@@ -1,12 +1,17 @@
 package upstream
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
+	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,9 +27,155 @@ type UpstreamPool struct {
 	timeout     time.Duration
 	udpClient   *dns.Client
 	tcpClient   *dns.Client
+	tlsClient   *dns.Client
+	httpClient  *http.Client
 	racing      bool
 	ecsClientIP net.IP
 	stats       map[string]*upstreamStatInternal
+}
+
+// Upstream schemes. A plain "host:port" (or bare host) is UDP, kept exactly as it
+// was before encrypted transport existed so a stored config keeps working.
+const (
+	schemeUDP   = ""
+	schemeTCP   = "tcp"
+	schemeTLS   = "tls"
+	schemeHTTPS = "https"
+)
+
+// dohDefaultPath is appended when a DoH URL carries no path of its own. RFC 8484
+// does not fix an endpoint, but /dns-query is the de-facto convention every
+// public resolver documents, so "https://dns.google" does the obvious thing.
+const dohDefaultPath = "/dns-query"
+
+// splitUpstreamScheme separates a leading "scheme://" from the rest of an
+// upstream string. Only the first occurrence counts, and the scheme is
+// lower-cased so "TLS://" and "tls://" are the same resolver.
+//
+// It looks for "://" rather than a bare ":" on purpose: an IPv6 literal such as
+// "[2606:4700:4700::1111]:53" is full of colons and must not be mistaken for one.
+func splitUpstreamScheme(raw string) (scheme, rest string) {
+	if i := strings.Index(raw, "://"); i >= 0 {
+		return strings.ToLower(strings.TrimSpace(raw[:i])), raw[i+3:]
+	}
+	return "", raw
+}
+
+// splitHostPortDefault splits "host:port", or takes a port-less host and gives
+// it defPort. A bracketed IPv6 literal without a port ("[::1]") is unwrapped
+// before net.JoinHostPort re-brackets it — otherwise the brackets would be
+// doubled into a host that never existed.
+func splitHostPortDefault(s, defPort string) (host, port string, ok bool) {
+	if h, p, err := net.SplitHostPort(s); err == nil {
+		host, port = h, p
+	} else {
+		host = s
+		if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+			host = host[1 : len(host)-1]
+		}
+		port = defPort
+	}
+	host = strings.TrimSpace(host)
+	if host == "" || port == "" {
+		return "", "", false
+	}
+	if n, err := strconv.Atoi(port); err != nil || n <= 0 || n > 65535 {
+		return "", "", false
+	}
+	return host, port, true
+}
+
+// normalizeUpstream canonicalises one operator-entered upstream and reports
+// whether it is usable. The canonical string is the pool's identity for that
+// resolver — it is the stats key, the value the dashboard reads back, and what a
+// delete matches — so it must be stable across the spellings of the same server:
+//
+//	1.1.1.1            -> "1.1.1.1:53"                 (UDP, unchanged)
+//	udp://1.1.1.1      -> "1.1.1.1:53"
+//	tcp://dns.google   -> "tcp://dns.google:53"
+//	tls://1.1.1.1      -> "tls://1.1.1.1:853"
+//	https://dns.google -> "https://dns.google/dns-query"
+func normalizeUpstream(raw string) (string, bool) {
+	u := strings.TrimSpace(raw)
+	if u == "" {
+		return "", false
+	}
+	scheme, rest := splitUpstreamScheme(u)
+
+	switch scheme {
+	case schemeUDP, "udp":
+		host, port, ok := splitHostPortDefault(rest, "53")
+		if !ok || !validUpstreamHost(host) {
+			return "", false
+		}
+		return net.JoinHostPort(host, port), true
+	case schemeTCP:
+		host, port, ok := splitHostPortDefault(rest, "53")
+		if !ok || !validUpstreamHost(host) {
+			return "", false
+		}
+		return schemeTCP + "://" + net.JoinHostPort(host, port), true
+	case schemeTLS:
+		// DoT has its own IANA-assigned port; the TLS handshake still validates
+		// the certificate against the host, so a plain hostname is the robust
+		// form and an IP literal needs a cert with an IP SAN.
+		host, port, ok := splitHostPortDefault(rest, "853")
+		if !ok || !validUpstreamHost(host) {
+			return "", false
+		}
+		return schemeTLS + "://" + net.JoinHostPort(host, port), true
+	case schemeHTTPS:
+		return normalizeDoHURL(rest)
+	default:
+		// "http://" (unauthenticated DoH) and anything else unrecognised is
+		// rejected rather than silently downgraded to plaintext.
+		return "", false
+	}
+}
+
+// normalizeDoHURL canonicalises the part after "https://". The port defaults to
+// 443 and is dropped when it is the default, so "host/dns-query" and
+// "host:443/dns-query" are one entry; the path defaults to /dns-query.
+func normalizeDoHURL(rest string) (string, bool) {
+	u, err := url.Parse("https://" + rest)
+	if err != nil || u.User != nil || u.Fragment != "" {
+		return "", false
+	}
+	host := u.Hostname()
+	if host == "" || !validUpstreamHost(host) {
+		return "", false
+	}
+	port := u.Port()
+	if port != "" {
+		if n, err := strconv.Atoi(port); err != nil || n <= 0 || n > 65535 {
+			return "", false
+		}
+	}
+	path := u.Path
+	if path == "" || path == "/" {
+		path = dohDefaultPath
+	}
+
+	authority := host
+	if strings.Contains(host, ":") {
+		authority = "[" + host + "]" // IPv6 without a port still needs brackets
+	}
+	if port != "" && port != "443" {
+		authority = net.JoinHostPort(host, port)
+	}
+
+	out := "https://" + authority + path
+	if u.RawQuery != "" {
+		out += "?" + u.RawQuery
+	}
+	return out, true
+}
+
+// NormalizeUpstream canonicalises a single operator-supplied upstream string,
+// reporting false when it is not a usable resolver. It is exported so the
+// dashboard's add handler validates a value exactly as the pool will store it.
+func NormalizeUpstream(raw string) (string, bool) {
+	return normalizeUpstream(raw)
 }
 
 type upstreamStatInternal struct {
@@ -35,40 +186,19 @@ type upstreamStatInternal struct {
 	lastUpdated time.Time
 }
 
-// normalizeUpstreams cleans a raw upstream list: trims blanks, appends the
-// default DNS port when missing, drops entries that are not a usable
-// host:port, and de-duplicates. An upstream without a port silently fails
-// every exchange, so normalizing here is what keeps a typo from taking the
+// normalizeUpstreams cleans a raw upstream list: trims blanks, canonicalises
+// each entry (default ports, DoH default path, scheme), drops entries that are
+// not a usable resolver, and de-duplicates. An upstream without a port silently
+// fails every exchange, so normalizing here is what keeps a typo from taking the
 // whole resolver offline.
 func normalizeUpstreams(list []string) []string {
 	out := make([]string, 0, len(list))
 	seen := make(map[string]struct{}, len(list))
 	for _, raw := range list {
-		u := strings.TrimSpace(raw)
-		if u == "" {
+		addr, ok := normalizeUpstream(raw)
+		if !ok {
 			continue
 		}
-		host, port, err := net.SplitHostPort(u)
-		if err != nil {
-			// No port (or an IPv6 literal without brackets) — try adding :53.
-			candidate := net.JoinHostPort(u, "53")
-			if h, p, err2 := net.SplitHostPort(candidate); err2 == nil {
-				host, port = h, p
-			} else {
-				continue
-			}
-		}
-		host = strings.TrimSpace(host)
-		if host == "" || port == "" {
-			continue
-		}
-		if n, err := strconv.Atoi(port); err != nil || n <= 0 || n > 65535 {
-			continue
-		}
-		if !validUpstreamHost(host) {
-			continue
-		}
-		addr := net.JoinHostPort(host, port)
 		if _, dup := seen[addr]; dup {
 			continue
 		}
@@ -173,6 +303,29 @@ func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecs
 			Net:     "tcp",
 			Timeout: timeout,
 		},
+		// DoT verifies the upstream's certificate like any other TLS client; there
+		// is deliberately no InsecureSkipVerify escape hatch. The host is taken
+		// from the address by miekg/dns when TLSConfig.ServerName is empty.
+		tlsClient: &dns.Client{
+			Net:       "tcp-tls",
+			Timeout:   timeout,
+			TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		},
+		// DoH posts a binary DNS message over HTTPS. Proxy is nil because an
+		// upstream resolver is not a web fetch: honouring HTTP_PROXY here would
+		// route every query through the operator's environment by accident, the
+		// same reason the updater ignores it.
+		httpClient: &http.Client{
+			Timeout: timeout,
+			Transport: &http.Transport{
+				Proxy:              nil,
+				TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12},
+				ForceAttemptHTTP2:  true,
+				MaxIdleConns:       4,
+				IdleConnTimeout:    90 * time.Second,
+				DisableCompression: true,
+			},
+		},
 	}
 
 	for _, u := range normalized {
@@ -229,6 +382,7 @@ func (p *UpstreamPool) BenchmarkAll() {
 	p.mu.RLock()
 	servers := make([]string, len(p.upstreams))
 	copy(servers, p.upstreams)
+	timeout := p.timeout
 	p.mu.RUnlock()
 
 	var wg sync.WaitGroup
@@ -236,10 +390,15 @@ func (p *UpstreamPool) BenchmarkAll() {
 		wg.Add(1)
 		go func(addr string) {
 			defer wg.Done()
+			// Probe through the same per-scheme path a real query takes. Probing
+			// everything over UDP:53 used to send a DoT/DoH upstream's probe to a
+			// port that is not even listening, so it scored as broken.
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
 			start := time.Now()
-			resp, _, err := p.udpClient.Exchange(m, addr)
+			resp, _, err := p.queryOne(ctx, m, addr)
 			dur := time.Since(start)
-			p.recordStat(addr, dur, err == nil && usableRcode(resp) && answersTheQuestion(m, resp))
+			p.recordStat(addr, dur, err == nil && usableRcode(resp))
 		}(s)
 	}
 	wg.Wait()
@@ -371,12 +530,35 @@ func (p *UpstreamPool) queryOne(ctx context.Context, req *dns.Msg, addr string) 
 	// the second fence, not the only one.
 	q := req.Copy()
 	clientID := req.Id
-	q.Id = dns.Id()
 
-	resp, rtt, err := p.udpClient.ExchangeContext(ctx, q, addr)
-	if err == nil && resp != nil && resp.Truncated {
-		if tcpResp, tcpRTT, tcpErr := p.tcpClient.ExchangeContext(ctx, q, addr); tcpErr == nil && tcpResp != nil {
-			resp, rtt, err = tcpResp, tcpRTT, nil
+	scheme, endpoint := splitUpstreamScheme(addr)
+
+	var (
+		resp *dns.Msg
+		rtt  time.Duration
+		err  error
+	)
+	switch scheme {
+	case schemeTLS:
+		// The client's ID rule above still holds: query under a fresh ID.
+		q.Id = dns.Id()
+		resp, rtt, err = p.tlsClient.ExchangeContext(ctx, q, endpoint)
+	case schemeHTTPS:
+		// RFC 8484 §4.1: a DoH query MUST use transaction ID 0. Correlation is
+		// by the HTTP request, so the ID carries no entropy and every client's
+		// query would otherwise be a fingerprintable value.
+		q.Id = 0
+		resp, rtt, err = p.exchangeDoH(ctx, q, addr)
+	case schemeTCP:
+		q.Id = dns.Id()
+		resp, rtt, err = p.tcpClient.ExchangeContext(ctx, q, endpoint)
+	default:
+		q.Id = dns.Id()
+		resp, rtt, err = p.udpClient.ExchangeContext(ctx, q, endpoint)
+		if err == nil && resp != nil && resp.Truncated {
+			if tcpResp, tcpRTT, tcpErr := p.tcpClient.ExchangeContext(ctx, q, endpoint); tcpErr == nil && tcpResp != nil {
+				resp, rtt, err = tcpResp, tcpRTT, nil
+			}
 		}
 	}
 	if err == nil && !answersTheQuestion(q, resp) {
@@ -391,6 +573,48 @@ func (p *UpstreamPool) queryOne(ctx context.Context, req *dns.Msg, addr string) 
 		resp.Id = clientID
 	}
 	return resp, rtt, err
+}
+
+// exchangeDoH sends one DNS query over DNS-over-HTTPS (RFC 8484) and returns the
+// decoded reply. The binary message is POSTed as application/dns-message; a
+// non-200, an unreadable body, or a body that will not unpack is an upstream
+// failure like any other. The caller has already set q.Id = 0.
+func (p *UpstreamPool) exchangeDoH(ctx context.Context, q *dns.Msg, rawURL string) (*dns.Msg, time.Duration, error) {
+	packed, err := q.Pack()
+	if err != nil {
+		return nil, 0, fmt.Errorf("pack DoH query for %s: %w", rawURL, err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader(packed))
+	if err != nil {
+		return nil, 0, fmt.Errorf("build DoH request for %s: %w", rawURL, err)
+	}
+	httpReq.Header.Set("Content-Type", "application/dns-message")
+	httpReq.Header.Set("Accept", "application/dns-message")
+
+	start := time.Now()
+	httpResp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, time.Since(start), err
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, time.Since(start), fmt.Errorf("DoH server %s returned HTTP %d", rawURL, httpResp.StatusCode)
+	}
+
+	// A DNS message cannot exceed 64 KiB, so cap the read: a hostile or broken
+	// endpoint must not be able to make the resolver allocate without bound.
+	body, err := io.ReadAll(io.LimitReader(httpResp.Body, dns.MaxMsgSize))
+	if err != nil {
+		return nil, time.Since(start), fmt.Errorf("read DoH response from %s: %w", rawURL, err)
+	}
+
+	out := new(dns.Msg)
+	if err := out.Unpack(body); err != nil {
+		return nil, time.Since(start), fmt.Errorf("unpack DoH response from %s: %w", rawURL, err)
+	}
+	return out, time.Since(start), nil
 }
 
 func (p *UpstreamPool) exchangeRacing(req *dns.Msg, upstreams []string, timeout time.Duration) (*dns.Msg, time.Duration, string, error) {

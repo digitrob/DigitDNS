@@ -409,6 +409,14 @@ history is gone.
 **Dashboard** (`/home`) is the aggregate view: QPS graph, cache hit rate, and
 per-upstream latency so you can see which resolver is winning the race.
 
+The **Upstream Racers** card is also where you add resolvers. A plain address
+(`1.1.1.1`, `1.1.1.1:53`) is queried over UDP; prefix the entry to select another
+transport: `tcp://host:53`, `tls://host` for **DoT** (default port 853) or an
+`https://host/dns-query` URL for **DoH** (default path `/dns-query`). DoT and DoH
+verify the upstream's certificate, so use a hostname it is valid for. **Benchmark**
+probes every resolver on its own transport and the fastest healthy answer wins each
+race.
+
 **Run Diagnostics** (sidebar) checks the listeners, does a test query, and
 reports the certificate state — the fastest "is it broken?" answer.
 

@@ -2307,14 +2307,17 @@ func (ws *WebServer) handleUpstreamsAdd(w http.ResponseWriter, r *http.Request) 
 	// IPv6 literal (v2.1.0 B-06 remediation): string concatenation turned
 	// 2001:db8::1 into 2001:db8::1:53, which parses as a DIFFERENT host, got
 	// persisted, and pointed the resolver at a machine that was never chosen.
-	if _, _, err := net.SplitHostPort(addr); err != nil {
-		if net.ParseIP(addr) != nil {
-			addr = net.JoinHostPort(addr, "53")
-		} else {
-			httpx.WriteJSONError(w, http.StatusBadRequest, "Invalid upstream address, expected host:port")
-			return
-		}
+	// Accept a bare host, host:port, tls://host[:port] (DNS-over-TLS) or an
+	// https:// URL (DNS-over-HTTPS). Normalising to the pool's canonical form
+	// here means what gets persisted and de-duplicated is exactly the string the
+	// pool keys its stats on — so a DoT/DoH entry round-trips through the
+	// dashboard and can be removed by the same string.
+	canonical, ok := upstream.NormalizeUpstream(addr)
+	if !ok {
+		httpx.WriteJSONError(w, http.StatusBadRequest, "Invalid upstream address (use host, host:port, tls://host, or https://host/dns-query)")
+		return
 	}
+	addr = canonical
 	list, errMsg, status := ws.addUpstream(addr)
 	if status != 0 {
 		httpx.WriteJSONError(w, status, errMsg)

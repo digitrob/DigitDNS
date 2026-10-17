@@ -206,3 +206,72 @@ func TestAddUpstreamNormalizesBareIP(t *testing.T) {
 		t.Errorf("stored upstreams = %v, want the bare IP normalized to :53", got.Upstreams)
 	}
 }
+
+// TestAddUpstreamAcceptsEncryptedForms pins that the dashboard can register a DoT
+// or DoH resolver, and that what gets persisted is the pool's canonical string
+// rather than the operator's raw text — otherwise the row added here would not be
+// the key the stats are stored under, and its remove button would not match.
+func TestAddUpstreamAcceptsEncryptedForms(t *testing.T) {
+	ws, db, cleanup := setupTestWebServer(t)
+	defer cleanup()
+	seedDNSRecord(t, db)
+
+	cases := []struct {
+		sent string
+		want string
+	}{
+		{"tls://1.1.1.1", "tls://1.1.1.1:853"},
+		{"https://dns.google", "https://dns.google/dns-query"},
+		{"https://cloudflare-dns.com:443/dns-query", "https://cloudflare-dns.com/dns-query"},
+	}
+	for _, tc := range cases {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/upstreams/add",
+			strings.NewReader(fmt.Sprintf(`{"address":%q}`, tc.sent)))
+		ws.handleUpstreamsAdd(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("adding %q: status = %d, want 200: %s", tc.sent, rec.Code, rec.Body.String())
+		}
+		if got := storedDNS(t, db); !slices.Contains(got.Upstreams, tc.want) {
+			t.Errorf("adding %q stored %v, want %q present", tc.sent, got.Upstreams, tc.want)
+		}
+	}
+}
+
+// TestAddUpstreamRejectsUnknownScheme keeps "http://" (unauthenticated DoH) and a
+// forward-looking scheme the pool cannot speak from being stored as a resolver
+// that then fails every exchange.
+func TestAddUpstreamRejectsUnknownScheme(t *testing.T) {
+	ws, db, cleanup := setupTestWebServer(t)
+	defer cleanup()
+	seedDNSRecord(t, db)
+
+	for _, bad := range []string{"http://dns.google/dns-query", "quic://dns.example", "tls://1.1.1.1:0"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/upstreams/add",
+			strings.NewReader(fmt.Sprintf(`{"address":%q}`, bad)))
+		ws.handleUpstreamsAdd(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("adding %q gave status %d, want 400: %s", bad, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// TestAddUpstreamDeduplicatesCanonicalForms — "1.1.1.1" and "udp://1.1.1.1" are
+// the same resolver; the second add must be refused rather than raced twice.
+func TestAddUpstreamDeduplicatesCanonicalForms(t *testing.T) {
+	ws, db, cleanup := setupTestWebServer(t)
+	defer cleanup()
+	seedDNSRecord(t, db)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/upstreams/add",
+		strings.NewReader(`{"address":"udp://1.1.1.1"}`))
+	ws.handleUpstreamsAdd(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 — udp://1.1.1.1 is the seeded 1.1.1.1:53", rec.Code)
+	}
+	if got := storedDNS(t, db); len(got.Upstreams) != 2 {
+		t.Errorf("stored upstreams = %v, want the two seeded resolvers only", got.Upstreams)
+	}
+}

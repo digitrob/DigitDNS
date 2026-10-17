@@ -246,6 +246,7 @@ This build ships **no built-in catalogue**. Routing is entirely the operator's, 
 - **An idle DoT connection is held for 60 seconds** (30 s on plain TCP), and there is no per-connection query limit. What a DoT client pays for a new connection is a full TLS handshake, so a phone on Android Private DNS that looks something up every few seconds used to re-handshake for nearly every name — tens of milliseconds, on mobile data, on the query that starts a game.
 - **The reply tells the client how long it may hold the connection** (`edns-tcp-keepalive`, RFC 7828), so it does not have to guess. Guessing long means writing a query into a socket the server already closed; guessing short means throwing away a handshake that would have been reused.
 - **Concurrent connections are capped** (512 TCP / 1024 DoT / 512 HTTPS) with header and idle timeouts on the HTTPS listener, so connection reuse cannot be turned into a way to hold the daemon's resources open.
+- **The racer also speaks DoT and DoH upstream.** An upstream entry may be a plain `1.1.1.1` (UDP, unchanged), `tcp://host:53`, `tls://host` (DoT, default port 853) or an `https://host/dns-query` URL (DoH, RFC 8484, default path `/dns-query`). Each scheme is queried on its own transport, and both encrypted transports verify the upstream's certificate — there is no `InsecureSkipVerify` escape hatch. Add one from Dashboard → **Upstream Racers**.
 
 ### 📜 5. Certificates Issued by the Daemon (v2.2.0)
 - **An embedded ACME client (RFC 8555) replaces certbot and acme.sh entirely.**

@@ -3203,6 +3203,17 @@ function initEventListeners() {
           if (input) input.value = '';
           showToast('Upstream resolver added & tested!', 'success');
           updateStats();
+        } else {
+          // The handler rejects a value it cannot canonicalise and says why
+          // (unknown scheme, bad port, not a host). Showing its message beats
+          // the old silence, where an add that never happened looked like a
+          // no-op and the operator retyped the same bad address.
+          let reason = 'Invalid upstream address';
+          try {
+            const body = await res.json();
+            if (body && body.error) reason = body.error;
+          } catch (_) { /* non-JSON error body */ }
+          showToast(reason, 'error');
         }
       } catch (e) {
         showToast('Failed to add upstream', 'error');
