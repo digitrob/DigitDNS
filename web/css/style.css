@@ -1021,9 +1021,54 @@ input:checked + .slider:before {
  * inside the panel rather than pushing Bulk import off the top of the page, and
  * the same scrollbar styling that covers every other scroller applies here too. */
 .proxied-scroll {
-  max-height: 24rem;
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
+
+/* The Proxied page fills the viewport the same way the live log does: #main-content
+ * is already a flex column, so the visible tab grows into the leftover height and the
+ * list scrolls inside the panel rather than sitting in a 24rem box on a mostly empty
+ * page. :not(.hidden) is load-bearing for the same reason it is on #tab-stream — an id
+ * selector would otherwise beat the display:none that switchTab toggles. */
+#tab-proxied:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+#tab-proxied > .glass-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The row checkbox and the proxied table's columns. Plain CSS for the same reason as
+ * the stream table: the purged utility sheet cannot be regenerated here. The two
+ * checkbox class names are the same control: proxied-check carries the size, and
+ * proxied-select-check is the row hook the delegated listener matches. */
+.proxied-select-check,
+.proxied-check {
+  width: 14px;
+  height: 14px;
+  accent-color: rgb(6 182 212);
+  cursor: pointer;
+}
+.proxied-table {
+  table-layout: fixed;
+}
+.proxied-bulk-bar {
+  min-height: 1.75rem;
+}
+.proxied-bulk-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.proxied-col-check { width: 2.75rem; }
+.proxied-col-status { width: 7rem; }
+.proxied-col-actions { width: 7.5rem; }
 
 /* The sentinel the IntersectionObserver watches. It has to be in the layout — a
  * display:none element never intersects — but not visible, so it is a
@@ -1063,10 +1108,33 @@ input:checked + .slider:before {
   flex-direction: column;
 }
 .stream-viewport {
-  flex: 1;
+  max-height: none;
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
 }
+
+/* ── Live query log: fixed column widths ────────────────────────────────────────
+ * With the default table-layout:auto every column is sized to its widest cell, so
+ * one long domain widens the domain column and shoves every column after it left
+ * — the header labels and the cells under them drift apart row by row. fixed
+ * takes the widths from this first row (the <th>s) and holds them for the whole
+ * table, which is what makes the columns line up. Widths are plain CSS rather
+ * than utility classes because the purged Tailwind sheet cannot be regenerated
+ * here, and an arbitrary value like w-[110px] would simply be missing from it.
+ * The domain column takes no width: it absorbs whatever is left. The proto and
+ * rule columns are hidden below sm (their cells and headers carry hidden
+ * sm:table-cell), so their widths only apply where they are shown. */
+.stream-table {
+  table-layout: fixed;
+}
+.stream-col-time { width: 6.5rem; }
+.stream-col-client { width: 12rem; }
+.stream-col-proto { width: 5rem; }
+.stream-col-domain { width: auto; }
+.stream-col-rule { width: 11rem; }
+.stream-col-action { width: 9rem; }
+.stream-col-latency { width: 7rem; }
 
 /* ── Live-log quick actions: the ACTION badge and its popover ───────────────────
  * The badge becomes a button so a query can be routed without leaving the log.

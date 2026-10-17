@@ -1223,15 +1223,48 @@
             <span id="proxied-count" class="text-[11px] text-slate-500"></span>
           </div>
 
+          <!-- Bulk actions over the selected rows. The buttons carry .proxied-bulk-btn
+               so their disabled state is styled in style.css rather than with utility
+               classes the purged sheet would have to be regenerated to contain. They
+               are enabled by updateProxiedBulkBar as the selection changes. -->
+          <div class="proxied-bulk-bar flex flex-wrap items-center justify-between gap-2">
+            <span id="proxied-selected-count" class="text-[11px] text-slate-500">No domains selected</span>
+            <div class="flex items-center gap-1.5">
+              <button type="button" id="proxied-bulk-pause"
+                class="proxied-bulk-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">Pause</button>
+              <button type="button" id="proxied-bulk-resume"
+                class="proxied-bulk-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition">Resume</button>
+              <button type="button" id="proxied-bulk-remove"
+                class="proxied-bulk-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-red-500/10 text-red-400 border border-red-500/30 text-[11px] font-semibold transition">Remove</button>
+            </div>
+          </div>
+
           <!-- The scroll region and its sentinel. renderProxiedList rewrites
                #custom-proxied-rows wholesale, so the "Loading rules…" line
                survives exactly until the settings fetch lands — and an empty
                rules list is not a neutral thing to show while that is in
                flight: it reads as "nothing is being routed through the proxy".
                The sentinel sits outside the rewritten rows and inside the
-               scroll container so the observer can watch it cross the fold. -->
+               scroll container so the observer can watch it cross the fold.
+               The list is a table — same fixed-column shape as the live log — so
+               each row's checkbox, domain, status and actions line up. -->
           <div id="custom-proxied-list" class="proxied-scroll">
-            <div id="custom-proxied-rows" class="space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">Loading rules…</div></div>
+            <table class="proxied-table w-full text-start border-collapse text-xs font-mono">
+              <caption class="sr-only">Proxied domains</caption>
+              <thead class="bg-slate-950/80 sticky top-0 text-slate-400 border-b border-slate-800 z-10">
+                <tr>
+                  <th class="proxied-col-check py-2.5 px-3">
+                    <input type="checkbox" id="proxied-select-all" aria-label="Select all proxied domains" class="proxied-check">
+                  </th>
+                  <th class="py-2.5 px-3">DOMAIN</th>
+                  <th class="proxied-col-status py-2.5 px-3">STATUS</th>
+                  <th class="proxied-col-actions py-2.5 px-3 text-end">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody id="custom-proxied-rows" class="divide-y divide-slate-800/50 text-slate-300">
+                <tr><td colspan="4" class="py-8 text-center text-slate-500">Loading rules…</td></tr>
+              </tbody>
+            </table>
             <div id="proxied-sentinel" class="proxied-sentinel" aria-hidden="true"></div>
           </div>
           <button type="button" id="proxied-load-more"
@@ -1344,6 +1377,21 @@
                 <option value="BLOCK">BLOCK</option>
                 <option value="CACHED">CACHED</option>
               </select>
+              <!-- The log's order. Changing it redraws the queries already buffered; an
+                   arriving query is inserted at its sorted position instead of forcing a
+                   full-table repaint, which is what stopped the live list from flashing. -->
+              <label class="flex items-center gap-1.5 text-[11px] text-slate-400 shrink-0">
+                <select id="stream-sort" aria-label="Sort live queries"
+                  class="bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
+                  <option value="time-desc" selected>Newest first</option>
+                  <option value="time-asc">Oldest first</option>
+                  <option value="client">Client A–Z</option>
+                  <option value="domain">Domain A–Z</option>
+                  <option value="action">Action</option>
+                  <option value="latency-desc">Slowest first</option>
+                  <option value="latency-asc">Fastest first</option>
+                </select>
+              </label>
             </div>
 
             <div class="flex items-center gap-2 w-full sm:w-auto sm:ms-auto sm:shrink-0 justify-end">
@@ -1379,17 +1427,20 @@
                ACTION and LATENCY are one thumb-nudge away, and the page itself never
                overflows (documentElement.scrollWidth stays 360). -->
           <div class="overflow-x-auto mt-3 stream-viewport">
-            <table class="w-full text-start border-collapse text-xs font-mono min-w-[420px] sm:min-w-[600px]">
+            <!-- stream-table fixes the column widths (style.css), so the header labels sit
+                 over their cells instead of shifting with each row's content. queryRowHTML
+                 carries the matching stream-col-* classes on its cells. -->
+            <table class="stream-table w-full text-start border-collapse text-xs font-mono min-w-[420px] sm:min-w-[600px]">
               <caption class="sr-only">Live DNS query log</caption>
               <thead class="bg-slate-950/80 sticky top-0 text-slate-400 border-b border-slate-800 z-10">
                 <tr>
-                  <th class="py-2.5 px-2 sm:px-3">TIME</th>
-                  <th class="py-2.5 px-2 sm:px-3">CLIENT / ACCOUNT</th>
-                  <th class="py-2.5 px-2 sm:px-3 hidden sm:table-cell">PROTO</th>
-                  <th class="py-2.5 px-2 sm:px-3">QUERY DOMAIN</th>
-                  <th class="py-2.5 px-2 sm:px-3 hidden sm:table-cell">RULE MATCHED</th>
-                  <th class="py-2.5 px-2 sm:px-3">ACTION</th>
-                  <th class="py-2.5 px-2 sm:px-3 text-end">LATENCY</th>
+                  <th class="stream-col-time py-2.5 px-2 sm:px-3">TIME</th>
+                  <th class="stream-col-client py-2.5 px-2 sm:px-3">CLIENT / ACCOUNT</th>
+                  <th class="stream-col-proto py-2.5 px-2 sm:px-3 hidden sm:table-cell">PROTO</th>
+                  <th class="stream-col-domain py-2.5 px-2 sm:px-3">QUERY DOMAIN</th>
+                  <th class="stream-col-rule py-2.5 px-2 sm:px-3 hidden sm:table-cell">RULE MATCHED</th>
+                  <th class="stream-col-action py-2.5 px-2 sm:px-3">ACTION</th>
+                  <th class="stream-col-latency py-2.5 px-2 sm:px-3 text-end">LATENCY</th>
                 </tr>
               </thead>
               <tbody id="stream-tbody" class="divide-y divide-slate-800/50 text-slate-300">
@@ -2053,7 +2104,7 @@ async function onBuySubscription(ctx, username) {
             <strong class="text-slate-200">AGPL-3.0</strong> licence. Based on
             <strong class="text-slate-200">HyperDNS</strong> by HyperRAIN
             (github.com/IzumiRain/HyperDNS); this fork's source
-            (github.com/digitrob/HyperDNS) is available under the same licence.
+            (github.com/digitrob/DigitDNS) is available under the same licence.
           </p>
         </div>
 
@@ -2148,7 +2199,7 @@ async function onBuySubscription(ctx, username) {
     <!-- FOOTER (Clean desktop footer) -->
     <footer class="hidden md:block border-t border-slate-800/60 bg-slate-950/40 py-4 text-center text-xs text-slate-500 font-mono">
       <span>DigitDNS Smart Controller — Low-Latency SmartDNS Engine · <span id="app-version-footer">v2.1.0</span></span>
-      <span class="footer-legal">© 2026 Digitrob · AGPL-3.0 · Based on HyperDNS by HyperRAIN · Source: github.com/digitrob/HyperDNS</span>
+      <span class="footer-legal">© 2026 Digitrob · AGPL-3.0 · Based on HyperDNS by HyperRAIN · Source: github.com/digitrob/DigitDNS</span>
     </footer>
     </main>
 

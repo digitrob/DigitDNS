@@ -66,6 +66,67 @@ let isStreamPaused = false;
 const STREAM_BUFFER_MAX = 200;
 let streamBuffer = [];
 
+// streamRendered mirrors the rows actually in the table, in DOM order, holding the same
+// query objects as streamBuffer. The two differ while a batch is being inserted: the
+// buffer has every arrival the moment it lands, but the rows are added one at a time on
+// the next frame. Keeping the rendered order as data is what lets insertStreamQuery find
+// a row's slot without walking (or rebuilding) the DOM, and it is the array a dropped
+// arrival is removed from when the buffer is full.
+let streamRendered = [];
+// streamPendingDropped holds the queries the capped buffer evicted in this frame, so the
+// matching rows leave the DOM too instead of lingering past STREAM_BUFFER_MAX.
+let streamPendingDropped = [];
+
+// streamSort is the live log's order. It lives with the buffer rather than in the
+// render call because pushStreamQuery has to consult it to decide where an arriving
+// row belongs, and the sort control only has to assign it and redraw.
+let streamSort = 'time-desc';
+
+// streamSortField returns the value one query sorts on, as a string, for the given
+// order. Time is the epoch in milliseconds and latency is milliseconds, both
+// zero-padded so that a plain string compare keeps them in numeric order — the
+// comparator below then needs no per-field branch at insertion time.
+function streamSortField(q, mode) {
+  switch (mode) {
+    case 'time-asc':
+    case 'time-desc': {
+      const t = q.timestamp ? new Date(q.timestamp).getTime() : Date.now();
+      return String(t).padStart(15, '0');
+    }
+    case 'client':
+      return ((q.account_name || 'Public') + ' ' + (q.client_ip || '')).toLowerCase();
+    case 'domain':
+      return (q.domain || '').toLowerCase();
+    case 'action':
+      return (q.action || 'DIRECT').toLowerCase();
+    case 'latency-desc':
+    case 'latency-asc': {
+      const lat = (typeof q.latency_ms === 'number')
+        ? q.latency_ms
+        : ((typeof q.latency === 'number') ? q.latency / 1000000 : 0);
+      return String(Math.round(lat * 10)).padStart(12, '0');
+    }
+    default:
+      return '';
+  }
+}
+
+// compareStreamQueries orders two queries under the current streamSort. The secondary
+// key keeps rows with equal values in a stable order, so a burst of queries to the same
+// domain does not shuffle among themselves on every redraw.
+function compareStreamQueries(a, b) {
+  const ka = streamSortField(a, streamSort);
+  const kb = streamSortField(b, streamSort);
+  let cmp = ka < kb ? -1 : ka > kb ? 1 : 0;
+  if (cmp === 0) {
+    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    cmp = ta - tb;
+  }
+  // time-desc / latency-desc are the two orders that want the larger key first.
+  return (streamSort === 'time-desc' || streamSort === 'latency-desc') ? -cmp : cmp;
+}
+
 function safeFeatherReplace() {
   try {
     if (typeof feather !== 'undefined' && feather.replace) {
@@ -981,19 +1042,55 @@ function proxiedOrderedRows() {
   }
 }
 
+// proxiedSelected holds the domains ticked for a bulk action. It is a set of domain
+// strings rather than row indexes: a re-render (a sort, the next batch, a save) would
+// otherwise move the selection onto whichever row happened to land on the same index.
+let proxiedSelected = new Set();
+
+// proxiedPruneSelection drops domains no longer in the list, so a bulk action can never
+// operate on an entry a reload or another operator has since removed.
+function proxiedPruneSelection() {
+  const live = new Set(proxiedOrderedRows().map((r) => r.domain));
+  for (const d of Array.from(proxiedSelected)) {
+    if (!live.has(d)) proxiedSelected.delete(d);
+  }
+}
+
+// updateProxiedBulkBar reflects the selection in the count line, the bulk buttons'
+// disabled state, and the header checkbox — checked when every domain is ticked,
+// indeterminate when only some are.
+function updateProxiedBulkBar() {
+  const n = proxiedSelected.size;
+  const total = proxiedOrderedRows().length;
+  const countEl = document.getElementById('proxied-selected-count');
+  if (countEl) countEl.textContent = n === 0 ? 'No domains selected' : `${n} selected`;
+  ['proxied-bulk-pause', 'proxied-bulk-resume', 'proxied-bulk-remove'].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = n === 0;
+  });
+  const all = document.getElementById('proxied-select-all');
+  if (all) {
+    all.checked = total > 0 && n >= total;
+    all.indeterminate = n > 0 && n < total;
+  }
+}
+
 // renderProxiedList draws the Proxied Domains page. Two lists feed it: the
 // enabled domains (cfg.rules.custom_proxied) the matcher actually proxies, and the
 // ones the operator switched off (custom_proxied_disabled), which are kept only so
-// they survive a reload. Every row carries a switch; the disabled rows are dimmed
-// and sorted after the live ones. Toggling a switch moves the domain between the
-// two lists rather than deleting it — that move is what lifts it out of the proxy
-// set, so a switched-off domain resolves normally instead of being proxied.
+// they survive a reload. Every row carries a switch; the paused rows are dimmed and
+// sorted after the live ones. Toggling a switch moves the domain between the two
+// lists rather than deleting it — that move is what lifts it out of the proxy set, so
+// a switched-off domain resolves normally instead of being proxied.
 //
-// The ordered list can be long, so only its first proxiedVisible rows are drawn.
+// The table mirrors the live log: a fixed set of columns, a leading checkbox for the
+// bulk actions, the domain, its status, and the per-row switch and remove button. The
+// ordered list can be long, so only its first proxiedVisible rows are drawn;
 // proxiedHasMore records whether there is a next batch for the sentinel to fetch.
 function renderProxiedList() {
   const container = document.getElementById('custom-proxied-rows');
   if (!container) return;
+  proxiedPruneSelection();
   const ordered = proxiedOrderedRows();
   const total = ordered.length;
   const countEl = document.getElementById('proxied-count');
@@ -1001,10 +1098,11 @@ function renderProxiedList() {
 
   container.innerHTML = '';
   if (total === 0) {
-    container.innerHTML = '<div class="text-slate-500 text-xs py-1">No custom entries yet</div>';
+    container.innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-500 text-xs">No custom entries yet</td></tr>';
     proxiedHasMore = false;
     if (countEl) countEl.textContent = '';
     if (moreBtn) moreBtn.classList.add('hidden');
+    updateProxiedBulkBar();
     return;
   }
 
@@ -1017,30 +1115,40 @@ function renderProxiedList() {
   }
   if (moreBtn) moreBtn.classList.toggle('hidden', !proxiedHasMore);
   rows.forEach(({ domain, on }) => {
-    const row = document.createElement('div');
-    // opacity-50 on the disabled rows reads as "listed, but not in effect"; the
-    // switch state is still the authoritative signal, the dimming just scans faster.
-    row.className = 'flex items-center justify-between gap-3 py-1.5 px-3 rounded-lg bg-slate-950/60 border border-slate-800 text-xs' + (on ? '' : ' opacity-50');
+    const row = document.createElement('tr');
+    // opacity-50 on the paused rows reads as "listed, but not in effect"; the switch
+    // state is still the authoritative signal, the dimming just scans faster.
+    row.className = 'hover:bg-slate-800/40 transition' + (on ? '' : ' opacity-50');
     // The colour class is chosen here rather than written into the template: the
     // escaping sweep reads attribute interpolations, and a literal ternary sitting
     // in a class attribute is a shape it cannot vouch for. domainClass carries no
     // operator data, which is why it is safe to interpolate unescaped.
     const domainClass = on ? 'text-cyan-300' : 'text-slate-400';
+    const statusBadge = on
+      ? '<span class="badge badge-proxy">PROXIED</span>'
+      : '<span class="badge badge-unknown">PAUSED</span>';
     row.innerHTML = `
-      <span class="font-mono ${domainClass} min-w-0 truncate">${escapeHTML(domain)}</span>
-      <div class="flex items-center gap-2 shrink-0">
-        <label class="switch shrink-0">
-          <input type="checkbox" class="toggle-proxied" data-val="${escapeHTML(domain)}" ${on ? 'checked' : ''} aria-label="Toggle proxying for ${escapeHTML(domain)}">
-          <span class="slider"></span>
-        </label>
-        <button class="remove-proxied inline-flex items-center justify-center w-6 h-6 shrink-0 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition" data-val="${escapeHTML(domain)}" aria-label="Remove ${escapeHTML(domain)}">
-          <i data-feather="x" class="w-3.5 h-3.5"></i>
-        </button>
-      </div>
+      <td class="py-2.5 px-3">
+        <input type="checkbox" class="proxied-select-check proxied-check" data-val="${escapeHTML(domain)}" ${proxiedSelected.has(domain) ? 'checked' : ''} aria-label="Select ${escapeHTML(domain)}">
+      </td>
+      <td class="py-2.5 px-3 truncate" title="${escapeHTML(domain)}"><span class="font-mono ${domainClass}">${escapeHTML(domain)}</span></td>
+      <td class="py-2.5 px-3">${statusBadge}</td>
+      <td class="py-2.5 px-3">
+        <div class="flex items-center justify-end gap-2">
+          <label class="switch shrink-0">
+            <input type="checkbox" class="toggle-proxied" data-val="${escapeHTML(domain)}" ${on ? 'checked' : ''} aria-label="Toggle proxying for ${escapeHTML(domain)}">
+            <span class="slider"></span>
+          </label>
+          <button class="remove-proxied inline-flex items-center justify-center w-6 h-6 shrink-0 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition" data-val="${escapeHTML(domain)}" aria-label="Remove ${escapeHTML(domain)}">
+            <i data-feather="x" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </td>
     `;
     container.appendChild(row);
   });
   safeFeatherReplace();
+  updateProxiedBulkBar();
 }
 
 // proxiedShowMore appends the next batch. It is the one growth path, shared by
@@ -1094,6 +1202,57 @@ function proxiedResetSlice() {
   proxiedVisible = proxiedBatchSize();
   renderProxiedList();
   proxiedFillViewport();
+}
+
+// proxiedBulkSetEnabled applies Pause (enable=false) or Resume (enable=true) to every
+// selected domain. Pause is the same move the per-row switch makes: the domain stays in
+// the list but leaves the proxy set, so it resolves normally. The selected domains are
+// removed from both lists first, then added to the target one, so the operation is a
+// move and not a duplicate.
+function proxiedBulkSetEnabled(enable) {
+  if (!currentConfig || !currentConfig.rules || proxiedSelected.size === 0) return;
+  const rules = currentConfig.rules;
+  const enabled = Array.isArray(rules.custom_proxied) ? rules.custom_proxied : [];
+  const disabled = Array.isArray(rules.custom_proxied_disabled) ? rules.custom_proxied_disabled : [];
+  const restEnabled = enabled.filter((d) => !proxiedSelected.has(d));
+  const restDisabled = disabled.filter((d) => !proxiedSelected.has(d));
+  if (enable) {
+    proxiedSelected.forEach((d) => { if (!restEnabled.includes(d)) restEnabled.push(d); });
+    rules.custom_proxied = restEnabled;
+    rules.custom_proxied_disabled = restDisabled;
+  } else {
+    proxiedSelected.forEach((d) => { if (!restDisabled.includes(d)) restDisabled.push(d); });
+    rules.custom_proxied = restEnabled;
+    rules.custom_proxied_disabled = restDisabled;
+  }
+  const n = proxiedSelected.size;
+  proxiedSelected = new Set();
+  renderConfig(currentConfig);
+  saveRules();
+  showToast(`${enable ? 'Resumed' : 'Paused'} ${n} domain${n === 1 ? '' : 's'}`, 'success');
+}
+
+// proxiedBulkRemove deletes the selected domains from both lists for good. It asks
+// first, because a long list can hide the rows a bulk selection captured and the tick
+// marks are small; the message names the count so the dialog is a real decision.
+async function proxiedBulkRemove() {
+  if (!currentConfig || !currentConfig.rules || proxiedSelected.size === 0) return;
+  const n = proxiedSelected.size;
+  const ok = await confirmAction({
+    destructive: true,
+    title: `Remove ${n} domain${n === 1 ? '' : 's'}?`,
+    hint: 'THIS CANNOT BE UNDONE',
+    message: `${n} selected domain${n === 1 ? '' : 's'} will be deleted from the proxied list. They stop being spoofed to the SNI proxy immediately and resolve normally.`,
+    confirmText: 'REMOVE',
+  });
+  if (!ok) return;
+  const rules = currentConfig.rules;
+  rules.custom_proxied = (rules.custom_proxied || []).filter((d) => !proxiedSelected.has(d));
+  rules.custom_proxied_disabled = (rules.custom_proxied_disabled || []).filter((d) => !proxiedSelected.has(d));
+  proxiedSelected = new Set();
+  renderConfig(currentConfig);
+  saveRules();
+  showToast(`Removed ${n} domain${n === 1 ? '' : 's'}`, 'success');
 }
 
 // ---- Named custom policy groups (v2.3) --------------------------------------
@@ -1963,13 +2122,13 @@ function queryRowHTML(q) {
   }
 
   return `
-    <td class="py-2.5 px-2 sm:px-3 text-slate-400 whitespace-nowrap">${timeStr}</td>
-    <td class="py-2.5 px-2 sm:px-3">${clientDisplay}</td>
-    <td class="py-2.5 px-2 sm:px-3 text-purple-400 font-bold hidden sm:table-cell">${escapeHTML(protoStr)}</td>
-    <td class="py-2.5 px-2 sm:px-3 text-cyan-300 font-semibold max-w-[120px] sm:max-w-xs truncate" title="${escapeHTML(domain)}">${escapeHTML(domain)}</td>
-    <td class="py-2.5 px-2 sm:px-3 text-slate-400 hidden sm:table-cell">${escapeHTML(ruleStr)}</td>
-    <td class="py-2.5 px-2 sm:px-3">${actBadge}${cacheBadge}</td>
-    <td class="py-2.5 px-2 sm:px-3 text-end text-emerald-400 font-mono">${latStr}</td>
+    <td class="stream-col-time py-2.5 px-2 sm:px-3 text-slate-400 whitespace-nowrap">${timeStr}</td>
+    <td class="stream-col-client py-2.5 px-2 sm:px-3">${clientDisplay}</td>
+    <td class="stream-col-proto py-2.5 px-2 sm:px-3 text-purple-400 font-bold hidden sm:table-cell">${escapeHTML(protoStr)}</td>
+    <td class="stream-col-domain py-2.5 px-2 sm:px-3 text-cyan-300 font-semibold truncate" title="${escapeHTML(domain)}">${escapeHTML(domain)}</td>
+    <td class="stream-col-rule py-2.5 px-2 sm:px-3 text-slate-400 hidden sm:table-cell">${escapeHTML(ruleStr)}</td>
+    <td class="stream-col-action py-2.5 px-2 sm:px-3">${actBadge}${cacheBadge}</td>
+    <td class="stream-col-latency py-2.5 px-2 sm:px-3 text-end text-emerald-400 font-mono">${latStr}</td>
   `;
 }
 
@@ -2034,15 +2193,21 @@ function renderQueryStream() {
   const tbody = document.getElementById('stream-tbody');
   if (!tbody) return;
 
+  // A full redraw rebuilds the table from the buffer, so whatever the eviction list
+  // held is already accounted for and must not be replayed against the new rows.
+  streamPendingDropped = [];
+
   if (streamBuffer.length === 0) {
     tbody.innerHTML = STREAM_LISTENING_ROW;
+    streamRendered = [];
     return;
   }
 
   const f = streamFilterState();
-  const rows = streamBuffer.filter((q) => queryMatchesStream(q, f));
+  const rows = streamBuffer.filter((q) => queryMatchesStream(q, f)).sort(compareStreamQueries);
   if (rows.length === 0) {
     tbody.innerHTML = streamNoMatchRow(f);
+    streamRendered = [];
     return;
   }
 
@@ -2053,6 +2218,42 @@ function renderQueryStream() {
   }
   tbody.innerHTML = '';
   tbody.appendChild(frag);
+  streamRendered = rows;
+}
+
+// insertStreamQuery places one arriving query into the table without rebuilding the
+// rest. pushStreamQuery used to call renderQueryStream() on every animation frame, so
+// under load the whole 200-row table was torn down and rebuilt up to 60 times a second:
+// that is the flicker an operator sees as "the list is flashing". Inserting the single
+// new row leaves every existing row — and its layout, focus and scroll — untouched.
+//
+// The insert index is the query's position in the filtered, sorted buffer, which is the
+// order the DOM mirrors. For the default order that is always the top; for the others it
+// is found by a linear scan of the (at most STREAM_BUFFER_MAX) buffered rows.
+function insertStreamQuery(q) {
+  const tbody = document.getElementById('stream-tbody');
+  if (!tbody) return;
+
+  const f = streamFilterState();
+  if (!queryMatchesStream(q, f)) return;
+  if (tbody.querySelector('.stream-placeholder')) {
+    renderQueryStream();
+    return;
+  }
+
+  // The slot is found among the rows already drawn, not among the whole buffer: a
+  // batch arriving in one frame is all in the buffer before any of it is in the DOM,
+  // so a buffer index would count rows this pass has not inserted yet and land the
+  // row one or more places too far down. streamRendered is exactly the drawn rows.
+  let lo = 0;
+  let hi = streamRendered.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (compareStreamQueries(streamRendered[mid], q) <= 0) lo = mid + 1;
+    else hi = mid;
+  }
+  tbody.insertBefore(newQueryRow(q), tbody.children[lo] || null);
+  streamRendered.splice(lo, 0, q);
 }
 
 // ---- Live-log quick actions --------------------------------------------------
@@ -2206,28 +2407,53 @@ let activeDashTab = 'dashboard';
 // gates now stand before it: the Logs tab must be the active tab (buffering
 // continues elsewhere, and the view repaints from the buffer on switch), and
 // the document must be visible. A rAF coalescer collapses bursts that arrive
-// inside one frame into a single renderQueryStream pass.
+// inside one frame into a single batch of insertStreamQuery calls.
 let streamPendingRender = false;
+// streamPendingQueries collects the queries that arrived inside one frame. The old
+// coalescer threw them away and rebuilt the whole table once; this one keeps them so
+// each can be inserted as a single row (see insertStreamQuery).
+let streamPendingQueries = [];
 function pushStreamQuery(q) {
   if (!q) return;
 
   streamBuffer.unshift(q);
-  if (streamBuffer.length > STREAM_BUFFER_MAX) streamBuffer.pop();
+  const dropped = streamBuffer.length > STREAM_BUFFER_MAX ? streamBuffer.pop() : null;
 
   if (document.visibilityState === 'hidden' || activeDashTab !== 'stream') return;
   if (isStreamPaused) return;
 
+  // Recorded only now, past the gates: a hidden or paused view does no incremental
+  // inserts, so its drops have no row to remove and would only pile up until the
+  // next full render — which rebuilds from the buffer anyway. Recording them here
+  // keeps the list bounded to the rows a live frame can actually be mirroring.
+  if (dropped) streamPendingDropped.push(dropped);
+  streamPendingQueries.push(q);
   if (streamPendingRender) return;
   streamPendingRender = true;
   requestAnimationFrame(() => {
     streamPendingRender = false;
+    const batch = streamPendingQueries;
+    streamPendingQueries = [];
     if (document.visibilityState === 'hidden' || activeDashTab !== 'stream' || isStreamPaused) return;
     const tbody = document.getElementById('stream-tbody');
+    if (!tbody) return;
     // The placeholder (listening / no-match row) is replaced wholesale by a
     // full render; a table still holding one must not have rows inserted
     // above it, which is why the class is looked up before the repaint.
-    if (tbody && tbody.querySelector('.stream-placeholder')) tbody.innerHTML = '';
-    renderQueryStream();
+    if (tbody.querySelector('.stream-placeholder') || tbody.children.length === 0) {
+      renderQueryStream();
+      return;
+    }
+    for (const pending of batch) insertStreamQuery(pending);
+    // Evicted arrivals lose their row here, once the inserts have placed the new
+    // ones, so the table never outgrows the buffer it is mirroring.
+    for (const gone of streamPendingDropped) {
+      const at = streamRendered.indexOf(gone);
+      if (at === -1) continue;
+      streamRendered.splice(at, 1);
+      if (tbody.children[at]) tbody.removeChild(tbody.children[at]);
+    }
+    streamPendingDropped = [];
   });
 }
 
@@ -3187,6 +3413,30 @@ function initEventListeners() {
   document.getElementById('proxied-load-more')?.addEventListener('click', proxiedShowMore);
   setupProxiedObserver();
 
+  // Multi-select for the bulk actions. The row checkboxes are delegated on the table
+  // body because renderProxiedList replaces its innerHTML on every save; the header
+  // checkbox is static, so it is bound directly. The select-all set covers the whole
+  // ordered list, not only the rows currently drawn, which is what makes it useful on
+  // a list that loads a batch at a time.
+  document.getElementById('custom-proxied-rows')?.addEventListener('change', (e) => {
+    const box = e.target.closest('.proxied-select-check');
+    if (!box) return;
+    if (box.checked) proxiedSelected.add(box.dataset.val);
+    else proxiedSelected.delete(box.dataset.val);
+    updateProxiedBulkBar();
+  });
+  document.getElementById('proxied-select-all')?.addEventListener('change', (e) => {
+    const on = e.target.checked;
+    proxiedSelected = on
+      ? new Set(proxiedOrderedRows().map((r) => r.domain))
+      : new Set();
+    document.querySelectorAll('.proxied-select-check').forEach((b) => { b.checked = on; });
+    updateProxiedBulkBar();
+  });
+  document.getElementById('proxied-bulk-pause')?.addEventListener('click', () => proxiedBulkSetEnabled(false));
+  document.getElementById('proxied-bulk-resume')?.addEventListener('click', () => proxiedBulkSetEnabled(true));
+  document.getElementById('proxied-bulk-remove')?.addEventListener('click', proxiedBulkRemove);
+
   // The × names itself through data-modal-close so Escape and a backdrop click reach
   // it; both still need their own handler or those paths click a dead button.
   document.getElementById('bulk-import-cancel-btn')?.addEventListener('click', closeBulkImport);
@@ -3412,6 +3662,12 @@ function initEventListeners() {
   // the buffer, so a change now takes effect on the last STREAM_BUFFER_MAX queries at once.
   document.getElementById('stream-filter')?.addEventListener('change', renderQueryStream);
   document.getElementById('stream-search')?.addEventListener('input', renderQueryStream);
+  // The sort select reorders the queries already received. pushStreamQuery consults the
+  // same streamSort when it inserts an arriving row, so the two stay in agreement.
+  document.getElementById('stream-sort')?.addEventListener('change', (e) => {
+    streamSort = e.target.value || 'time-desc';
+    renderQueryStream();
+  });
 
   // Delegated on the table body, because the button lives inside markup that is replaced on
   // every keystroke — a listener bound to the button itself would be discarded by the next
@@ -3455,6 +3711,11 @@ function initEventListeners() {
         ? '<i data-feather="play" class="w-3.5 h-3.5"></i> <span>Resume</span>'
         : '<i data-feather="pause" class="w-3.5 h-3.5"></i> <span>Pause</span>';
       safeFeatherReplace();
+      // While paused the buffer keeps filling but nothing is inserted, so on resume the
+      // table is behind it by however many queries arrived in between. A redraw from the
+      // buffer is what brings the frozen view level again; the incremental insert that
+      // follows only ever places the newest arrival.
+      if (!isStreamPaused) renderQueryStream();
     };
   }
 
