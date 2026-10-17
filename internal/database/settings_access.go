@@ -113,8 +113,11 @@ func (s *ServerSettings) GetAPIKey() string {
 	return s.APIKey
 }
 
-// GetAPIBind returns the REST authorization gate: "0.0.0.0" to accept any peer,
-// anything else to accept loopback only.
+// GetAPIBind returns the REST exposure rule, as a bare IP or a CIDR block:
+// "0.0.0.0" (or the /0 forms) accepts any peer, "127.0.0.1" or an empty value
+// accepts loopback only, and "100.64.0.0/10" accepts peers inside that block.
+// Loopback is always accepted, so the rule cannot lock out the local control
+// plane. netutil.ParseAPIBind owns the precise meaning.
 //
 // A nil receiver returns "", which the gate reads as "loopback only" — the strict
 // answer, which is the right way for a missing configuration to fail.

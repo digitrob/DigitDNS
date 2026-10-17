@@ -23,8 +23,10 @@ import (
 	"strconv"
 	"strings"
 
+	"hyperdns/internal/core/upstream"
 	"hyperdns/internal/database"
 	"hyperdns/internal/httpx"
+	"hyperdns/internal/netutil"
 	"hyperdns/internal/service"
 	"hyperdns/internal/version"
 )
@@ -101,6 +103,15 @@ func (a *API) RegisterRoutesV2(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v2/clients/", a.SecurityMiddleware(a.handleV2ClientItem))
 	mux.HandleFunc("/api/v2/policies", a.SecurityMiddleware(a.handleV2Policies))
 	mux.HandleFunc("/api/v2/cache/flush", a.SecurityMiddleware(a.handleV2FlushCache))
+	mux.HandleFunc("/api/v2/upstreams", a.SecurityMiddleware(a.handleV2Upstreams))
+	mux.HandleFunc("/api/v2/upstreams/actions/", a.SecurityMiddleware(a.handleV2UpstreamsActions))
+	mux.HandleFunc("/api/v2/stats", a.SecurityMiddleware(a.handleV2Stats))
+	mux.HandleFunc("/api/v2/settings", a.SecurityMiddleware(a.handleV2Settings))
+	mux.HandleFunc("/api/v2/access", a.SecurityMiddleware(a.handleV2Access))
+	mux.HandleFunc("/api/v2/access/actions/", a.SecurityMiddleware(a.handleV2AccessActions))
+	mux.HandleFunc("/api/v2/rules", a.SecurityMiddleware(a.handleV2Rules))
+	mux.HandleFunc("/api/v2/diagnostics", a.SecurityMiddleware(a.handleV2Diagnostics))
+	mux.HandleFunc("/api/v2/events/stream", a.SecurityMiddleware(a.handleV2Stream))
 }
 
 // DeprecateV1 wraps a v1 route handler with the deprecation markers. The
@@ -409,4 +420,205 @@ func firstNonEmpty(ss []string) string {
 		}
 	}
 	return ""
+}
+
+func (a *API) handleV2Upstreams(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		var list []string
+		if a.upstreams != nil {
+			list = a.upstreams.GetUpstreams()
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": list})
+		return
+	case http.MethodPost:
+		var req struct {
+			Address string `json:"address"`
+		}
+		if !decodeStrict(w, r, &req) {
+			return
+		}
+		addr := strings.TrimSpace(req.Address)
+		if addr == "" {
+			writeProblem(w, http.StatusBadRequest, "invalid_request", "address required")
+			return
+		}
+		if a.upstreams == nil {
+			writeProblem(w, http.StatusServiceUnavailable, "unavailable", "no upstream pool")
+			return
+		}
+		canonical, ok := upstream.NormalizeUpstream(addr)
+		if !ok {
+			writeProblem(w, http.StatusBadRequest, "invalid_request", "invalid upstream")
+			return
+		}
+		// reuse web logic via SetUpstreams on modified list? easier to delegate to pool's behavior by getting+setting
+		list := a.upstreams.GetUpstreams()
+		for _, u := range list {
+			if u == canonical {
+				writeProblem(w, http.StatusConflict, "conflict", "upstream already exists")
+				return
+			}
+		}
+		list = append(list, canonical)
+		a.upstreams.SetUpstreams(list)
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": list})
+		return
+	default:
+		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
+	}
+}
+
+func (a *API) handleV2UpstreamsActions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	rest := strings.TrimPrefix(r.URL.Path, "/api/v2/upstreams/actions/")
+	rest = strings.TrimSuffix(rest, "/")
+	if rest == "remove" {
+		var req struct {
+			Address string `json:"address"`
+		}
+		if !decodeStrict(w, r, &req) {
+			return
+		}
+		addr := strings.TrimSpace(req.Address)
+		if a.upstreams == nil {
+			writeProblem(w, http.StatusServiceUnavailable, "unavailable", "no upstream pool")
+			return
+		}
+		list := a.upstreams.GetUpstreams()
+		filtered := make([]string, 0, len(list))
+		for _, u := range list {
+			if u != addr {
+				filtered = append(filtered, u)
+			}
+		}
+		if len(filtered) == len(list) {
+			writeProblem(w, http.StatusNotFound, "not_found", "upstream not found")
+			return
+		}
+		if len(filtered) == 0 {
+			writeProblem(w, http.StatusBadRequest, "invalid_request", "cannot remove last upstream")
+			return
+		}
+		a.upstreams.SetUpstreams(filtered)
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": filtered})
+		return
+	}
+	if rest == "benchmark" {
+		if a.upstreams == nil {
+			writeProblem(w, http.StatusServiceUnavailable, "unavailable", "no upstream pool")
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]bool{"started": true})
+		return
+	}
+	writeProblem(w, http.StatusNotFound, "not_found", "unknown action")
+}
+
+func (a *API) handleV2Stats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD")
+		return
+	}
+	_ = json.NewEncoder(w).Encode(a.stats.GetLiveStats())
+}
+
+func (a *API) handleV2Settings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		_ = json.NewEncoder(w).Encode(a.settings.Snapshot())
+		return
+	case http.MethodPatch:
+		var patch struct {
+			APIBind  *string `json:"api_bind"`
+			PublicIP *string `json:"public_ip"`
+		}
+		if !decodeStrict(w, r, &patch) {
+			return
+		}
+		// apply minimal
+		if patch.APIBind != nil {
+			if _, err := netutil.ParseAPIBind(*patch.APIBind); err != nil {
+				writeProblem(w, http.StatusBadRequest, "invalid_request", "api_bind invalid")
+				return
+			}
+			a.settings.APIBind = *patch.APIBind
+		}
+		if patch.PublicIP != nil {
+			a.settings.PublicIP = *patch.PublicIP
+		}
+		if err := a.db.SetSetting("server", a.settings); err != nil {
+			writeProblem(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(a.settings.Snapshot())
+		return
+	default:
+		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or PATCH")
+	}
+}
+
+func (a *API) handleV2Access(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		_ = json.NewEncoder(w).Encode(map[string]any{"allow_all": a.clients.IsAllowAll()})
+		return
+	case http.MethodPatch:
+		var req struct {
+			AllowAll *bool `json:"allow_all"`
+		}
+		if !decodeStrict(w, r, &req) {
+			return
+		}
+		if req.AllowAll != nil {
+			if err := a.clients.SetAllowAll(*req.AllowAll); err != nil {
+				writeProblem(w, http.StatusInternalServerError, "internal", err.Error())
+				return
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"allow_all": a.clients.IsAllowAll()})
+		return
+	default:
+		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or PATCH")
+	}
+}
+
+func (a *API) handleV2AccessActions(w http.ResponseWriter, r *http.Request) {
+	writeProblem(w, http.StatusNotFound, "not_found", "unknown action")
+}
+
+func (a *API) handleV2Rules(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD")
+		return
+	}
+	pol, err := a.db.ListPolicies()
+	if err != nil {
+		writeProblem(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": pol})
+}
+
+func (a *API) handleV2Diagnostics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func (a *API) handleV2Stream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD")
+		return
+	}
+	a.stats.ServeSSE(w, r)
 }

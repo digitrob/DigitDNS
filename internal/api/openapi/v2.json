@@ -1,0 +1,185 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "DigitDNS Core REST API v2",
+    "version": "2.0",
+    "description": "v2 of the DigitDNS API: RFC 9457 errors, cursor-paginated lists, symmetric client DTO and action sub-resources. The key or a dashboard session goes in X-API-Key or Authorization: Bearer."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Mounted under the install's hidden admin path; the handler fills the correct base."
+    }
+  ],
+  "security": [
+    {"ApiKeyAuth": []},
+    {"BearerAuth": []}
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"},
+      "BearerAuth": {"type": "http", "scheme": "bearer", "description": "Master key or dashboard session token."}
+    },
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "required": ["type", "title", "status", "detail", "instance"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
+        }
+      },
+      "Client": {
+        "type": "object",
+        "required": ["id", "display_name", "uuid", "allowed_ips", "traffic_used_bytes", "traffic_limit_bytes", "quota_exceeded", "quota_reset_cycle", "policy_ids", "note", "enabled", "max_devices"],
+        "properties": {
+          "id": {"type": "string"},
+          "display_name": {"type": "string"},
+          "uuid": {"type": "string"},
+          "allowed_ips": {"type": "array", "items": {"type": "string"}},
+          "traffic_used_bytes": {"type": "integer"},
+          "traffic_limit_bytes": {"type": "integer"},
+          "quota_exceeded": {"type": "boolean"},
+          "quota_reset_cycle": {"type": "string", "enum": ["", "daily", "weekly", "monthly"]},
+          "policy_ids": {"type": "array", "items": {"type": "string"}},
+          "note": {"type": "string"},
+          "enabled": {"type": "boolean"},
+          "max_devices": {"type": "integer"},
+          "register_secret": {"type": "string"}
+        }
+      },
+      "ClientList": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {"type": "array", "items": {"$ref": "#/components/schemas/Client"}},
+          "next_cursor": {"type": "string"}
+        }
+      },
+      "ClientCreate": {
+        "type": "object",
+        "required": ["display_name"],
+        "properties": {
+          "display_name": {"type": "string"},
+          "uuid": {"type": "string"},
+          "allowed_ips": {"type": "array", "items": {"type": "string"}},
+          "traffic_limit_bytes": {"type": "integer"},
+          "quota_reset_cycle": {"type": "string", "enum": ["", "daily", "weekly", "monthly"]},
+          "policy_ids": {"type": "array", "items": {"type": "string"}},
+          "note": {"type": "string"},
+          "enabled": {"type": "boolean"},
+          "max_devices": {"type": "integer"}
+        }
+      },
+      "ClientUpdate": {
+        "type": "object",
+        "properties": {
+          "display_name": {"type": "string"},
+          "allowed_ips": {"type": "array", "items": {"type": "string"}},
+          "traffic_limit_bytes": {"type": "integer"},
+          "quota_reset_cycle": {"type": "string", "enum": ["", "daily", "weekly", "monthly"]},
+          "policy_ids": {"type": "array", "items": {"type": "string"}},
+          "note": {"type": "string"},
+          "enabled": {"type": "boolean"},
+          "max_devices": {"type": "integer"}
+        }
+      },
+      "Status": {"type": "object"},
+      "Version": {
+        "type": "object",
+        "required": ["version", "build", "sync_hash", "api"],
+        "properties": {
+          "version": {"type": "string"},
+          "build": {"type": "string"},
+          "sync_hash": {"type": "string"},
+          "api": {"type": "string", "enum": ["v2"]}
+        }
+      },
+      "Policy": {"type": "object"},
+      "PoliciesList": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {"type": "array", "items": {"$ref": "#/components/schemas/Policy"}},
+          "next_cursor": {"type": "string"}
+        }
+      },
+      "FlushResult": {
+        "type": "object",
+        "required": ["success", "items_cleared", "bytes_reclaimed"],
+        "properties": {
+          "success": {"type": "boolean"},
+          "items_cleared": {"type": "integer"},
+          "bytes_reclaimed": {"type": "integer"}
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/v2/version": {
+      "get": {
+        "summary": "Version (no auth)",
+        "security": [],
+        "responses": {
+          "200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Version"}}}},
+          "405": {"description": "Method not allowed", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    },
+    "/api/v2/status": {
+      "get": {
+        "summary": "Live status",
+        "responses": {
+          "200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Status"}}}},
+          "401": {"description": "Unauthorized", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "Bound to localhost", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    },
+    "/api/v2/clients": {
+      "get": {
+        "summary": "List clients",
+        "parameters": [
+          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 1, "maximum": 200}},
+          {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ClientList"}}}},
+          "401": {"description": "Unauthorized", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "Forbidden", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      },
+      "post": {
+        "summary": "Create client",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ClientCreate"}}}},
+        "responses": {
+          "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Client"}}}},
+          "400": {"description": "Bad request", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "Unauthorized", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "Forbidden", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    },
+    "/api/v2/clients/{id}": {
+      "get": {"summary": "Get client", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"$ref": "#/components/responses/Client"}, "404": {"$ref": "#/components/responses/ProblemNotFound"}}},
+      "put": {"summary": "Update client", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ClientUpdate"}}}}, "responses": {"200": {"$ref": "#/components/responses/Client"}, "400": {"$ref": "#/components/responses/ProblemBad"}, "404": {"$ref": "#/components/responses/ProblemNotFound"}}},
+      "delete": {"summary": "Delete client", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"204": {"description": "No content"}, "404": {"$ref": "#/components/responses/ProblemNotFound"}}}
+    },
+    "/api/v2/policies": {
+      "get": {
+        "summary": "List policies",
+        "parameters": [{"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 1, "maximum": 200}}, {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PoliciesList"}}}}, "401": {"description": "Unauthorized", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}, "403": {"description": "Forbidden", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}}
+      }
+    },
+    "/api/v2/cache/flush": {
+      "post": {
+        "summary": "Flush cache",
+        "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FlushResult"}}}}, "401": {"description": "Unauthorized", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}, "403": {"description": "Forbidden", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}}
+      }
+    }
+  }
+}

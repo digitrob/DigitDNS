@@ -1462,19 +1462,20 @@
             </span>
           </div>
 
-          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-950/80 border border-slate-800">
-            <div>
-              <div class="text-xs font-bold text-white font-heading flex items-center gap-2">
-                <span>Expose API to Public (<code class="text-cyan-400">0.0.0.0</code>)</span>
-              </div>
-              <p class="text-[11px] text-slate-400 mt-1 leading-relaxed max-w-xl">
-                Allows external bots, web services, and billing systems to call REST API v1 directly. <strong class="text-amber-300">Security requirement:</strong> Requires an active custom domain and valid SSL/HTTPS on the server to prevent credential leakage.
-              </p>
+          <div class="flex flex-col gap-3 p-4 rounded-xl bg-slate-950/80 border border-slate-800">
+            <div class="text-xs font-bold text-white font-heading">API exposure</div>
+            <p class="text-[11px] text-slate-400 leading-relaxed max-w-xl">
+              Choose who may reach the REST API. <strong class="text-amber-300">Public (0.0.0.0)</strong> requires an active custom domain and HTTPS to protect credentials. <strong class="text-amber-300">Custom IP/CIDR</strong> lets you restrict to a specific address or network (e.g. a tailnet <code class="text-cyan-400">100.64.0.0/10</code>) while always allowing local calls.
+            </p>
+            <div class="flex flex-wrap gap-2" role="radiogroup" aria-label="API exposure scope">
+              <button type="button" class="api-bind-opt px-3 py-1.5 rounded-lg text-xs font-bold font-heading transition" data-bind="127.0.0.1">Localhost only</button>
+              <button type="button" class="api-bind-opt px-3 py-1.5 rounded-lg text-xs font-bold font-heading transition" data-bind="0.0.0.0">Public (0.0.0.0)</button>
+              <button type="button" class="api-bind-opt px-3 py-1.5 rounded-lg text-xs font-bold font-heading transition" data-bind="__custom__">Custom IP / CIDR</button>
             </div>
-            <label class="switch">
-              <input type="checkbox" id="toggle-public-api">
-              <span class="slider"></span>
-            </label>
+            <div id="api-bind-custom-wrap" class="flex flex-col sm:flex-row gap-2 hidden">
+              <input id="api-bind-custom-input" aria-label="Custom API bind IP or CIDR" class="flex-1 min-w-0 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-slate-300" placeholder="e.g. 100.64.0.0/10 or 203.0.113.5" spellcheck="false" autocomplete="off">
+              <button id="api-bind-custom-save" class="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs font-heading transition whitespace-nowrap">Apply CIDR</button>
+            </div>
           </div>
         </div>
 

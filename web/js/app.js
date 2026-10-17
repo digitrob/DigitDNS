@@ -909,19 +909,34 @@ function renderConfig(cfg) {
     idleEl.value = Number.isFinite(live) && live > 0 ? live : 15;
   }
   const apiBindBadge = document.getElementById('api-bind-badge');
-  const togglePublicAPI = document.getElementById('toggle-public-api');
   
   if (apiBindBadge) {
     if (apiBind === '0.0.0.0') {
       apiBindBadge.innerText = '0.0.0.0 (Public HTTPS)';
       apiBindBadge.className = 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
-    } else {
+    } else if (apiBind === '127.0.0.1') {
       apiBindBadge.innerText = '127.0.0.1 (Localhost Only)';
       apiBindBadge.className = 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+    } else {
+      apiBindBadge.innerText = apiBind + ' (Restricted)';
+      apiBindBadge.className = 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30';
     }
   }
-  if (togglePublicAPI) {
-    togglePublicAPI.checked = (apiBind === '0.0.0.0');
+  // Reflect the current api_bind into the 3-way selector. Custom values
+  // (any IP or CIDR other than the two sentinels) select the "Custom"
+  // button and prefill the CIDR input.
+  document.querySelectorAll('.api-bind-opt').forEach(btn => {
+    const bind = btn.getAttribute('data-bind');
+    const isActive = (bind === apiBind) ||
+      (bind === '__custom__' && apiBind !== '127.0.0.1' && apiBind !== '0.0.0.0');
+    btn.classList.toggle('is-active', isActive);
+  });
+  const customWrap = document.getElementById('api-bind-custom-wrap');
+  const customInput = document.getElementById('api-bind-custom-input');
+  if (customWrap && customInput) {
+    const isCustom = apiBind !== '127.0.0.1' && apiBind !== '0.0.0.0';
+    customWrap.classList.toggle('hidden', !isCustom);
+    if (isCustom) customInput.value = apiBind;
   }
 
   updateCodeSnippets(pubIP, cfg.server?.api_key || 'hdns_live_your_key_here');
@@ -2937,52 +2952,61 @@ function initAPIEvents() {
     };
   }
 
-  // Public API Toggle (0.0.0.0 bind)
-  const togglePublic = document.getElementById('toggle-public-api');
-  if (togglePublic) {
-    togglePublic.onchange = async () => {
-      const willBePublic = togglePublic.checked;
-      
-      // If attempting to expose publicly without HTTPS domain
-      if (willBePublic && (!currentConfig?.tls?.domain || !currentConfig.tls.domain.trim())) {
-        togglePublic.checked = false;
+  // API exposure selector (Localhost / Public / Custom CIDR).
+  const saveApiBind = async (targetBind, label) => {
+    try {
+      const res = await fetch(api('/api/settings'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ api_bind: targetBind })
+      });
+      if (!res.ok) {
+        showToast(await errorMessage(res, 'Failed to update API bind configuration'), 'error');
+        return false;
+      }
+      const data = await res.json().catch(() => null);
+      if (currentConfig?.server) {
+        currentConfig.server.api_bind = (data && data.api_bind) || targetBind;
+      }
+      renderConfig(currentConfig);
+      showToast(label, 'success');
+      return true;
+    } catch (err) {
+      showToast('Error communicating with server', 'error');
+      return false;
+    }
+  };
+
+  document.querySelectorAll('.api-bind-opt').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const bind = btn.getAttribute('data-bind');
+      if (bind === '__custom__') {
+        document.getElementById('api-bind-custom-wrap')?.classList.remove('hidden');
+        document.getElementById('api-bind-custom-input')?.focus();
+        return;
+      }
+      if (bind === '0.0.0.0' && (!currentConfig?.tls?.domain || !currentConfig.tls.domain.trim())) {
         showToast('Cannot expose API to 0.0.0.0: Public API requires an active custom domain and HTTPS configured in Settings to protect credentials.', 'error');
         return;
       }
-
-      const targetBind = willBePublic ? '0.0.0.0' : '127.0.0.1';
-      try {
-        // /api/settings owns api_bind. This used to post to /api/config/server,
-        // which has never read the field — the toggle reported success while
-        // nothing was persisted, and reverted on the next page load.
-        const res = await fetch(api('/api/settings'), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
-          },
-          body: JSON.stringify({ api_bind: targetBind })
-        });
-
-        if (!res.ok) {
-          togglePublic.checked = !willBePublic;
-          showToast(await errorMessage(res, 'Failed to update API bind configuration'), 'error');
-          return;
-        }
-
-        const data = await res.json().catch(() => null);
-        if (currentConfig?.server) {
-          currentConfig.server.api_bind = (data && data.api_bind) || targetBind;
-        }
-        renderConfig(currentConfig);
-        showToast(willBePublic
-          ? 'Public REST API enabled — external callers with a valid key are now accepted (0.0.0.0)'
-          : 'REST API restricted to localhost (127.0.0.1)', 'success');
-      } catch (err) {
-        togglePublic.checked = !willBePublic;
-        showToast('Error communicating with server', 'error');
+      await saveApiBind(bind, bind === '0.0.0.0'
+        ? 'Public REST API enabled — external callers with a valid key are now accepted (0.0.0.0)'
+        : 'REST API restricted to localhost (127.0.0.1)');
+    });
+  });
+  const customSave = document.getElementById('api-bind-custom-save');
+  if (customSave) {
+    customSave.addEventListener('click', async () => {
+      const raw = (document.getElementById('api-bind-custom-input')?.value || '').trim();
+      if (!raw) {
+        showToast('Enter an IP address or CIDR block (e.g. 100.64.0.0/10)', 'error');
+        return;
       }
-    };
+      await saveApiBind(raw, `API exposure restricted to ${raw}`);
+    });
   }
 
   // Dashboard session idle window (Phase D): load + save through /api/settings.

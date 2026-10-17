@@ -1208,3 +1208,27 @@ input:checked + .slider:before {
     max-height: none;
   }
 }
+
+/* API exposure selector (api_bind): three discrete choices plus a custom
+   CIDR input. Plain CSS, not Tailwind utilities, for the same reason as
+   .upstream-col above. */
+.api-bind-opt {
+  background: rgb(15 23 42 / 0.6);
+  border: 1px solid rgb(30 41 59);
+  color: rgb(148 163 184);
+}
+.api-bind-opt:hover {
+  border-color: rgb(34 211 238 / 0.4);
+  color: rgb(226 232 240);
+}
+.api-bind-opt.is-active {
+  background: rgb(34 211 238 / 0.12);
+  border-color: rgb(34 211 238 / 0.6);
+  color: rgb(103 232 249);
+}
+#api-bind-custom-wrap.hidden {
+  display: none;
+}
+#api-bind-custom-wrap:not(.hidden) {
+  display: flex;
+}

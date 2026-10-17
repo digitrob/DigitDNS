@@ -138,10 +138,13 @@ func TestSettingsRequiresAuth(t *testing.T) {
 	}
 }
 
-// api_bind is a live authorization gate: internal/api refuses non-loopback peers
-// unless it is exactly 0.0.0.0. An unvalidated string here leaves the gate in a
-// state that reads as "restricted" while the operator was told the API is public,
-// or the reverse — so the handler has to reject anything else outright.
+// api_bind is a live authorization gate: internal/api matches the immediate
+// peer against it, and only a bare IP, a CIDR block or the 127.0.0.1 / 0.0.0.0
+// sentinels name a rule netutil can apply. An unvalidated string here leaves
+// the gate in a state that reads as "restricted" while the operator was told
+// the API is public, or the reverse — so the handler rejects anything else
+// outright. Note what must NOT be rejected any more: 100.64.0.0/10 and a bare
+// 10.0.0.1 are the point of the CIDR feature.
 func TestSettingsPostRejectsBadInput(t *testing.T) {
 	ws, h, tok, cleanup := authedServer(t)
 	defer cleanup()
@@ -156,8 +159,9 @@ func TestSettingsPostRejectsBadInput(t *testing.T) {
 		{"empty body", ``, http.StatusBadRequest},
 		{"public_ip is a hostname", `{"public_ip":"example.com"}`, http.StatusBadRequest},
 		{"public_ip is garbage", `{"public_ip":"999.1.1.1"}`, http.StatusBadRequest},
-		{"api_bind is a typo", `{"api_bind":"0.0.0.1"}`, http.StatusBadRequest},
-		{"api_bind is a wildcard host", `{"api_bind":"::"}`, http.StatusBadRequest},
+		{"api_bind is a word, not an address", `{"api_bind":"localhost"}`, http.StatusBadRequest},
+		{"api_bind is a typo'd CIDR", `{"api_bind":"100.64.0.0/1o"}`, http.StatusBadRequest},
+		{"api_bind has a bad prefix length", `{"api_bind":"10.0.0.0/33"}`, http.StatusBadRequest},
 		{"api_bind carries a port", `{"api_bind":"0.0.0.0:8080"}`, http.StatusBadRequest},
 	}
 	for _, tc := range cases {
@@ -181,6 +185,19 @@ func TestSettingsPostRejectsBadInput(t *testing.T) {
 	}
 	if ws.settings.APIBind != "0.0.0.0" {
 		t.Fatalf("api_bind = %q after a padded value, want the trimmed 0.0.0.0", ws.settings.APIBind)
+	}
+
+	// The CIDR forms are the feature, not edge cases: a tailnet block has to be
+	// storable exactly as written, and a bare address has to widen to /32 rather
+	// than be mistaken for the "0.0.0.1" typo the old binary rule rejected.
+	for _, v := range []string{"100.64.0.0/10", "10.0.0.1", "::1", "2001:db8::/48"} {
+		w := postJSON(t, h, "/api/settings", `{"api_bind":"`+v+`"}`, tok)
+		if w.Code != http.StatusOK {
+			t.Fatalf("api_bind = %q rejected with %d — %s", v, w.Code, w.Body.String())
+		}
+		if ws.settings.APIBind != v {
+			t.Errorf("api_bind stored as %q, want %q", ws.settings.APIBind, v)
+		}
 	}
 }
 

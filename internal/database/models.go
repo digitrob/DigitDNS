@@ -127,7 +127,7 @@ type ServerSettings struct {
 	AdminPasswordWeak bool `json:"admin_password_weak"`
 
 	APIKey  string `json:"api_key"`
-	APIBind string `json:"api_bind"` // "127.0.0.1" (default) or "0.0.0.0"
+	APIBind string `json:"api_bind"` // "127.0.0.1" (default) or "0.0.0.0" or "100.64.0.0/10" (CIDR)
 
 	// AdminPath is a randomly generated hexadecimal string that obscures the admin
 	// interface to reduce casual discovery. Exactly 16 lowercase hex characters.

@@ -26,6 +26,7 @@ import (
 	"hyperdns/internal/core/upstream"
 	"hyperdns/internal/database"
 	"hyperdns/internal/httpx"
+	"hyperdns/internal/netutil"
 	"hyperdns/internal/selfupdate"
 	"hyperdns/internal/service"
 	"hyperdns/internal/service/acme"
@@ -2159,14 +2160,17 @@ func (ws *WebServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		apiBind := strings.TrimSpace(req.APIBind)
-		// Only these two are meaningful, and the value is load-bearing: the REST
-		// API's middleware refuses non-loopback peers whenever the bind is not
-		// 0.0.0.0, so an unvalidated string here (a typo, or "0.0.0.0 ") would
-		// leave the gate in a state that reads as "restricted" while the operator
-		// was told the API is public — or the reverse.
-		if apiBind != "" && apiBind != "127.0.0.1" && apiBind != "0.0.0.0" {
-			httpx.WriteJSONError(w, http.StatusBadRequest, "api_bind must be 127.0.0.1 or 0.0.0.0")
-			return
+		// The value is load-bearing: it is the rule netutil.APIBindAllowsPeer
+		// matches the REST API's immediate peer against. An unvalidated string
+		// here (a typo, or "100.64.0.0/1o") would leave the gate in a state that
+		// reads as "restricted" while the operator believed the API was reachable,
+		// or the reverse — so accept only shapes ParseAPIBind understands: a bare
+		// IP, a CIDR block, or the 127.0.0.1 / 0.0.0.0 sentinels.
+		if apiBind != "" {
+			if _, err := netutil.ParseAPIBind(apiBind); err != nil {
+				httpx.WriteJSONError(w, http.StatusBadRequest, "api_bind must be an IP address or CIDR block (e.g. 127.0.0.1, 0.0.0.0, 100.64.0.0/10)")
+				return
+			}
 		}
 
 		// prevBind is read before the update so the log line below can report an

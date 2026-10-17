@@ -2,10 +2,10 @@ package api
 
 import (
 	"crypto/subtle"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -84,20 +84,16 @@ func (a *API) SecurityMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// 1. Enforce APIBind Security Gate. The gate is decided by the immediate
-		// peer, deliberately not by netutil.ClientIP: a forwarding header must
-		// never be able to carry a request past a listener the operator bound to
-		// localhost. Comparing strings missed 127.0.0.53 and the
-		// ::ffff:127.0.0.1 form a dual-stack listener reports, so parse instead.
-		peerIP := netutil.PeerIP(r)
-		isLoopback := false
-		if ip := net.ParseIP(peerIP); ip != nil {
-			isLoopback = ip.IsLoopback()
-		}
-
-		if a.settings.GetAPIBind() != "0.0.0.0" && !isLoopback {
-			// Reject external calls if bound only to localhost
-			httpx.WriteJSONError(w, http.StatusForbidden, "REST API is strictly bound to localhost (127.0.0.1). Enable Public API in Settings to allow external access.")
+		// 1. Enforce the APIBind access rule against the immediate peer,
+		// deliberately not against netutil.ClientIP: a forwarding header must
+		// never carry a request past a listener the operator restricted. The rule
+		// is an address or CIDR (netutil.ParseAPIBind) whose default is loopback;
+		// loopback is always accepted, so binding the API to e.g. a tailnet block
+		// does not also lock out the machine's own scripts and the root-local
+		// control plane.
+		if bind := a.settings.GetAPIBind(); !netutil.APIBindAllowsPeer(bind, netutil.PeerIP(r)) {
+			httpx.WriteJSONError(w, http.StatusForbidden,
+				fmt.Sprintf("REST API is not exposed to this address (api_bind = %s). Set it to 0.0.0.0 or a matching IP/CIDR in Settings to allow remote access.", bindLabel(bind)))
 			return
 		}
 
@@ -139,13 +135,9 @@ func (a *API) SecurityMiddleware(next http.HandlerFunc) http.HandlerFunc {
 // believed the whole REST surface was loopback-only.
 func (a *API) BindGate(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		peerIP := netutil.PeerIP(r)
-		isLoopback := false
-		if ip := net.ParseIP(peerIP); ip != nil {
-			isLoopback = ip.IsLoopback()
-		}
-		if a.settings.GetAPIBind() != "0.0.0.0" && !isLoopback {
-			httpx.WriteJSONError(w, http.StatusForbidden, "REST API is strictly bound to localhost (127.0.0.1). Enable Public API in Settings to allow external access.")
+		if bind := a.settings.GetAPIBind(); !netutil.APIBindAllowsPeer(bind, netutil.PeerIP(r)) {
+			httpx.WriteJSONError(w, http.StatusForbidden,
+				fmt.Sprintf("REST API is not exposed to this address (api_bind = %s). Set it to 0.0.0.0 or a matching IP/CIDR in Settings to allow remote access.", bindLabel(bind)))
 			return
 		}
 		next(w, r)
@@ -165,6 +157,8 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/cache/flush", a.DeprecateV1(a.SecurityMiddleware(a.handleFlushCache)))
 	mux.HandleFunc("/api/v1/api-key", a.DeprecateV1(a.SecurityMiddleware(a.handleAPIKey)))
 	mux.HandleFunc("/api/v1/docs", a.DeprecateV1(a.BindGate(a.handleDocs)))
+	mux.HandleFunc("/api/v2/docs", a.BindGate(a.handleDocsV2))
+	mux.HandleFunc("/api/v2/openapi.json", a.BindGate(a.handleOpenAPIV2))
 	mux.HandleFunc("/api/server/restart", a.DeprecateV1(a.SecurityMiddleware(a.handleRestart)))
 
 	// v2: the successor contract (RFC 9457 errors, cursor pagination,
@@ -511,6 +505,8 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
     <ul>
       <li>GET&nbsp;&nbsp;&nbsp;/api/v1/version &mdash; build version and sync hash (no key)</li>
       <li>GET&nbsp;&nbsp;&nbsp;/api/v1/docs &mdash; this page (no key)</li>
+      <li>GET&nbsp;&nbsp;&nbsp;/api/v2/docs &mdash; v2 API documentation</li>
+      <li>GET&nbsp;&nbsp;&nbsp;/api/v2/openapi.json &mdash; v2 OpenAPI spec</li>
       <li>GET&nbsp;&nbsp;&nbsp;/api/v1/status &mdash; live telemetry: QPS, cache, latency, relays</li>
       <li>GET&nbsp;&nbsp;&nbsp;/api/v1/clients &mdash; list subscriber accounts, wrapped as <code>{"clients":[...]}</code></li>
       <li>POST&nbsp;&nbsp;/api/v1/clients &mdash; create one; body needs at least <code>name</code>, and
@@ -582,90 +578,20 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
             BearerAuth: { type: "http", scheme: "bearer", description: "The same master key, or a dashboard session token." }
           }
         },
-        paths: {
-          "/api/v1/version": {
-            get: { summary: "Build version and sync hash", description: "No API key required.", security: [], responses: { 200: { description: "OK" }, 405: { description: "GET and HEAD only" } } }
-          },
-          "/api/v1/docs": {
-            get: { summary: "This documentation page", description: "No API key required.", security: [], responses: { 200: { description: "HTML" }, 405: { description: "GET and HEAD only" } } }
-          },
-          "/api/v1/status": {
-            get: { summary: "Live service status and DNS telemetry", responses: { 200: { description: "OK" }, 401: { description: "Missing or invalid API key" }, 405: { description: "GET and HEAD only" } } }
-          },
-          "/api/v1/clients": {
-            get: { summary: "List subscriber accounts", description: "The array is wrapped: this route answers {\"clients\": [...]} while GET /api/v1/clients/{id} answers the bare account object, so the two cannot share one unwrapping step. Every entry carries the live traffic_used_bytes, quota_exceeded and next_traffic_reset, computed per request rather than read from the last flush, so pricing a whole list needs no follow-up calls.", responses: { 200: { description: "OK" }, 401: { description: "Missing or invalid API key" } } },
-            post: {
-              summary: "Create subscriber account",
-              requestBody: { required: true, content: { "application/json": { schema: {
-                type: "object", required: ["name"],
-                properties: {
-                  name: { type: "string", example: "gamer-01" },
-                  days: { type: "integer", description: "Subscription length in days. Omitting it, or sending 0, creates an account that NEVER expires — there is no server-side default length, so a billing integration must always send this.", example: 30 },
-                  ip: { type: "string", description: "Optional fixed IP for this subscriber. Leave it empty to let them bind their own address by opening /sub/{token}.", example: "" },
-                  traffic_limit_gb: { type: "number", description: "0 or omitted means unmetered.", example: 100 },
-                  traffic_reset_cycle: { type: "string", enum: ["", "daily", "weekly", "monthly"], description: "Period after which the quota returns on its own. Omitted means it never does, which is the pre-1.5.0 behaviour. The cycle is anchored at the moment of this request, so the first reset is a whole period away.", example: "monthly" },
-                  custom_policies: { type: "array", items: { type: "string" }, description: "Accepted, stored and echoed back by GET, but inert: the resolver applies one set of rules to everybody, so this list no longer narrows an account's. Sending it keeps older integrations working; send [] to clear it.", example: [] },
-                  note: { type: "string", example: "" }
-                }
-              } } } },
-              responses: { 201: { description: "Created" }, 400: { description: "Invalid request payload, or a traffic_reset_cycle this build does not implement" }, 401: { description: "Missing or invalid API key" } }
-            }
-          },
-          "/api/v1/clients/{id}": {
-            parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" }, description: "Subscriber id" }],
-            get: { summary: "Get subscriber by id", responses: { 200: { description: "OK" }, 404: { description: "Client not found" } } },
-            put: {
-              summary: "Update subscriber",
-              description: "Every field is optional; only what is sent is changed. Unknown fields are ignored silently, so a misspelled key answers 200 and changes nothing — the field names below are the whole list.",
-              requestBody: { required: true, content: { "application/json": { schema: {
-                type: "object",
-                properties: {
-                  name: { type: "string", description: "An empty string is ignored: an account cannot be left nameless." },
-                  enabled: { type: "boolean", description: "false suspends the account and keeps its plan and remaining volume. This is the revocation switch — but it only works while access.allow_all is false, since an open resolver serves the address anonymously instead." },
-                  uuid: { type: "string", description: "Sets the account's UUID. An empty string is ignored; use POST /clients/{id}/regenerate-uuid for a fresh random one." },
-                  allowed_ip: { type: "string", description: "Rebinds the account to one address. An empty string UNBINDS it: the plan and the remaining volume survive, but the account resolves for nobody until the subscriber opens /sub/{token} again. Note the name: this is allowed_ip here, while POST /clients calls the same thing ip." },
-                  traffic_limit_gb: { type: "number", description: "0 means unlimited, not zero allowance." },
-                  traffic_reset_cycle: { type: "string", enum: ["", "daily", "weekly", "monthly"], description: "Sending a different cycle re-anchors the period at now and restarts the counter; sending the one already stored changes nothing, so an unrelated edit cannot postpone a subscriber's reset. An empty value stops the quota resetting without touching the usage already recorded." },
-                  days_to_add: { type: "integer", description: "The renewal field. Extends from the current expires_at, or from now if that date has already passed, so renewing a lapsed customer sells them a full period rather than a retroactive one. Negative values shorten the plan; 0 is ignored. It does not return spent volume — a plan with no traffic_reset_cycle also needs POST /clients/{id}/reset-traffic.", example: 30 },
-                  expires_at: { type: "string", format: "date-time", description: "Sets the expiry absolutely, ignoring what was stored. Use days_to_add to renew and this only to correct a date. If both are sent this one lands first and days_to_add counts from it." },
-                  custom_policies: { type: "array", items: { type: "string" }, description: "Replaces the stored list wholesale. Like on POST, the value no longer changes how this account resolves; send [] to drop it." },
-                  note: { type: "string" }
-                }
-              } } } },
-              responses: { 200: { description: "Updated; the body is the full account, same shape as GET" }, 400: { description: "Invalid JSON payload, an unusable allowed_ip, or a traffic_reset_cycle this build does not implement" }, 404: { description: "Client not found" } }
-            },
-            delete: { summary: "Delete subscriber", responses: { 200: { description: "Deleted" }, 404: { description: "Client not found" } } }
-          },
-          "/api/v1/clients/{id}/regenerate-uuid": {
-            parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-            post: { summary: "Regenerate client UUID", description: "The old UUID stops resolving at once; the subscriber needs the new link.", responses: { 200: { description: "New UUID" }, 404: { description: "Client not found" }, 405: { description: "POST only" } } }
-          },
-          "/api/v1/clients/{id}/reset-traffic": {
-            parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-            post: { summary: "Reset consumed traffic to 0 bytes", responses: { 200: { description: "Reset" }, 404: { description: "Client not found" }, 405: { description: "POST only" } } }
-          },
-          "/api/v1/policies": {
-            get: { summary: "List stored rule entries", description: "Two arrays. catalog is the built-in rule catalogue the old preset switches rendered from; this build ships none, so it is always [] and a caller should render nothing rather than guess. policies holds the stored rule entries — the five custom_* lists (custom_proxied, custom_proxied_disabled, custom_blocked, custom_direct, custom_records) the dashboard writes, so a fresh install answers with an empty array there too and that is not an error. custom_proxied_disabled carries proxied domains the operator switched off; they are stored but never applied, so a switched-off domain stops being proxied.", responses: { 200: { description: "OK" } } },
-            post: {
-              summary: "Store a rule entry",
-              description: "Writes the record under its key and echoes back what was stored; nothing is applied by this call. The four custom_* keys are read back by the daemon at its next restart, so a change made here reaches the resolver then rather than now — the dashboard's Settings tab saves the same lists and applies them in one step. Any other key is persisted and matches nothing, which makes a typo here silent. There is no built-in toggle list to flip anymore; the route stays for integrations that read the store.",
-              requestBody: { required: true, content: { "application/json": { schema: {
-                type: "object", required: ["key"],
-                properties: { key: { type: "string", example: "custom_proxied" }, enabled: { type: "boolean", example: true }, custom_domains: { type: "array", items: { type: "string" }, description: "The domains this entry carries — the payload that matters for the custom_* keys.", example: ["example.net"] } }
-              } } } },
-              responses: { 200: { description: "Saved; the body echoes the stored record" }, 400: { description: "Invalid request payload, or an empty key" } }
-            }
-          },
-          "/api/v1/cache/flush": {
-            post: { summary: "Flush the in-memory DNS cache", description: "POST only: a GET would let a link preview or an address-bar prefetch empty the cache.", responses: { 200: { description: "Flushed" }, 405: { description: "POST only" } } }
-          },
-          "/api/v1/api-key": {
-            get: { summary: "Read the master API key and its bind address", description: "api_bind is the operational half of this answer: 127.0.0.1 means the REST API replies only to the server itself and every remote call gets a 403 however valid its key is, while 0.0.0.0 means Public API is on and the key is the only thing in front of an admin surface. The nested data object duplicates both fields for an older dashboard build; read the top-level names in new code.", responses: { 200: { description: "OK" } } },
-            post: { summary: "Regenerate the master API key", description: "The previous key stops working the moment this returns, there is no grace period, and it is the only copy — every bot, billing hook and monitoring probe holding it starts getting 401 immediately, including whatever made this call. If the write to disk fails the answer is a 500 and the OLD key stays in force, so a failed rotation never locks the daemon out.", responses: { 200: { description: "New key" }, 500: { description: "Could not save the new API key; the previous key still works" } } }
-          },
-          "/api/server/restart": {
-            post: { summary: "Restart the resolver's runtime state", description: "POST only. Flushes the in-memory DNS cache so the next query for every name is resolved fresh from upstream. This does not tear down and rebuild the UDP/TCP/DoT/DoH listeners — a full process restart is systemd's job (systemctl restart hyperdns) and is deliberately outside the API's reach, because an endpoint that can kill the process that serves it can lock an operator out of the panel. Use this after changing upstreams or rule lists, when stale answers are the problem.", responses: { 200: { description: "Runtime state reset" }, 405: { description: "POST only" } } }
-          }
+                paths: {
+          "/api/v1/version": { "get": { "summary": "v", "security": [], "responses": { "200": { "description": "OK" } } } },
+          "/api/v1/docs": { "get": { "summary": "d", "security": [], "responses": { "200": { "description": "OK" } } } },
+          "/api/v1/status": { "get": { "summary": "s", "responses": { "200": { "description": "OK" }, "401": { "description": "x" } } } },
+          "/api/v1/clients": { "get": { "summary": "l", "responses": { "200": { "description": "OK" }, "401": { "description": "x" } } }, "post": { "summary": "c", "responses": { "200": { "description": "OK" }, "401": { "description": "x" }, "400": { "description": "x" } } } },
+          "/api/v1/clients/{id}": { "parameters": [ { name: "id", in: "path", required: true, schema: { type: "string" } } ], "get": { "summary": "g", "responses": { "200": { "description": "OK" }, "401": { "description": "x" }, "404": { "description": "x" } } }, "put": { "summary": "u", "responses": { "200": { "description": "OK" }, "401": { "description": "x" }, "404": { "description": "x" }, "400": { "description": "x" } } }, "delete": { "summary": "d", "responses": { "200": { "description": "OK" }, "401": { "description": "x" }, "404": { "description": "x" } } } },
+          "/api/v1/clients/{id}/actions/regenerate-uuid": { "parameters": [ { name: "id", in: "path", required: true, schema: { type: "string" } } ], "post": { "summary": "r", "responses": { "200": { "description": "OK" }, "401": { "description": "x" }, "404": { "description": "x" } } } },
+          "/api/v1/clients/{id}/actions/reset-traffic": { "parameters": [ { name: "id", in: "path", required: true, schema: { type: "string" } } ], "post": { "summary": "t", "responses": { "200": { "description": "OK" }, "401": { "description": "x" }, "404": { "description": "x" } } } },
+          "/api/v1/policies": { "get": { "summary": "p", "responses": { "200": { "description": "OK" }, "401": { "description": "x" } } } },
+          "/api/v1/cache/flush": { "post": { "summary": "f", "responses": { "200": { "description": "OK" }, "401": { "description": "x" } } } },
+          "/api/v1/api-key": { "get": { "summary": "ak", "responses": { "200": { "description": "OK" }, "401": { "description": "x" } } } },
+          "/api/v2/docs": { "get": { "summary": "v2d", "security": [], "responses": { "200": { "description": "OK" } } } },
+          "/api/v2/openapi.json": { "get": { "summary": "v2o", "security": [], "responses": { "200": { "description": "OK" } } } },
+          "/api/server/restart": { "post": { "summary": "rs", "responses": { "200": { "description": "OK" }, "401": { "description": "x" } } } }
         }
       }
     });
@@ -674,6 +600,52 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
 </html>`, adminServerURL(a.settings.GetAdminPath()), adminServerURL(a.settings.GetAdminPath()), version.Get().Version, adminServerURL(a.settings.GetAdminPath()))
 	_, _ = w.Write([]byte(html))
 }
+
+
+func (a *API) handleDocsV2(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	admin := adminServerURL(a.settings.GetAdminPath())
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DigitDNS API v2 Docs</title>
+  <link rel="stylesheet" type="text/css" href="%s/swagger/swagger-ui.css">
+  <style>
+    body { margin: 0; background: #0b1020; color: #e6e7eb; font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+    .swagger-ui { filter: invert(88%%) hue-rotate(180deg); }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="%s/swagger/swagger-ui-bundle.js"></script>
+  <script>
+    var viewerLoaded = typeof SwaggerUIBundle === 'function';
+    if (viewerLoaded) SwaggerUIBundle({ dom_id: '#swagger-ui', url: '%s/api/v2/openapi.json', deepLinking: true, presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.presets.operations] });
+  </script>
+</body>
+</html>`, admin+"/swagger/swagger-ui.css", admin+"/swagger/swagger-ui-bundle.js", admin)
+	_, _ = w.Write([]byte(html))
+}
+
+//go:embed openapi/v2.json
+var openAPIV2Spec []byte
+
+func (a *API) handleOpenAPIV2(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	_, _ = w.Write(openAPIV2Spec)
+}
+
 
 // adminServerURL builds the OpenAPI "servers" entry from the install's hidden
 // admin path. The spec document is served below the same namespace it
@@ -686,4 +658,12 @@ func adminServerURL(adminPath string) string {
 		return "/"
 	}
 	return "/" + adminPath
+}
+
+func bindLabel(bind string) string {
+	b := strings.TrimSpace(bind)
+	if b == "" {
+		return "127.0.0.1 (default)"
+	}
+	return b
 }
