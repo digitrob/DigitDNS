@@ -26,9 +26,8 @@ import (
 
 // portalBodyFor stands up a subscription, fetches its portal page and returns the
 // HTML. domain is written to TLS settings first, so "" exercises the no-domain
-// fallback path. lang picks the rendered language: the portal negotiates Persian
-// by default, so a test asserting on English copy has to ask for it.
-func portalBodyFor(t *testing.T, domain, lang string) string {
+// fallback path. The portal is English-only.
+func portalBodyFor(t *testing.T, domain string) string {
 	t.Helper()
 
 	ws, _, cleanup := setupTestWebServer(t)
@@ -47,9 +46,6 @@ func portalBodyFor(t *testing.T, domain, lang string) string {
 	}
 
 	url := "/sub/" + client.Token
-	if lang != "" {
-		url += "?lang=" + lang
-	}
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	req.RemoteAddr = "198.51.100.7:5555"
 	rec := httptest.NewRecorder()
@@ -65,7 +61,7 @@ func portalBodyFor(t *testing.T, domain, lang string) string {
 // configured, the encrypted endpoints must carry the name and not the address.
 func TestPortalAdvertisesTheDomainForDoTAndDoH(t *testing.T) {
 	const domain = "dns.example.com"
-	body := portalBodyFor(t, domain, "en")
+	body := portalBodyFor(t, domain)
 
 	for _, want := range []string{
 		domain + ":853",                         // DoT endpoint card
@@ -100,31 +96,18 @@ func TestPortalAdvertisesTheDomainForDoTAndDoH(t *testing.T) {
 // path. A server with no domain cannot serve Private DNS at all, and printing an
 // IP under a field that rejects IPs is an instruction that cannot be followed.
 func TestPortalWithoutADomainSaysPrivateDNSIsUnavailable(t *testing.T) {
-	for _, tc := range []struct {
-		lang string
-		// says is a fragment of the "Private DNS is unavailable" copy in that
-		// language. Both bundles are checked because the Persian page is what most
-		// subscribers of this project actually read.
-		says string
-	}{
-		{"en", "no domain and TLS certificate"},
-		{"fa", "دامنه و گواهی TLS ندارد"},
-	} {
-		t.Run(tc.lang, func(t *testing.T) {
-			body := portalBodyFor(t, "", tc.lang)
+	body := portalBodyFor(t, "")
 
-			if strings.Contains(body, "Private DNS provider hostname: <b>203.0.113.9</b>") {
-				t.Error("with no domain the portal still prints an IP as the Private DNS hostname")
-			}
-			if !strings.Contains(body, tc.says) {
-				t.Errorf("with no domain the %s portal does not explain that Private DNS is unavailable", tc.lang)
-			}
-			// The static-Wi-Fi fallback is what such a subscriber is meant to use, so
-			// it has to still be there with the address in it.
-			if !strings.Contains(body, "DNS 1: <b>203.0.113.9</b>") {
-				t.Error("the static Wi-Fi fallback lost the server address")
-			}
-		})
+	if strings.Contains(body, "Private DNS provider hostname: <b>203.0.113.9</b>") {
+		t.Error("with no domain the portal still prints an IP as the Private DNS hostname")
+	}
+	if !strings.Contains(body, "no domain and TLS certificate") {
+		t.Error("with no domain the portal does not explain that Private DNS is unavailable")
+	}
+	// The static-Wi-Fi fallback is what such a subscriber is meant to use, so
+	// it has to still be there with the address in it.
+	if !strings.Contains(body, "DNS 1: <b>203.0.113.9</b>") {
+		t.Error("the static Wi-Fi fallback lost the server address")
 	}
 }
 

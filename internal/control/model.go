@@ -117,8 +117,6 @@ type SettingsView struct {
 	AdminPath          string `json:"admin_path"`
 	SessionIdleMinutes int    `json:"session_idle_minutes"`
 	TOTPEnabled        bool   `json:"totp_enabled"`
-	LDAPEnabled        bool   `json:"ldap_enabled"`
-	LDAPLoginMode      string `json:"ldap_login_mode"`
 }
 
 type RotateAPIKeyRequest struct {

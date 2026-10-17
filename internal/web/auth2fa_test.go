@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -25,36 +24,9 @@ import (
 // counting as an occurrence.
 var jsLineCommentRe = regexp.MustCompile(`//[^\n]*`)
 
-// Phase 6 (v2.1) test suite: TOTP two-factor end-to-end, the LDAP login paths
-// against a fake authenticator, the second-factor gates on credential
-// mutations, and the structural guarantee that no auth secret serialises.
-
-// fakeLDAP records the calls it saw and answers from a table, so every branch
-// of the login mode logic is exercised without a real directory.
-type fakeLDAP struct {
-	mu       sync.Mutex
-	calls    []string
-	failAll  bool
-	accepted map[string]bool // username+":"+password that succeed
-}
-
-func (f *fakeLDAP) Authenticate(username, password string, cfg auth.LDAPConfig) error {
-	f.mu.Lock()
-	f.calls = append(f.calls, username+":"+password)
-	_, ok := f.accepted[username+":"+password]
-	fail := f.failAll
-	f.mu.Unlock()
-	if fail || !ok {
-		return errFakeRejected
-	}
-	return nil
-}
-
-var errFakeRejected = &fakeErr{"invalid credentials"}
-
-type fakeErr struct{ msg string }
-
-func (e *fakeErr) Error() string { return e.msg }
+// Phase 6 (v2.1) test suite: TOTP two-factor end-to-end, the second-factor
+// gates on credential mutations, and the structural guarantee that no auth
+// secret serialises.
 
 // totpStepStart returns the start of the current TOTP step. Tests derive every
 // code from this rather than from a bare time.Now(): a code computed late in
@@ -452,135 +424,6 @@ func TestSecondFactorGatesCredentialChanges(t *testing.T) {
 	}
 }
 
-func TestLDAPLoginPaths(t *testing.T) {
-	ws, _, cleanup := setupTestWebServer(t)
-	defer cleanup()
-	ws.SetAuthSettings(&database.AuthSettings{})
-	fake := &fakeLDAP{accepted: map[string]bool{
-		"admin:directory-pass": true,
-		"jane:directory-pass":  true,
-	}}
-	ws.SetLDAPAuthenticator(fake)
-	h := ws.buildAdminHandler()
-
-	if err := ws.authSettings.SetLDAP(true, "ldaps://dir.example:636", "cn=svc,dc=example,dc=com", "svc-secret", "ou=people,dc=example,dc=com", "uid", "ldap", func(a *database.AuthSettings) error {
-		return ws.db.SetSetting("auth", a)
-	}); err != nil {
-		t.Fatalf("SetLDAP: %v", err)
-	}
-
-	login := func(user, pass string) *httptest.ResponseRecorder {
-		return login(t, h, user, pass)
-	}
-
-	// LDAP-only mode: a local credential is refused, the directory
-	// credential for the ADMIN ACCOUNT is accepted, and every other entry
-	// under the BaseDN is refused even though the directory accepted it —
-	// the panel decides who may log in, one admin account, always.
-	if w := login("admin", testAdminPassword); w.Code != http.StatusUnauthorized {
-		t.Errorf("local login under ldap-only mode = %d, want 401", w.Code)
-	}
-	if w := login("jane", "directory-pass"); w.Code != http.StatusUnauthorized {
-		t.Errorf("a non-admin directory user = %d, want 401 (the directory validates credentials; the panel picks the account)", w.Code)
-	}
-	if w := login("admin", "directory-pass"); w.Code != http.StatusOK {
-		t.Errorf("directory login for the admin account = %d, want 200 — %s", w.Code, w.Body.String())
-	}
-	if ws.sessions.Count() == 0 {
-		t.Error("a successful LDAP login minted no session")
-	}
-	// Every failure was a failure of the directory, not of the local record.
-	fake.mu.Lock()
-	calls := len(fake.calls)
-	fake.mu.Unlock()
-	if calls < 2 {
-		t.Errorf("the fake authenticator saw %d calls, want at least one per attempt", calls)
-	}
-
-	// Switch to local: the directory is not consulted at all.
-	if err := ws.authSettings.SetLDAP(true, "ldaps://dir.example:636", "cn=svc,dc=example,dc=com", "svc-secret", "ou=people,dc=example,dc=com", "uid", "local", func(a *database.AuthSettings) error {
-		return ws.db.SetSetting("auth", a)
-	}); err != nil {
-		t.Fatalf("SetLDAP local: %v", err)
-	}
-	fake.mu.Lock()
-	before := len(fake.calls)
-	fake.mu.Unlock()
-	if w := login("admin", testAdminPassword); w.Code != http.StatusOK {
-		t.Errorf("local login under local mode = %d, want 200", w.Code)
-	}
-	fake.mu.Lock()
-	after := len(fake.calls)
-	fake.mu.Unlock()
-	if after != before {
-		t.Error("local mode consulted the directory")
-	}
-
-	// Both mode: a directory failure falls back to the local record.
-	if err := ws.authSettings.SetLDAP(true, "ldaps://dir.example:636", "cn=svc,dc=example,dc=com", "svc-secret", "ou=people,dc=example,dc=com", "uid", "both", func(a *database.AuthSettings) error {
-		return ws.db.SetSetting("auth", a)
-	}); err != nil {
-		t.Fatalf("SetLDAP both: %v", err)
-	}
-	if w := login("admin", testAdminPassword); w.Code != http.StatusOK {
-		t.Errorf("both-mode fallback login = %d, want 200", w.Code)
-	}
-}
-
-func TestLDAPSettingsNeverEchoBindPassword(t *testing.T) {
-	ws, _, cleanup := setupTestWebServer(t)
-	defer cleanup()
-	ws.SetAuthSettings(&database.AuthSettings{})
-	h := ws.buildAdminHandler()
-
-	// The mode switch deletes sessions by design, so every POST re-logs in.
-	// The saves below use mode "both" so the local login keeps working for the
-	// re-login (ldap-only would lock the test out of its own harness).
-	relogin := func() string {
-		return decodeBody(t, login(t, h, "admin", testAdminPassword))["token"].(string)
-	}
-
-	post := func(body string) *httptest.ResponseRecorder {
-		tok := relogin()
-		req := httptest.NewRequest(http.MethodPost, "/api/auth/ldap", strings.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+tok)
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, req)
-		return w
-	}
-
-	w := post(`{"current_password":"` + testAdminPassword + `","enabled":"true","ldap_server_url":"ldaps://dir.example:636","ldap_bind_dn":"cn=svc,dc=example,dc=com","ldap_bind_password":"super-secret","ldap_base_dn":"ou=people,dc=example,dc=com","ldap_user_attr":"uid","ldap_login_mode":"both"}`)
-	if w.Code != http.StatusOK {
-		t.Fatalf("LDAP save = %d — %s", w.Code, w.Body.String())
-	}
-	if strings.Contains(w.Body.String(), "super-secret") {
-		t.Fatal("the bind password came back in the response")
-	}
-
-	// GET must not leak it either.
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/ldap", nil)
-	req.Header.Set("Authorization", "Bearer "+relogin())
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	if strings.Contains(w.Body.String(), "super-secret") {
-		t.Fatal("GET /api/auth/ldap echoed the bind password")
-	}
-
-	// A partial save without the password field preserves the stored one —
-	// then GET still carries nothing.
-	w = post(`{"current_password":"` + testAdminPassword + `","enabled":"true","ldap_server_url":"ldaps://dir2.example:636","ldap_base_dn":"ou=x,dc=example,dc=com","ldap_login_mode":"both"}`)
-	if w.Code != http.StatusOK {
-		t.Fatalf("partial LDAP save = %d — %s", w.Code, w.Body.String())
-	}
-	if ws.authSettings.StoredBindPassword() != "super-secret" {
-		t.Error("a partial save wiped the stored bind password")
-	}
-	if strings.Contains(w.Body.String(), "super-secret") {
-		t.Error("the partial-save response echoed the bind password")
-	}
-}
-
 func TestAuthSnapshotCarriesNoSecrets(t *testing.T) {
 	// Structural, not behavioural: walk the snapshot type and fail on any field
 	// whose name suggests a credential. A future field named to evade this is
@@ -597,34 +440,12 @@ func TestAuthSnapshotCarriesNoSecrets(t *testing.T) {
 	}
 }
 
-// TestLDAPSettingsRejectNonLDAPURLS pins the scheme check: a bare host or an
-// https:// URL is refused rather than dialed blind.
-func TestLDAPSettingsRejectNonLDAPURLS(t *testing.T) {
-	ws, _, cleanup := setupTestWebServer(t)
-	defer cleanup()
-	ws.SetAuthSettings(&database.AuthSettings{})
-	h := ws.buildAdminHandler()
-	tok := bearerFor(t, h)
-
-	for _, url := range []string{"dir.example:636", "https://dir.example", "ftp://dir.example"} {
-		req := httptest.NewRequest(http.MethodPost, "/api/auth/ldap", strings.NewReader(
-			`{"current_password":"`+testAdminPassword+`","enabled":"true","ldap_server_url":"`+url+`","ldap_base_dn":"ou=x,dc=example,dc=com"}`))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+tok)
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, req)
-		if w.Code != http.StatusBadRequest {
-			t.Errorf("LDAP URL %q was accepted (%d), want 400", url, w.Code)
-		}
-	}
-}
-
 // TestTOTPCodeCannotBeReplayedAcrossGatedEndpoints: the single-use invariant.
 // One validated code must not authorise a second gated operation, and least of
-// all a different one — a code seen at login must not buy a key rotation, a
-// lockout unlock, or a directory re-point. The RFC 6238 one-time-use rule
-// applies per verifier; the cross-endpoint part is HyperDNS's own invariant,
-// and this is the test that owns it.
+// all a different one — a code seen at login must not buy a key rotation or a
+// lockout unlock. The RFC 6238 one-time-use rule applies per verifier; the
+// cross-endpoint part is DigitDNS's own invariant, and this is the test that
+// owns it.
 func TestTOTPCodeCannotBeReplayedAcrossGatedEndpoints(t *testing.T) {
 	ws, _, cleanup := setupTestWebServer(t)
 	defer cleanup()

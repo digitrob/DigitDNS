@@ -7,15 +7,14 @@ import (
 	"testing"
 )
 
-// The portal's two languages are two literals of the same struct, and that shape has
-// exactly one failure mode: a field added to portalText and filled in on only one of
-// them. Go does not complain — a missing key in a struct literal is the zero value —
-// so the English reader gets a heading that renders as nothing at all, and the page
-// still returns 200 with a valid document. Nobody sees it until an English-speaking
-// subscriber does.
+// The portal's copy is one literal of the portalText struct, and that shape has
+// exactly one failure mode: a field added to portalText and left blank. Go does not
+// complain — a missing key in a struct literal is the zero value — so the page
+// renders a heading that shows nothing at all, and still returns 200 with a valid
+// document. Nobody sees it until a subscriber does.
 //
-// The reverse leak matters too. A field nobody reads is a translation someone wrote
-// and a maintainer will keep updating for a page that does not show it, and a
+// The reverse leak matters too. A field nobody reads is a string someone wrote and a
+// maintainer will keep updating for a page that does not show it, and a
 // {{.T.Whatever}} that names no field renders "<no value>" into the markup rather
 // than failing, because these templates are executed with a concrete struct.
 //
@@ -30,15 +29,14 @@ import (
 var tFieldRe = regexp.MustCompile(`(?:\.T\.|\bt\.)([A-Za-z][A-Za-z0-9_]*)\b`)
 
 // portalBundles is what every check below iterates. Named rather than positional so a
-// failure says which language is short a string.
+// failure says which bundle is short a string.
 func portalBundles() map[string]portalText {
 	return map[string]portalText{
-		portalLangFa: portalFa,
-		portalLangEn: portalEn,
+		"en": portalEn,
 	}
 }
 
-// TestPortalTextBundlesAreComplete asserts every field of every bundle carries text.
+// TestPortalTextBundlesAreComplete asserts every field of the bundle carries text.
 //
 // It walks the struct by reflection rather than by name, so a field added tomorrow is
 // covered the moment it exists — which is the only version of this test that keeps
@@ -76,31 +74,8 @@ func TestPortalTextBundlesAreComplete(t *testing.T) {
 				// not know how to check, and silently skipping it is how the guarantee
 				// erodes.
 				t.Errorf("portalText.%s is a %s — extend this test to check that kind, "+
-					"or it is unverified in both languages", name, f.Kind())
+					"or it is unverified", name, f.Kind())
 			}
-		}
-	}
-}
-
-// TestPortalTextSlicesAgreeAcrossLanguages pins the step counts together.
-//
-// The steps are a numbered procedure for a specific settings screen, so the two
-// languages are not free to differ in length: a Persian list with five steps and an
-// English one with four means one of the two is missing an instruction, and the one
-// most likely to be missing it is the one nobody on this project reads back.
-func TestPortalTextSlicesAgreeAcrossLanguages(t *testing.T) {
-	typ := reflect.TypeFor[portalText]()
-	fa := reflect.ValueOf(portalFa)
-	en := reflect.ValueOf(portalEn)
-
-	for i := 0; i < typ.NumField(); i++ {
-		if typ.Field(i).Type.Kind() != reflect.Slice {
-			continue
-		}
-		name := typ.Field(i).Name
-		if a, b := fa.Field(i).Len(), en.Field(i).Len(); a != b {
-			t.Errorf("%s has %d step(s) in Persian and %d in English — one language is "+
-				"walking the subscriber through a different procedure", name, a, b)
 		}
 	}
 }
@@ -212,12 +187,12 @@ func TestPortalScriptMessagesReachTheScript(t *testing.T) {
 	}
 
 	// And no message may go back to being a literal in the script, which is the shape
-	// this whole mechanism replaced: one file, served to both audiences, cannot hold a
-	// sentence in either language. Every call has to pass a variable — msg(), or the
+	// this whole mechanism replaced: the strings live in one place so the page and the
+	// script cannot drift. Every call has to pass a variable — msg(), or the
 	// element's own data-copied — never a quoted string.
 	if lit := regexp.MustCompile(`showToast\(\s*['"]`).FindAllString(js, -1); len(lit) != 0 {
-		t.Errorf("js/portal.js calls showToast with a quoted literal %d time(s) — that "+
-			"string is shown to the Persian and the English reader alike", len(lit))
+		t.Errorf("js/portal.js calls showToast with a quoted literal %d time(s) — the "+
+			"message belongs in the bundle, not the script", len(lit))
 	}
 	// The emoji prefixes are now a masked ::before driven by the tone class, so a glyph
 	// reappearing in a shown string means someone put the old shape back.

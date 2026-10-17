@@ -15,6 +15,7 @@ carried on the `custom` branch.
 ### ✨ Added
 - **Proxied Domains list controls** — a sort selector (Added newest/oldest, Name A–Z/Z–A, Status) and a batch-size selector (10/25/50/100, default 25). The list loads incrementally with an IntersectionObserver sentinel and a "Load more" fallback.
 - **Live Query Log row actions** — each row's ACTION badge opens one shared menu offering Proxy / Block / Direct / Remove for the exact host, its `*.host` wildcard, or the `*.parent` wildcard. Applying one rewrites the routing lists through the exact same write path as a manual edit.
+- **Bulk import for Custom Static Records** — the static-record card gains a **Bulk import** button that loads a whole `hostname address` table at once (paste or file, one pair per line, separated by spaces/commas/semicolons/`=`, IPv4 or IPv6). It reuses the shared import dialog and reports how many records were added, updated, unchanged or invalid, so re-uploading a corrected table refreshes existing addresses instead of duplicating them.
 - **About & Legal card and footer notice** crediting upstream HyperDNS, stating the AGPL-3.0 licence and naming the fork's source.
 - **`NOTICE`** file with the AGPL-3.0 attribution and a modification summary relative to upstream.
 - **`upstream-sync` GitHub Actions workflow** — merges upstream into a throwaway branch and opens a pull request, raising an issue instead when the merge conflicts.
@@ -23,6 +24,11 @@ carried on the `custom` branch.
 - The dashboard section formerly called **"Custom Proxied Domains"** is now **"Proxied Domains"** (sidebar, heading, mobile label and i18n string).
 - The **Live Query Log** fills the available height (the centred max-width is preserved) instead of a fixed 500px scroll box.
 - **Self-updates are repointed to this fork**: `internal/selfupdate` targets `digitrob/DigitDNS` on the `custom` branch and pins the fork's own ed25519 release key.
+- **Proxied Domains table headers** are aligned with the columns they label.
+- **The interface is English-only.** The Persian locale, its RTL font stack and every translated string were removed from the dashboard and the subscriber portal, and the shipped `README.fa.md` and `docs/TUTORIAL.fa.md` translations were dropped. Vazirmatn remains only as a Latin-capable display font.
+
+### 🗑️ Removed
+- **LDAP directory login.** The `internal/auth` LDAP client, the `GET/POST /api/auth/ldap` routes, the Settings-tab panel, the sealed bind password and the `ldap_enabled`/`ldap_login_mode` config were all removed; operators authenticate with the local admin account plus optional TOTP. `github.com/go-ldap/ldap/v3` and its now-unused transitive dependencies were dropped from `go.mod`.
 
 ---
 
@@ -246,7 +252,7 @@ Codename **HyperFORGE**. A feature release (new user-facing surface, so a MINOR 
 ### 🖼 Fixed
 - **The footer is inside the content column.** The root cause was not CSS: a `<div class="glass-panel">` in the REST API tab was never closed, and an extra `</div>` in the Settings tab balanced the count while closing the layout wrapper early. The HTML parser then reparented the Connect tab, the desktop footer and the mobile nav onto `<body>`, which is a row-wise flex container — so the footer rendered **beside** the content, at the right edge of the page. Both tags are corrected, and `index.html` now carries structural regression tests (per-tab div balance, footer-inside-main, no mojibake, no control bytes) so the next hand-edit that unbalances a tag fails the build instead of reaching a screenshot.
 - **`Reg Link` hands out the subscriber page, not the API.** The button copied `.../ip/<token>` — an API endpoint since Phase B — while `/sub/<token>` is the page a subscriber opens. It now copies `/sub/`, and a separate `data-reg-url` carries the registration API for the Bot Card.
-- **The Bot Card is current.** The Telegram text named the retired `/ip/` link as if it were the subscriber page and printed `دی ان اس اختصاصی شما :` with nothing after it. It now carries the four things the subscriber needs: the `/sub/` portal link, the registration secret, the DNS address, and the automation API URL.
+- **The Bot Card is current.** The Telegram text named the retired `/ip/` link as if it were the subscriber page and printed a bare `your dedicated DNS:` heading with nothing after it. It now carries the four things the subscriber needs: the `/sub/` portal link, the registration secret, the DNS address, and the automation API URL.
 - **The Portal title reaches the page.** The h1 rendered a translated constant, so the operator's Portal title changed only the browser tab. The heading is now their `Title` (falling back to "HyperDNS"), and the subtitle and footer carry the **running** version instead of a hardcoded `v2.0.0-beta [HyperRAIN]` that had survived two releases.
 - **A failed listener bind is reported, not swallowed.** If the portal port is already held, the save persists and the card says so with the reason, rather than claiming success over a port nothing can reach. The card also names the one manual step the panel cannot take for the operator: opening that port in the host firewall.
 
@@ -265,7 +271,7 @@ Codename **HyperFORGE**. A feature release (new user-facing surface, so a MINOR 
 ## 🖼 [v2.1.0-beta Hotfix 4] — Dashboard Text Corruption & Footer Placement
 
 ### 🖼 Fixed
-- **The language selector reads فارسی again (and every stray `â`/`Â` is gone).** The shipped `index.html` carried cp1252-mojibake text baked into the embedded document: the Persian language labels rendered as `ÙØ§Ø±Ø³ÛŒ`, and em-dashes, bullets, curly quotes, the setup-wizard `●` glyph and the Telegram template emojis were all double-encoded. Every sequence in the document was repaired back to proper UTF-8 (140+ runs across the static markup, the language buttons, and the inline Telegram templates); the served document now scans **zero** mojibake markers and **zero** stray control bytes, and the portal's server-rendered strings (`portal.go`, `portal_i18n.go`, `landing.go`) were swept with it.
+- **Every stray `â`/`Â` is gone.** The shipped `index.html` carried cp1252-mojibake text baked into the embedded document: em-dashes, bullets, curly quotes, the setup-wizard `●` glyph and the Telegram template emojis were all double-encoded. Every sequence in the document was repaired back to proper UTF-8 (140+ runs across the static markup and the inline Telegram templates); the served document now scans **zero** mojibake markers and **zero** stray control bytes, and the portal's server-rendered strings (`portal.go`, `portal_i18n.go`, `landing.go`) were swept with it.
 - **The desktop footer sits inside the content column again.** The `<footer>` had drifted outside `</main>`, so the flex layout pushed it to the right edge of the page. It is moved back inside the main element, and the placement is pinned by the served-document checks.
 
 ### 🧪 Quality gates this hotfix passed
@@ -347,7 +353,7 @@ Codename **HyperFORGE**. A feature release (new user-facing surface, so a MINOR 
 ### ✨ Added
 - `internal/web/landing.go`, `internal/web/security.go` (validators: admin path, domains, ports, CIDRs, time zones, certificates, CSS), `internal/web/subscription.go` (effective-URL layer), `internal/auth` (TOTP + LDAP), `internal/database/subscription_access.go` and `auth_access.go`.
 - `POST /api/settings/regenerate-admin-path` (requires `{"confirm":true}`), `GET/POST /api/settings/subscription`, `GET /api/auth/2fa/status`, `POST /api/auth/2fa/{setup,enable,disable}`, `GET/POST /api/auth/ldap`.
-- Settings-tab panels: Hidden Admin Path, Subscription Portal, Two-Factor Authentication, LDAP — all English/Persian.
+- Settings-tab panels: Hidden Admin Path, Subscription Portal, Two-Factor Authentication, LDAP — all in English.
 
 ---
 

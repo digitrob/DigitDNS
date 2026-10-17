@@ -18,8 +18,8 @@ import (
 // http.ServeContent omits Last-Modified when the time is zero, and FileServer never
 // generates an ETag — so the response was always a complete, uncompressed copy of
 // every asset, on every reload, forever. It worked. It was just expensive in
-// exactly the place this project cannot afford it, which is the link between an
-// Iranian VPS and the operator's browser.
+// exactly the place this project cannot afford it, which is the link between a
+// server and the operator's browser.
 //
 // These tests pin the two halves of the fix (a validator and a pre-built gzip body)
 // and, more importantly, the details of conditional-request handling that are easy

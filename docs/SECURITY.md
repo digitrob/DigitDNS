@@ -123,7 +123,7 @@ with **AES-256-GCM** under the 32-byte key in `master.key`:
 | Registration secret | |
 | REST API key | |
 | TLS certificate paths | |
-| TOTP secret and LDAP bind password | |
+| TOTP secret | |
 
 **The admin password is never stored.** Only a PBKDF2-HMAC-SHA256 verifier
 (600,000 iterations) is kept, so the password cannot be recovered by reversing
@@ -175,14 +175,7 @@ They are the reason several classes of issue are "by design" rather than bugs.
   the refusal on the admin routes and the exception on that one. Key rotation
   re-asks for the **current password** (dashboard) and the same TOTP gate runs
   on both surfaces.
-- **LDAP** (`ldaps://` verified against the system trust store, bounded timeouts,
-  bind/search/bind). Modes: local, LDAP, or LDAP-with-local-fallback. Saving the
-  directory settings re-asks for the current password (the directory IS the
-  login path — repointing it from a bare session is the one credential change a
-  stolen session must not make), and **only the directory entry naming the admin
-  account may authenticate** — the directory validates credentials, the panel
-  picks the account.
-- **One answer for every credential failure.** Local, LDAP, and second-factor
+- **One answer for every credential failure.** Local and second-factor
   failures are indistinguishable, so the API is not an oracle for which path
   exists or which account is real.
 
@@ -368,7 +361,6 @@ named, not scattered — these are the ones to read first:
 | `TestTwoFactorGatesLogins`, `TestSecondFactorGatesCredentialChanges` | Password and API-key changes re-authenticate; codes are single-use. |
 | `TestTOTPCodeCannotBeReplayedAcrossGatedEndpoints` | One validated code, used once: a second gated endpoint refuses the same code, and a fresh one passes (the cross-endpoint single-use invariant). |
 | `TestDoHAcceptsBothBase64URLSpellings`, `TestDoHRejectsMethodsRFC8484DoesNotDefine` | DoH GET (both base64url spellings) and POST work; non-RFC methods are refused. |
-| `TestLDAPLoginPaths` | Only the admin account's directory entry may log in; a non-admin directory user is refused. |
 | `TestDotFirstIssuanceConstructsHolderAndRebinds`, `TestDotClearDetachesHolderAndSource` | The first DoT/DoH certificate goes live; clearing detaches the dedicated source. |
 | `TestValidatePortRefusesTheRedirectListenerPort` (`portplan_test.go`) | The panel cannot be moved onto the redirect listener's port. |
 | `TestPortalUnknownTokenAnswers404` | The friendly error page no longer carries a success code. |

@@ -93,7 +93,7 @@ v2 exists because v1's field names grew asymmetric (`ip` on create, `allowed_ip`
 - **RFC 9457 errors.** Errors are `application/problem+json` with `type`, `title`, `status`, `detail`.
 - **Actions are explicit.** `POST /api/v2/clients/{id}/actions/reset-traffic` and `.../actions/regenerate-uuid`.
 - **PATCH for partial updates.** Only the fields you send change; absent and empty stay distinguishable.
-- **The master key is a REST credential.** It authorizes `/api/v2` (and `/api/v1`) — it no longer opens dashboard admin routes (settings, credentials, 2FA, LDAP). Those take a dashboard session.
+- **The master key is a REST credential.** It authorizes `/api/v2` (and `/api/v1`) — it no longer opens dashboard admin routes (settings, credentials, 2FA). Those take a dashboard session.
 
 ### `GET /api/v2/clients?limit=50&cursor=0`
 ```json
@@ -354,7 +354,7 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/clients \
   -H "X-API-Key: hdns_live_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Reza (PS5 & PC)",
+    "name": "Alex (PS5 & PC)",
     "days": 30,
     "ip": "2.189.86.32",
     "traffic_limit_gb": 50,
@@ -380,7 +380,7 @@ Omit it and the account behaves exactly as it did before v1.5.0: one quota, spen
   "id": "c4b8e219",
   "uuid": "ded3329d-e208-4e00-9d6b-3b1567bdc501",
   "token": "c4b8e219",
-  "name": "Reza (PS5 & PC)",
+  "name": "Alex (PS5 & PC)",
   "allowed_ips": ["2.189.86.32"],
   "traffic_limit_gb": 50,
   "traffic_used_bytes": 0,
@@ -424,7 +424,7 @@ curl -s http://127.0.0.1:8080/api/v1/clients \
 ```json
 {
   "clients": [
-    { "id": "c4b8e219", "name": "Reza (PS5 & PC)", "quota_exceeded": false }
+    { "id": "c4b8e219", "name": "Alex (PS5 & PC)", "quota_exceeded": false }
   ]
 }
 ```
@@ -459,7 +459,7 @@ curl -s -X PUT http://127.0.0.1:8080/api/v1/clients/c4b8e219 \
   -H "X-API-Key: hdns_live_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Reza (VIP-Pro)",
+    "name": "Alex (VIP-Pro)",
     "allowed_ip": "2.189.86.32",
     "traffic_limit_gb": 100,
     "traffic_reset_cycle": "monthly",
@@ -686,8 +686,8 @@ These three routes are **unauthenticated by design** — the token in the path *
 
 | Route | What it does |
 | :--- | :--- |
-| `GET /sub/{token}` | Binds the caller's current IP to the subscription and renders the Persian portal page (quota, expiry countdown, setup guide). `GET /ip/{token}` is the same handler under the older path. |
-| `GET /api/sub/{token}/sync` | The JSON half, called by the portal's *«بروزرسانی آی‌پی من»* button. Registers the caller's IP and returns the account's live figures. |
+| `GET /sub/{token}` | Binds the caller's current IP to the subscription and renders the subscriber portal page (quota, expiry countdown, setup guide). `GET /ip/{token}` is the same handler under the older path. |
+| `GET /api/sub/{token}/sync` | The JSON half, called by the portal's *“Update my IP”* button. Registers the caller's IP and returns the account's live figures. |
 
 **A subscription link is a write, and that is the point.** A registration *replaces* the account's single allowed IP with the caller's address, which is what makes the link a one-click fix for a subscriber whose home IP just changed. It also means anything that fetches the link on their behalf would take the subscription:
 
@@ -707,13 +707,11 @@ All of these live **inside the admin namespace** (`/<admin-path>/api/...` below 
 
 | Route | What it does |
 | :--- | :--- |
-| `POST /api/auth/login` | Session login. Body: `username`, `password`, and `code` (required when 2FA is enabled). Directory logins follow the configured LDAP mode (`local`, `ldap`, `both`). |
+| `POST /api/auth/login` | Session login. Body: `username`, `password`, and `code` (required when 2FA is enabled). |
 | `GET /api/auth/2fa/status` | Display-safe 2FA state: `totp_enabled`, `totp_enrolling`, `otpauth_uri` (present **only** while an enrollment is open). Never carries the secret. |
 | `POST /api/auth/2fa/setup` | Opens an enrollment. Body: `username`, `current_password`. Returns `secret` + `otpauth_uri` **once**. Refused while 2FA is already active. |
 | `POST /api/auth/2fa/enable` | Confirms the enrollment. Body: `username`, `current_password`, `code`. On success every session is invalidated. |
 | `POST /api/auth/2fa/disable` | Turns 2FA off. Body: `username`, `current_password`, `code` — both factors are required one last time. |
-| `GET /api/auth/ldap` | LDAP settings snapshot. The bind password is structurally absent from the response. |
-| `POST /api/auth/ldap` | Saves the directory settings (`enabled`, `ldap_server_url` — must start with `ldap://`/`ldaps://` — `ldap_bind_dn`, `ldap_bind_password` (empty keeps the stored one), `ldap_base_dn`, `ldap_user_attr`, `ldap_login_mode`). Invalidates sessions. |
 | `POST /api/settings/regenerate-admin-path` | Replaces the hidden namespace. Body **must** be `{"confirm":true}`; every session and bookmark under the old path dies immediately. |
 | `GET/POST /api/settings/subscription` | The subscriber-surface record (enabled, domain, port, title, certificate paths, `use_panel_certificate`). A different domain is refused without a valid certificate naming it; `restart_required` is always stated. |
 | `GET /api/update/check` | *(v2.6)* Reports the running version, the version published on the project's `main` branch, and whether a newer one is available. Read-only. |
@@ -725,7 +723,7 @@ All of these live **inside the admin namespace** (`/<admin-path>/api/...` below 
 | `PUT /api/custom-groups/{id}/icon` | *(v2.7)* Replaces the group's icon. Body is the raw image: **SVG ≤ 16 KB** (re-encoded through an element/attribute allowlist — scripts, event handlers, `foreignObject`, `use`/`image` and external `url()` references cannot survive) or **PNG ≤ 64 KB, ≤ 512×512**. |
 | `GET /api/custom-groups/{id}/icon` | *(v2.7)* Serves the stored icon (`image/svg+xml` or `image/png`); 404 when the group has none. `DELETE` on the same path removes it. |
 
-The password-change endpoint (`POST /api/config/server`) accepts a `code` field and enforces the same second-factor gate. Session invalidation after 2FA, LDAP-mode, admin-path and credential changes is deliberate and documented in the v2.1 plan.
+The password-change endpoint (`POST /api/config/server`) accepts a `code` field and enforces the same second-factor gate. Session invalidation after 2FA, admin-path and credential changes is deliberate and documented in the v2.1 plan.
 
 ---
 
@@ -868,7 +866,7 @@ curl -s "http://127.0.0.1:8080/api/v1/clients" -H "X-API-Key: $KEY" \
 # Sell 30 days / 50 GB and print the link to hand over.
 curl -s -X POST "http://127.0.0.1:8080/api/v1/clients" -H "X-API-Key: $KEY" \
   -H "Content-Type: application/json" \
-  -d '{"name":"Reza","days":30,"traffic_limit_gb":50,"traffic_reset_cycle":"monthly"}' \
+  -d '{"name":"Alex","days":30,"traffic_limit_gb":50,"traffic_reset_cycle":"monthly"}' \
   | jq -r '"http://YOUR_SERVER_IP:8080/sub/" + .token'
 ```
 

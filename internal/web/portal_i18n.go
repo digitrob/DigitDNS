@@ -2,54 +2,42 @@ package web
 
 import (
 	"net/http"
-	"strconv"
-	"strings"
 )
 
-// The subscriber portal is the one page in this project a customer sees, and the two
-// things it could not do until now were speak English and render in light. Both were
-// blocked by the same fact: every string on it was a Persian literal inside the two
-// template constants, and the page has no JavaScript it can rely on — the error page
-// deliberately carries no <script> at all, because a portal that cannot report a bad
-// token without scripting is a portal that reports nothing to the person most likely
-// to have scripting off. So the language and the theme are both resolved on the
-// server, before the template runs, and every literal moved in here.
+// The subscriber portal is the one page in this project a customer sees. Every word it
+// shows lives here, in one bundle, because the page has no JavaScript it can rely on —
+// the error page deliberately carries no <script> at all, so the theme is resolved on
+// the server, before the template runs, rather than by a client script.
 //
-// Persian stays the default. That is not sentiment: internal/web/portal_test.go builds
-// every request with nothing but a RemoteAddr — no Accept-Language, no cookie, no
-// query — and asserts Persian in the rendered body, which is the encoded form of the
-// real audience. English is what a request asks for, never what it gets by accident.
+// The portal is English-only. The theme preference remains because it is a real feature
+// and its toggle works with JavaScript disabled.
 
 const (
-	portalLangFa = "fa"
-	portalLangEn = "en"
-
 	portalThemeDark  = "dark"
 	portalThemeLight = "light"
 
-	// Both preferences are stored client-side and read back on the next visit. They are
-	// deliberately not HttpOnly — nothing secret is in them and a future script may want
-	// to read them. Secure is set only when the page was reached over TLS: a Secure
+	// The theme preference is stored client-side and read back on the next visit. It is
+	// deliberately not HttpOnly — nothing secret is in it and a future script may want
+	// to read it. Secure is set only when the page was reached over TLS: a Secure
 	// cookie on a plain-http panel would never be stored, silently undoing the choice on
 	// every page load, so it is gated on r.TLS rather than unconditional.
-	portalLangCookie  = "hdns_lang"
 	portalThemeCookie = "hdns_theme"
 
 	// A subscriber sets this once. The cookie outliving the subscription is harmless;
-	// the cookie expiring inside it means the page flips language on its own.
+	// the cookie expiring inside it means the page flips palette on its own.
 	portalPrefMaxAge = 365 * 24 * 60 * 60
 )
 
-// portalText is every word the portal shows, in one language. Two rules hold it
-// together, both checked by TestPortalTextBundlesAreCompleteAndUsed:
+// portalText is every word the portal shows. One rule holds it together:
 //
-//   - no field may be empty in either bundle, and the slices must be the same length in
-//     both. A missing translation on this page is not a blank — it is a step of a DNS
-//     setup guide that silently is not there, which is worse than the English original.
+//   - no field may be empty. A missing string on this page is not a blank — it is a
+//     step of a DNS setup guide that silently is not there.
 //   - purely technical strings are NOT here. "Primary DNS (IPv4)", "DNS over TLS (DoT)"
 //     and the address values themselves stay literal in the template, because they are
-//     the same in both languages and a translated copy of each is one more thing to
-//     drift.
+//     addresses to type into a console, not prose.
+//
+// The portal is English-only; the theme toggle stays because it is a real feature that
+// works with JavaScript disabled.
 type portalText struct {
 	// Page chrome.
 	DocTitle    string // <title> of the portal page
@@ -64,7 +52,6 @@ type portalText struct {
 	ThemeToLight string // label of the link that switches TO light
 	ThemeToDark  string // label of the link that switches TO dark
 	ThemeHint    string // title/aria-label on the theme link
-	LangHint     string // title/aria-label on the language link
 
 	// What just happened, shown as the line under the topbar or on the error card.
 	StatusRegistered string
@@ -163,11 +150,9 @@ type portalText struct {
 	AndroidStatic   string
 
 	// The four strings js/portal.js shows. They are bundle fields rather than literals
-	// inside the script for the same reason the rest of this file exists — the script is
-	// one file served to a Persian and an English reader alike, and it cannot ask the
-	// server which one it is talking to. The template renders them onto data- attributes
-	// (#toast and #traffic-remaining) and the script reads them back, so there is one
-	// spelling of each message and it is chosen by the same negotiation as the page.
+	// inside the script so the script carries no copy of its own: the template renders
+	// them onto data- attributes (#toast and #traffic-remaining) and the script reads
+	// them back, so there is one spelling of each message.
 	//
 	// WordRemaining and Unlimited above are deliberately *not* duplicated here: the
 	// script re-renders the traffic figures after a sync, and reusing the very fields Go
@@ -197,152 +182,8 @@ type portalText struct {
 	StatusOverview       string
 }
 
-// portalFa is the default bundle. Where a term is one an operator will also read in
-// English inside a console menu — Account Name, Detected IP, Days — it is kept
-// alongside the Persian rather than replaced by it, because the subscriber is about to
-// go looking for that exact English word in a PlayStation settings screen.
-var portalFa = portalText{
-	DocTitle:     "اشتراک هوشمند",
-	ErrDocTitle:  "خطا در اشتراک",
-	Subtitle:     "DigitDNS %s • سرویس دامنه‌شکن کم‌تأخیر",
-	PillActive:   "فعال",
-	ThemeToLight: "حالت روشن",
-	ThemeToDark:  "حالت تیره",
-	ThemeHint:    "تغییر پوستهٔ روشن/تیره",
-	LangHint:     "Switch this page to English",
-
-	StatusRegistered: "آی‌پی جدید شما با موفقیت ثبت و همگام شد!",
-	StatusConfirmed:  "آی‌پی شما تأیید شد و اشتراک فعال است.",
-	StatusPreview: "این لینک توسط پیش‌نمایش پیام‌رسان یا مرورگر باز شده و آی‌پی شما ثبت نشد. " +
-		"برای اتصال، دکمهٔ «بروزرسانی آی‌پی من» را در بالای همین صفحه بزنید.",
-	ErrExpiredTitle: "اعتبار اشتراک شما به پایان رسیده است",
-	ErrExpiredNote:  "Your subscription plan has expired. Please contact support.",
-	ErrInvalidTitle: "لینک اشتراک نامعتبر است",
-	ErrInvalidNote:  "Invalid or unknown subscription token.",
-	ErrIPLabel:      "آی‌پی شناسایی‌شده شما:",
-
-	CardIdentity: "مشخصات اشتراک",
-	LabelAccount: "نام کاربر (Account Name):",
-	LabelUUID:    "شناسه UUID:",
-	CopiedUUID:   "UUID کپی شد!",
-	BtnCopy:      "کپی",
-
-	CardIPStatus:    "وضعیت اتصال آی‌پی (IP Status)",
-	PillBound:       "ثبت شده",
-	LabelDetectedIP: "آی‌پی شناسایی‌شده (Detected IP):",
-	HintModem: "هر بار که مودم یا اینترنت شما قطع و وصل شود، آی‌پی عوض می‌شود. " +
-		"در آن صورت کافی است همین صفحه را باز کنید و دکمهٔ «بروزرسانی آی‌پی من» را بزنید.",
-
-	CardTraffic:    "مصرف ترافیک (Traffic Usage)",
-	LabelRemaining: "حجم باقیمانده:",
-	LabelAutoRenew: "تمدید خودکار حجم",
-	PillQuotaSpent: "حجم مصرفی این دوره به پایان رسیده است",
-	WordRemaining:  "باقیمانده",
-	Unlimited:      "نامحدود (Unlimited)",
-	LifetimeLabel:  "نامحدود (Lifetime)",
-	CycleDaily:     "روزانه",
-	CycleWeekly:    "هفتگی",
-	CycleMonthly:   "ماهانه",
-
-	CardCountdown: "زمان باقیمانده اشتراک",
-	UnitDays:      "روز (Days)",
-	UnitHours:     "ساعت (Hours)",
-	UnitMins:      "دقیقه (Mins)",
-	LabelEndDate:  "تاریخ پایان:",
-
-	CardPolicies: "سرویس‌ها و بازی‌های فعال روی این اشتراک:",
-	PolicyAll:    "تمام بازی‌ها و سرویس‌های فعال سرور (Full Inherit)",
-
-	CardEndpoints:   "آدرس‌های اختصاصی سرور DNS شما",
-	HintTapCopy:     "روی هر آدرس بزنید تا کپی شود",
-	CopiedPrimary:   "Primary DNS کپی شد!",
-	CopiedSecondary: "Secondary DNS کپی شد!",
-	CopiedDoH:       "لینک DoH کپی شد!",
-	CopiedDoT:       "آدرس DoT کپی شد!",
-
-	CardGuide:      "راهنمای تنظیم DNS روی دستگاه‌های مختلف",
-	GuideArrowNote: "با کلیدهای ← و → هم می‌توانید بین تب‌ها جابه‌جا شوید",
-	GuideTabsAria:  "راهنمای دستگاه‌ها",
-	TabPs:          "PlayStation (PS4/PS5)",
-	TabXbox:        "Xbox (Series / One)",
-	TabSwitch:      "Nintendo Switch",
-	TabWindows:     "Windows 10 / 11",
-	TabApple:       "iOS و macOS",
-	TabAndroid:     "Android",
-	TabRouter:      "مودم و روتر",
-
-	PsTitle: "تنظیم DNS روی PlayStation",
-	PsSteps: []string{
-		"از منوی Settings کنسول وارد بخش Network شوید.",
-		"گزینهٔ Set Up Internet Connection را بزنید و نوع اتصال خود (Wi-Fi یا LAN) را انتخاب کنید.",
-		"حالت Custom را انتخاب کنید تا تنظیمات دستی باز شود.",
-		"مقدار IP Address را روی Automatic و DHCP Host Name را روی Do Not Specify بگذارید.",
-		"در DNS Settings گزینهٔ Manual را انتخاب کنید و دو مقدار زیر را وارد کنید.",
-		"MTU را روی Automatic و Proxy Server را روی Do Not Use بگذارید و در پایان Test Internet Connection را بزنید.",
-	},
-	XboxTitle: "تنظیم DNS روی Xbox",
-	XboxSteps: []string{
-		"دکمهٔ Xbox را بزنید و وارد Settings شوید.",
-		"مسیر General ➔ Network settings ➔ Advanced settings را باز کنید.",
-		"گزینهٔ DNS settings را انتخاب کرده و روی Manual بگذارید.",
-		"دو مقدار زیر را به‌عنوان Primary و Secondary IPv4 DNS وارد کنید و ذخیره کنید.",
-	},
-	SwitchTitle: "تنظیم DNS روی Nintendo Switch",
-	SwitchSteps: []string{
-		"مسیر System Settings ➔ Internet ➔ Internet Settings را باز کنید.",
-		"شبکهٔ وای‌فای متصل را انتخاب کنید و Change Settings را بزنید.",
-		"مقدار DNS Settings را روی Manual بگذارید و دو مقدار زیر را وارد کنید.",
-	},
-	WinTitle: "تنظیم DNS روی ویندوز ۱۰ و ۱۱",
-	WinSteps: []string{
-		"وارد Settings ➔ Network & Internet شوید.",
-		"روی کانکشن فعال (Wi-Fi یا Ethernet) بزنید و در بخش DNS server assignment دکمهٔ Edit را انتخاب کنید.",
-		"حالت را از Automatic به Manual تغییر دهید و کلید IPv4 را روشن کنید.",
-		"دو مقدار زیر را در Preferred DNS و Alternate DNS بنویسید و Save را بزنید.",
-	},
-	RouterTitle: "تنظیم DNS روی مودم و روتر",
-	RouterSteps: []string{
-		"با مرورگر وارد پنل مودم شوید (معمولاً ۱۹۲.۱۶۸.۱.۱ یا ۱۹۲.۱۶۸.۰.۱).",
-		"به بخش WAN یا Internet یا DHCP بروید و گزینهٔ DNS را از Automatic به Manual/Static تغییر دهید.",
-		"دو مقدار زیر را وارد کنید، ذخیره کنید و یک بار مودم را ری‌استارت کنید. از این پس همهٔ دستگاه‌های خانه بدون تنظیم جداگانه از این DNS استفاده می‌کنند.",
-	},
-	AppleTitle: "تنظیم DNS روی iOS و macOS",
-	ApplePhone: "آیفون و آیپد: مسیر Settings ➔ Wi-Fi ➔ آیکن (i) کنار نام شبکه ➔ Configure DNS ➔ Manual را باز کنید، " +
-		"همهٔ آدرس‌های قبلی را با Delete پاک کنید و با Add Server آدرس زیر را اضافه کنید.",
-	AppleMac:     "مک: مسیر System Settings ➔ Network ➔ Details ➔ تب DNS را باز کنید، با دکمهٔ (+) آدرس زیر را اضافه کنید و OK را بزنید.",
-	AndroidTitle: "تنظیم DNS روی اندروید",
-	AndroidPrivate: "روش اول — Private DNS (پیشنهادی، رمزنگاری‌شده): مسیر Settings ➔ Network & internet ➔ Private DNS را باز کنید، " +
-		"گزینهٔ «Private DNS provider hostname» را انتخاب کنید و نام دامنهٔ زیر را وارد کنید. " +
-		"دقت کنید که این فیلد فقط نام دامنه می‌پذیرد؛ اگر سرور شما دامنه و گواهی TLS ندارد، از روش دوم استفاده کنید.",
-	AndroidNoDomain: "این سرور هنوز دامنه و گواهی TLS ندارد، پس Private DNS اندروید قابل استفاده نیست " +
-		"(این فیلد آدرس IP را نمی‌پذیرد). از روش دوم استفاده کنید یا از مدیر سرور بخواهید دامنه اضافه کند.",
-	AndroidStatic: "روش دوم — تنظیم دستی وای‌فای: مسیر Settings ➔ Wi-Fi ➔ نگه‌داشتن نام شبکه ➔ Modify network ➔ Advanced را باز کنید، " +
-		"IP settings را روی Static بگذارید و دو مقدار زیر را در DNS 1 و DNS 2 بنویسید.",
-
-	MsgCopied: "کپی شد!",
-	// Said only when the copy genuinely failed, which over plain http is the common
-	// case rather than the edge one: navigator.clipboard does not exist outside a
-	// secure context and execCommand can be refused. The instruction is the useful
-	// half of the message — the subscriber can still select the text by hand.
-	MsgCopyFail: "کپی خودکار ممکن نشد — متن را دستی انتخاب کنید",
-
-	CardRegister:         "ثبت یا بروزرسانی آی‌پی",
-	LabelSecret:          "رمز ثبت (Registration Secret):",
-	PlaceholderSecret:    "رمز ثبت خود را اینجا وارد کنید",
-	BtnRegister:          "ثبت آی‌پی من",
-	HintSecret:           "رمز ثبت را اپراتور شما هنگام فروش اشتراک تحویل داده است. با هر بار رزرو مودم، همین صفحه را باز کنید، رمز را وارد کنید و دکمه را بزنید.",
-	MsgRegisterOK:        "آی‌پی جدید با موفقیت ثبت شد!",
-	MsgRegisterFail:      "ثبت آی‌پی ناموفق بود — رمز و آدرس را بررسی کنید.",
-	MsgRegisterDenied:    "رمز ثبت اشتباه است یا لینک نامعتبر است.",
-	MsgRegisterSuspended: "این اشتراک توسط اپراتور غیرفعال شده است. با پشتیبانی تماس بگیرید.",
-	MsgRegisterExpired:   "این اشتراک منقضی شده است. برای تمدید با پشتیبانی تماس بگیرید.",
-	MsgRegisterQuota:     "حجم این اشتراک به پایان رسیده است. برای شارژ با پشتیبانی تماس بگیرید.",
-	MsgRegisterConflict:  "این آی‌پی قبلاً برای اشتراک دیگری ثبت شده است. با پشتیبانی تماس بگیرید.",
-	StatusOverview:       "این صفحه نمای کلی اشتراک شماست؛ آی‌پی شناسایی‌شده‌ی شما در پایین نمایش داده شده است.",
-}
-
-// portalEn is what a request has to ask for. The console menu names are the same strings
-// as in portalFa on purpose — they are what is printed on the device, not prose.
+// portalEn is the portal's only bundle. The console menu names are the exact strings
+// printed on the device, not prose, so a subscriber can match them on screen.
 var portalEn = portalText{
 	DocTitle:     "Smart Subscription",
 	ErrDocTitle:  "Subscription Error",
@@ -351,7 +192,6 @@ var portalEn = portalText{
 	ThemeToLight: "Light mode",
 	ThemeToDark:  "Dark mode",
 	ThemeHint:    "Switch between light and dark",
-	LangHint:     "نمایش این صفحه به فارسی",
 
 	StatusRegistered: "Your new IP address has been registered and synced.",
 	StatusConfirmed:  "Your IP address is confirmed and the subscription is active.",
@@ -480,16 +320,6 @@ var portalEn = portalText{
 	StatusOverview:       "This is your subscription overview; the address this device was seen from is shown below.",
 }
 
-// portalBundle resolves a language code to its strings. Anything unrecognised is Persian,
-// which is the same rule as the negotiation below and keeps a corrupted cookie from
-// rendering a page with no words on it.
-func portalBundle(lang string) portalText {
-	if lang == portalLangEn {
-		return portalEn
-	}
-	return portalFa
-}
-
 // portalStatus is what the handler worked out actually happened, kept as a value rather
 // than a sentence so the handler never touches a translated string. Two of the five render
 // the error card instead of the portal.
@@ -560,18 +390,9 @@ func (s portalStatus) errText(t portalText) (title, note string) {
 	return t.ErrInvalidTitle, t.ErrInvalidNote
 }
 
-// portalDir is the writing direction that goes with a language. It ends up on <html>,
-// where it drives both the layout and the arrow keys in js/portal.js.
-func portalDir(lang string) string {
-	if lang == portalLangEn {
-		return "ltr"
-	}
-	return "rtl"
-}
-
 // portalPref reads one preference in the order query → cookie → default, and stores the
 // query form so the choice survives the next visit. A link, not a form: the query param
-// is what makes both toggles work with JavaScript disabled, which the error page needs
+// is what makes the toggle work with JavaScript disabled, which the error page needs
 // because it has no script at all.
 func portalPref(w http.ResponseWriter, r *http.Request, param, cookie string, valid func(string) bool, def string) string {
 	if v := r.URL.Query().Get(param); valid(v) {
@@ -591,19 +412,6 @@ func portalPref(w http.ResponseWriter, r *http.Request, param, cookie string, va
 	return def
 }
 
-// negotiatePortalLang picks the page language: ?lang= wins, then the stored choice, then
-// the browser's own preference, then Persian.
-func negotiatePortalLang(w http.ResponseWriter, r *http.Request) string {
-	isLang := func(v string) bool { return v == portalLangFa || v == portalLangEn }
-	if lang := portalPref(w, r, "lang", portalLangCookie, isLang, ""); lang != "" {
-		return lang
-	}
-	if prefersEnglishOverPersian(r.Header.Get("Accept-Language")) {
-		return portalLangEn
-	}
-	return portalLangFa
-}
-
 // negotiatePortalTheme picks the palette: ?theme= wins, then the stored choice, then dark.
 //
 // There is deliberately no third "auto" state that follows prefers-color-scheme. Honouring
@@ -615,31 +423,4 @@ func negotiatePortalLang(w http.ResponseWriter, r *http.Request) string {
 func negotiatePortalTheme(w http.ResponseWriter, r *http.Request) string {
 	isTheme := func(v string) bool { return v == portalThemeDark || v == portalThemeLight }
 	return portalPref(w, r, "theme", portalThemeCookie, isTheme, portalThemeDark)
-}
-
-// prefersEnglishOverPersian reads Accept-Language and reports whether English outranks
-// Persian in it. Quality values are parsed rather than assumed from order, because
-// "en;q=0.5, fa;q=0.9" and "fa;q=0.5, en;q=0.9" are listed the same way round and mean
-// opposite things. A header naming neither language, or ranking them equally, leaves the
-// Persian default in place.
-func prefersEnglishOverPersian(header string) bool {
-	faQ, enQ := -1.0, -1.0
-	for part := range strings.SplitSeq(header, ",") {
-		tag, params, hasParams := strings.Cut(part, ";")
-		q := 1.0
-		if hasParams {
-			trimmed := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(params)), "q=")
-			if v, err := strconv.ParseFloat(trimmed, 64); err == nil {
-				q = v
-			}
-		}
-		primary, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(tag)), "-")
-		switch primary {
-		case portalLangFa:
-			faQ = max(faQ, q)
-		case portalLangEn:
-			enQ = max(enQ, q)
-		}
-	}
-	return enQ > faQ
 }

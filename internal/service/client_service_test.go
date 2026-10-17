@@ -219,7 +219,7 @@ func TestDisabledAccountIsNotServedButStillResolves(t *testing.T) {
 // for. This is the conditional delete in deindexLocked.
 // Two subscriptions must not share one address through the portal: Phase B
 // (Mantis C-04) refuses the second bind with ErrDuplicateIPConflict and leaves
-// BOTH accounts intact — shared CGNAT addresses are ordinary on Iranian mobile
+// BOTH accounts intact — shared CGNAT addresses are ordinary on carrier mobile
 // networks, and auto-disabling a paying account over one is the cure killing
 // the patient. The operator path (SetClientIP) deliberately has no such gate:
 // a human who moves an address between accounts is an override, and the

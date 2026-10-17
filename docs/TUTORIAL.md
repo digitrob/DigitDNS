@@ -4,15 +4,12 @@
   <a href="../README.md">README</a> •
   <a href="API.md">REST API</a> •
   <a href="SECURITY.md">Security</a> •
-  <a href="CHANGELOG.md">Changelog</a> •
-  <a href="TUTORIAL.fa.md">نسخهٔ فارسی</a>
+  <a href="CHANGELOG.md">Changelog</a>
 </p>
 
 > This tutorial takes you from an empty VPS to a working gaming gateway with
 > subscribers, a branded subscriber portal on **your own domain**, and clients
 > connected. Every screen, field name and URL below is the real one in v2.2.0.
->
-> **Persian version:** [TUTORIAL.fa.md](TUTORIAL.fa.md).
 
 ---
 
@@ -178,7 +175,7 @@ The sidebar has six sections; this tutorial visits each:
 | **Clients** | `/clients` | Add/edit/delete subscribers, quotas, expiry, registration links and secrets. |
 | **Live Stream** | `/logs` | Live DNS query stream over SSE, with per-query action labels (`PROXY`, `DIRECT`, `BLOCK`). |
 | **REST API Gateway** | `/api` | Generate the Master API key, see ready-to-copy code samples, check public exposure. |
-| **Settings & SSL** | `/settings` | Whitelist mode, **routing rules** (custom proxied/blocked/direct lists, bulk import), API binding, 2FA, LDAP, hidden admin path, **Subscription Portal**, SSL/TLS. |
+| **Settings & SSL** | `/settings` | Whitelist mode, **routing rules** (custom proxied/blocked/direct lists, bulk import), API binding, 2FA, hidden admin path, **Subscription Portal**, SSL/TLS. |
 | **Connect Guide** | `/guide` | Per-platform connection instructions you can hand to a subscriber. |
 
 The sidebar footer also has the **server's public IP** (click to copy), a
@@ -287,7 +284,7 @@ The portal ships with a clean default theme, but you can override it with your o
 
 | Field | Meaning |
 | :--- | :--- |
-| **Name** (required) | Anything that identifies the human, e.g. `Reza (PS5 & Phone)`. Shown only to you. |
+| **Name** (required) | Anything that identifies the human, e.g. `Alex (PS5 & Phone)`. Shown only to you. |
 | **Traffic Limit (GB)** | `0` = unlimited. Counted on proxied traffic only — direct answers are free. |
 | **Auto Reset** | The quota cycle: never / monthly / daily. |
 | **Expiry (Gregorian)** | When the account stops working. Blank = never. There is a date picker (`YYYY-MM-DD HH:mm:ss`). |
@@ -388,7 +385,7 @@ This build ships **no built-in catalogue** — there are no game presets to togg
 - **Custom Direct** — names forced to resolve normally, overriding a proxy rule for that name.
 - **Custom Records** — static `domain=IP` overrides.
 
-Add names one at a time, or use **Bulk Import** (see [section 12](#12-advanced-rules-custom-proxied--blocked--direct--static-records)) to paste or upload a whole list.
+Add names one at a time, or use **Bulk Import** (see [section 12](#12-advanced-rules-custom-proxied--blocked--direct--static-records)) to paste or upload a whole list. The **Custom Static Records** card has its own **Bulk import** button for loading a `hostname address` table at once.
 
 Changes apply to the live engine immediately; after a big change, hit **Flush Cache** (sidebar) or `POST /api/v1/cache/flush` so cached answers do not keep their old routing for the rest of their TTL.
 
@@ -457,6 +454,14 @@ Matching is **longest-suffix-wins** with an exact-match index, so
 specific rule wins. These lists apply to **every** client; the per-client policy
 list the API still accepts is inert in this build.
 
+Every list has a **Bulk import** button. The three domain lists take one name per
+line (or comma/semicolon/space separated), with `*.` wildcards and `#` comments.
+The **Custom Static Records** import takes one `hostname address` pair per line,
+separated by spaces, commas, semicolons or `=`, and accepts both IPv4 and IPv6
+addresses; re-importing a domain updates its address rather than adding a second
+entry. Each import reports how many entries were added, updated, unchanged or
+invalid.
+
 ---
 
 ## 13. The REST API and Swagger
@@ -485,7 +490,7 @@ Create a subscriber by API:
 curl -X POST "https://dns.example.com/<admin-path>/api/v2/clients" \
   -H "Authorization: Bearer $HYPERDNS_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"display_name": "Reza (PS5 & Phone)", "traffic_limit_gb": 100}'
+  -d '{"display_name": "Alex (PS5 & Phone)", "traffic_limit_gb": 100}'
 ```
 
 ```python
@@ -494,7 +499,7 @@ import requests
 r = requests.post(
     "https://dns.example.com/<admin-path>/api/v2/clients",
     headers={"Authorization": f"Bearer {API_KEY}"},
-    json={"display_name": "Reza (PS5 & Phone)", "traffic_limit_gb": 100},
+    json={"display_name": "Alex (PS5 & Phone)", "traffic_limit_gb": 100},
 )
 client = r.json()
 print(client["registration_link"])   # send this to the subscriber

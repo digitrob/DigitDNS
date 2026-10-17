@@ -9,20 +9,18 @@
  * the console logged a violation every time the dashboard opened. The @import was
  * removed and the real fallback stacks were written out in its place.
  *
- * That left a second, quieter problem: the panel is bilingual. Half its text is
- * Persian and half is English, and a stack of Latin-only families means every Persian
- * string fell through all of them to the browser's last resort — Tahoma on Windows,
- * something else on Android, nothing predictable anywhere. Persian and English in the
- * same row rendered at different apparent sizes with different baselines, which is
- * precisely the kind of defect that reads as "cheap" without the reader being able to
- * say why.
+ * That left a second, quieter problem: the font stacks named families that were
+ * never actually downloaded, so text fell through all of them to the browser's last
+ * resort — Tahoma on Windows, something else on Android, nothing predictable
+ * anywhere. Mixed content rendered at different apparent sizes with different
+ * baselines, which is precisely the kind of defect that reads as "cheap" without the
+ * reader being able to say why.
  *
- * So the fonts now ship in the binary:
+ * So the fonts now ship in the binary. The panel is English-only:
  *
- *   Vazirmatn      — one variable file, weights 100-900, Persian *and* Latin in a
- *                    single family. It carries both scripts, so a heading that mixes
- *                    them has one set of metrics and one baseline, and no weight
- *                    needs its own download.
+ *   Vazirmatn      — one variable file, weights 100-900, Latin plus a wide range of
+ *                    other scripts in a single family, so no weight needs its own
+ *                    download and a heading arrives in one request.
  *   JetBrains Mono — regular only, for the telemetry: IPs, tokens, UUIDs, latency
  *                    figures. Its digits are the same width, which is why a number
  *                    that repaints once a second stops shifting the cells beside it.
@@ -33,11 +31,8 @@
  * Both are OFL, and both licences sit next to the files in web/fonts/.
  *
  * Chakra Petch — the old display family for headings — is gone rather than
- * self-hosted. It has no Persian coverage at all, so every Persian heading would have
- * fallen out of it into a different family with a different x-height, reintroducing
- * the exact mismatch above in the most prominent text on the page. Vazirmatn at 700
- * with tracking carries a heading perfectly well, and it carries it identically in
- * both languages.
+ * self-hosted. Vazirmatn at 700 with tracking carries a heading perfectly well, and
+ * it is the same family every other string on the page already uses.
  *
  * url() is relative to this stylesheet rather than absolute, so the panel keeps
  * working if it is ever served under a path prefix. font-src 'self' already permits
@@ -113,7 +108,7 @@
   --c-slate-600: 71 85 105;
   /* Tailwind's own slate-500 (#64748b) sat here while the comment above described 500 as a
      divider/placeholder tier — but the markup uses `text-slate-500` for the 9-12px metadata
-     line under every stat, the client-token monospace, "انقضای پلن", "Used: 0 B" and both
+     line under every stat, the client-token monospace, "Plan expiry", "Used: 0 B" and both
      empty states. As text it measured 3.73:1 on the card, 4.06:1 on the panel and 4.11:1 on
      the page: ten AA failures, all invisible in review because the text reads as
      deliberately quiet rather than broken. This is the dark-mode twin of the light block's
@@ -275,10 +270,10 @@
   --scroll-track: rgba(6, 9, 19, 0.8);
 
   /* One definition per role. Vazirmatn leads two of the three and appears in all
-     three: it is the only family here that covers Persian, so it has to be reachable
-     from every role — including the mono one, where the portal renders strings like
-     "۲.۵ GB باقیمانده" and would otherwise set the number in JetBrains Mono and the
-     Persian beside it in whatever the OS offered. The system names after it are the
+     three: it is the panel's primary webfont, so it has to be reachable from every
+     role — including the mono one, where the portal renders strings like
+     "2.5 GB remaining" and would otherwise set the number in JetBrains Mono and the
+     surrounding text in whatever the OS offered. The system names after it are the
      no-webfont path (a 304-less first paint, a stripped build, an operator who blocks
      fonts) and are ordered so that path still looks deliberate. */
   --font-body: 'Vazirmatn', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
@@ -303,7 +298,7 @@
   --c-slate-600: 141 153 171;
   /* 500 and 400 sit much closer together here than they do in the dark block, and that
      is forced rather than sloppy. Both are text — 500 is the 9-10px metadata line under
-     every stat ("سیستم: 812 MB", "هسته: 8 · ترد 16"), 400 is the muted body tier — and
+     every stat ("System: 812 MB", "Cores: 8 · Threads: 16"), 400 is the muted body tier — and
      on a near-white page both have to clear 4.5:1. The floor leaves about 30 units of
      room between "faint" and "muted" instead of the 48 the dark ramp enjoys, because
      dark mode can go as bright as it likes above the page and light mode cannot go
@@ -542,10 +537,9 @@ body::before {
 
 /* Sidebar Nav Item Styling.
  *
- * Logical properties rather than left/right: this panel now runs in RTL when the
- * language is Persian, and a hard `border-left` accent would sit on the wrong edge of
- * every nav item there — on the side the text runs away from, not the side it starts
- * from. border-inline-start and text-align: start follow the direction instead. */
+ * Logical properties rather than left/right: border-inline-start and text-align:
+ * start follow the writing direction, so an accent sits on the side the text starts
+ * from rather than a fixed physical edge. */
 .sidebar-nav-item {
   display: flex;
   align-items: center;
@@ -577,13 +571,6 @@ body::before {
   background: linear-gradient(90deg, rgb(var(--c-cyan-400) / 0.15), rgb(var(--c-cyan-400) / 0.02)) !important;
   border-inline-start-color: var(--accent-cyan) !important;
   box-shadow: inset 0 0 15px rgb(var(--c-cyan-400) / 0.08);
-}
-
-/* linear-gradient has no logical keyword — `to inline-end` is not valid CSS and would
-   drop the whole declaration — so the one direction-dependent value gets an explicit
-   RTL twin. It has to fade away from the accent border, which is now on the right. */
-[dir="rtl"] .sidebar-nav-item.active {
-  background: linear-gradient(270deg, rgb(var(--c-cyan-400) / 0.15), rgb(var(--c-cyan-400) / 0.02)) !important;
 }
 
 .sidebar-nav-item.active svg,
@@ -676,8 +663,8 @@ body::before {
    --accent-cyan, which is cyan-400 because that is the right cyan for a border or a glow.
    On the light page cyan-400 is the hover step of the primary buttons, half a step
    lighter than cyan-300, and on this chip's own cyan wash it measures 4.19:1. Overriding
-   the chip is the same move as .lang-btn.is-active above: the token is load-bearing
-   elsewhere, so the one component that needs a deeper value asks for it directly. */
+   the chip is the right move here: the token is load-bearing elsewhere, so the one
+   component that needs a deeper value asks for it directly. */
 [data-theme="light"] .badge-proxy {
   color: rgb(var(--c-cyan-300));
 }
@@ -720,9 +707,9 @@ body::before {
   content: "";
   height: 18px;
   width: 18px;
-  /* inset-inline-start, not left: in RTL the knob has to rest against the right edge
-     and travel left, which is also why the checked transform is direction-dependent
-     below. A hard `left` put the knob under its own track in Persian. */
+  /* inset-inline-start keeps the knob tied to the track's logical start rather than
+     a fixed physical edge, which is also why the checked transform is
+     direction-dependent below. */
   inset-inline-start: 3px;
   bottom: 3px;
   background-color: var(--knob-bg);
@@ -740,12 +727,6 @@ input:checked + .slider:before {
   transform: translateX(22px);
   background-color: var(--accent-cyan);
   box-shadow: 0 0 14px var(--accent-cyan);
-}
-
-/* translateX is a physical axis, so RTL needs the opposite sign — otherwise the knob
-   leaves the track entirely when the switch is turned on. */
-[dir="rtl"] input:checked + .slider:before {
-  transform: translateX(-22px);
 }
 
 /* Custom Scrollbar.
@@ -786,9 +767,8 @@ input:checked + .slider:before {
   border: 1px solid rgb(var(--c-cyan-400) / 0.22);
   border-radius: 12px;
   padding: 10px 14px;
-  /* var(), not a second hardcoded 'JetBrains Mono', monospace stack. A copy box holds
-     a token, an IP or a DoH URL, but the portal also puts Persian next to one, and the
-     literal stack that used to be here had no Persian family in it at all. */
+  /* var(), not a second hardcoded 'JetBrains Mono', monospace stack: the token role
+     is defined once in the palette above, so every copy box follows it. */
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--accent-cyan);
@@ -939,45 +919,6 @@ input:checked + .slider:before {
 .card-roblox      { --accent: 239 68 68; }
 .card-twitch      { --accent: 145 70 255; }
 .card-kick        { --accent: 83 252 24; }
-
-/* ── Language switch ───────────────────────────────────────────────────────────
- * Two buttons in one track, so the pressed one has to be obvious at a glance: this
- * is the only control on the panel whose whole job is to tell you which of two
- * states you are in. is-active is written by js/i18n.js alongside aria-pressed —
- * the attribute is what a screen reader reads, this is what everyone else sees. */
-.lang-btn {
-  color: rgb(var(--c-slate-400));
-  border: 1px solid transparent;
-}
-.lang-btn:hover { color: rgb(var(--c-slate-200)); }
-.lang-btn.is-active {
-  background: rgb(var(--c-cyan-400) / 0.14);
-  border-color: rgb(var(--c-cyan-400) / 0.35);
-  color: rgb(var(--c-cyan-400));
-}
-.lang-btn:focus-visible {
-  outline: 2px solid var(--accent-cyan);
-  outline-offset: 1px;
-}
-/* Light mode gets a different pressed treatment, not a re-tinted version of the same one.
- * The wash above works in dark mode because the track is darker than the page and the
- * chip is lighter than the track — the pressed item is the brightest thing in the group.
- * Invert the page and that ordering collapses: the track (--c-slate-800) is now a grey
- * band, a 14% cyan wash over it lands at rgb(192,212,223), and cyan-400 on that measured
- * 3.49:1 — the worst contrast left anywhere in the panel, on the one control whose entire
- * purpose is to show you which of two states you are in.
- *
- * Deepening --c-cyan-400 was the obvious fix and the wrong one: that token is also the
- * hover step of the seven cyan-500 primary buttons, and taking it darker collapses it
- * into the resting fill so the buttons stop reacting to the pointer. So the chip changes
- * instead of the colour. A raised near-white chip on the grey track is what a light-mode
- * segmented control actually looks like, it puts cyan-400 back on a near-white surface
- * (5.15:1), and it reads as pressed from further away than the wash did. */
-[data-theme="light"] .lang-btn.is-active {
-  background: rgb(var(--c-slate-900));
-  border-color: rgb(var(--c-cyan-400) / 0.45);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.12);
-}
 
 /* Quick Action Profile Buttons */
 .quick-mode-btn {

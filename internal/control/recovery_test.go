@@ -60,14 +60,11 @@ func recoverySettings(t *testing.T) *database.ServerSettings {
 func TestAdminRecoveryCommitsBeforeRevokingSessionsAndPreservesState(t *testing.T) {
 	settings := recoverySettings(t)
 	authSettings := &database.AuthSettings{
-		TOTPEnabled: true, TOTPSecret: "JBSWY3DPEHPK3PXP",
-		TOTPConfirmedAt: "2026-01-02T03:04:05Z", LDAPEnabled: true,
-		LDAPServerURL: "ldaps://directory.example:636", LDAPBindDN: "cn=bind",
-		LDAPBindPassword: "ldap-bind-secret", LDAPBaseDN: "dc=example,dc=com",
-		LDAPUserAttr: "uid", LDAPLoginMode: "both",
+		TOTPEnabled:     true,
+		TOTPSecret:      "JBSWY3DPEHPK3PXP",
+		TOTPConfirmedAt: "2026-01-02T03:04:05Z",
 	}
 	authBefore := authSettings.Snapshot()
-	bindBefore := authSettings.StoredBindPassword()
 	store := &recoveryStoreStub{masters: []byte("synthetic-master-key-fixture")}
 	sessions := service.NewSessionManager(time.Hour)
 	defer sessions.Close()
@@ -97,11 +94,11 @@ func TestAdminRecoveryCommitsBeforeRevokingSessionsAndPreservesState(t *testing.
 	if sessions.Count() != 0 {
 		t.Fatalf("sessions after commit = %d, want 0", sessions.Count())
 	}
-	assertRecoveryStatePreserved(t, settings, authSettings, authBefore, bindBefore, store.masters)
+	assertRecoveryStatePreserved(t, settings, authSettings, authBefore, store.masters)
 	if got := audit.String(); !strings.Contains(got, "root-local admin reset") {
 		t.Fatalf("audit = %q, want root-local reset event", got)
 	} else {
-		for _, secret := range []string{"old-admin", "recovered-admin", "Fresh-Phrase-92!", verifier, "JBSWY3DPEHPK3PXP", "ldap-bind-secret", "hdns_live_keep_this_secret"} {
+		for _, secret := range []string{"old-admin", "recovered-admin", "Fresh-Phrase-92!", verifier, "JBSWY3DPEHPK3PXP", "hdns_live_keep_this_secret"} {
 			if strings.Contains(got, secret) {
 				t.Fatalf("audit leaked sensitive value %q", secret)
 			}
@@ -109,7 +106,7 @@ func TestAdminRecoveryCommitsBeforeRevokingSessionsAndPreservesState(t *testing.
 	}
 }
 
-func assertRecoveryStatePreserved(t *testing.T, settings *database.ServerSettings, authSettings *database.AuthSettings, authBefore database.AuthSnapshot, bindBefore string, master []byte) {
+func assertRecoveryStatePreserved(t *testing.T, settings *database.ServerSettings, authSettings *database.AuthSettings, authBefore database.AuthSnapshot, master []byte) {
 	t.Helper()
 	snap := settings.Snapshot()
 	if snap.PublicIP != "203.0.113.8" || snap.BindHost != "127.0.0.1" || snap.WebPort != 8443 || snap.APIBind != "127.0.0.1" || snap.AdminPath != "0123456789abcdef" || snap.SessionIdleMinutes != 47 {
@@ -118,7 +115,7 @@ func assertRecoveryStatePreserved(t *testing.T, settings *database.ServerSetting
 	if settings.GetAPIKey() != "hdns_live_keep_this_secret" || len(settings.TrustedProxyCIDRs) != 1 || settings.TrustedProxyCIDRs[0] != "10.0.0.0/8" {
 		t.Fatal("API key or trusted proxies changed")
 	}
-	if got := authSettings.Snapshot(); got != authBefore || authSettings.StoredBindPassword() != bindBefore {
+	if got := authSettings.Snapshot(); got != authBefore {
 		t.Fatalf("auth settings changed: before=%+v after=%+v", authBefore, got)
 	}
 	if string(master) != "synthetic-master-key-fixture" {
@@ -130,7 +127,7 @@ func TestAdminRecoveryPersistenceFailureRollsBackWithoutRevokingOrLeaking(t *tes
 	settings := recoverySettings(t)
 	before := settings.Snapshot()
 	_, beforeVerifier, beforeWeak := settings.AdminCredentials()
-	authSettings := &database.AuthSettings{TOTPEnabled: true, TOTPSecret: "TOTP-KEEP", TOTPConfirmedAt: "confirmed", LDAPBindPassword: "LDAP-KEEP", LDAPLoginMode: "both"}
+	authSettings := &database.AuthSettings{TOTPEnabled: true, TOTPSecret: "TOTP-KEEP", TOTPConfirmedAt: "confirmed"}
 	authBefore := authSettings.Snapshot()
 	store := &recoveryStoreStub{fail: errors.New("storage rejected credential material Fresh-Phrase-92!"), masters: []byte("synthetic-master-key-fixture")}
 	sessions := service.NewSessionManager(time.Hour)
@@ -159,7 +156,7 @@ func TestAdminRecoveryPersistenceFailureRollsBackWithoutRevokingOrLeaking(t *tes
 	if sessions.Count() != 1 || !sessions.Validate(token) {
 		t.Fatal("sessions were revoked after failed persistence")
 	}
-	assertRecoveryStatePreserved(t, settings, authSettings, authBefore, "LDAP-KEEP", store.masters)
+	assertRecoveryStatePreserved(t, settings, authSettings, authBefore, store.masters)
 }
 
 func TestAdminRecoveryValidatesBeforeMutation(t *testing.T) {

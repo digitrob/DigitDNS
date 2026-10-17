@@ -38,7 +38,8 @@ import "embed"
 // but nothing serves it, so there is no reason to carry 9 KB of licence text in every
 // binary and write it to every VPS.
 //
-// js/i18n.js is the dashboard's Persian translation table and theme controller. It is
+// js/i18n.js is the dashboard's theme controller (the language dictionary it once
+// carried is gone — the panel is English-only). It is
 // listed after js/app.js because that is also the order the two <script> tags appear in,
 // and the order matters: i18n.js calls window.safeFeatherReplace(), which app.js defines.
 // Dropping this line does not break the panel — it silently reverts to English-only with

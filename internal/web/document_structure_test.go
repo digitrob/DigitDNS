@@ -143,9 +143,9 @@ func TestIndexHTMLMobileNavigationMeetsTargetSize(t *testing.T) {
 
 // TestIndexHTMLHasNoMojibake guards the other half of the same report. The
 // document is embedded in the binary and was shipped with cp1252-misdecoded
-// UTF-8 baked in: the Persian labels read "ÙØ§Ø±Ø3ÛŒ" and em-dashes, bullets and
-// curly quotes were all double-encoded. The markers below only ever appear as
-// mojibake, so legitimate UTF-8 (including Persian) passes untouched.
+// UTF-8 baked in: non-ASCII labels, em-dashes, bullets and curly quotes were all
+// double-encoded. The markers below only ever appear as mojibake, so legitimate
+// UTF-8 passes untouched.
 func TestIndexHTMLHasNoMojibake(t *testing.T) {
 	doc := readAsset(t, "index.html")
 	for _, marker := range []string{"\u00c3", "\u00c2", "\u00d9", "\u00db", "\u00e2\u20ac"} {

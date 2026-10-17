@@ -804,11 +804,10 @@ function renderConfig(cfg) {
   // empty object keeps the renderers below total.
   if (!cfg.subscription || typeof cfg.subscription !== 'object') cfg.subscription = {};
 
-  // The two v2.1 panels read straight from the config they were handed.
+  // The v2.1 panels read straight from the config they were handed.
   if (typeof window.renderSubscriptionSettings === 'function') window.renderSubscriptionSettings();
   if (typeof window.renderAdminPath === 'function') window.renderAdminPath();
   if (typeof window.renderTwoFactor === 'function') window.renderTwoFactor();
-  if (typeof window.renderLdap === 'function') window.renderLdap();
 
   // Version badge (single source of truth: version.json embedded in the binary).
   //
@@ -972,6 +971,61 @@ function parseDomainList(text, existing) {
   return { accepted, duplicates, invalid };
 }
 
+// RECORD_DOMAIN_RE is DOMAIN_RE without the "*.", because a custom static record is
+// an exact-hostname A/AAAA answer: the matcher resolves it by exact key lookup, so a
+// wildcard record would be stored and then never answer anything.
+const RECORD_DOMAIN_RE = /^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?:\.([a-z0-9](?:[a-z0-9-]*[a-z0-9])?))+$/;
+
+// isIPAddress accepts the two literals a static record may point at: a dotted-quad
+// IPv4 (each octet 0-255, no leading zeros) or an IPv6 address. It is deliberately
+// strict on IPv4 and structural on IPv6 — the browser cannot parse an address for us,
+// and the server stores the string verbatim, so a typo must be caught here.
+function isIPAddress(value) {
+  const s = String(value || '').trim();
+  if (!s) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(s)) {
+    return s.split('.').every((part) => {
+      const n = Number(part);
+      return String(n) === part && n <= 255;
+    });
+  }
+  return /^(([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,7}:|([0-9a-f]{1,4}:){1,6}:[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,5}(:[0-9a-f]{1,4}){1,2}|([0-9a-f]{1,4}:){1,4}(:[0-9a-f]{1,4}){1,3}|([0-9a-f]{1,4}:){1,3}(:[0-9a-f]{1,4}){1,4}|([0-9a-f]{1,4}:){1,2}(:[0-9a-f]{1,4}){1,5}|[0-9a-f]{1,4}:((:[0-9a-f]{1,4}){1,6})|:((:[0-9a-f]{1,4}){1,7}|:))$/i.test(s);
+}
+
+// parseRecordList turns a free-form blob into the domain -> IP mappings the Custom
+// Static Records panel stores. Each line carries one domain and one address, split by
+// whitespace, a comma, a semicolon or an "=". A "#" starts a comment. The domain is
+// lowercased and de-dotted; the address must be an IPv4 or IPv6 literal. Records
+// already present are collected as `updated` (the address changes) or `unchanged` (the
+// same address), so re-uploading a corrected table replaces stale addresses instead of
+// piling duplicates on top. Nothing here touches the DOM.
+function parseRecordList(text, existing) {
+  const have = existing || {};
+  const seen = new Set();
+  const accepted = [];
+  const updated = [];
+  const unchanged = [];
+  const invalid = [];
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.split('#')[0].trim();
+    if (!line) continue;
+    const parts = line.split(/[\s,;=]+/).filter(Boolean);
+    if (parts.length !== 2) { invalid.push(line); continue; }
+    let d = parts[0].trim().toLowerCase();
+    if (d.endsWith('.')) d = d.slice(0, -1);
+    const ip = parts[1].trim();
+    if (!RECORD_DOMAIN_RE.test(d) || !isIPAddress(ip) || seen.has(d)) { invalid.push(line); continue; }
+    seen.add(d);
+    if (Object.prototype.hasOwnProperty.call(have, d)) {
+      if (have[d] === ip) unchanged.push(d);
+      else updated.push({ domain: d, ip });
+    } else {
+      accepted.push({ domain: d, ip });
+    }
+  }
+  return { accepted, updated, unchanged, invalid };
+}
+
 function renderList(containerId, items, removeClass) {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -1002,26 +1056,18 @@ function renderList(containerId, items, removeClass) {
 //
 // The routing list is the one list on the panel that can hold thousands of
 // entries, so it is drawn a batch at a time rather than printed in full.
-// proxiedVisible is how many rows the current slice shows; moving either control
-// resets it, and the sentinel at the bottom of the scroll region grows it as it
-// comes into view. proxiedHasMore is the renderer's answer to "is there another
-// batch", read by both the observer and the fallback button.
+// PROXIED_BATCH is how many rows each slice shows; changing the sort resets
+// proxiedVisible to it, and the sentinel at the bottom of the scroll region
+// grows it as it comes into view. proxiedHasMore is the renderer's answer to
+// "is there another batch", read by both the observer and the fallback button.
+const PROXIED_BATCH = 50;
 let proxiedSort = 'added-desc';
-let proxiedVisible = 25;
+let proxiedVisible = PROXIED_BATCH;
 let proxiedHasMore = false;
 // Created once and left watching the sentinel. It is not rebuilt on render,
 // because the sentinel is a sibling of the rows container rather than a child of
 // it: renderProxiedList rewrites the rows' innerHTML and never touches it.
 let proxiedObserver = null;
-
-// proxiedBatchSize reads the batch size select. parseInt plus a positive-integer
-// guard means a missing or hand-edited select falls back to the default rather
-// than to NaN, which would make every later increment a no-op.
-function proxiedBatchSize() {
-  const el = document.getElementById('proxied-load-size');
-  const n = parseInt(el?.value || '', 10);
-  return Number.isFinite(n) && n > 0 ? n : 25;
-}
 
 // proxiedOrderedRows is the whole list in the operator's chosen order. Insertion
 // order is array order: a new domain is pushed onto the end, so "Added (newest)"
@@ -1155,7 +1201,7 @@ function renderProxiedList() {
 // the sentinel observer and the fallback button, so the two cannot drift apart.
 function proxiedShowMore() {
   if (!proxiedHasMore) return;
-  proxiedVisible += proxiedBatchSize();
+  proxiedVisible += PROXIED_BATCH;
   renderProxiedList();
   proxiedFillViewport();
 }
@@ -1176,7 +1222,7 @@ function proxiedFillViewport() {
   if (rootRect.height === 0) return;
   let guard = 0;
   while (proxiedHasMore && guard < 50 && sentinel.getBoundingClientRect().top <= rootRect.bottom) {
-    proxiedVisible += proxiedBatchSize();
+    proxiedVisible += PROXIED_BATCH;
     renderProxiedList();
     guard++;
   }
@@ -1195,11 +1241,10 @@ function setupProxiedObserver() {
   proxiedObserver.observe(sentinel);
 }
 
-// proxiedResetSlice re-slices from the top after the sort order or the batch size
-// changes, then refills the viewport so the control's effect is visible without a
-// scroll.
+// proxiedResetSlice re-slices from the top after the sort order changes, then
+// refills the viewport so the control's effect is visible without a scroll.
 function proxiedResetSlice() {
-  proxiedVisible = proxiedBatchSize();
+  proxiedVisible = PROXIED_BATCH;
   renderProxiedList();
   proxiedFillViewport();
 }
@@ -1530,7 +1575,7 @@ async function saveRules() {
 // not at two:
 //
 //   A fetch can outlast the interval. setInterval does not care — it fires again
-//   regardless. On a link where /api/stats takes 1.4 s, and an Iranian VPS answering a
+//   regardless. On a link where /api/stats takes 1.4 s, and a VPS answering a
 //   home connection is exactly that link, polls overlap, queue behind each other, and
 //   the tiles end up painted from whichever response happens to land last. Scheduling
 //   the next poll only after the previous one settles makes overlap structurally
@@ -2996,10 +3041,9 @@ function initAPIEvents() {
 
   window.initSubscriptionSettings?.();
   initAdminPathControls();
-  // The 2FA/LDAP panel lives in its own ES module (js/modules/twofa.js);
-  // it registers these two hooks on window when the module executes.
+  // The 2FA panel lives in its own ES module (js/modules/twofa.js); it
+  // registers this hook on window when the module executes.
   window.initTwoFactorControls?.();
-  window.initLdapControls?.();
 }
 
 // =======================================================
@@ -3381,16 +3425,30 @@ function initEventListeners() {
   function openBulkImport(target) {
     bulkImportTarget = target;
     const proxied = target === 'proxied';
+    const records = target === 'records';
     const titleEl = document.getElementById('bulk-import-title');
-    if (titleEl) titleEl.textContent = proxied ? 'Bulk Import Proxied Domains' : 'Bulk Import Blocked Domains';
+    if (titleEl) titleEl.textContent = records ? 'Bulk Import Static Records' : proxied ? 'Bulk Import Proxied Domains' : 'Bulk Import Blocked Domains';
     const subtitleEl = document.getElementById('bulk-import-subtitle');
-    if (subtitleEl) subtitleEl.textContent = proxied
-      ? 'Each name listed will resolve to this server through the SNI proxy.'
-      : 'Each name listed will be sinkholed to 0.0.0.0.';
+    if (subtitleEl) subtitleEl.textContent = records
+      ? 'Each line maps one hostname to one IPv4 or IPv6 address.'
+      : proxied
+        ? 'Each name listed will resolve to this server through the SNI proxy.'
+        : 'Each name listed will be sinkholed to 0.0.0.0.';
     const applyBtn = document.getElementById('bulk-import-apply-btn');
-    if (applyBtn) applyBtn.textContent = proxied ? 'Import Proxied' : 'Import Blocked';
+    if (applyBtn) applyBtn.textContent = records ? 'Import Records' : proxied ? 'Import Proxied' : 'Import Blocked';
+    const labelEl = document.getElementById('bulk-import-textarea-label');
+    if (labelEl) labelEl.textContent = records ? 'Records' : 'Domains';
+    const helpEl = document.getElementById('bulk-import-help');
+    if (helpEl) {
+      helpEl.innerHTML = records
+        ? 'One record per line as <code>hostname address</code> — separated by spaces, commas, semicolons or <code>=</code>. Lines starting with <code>#</code> are ignored. IPv4 and IPv6 are both accepted.'
+        : 'One name per line, or separated by commas, semicolons or spaces. Lines starting with <code>#</code> are ignored. A leading <code>*.</code> covers every subdomain.';
+    }
     const ta = document.getElementById('bulk-import-textarea');
-    if (ta) ta.value = '';
+    if (ta) {
+      ta.value = '';
+      ta.placeholder = records ? 'host.example 203.0.113.9\ncdn.example.net, 2001:db8::1' : 'example.com\n*.sub.example.com\nanother.example.net, third.example.org';
+    }
     const fileEl = document.getElementById('bulk-import-file');
     if (fileEl) fileEl.value = '';
     setBulkImportStatus('');
@@ -3400,6 +3458,7 @@ function initEventListeners() {
 
   document.getElementById('bulk-proxied-btn')?.addEventListener('click', () => openBulkImport('proxied'));
   document.getElementById('bulk-blocked-btn')?.addEventListener('click', () => openBulkImport('blocked'));
+  document.getElementById('bulk-records-btn')?.addEventListener('click', () => openBulkImport('records'));
 
   // Proxied-list sort and batch controls, and the sentinel that appends the next
   // batch as the region scrolls. Every one of these re-renders through
@@ -3409,7 +3468,6 @@ function initEventListeners() {
     proxiedSort = e.target.value || 'added-desc';
     proxiedResetSlice();
   });
-  document.getElementById('proxied-load-size')?.addEventListener('change', proxiedResetSlice);
   document.getElementById('proxied-load-more')?.addEventListener('click', proxiedShowMore);
   setupProxiedObserver();
 
@@ -3464,6 +3522,34 @@ function initEventListeners() {
   document.getElementById('bulk-import-apply-btn')?.addEventListener('click', () => {
     if (!currentConfig || !bulkImportTarget) return;
     const ta = document.getElementById('bulk-import-textarea');
+
+    if (bulkImportTarget === 'records') {
+      if (!currentConfig.rules.custom_records) currentConfig.rules.custom_records = {};
+      const { accepted, updated, unchanged, invalid } = parseRecordList(ta ? ta.value : '', currentConfig.rules.custom_records);
+      for (const r of accepted) currentConfig.rules.custom_records[r.domain] = r.ip;
+      for (const r of updated) currentConfig.rules.custom_records[r.domain] = r.ip;
+      if (accepted.length === 0 && updated.length === 0) {
+        setBulkImportStatus(invalid.length ? `Nothing to import — ${invalid.length} invalid line(s).` : 'Nothing to import.', invalid.length ? 'error' : '');
+        return;
+      }
+      saveRules();
+      renderConfig(currentConfig);
+      const parts = [`${accepted.length} added`];
+      if (updated.length) parts.push(`${updated.length} updated`);
+      if (unchanged.length) parts.push(`${unchanged.length} unchanged`);
+      if (invalid.length) parts.push(`${invalid.length} invalid`);
+      const summary = `Static records: ${parts.join(', ')}.`;
+      if (invalid.length) {
+        // Keep the modal open so the operator can see the offending lines, but the
+        // good ones are already saved.
+        setBulkImportStatus(summary, 'error');
+        return;
+      }
+      closeBulkImport();
+      showToast(`Imported ${accepted.length + updated.length} static record(s)`, 'success');
+      return;
+    }
+
     const key = bulkImportTarget === 'proxied' ? 'custom_proxied' : 'custom_blocked';
     const active = Array.isArray(currentConfig.rules[key]) ? currentConfig.rules[key] : [];
     // On the proxied page a switched-off domain is still "already listed", so the
@@ -4338,8 +4424,8 @@ function renderClientsView(data) {
 // page is read-only on its own, so the registration secret has to reach the
 // subscriber somewhere other than the portal link. It used to be a Shelcan-
 // style message that named the retired /ip/ link as if it were the subscriber
-// page and printed the literal string "دی ان اس اختصاصی شما :" with nothing
-// after it — an operator copying it sent a link that has been an API since
+// page and printed a bare "Your dedicated DNS:" heading with nothing after
+// it — an operator copying it sent a link that has been an API since
 // v2.1, next to an empty field.
 //
 // Four pieces now, each with a job: where to manage the subscription, the
@@ -4349,28 +4435,28 @@ function renderClientsView(data) {
 function generateClientTelegramMessage(clientId, clientName, expStr, subUrl, regApiUrl, secret, dnsIP) {
   const serverLine = dnsIP || '(server address not configured)';
   const secretLine = secret ? secret : '(no secret on file — regenerate it in the panel)';
-  return `🎮 اکانت SmartDNS شما آماده است
+  return `🎮 Your SmartDNS account is ready
 
-🔹 کد کاربری : ${clientId}
-🔹 تاریخ انقضای پلن : ${expStr}
+🔹 Client ID : ${clientId}
+🔹 Plan expires : ${expStr}
 
-📄 لینک پنل اشتراک شما (وضعیت، حجم و تمدید):
+📄 Your subscription panel (status, usage and renewal):
 ${subUrl}
 
-📶 دی ان اس اختصاصی شما :
+📶 Your dedicated DNS :
 🔹 Primary : ${serverLine}
 🔹 Secondary : 1.1.1.1
 
-مراحل ثبت آیپی :
-1️⃣ گوشی موبایل و کنسول بازی را به یک اینترنت مشترک وصل کنید .
-2️⃣ بدون فیلترشکن، لینک پنل اشتراک بالا را باز کنید .
-3️⃣ رمز ثبت زیر را وارد کرده و دکمهٔ «ثبت آیپی من» را بزنید .
-❌ در صورت عدم ثبت آیپی، DNS برای شما متصل نخواهد شد ❌
+Steps to register your IP :
+1️⃣ Connect your phone and game console to the same internet connection .
+2️⃣ Open the subscription panel link above (without a VPN/proxy) .
+3️⃣ Enter the registration secret below and press "Register my IP" .
+❌ Without registering your IP, DNS will not be enabled for you ❌
 
-🔑 رمز ثبت آیپی (Registration Secret) :
+🔑 Registration Secret :
 ${secretLine}
 
-🔗 آدرس API ثبت آیپی (برای اتوماسیون):
+🔗 IP registration API endpoint (for automation):
 ${regApiUrl}`;
 }
 
@@ -4552,7 +4638,7 @@ function initClientEventListeners() {
       const ip = cardBtn.dataset.ip;
       const msg = generateClientTelegramMessage(id, cardBtn.dataset.name, exp, subUrl, regApiUrl, secret, ip);
       copyText(msg, cardBtn);
-      showToast('Persian client card copied for Telegram!', 'success');
+      showToast('Client card copied for Telegram!', 'success');
       return;
     }
 

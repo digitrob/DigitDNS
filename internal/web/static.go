@@ -20,7 +20,7 @@ import (
 // http.ServeContent omits Last-Modified when the time is zero, and FileServer
 // never generates an ETag — so no browser could ever revalidate. Every reload of
 // the panel re-downloaded every byte of every asset, uncompressed, including the
-// vendored chart and icon libraries. On the link an Iranian VPS actually has to a
+// vendored chart and icon libraries. On the link a modest VPS actually has to a
 // browser at home, that is the difference between a panel that opens and a panel
 // the operator waits for.
 //

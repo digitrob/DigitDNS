@@ -165,7 +165,7 @@ func TestValidatePasswordStrength(t *testing.T) {
 	}{
 		{"good mixed", "admin", "Zx7-quiet-lantern", false},
 		{"good long single class", "admin", "quietlanternriverstone", false},
-		{"persian passphrase", "admin", "گذرواژهٔ‌بلندِمن", false},
+		{"non-ascii passphrase", "admin", "München-Über-Lantern", false},
 		{"generated hex", "admin", "9f2ac41b7de05c83", false},
 
 		{"empty", "admin", "", true},

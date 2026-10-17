@@ -14,9 +14,9 @@ import (
 	"hyperdns/internal/httpx"
 )
 
-// The v2.1 authentication surface: TOTP enrollment and LDAP directory
-// settings (Phase 6), plus the shared checks every credential-changing
-// endpoint runs when two-factor is in force.
+// The authentication surface: TOTP enrollment and the change-credential
+// endpoints, plus the shared checks every credential-changing endpoint runs
+// when two-factor is in force.
 //
 // Two rules this file enforces everywhere:
 //
@@ -24,19 +24,14 @@ import (
 //     password-change and API-key endpoints — re-asks for the current password,
 //     and when TOTP is enabled also for a current one-time code. An attacker
 //     holding a stolen session token can therefore look, but not touch.
-//  2. One failure string. The local login, the LDAP login, and the TOTP check
-//     all answer "Invalid credentials". A different message per path would be
-//     an oracle telling a prober which paths exist.
+//  2. One failure string. Every credential check answers "Invalid credentials".
+//     A different message per path would be an oracle telling a prober which
+//     paths exist.
 
 // SetAuthSettings attaches the auth record (test harness convenience; main
 // wires it after construction, like SetSubscriptionSettings).
 func (ws *WebServer) SetAuthSettings(a *database.AuthSettings) {
 	ws.authSettings = a
-}
-
-// SetLDAPAuthenticator swaps the directory client (tests inject a fake).
-func (ws *WebServer) SetLDAPAuthenticator(a auth.LDAPAuthenticator) {
-	ws.ldapAuth = a
 }
 
 // totpReplayGuard makes a validated TOTP code single-use across every gated
@@ -279,99 +274,4 @@ func (ws *WebServer) handleAuth2FAStatus(w http.ResponseWriter, r *http.Request)
 		snap.OTPAuthURI = "present"
 	}
 	_ = json.NewEncoder(w).Encode(snap)
-}
-
-// handleLDAPSettings reads and writes the directory configuration. GET answers
-// the snapshot — which structurally cannot carry the bind password — and POST
-// validates, saves, and answers the same masked snapshot.
-func (ws *WebServer) handleLDAPSettings(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	switch r.Method {
-	case http.MethodGet:
-		_ = json.NewEncoder(w).Encode(ws.authSettings.Snapshot())
-		return
-	case http.MethodPost:
-	default:
-		httpx.WriteMethodNotAllowed(w, "GET, POST")
-		return
-	}
-
-	body, ok := decodeBodyMap(w, r)
-	if !ok {
-		return
-	}
-
-	// Credential re-auth first — the invariant this file states, and here it
-	// matters most: the directory IS the login path, so repointing it from a
-	// bare session would let a stolen token mint a durable admin login
-	// against whatever server the request names. Password always, current
-	// code when 2FA is in force.
-	if !ws.reauthCurrentPassword(body.Get("current_password")) {
-		httpx.WriteJSONError(w, http.StatusForbidden, "Current password is incorrect")
-		return
-	}
-	if !ws.totpGate(w, body.Get("code")) {
-		return
-	}
-
-	enabled := body.Get("enabled") == "true"
-	str := func(key string) string { return strings.TrimSpace(body.Get(key)) }
-	serverURL := str("ldap_server_url")
-	mode := str("ldap_login_mode")
-
-	// Validate the URL shape before anything persists. Only ldap:// and
-	// ldaps:// are accepted: a bare host:port would silently dial cleartext
-	// with no way for the operator to tell, which is exactly the failure the
-	// plan calls out.
-	if serverURL != "" && !strings.HasPrefix(serverURL, "ldap://") && !strings.HasPrefix(serverURL, "ldaps://") {
-		httpx.WriteJSONError(w, http.StatusBadRequest, "the LDAP server URL must start with ldap:// or ldaps://")
-		return
-	}
-	switch mode {
-	case "local", "ldap", "both", "":
-		mode = strings.TrimSpace(mode)
-	default:
-		httpx.WriteJSONError(w, http.StatusBadRequest, "login mode must be local, ldap, or both")
-		return
-	}
-
-	// The bind password is only replaced when the request carries a new one:
-	// the UI re-sends the form without it, and re-reading the field would
-	// otherwise wipe the stored credential.
-	bindPassword := body.Get("ldap_bind_password")
-	if bindPassword == "" {
-		bindPassword = ws.storedBindPassword()
-	}
-
-	if err := ws.authSettings.SetLDAP(
-		enabled, serverURL, str("ldap_bind_dn"), bindPassword, str("ldap_base_dn"), str("ldap_user_attr"), mode,
-		func(a *database.AuthSettings) error { return ws.db.SetSetting("auth", a) },
-	); err != nil {
-		log.Printf("[Web] Could not persist LDAP settings: %v", err)
-		httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not save the LDAP settings")
-		return
-	}
-
-	// Authentication-mode change: sessions die, per the plan.
-	if ws.sessions != nil {
-		ws.sessions.DeleteAll()
-	}
-	log.Printf("[Web] LDAP settings saved (enabled=%v mode=%s); sessions invalidated", enabled, mode)
-	_ = json.NewEncoder(w).Encode(ws.authSettings.Snapshot())
-}
-
-// storedBindPassword reads the current bind password through a round-trip the
-// type system cannot shortcut: it exists so a partial save (UI form without
-// the password field) preserves the stored credential.
-func (ws *WebServer) storedBindPassword() string {
-	if cfg, ok := ws.authSettings.LDAPConfigNow(); ok {
-		return cfg.BindPassword
-	}
-	// LDAP may be disabled but the bind password still stored.
-	if ws.authSettings == nil {
-		return ""
-	}
-	snap := ws.authSettings.Snapshot()
-	_ = snap // the snapshot deliberately cannot carry it; read under the record
-	return ws.authSettings.StoredBindPassword()
 }

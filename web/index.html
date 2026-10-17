@@ -34,13 +34,9 @@
         if (t !== 'light' && t !== 'dark') {
           t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
         }
-        var l = localStorage.getItem('hyperdns_lang');
-        if (l !== 'fa' && l !== 'en') l = 'en';
         var h = document.documentElement;
         h.setAttribute('data-theme', t);
         h.classList.toggle('dark', t === 'dark');
-        h.setAttribute('lang', l);
-        h.setAttribute('dir', l === 'fa' ? 'rtl' : 'ltr');
       } catch (e) { /* private mode: the markup's own defaults stand */ }
     })();
   </script>
@@ -104,19 +100,7 @@
           <h1 id="login-title" class="text-xl font-bold text-white tracking-wider font-heading">DigitDNS</h1>
           <p class="text-xs text-cyan-400 font-mono">STANDALONE CONTROLLER</p>
         </div>
-        <!-- The gate needs its own pair. Everything else on this screen is behind the
-             login, so an operator who cannot read the English form has no way to reach
-             the sidebar switch that would translate it. -->
         <div class="flex items-center gap-1.5 shrink-0">
-          <div class="flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-950/80 border border-slate-700" role="group" aria-label="Interface language">
-            <!-- Same 26px floor as the mobile header's pair, for the same reason: the login
-                 screen is the first thing a phone sees, and a 20px pill is the smallest thing
-                 on it. See the comment on that copy for the WCAG 2.5.8 arithmetic. -->
-            <button type="button" data-lang-btn="en" aria-pressed="true" lang="en"
-              class="lang-btn inline-flex items-center justify-center min-h-[26px] min-w-[26px] px-1.5 rounded-md text-[10px] font-bold font-mono leading-none transition" data-no-i18n>EN</button>
-            <button type="button" data-lang-btn="fa" aria-pressed="false" lang="fa"
-              class="lang-btn inline-flex items-center justify-center min-h-[26px] min-w-[26px] px-1.5 rounded-md text-[10px] font-bold leading-none transition" data-no-i18n>فا</button>
-          </div>
           <button type="button" data-theme-toggle aria-pressed="false"
             class="p-1.5 rounded-lg bg-slate-950/80 text-slate-400 hover:text-amber-300 border border-slate-700 transition"
             title="Switch to light theme" aria-label="Switch to light theme">
@@ -303,7 +287,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
             <label for="edit-client-name" class="block text-[11px] font-semibold text-slate-400 mb-1"><span class="text-red-400 font-bold">*</span> Email / Client Name</label>
-            <input type="text" id="edit-client-name" required placeholder="e.g. gamer-reza"
+            <input type="text" id="edit-client-name" required placeholder="e.g. gamer-alex"
               class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
           </div>
           <div class="grid grid-cols-2 gap-3.5">
@@ -353,9 +337,8 @@
                  288px wide and a 320px popup hung its trailing column — the last four days of
                  every month — off the edge of the screen with nothing to scroll to reach it.
 
-                 start-0 rather than left-0 so the popup is anchored to the same edge as the
-                 field that opens it in both directions. With left-0 under dir="rtl" it
-                 detached from its own input and grew towards the far side of the panel. -->
+                 start-0 rather than a physical left so the popup stays anchored to the same
+                 logical edge as the field that opens it, whatever the writing direction. -->
             <div id="datepicker-popup" data-modal-popover class="hidden absolute start-0 top-full mt-1.5 z-50 p-3.5 rounded-xl bg-slate-900 border border-cyan-500/30 shadow-2xl w-[288px] sm:w-[340px] text-xs">
               <div class="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800">
                 <div class="flex items-center gap-1.5">
@@ -451,15 +434,10 @@
           </div>
           <label class="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" id="edit-client-enabled" class="sr-only peer" checked>
-            <!-- after:left-[2px] stays physical on purpose, and it is the one exception to
-                 the logical-property sweep. The knob is moved by translate-x-full, and a
-                 transform is not mirrored by dir="rtl" — so pairing start-[2px] with a
-                 positive translate under RTL would resolve to "2px from the right edge,
-                 then 20px further right", which slides the knob clean off its own track.
-                 Making it correct needs a second rtl: rule whose cascade order against the
-                 first is not something to gamble a control on. The track is symmetric, so
-                 as it stands the switch works identically in both directions; only the
-                 direction of travel reads as latin, which no user can misread. -->
+            <!-- after:left-[2px] is deliberately physical: the knob is moved by
+                 translate-x-full, and a transform is not mirrored by any writing
+                 direction, so pairing a logical start with a positive translate would
+                 slide the knob off its own track. The track is symmetric. -->
             <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
           </label>
         </div>
@@ -520,7 +498,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
             <label for="client-name-input" class="block text-[11px] font-semibold text-slate-400 mb-1"><span class="text-red-400 font-bold">*</span> CLIENT NAME / LABEL</label>
-            <input type="text" id="client-name-input" placeholder="e.g. Reza (PS5 &amp; Phone)" required
+            <input type="text" id="client-name-input" placeholder="e.g. Alex (PS5 &amp; Phone)" required
               class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
           </div>
           <div class="grid grid-cols-2 gap-3.5">
@@ -570,7 +548,7 @@
 
             <!-- Same 288px-below-sm sizing and start-0 anchoring as the editor's picker,
                  for the same reasons: the popup must not hang off a 320px viewport, and
-                 it must stay anchored to its own input in RTL. -->
+                 it must stay anchored to its own input. -->
             <div id="add-datepicker-popup" data-modal-popover class="hidden absolute start-0 top-full mt-1.5 z-50 p-3.5 rounded-xl bg-slate-900 border border-cyan-500/30 shadow-2xl w-[288px] sm:w-[340px] text-xs">
               <div class="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800">
                 <div class="flex items-center gap-1.5">
@@ -727,11 +705,11 @@
       </div>
 
       <div>
-        <label for="bulk-import-textarea" class="block text-[11px] font-semibold text-slate-400 mb-1">Domains</label>
+        <label for="bulk-import-textarea" id="bulk-import-textarea-label" class="block text-[11px] font-semibold text-slate-400 mb-1">Domains</label>
         <textarea id="bulk-import-textarea" rows="10" spellcheck="false"
           placeholder="example.com&#10;*.sub.example.com&#10;another.example.net, third.example.org"
           class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400"></textarea>
-        <p class="text-[10px] text-slate-500 mt-1">One name per line, or separated by commas, semicolons or spaces. Lines starting with <code>#</code> are ignored. A leading <code>*.</code> covers every subdomain.</p>
+        <p id="bulk-import-help" class="text-[10px] text-slate-500 mt-1">One name per line, or separated by commas, semicolons or spaces. Lines starting with <code>#</code> are ignored. A leading <code>*.</code> covers every subdomain.</p>
       </div>
 
       <p id="bulk-import-status" class="text-[11px] text-slate-400"></p>
@@ -838,10 +816,10 @@
         </button>
       </div>
 
-      <!-- Appearance & Language -->
-      <!-- Both controls are addressed by data- attribute rather than by id because the
-           mobile header carries a second copy of each, and only one copy is ever visible.
-           js/i18n.js wires every match, so the pair works from either viewport. The theme
+      <!-- Appearance -->
+      <!-- The theme control is addressed by data- attribute rather than by id because the
+           mobile header carries a second copy, and only one copy is ever visible.
+           js/i18n.js wires every match, so it works from either viewport. The theme
            button's icon name (moon/sun) and its label are written by syncSwitchLabels — the
            literals here are what a browser with JavaScript disabled would show. -->
       <div class="flex items-center gap-2">
@@ -850,12 +828,6 @@
           title="Switch to light theme" aria-label="Switch to light theme">
           <i data-feather="moon" class="w-4 h-4"></i>
         </button>
-        <div class="flex-1 flex items-center gap-1 p-1 rounded-lg bg-slate-900 border border-slate-800" role="group" aria-label="Interface language">
-          <button type="button" data-lang-btn="en" aria-pressed="true" lang="en"
-            class="lang-btn flex-1 py-1 rounded-md text-[11px] font-bold font-mono transition" data-no-i18n>EN</button>
-          <button type="button" data-lang-btn="fa" aria-pressed="false" lang="fa"
-            class="lang-btn flex-1 py-1 rounded-md text-[11px] font-bold transition" data-no-i18n>فارسی</button>
-        </div>
       </div>
 
     </div>
@@ -902,28 +874,15 @@
         <!-- Touch targets in this cluster are as wide as they can be and as tall as they should
              be, and those are two different limits.
              Width is capped by arithmetic: at 360px the header has 328px of content, the brand
-             block takes 111px, and five control groups plus four 6px gaps have to live in the
-             rest. The four icon buttons at 30px wide (px-1.5 + a 16px glyph + 1px borders) plus
-             the 30px-wide language group come to 207px, and 111 + 207 = 318 ≤ 328. Growing the
-             icons to 36px would need 342px and overflow, so 30px is the ceiling — not a
-             preference. It clears WCAG 2.2 SC 2.5.8 outright (≥24×24), and it clears the
-             spacing clause too: centres sit 36px apart, and the 24px exception circles only
-             need 24px of separation.
+             block takes 111px, and the four icon buttons plus their 6px gaps have to live in
+             the rest. At 30px wide each (px-1.5 + a 16px glyph + 1px borders) and four 6px
+             gaps, that is 111 + 120 + 24 = 255 ≤ 328. Each button clears WCAG 2.2 SC 2.5.8
+             outright (≥24×24), and it clears the spacing clause too: centres sit 36px apart,
+             and the 24px exception circles only need 24px of separation.
              Height was free and was being wasted. `p-1.5` made these 30×30 inside a 56px
              header, so `py-2.5` takes them to 30×38 — a 33% larger target area, no extra
              width, and the taller box is easier to hit with a thumb reaching the top edge of a
-             phone. The language pills get `min-h-[32px]` for the same reason and so the group's
-             38px outer height lines up with the buttons beside it.
-             `min-h/min-w 26px` on each pill and `inline-flex` to centre the label inside a box
-             the text no longer sizes: `text-[10px] leading-none` plus `py-1` produced a 20px
-             hit area, under the 24px floor, on the one surface that is only ever touched. The
-             width still comes from px-1.5 for "EN"; min-w only binds on the Persian glyph. -->
-        <div class="flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-800 border border-slate-700" role="group" aria-label="Interface language">
-          <button type="button" data-lang-btn="en" aria-pressed="true" lang="en"
-            class="lang-btn inline-flex items-center justify-center min-h-[32px] min-w-[26px] px-1.5 rounded-md text-[10px] font-bold font-mono leading-none transition" data-no-i18n>EN</button>
-          <button type="button" data-lang-btn="fa" aria-pressed="false" lang="fa"
-            class="lang-btn inline-flex items-center justify-center min-h-[32px] min-w-[26px] px-1.5 rounded-md text-[10px] font-bold leading-none transition" data-no-i18n>فا</button>
-        </div>
+             phone. -->
         <button type="button" data-theme-toggle aria-pressed="false" class="px-1.5 py-2.5 rounded-lg bg-slate-800 text-slate-300 hover:text-amber-300 border border-slate-700 transition" title="Switch to light theme" aria-label="Switch to light theme">
           <i data-feather="moon" class="w-4 h-4"></i>
         </button>
@@ -1031,8 +990,7 @@
             <!-- Feather arrows rather than the ↓/↑ characters that were here. The
                  characters were not the problem the emoji were — they render in any
                  font — but they sat at a different weight and cap height from every
-                 other glyph on this row of cards, and ms-1 replaces an ml-1 that
-                 pointed the wrong way once the panel is in RTL. -->
+                 other glyph on this row of cards, and ms-1 replaces a physical ml-1. -->
             <div class="flex items-baseline gap-1 font-mono text-xs font-bold text-slate-200 truncate">
               <i data-feather="arrow-down" class="w-3 h-3 text-emerald-400 shrink-0"></i><span id="stat-speed-in">0.0</span> <span class="text-[10px]">KB/s</span>
               <i data-feather="arrow-up" class="w-3 h-3 text-cyan-400 shrink-0 ms-1"></i><span id="stat-speed-out">0.0</span>
@@ -1054,7 +1012,7 @@
                 <i data-feather="activity" class="w-4 h-4 text-cyan-400"></i> Resolver Latency
               </h3>
               <!-- `sm:truncate`, not `truncate`: on a 360px phone the badge beside this leaves
-                   the text block about 196px, and the Persian sentence needs roughly 230px at
+                   the text block about 196px, and this subtitle needs roughly 230px at
                    11px, so an unconditional clamp cut it off with no hover to recover it.
                    Below `sm` it wraps to a second line instead — a taller panel is cheaper
                    than an unreadable subtitle. -->
@@ -1194,10 +1152,10 @@
             <i data-feather="upload-cloud" class="w-3.5 h-3.5"></i> Bulk import
           </button>
 
-          <!-- Sort and batch size for the routing list. A proxy list can run to
-               thousands of entries, so the panel renders a batch at a time:
-               moving either select re-sorts and re-slices, and the sentinel
-               below appends the next batch as it scrolls into view. -->
+          <!-- Sort for the routing list. A proxy list can run to thousands of
+               entries, so the panel renders a fixed batch at a time: changing
+               the sort re-slices, and the sentinel below appends the next batch
+               as it scrolls into view. -->
           <div class="flex flex-wrap items-center gap-2">
             <label class="flex items-center gap-1.5 text-[11px] text-slate-400">
               Sort
@@ -1208,16 +1166,6 @@
                 <option value="az">Name A–Z</option>
                 <option value="za">Name Z–A</option>
                 <option value="status">Status (on first)</option>
-              </select>
-            </label>
-            <label class="flex items-center gap-1.5 text-[11px] text-slate-400">
-              Load
-              <select id="proxied-load-size" aria-label="Proxied domains per batch"
-                class="bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
-                <option value="10">10</option>
-                <option value="25" selected>25</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
               </select>
             </label>
             <span id="proxied-count" class="text-[11px] text-slate-500"></span>
@@ -1253,11 +1201,11 @@
               <caption class="sr-only">Proxied domains</caption>
               <thead class="bg-slate-950/80 sticky top-0 text-slate-400 border-b border-slate-800 z-10">
                 <tr>
-                  <th class="proxied-col-check py-2.5 px-3">
+                  <th class="proxied-col-check py-2.5 px-3 text-start">
                     <input type="checkbox" id="proxied-select-all" aria-label="Select all proxied domains" class="proxied-check">
                   </th>
-                  <th class="py-2.5 px-3">DOMAIN</th>
-                  <th class="proxied-col-status py-2.5 px-3">STATUS</th>
+                  <th class="py-2.5 px-3 text-start">DOMAIN</th>
+                  <th class="proxied-col-status py-2.5 px-3 text-start">STATUS</th>
                   <th class="proxied-col-actions py-2.5 px-3 text-end">ACTIONS</th>
                 </tr>
               </thead>
@@ -1434,12 +1382,12 @@
               <caption class="sr-only">Live DNS query log</caption>
               <thead class="bg-slate-950/80 sticky top-0 text-slate-400 border-b border-slate-800 z-10">
                 <tr>
-                  <th class="stream-col-time py-2.5 px-2 sm:px-3">TIME</th>
-                  <th class="stream-col-client py-2.5 px-2 sm:px-3">CLIENT / ACCOUNT</th>
-                  <th class="stream-col-proto py-2.5 px-2 sm:px-3 hidden sm:table-cell">PROTO</th>
-                  <th class="stream-col-domain py-2.5 px-2 sm:px-3">QUERY DOMAIN</th>
-                  <th class="stream-col-rule py-2.5 px-2 sm:px-3 hidden sm:table-cell">RULE MATCHED</th>
-                  <th class="stream-col-action py-2.5 px-2 sm:px-3">ACTION</th>
+                  <th class="stream-col-time py-2.5 px-2 sm:px-3 text-start">TIME</th>
+                  <th class="stream-col-client py-2.5 px-2 sm:px-3 text-start">CLIENT / ACCOUNT</th>
+                  <th class="stream-col-proto py-2.5 px-2 sm:px-3 hidden sm:table-cell text-start">PROTO</th>
+                  <th class="stream-col-domain py-2.5 px-2 sm:px-3 text-start">QUERY DOMAIN</th>
+                  <th class="stream-col-rule py-2.5 px-2 sm:px-3 hidden sm:table-cell text-start">RULE MATCHED</th>
+                  <th class="stream-col-action py-2.5 px-2 sm:px-3 text-start">ACTION</th>
                   <th class="stream-col-latency py-2.5 px-2 sm:px-3 text-end">LATENCY</th>
                 </tr>
               </thead>
@@ -1675,65 +1623,6 @@ async function onBuySubscription(ctx, username) {
               </button>
             </div>
             <p class="text-[11px] text-amber-300">Disabling removes the second factor and signs out every session.</p>
-          </div>
-        </div>
-
-        <!-- v2.1 Phase 6: LDAP directory login. The bind password never travels
-             back: the server stores it and the field stays write-only. -->
-        <div class="glass-panel p-5 sm:p-6 border border-indigo-500/30 space-y-4" id="ldap-card">
-          <div class="flex items-center gap-3">
-            <div class="p-2 rounded-xl bg-indigo-500/20 text-indigo-400">
-              <i data-feather="database" class="w-5 h-5"></i>
-            </div>
-            <div>
-              <h3 class="text-xs sm:text-sm font-bold text-white font-heading">LDAP Directory Login</h3>
-              <p class="text-[11px] text-slate-400">Authenticate operators against a directory (Active Directory, OpenLDAP)</p>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label class="flex items-center gap-2 text-xs text-slate-300">
-              <input type="checkbox" id="ldap-enabled-input" class="accent-indigo-500 w-4 h-4">
-              LDAP enabled
-            </label>
-            <div>
-              <select id="ldap-mode-input" aria-label="LDAP login mode"
-                class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-indigo-400">
-                <option value="local">Local login only</option>
-                <option value="ldap">LDAP only</option>
-                <option value="both">LDAP with local fallback</option>
-              </select>
-            </div>
-            <input type="text" id="ldap-url-input" aria-label="LDAP server URL" placeholder="ldaps://dc.corp.local:636"
-              class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-indigo-400">
-            <input type="text" id="ldap-userattr-input" aria-label="LDAP user attribute" placeholder="User attribute (default uid)"
-              class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-indigo-400">
-            <input type="text" id="ldap-binddn-input" aria-label="LDAP bind DN" placeholder="Bind DN (e.g. cn=svc,dc=corp,dc=local)"
-              class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-indigo-400">
-            <input type="password" id="ldap-bindpw-input" aria-label="LDAP bind password" placeholder="Bind password (leave empty to keep)"
-              class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-indigo-400">
-            <input type="text" id="ldap-basedn-input" aria-label="LDAP base DN" placeholder="Base DN (e.g. ou=people,dc=corp,dc=local)"
-              class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-indigo-400 sm:col-span-2">
-          </div>
-          <p class="text-[11px] text-amber-300">Saving the directory settings signs out every session. ldaps:// is verified against the system certificate store.</p>
-
-          <!-- The directory IS the login path, so saving it re-authenticates the
-               operator: current password always, TOTP code when 2FA is on. -->
-          <div class="flex items-center gap-3 flex-wrap">
-            <input type="password" id="ldap-admin-password" aria-label="Current admin password" autocomplete="current-password"
-              placeholder="Current admin password"
-              class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-indigo-400">
-            <input type="text" id="ldap-totp-code" aria-label="Two-factor code (when 2FA is enabled)" placeholder="2FA code (if enabled)"
-              class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-indigo-400"
-              maxlength="6" inputmode="numeric" autocomplete="one-time-code">
-          </div>
-
-          <div class="flex items-center gap-3 flex-wrap">
-            <button id="ldap-save-btn" type="button"
-              class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs font-heading transition">
-              Save LDAP Settings
-            </button>
-            <span id="ldap-save-status" class="text-[11px] text-slate-400"></span>
           </div>
         </div>
 
@@ -1999,6 +1888,11 @@ async function onBuySubscription(ctx, username) {
             </div>
 
             <div id="custom-records-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">Loading records…</div></div>
+
+            <button type="button" id="bulk-records-btn"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition">
+              <i data-feather="upload-cloud" class="w-3.5 h-3.5"></i> Bulk import
+            </button>
           </div>
 
 

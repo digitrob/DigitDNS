@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"hyperdns/internal/api"
-	"hyperdns/internal/auth"
 	"hyperdns/internal/core/cache"
 	"hyperdns/internal/core/matcher"
 	"hyperdns/internal/core/upstream"
@@ -65,10 +64,6 @@ type WebServer struct {
 	loginLimiter  *service.LoginAttemptTracker
 	benchmark     *service.BenchmarkRunner
 	sseTickets    *sseTicketStore
-
-	// ldapAuth is the directory client used when the auth record points at
-	// LDAP. It is an interface so tests can inject a fake without a network.
-	ldapAuth auth.LDAPAuthenticator
 
 	// kdfGate bounds how many password verifications run at once. Verification is
 	// deliberately expensive and reachable without authentication, so without a
@@ -181,7 +176,6 @@ func NewWebServer(
 		staticFS:    staticFS,
 		api:         apiInst,
 		sseTickets:  newSSETicketStore(),
-		ldapAuth:    auth.GoLDAPAuthenticator{},
 		kdfGate:     make(chan struct{}, kdfConcurrency()),
 		totpReplay:  newTOTPReplayGuard(),
 	}
@@ -752,7 +746,6 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/auth/2fa/setup", ws.requireAuth(ws.handleAuth2FASetup))
 	mux.HandleFunc("/api/auth/2fa/enable", ws.requireAuth(ws.handleAuth2FAEnable))
 	mux.HandleFunc("/api/auth/2fa/disable", ws.requireAuth(ws.handleAuth2FADisable))
-	mux.HandleFunc("/api/auth/ldap", ws.requireAuth(ws.handleLDAPSettings))
 	mux.HandleFunc("/api/auth/sse-ticket", ws.requireAuth(ws.handleSSETicket))
 	mux.HandleFunc("/api/benchmark", ws.requireAuth(ws.handleBenchmark))
 	mux.HandleFunc("/api/upstreams/add", ws.requireAuth(ws.handleUpstreamsAdd))
@@ -1440,7 +1433,7 @@ func (ws *WebServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 		// Guide used to rebuild this from the web port and got all three wrong.
 		"doh_url": ws.dohURL(),
 		// Auth state for the settings panel's 2FA prompts: the snapshot type
-		// structurally cannot carry the TOTP secret or the LDAP bind password.
+		// structurally cannot carry the TOTP secret.
 		"auth": ws.authSettings.Snapshot(),
 	})
 }

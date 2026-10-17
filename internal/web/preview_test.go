@@ -248,7 +248,7 @@ func TestPortalPreviewOfAnExpiredAccountDoesNotRetireIt(t *testing.T) {
 	if w.Code != http.StatusGone {
 		t.Fatalf("status = %d, want 410 Gone for an expired plan", w.Code)
 	}
-	if body := w.Body.String(); !strings.Contains(body, "به پایان رسیده") {
+	if body := w.Body.String(); !strings.Contains(body, "Your subscription has expired") {
 		t.Error("the expiry page did not render for an expired account")
 	}
 

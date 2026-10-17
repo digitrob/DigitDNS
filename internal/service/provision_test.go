@@ -17,7 +17,7 @@ func TestProvisionClientWritesTheWholePlanOnce(t *testing.T) {
 
 	before := time.Now()
 	created, err := svc.ProvisionClient(CreateClientRequest{
-		Name:              "Reza",
+		Name:              "Alex",
 		Days:              30,
 		TrafficLimitGB:    50,
 		TrafficResetCycle: TrafficCycleMonthly,

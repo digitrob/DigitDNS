@@ -35,8 +35,7 @@
   <a href="docs/API.md">🔌 REST API</a> •
   <a href="#-technical-architecture--codebase-design">🏛️ Internals</a> •
   <a href="docs/SECURITY.md">🛡️ Security</a> •
-  <a href="#-support--donate">☕ Support</a> •
-  <a href="README.fa.md"> راهنمای فارسی</a>
+  <a href="#-support--donate">☕ Support</a>
 </p>
 
 ---
@@ -50,7 +49,6 @@
 | **[API.md](docs/API.md)** | REST API v1 (deprecated) and v2, with Python / Node.js / cURL samples. |
 | **[CHANGELOG.md](docs/CHANGELOG.md)** | Release history and the fix behind each one. |
 | **[docs/RELEASING.md](docs/RELEASING.md)** | Versioning policy, the stable/beta channels, and how the in-dashboard updater decides what to offer. |
-| **[README.fa.md](README.fa.md)** | راهنمای فارسی. |
 
 ## 📖 Overview
 
@@ -195,6 +193,7 @@ This build ships **no built-in catalogue**. Routing is entirely the operator's, 
 - **Custom Direct** — names forced to resolve normally, overriding a proxy rule for that name.
 - **Named groups** — a set of domains sharing one action (`proxy` / `direct` / `block`), enabled or disabled as a unit.
 - **Bulk import** — add a whole list at once: paste it or upload a file (≤ 1 MiB), one name per line or comma-separated, `*.` wildcards and `#` comments understood. The import reports how many names were added, already present, and invalid.
+- **Bulk static records** — load a `hostname address` table into **Custom Static Records** at once: paste it or upload a file, one record per line with the name and address separated by whitespace, a comma, a semicolon or `=`. Both IPv4 and IPv6 are accepted. Re-uploading a corrected table updates existing hostnames in place; the import reports how many were added, updated, unchanged and invalid.
 - **A small forced-direct plane stays built in.** A handful of names cannot work through a Layer-4 relay — Discord voice/video media, Vivox voice, Steam's connection manager, and Google's update CDNs — so they are always resolved directly, ahead of every rule, and cannot be lost to a wildcard. See [Bulk Downloads Stay Direct](#-6-bulk-downloads-stay-direct).
 - **Real icons for named groups (v2.7).** A custom group can carry an uploaded logo: **SVG ≤ 16 KB or PNG ≤ 64 KB**, validated server-side (SVG is re-encoded through an allowlist; scripts, event handlers and external references cannot survive it) and stored in the encrypted database so backups carry them.
 
@@ -228,7 +227,7 @@ This build ships **no built-in catalogue**. Routing is entirely the operator's, 
 - **RFC 9562 v4 UUIDs:** stable unique identifiers for all clients (the standard that supersedes RFC 4122).
 - **Plan Durations & Traffic Limits:** daily/monthly/yearly/lifetime expiry with
   live quota enforcement.
-- **Persian Telegram cards:** a 1-click formatted provisioning card carrying the
+- **Telegram provisioning cards:** a 1-click formatted card carrying the
   portal link, the registration secret, the DNS address and the API URL.
 - **Whitelist by default (v2.2.0).** An unknown source is **refused** by DNS —
   with an RFC 8914 *Prohibited* Extended DNS Error for OPT-bearing queries, so
@@ -283,7 +282,7 @@ Four settings decide whether this install is a private resolver or an open one. 
 | Admin password | randomly generated, printed **once** in the install output | your own, ≥10 characters | It is stored as a PBKDF2-HMAC-SHA256 verifier (600,000 iterations) and never in the clear, so it cannot be read back out of `data.db` even with `master.key` in hand — which also means a lost password is a reset, not a recovery. Changing it invalidates every existing dashboard session. |
 | `master.key` | generated on first start | back it up, off the server | It decrypts every subscriber record. Losing it makes them unreadable; leaking it makes them readable. It must never enter a git repository — `.gitignore` already covers it. |
 
-An install carrying a password from before the strength policy keeps working — verification never applies the policy, so nobody is locked out of their own server by an upgrade — but it is flagged, and the dashboard asks for a replacement. New passwords must be at least 10 characters and combine two character classes, or be at least 16 characters, or use a non-ASCII script; a Persian passphrase satisfies the rule on its own.
+An install carrying a password from before the strength policy keeps working — verification never applies the policy, so nobody is locked out of their own server by an upgrade — but it is flagged, and the dashboard asks for a replacement. New passwords must be at least 10 characters and combine two character classes, or be at least 16 characters, or use a non-ASCII script; a non-Latin passphrase satisfies the rule on its own.
 
 Two things this build does *not* do, so you do not have to configure them: query logs are never written to disk in any form (DNS telemetry lives in memory and on the SSE stream), and the SNI relay never terminates TLS, so it never holds a key for the sessions it carries.
 
@@ -294,7 +293,6 @@ The dashboard no longer lives at the root of the host. On first start the daemon
 Optional hardening on top, all in Settings:
 
 - **Two-Factor Authentication** — RFC 6238 TOTP. Enroll from Settings → *Two-Factor Authentication*: the secret is shown exactly once, one code confirms it, and from then on logins (plus every password/API-key change) require a current code. Disabling demands both factors one last time.
-- **LDAP** — authenticate operators against Active Directory/OpenLDAP (`ldaps://` verified against the system certificate store, bind/search/bind flow, 5-second timeout). Modes: local only, LDAP only, or LDAP with local fallback.
 - **Session idle window** — revoke a dashboard session after N minutes without use (5–1440, default 15). Applies live on save; the 24-hour absolute ceiling is unchanged.
 - **Login lockouts** — 3 failures from one address locks it for 10 minutes. Clear it without a restart from TUI entry `[12]` or `POST /api/auth/unlock` (session or API key, plus a TOTP code when 2FA is on).
 - **Subscription Portal** — the subscriber pages (`/sub/<token>`, `/ip/<token>`, and the dedicated listener if you set a port) stay public by design; Settings controls the title, the domain and port their links advertise, and an optional custom stylesheet that is sanitised (no `@import`, no external `url()`, no script) before it reaches a subscriber's browser.
@@ -361,11 +359,11 @@ on every start.
   shared default password.
 - **Clients & Whitelist:** Add/edit clients, assign the single allowed IP,
   configure traffic limits, view and regenerate the **registration secret**, and
-  copy the Persian Telegram card.
-- **Routing Rules:** custom proxied, blocked and direct domain lists with bulk download/upload, named groups, DoH tokens and static records.
+  copy the Telegram provisioning card.
+- **Routing Rules:** custom proxied, blocked and direct domain lists with bulk download/upload, named groups, DoH tokens and static A/AAAA records (with their own bulk import).
 - **Live Stream:** Real-time Server-Sent Events (SSE) stream of DNS queries.
 - **Settings & SSL:** the subscription portal (title, domain, port),
-  two-factor authentication, LDAP, session idle window, hidden admin path,
+  two-factor authentication, session idle window, hidden admin path,
   certificate issuance, and the REST API gateway (master key, exposure toggle,
   integration snippets).
 
@@ -503,7 +501,7 @@ panel that requires authentication has no public page to light up.
 
 | Dimension | Score | Basis |
 | :--- | :---: | :--- |
-| 🔐 **Security** | **93 / 100** | Three full Mantis audit rounds + a fix-verification pass — **50+ findings, every one fixed with a named regression test** (master-key scoping, TOTP single-use, LDAP scoping, DoH surface restriction, port-drift, safe installers). A T3MP3ST-style external-attacker campaign against a live deployment found every headline control holding and produced one LOW, fixed live. Race detector: 20/20 packages, zero races. Deductions: the open-resolver posture remains one toggle away (documented non-goal), no WAF or volumetric DDoS layer (the provider's job), the admin path is defence-in-depth only. |
+| 🔐 **Security** | **93 / 100** | Three full Mantis audit rounds + a fix-verification pass — **50+ findings, every one fixed with a named regression test** (master-key scoping, TOTP single-use, DoH surface restriction, port-drift, safe installers). A T3MP3ST-style external-attacker campaign against a live deployment found every headline control holding and produced one LOW, fixed live. Race detector: 20/20 packages, zero races. Deductions: the open-resolver posture remains one toggle away (documented non-goal), no WAF or volumetric DDoS layer (the provider's job), the admin path is defence-in-depth only. |
 | ⚡ **Performance** | **90 / 100** | The hot paths are allocation-free nanosecond operations (subscriber lookup ~17 ns, exact rule match ~52 ns, cache hit ~258 ns — benchmarked, see Architecture), the cache is 64-shard concurrent, DoT holds idle connections (RFC 7828) instead of re-handshaking, relays draw from a `sync.Pool`, and the whole thing is one zero-CGO binary. Deductions: the subscriber index sits behind one RWMutex and does not scale with cores (documented shape), no published end-to-end wire latency numbers, the v1.2.0-era field reports (CPU pegged, memory leak) are fixed but the memory of them is why this is not a 95. |
 | 🔎 **SEO** | **70 / 100** | Deliberate and honest: the public landing page serves `noindex, nofollow` **by design** — a private resolver's landing page has no business ranking, and the subscriber portal carries per-request `Vary` headers so no cache serves one subscriber's page to another. What Google's guidelines ask for structurally is there: real `<title>`, single `<h1>`, viewport meta, semantic HTML, mobile-first rendering. Deductions: no sitemap, no Open Graph/structured data, no indexable content — because the product is not a content site. Raise the score by removing one meta tag if you want the landing indexed. |
 | 🧹 **Code hygiene** | **95 / 100** | gofmt/go vet clean across 20 packages, JS/Python/shell syntax gates, a markup↔JS consistency test that catches dead DOM lookups, changelog discipline, and an offline-bundle mirror kept byte-identical. Deduction: the tree carries private planning notes in `.idea/` — keep them out of the published repository. |
@@ -533,7 +531,7 @@ games or your work, consider supporting the original author.
 
 | Method | Address / Link |
 | :--- | :--- |
-| 💳 **Rial (ایران)** | [coffeebede.com/amtherain](https://coffeebede.com/amtherain) |
+| 💳 **Rial (Iran)** | [coffeebede.com/amtherain](https://coffeebede.com/amtherain) |
 | 💰 **USDT · TRC20** | `TKBHWNoeygcaCK8N78e7dQX5Yco3WTb6ZN` |
 | 💰 **USDT · BEP20** | `0x0F982640a69D3B9FB944840D7DA8bECCfcF0bb9E` |
 | 💰 **TON** | `UQAyLUyxew-eggwhxbzsAZZZ9ULM8MYOk-3IXFh7tNC33LNt` |

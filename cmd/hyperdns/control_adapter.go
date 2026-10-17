@@ -170,10 +170,7 @@ func (d *daemonControl) ControlSettings() control.SettingsView {
 		SessionIdleMinutes: s.SessionIdleMinutes,
 	}
 	if d.auth != nil {
-		a := d.auth.Snapshot()
-		out.TOTPEnabled = a.TOTPEnabled
-		out.LDAPEnabled = a.LDAPEnabled
-		out.LDAPLoginMode = a.LDAPLoginMode
+		out.TOTPEnabled = d.auth.Snapshot().TOTPEnabled
 	}
 	return out
 }

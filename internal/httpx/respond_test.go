@@ -29,7 +29,7 @@ func TestWriteJSONErrorIsParseable(t *testing.T) {
 		{"newline", "a message\nwith a newline"},
 		{"tab", "a message\twith a tab"},
 		{"nested escapes", `nested "quotes" and \"escapes\"`},
-		{"non-ascii", "unicode: کاربر ۱۲۳"},
+		{"non-ascii", "unicode: café — 日本語 123"},
 		{"control chars", "control char: \x00 and \x1f"},
 		{"html sensitive", `<script>alert(1)</script> & "co"`},
 		{"body that is itself json", `{"error":"a message that is itself JSON"}`},

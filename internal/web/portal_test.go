@@ -186,7 +186,7 @@ func TestPortalRejectsUnknownToken(t *testing.T) {
 	ws.buildAdminHandler().ServeHTTP(w, req)
 
 	body := w.Body.String()
-	if !strings.Contains(body, "نامعتبر") {
+	if !strings.Contains(body, "This subscription link is not valid") {
 		t.Error("an unknown token did not render the invalid-subscription page")
 	}
 	if strings.Contains(body, "CLIENT_TOKEN") {
@@ -203,14 +203,16 @@ func TestPortalRejectsUnknownToken(t *testing.T) {
 // subscriber loading their own page, and the failure is a 500 nobody sees until
 // they complain.
 //
-// Both bundles are executed, not just the default one: the two differ in string
-// lengths and in direction, and the English one is the only place an ASCII value
-// lands in a context the Persian one happens not to reach.
+// Both palettes are executed: the light one is where a different set of CSS values
+// lands in a context the dark one happens not to reach.
 func TestPortalTemplatesExecute(t *testing.T) {
 	base := portalData{
-		StatusLine:       "پورتال",
-		ErrTitle:         "لینک اشتراک نامعتبر است",
-		ErrNote:          "توکن یافت نشد",
+		Lang:             "en",
+		Dir:              "ltr",
+		T:                portalEn,
+		StatusLine:       "Subscription overview",
+		ErrTitle:         "This subscription link is not valid",
+		ErrNote:          "Invalid or unknown subscription token.",
 		ClientIP:         "198.51.100.7",
 		ServerDNS:        "dns.example.com",
 		Name:             "Gamer One",
@@ -218,7 +220,7 @@ func TestPortalTemplatesExecute(t *testing.T) {
 		UUID:             "8f14e45f-ceea-467a-9e3d-1b2c3d4e5f60",
 		Token:            "tok_9f8e7d6c5b4a",
 		TrafficDisplay:   "12.50 GB / 50.0 GB",
-		TrafficRemaining: "37.50 GB باقیمانده",
+		TrafficRemaining: "37.50 GB remaining",
 		TrafficPercent:   "25.0",
 		ExpiresAt:        "2026-12-31 23:59:59",
 		Days:             120,
@@ -228,42 +230,35 @@ func TestPortalTemplatesExecute(t *testing.T) {
 
 		QuotaExceeded: true,
 		HasCycle:      true,
-		CycleLabel:    "ماهانه",
+		CycleLabel:    "monthly",
 		NextResetAt:   "2026-10-01 00:00:00",
 	}
 
-	for _, lang := range []string{portalLangFa, portalLangEn} {
-		for _, theme := range []string{portalThemeDark, portalThemeLight} {
-			data := base
-			data.Lang = lang
-			data.Dir = portalDir(lang)
-			data.Theme = theme
-			data.IsFa = lang == portalLangFa
-			data.IsLight = theme == portalThemeLight
-			data.T = portalBundle(lang)
+	for _, theme := range []string{portalThemeDark, portalThemeLight} {
+		data := base
+		data.Theme = theme
+		data.IsLight = theme == portalThemeLight
 
-			for _, tpl := range []*template.Template{portalErrorTpl, portalPageTpl} {
-				var out strings.Builder
-				if err := tpl.Execute(&out, data); err != nil {
-					t.Fatalf("%s failed to execute for %s/%s: %v", tpl.Name(), lang, theme, err)
-				}
-				body := out.String()
-				// ZgotmplZ is what html/template substitutes when a value cannot be made
-				// safe for the context it landed in. It renders as visible garbage, so it
-				// is a bug even though it is not an error.
-				if strings.Contains(body, "ZgotmplZ") {
-					t.Errorf("%s emitted ZgotmplZ for %s/%s: a value was rejected by its context filter",
-						tpl.Name(), lang, theme)
-				}
-				if !strings.HasSuffix(strings.TrimSpace(body), "</html>") {
-					t.Errorf("%s did not render a complete document for %s/%s", tpl.Name(), lang, theme)
-				}
-				// The negotiated presentation has to actually reach the document, or the
-				// whole bundle mechanism is rendering a page nobody can read in the
-				// language they asked for.
-				if want := `<html lang="` + lang + `" dir="` + portalDir(lang) + `" data-theme="` + theme + `">`; !strings.Contains(body, want) {
-					t.Errorf("%s (%s/%s) does not carry %s", tpl.Name(), lang, theme, want)
-				}
+		for _, tpl := range []*template.Template{portalErrorTpl, portalPageTpl} {
+			var out strings.Builder
+			if err := tpl.Execute(&out, data); err != nil {
+				t.Fatalf("%s failed to execute for %s: %v", tpl.Name(), theme, err)
+			}
+			body := out.String()
+			// ZgotmplZ is what html/template substitutes when a value cannot be made
+			// safe for the context it landed in. It renders as visible garbage, so it
+			// is a bug even though it is not an error.
+			if strings.Contains(body, "ZgotmplZ") {
+				t.Errorf("%s emitted ZgotmplZ for %s: a value was rejected by its context filter",
+					tpl.Name(), theme)
+			}
+			if !strings.HasSuffix(strings.TrimSpace(body), "</html>") {
+				t.Errorf("%s did not render a complete document for %s", tpl.Name(), theme)
+			}
+			// The presentation has to actually reach the document, or the theme is
+			// rendering a page nobody can see.
+			if want := `<html lang="en" dir="ltr" data-theme="` + theme + `">`; !strings.Contains(body, want) {
+				t.Errorf("%s (%s) does not carry %s", tpl.Name(), theme, want)
 			}
 		}
 	}
@@ -330,7 +325,7 @@ func TestPortalClampsOverQuotaBar(t *testing.T) {
 	if !strings.Contains(body, "width: 100.0%") {
 		t.Error("an over-quota subscriber pushed the traffic bar past 100%")
 	}
-	if !strings.Contains(body, "0.00 GB باقیمانده") {
+	if !strings.Contains(body, "0.00 GB remaining") {
 		t.Error("the remaining figure went negative instead of bottoming out at zero")
 	}
 }
@@ -414,7 +409,7 @@ func TestPortalShowsTheRenewalAndTheCutOff(t *testing.T) {
 	}
 
 	body := page()
-	if !strings.Contains(body, "تمدید خودکار حجم (ماهانه)") {
+	if !strings.Contains(body, "Quota resets automatically (monthly)") {
 		t.Error("a monthly plan does not tell the subscriber their volume renews")
 	}
 	// Hidden rather than absent: js/portal.js reveals it after a sync, and it cannot

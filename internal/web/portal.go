@@ -188,13 +188,13 @@ func (ws *WebServer) serverDNSForDisplay(r *http.Request) string {
 //
 // Duplicate addresses across two DIFFERENT subscriptions are refused with 409
 // and logged, never de-activating either account: shared CGNAT addresses are
-// ordinary on Iranian mobile networks, and auto-disabling a paying account over
+// ordinary on mobile carrier networks, and auto-disabling a paying account over
 // one would be the cure killing the patient.
 func (ws *WebServer) handleRegisterIPAPI(w http.ResponseWriter, r *http.Request) {
 	// GET/HEAD answers with the explainer page instead of a bare 405: the old
 	// GET on this address auto-registered the caller, so old bookmarks and
 	// chat unfurls land here and deserve to be told what changed and where
-	// their portal now lives — in both languages, with no script.
+	// their portal now lives — with no script.
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		ws.handleIPPage(w, r)
 		return
@@ -283,7 +283,7 @@ func (ws *WebServer) handleRegisterIPAPI(w http.ResponseWriter, r *http.Request)
 // handleIPPage explains the API to a subscriber (or an old bookmark) that
 // opened /ip/<token> with GET. The verb that used to auto-register is gone on
 // purpose (C-03); this page says what the address is for and where the portal
-// lives, in both languages, with no script.
+// lives, in English, with no script.
 func (ws *WebServer) handleIPPage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
@@ -291,7 +291,7 @@ func (ws *WebServer) handleIPPage(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	const page = `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -305,17 +305,13 @@ func (ws *WebServer) handleIPPage(w http.ResponseWriter, r *http.Request) {
       <div class="error-mark" aria-hidden="true"><i class="ico ico-info"></i></div>
       <div>
         <h1 class="title">IP registration API</h1>
-        <p class="subtitle mono">این آدرس یک API است / This address is an API endpoint</p>
+        <p class="subtitle mono">This address is an API endpoint</p>
       </div>
       <div class="error-box">
-        <div class="label">EN</div>
+        <div class="label">Endpoint</div>
         <div class="value-lg mono" style="font-size:.9rem">POST your new address here with your registration secret.<br>Open your <b>/sub/…</b> portal link to manage your IP.</div>
       </div>
-      <div class="error-box">
-        <div class="label">FA</div>
-        <div class="value-lg mono" style="font-size:.9rem">این آدرس برای ثبت برنامه‌ای آی‌پی است و با «رمز ثبت» کار می‌کند.<br>برای مدیریت آی‌پی، لینک پورتال <b>/sub/…</b> خود را باز کنید.</div>
-      </div>
-      <div class="footer">DigitDNS Secure Portal</div>
+      <div class="footer">DigitDNS</div>
     </div>
   </div>
 </body>
@@ -378,21 +374,18 @@ func safeHostDisplay(s string) string {
 // argument, because every value a control acts on is a data- attribute and the
 // handlers live in /js/portal.js.
 type portalData struct {
-	// The negotiated presentation. Lang and Dir land in <html lang> and <html dir>;
-	// Theme lands in data-theme, which is what makes portal.css's light palette
-	// reachable at all. IsFa and IsLight exist because the two toggle links have to be
-	// written out as literal branches: a class attribute on this page may not contain a
-	// template action (portal_assets_test.go reads the literal attribute), so the
-	// "switch to English" and "switch to light" markup cannot be built from a value.
+	// The presentation. Lang and Dir land in <html lang> and <html dir>; Theme lands
+	// in data-theme, which is what makes portal.css's light palette reachable at all.
+	// IsLight exists because the theme toggle link has to be written out as a literal
+	// branch: a class attribute on this page may not contain a template action
+	// (portal_assets_test.go reads the literal attribute), so the "switch to light"
+	// markup cannot be built from a value.
 	Lang    string
 	Dir     string
 	Theme   string
-	IsFa    bool
 	IsLight bool
 
-	// T is the whole bundle. Every word on the page comes through it, which is what
-	// keeps the two languages from drifting: a field the template reads must exist in
-	// both bundles or the package will not compile.
+	// T is the whole bundle. Every word on the page comes through it.
 	T portalText
 
 	// StatusLine is the sentence under the topbar; StatusWarn picks the caveat icon
@@ -472,7 +465,7 @@ type portalData struct {
 	// to tick.
 	ExpiresUnix int64
 	// Lifetime selects the ∞ cell over the three countdown boxes. It used to render
-	// as "9999 روز", which reads as a bug to the person paying for the plan.
+	// as a countdown of 9999 days, which reads as a bug to the person paying for the plan.
 	Lifetime bool
 
 	// Policies holds display labels. Empty means the subscriber inherits every
@@ -574,37 +567,34 @@ func resolvePortalThemeCSS(snap database.SubscriptionSnapshot) template.HTML {
 
 // renderIPResultPage writes either the subscriber portal or the error page.
 //
-// Language and theme are resolved here, before either template runs, because the error
+// The theme is resolved here, before either template runs, because the error
 // page carries no script at all and must not start carrying one — there is nothing on
 // it to operate, and an inline script is exactly what the CSP does not have to be
-// relaxed for today. A ?lang= or ?theme= in the URL both switches and remembers; a
-// cookie carries it to the next visit; a first visit with neither falls back to
-// Accept-Language for the language and to dark for the theme.
+// relaxed for today. A ?theme= in the URL both switches and remembers; a
+// cookie carries it to the next visit; a first visit with neither falls back to dark.
+// The portal is English-only, so there is no language negotiation.
 //
 // Nothing here escapes by hand: every field of portalData is inserted by html/template,
 // which picks the escaper from the surrounding markup. The one exception is ServerDNS,
 // filtered by safeHostDisplay because the page shows it as an address to type into a
 // console — see that function's comment.
 func (ws *WebServer) renderIPResultPage(w http.ResponseWriter, r *http.Request, status portalStatus, clientIP string, client *database.Client, serverDNS string) {
-	lang := negotiatePortalLang(w, r)
 	theme := negotiatePortalTheme(w, r)
-	t := portalBundle(lang)
+	t := portalEn
 	// The subtitle names the running build. It used to be a literal in the
 	// template, so every release after v2.0.0-beta still told subscribers they
 	// were on v2.0.0-beta; formatting it here keeps one source of truth.
 	t.Subtitle = fmt.Sprintf(t.Subtitle, version.Display())
 
-	// Two requests for the same URL now legitimately differ by cookie and by
-	// Accept-Language. Saying so keeps a cache in front of this from serving one
-	// subscriber's language to another — and the panel is routinely put behind one.
+	// Two requests for the same URL now legitimately differ by cookie. Saying so
+	// keeps a cache in front of this from serving one subscriber's palette to
+	// another — and the panel is routinely put behind one.
 	w.Header().Add("Vary", "Cookie")
-	w.Header().Add("Vary", "Accept-Language")
 
 	data := portalData{
-		Lang:      lang,
-		Dir:       portalDir(lang),
+		Lang:      "en",
+		Dir:       "ltr",
 		Theme:     theme,
-		IsFa:      lang == portalLangFa,
 		IsLight:   theme == portalThemeLight,
 		T:         t,
 		ClientIP:  clientIP,
@@ -755,15 +745,10 @@ const portalErrorHTML = `<!DOCTYPE html>
         <div class="value-lg value-bad mono">{{.ClientIP}}</div>
       </div>
 
-      <!-- Both links are plain relative hrefs, so they work with no script and keep
+      <!-- The theme link is a plain relative href, so it works with no script and keeps
            the token in the path. The handler writes a cookie when it sees the query,
            which is what carries the choice to the next visit and to the other page. -->
       <div class="tools">
-        {{- if .IsFa}}
-        <a class="btn" href="?lang=en" hreflang="en" title="{{.T.LangHint}}"><i class="ico ico-globe" aria-hidden="true"></i>English</a>
-        {{- else}}
-        <a class="btn" href="?lang=fa" hreflang="fa" title="{{.T.LangHint}}"><i class="ico ico-globe" aria-hidden="true"></i>فارسی</a>
-        {{- end}}
         {{- if .IsLight}}
         <a class="btn" href="?theme=dark" title="{{.T.ThemeHint}}"><i class="ico ico-moon" aria-hidden="true"></i>{{.T.ThemeToDark}}</a>
         {{- else}}
@@ -824,16 +809,11 @@ const portalPageHTML = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- The two preference links are plain relative hrefs: they work with no script,
-           they keep the token in the path, and the handler writes a cookie when it sees
+      <!-- The theme link is a plain relative href: it works with no script,
+           it keeps the token in the path, and the handler writes a cookie when it sees
            the query, which is what carries the choice to the next visit and to the
            error page. Only the sync button needs /js/portal.js. -->
       <div class="tools">
-        {{- if .IsFa}}
-        <a class="btn" href="?lang=en" hreflang="en" title="{{.T.LangHint}}"><i class="ico ico-globe" aria-hidden="true"></i>English</a>
-        {{- else}}
-        <a class="btn" href="?lang=fa" hreflang="fa" title="{{.T.LangHint}}"><i class="ico ico-globe" aria-hidden="true"></i>فارسی</a>
-        {{- end}}
         {{- if .IsLight}}
         <a class="btn" href="?theme=dark" title="{{.T.ThemeHint}}"><i class="ico ico-moon" aria-hidden="true"></i>{{.T.ThemeToDark}}</a>
         {{- else}}
@@ -1147,13 +1127,13 @@ const portalPageHTML = `<!DOCTYPE html>
     </div>
 
 
-    <!-- role="status" with aria-live="polite" so a screen reader announces "کپی شد"
+    <!-- role="status" with aria-live="polite" so a screen reader announces "Copied"
          without stealing focus or interrupting what is being read. The element stays
          in the DOM empty; /js/portal.js fills it and toggles .is-shown.
 
-         It also carries the four messages the script shows. Putting them here rather
-         than in portal.js keeps one spelling of each string per language and keeps the
-         script free of Persian literals it would have to pick between at runtime. -->
+         It also carries the messages the script shows. Putting them here rather
+         than in portal.js keeps one spelling of each message and keeps the
+         script free of user-facing literals. -->
     <div class="toast" id="toast" role="status" aria-live="polite"
          data-msg-copied="{{.T.MsgCopied}}"
          data-msg-copy-fail="{{.T.MsgCopyFail}}"

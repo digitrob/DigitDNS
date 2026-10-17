@@ -134,7 +134,7 @@ func TestPortalTemplatesNeedNoCSPRelaxation(t *testing.T) {
 		}
 		if found := offOriginRe.FindAllString(tpl.body, -1); len(found) != 0 {
 			t.Errorf("%s loads %d off-origin resource(s): %v\nThis page is opened from "+
-				"Iranian mobile networks; a third-party host in its critical path is a host "+
+				"mobile networks where a third-party host in its critical path is a host "+
 				"that is regularly unreachable, and default-src 'self' refuses it anyway.",
 				tpl.name, len(found), found)
 		}
@@ -182,8 +182,9 @@ func TestPortalAssetsAreEmbeddedAndWired(t *testing.T) {
 
 	// The bug the old inline script had, which no browser and no test would report: it
 	// called navigator.clipboard.writeText on a page served over plain http — where the
-	// API does not exist — and then showed "کپی شد!" unconditionally. The subscriber was
-	// told the copy worked and their clipboard was untouched. Both paths have to stay.
+	// API does not exist — and then showed the "copied" toast unconditionally. The
+	// subscriber was told the copy worked and their clipboard was untouched. Both paths
+	// have to stay.
 	if !strings.Contains(js, "isSecureContext") || !strings.Contains(js, "execCommand") {
 		t.Error("js/portal.js no longer carries both clipboard paths. This page is normally " +
 			"served over plain http on a VPS address, so navigator.clipboard is absent for " +
@@ -198,10 +199,10 @@ func TestPortalAssetsAreEmbeddedAndWired(t *testing.T) {
 	// The font stacks are the replacement for the webfont link that never loaded. Naming
 	// Vazirmatn first keeps self-hosting it additive — a @font-face plus a .woff2 under
 	// css/, which font-src 'self' already permits.
-	for _, prop := range []string{"--font-fa:", "--font-mono:"} {
+	for _, prop := range []string{"--font-body:", "--font-mono:"} {
 		if !strings.Contains(css, prop) {
 			t.Errorf("css/portal.css no longer defines %s — that stack is what actually "+
-				"renders this all-Persian page", prop)
+				"renders this page", prop)
 		}
 	}
 }
@@ -284,7 +285,7 @@ func TestPortalMarkupWiringMatchesTheScript(t *testing.T) {
 	}
 
 	// The countdown's source of truth. Without it the three cells keep their first paint
-	// forever, which is how "0 روز 4 ساعت" stayed at four hours past midnight.
+	// forever, which is how "0 days 4 hours" stayed at four hours past midnight.
 	if !strings.Contains(page, `data-expires="{{.ExpiresUnix}}"`) {
 		t.Error(`no data-expires="{{.ExpiresUnix}}" — the countdown cannot count`)
 	}

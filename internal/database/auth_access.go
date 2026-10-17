@@ -2,17 +2,15 @@ package database
 
 import (
 	"errors"
-	"strings"
 	"sync"
 )
 
-// The authentication record (v2.1 Phase 6): two-factor configuration and the
-// LDAP directory settings, stored as the "auth" settings key — which the
-// settings envelope seals with the master key, so the TOTP secret and the LDAP
-// bind password are encrypted at rest without this file doing anything.
+// The authentication record: two-factor configuration, stored as the "auth"
+// settings key — which the settings envelope seals with the master key, so the
+// TOTP secret is encrypted at rest without this file doing anything.
 //
 // The snapshot rule is the one the other records follow, with sharper teeth:
-// this record carries two live credentials, and NEITHER may serialise into any
+// this record carries a live credential, and it may not serialise into any
 // response. The dashboard learns booleans ("2FA enabled", "enrollment in
 // progress") and the otpauth URI exactly once, at enrollment, when the secret
 // must reach the phone. After that the secret is write-only.
@@ -30,40 +28,22 @@ type AuthSettings struct {
 	TOTPSecret      string `json:"totp_secret"`       // base32, encrypted at rest by the settings envelope
 	TOTPPending     string `json:"totp_pending"`      // enrollment secret until a code confirms it
 	TOTPConfirmedAt string `json:"totp_confirmed_at"` // RFC3339; empty until first confirmation
-
-	// LDAP.
-	LDAPEnabled      bool   `json:"ldap_enabled"`
-	LDAPServerURL    string `json:"ldap_server_url"` // ldaps://host:636 preferred
-	LDAPBindDN       string `json:"ldap_bind_dn"`
-	LDAPBindPassword string `json:"ldap_bind_password"` // encrypted at rest; NEVER serialised
-	LDAPBaseDN       string `json:"ldap_base_dn"`
-	LDAPUserAttr     string `json:"ldap_user_attr"` // "uid", "sAMAccountName", …
-	// LDAPLoginMode: "local" (default), "ldap", or "both".
-	LDAPLoginMode string `json:"ldap_login_mode"`
 }
 
-// AuthSnapshot is what leaves the process. Both credentials are structurally
-// absent — the fields do not exist on the type, so no handler can leak them by
-// marshalling carelessly. TestAuthSnapshotCarriesNoSecrets walks the type to
-// keep that true.
+// AuthSnapshot is what leaves the process. It cannot carry the TOTP secret:
+// the field is simply not here. TestAuthSnapshotNeverCarriesSecret pins that by
+// reflection.
 type AuthSnapshot struct {
 	TOTPEnabled    bool   `json:"totp_enabled"`
 	TOTPConfigured bool   `json:"totp_configured"` // a confirmed secret exists
 	TOTPEnrolling  bool   `json:"totp_enrolling"`  // a pending enrollment is open
 	OTPAuthURI     string `json:"otpauth_uri"`     // set ONLY during enrollment
-	LDAPEnabled    bool   `json:"ldap_enabled"`
-	LDAPServerURL  string `json:"ldap_server_url"`
-	LDAPBindDN     string `json:"ldap_bind_dn"`
-	LDAPBaseDN     string `json:"ldap_base_dn"`
-	LDAPUserAttr   string `json:"ldap_user_attr"`
-	LDAPLoginMode  string `json:"ldap_login_mode"`
-	LDAPReachable  *bool  `json:"ldap_reachable"` // nil = never probed
 }
 
 // Snapshot copies the displayable auth state under one lock.
 func (a *AuthSettings) Snapshot() AuthSnapshot {
 	if a == nil {
-		return AuthSnapshot{LDAPLoginMode: "local"}
+		return AuthSnapshot{}
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -71,12 +51,6 @@ func (a *AuthSettings) Snapshot() AuthSnapshot {
 		TOTPEnabled:    a.TOTPEnabled,
 		TOTPConfigured: a.TOTPConfirmedAt != "" && a.TOTPSecret != "",
 		TOTPEnrolling:  a.TOTPPending != "",
-		LDAPEnabled:    a.LDAPEnabled,
-		LDAPServerURL:  a.LDAPServerURL,
-		LDAPBindDN:     a.LDAPBindDN,
-		LDAPBaseDN:     a.LDAPBaseDN,
-		LDAPUserAttr:   a.LDAPUserAttr,
-		LDAPLoginMode:  a.ldapModeLocked(),
 	}
 	// The otpauth URI is only ever published while an enrollment is open — the
 	// one moment the secret has to reach the phone. A confirmed record never
@@ -85,18 +59,6 @@ func (a *AuthSettings) Snapshot() AuthSnapshot {
 		s.OTPAuthURI = "present" // the handler builds the real URI; the snapshot carries no secret
 	}
 	return s
-}
-
-// ldapModeLocked normalises the stored mode. Caller holds mu.
-func (a *AuthSettings) ldapModeLocked() string {
-	switch strings.ToLower(strings.TrimSpace(a.LDAPLoginMode)) {
-	case "ldap":
-		return "ldap"
-	case "both":
-		return "both"
-	default:
-		return "local"
-	}
 }
 
 // GetTOTPSecret returns the confirmed enrollment secret, for verification only.
@@ -132,60 +94,6 @@ func (a *AuthSettings) TOTPEnabledNow() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.TOTPEnabled && a.TOTPConfirmedAt != "" && a.TOTPSecret != ""
-}
-
-// LDAPConfigNow returns the directory configuration in force, ready for the
-// authenticator. The second result is false when LDAP is not both enabled and
-// configured, which is the caller's signal to fall back to local credentials.
-func (a *AuthSettings) LDAPConfigNow() (LDAPConfigSnapshot, bool) {
-	if a == nil {
-		return LDAPConfigSnapshot{}, false
-	}
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	if !a.LDAPEnabled || strings.TrimSpace(a.LDAPServerURL) == "" || strings.TrimSpace(a.LDAPBaseDN) == "" {
-		return LDAPConfigSnapshot{}, false
-	}
-	return LDAPConfigSnapshot{
-		ServerURL:    a.LDAPServerURL,
-		BindDN:       a.LDAPBindDN,
-		BindPassword: a.LDAPBindPassword,
-		BaseDN:       a.LDAPBaseDN,
-		UserAttr:     a.LDAPUserAttr,
-	}, true
-}
-
-// LDAPConfigSnapshot is the fields the authenticator needs, handed across the
-// package boundary. It is never serialised anywhere.
-type LDAPConfigSnapshot struct {
-	ServerURL    string
-	BindDN       string
-	BindPassword string
-	BaseDN       string
-	UserAttr     string
-}
-
-// GetLDAPLoginMode returns the normalised mode: "local", "ldap", or "both".
-func (a *AuthSettings) GetLDAPLoginMode() string {
-	if a == nil {
-		return "local"
-	}
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.ldapModeLocked()
-}
-
-// StoredBindPassword returns the raw bind password for the one caller that
-// must preserve it across a partial save (the LDAP settings handler when the
-// form arrived without a new password). It must never be written to a
-// response or a log.
-func (a *AuthSettings) StoredBindPassword() string {
-	if a == nil {
-		return ""
-	}
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.LDAPBindPassword
 }
 
 // SetTOTPPending opens (or re-opens) an enrollment: a fresh secret is drawn,
@@ -264,38 +172,6 @@ func (a *AuthSettings) DisableTOTP(persist func(*AuthSettings) error) error {
 		// quietly turned 2FA off is worse than a disable that reported its
 		// own failure.
 		a.TOTPEnabled, a.TOTPSecret, a.TOTPPending, a.TOTPConfirmedAt = enabled, secret, pending, confirmed
-		return err
-	}
-	return nil
-}
-
-// SetLDAP applies the directory settings under the write lock with rollback.
-// The bind password is stored as given — the settings envelope encrypts it at
-// rest — and an empty bind DN/password pair is a legal anonymous-bind setup.
-func (a *AuthSettings) SetLDAP(enabled bool, serverURL, bindDN, bindPassword, baseDN, userAttr, loginMode string, persist func(*AuthSettings) error) error {
-	if a == nil {
-		return ErrAuthSettingsNil
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	before := [7]string{a.LDAPServerURL, a.LDAPBindDN, a.LDAPBindPassword, a.LDAPBaseDN, a.LDAPUserAttr, a.LDAPLoginMode}
-	beforeEnabled := a.LDAPEnabled
-
-	a.LDAPEnabled = enabled
-	a.LDAPServerURL = strings.TrimSpace(serverURL)
-	a.LDAPBindDN = strings.TrimSpace(bindDN)
-	a.LDAPBindPassword = bindPassword
-	a.LDAPBaseDN = strings.TrimSpace(baseDN)
-	a.LDAPUserAttr = strings.TrimSpace(userAttr)
-	a.LDAPLoginMode = strings.ToLower(strings.TrimSpace(loginMode))
-
-	if persist == nil {
-		return nil
-	}
-	if err := persist(a); err != nil {
-		a.LDAPEnabled = beforeEnabled
-		a.LDAPServerURL, a.LDAPBindDN, a.LDAPBindPassword, a.LDAPBaseDN, a.LDAPUserAttr, a.LDAPLoginMode = before[0], before[1], before[2], before[3], before[4], before[5]
 		return err
 	}
 	return nil

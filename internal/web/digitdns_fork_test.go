@@ -33,7 +33,6 @@ func TestDashboardIsBrandedDigitDNS(t *testing.T) {
 		`data-tab="proxied"`,
 		"Proxied Domains",
 		`id="proxied-sort"`,
-		`id="proxied-load-size"`,
 	} {
 		if !strings.Contains(html, marker) {
 			t.Errorf("index.html is missing %q — the Proxied Domains section regressed", marker)

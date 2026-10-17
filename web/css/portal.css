@@ -3,7 +3,7 @@
  * The portal used to be Tailwind markup styled by /js/tailwind.js — the Play CDN
  * JIT engine, 407 KB of JavaScript that compiles utility classes in the browser on
  * every page load. On the dashboard that is a cost an operator pays once on a
- * desktop. Here it was being paid by a reseller's customer, on a phone, on Iranian
+ * desktop. Here it was being paid by a reseller's customer, on a phone, on slow
  * mobile data, on the one page they are told to open every time their modem
  * restarts — and until that 407 KB arrived and ran, the page they were looking at
  * had no styling at all.
@@ -15,8 +15,8 @@
  * a rule here, and every rule here must be used. A framework cannot be half
  * removed, so the test is what keeps the two files honest with each other.
  *
- * Written logical-first (padding-inline, margin-inline, text-align: start) because
- * the page is dir="rtl" and mixes Persian prose with LTR addresses. */
+ * Written logical-first (padding-inline, margin-inline, text-align: start) so the
+ * layout stays direction-agnostic without a second set of rules. */
 
 /* The portal loads no other stylesheet, so the two @font-face blocks are repeated
  * here rather than shared with css/style.css. That is deliberate: the portal is one
@@ -136,16 +136,14 @@
   --chip-face: rgba(71, 85, 105, 0.1);
 }
 
-:root {  /* Vazirmatn is self-hosted above and covers Persian and Latin from one file, so it
-   * leads here and the rest of the list is the no-webfont path. Tahoma stays in it,
-   * early: it is the one font present on stock Windows that draws Persian well.
+:root {  /* Vazirmatn is self-hosted above and covers Latin from one file, so it
+   * leads here and the rest of the list is the no-webfont fallback.
    *
    * Vazirmatn is second in the mono stack, not absent from it. This page sets a
-   * traffic figure like "۲.۵ GB باقیمانده" in the mono role — a Latin-only monospace
-   * would render the number and hand the Persian to whatever the OS chose, at a
-   * different size, on a different baseline, inside one line of text. */
-  --font-fa: 'Vazirmatn', 'Sahel', 'Shabnam', 'Iranian Sans', Tahoma,
-    'Segoe UI', 'Noto Naskh Arabic', 'Geeza Pro', system-ui, sans-serif;
+   * traffic figure like "2.5 GB remaining" in the mono role — a Latin-only monospace
+   * would render the number at a different size and baseline than the words beside
+   * it, inside one line of text. */
+  --font-body: 'Vazirmatn', Tahoma, 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Vazirmatn', ui-monospace, 'Cascadia Mono',
     'Segoe UI Mono', 'SF Mono', Menlo, Consolas, monospace;
 
@@ -164,7 +162,7 @@
   margin: 0;
   padding: 2rem 1rem;
   min-height: 100vh;
-  font-family: var(--font-fa);
+  font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.7;
   color: var(--ink);
@@ -284,9 +282,9 @@
   color: var(--ink);
 }
 
-/* Addresses, tokens and quota figures are LTR inside an RTL document. Without the
- * direction reset a browser reorders "1.1.1.1" or "12.50 GB / 50.0 GB" around the
- * surrounding Persian and the subscriber copies a value that reads backwards. */
+/* Addresses, tokens and quota figures are pinned LTR and bidi-isolated so a value
+ * like "1.1.1.1" or "12.50 GB / 50.0 GB" always reads left-to-right and is copied
+ * verbatim. */
 .mono {
   font-family: var(--font-mono);
   direction: ltr;
@@ -755,7 +753,7 @@
   color: var(--ink-faint);
 }
 
-/* A lifetime subscription has no countdown. It used to be rendered as "9999 روز",
+/* A lifetime subscription has no countdown. It used to be rendered as "9999 days",
  * which reads like a bug to the person paying for it. */
 .count-inf {
   padding: 0.85rem;
@@ -861,9 +859,8 @@
   margin: 0;
 }
 
-/* The DNS values inside a step. Two addresses on their own lines, LTR, so a
- * subscriber reading a Persian instruction can still copy them character by
- * character without the digits reordering. */
+/* The DNS values inside a step. Two addresses on their own lines, LTR, so the
+ * digits never reorder and a subscriber can copy them character by character. */
 .snippet {
   font-family: var(--font-mono);
   direction: ltr;
@@ -891,9 +888,9 @@
 }
 
 /* Centred with auto inline margins rather than a 50% offset plus a translate: the
- * transform axis stays physical while the offset flips under dir="rtl", so the
- * offset-and-translate pair centres the toast in one direction and pushes it off
- * screen in the other. */
+ * transform axis stays physical while the offset flips with writing direction, so
+ * the offset-and-translate pair would centre the toast one way and push it off
+ * screen the other. */
 /* The toast is a bright chip with dark text in the dark theme and a dark chip with
    light text in the light one — --on-accent flips, so one set of state colours works
    in both as long as each of them is a token that darkens too. */

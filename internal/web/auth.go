@@ -145,7 +145,7 @@ func (ws *WebServer) authGate(next http.HandlerFunc, allowQueryToken bool) http.
 // v2.2.0 scoping: the master REST key no longer authorizes dashboard admin
 // routes. One credential passing both surfaces meant a leaked REST key (the
 // one credential that rides HTTP headers in integrations and CI logs) was a
-// full panel takeover — settings, credentials, LDAP mode, everything. The
+// full panel takeover — settings, credentials, everything. The
 // REST key keeps its full power on /api/v1|/api/v2 (the API router's own
 // SecurityMiddleware); here, only a real dashboard session counts.
 func (ws *WebServer) tokenAuthorized(token string) bool {
@@ -289,43 +289,10 @@ func (ws *WebServer) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Two credential sources, ordered by the auth record's login mode: the
-	// local record, the directory, or the directory falling back to the local
-	// record. All of them collapse to one boolean and one failure string — a
-	// prober must not learn which paths exist from an answer.
-	ok, weak := false, false
-	mode := ws.authSettings.GetLDAPLoginMode()
-	ldapTried := false
-	if cfgSnap, ldapOn := ws.authSettings.LDAPConfigNow(); ldapOn && (mode == "ldap" || mode == "both") {
-		ldapTried = true
-		cfg := auth.LDAPConfig{
-			ServerURL:    cfgSnap.ServerURL,
-			BindDN:       cfgSnap.BindDN,
-			BindPassword: cfgSnap.BindPassword,
-			BaseDN:       cfgSnap.BaseDN,
-			UserAttr:     cfgSnap.UserAttr,
-		}
-		if ws.ldapAuth.Authenticate(req.Username, req.Password, cfg) == nil {
-			// The directory decides whether the credentials are real; this
-			// panel decides who may log in. The daemon has exactly one admin
-			// account, so only the entry naming that account may pass —
-			// without this check every user under the BaseDN would
-			// authenticate into full panel admin.
-			adminUser, _, _ := ws.settings.AdminCredentials()
-			if adminUser == "" {
-				adminUser = "admin"
-			}
-			if subtle.ConstantTimeCompare([]byte(req.Username), []byte(adminUser)) == 1 {
-				ok = true
-			}
-		} else if mode == "both" {
-			// The directory did not take the credentials; "both" means the
-			// local record still gets its chance.
-			ok, weak = ws.verifyAdminPassword(req.Username, req.Password)
-		}
-	} else if !ldapTried {
-		ok, weak = ws.verifyAdminPassword(req.Username, req.Password)
-	}
+	// The local record is the only credential source. Every failure collapses
+	// to one boolean and one failure string — a prober must not learn which
+	// accounts exist from an answer.
+	ok, weak := ws.verifyAdminPassword(req.Username, req.Password)
 
 	// Second factor. Checked only after a primary factor has already passed:
 	// asking for a code up front would confirm that 2FA is on without any

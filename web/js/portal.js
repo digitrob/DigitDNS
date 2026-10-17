@@ -12,13 +12,12 @@
 // data-copy on anything copyable, data-tab on a guide tab, data-sync on the sync
 // button, data-expires on the countdown.
 //
-// It also shows no string of its own. One file is served to a Persian and an English
-// reader alike and it cannot ask the server which one is reading it, so every message
-// it displays is rendered onto a data- attribute by the template and read back from
-// there. That is not only about translation: two of them are glued to a number this
-// file recomputes after a sync, and reading the same bundle field Go used for the
-// first paint is what stops the wording shifting under the subscriber when they
-// press the button.
+// It also shows no string of its own. Every message it displays is rendered onto
+// a data- attribute by the template and read back from there, so the wording has
+// exactly one source. That matters beyond tidiness: two of them are glued to a
+// number this file recomputes after a sync, and reading the same bundle field Go
+// used for the first paint is what stops the wording shifting under the subscriber
+// when they press the button.
 
 (function () {
   'use strict';
@@ -63,7 +62,7 @@
   // normally served over plain http on a VPS address — so on the page where the
   // whole point is copying a DNS address, the async API is absent for most
   // subscribers. The previous code called navigator.clipboard.writeText without
-  // awaiting it or checking for it, then showed "کپی شد!" unconditionally: the
+  // awaiting it or checking for it, then showed "Copied!" unconditionally: the
   // subscriber was told the copy succeeded and their clipboard was untouched.
   // Nothing here reports success it did not get.
   function writeClipboard(text) {
@@ -136,9 +135,9 @@
     });
   }
 
-  // Arrow keys move along the tablist. The list is inside dir="rtl", so
-  // ArrowLeft advances and ArrowRight goes back — the key that points at the next
-  // tab visually is the one that should select it.
+  // Arrow keys move along the tablist. The list follows the document's writing
+  // direction: when that is right-to-left, ArrowLeft advances and ArrowRight goes
+  // back — the key that points at the next tab visually selects it.
   function activate(btn) {
     if (!btn) return;
     selectTab(btn.getAttribute('data-tab'));
@@ -153,11 +152,8 @@
     var btns = tabButtons();
     var i = btns.indexOf(tab);
     if (i < 0) return;
-    var rtl = (document.documentElement.getAttribute('dir') || '') === 'rtl';
-    var forward = rtl ? 'ArrowLeft' : 'ArrowRight';
-    var back = rtl ? 'ArrowRight' : 'ArrowLeft';
-    if (e.key === forward) activate(btns[(i + 1) % btns.length]);
-    else if (e.key === back) activate(btns[(i - 1 + btns.length) % btns.length]);
+    if (e.key === 'ArrowRight') activate(btns[(i + 1) % btns.length]);
+    else if (e.key === 'ArrowLeft') activate(btns[(i - 1 + btns.length) % btns.length]);
     else if (e.key === 'Home') activate(btns[0]);
     else if (e.key === 'End') activate(btns[btns.length - 1]);
     else return;
@@ -183,8 +179,8 @@
   /* --- Expiry countdown ----------------------------------------------------- */
 
   // The three boxes used to be server-rendered numbers with ids that promised a
-  // countdown and never moved: a subscriber who left the tab open watched "0 روز
-  // 4 ساعت" stay at four hours past midnight. data-expires is a unix second, 0 for
+  // countdown and never moved: a subscriber who left the tab open watched "0 days
+  // 4 hours" stay at four hours past midnight. data-expires is a unix second, 0 for
   // a lifetime plan (in which case the markup renders a single ∞ cell instead and
   // there is nothing here to update).
   function tickCountdown() {

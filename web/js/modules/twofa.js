@@ -169,89 +169,6 @@ function initTwoFactorControls() {
 }
 
 // =======================================================
-// v2.1 LDAP DIRECTORY LOGIN (settings tab)
-// =======================================================
-
-function initLdapControls() {
-  const enabled = document.getElementById('ldap-enabled-input');
-  const mode = document.getElementById('ldap-mode-input');
-  const urlInput = document.getElementById('ldap-url-input');
-  const userAttr = document.getElementById('ldap-userattr-input');
-  const bindDN = document.getElementById('ldap-binddn-input');
-  const bindPW = document.getElementById('ldap-bindpw-input');
-  const baseDN = document.getElementById('ldap-basedn-input');
-  const saveBtn = document.getElementById('ldap-save-btn');
-  const statusEl = document.getElementById('ldap-save-status');
-
-  window.renderLdap = function () {
-    fetch(api('/api/auth/ldap'), {
-      headers: { 'Authorization': `Bearer ${authToken()}` }
-    }).then(async res => {
-      if (!res.ok) return;
-      const s = await res.json();
-      if (enabled) enabled.checked = !!s.ldap_enabled;
-      if (mode) mode.value = s.ldap_login_mode || 'local';
-      if (urlInput) urlInput.value = s.ldap_server_url || '';
-      if (userAttr) userAttr.value = s.ldap_user_attr || '';
-      if (bindDN) bindDN.value = s.ldap_bind_dn || '';
-      if (baseDN) baseDN.value = s.ldap_base_dn || '';
-      if (bindPW) bindPW.value = '';
-    }).catch(() => {});
-  };
-
-  if (!saveBtn) return;
-  saveBtn.addEventListener('click', async () => {
-    if (!enabled || !mode) return;
-    if (enabled.checked && (urlInput ? urlInput.value.trim() : '') && !/^ldaps?:\/\//.test(urlInput.value.trim())) {
-      showToast('The server URL must start with ldap:// or ldaps://', 'error');
-      return;
-    }
-    const ldapPassword = document.getElementById('ldap-admin-password');
-    const ldapCode = document.getElementById('ldap-totp-code');
-    if (!ldapPassword || !ldapPassword.value) {
-      showToast('Enter your current password to save the directory settings.', 'error');
-      return;
-    }
-    saveBtn.disabled = true;
-    if (statusEl) statusEl.textContent = 'Saving…';
-    try {
-      const res = await fetch(api('/api/auth/ldap'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken()}` },
-        body: JSON.stringify({
-          enabled: enabled.checked ? 'true' : 'false',
-          current_password: ldapPassword.value,
-          code: (ldapCode ? ldapCode.value : '').trim(),
-          ldap_server_url: urlInput ? urlInput.value.trim() : '',
-          ldap_bind_dn: bindDN ? bindDN.value.trim() : '',
-          // Empty means "keep the stored one" — the bind password never
-          // round-trips through the browser.
-          ldap_bind_password: bindPW ? bindPW.value : '',
-          ldap_base_dn: baseDN ? baseDN.value.trim() : '',
-          ldap_user_attr: userAttr ? userAttr.value.trim() : '',
-          ldap_login_mode: mode.value
-        })
-      });
-      if (!res.ok) {
-        if (statusEl) statusEl.textContent = '';
-        showToast(await errorMessage(res, 'The server refused the LDAP settings'), 'error');
-        return;
-      }
-      if (statusEl) statusEl.textContent = 'Saved.';
-      showToast('LDAP settings saved — sign in again.', 'success');
-      localStorage.removeItem('hyperdns_token');
-      setAuthToken('');
-      window.location.reload();
-    } catch (err) {
-      if (statusEl) statusEl.textContent = '';
-      showToast('Could not reach the server.', 'error');
-    } finally {
-      saveBtn.disabled = false;
-    }
-  });
-}
-
-// =======================================================
 // v2.1 SUBSCRIPTION SETTINGS (settings tab, third group)
 // =======================================================
 
@@ -391,6 +308,5 @@ function initSubscriptionSettings() {
   // whole route switch (UI bug found by the Playwright E2E: /dash/settings
   // stayed on Dashboard because handleRouteFromURL never ran).
   window.initTwoFactorControls = initTwoFactorControls;
-  window.initLdapControls = initLdapControls;
   window.initSubscriptionSettings = initSubscriptionSettings;
 })();

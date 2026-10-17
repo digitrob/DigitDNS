@@ -11,8 +11,8 @@ import (
 // A placeholder is not a label. A screen reader does not announce it as the
 // field's name, and it disappears the moment the field has content — so an
 // operator who tabs back into a half-filled Settings form has nothing left to
-// identify it by. Thirty-three controls shipped that way: every LDAP field,
-// every subscription field, both certificate fields, the three rule-list inputs,
+// identify it by. Many controls shipped that way: every subscription field,
+// both certificate fields, the three rule-list inputs,
 // both static-record inputs, all four two-factor fields, the three search boxes,
 // the stream filter, the expiry hour/minute selects, and the four icon-only
 // dialog buttons, which had no text node at all.

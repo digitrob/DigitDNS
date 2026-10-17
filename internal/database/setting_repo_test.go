@@ -511,7 +511,7 @@ func TestValidateSettingsRejectsWrongAuthoritativeFieldTypes(t *testing.T) {
 		{key: "sniproxy", raw: `{"http_port":"80"}`},
 		{key: "tls", raw: `{"panel_https":"true"}`},
 		{key: "subscription", raw: `{"port":"443"}`},
-		{key: "auth", raw: `{"ldap_enabled":"true"}`},
+		{key: "auth", raw: `{"totp_enabled":"true"}`},
 		{key: "access", raw: `{"doh_tokens":"one-token"}`},
 	}
 

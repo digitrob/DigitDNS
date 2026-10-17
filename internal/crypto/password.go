@@ -240,7 +240,7 @@ func ValidatePasswordStrength(username, plaintext string) error {
 	if len(plaintext) > maxPasswordLength {
 		return fmt.Errorf("password cannot be longer than %d characters", maxPasswordLength)
 	}
-	// Count runes, not bytes: a Persian or emoji passphrase is not short just
+	// Count runes, not bytes: a non-ASCII or emoji passphrase is not short just
 	// because UTF-8 spends more bytes on it.
 	runes := []rune(plaintext)
 	if len(runes) < MinPasswordLength {
@@ -275,7 +275,7 @@ func ValidatePasswordStrength(username, plaintext string) error {
 	// A single character class over ten ASCII characters is still weak against a
 	// targeted run, so ask for two. The rule is skipped once length or alphabet
 	// already carries the keyspace: a 16-character phrase, or anything using a
-	// non-ASCII script (a Persian passphrase is not weak for being all one
+	// non-ASCII script (such a passphrase is not weak for being all one
 	// "class" — it draws from a far larger alphabet than [a-z]).
 	if len(runes) < 16 && !hasNonASCII(runes) && countCharacterClasses(runes) < 2 {
 		return errors.New("password must combine at least two of: lower case, upper case, digits, symbols — or be at least 16 characters long")
@@ -340,7 +340,7 @@ func countCharacterClasses(runes []rune) int {
 		case unicode.IsDigit(r):
 			digit = true
 		default:
-			// Symbols, punctuation, and scripts without case (Persian, CJK) all
+			// Symbols, punctuation, and scripts without case (CJK, and the like) all
 			// land here and count as their own class.
 			other = true
 		}

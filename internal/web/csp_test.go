@@ -192,8 +192,8 @@ func TestInlineScriptBlocksAreAccountedFor(t *testing.T) {
 var offOriginRe = regexp.MustCompile(`(?:src|href)\s*=\s*["'](?:https?:)?//[^"']+`)
 
 // "100% offline, zero external CDN" is a claim the project makes, and it is the
-// operational requirement behind it that matters: this panel is served from a VPS in
-// Iran to a browser at home, and any third-party host in the critical path is a host
+// operational requirement behind it that matters: this panel is served from a VPS
+// to a browser at home, and any third-party host in the critical path is a host
 // that is frequently unreachable from one end or the other. It is also a privacy
 // claim — a CDN in the page tells that CDN who administers this resolver and when.
 func TestDashboardLoadsNothingOffOrigin(t *testing.T) {
