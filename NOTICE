@@ -13,7 +13,7 @@ This product is a modified fork of HyperDNS.
 
     This fork        : DigitDNS
     Maintainer       : Digitrob
-    Fork source      : https://github.com/digitrob/HyperDNS
+    Fork source      : https://github.com/digitrob/DigitDNS
 
 DigitDNS is free software: you can redistribute it and/or modify it under the
 terms of the GNU Affero General Public License as published by the Free
@@ -25,7 +25,7 @@ more details.
 
 The full licence text is in the LICENSE file in this repository. The complete
 corresponding source of this fork is available at
-https://github.com/digitrob/HyperDNS.
+https://github.com/digitrob/DigitDNS.
 
 Modifications relative to upstream HyperDNS
 -------------------------------------------

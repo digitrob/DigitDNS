@@ -442,6 +442,6 @@ GNU Affero General Public License v3.0 منتشر شده است. DigitDNS یک �
 و توضیح انتساب و تغییرات در [NOTICE](NOTICE) موجود است.
 
 کد منبع این فورک در
-[github.com/digitrob/HyperDNS](https://github.com/digitrob/HyperDNS) در دسترس است.
+[github.com/digitrob/DigitDNS](https://github.com/digitrob/DigitDNS) در دسترس است.
 
 </div>

@@ -101,14 +101,14 @@ func VerifyChecksumsSignatureForTest(body []byte, header string) error {
 	return verifyChecksumsSignature(body, header)
 }
 
-// This fork publishes its own releases from digitrob/HyperDNS on the `custom`
+// This fork publishes its own releases from digitrob/DigitDNS on the `custom`
 // branch, and signs every bundle with the fork's own pinned RELEASE_SIGNING_KEY
 // (see ReleasePubKey above). The updater only ever reads from these values, so
 // repointing them here is what makes a fork build update from the fork and not
 // from upstream.
 const (
 	ghOwner  = "digitrob"
-	ghRepo   = "HyperDNS"
+	ghRepo   = "DigitDNS"
 	ghBranch = "custom"
 
 	rawVersionURL = "https://raw.githubusercontent.com/" + ghOwner + "/" + ghRepo + "/" + ghBranch + "/version.json"

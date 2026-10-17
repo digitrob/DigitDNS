@@ -53,7 +53,7 @@ func TestDashboardCarriesAGPLAttribution(t *testing.T) {
 func TestRepositoryShipsUpstreamNoticeAndAttribution(t *testing.T) {
 	notice := repoFile(t, "../../NOTICE")
 	for _, marker := range []string{
-		"AGPL", "IzumiRain/HyperDNS", "digitrob/HyperDNS", "fork",
+		"AGPL", "IzumiRain/HyperDNS", "digitrob/DigitDNS", "fork",
 	} {
 		if !strings.Contains(notice, marker) {
 			t.Errorf("NOTICE is missing %q", marker)
@@ -69,7 +69,7 @@ func TestSelfUpdateRepointedToFork(t *testing.T) {
 	src := readGoSource(t, "../selfupdate/selfupdate.go")
 	for _, pin := range []string{
 		`ghOwner  = "digitrob"`,
-		`ghRepo   = "HyperDNS"`,
+		`ghRepo   = "DigitDNS"`,
 		`ghBranch = "custom"`,
 	} {
 		if !strings.Contains(src, pin) {

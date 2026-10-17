@@ -22,13 +22,13 @@ carried on the `custom` branch.
 ### 🔄 Changed
 - The dashboard section formerly called **"Custom Proxied Domains"** is now **"Proxied Domains"** (sidebar, heading, mobile label and i18n string).
 - The **Live Query Log** fills the available height (the centred max-width is preserved) instead of a fixed 500px scroll box.
-- **Self-updates are repointed to this fork**: `internal/selfupdate` targets `digitrob/HyperDNS` on the `custom` branch and pins the fork's own ed25519 release key.
+- **Self-updates are repointed to this fork**: `internal/selfupdate` targets `digitrob/DigitDNS` on the `custom` branch and pins the fork's own ed25519 release key.
 
 ---
 
 ## 🔧 [Unreleased] — Preset Catalogue Removed, Bulk Domain Import Added
 
-This fork ([digitrob/HyperDNS](https://github.com/digitrob/HyperDNS)) tracks upstream from v2.8.0-beta.1 with one deliberate divergence: the built-in policy preset catalogue is gone, and routing is entirely the operator's own domain lists.
+This fork ([digitrob/DigitDNS](https://github.com/digitrob/DigitDNS)) tracks upstream from v2.8.0-beta.1 with one deliberate divergence: the built-in policy preset catalogue is gone, and routing is entirely the operator's own domain lists.
 
 ### ✨ Added
 - **A dedicated "Custom Proxied Domains" page** (`/proxied`) with its own entry in the sidebar and the mobile bar, between Dashboard and Clients. Each domain carries a switch: turning one off keeps it listed (dimmed) but lifts it out of the proxy set, so it resolves normally; turning it back on restores proxying. The add box and bulk import move here with it.

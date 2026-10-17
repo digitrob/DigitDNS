@@ -554,4 +554,4 @@ modified fork; the original copyright notices are retained in full. See
 attribution and modification summary.
 
 Source code for this fork is available at
-[github.com/digitrob/HyperDNS](https://github.com/digitrob/HyperDNS).
+[github.com/digitrob/DigitDNS](https://github.com/digitrob/DigitDNS).
