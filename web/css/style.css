@@ -1184,3 +1184,27 @@ input:checked + .slider:before {
   margin-top: 0.25rem;
   color: rgb(var(--c-slate-500));
 }
+
+/* ---- Dashboard telemetry grid (Upstream Racers column) -----------------------
+   At >=1024px the racer card runs the full height of the two left-hand rows so a
+   long upstream list shows ten-plus resolvers without an inner scrollbar; the list
+   grows to fill the column and only scrolls once it is full. Plain CSS rather than
+   Tailwind utilities because the committed purged stylesheet cannot be regenerated
+   without Node, so a utility that is not already in it would silently do nothing. */
+.upstream-list {
+  flex: 1 1 0%;
+  min-height: 0;
+  max-height: 30rem; /* mobile: keep a long list from towering over the page */
+  overflow-y: auto;
+}
+
+@media (min-width: 1024px) {
+  .upstream-col {
+    grid-row: span 2 / span 2;
+    height: 100%;
+    min-height: 0;
+  }
+  .upstream-list {
+    max-height: none;
+  }
+}
