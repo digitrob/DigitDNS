@@ -1,8 +1,28 @@
-# 📜 HyperDNS Changelog
+# 📜 DigitDNS Changelog
 
-All notable changes to the **HyperDNS** project will be documented in this file.
+All notable changes to **DigitDNS** — a fork of the **HyperDNS** project by HyperRAIN — will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## 🏷️ [Unreleased] — DigitDNS Rebrand, Proxied Domains UX & Forked Self-Updates
+
+The browser-facing interface in this fork is **DigitDNS**. The engine, REST API, CLI and
+internal identifiers stay unchanged from upstream (see `NOTICE`), and every change below is
+carried on the `custom` branch.
+
+### ✨ Added
+- **Proxied Domains list controls** — a sort selector (Added newest/oldest, Name A–Z/Z–A, Status) and a batch-size selector (10/25/50/100, default 25). The list loads incrementally with an IntersectionObserver sentinel and a "Load more" fallback.
+- **Live Query Log row actions** — each row's ACTION badge opens one shared menu offering Proxy / Block / Direct / Remove for the exact host, its `*.host` wildcard, or the `*.parent` wildcard. Applying one rewrites the routing lists through the exact same write path as a manual edit.
+- **About & Legal card and footer notice** crediting upstream HyperDNS, stating the AGPL-3.0 licence and naming the fork's source.
+- **`NOTICE`** file with the AGPL-3.0 attribution and a modification summary relative to upstream.
+- **`upstream-sync` GitHub Actions workflow** — merges upstream into a throwaway branch and opens a pull request, raising an issue instead when the merge conflicts.
+
+### 🔄 Changed
+- The dashboard section formerly called **"Custom Proxied Domains"** is now **"Proxied Domains"** (sidebar, heading, mobile label and i18n string).
+- The **Live Query Log** fills the available height (the centred max-width is preserved) instead of a fixed 500px scroll box.
+- **Self-updates are repointed to this fork**: `internal/selfupdate` targets `digitrob/HyperDNS` on the `custom` branch and pins the fork's own ed25519 release key.
 
 ---
 
@@ -11,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 This fork ([digitrob/HyperDNS](https://github.com/digitrob/HyperDNS)) tracks upstream from v2.8.0-beta.1 with one deliberate divergence: the built-in policy preset catalogue is gone, and routing is entirely the operator's own domain lists.
 
 ### ✨ Added
+- **A dedicated "Custom Proxied Domains" page** (`/proxied`) with its own entry in the sidebar and the mobile bar, between Dashboard and Clients. Each domain carries a switch: turning one off keeps it listed (dimmed) but lifts it out of the proxy set, so it resolves normally; turning it back on restores proxying. The add box and bulk import move here with it.
 - **Bulk domain import.** The Custom Proxied and Custom Blocked lists can be filled a whole list at a time: paste names into the dashboard dialog or upload a file (≤ 1 MiB). Entries may be newline-, comma- or semicolon-separated, `#` starts a comment, `*.` wildcards are accepted, and the import reports how many names were added, already listed, and invalid.
 
 ### 🗑️ Removed
@@ -19,7 +40,7 @@ This fork ([digitrob/HyperDNS](https://github.com/digitrob/HyperDNS)) tracks ups
 - **The `config.json` `rules` block and the `enable_*` keys** — routing lives in the database and is edited from the dashboard, not seeded from the config file.
 
 ### 🔄 Changed
-- `GET /api/v1/policies` (and v2) now answers an empty `catalog`; `POST` stores a rule entry (the four `custom_*` keys) instead of toggling a preset.
+- `GET /api/v1/policies` (and v2) now answers an empty `catalog`; `POST` stores a rule entry (the five `custom_*` keys, including the new `custom_proxied_disabled`) instead of toggling a preset. `custom_proxied_disabled` holds proxied domains the operator switched off on the proxied page: they are persisted and echoed back, but never handed to the live resolver.
 - `custom_policies` on a client is accepted and stored but is **inert** — the resolver applies one rule set to everyone.
 - The `update-presets` console command is gone and the TUI menu is renumbered; the `/rules` and `/policy` SPA paths still resolve so old bookmarks keep working.
 

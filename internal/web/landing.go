@@ -45,7 +45,7 @@ const landingPageHTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="dark">
 <meta name="robots" content="noindex, nofollow">
-<title>HyperDNS</title>
+<title>DigitDNS</title>
 <style>
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
@@ -107,11 +107,11 @@ body {
 <body data-landing="matrix">
 <canvas id="matrix" aria-hidden="true"></canvas>
 <main class="brand">
-<h1>HyperDNS</h1>
+<h1>DigitDNS</h1>
 <p class="sub">quiet node</p>
-<p class="static-fallback" aria-hidden="true">01001000 01111001 01110000 01100101 01110010 01000100 01001110 01010011</p>
+<p class="static-fallback" aria-hidden="true">01000100 01101001 01100111 01101001 01110100 01000100 01001110 01010011</p>
 </main>
-<noscript><p style="position:relative;text-align:center;color:#00ff41">HyperDNS</p></noscript>
+<noscript><p style="position:relative;text-align:center;color:#00ff41">DigitDNS</p></noscript>
 <script>
 (function () {
   try {

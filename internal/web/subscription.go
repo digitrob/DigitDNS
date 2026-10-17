@@ -264,7 +264,7 @@ func (ws *WebServer) sanitizeSubscriptionSnapshot(in SubscriptionSettingsInput) 
 
 	out.Title = strings.TrimSpace(out.Title)
 	if out.Title == "" {
-		out.Title = "HyperDNS"
+		out.Title = "DigitDNS"
 	}
 	if len(out.Title) > 64 {
 		return in, "the title must be at most 64 characters"

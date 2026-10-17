@@ -120,8 +120,8 @@ func TestIndexHTMLFormsHaveExplicitLabels(t *testing.T) {
 
 func TestIndexHTMLMobileNavigationMeetsTargetSize(t *testing.T) {
 	doc := readAsset(t, "index.html")
-	if strings.Count(doc, `class="mobile-nav-item`) != 6 {
-		t.Error("the mobile navigation must carry its six targets")
+	if strings.Count(doc, `class="mobile-nav-item`) != 7 {
+		t.Error("the mobile navigation must carry its seven targets")
 	}
 	// Sizing lives once in css/style.css's .mobile-nav-item rule (a documented
 	// 40px target inside the 48px bar — above WCAG 2.2 SC 2.5.8's 24px floor),
@@ -245,7 +245,7 @@ func TestPortalBrandLineIsTheOperatorsTitle(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), `<h1 class="title">HyperDNS</h1>`) {
+	if !strings.Contains(w.Body.String(), `<h1 class="title">DigitDNS</h1>`) {
 		t.Error("the default brand line is not rendered as the portal heading")
 	}
 }

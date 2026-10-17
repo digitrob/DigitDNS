@@ -1012,3 +1012,166 @@ input:checked + .slider:before {
 .mobile-nav-item.active i {
   filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.6));
 }
+
+/* ── Proxied domains list — the scrolling batch region ───────────────────────────
+ * The routing list is the one list on the panel that can hold thousands of
+ * entries, so it is not capped at max-h-72 and printed in full. It gets a fixed
+ * viewport of its own and the JS fills it a batch at a time (#proxied-sentinel
+ * appends the next one). The height is a viewport unit so a tall list scrolls
+ * inside the panel rather than pushing Bulk import off the top of the page, and
+ * the same scrollbar styling that covers every other scroller applies here too. */
+.proxied-scroll {
+  max-height: 24rem;
+  overflow-y: auto;
+}
+
+/* The sentinel the IntersectionObserver watches. It has to be in the layout — a
+ * display:none element never intersects — but not visible, so it is a
+ * full-width hairline at the end of the list. */
+.proxied-sentinel {
+  width: 100%;
+  height: 1px;
+}
+
+/* ── Live query log: full-height panel ──────────────────────────────────────────
+ * The log is the one tab an operator leaves open and reads continuously, so it
+ * should own the viewport rather than a fixed 500px window. #main-content becomes
+ * a flex column so a single visible tab can grow into the leftover height — this
+ * is safe for the other tabs because a lone hidden sibling is display:none and a
+ * lone visible sibling does not grow without an explicit flex-grow. Only
+ * #tab-stream opts in: the section, its glass panel, and the table viewport each
+ * pass the height down with min-height:0, which is what lets the viewport's own
+ * overflow scroll instead of stretching the page.
+ *
+ * :not(.hidden) is load-bearing. #tab-stream is an id selector, so a bare
+ * display:flex on it would out-specify the .hidden utility switchTab adds and the
+ * panel would never hide. */
+#main-content {
+  display: flex;
+  flex-direction: column;
+}
+#tab-stream:not(.hidden) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+#tab-stream > .glass-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.stream-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* ── Live-log quick actions: the ACTION badge and its popover ───────────────────
+ * The badge becomes a button so a query can be routed without leaving the log.
+ * One shared menu node is positioned next to the badge that opened it (app.js
+ * sets left/top); colours come from the theme tokens, so it sits with the other
+ * glass surfaces in either theme. */
+.stream-action-btn {
+  display: inline-flex;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 9999px;
+}
+.stream-action-btn:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+}
+.stream-action-btn:hover .badge {
+  filter: brightness(1.12);
+}
+
+.stream-action-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 12rem;
+  padding: 0.35rem;
+  border-radius: 0.75rem;
+  background: rgb(var(--c-slate-950) / 0.98);
+  border: 1px solid rgb(var(--c-slate-700));
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.5);
+  color: rgb(var(--c-slate-200));
+}
+.stream-action-head {
+  padding: 0.3rem 0.5rem;
+  margin-bottom: 0.3rem;
+  border-bottom: 1px solid rgb(var(--c-slate-800));
+}
+.stream-action-domain {
+  display: block;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: rgb(var(--c-cyan-400));
+}
+.stream-action-scopes {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 0.25rem 0.35rem;
+}
+.stream-action-scope {
+  flex: 1;
+  padding: 0.2rem 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: rgb(var(--c-slate-400));
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  cursor: pointer;
+}
+.stream-action-scope:hover { color: rgb(var(--c-slate-200)); }
+.stream-action-scope.is-active {
+  color: rgb(var(--c-cyan-400));
+  background: rgb(var(--c-cyan-400) / 0.14);
+  border-color: rgb(var(--c-cyan-400) / 0.35);
+}
+.stream-action-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.5rem;
+  font-size: 12px;
+  text-align: start;
+  color: rgb(var(--c-slate-200));
+  background: transparent;
+  border: 0;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+.stream-action-item:hover { background: rgb(var(--c-cyan-400) / 0.12); }
+.stream-action-item svg,
+.stream-action-item .stream-action-icon {
+  width: 14px;
+  height: 14px;
+}
+.stream-action-danger { color: rgb(var(--c-slate-400)); }
+.stream-action-danger:hover {
+  background: rgb(239 68 68 / 0.14);
+  color: rgb(248 113 113);
+}
+
+/* ---- About & legal (AGPL-3.0 attribution) -----------------------------------
+   The footer line and the Settings About card carry the fork's identity and the
+   upstream notice. Both are plain CSS rather than Tailwind utilities so the
+   attribution text cannot drift out of the purged stylesheet. */
+.footer-legal {
+  display: block;
+  margin-top: 0.25rem;
+  color: rgb(var(--c-slate-500));
+}

@@ -46,7 +46,7 @@ import (
 // To rotate the release identity: generate a fresh keypair, put the private half
 // in the RELEASE_SIGNING_KEY secret, and replace the base64 below — the public
 // key is the 32-byte raw ed25519 key, not a PEM/SPKI wrapper.
-var ReleasePubKey = mustDecodeKey("kbPBMII0wuIGvhca5hnB1+LmNJWgGZ6ZcncEBw0qRmE=")
+var ReleasePubKey = mustDecodeKey("t6ALf/qKHGDn0uMJZOzQmJKh/feXXaQPceGa/8KD1qc=")
 
 func mustDecodeKey(b64 string) ed25519.PublicKey {
 	raw, err := base64.StdEncoding.DecodeString(b64)
@@ -101,10 +101,15 @@ func VerifyChecksumsSignatureForTest(body []byte, header string) error {
 	return verifyChecksumsSignature(body, header)
 }
 
+// This fork publishes its own releases from digitrob/HyperDNS on the `custom`
+// branch, and signs every bundle with the fork's own pinned RELEASE_SIGNING_KEY
+// (see ReleasePubKey above). The updater only ever reads from these values, so
+// repointing them here is what makes a fork build update from the fork and not
+// from upstream.
 const (
-	ghOwner  = "IzumiRain"
+	ghOwner  = "digitrob"
 	ghRepo   = "HyperDNS"
-	ghBranch = "main"
+	ghBranch = "custom"
 
 	rawVersionURL = "https://raw.githubusercontent.com/" + ghOwner + "/" + ghRepo + "/" + ghBranch + "/version.json"
 	releasesURL   = "https://api.github.com/repos/" + ghOwner + "/" + ghRepo + "/releases?per_page=30"

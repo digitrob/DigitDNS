@@ -15,7 +15,7 @@
        autofill dropdown) in the theme actually in force. Kept in sync with the
        data-theme attribute below by app.js. -->
   <meta name="color-scheme" content="dark light">
-  <title>HyperDNS — Next-Gen Gaming & Anti-Sanction SmartDNS Controller</title>
+  <title>DigitDNS — Anti-Sanction SmartDNS Controller</title>
   <!-- A drawn mark rather than the ⚡ emoji this used to be. An emoji favicon is rendered
        by the platform's emoji font, so the tab showed a different glyph on every OS — flat
        yellow on Windows, a blue-grey bolt on macOS, nothing at all in some Linux builds —
@@ -101,7 +101,7 @@
           <i data-feather="shield"></i>
         </div>
         <div class="flex-1 min-w-0">
-          <h1 id="login-title" class="text-xl font-bold text-white tracking-wider font-heading">HyperDNS</h1>
+          <h1 id="login-title" class="text-xl font-bold text-white tracking-wider font-heading">DigitDNS</h1>
           <p class="text-xs text-cyan-400 font-mono">STANDALONE CONTROLLER</p>
         </div>
         <!-- The gate needs its own pair. Everything else on this screen is behind the
@@ -758,7 +758,7 @@
         </div>
         <div>
           <div class="flex items-center gap-2">
-            <span class="font-extrabold tracking-wider text-base text-white font-heading">HyperDNS</span>
+            <span class="font-extrabold tracking-wider text-base text-white font-heading">DigitDNS</span>
             <span id="app-version-badge" class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold border border-cyan-500/30">v2.1.0</span>
           </div>
           <div class="flex items-center gap-1.5 text-[11px] text-emerald-400 font-mono mt-0.5">
@@ -773,6 +773,10 @@
         <button class="sidebar-nav-item active" data-tab="dashboard" data-route="/home">
           <i data-feather="activity" class="w-4 h-4"></i>
           <span>Dashboard</span>
+        </button>
+        <button class="sidebar-nav-item" data-tab="proxied" data-route="/proxied">
+          <i data-feather="shield" class="w-4 h-4"></i>
+          <span>Proxied Domains</span>
         </button>
         <button class="sidebar-nav-item" data-tab="clients" data-route="/clients">
           <i data-feather="users" class="w-4 h-4"></i>
@@ -874,7 +878,7 @@
              showed the markup's static "v1.5.0" and became a broken header the moment app.js
              filled it in: the real string is "v1.5.0-beta [3585f9bf]", it does not fit beside
              the wordmark at 9px mono, so it wrapped to a second line and then a third and
-             pushed a 68px stack through a 56px header — "HyperDNS" clipped by its own top
+             pushed a 68px stack through a 56px header — "DigitDNS" clipped by its own top
              border on every phone.
              Simply forbidding the wrap moves the failure rather than fixing it. At 360px the
              header has 328px of content width; a nowrap brand row is 32 (mark) + 10 + 69
@@ -889,7 +893,7 @@
              better without it. app.js gives this element the version without the commit hash
              (the hash goes to its title), which is what keeps it inside the wordmark's width. -->
         <div class="flex flex-col leading-none">
-          <span class="font-extrabold text-sm text-white font-heading">HyperDNS</span>
+          <span class="font-extrabold text-sm text-white font-heading">DigitDNS</span>
           <span class="text-[9px] text-cyan-300/90 font-mono font-bold mt-1 whitespace-nowrap" id="app-version-badge-mobile">v2.1.0</span>
         </div>
       </div>
@@ -1155,6 +1159,88 @@
       </section>
 
       <!-- ============================================== -->
+      <!-- TAB: PROXIED DOMAINS (SmartDNS Spoof) -->
+      <!-- ============================================== -->
+      <section id="tab-proxied" class="tab-content space-y-6 hidden">
+
+        <!-- Proxied Domains (SmartDNS Spoof). Moved here from the settings
+             tab so the routing list owns a full page. Every id is kept from the
+             original card, so the add / bulk-import / remove handlers in app.js
+             keep working untouched. Each row now carries a switch: off keeps the
+             domain in the list but lifts it out of the proxy set. -->
+        <div class="glass-panel p-5 sm:p-6 space-y-4">
+          <div>
+            <h3 class="text-xs sm:text-sm font-bold uppercase text-white flex items-center gap-2 font-heading">
+              <i data-feather="shield" class="w-4 h-4 text-cyan-400"></i> Proxied Domains
+            </h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">Domains that will be spoofed to this server's SNI Proxy. Switch a domain off to keep it listed but stop proxying it — it then resolves normally.</p>
+          </div>
+
+          <!-- Each of these rows is `flex-1 min-w-0` input + `shrink-0` button. Both
+               halves of that pair matter: a flex item's default `min-width: auto` resolves
+               to a form control's intrinsic width (~170px), so without `min-w-0` the input
+               refuses to shrink and pushes the button out of the panel instead — which is
+               exactly what the Save button below did at 768px, where a 256px sidebar leaves
+               the grid cell 207px wide. `shrink-0` then keeps the button's label from being
+               squashed once the input is the only thing giving way. -->
+          <div class="flex gap-2">
+            <input type="text" id="new-proxied-input" aria-label="New proxied domain" placeholder="e.g. *.newgame.com or api.target.com"
+              class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
+            <button id="add-proxied-btn" class="shrink-0 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Add</button>
+          </div>
+
+          <button type="button" id="bulk-proxied-btn"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">
+            <i data-feather="upload-cloud" class="w-3.5 h-3.5"></i> Bulk import
+          </button>
+
+          <!-- Sort and batch size for the routing list. A proxy list can run to
+               thousands of entries, so the panel renders a batch at a time:
+               moving either select re-sorts and re-slices, and the sentinel
+               below appends the next batch as it scrolls into view. -->
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="flex items-center gap-1.5 text-[11px] text-slate-400">
+              Sort
+              <select id="proxied-sort" aria-label="Sort proxied domains"
+                class="bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
+                <option value="added-desc">Added (newest)</option>
+                <option value="added-asc">Added (oldest)</option>
+                <option value="az">Name A–Z</option>
+                <option value="za">Name Z–A</option>
+                <option value="status">Status (on first)</option>
+              </select>
+            </label>
+            <label class="flex items-center gap-1.5 text-[11px] text-slate-400">
+              Load
+              <select id="proxied-load-size" aria-label="Proxied domains per batch"
+                class="bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
+                <option value="10">10</option>
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+            <span id="proxied-count" class="text-[11px] text-slate-500"></span>
+          </div>
+
+          <!-- The scroll region and its sentinel. renderProxiedList rewrites
+               #custom-proxied-rows wholesale, so the "Loading rules…" line
+               survives exactly until the settings fetch lands — and an empty
+               rules list is not a neutral thing to show while that is in
+               flight: it reads as "nothing is being routed through the proxy".
+               The sentinel sits outside the rewritten rows and inside the
+               scroll container so the observer can watch it cross the fold. -->
+          <div id="custom-proxied-list" class="proxied-scroll">
+            <div id="custom-proxied-rows" class="space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">Loading rules…</div></div>
+            <div id="proxied-sentinel" class="proxied-sentinel" aria-hidden="true"></div>
+          </div>
+          <button type="button" id="proxied-load-more"
+            class="hidden px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">Load more</button>
+        </div>
+
+      </section>
+
+      <!-- ============================================== -->
       <!-- TAB: CLIENTS & IP WHITELIST (Shelter & Shecan Mode) -->
       <!-- ============================================== -->
       <section id="tab-clients" class="tab-content space-y-6 hidden">
@@ -1292,7 +1378,7 @@
                is nothing left to swipe. 420px is the compromise — the domain stays legible,
                ACTION and LATENCY are one thumb-nudge away, and the page itself never
                overflows (documentElement.scrollWidth stays 360). -->
-          <div class="overflow-x-auto mt-3 max-h-[500px] overflow-y-auto">
+          <div class="overflow-x-auto mt-3 stream-viewport">
             <table class="w-full text-start border-collapse text-xs font-mono min-w-[420px] sm:min-w-[600px]">
               <caption class="sr-only">Live DNS query log</caption>
               <thead class="bg-slate-950/80 sticky top-0 text-slate-400 border-b border-slate-800 z-10">
@@ -1652,7 +1738,7 @@ async function onBuySubscription(ctx, username) {
               class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-emerald-400">
             <input type="number" id="sub-port-input" aria-label="Subscription advertised port" min="0" max="65535" placeholder="Advertised port"
               class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-emerald-400">
-            <input type="text" id="sub-title-input" aria-label="Subscription portal title" placeholder="Portal title (default HyperDNS)"
+            <input type="text" id="sub-title-input" aria-label="Subscription portal title" placeholder="Portal title (default DigitDNS)"
               class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-emerald-400">
           </div>
 
@@ -1801,40 +1887,6 @@ async function onBuySubscription(ctx, username) {
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
-          <!-- Custom Proxied Domains (SmartDNS Spoof) -->
-          <div class="glass-panel p-5 sm:p-6 space-y-4">
-            <div>
-              <h3 class="text-xs sm:text-sm font-bold uppercase text-white flex items-center gap-2 font-heading">
-                <i data-feather="shield" class="w-4 h-4 text-cyan-400"></i> Custom Proxied Domains
-              </h3>
-              <p class="text-[11px] text-slate-400 mt-0.5">Domains that will be spoofed to this server's SNI Proxy</p>
-            </div>
-
-            <!-- Each of these four rows is `flex-1 min-w-0` input + `shrink-0` button. Both
-                 halves of that pair matter: a flex item's default `min-width: auto` resolves
-                 to a form control's intrinsic width (~170px), so without `min-w-0` the input
-                 refuses to shrink and pushes the button out of the panel instead — which is
-                 exactly what the Save button below did at 768px, where a 256px sidebar leaves
-                 the grid cell 207px wide. `shrink-0` then keeps the button's label from being
-                 squashed once the input is the only thing giving way. -->
-            <div class="flex gap-2">
-              <input type="text" id="new-proxied-input" aria-label="New proxied domain" placeholder="e.g. *.newgame.com or api.target.com"
-                class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
-              <button id="add-proxied-btn" class="shrink-0 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Add</button>
-            </div>
-
-            <button type="button" id="bulk-proxied-btn"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">
-              <i data-feather="upload-cloud" class="w-3.5 h-3.5"></i> Bulk import
-            </button>
-
-            <!-- The line inside is the pre-config state. renderList overwrites the container
-                 outright, so it survives exactly until the settings fetch lands — and an empty
-                 rules list is not a neutral thing to show while that is in flight: on a
-                 blocklist it reads as "nothing is blocked". -->
-            <div id="custom-proxied-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">Loading rules…</div></div>
-          </div>
-
           <!-- Custom Blocklist (Sinkhole / Adblock) -->
           <div class="glass-panel p-5 sm:p-6 space-y-4">
             <div>
@@ -1986,6 +2038,25 @@ async function onBuySubscription(ctx, username) {
             </div>
           </div>
 
+        <!-- About & legal (AGPL-3.0): product identity, licence and upstream
+             attribution. Kept in the panel so the notice travels with the app
+             instead of living only in the repository. -->
+        <div class="glass-panel p-5 sm:p-6 space-y-2">
+          <h3 class="text-xs sm:text-sm font-bold uppercase text-white flex items-center gap-2 font-heading">
+            <i data-feather="info" class="w-4 h-4 text-cyan-400"></i> About &amp; Legal
+          </h3>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            <strong class="text-slate-200">DigitDNS</strong> Smart Controller · <span id="about-version" class="font-mono">v2.1.0</span>
+          </p>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            Copyright © 2026 Digitrob. Free software under the
+            <strong class="text-slate-200">AGPL-3.0</strong> licence. Based on
+            <strong class="text-slate-200">HyperDNS</strong> by HyperRAIN
+            (github.com/IzumiRain/HyperDNS); this fork's source
+            (github.com/digitrob/HyperDNS) is available under the same licence.
+          </p>
+        </div>
+
 </section>
 
       <!-- ============================================== -->
@@ -2076,15 +2147,48 @@ async function onBuySubscription(ctx, username) {
 
     <!-- FOOTER (Clean desktop footer) -->
     <footer class="hidden md:block border-t border-slate-800/60 bg-slate-950/40 py-4 text-center text-xs text-slate-500 font-mono">
-      <span>HyperDNS Smart Controller — Low-Latency SmartDNS Engine · <span id="app-version-footer">v2.1.0</span></span>
+      <span>DigitDNS Smart Controller — Low-Latency SmartDNS Engine · <span id="app-version-footer">v2.1.0</span></span>
+      <span class="footer-legal">© 2026 Digitrob · AGPL-3.0 · Based on HyperDNS by HyperRAIN · Source: github.com/digitrob/HyperDNS</span>
     </footer>
     </main>
+
+    <!-- Shared quick-action popover for the live log. One menu is declared here and
+         shown under whichever ACTION badge was pressed; app.js does not create
+         element ids, so the node has to exist in this document. The scope row picks
+         the match width — the exact host, its own wildcard, or the parent wildcard —
+         and the four actions rewrite the routing lists. -->
+    <div id="stream-action-menu" role="menu" aria-label="Query quick actions" class="stream-action-menu hidden">
+      <div class="stream-action-head">
+        <span id="stream-action-domain" class="stream-action-domain"></span>
+      </div>
+      <div class="stream-action-scopes" role="radiogroup" aria-label="Match scope">
+        <button type="button" class="stream-action-scope is-active" data-scope="exact" role="radio" aria-checked="true">exact</button>
+        <button type="button" class="stream-action-scope" data-scope="host" role="radio" aria-checked="false">*.host</button>
+        <button type="button" class="stream-action-scope" data-scope="parent" role="radio" aria-checked="false">*.parent</button>
+      </div>
+      <button type="button" class="stream-action-item" data-action="proxy" role="menuitem">
+        <i data-feather="shield" class="stream-action-icon"></i><span>Proxy</span>
+      </button>
+      <button type="button" class="stream-action-item" data-action="block" role="menuitem">
+        <i data-feather="slash" class="stream-action-icon"></i><span>Block</span>
+      </button>
+      <button type="button" class="stream-action-item" data-action="direct" role="menuitem">
+        <i data-feather="corner-up-right" class="stream-action-icon"></i><span>Direct</span>
+      </button>
+      <button type="button" class="stream-action-item stream-action-danger" data-action="remove" role="menuitem">
+        <i data-feather="trash-2" class="stream-action-icon"></i><span>Remove</span>
+      </button>
+    </div>
 
     <!-- MOBILE STICKY BOTTOM NAVIGATION BAR -->
     <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800 px-1 py-1 flex items-stretch justify-around">
       <button class="mobile-nav-item active flex flex-col items-center gap-1 text-[10px] font-semibold text-cyan-400 transition" data-tab="dashboard" data-route="/home">
         <i data-feather="activity" class="w-4 h-4"></i>
         <span>Dash</span>
+      </button>
+      <button class="mobile-nav-item flex flex-col items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-white transition" data-tab="proxied" data-route="/proxied">
+        <i data-feather="shield" class="w-4 h-4"></i>
+        <span>Proxied</span>
       </button>
       <button class="mobile-nav-item flex flex-col items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-white transition" data-tab="clients" data-route="/clients">
         <i data-feather="users" class="w-4 h-4"></i>

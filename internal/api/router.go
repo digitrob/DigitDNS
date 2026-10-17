@@ -482,7 +482,7 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
-  <title>HyperDNS REST API v1 Documentation</title>
+  <title>DigitDNS REST API v1 Documentation</title>
   <meta charset="utf-8"/>
   <link rel="stylesheet" type="text/css" href="%s/swagger/swagger-ui.css">
   <style>
@@ -502,7 +502,7 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
 </head>
 <body>
   <div id="offline-notice">
-    <h1>HyperDNS REST API v1</h1>
+    <h1>DigitDNS REST API v1</h1>
     <p>The interactive viewer normally loads here, but this browser could not load it
       from this origin. <b>The API itself is running normally</b> &mdash; only the viewer is
       missing. Every endpoint below is live right now; from the server itself:</p>
@@ -570,11 +570,11 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
       spec: {
         openapi: "3.0.0",
         info: {
-          title: "HyperDNS Core REST API",
+          title: "DigitDNS Core REST API",
           version: "%s",
-          description: "REST API for the HyperDNS SmartDNS Controller: AES-256-GCM encrypted subscribers, operator-maintained domain rule lists and real-time DNS telemetry.\n\n**Authentication.** Press Authorize and paste the master API key from Settings. It travels as the X-API-Key header, or as Authorization: Bearer <key> — both are accepted, and a live dashboard session token works in either.\n\n**If Try it out answers 403 rather than 401**, the key is not the problem: the REST API is bound to localhost and this browser is not on the server. Turn on Public API in Settings, or call the API from the machine itself."
+          description: "REST API for the DigitDNS SmartDNS Controller: AES-256-GCM encrypted subscribers, operator-maintained domain rule lists and real-time DNS telemetry.\n\n**Authentication.** Press Authorize and paste the master API key from Settings. It travels as the X-API-Key header, or as Authorization: Bearer <key> — both are accepted, and a live dashboard session token works in either.\n\n**If Try it out answers 403 rather than 401**, the key is not the problem: the REST API is bound to localhost and this browser is not on the server. Turn on Public API in Settings, or call the API from the machine itself."
         },
-        servers: [{ url: "%s", description: "This HyperDNS instance. Since v2.1 the API lives below the install's hidden 16-hex admin path, so the base is that path and not the host root — Try it out resolves against this value." }],
+        servers: [{ url: "%s", description: "This DigitDNS instance. Since v2.1 the API lives below the install's hidden 16-hex admin path, so the base is that path and not the host root — Try it out resolves against this value." }],
         security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
         components: {
           securitySchemes: {
@@ -645,7 +645,7 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
             post: { summary: "Reset consumed traffic to 0 bytes", responses: { 200: { description: "Reset" }, 404: { description: "Client not found" }, 405: { description: "POST only" } } }
           },
           "/api/v1/policies": {
-            get: { summary: "List stored rule entries", description: "Two arrays. catalog is the built-in rule catalogue the old preset switches rendered from; this build ships none, so it is always [] and a caller should render nothing rather than guess. policies holds the stored rule entries — the four custom_* lists (custom_proxied, custom_blocked, custom_direct, custom_records) the dashboard writes, so a fresh install answers with an empty array there too and that is not an error.", responses: { 200: { description: "OK" } } },
+            get: { summary: "List stored rule entries", description: "Two arrays. catalog is the built-in rule catalogue the old preset switches rendered from; this build ships none, so it is always [] and a caller should render nothing rather than guess. policies holds the stored rule entries — the five custom_* lists (custom_proxied, custom_proxied_disabled, custom_blocked, custom_direct, custom_records) the dashboard writes, so a fresh install answers with an empty array there too and that is not an error. custom_proxied_disabled carries proxied domains the operator switched off; they are stored but never applied, so a switched-off domain stops being proxied.", responses: { 200: { description: "OK" } } },
             post: {
               summary: "Store a rule entry",
               description: "Writes the record under its key and echoes back what was stored; nothing is applied by this call. The four custom_* keys are read back by the daemon at its next restart, so a change made here reaches the resolver then rather than now — the dashboard's Settings tab saves the same lists and applies them in one step. Any other key is persisted and matches nothing, which makes a typo here silent. There is no built-in toggle list to flip anymore; the route stays for integrations that read the store.",

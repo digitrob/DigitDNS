@@ -629,13 +629,13 @@ curl -s http://127.0.0.1:8080/api/v1/policies \
 | Field | Meaning |
 |---|---|
 | `catalog` | Always `[]`. Kept so a client that renders a picker from it shows nothing rather than falling back to a guess. |
-| `policies` | The stored rule entries. The dashboard writes four keys — `custom_proxied`, `custom_blocked`, `custom_direct` and `custom_records` — each with its domains in `custom_domains`. A fresh install answers `[]`. |
+| `policies` | The stored rule entries. The dashboard writes five keys — `custom_proxied`, `custom_proxied_disabled`, `custom_blocked`, `custom_direct` and `custom_records` — each with its domains in `custom_domains`. A fresh install answers `[]`. |
 
 `custom_policies` on a client is still accepted and stored, but it is **inert**: the resolver applies one set of rules to everybody, so the list no longer narrows an account's routing.
 
 ### `POST /api/v1/policies` — Store a rule entry
 
-Writes the record under its `key` and echoes back what was stored. Nothing is applied by this call: the four `custom_*` keys are read back by the daemon at its **next restart**, so a change made here reaches the resolver then rather than now. The dashboard's Settings tab saves the same lists and applies them in one step.
+Writes the record under its `key` and echoes back what was stored. Nothing is applied by this call: the four applied `custom_*` keys are read back by the daemon at its **next restart**, so a change made here reaches the resolver then rather than now. The dashboard's Rules tab and its Custom Proxied Domains page save the same lists and apply them in one step.
 
 ```bash
 curl -s -X POST "http://127.0.0.1:8080/api/v1/policies" -H "X-API-Key: $KEY" \
@@ -645,11 +645,12 @@ curl -s -X POST "http://127.0.0.1:8080/api/v1/policies" -H "X-API-Key: $KEY" \
 
 | Field | Meaning |
 |---|---|
-| `key` | Required; an empty key is a `400`. The four keys the daemon reads back are `custom_proxied`, `custom_blocked`, `custom_direct` and `custom_records`. Any other key is persisted and matches nothing, so a typo here is silent. |
+| `key` | Required; an empty key is a `400`. The four keys the daemon applies are `custom_proxied`, `custom_blocked`, `custom_direct` and `custom_records`; `custom_proxied_disabled` is also stored and echoed but never applied. Any other key is persisted and matches nothing, so a typo here is silent. |
 | `custom_domains` | The payload that matters: one domain per entry (for `custom_records`, one `domain=IP` per entry). |
 | `enabled`, `name`, `category` | Stored and echoed; the dashboard sets `enabled: true` and `category: "custom"`. |
 
 - **`custom_proxied`** — names relayed through the SNI proxy.
+- **`custom_proxied_disabled`** — proxied names the operator switched off on the `/proxied` page. Persisted so the choice survives a reload, but never handed to the resolver, so a name here resolves normally.
 - **`custom_blocked`** — names sinkholed to `0.0.0.0`.
 - **`custom_direct`** — names forced to resolve normally, overriding a proxy rule for that name.
 - **`custom_records`** — static A/AAAA overrides.

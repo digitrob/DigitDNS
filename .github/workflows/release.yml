@@ -1,4 +1,4 @@
-﻿name: Release HyperDNS
+﻿name: Release DigitDNS
 
 on:
   push:
@@ -163,5 +163,5 @@ jobs:
             > This build is a work in progress and is **not** recommended for production.
             > New installs should use the current stable line the README points at
             > (`v2.2.0-beta.1`); this tag exists for testing the features in flight.
-            > Full list of changes: [docs/CHANGELOG.md](https://github.com/IzumiRain/HyperDNS/blob/${{ github.ref_name }}/docs/CHANGELOG.md).
+            > Full list of changes: [docs/CHANGELOG.md](https://github.com/digitrob/HyperDNS/blob/${{ github.ref_name }}/docs/CHANGELOG.md).
 

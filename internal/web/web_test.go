@@ -123,7 +123,7 @@ func TestWebServer_SPARoutingAndAssets(t *testing.T) {
 	//    unauthenticated navigation is redirected to the sign-in page, so the
 	//    dashboard shell never renders pre-auth (no content flash). /login is
 	//    the one route served unauthenticated.
-	routes := []string{"/home", "/clients", "/logs", "/rules", "/api", "/guide", "/settings", "/dashboard", "/panel"}
+	routes := []string{"/home", "/proxied", "/clients", "/logs", "/rules", "/api", "/guide", "/settings", "/dashboard", "/panel"}
 	for _, route := range routes {
 		req := httptest.NewRequest(http.MethodGet, route, nil)
 		w := httptest.NewRecorder()

@@ -159,6 +159,49 @@ func TestConfigRulesExplicitEmptyClears(t *testing.T) {
 	}
 }
 
+// TestConfigRulesProxiedDisabledList pins the per-domain switch on the proxied
+// page. A switched-off domain is kept in custom_proxied_disabled (so it survives a
+// reload and can be flipped back on), echoed back by /api/config, and — the point
+// of the whole feature — never handed to the live matcher, so it resolves normally
+// instead of being proxied.
+func TestConfigRulesProxiedDisabledList(t *testing.T) {
+	ws, h, tok, cleanup := authedServer(t)
+	defer cleanup()
+
+	body := `{
+		"custom_proxied": ["live.example.com"],
+		"custom_proxied_disabled": ["paused.example.com"]
+	}`
+	if w := postJSON(t, h, "/api/config/rules", body, tok); w.Code != http.StatusOK {
+		t.Fatalf("save = %d — %s", w.Code, w.Body.String())
+	}
+
+	rules := rulesFromConfig(t, h, tok)
+	if got := domainsAt(t, rules, "custom_proxied"); !slices.Equal(got, []string{"live.example.com"}) {
+		t.Errorf("custom_proxied = %v, want [live.example.com]", got)
+	}
+	if got := domainsAt(t, rules, "custom_proxied_disabled"); !slices.Equal(got, []string{"paused.example.com"}) {
+		t.Errorf("custom_proxied_disabled = %v, want [paused.example.com]", got)
+	}
+
+	// The live matcher proxies the enabled domain and nothing else.
+	if action, rule := ws.matcher.Match("live.example.com"); action != matcher.ActionProxy {
+		t.Errorf("Match(live.example.com) = %v/%s, want ActionProxy", action, rule)
+	}
+	if action, rule := ws.matcher.Match("paused.example.com"); action == matcher.ActionProxy {
+		t.Errorf("a switched-off domain is still proxied (Match(paused.example.com) = %v/%s)", action, rule)
+	}
+
+	// A partial save that carries neither key keeps both lists, disabled included.
+	if w := postJSON(t, h, "/api/config/rules", `{"some_unknown_key":false}`, tok); w.Code != http.StatusOK {
+		t.Fatalf("unknown-key save = %d — %s", w.Code, w.Body.String())
+	}
+	rules = rulesFromConfig(t, h, tok)
+	if got := domainsAt(t, rules, "custom_proxied_disabled"); !slices.Equal(got, []string{"paused.example.com"}) {
+		t.Errorf("after an unknown-key save, custom_proxied_disabled = %v, want [paused.example.com]", got)
+	}
+}
+
 func TestConfigRulesGuards(t *testing.T) {
 	_, h, tok, cleanup := authedServer(t)
 	defer cleanup()

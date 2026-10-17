@@ -1,0 +1,91 @@
+name: Upstream Sync
+
+# Keeps this fork's `custom` branch close to upstream HyperDNS without ever
+# pushing to `custom` un-reviewed. Upstream's `main` is merged into a throwaway
+# branch and opened as a pull request; if the merge conflicts — which it will
+# whenever upstream touches a string this fork rebranded — the workflow opens an
+# issue instead of guessing, and a human resolves it. Nothing here ever writes
+# to `custom` directly.
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout custom
+        uses: actions/checkout@v4
+        with:
+          ref: custom
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "Digitrob"
+          git config user.email "digitrob@gmail.com"
+
+      - name: Merge upstream/main into a throwaway branch
+        id: merge
+        run: |
+          git remote add upstream https://github.com/IzumiRain/HyperDNS.git
+          git fetch --no-tags upstream main
+          git checkout -B upstream-sync custom
+          if git merge --no-edit upstream/main; then
+            echo "status=ready" >> "$GITHUB_OUTPUT"
+          else
+            git merge --abort
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open a pull request for the clean merge
+        if: steps.merge.outputs.status == 'ready'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          base: custom
+          branch: upstream-sync
+          title: "chore: sync upstream HyperDNS"
+          commit-message: "chore: merge upstream HyperDNS into custom"
+          body: |
+            Automated merge of
+            [IzumiRain/HyperDNS](https://github.com/IzumiRain/HyperDNS) `main`
+            into this fork's `custom` branch.
+
+            The merge applied cleanly — review it before merging. Keep the
+            DigitDNS rebrand, the Proxied Domains section and this fork's
+            signed-update pipeline intact.
+          delete-branch: true
+
+      - name: Raise an issue when the merge conflicts
+        if: steps.merge.outputs.status == 'conflict'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Upstream sync needs a manual merge"
+          body="Upstream HyperDNS changed lines this fork also changed, so the automatic merge stopped.
+
+          Resolve it locally:
+
+          \`\`\`
+          git checkout custom
+          git remote add upstream https://github.com/IzumiRain/HyperDNS.git
+          git fetch upstream main
+          git merge upstream/main
+          # resolve, keeping the DigitDNS rebrand
+          git push origin custom
+          \`\`\`"
+          # Do not open a duplicate every night: only file one if none is open.
+          if ! gh issue list --state open --search "$title in:title" --json title --jq '.[].title' | grep -qx "$title"; then
+            gh issue create --title "$title" --body "$body"
+          fi

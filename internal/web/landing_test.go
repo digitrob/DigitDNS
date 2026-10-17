@@ -30,10 +30,10 @@ func TestRootServesMatrixLandingPage(t *testing.T) {
 	body := w.Body.String()
 
 	for _, marker := range []string{
-		`<title>HyperDNS</title>`,
+		`<title>DigitDNS</title>`,
 		`data-landing="matrix"`,
 		`<canvas id="matrix"`,
-		`<h1>HyperDNS</h1>`,
+		`<h1>DigitDNS</h1>`,
 		`prefers-reduced-motion`,
 		`<noscript>`,
 	} {

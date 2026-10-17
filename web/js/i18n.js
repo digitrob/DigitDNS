@@ -1,4 +1,4 @@
-/* HyperDNS panel localisation — Persian / English.
+/* DigitDNS panel localisation — Persian / English.
  *
  * The dictionary is keyed on the English source text rather than on data-i18n
  * attributes, and that choice is worth defending because the obvious alternative
@@ -31,8 +31,8 @@
      only the trimmed core is looked up — so an entry never needs padding. */
   var FA = {
     /* --- shell, auth, login --- */
-    'HyperDNS — Next-Gen Gaming & Anti-Sanction SmartDNS Controller':
-      'HyperDNS — کنترلر هوشمند DNS برای گیم و دور زدن تحریم',
+    'DigitDNS — Anti-Sanction SmartDNS Controller':
+      'DigitDNS — کنترلر هوشمند DNS برای دور زدن تحریم',
     'STANDALONE CONTROLLER': 'کنترلر مستقل',
     'ADMIN USERNAME': 'نام کاربری مدیر',
     'PASSWORD': 'رمز عبور',
@@ -41,8 +41,8 @@
     'Enter your admin password': 'رمز عبور مدیر را وارد کنید',
     'Sign Out': 'خروج',
     'ONLINE · SMARTDNS': 'آنلاین · SMARTDNS',
-    'HyperDNS Smart Controller — Low-Latency SmartDNS Engine ·':
-      'کنترلر هوشمند HyperDNS — موتور SmartDNS با تأخیر پایین ·',
+    'DigitDNS Smart Controller — Low-Latency SmartDNS Engine ·':
+      'کنترلر هوشمند DigitDNS — موتور SmartDNS با تأخیر پایین ·',
 
     /* --- security setup modal --- */
     'Security Setup': 'تنظیم امنیتی',
@@ -574,7 +574,7 @@
     "Use the panel's certificate": 'از گواهی پنل استفاده شود',
     'Subscription domain (empty = panel domain)': 'دامنه اشتراک (خالی = دامنه پنل)',
     'Advertised port': 'پورت اعلام‌شده',
-    'Portal title (default HyperDNS)': 'عنوان پورتال (پیش‌فرض HyperDNS)',
+    'Portal title (default DigitDNS)': 'عنوان پورتال (پیش‌فرض DigitDNS)',
     'Certificate path (separate domain only)': 'مسیر گواهی (فقط برای دامنه مجزا)',
     'Key path (separate domain only)': 'مسیر کلید (فقط برای دامنه مجزا)',
     'Save Subscription Settings': 'ذخیره تنظیمات اشتراک',
@@ -604,7 +604,7 @@
     'Issue SSL Certificate': 'صدور گواهی SSL',
     'Domain name (e.g. dns.mygame.ir)': 'نام دامنه (مثلاً dns.mygame.ir)',
     'Admin Email (optional)': 'ایمیل مدیر (اختیاری)',
-    'Custom Proxied Domains': 'دامنه‌های پروکسی سفارشی',
+    'Proxied Domains': 'دامنه‌های پروکسی',
     'Domains that will be spoofed to this server\'s SNI Proxy':
       'دامنه‌هایی که به پروکسی SNI این سرور هدایت می‌شوند',
     'Loading rules…': 'در حال بارگذاری قوانین…',

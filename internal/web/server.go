@@ -797,6 +797,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 			"/dashboard": true,
 			"/panel":     true,
 			"/home":      true,
+			"/proxied":   true,
 			"/clients":   true,
 			"/rules":     true,
 			"/policy":    true,
@@ -1378,6 +1379,10 @@ func redirectHost(host string) string {
 func (ws *WebServer) loadRulesConfig() map[string]any {
 	rules := map[string]any{}
 	rules["custom_proxied"] = []string{}
+	// custom_proxied_disabled carries the proxied domains the operator switched
+	// off. It is display state only: the matcher is never handed this list, so a
+	// disabled domain simply stops being proxied and resolves normally.
+	rules["custom_proxied_disabled"] = []string{}
 	rules["custom_blocked"] = []string{}
 	rules["custom_direct"] = []string{}
 	rules["custom_records"] = map[string]string{}
@@ -1388,7 +1393,7 @@ func (ws *WebServer) loadRulesConfig() map[string]any {
 	}
 	for _, p := range policies {
 		switch p.Key {
-		case "custom_proxied", "custom_blocked", "custom_direct":
+		case "custom_proxied", "custom_proxied_disabled", "custom_blocked", "custom_direct":
 			if p.CustomDomains != nil {
 				rules[p.Key] = p.CustomDomains
 			}
@@ -1546,13 +1551,14 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var customProxied, customBlocked, customDirect []string
+	var customProxied, customProxiedDisabled, customBlocked, customDirect []string
 	customRecords := map[string]string{}
 
 	// Start from the persisted state so a partial update never wipes the saved
 	// custom domain lists.
 	persisted := ws.loadRulesConfig()
 	customProxied = toStringSlice(persisted["custom_proxied"])
+	customProxiedDisabled = toStringSlice(persisted["custom_proxied_disabled"])
 	customBlocked = toStringSlice(persisted["custom_blocked"])
 	customDirect = toStringSlice(persisted["custom_direct"])
 	if m, ok := persisted["custom_records"].(map[string]string); ok {
@@ -1563,6 +1569,8 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 		switch key {
 		case "custom_proxied":
 			customProxied = toStringSlice(val)
+		case "custom_proxied_disabled":
+			customProxiedDisabled = toStringSlice(val)
 		case "custom_blocked":
 			customBlocked = toStringSlice(val)
 		case "custom_direct":
@@ -1594,6 +1602,10 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	// telling the operator it saved, hides the failure until a restart reverts it.
 	customSaves := []database.Policy{
 		{Key: "custom_proxied", Name: "Custom Proxied Domains", Category: "custom", Enabled: true, CustomDomains: customProxied},
+		// Disabled proxied domains are persisted alongside the active list but not
+		// applied to the matcher: switching one off removes it from the proxy set
+		// without losing the operator's entry.
+		{Key: "custom_proxied_disabled", Name: "Disabled Proxied Domains", Category: "custom", Enabled: true, CustomDomains: customProxiedDisabled},
 		{Key: "custom_blocked", Name: "Custom Blocked Domains", Category: "custom", Enabled: true, CustomDomains: customBlocked},
 		{Key: "custom_direct", Name: "Custom Direct Domains", Category: "custom", Enabled: true, CustomDomains: customDirect},
 	}

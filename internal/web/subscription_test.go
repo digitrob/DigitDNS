@@ -371,7 +371,7 @@ func TestSubscriptionDefaultsSeedOnce(t *testing.T) {
 	if err != nil || !seeded {
 		t.Fatalf("first seed = %v, %v; want seeded", seeded, err)
 	}
-	if ws.subSettings.Title != "HyperDNS" || ws.subSettings.URIPath != "/sub" || !ws.subSettings.UsePanelCertificate || !ws.subSettings.Enabled {
+	if ws.subSettings.Title != "DigitDNS" || ws.subSettings.URIPath != "/sub" || !ws.subSettings.UsePanelCertificate || !ws.subSettings.Enabled {
 		t.Errorf("seed does not carry the documented defaults (title=%q path=%q panel-cert=%v enabled=%v)",
 			ws.subSettings.Title, ws.subSettings.URIPath, ws.subSettings.UsePanelCertificate, ws.subSettings.Enabled)
 	}

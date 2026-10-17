@@ -75,7 +75,7 @@ func TestLoginDocumentIsSelfContained(t *testing.T) {
 
 func TestLoginDocumentHasAccessibleHeadingAndEmbeddedFavicon(t *testing.T) {
 	doc := readAsset(t, "login.html")
-	if !strings.Contains(doc, `<h1 class="brand-name">HyperDNS</h1>`) {
+	if !strings.Contains(doc, `<h1 class="brand-name">DigitDNS</h1>`) {
 		t.Error("standalone login has no page-level h1")
 	}
 	if !strings.Contains(doc, `<link rel="icon" href="data:image/svg+xml,`) {

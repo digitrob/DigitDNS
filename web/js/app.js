@@ -1,5 +1,5 @@
 // =======================================================
-// HyperDNS Front-End Application Logic (ES6)
+// DigitDNS Front-End Application Logic (ES6)
 // Bulletproof, Offline-Safe, Self-Healing
 // =======================================================
 
@@ -730,7 +730,7 @@ function renderConfig(cfg) {
 
   // Normalize config structures to prevent runtime crashes on missing fields
   if (!cfg.rules || typeof cfg.rules !== 'object') cfg.rules = {};
-  ['custom_proxied', 'custom_blocked', 'custom_direct'].forEach(k => {
+  ['custom_proxied', 'custom_proxied_disabled', 'custom_blocked', 'custom_direct'].forEach(k => {
     if (!Array.isArray(cfg.rules[k])) cfg.rules[k] = [];
   });
   if (!cfg.rules.custom_records || typeof cfg.rules.custom_records !== 'object' || Array.isArray(cfg.rules.custom_records)) {
@@ -767,6 +767,9 @@ function renderConfig(cfg) {
 
     const footer = document.getElementById('app-version-footer');
     if (footer) footer.innerText = versionWithHash;
+
+    const aboutVersion = document.getElementById('about-version');
+    if (aboutVersion) aboutVersion.innerText = versionOnly;
 
     const mobileBadge = document.getElementById('app-version-badge-mobile');
     if (mobileBadge) {
@@ -864,7 +867,8 @@ function renderConfig(cfg) {
   updateCodeSnippets(pubIP, cfg.server?.api_key || 'hdns_live_your_key_here');
 
   // Render Custom Rules Lists (with safe optional chaining)
-  renderList('custom-proxied-list', cfg.rules?.custom_proxied || [], 'remove-proxied');
+  renderProxiedList();
+  proxiedFillViewport();
   renderList('custom-blocked-list', cfg.rules?.custom_blocked || [], 'remove-blocked');
   renderList('tokens-list', cfg.access?.doh_tokens || [], 'remove-token');
   renderCustomRecords(cfg.rules?.custom_records || {});
@@ -931,6 +935,165 @@ function renderList(containerId, items, removeClass) {
     container.appendChild(row);
   });
   safeFeatherReplace();
+}
+
+// ---- Proxied domains: sort and windowed rendering ---------------------------
+//
+// The routing list is the one list on the panel that can hold thousands of
+// entries, so it is drawn a batch at a time rather than printed in full.
+// proxiedVisible is how many rows the current slice shows; moving either control
+// resets it, and the sentinel at the bottom of the scroll region grows it as it
+// comes into view. proxiedHasMore is the renderer's answer to "is there another
+// batch", read by both the observer and the fallback button.
+let proxiedSort = 'added-desc';
+let proxiedVisible = 25;
+let proxiedHasMore = false;
+// Created once and left watching the sentinel. It is not rebuilt on render,
+// because the sentinel is a sibling of the rows container rather than a child of
+// it: renderProxiedList rewrites the rows' innerHTML and never touches it.
+let proxiedObserver = null;
+
+// proxiedBatchSize reads the batch size select. parseInt plus a positive-integer
+// guard means a missing or hand-edited select falls back to the default rather
+// than to NaN, which would make every later increment a no-op.
+function proxiedBatchSize() {
+  const el = document.getElementById('proxied-load-size');
+  const n = parseInt(el?.value || '', 10);
+  return Number.isFinite(n) && n > 0 ? n : 25;
+}
+
+// proxiedOrderedRows is the whole list in the operator's chosen order. Insertion
+// order is array order: a new domain is pushed onto the end, so "Added (newest)"
+// is the reverse. Disabled entries keep their own order after the enabled ones,
+// which is the grouping the status sort exposes.
+function proxiedOrderedRows() {
+  const enabled = Array.isArray(currentConfig?.rules?.custom_proxied) ? currentConfig.rules.custom_proxied : [];
+  const disabled = Array.isArray(currentConfig?.rules?.custom_proxied_disabled) ? currentConfig.rules.custom_proxied_disabled : [];
+  const rows = enabled.map((d) => ({ domain: d, on: true })).concat(disabled.map((d) => ({ domain: d, on: false })));
+  const byName = (a, b) => a.domain.localeCompare(b.domain, undefined, { sensitivity: 'base' });
+  switch (proxiedSort) {
+    case 'added-asc': return rows;
+    case 'az': return rows.slice().sort(byName);
+    case 'za': return rows.slice().sort((a, b) => byName(b, a));
+    case 'status': return rows.slice().sort((a, b) => (a.on === b.on ? 0 : a.on ? -1 : 1));
+    case 'added-desc':
+    default: return rows.slice().reverse();
+  }
+}
+
+// renderProxiedList draws the Proxied Domains page. Two lists feed it: the
+// enabled domains (cfg.rules.custom_proxied) the matcher actually proxies, and the
+// ones the operator switched off (custom_proxied_disabled), which are kept only so
+// they survive a reload. Every row carries a switch; the disabled rows are dimmed
+// and sorted after the live ones. Toggling a switch moves the domain between the
+// two lists rather than deleting it — that move is what lifts it out of the proxy
+// set, so a switched-off domain resolves normally instead of being proxied.
+//
+// The ordered list can be long, so only its first proxiedVisible rows are drawn.
+// proxiedHasMore records whether there is a next batch for the sentinel to fetch.
+function renderProxiedList() {
+  const container = document.getElementById('custom-proxied-rows');
+  if (!container) return;
+  const ordered = proxiedOrderedRows();
+  const total = ordered.length;
+  const countEl = document.getElementById('proxied-count');
+  const moreBtn = document.getElementById('proxied-load-more');
+
+  container.innerHTML = '';
+  if (total === 0) {
+    container.innerHTML = '<div class="text-slate-500 text-xs py-1">No custom entries yet</div>';
+    proxiedHasMore = false;
+    if (countEl) countEl.textContent = '';
+    if (moreBtn) moreBtn.classList.add('hidden');
+    return;
+  }
+
+  const rows = ordered.slice(0, proxiedVisible);
+  proxiedHasMore = rows.length < total;
+  if (countEl) {
+    countEl.textContent = proxiedHasMore
+      ? `Showing ${rows.length} of ${total}`
+      : `${total} domain${total === 1 ? '' : 's'}`;
+  }
+  if (moreBtn) moreBtn.classList.toggle('hidden', !proxiedHasMore);
+  rows.forEach(({ domain, on }) => {
+    const row = document.createElement('div');
+    // opacity-50 on the disabled rows reads as "listed, but not in effect"; the
+    // switch state is still the authoritative signal, the dimming just scans faster.
+    row.className = 'flex items-center justify-between gap-3 py-1.5 px-3 rounded-lg bg-slate-950/60 border border-slate-800 text-xs' + (on ? '' : ' opacity-50');
+    // The colour class is chosen here rather than written into the template: the
+    // escaping sweep reads attribute interpolations, and a literal ternary sitting
+    // in a class attribute is a shape it cannot vouch for. domainClass carries no
+    // operator data, which is why it is safe to interpolate unescaped.
+    const domainClass = on ? 'text-cyan-300' : 'text-slate-400';
+    row.innerHTML = `
+      <span class="font-mono ${domainClass} min-w-0 truncate">${escapeHTML(domain)}</span>
+      <div class="flex items-center gap-2 shrink-0">
+        <label class="switch shrink-0">
+          <input type="checkbox" class="toggle-proxied" data-val="${escapeHTML(domain)}" ${on ? 'checked' : ''} aria-label="Toggle proxying for ${escapeHTML(domain)}">
+          <span class="slider"></span>
+        </label>
+        <button class="remove-proxied inline-flex items-center justify-center w-6 h-6 shrink-0 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition" data-val="${escapeHTML(domain)}" aria-label="Remove ${escapeHTML(domain)}">
+          <i data-feather="x" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    `;
+    container.appendChild(row);
+  });
+  safeFeatherReplace();
+}
+
+// proxiedShowMore appends the next batch. It is the one growth path, shared by
+// the sentinel observer and the fallback button, so the two cannot drift apart.
+function proxiedShowMore() {
+  if (!proxiedHasMore) return;
+  proxiedVisible += proxiedBatchSize();
+  renderProxiedList();
+  proxiedFillViewport();
+}
+
+// proxiedFillViewport keeps pulling batches while the sentinel is still on
+// screen. A batch of 10 rows is shorter than the 24rem viewport, so after one
+// append there is nothing left to scroll and the observer — which fires on a
+// change of intersection — would never fire again. The loop closes that gap, and
+// the guard stops a pathological size from spinning: it costs at most 50 paints.
+function proxiedFillViewport() {
+  const root = document.getElementById('custom-proxied-list');
+  const sentinel = document.getElementById('proxied-sentinel');
+  if (!root || !sentinel) return;
+  // Only meaningful while the Proxied tab is on screen. A hidden panel has a
+  // zero-height rect, which would otherwise read as "the sentinel is already
+  // visible" and pull every batch in one go.
+  const rootRect = root.getBoundingClientRect();
+  if (rootRect.height === 0) return;
+  let guard = 0;
+  while (proxiedHasMore && guard < 50 && sentinel.getBoundingClientRect().top <= rootRect.bottom) {
+    proxiedVisible += proxiedBatchSize();
+    renderProxiedList();
+    guard++;
+  }
+}
+
+// setupProxiedObserver watches the sentinel that sits below the rewritten rows,
+// inside the scroll container. It is built once, at init: the sentinel is static,
+// so the observer never has to be rebuilt as the list redraws.
+function setupProxiedObserver() {
+  const root = document.getElementById('custom-proxied-list');
+  const sentinel = document.getElementById('proxied-sentinel');
+  if (!root || !sentinel || typeof IntersectionObserver === 'undefined') return;
+  proxiedObserver = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) proxiedShowMore();
+  }, { root: root, rootMargin: '160px' });
+  proxiedObserver.observe(sentinel);
+}
+
+// proxiedResetSlice re-slices from the top after the sort order or the batch size
+// changes, then refills the viewport so the control's effect is visible without a
+// scroll.
+function proxiedResetSlice() {
+  proxiedVisible = proxiedBatchSize();
+  renderProxiedList();
+  proxiedFillViewport();
 }
 
 // ---- Named custom policy groups (v2.3) --------------------------------------
@@ -1169,6 +1332,7 @@ async function saveRules() {
 
   const payload = {
     custom_proxied: currentConfig.rules.custom_proxied,
+    custom_proxied_disabled: currentConfig.rules.custom_proxied_disabled || [],
     custom_blocked: currentConfig.rules.custom_blocked,
     custom_direct: currentConfig.rules.custom_direct,
     custom_records: currentConfig.rules.custom_records
@@ -1774,8 +1938,13 @@ function queryRowHTML(q) {
   const accountName = q.account_name || 'Public';
 
   const action = q.action || 'DIRECT';
-  const actBadge = STREAM_ACTION_BADGES[action]
+  const actBadgeInner = STREAM_ACTION_BADGES[action]
     || `<span class="badge badge-unknown">${escapeHTML(action)}</span>`;
+  // The badge is the trigger for the quick-action menu: it carries the row's
+  // domain, and clicking it opens the one shared popover. It is a <button> so it
+  // is focusable and Enter/Space reach it; the badge styling stays on the inner
+  // span, so the wrapper carries no decoration of its own.
+  const actBadge = `<button type="button" class="stream-action-btn" data-domain="${escapeHTML(domain)}" aria-haspopup="menu" aria-expanded="false" title="Quick actions for ${escapeHTML(domain)}">${actBadgeInner}</button>`;
 
   let cacheBadge = q.cached ? '<span class="badge badge-cached ms-1">RAM</span>' : '';
   const timeStr = q.timestamp ? new Date(q.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
@@ -1886,7 +2055,144 @@ function renderQueryStream() {
   tbody.appendChild(frag);
 }
 
-// The active dashboard tab, set by switchTab. The perf pass (v2.2.0) gates
+// ---- Live-log quick actions --------------------------------------------------
+//
+// Clicking a row's ACTION badge opens one shared menu (declared in index.html,
+// because app.js never creates element ids). The menu names the domain and offers
+// a scope — the exact host, its own wildcard, or the parent wildcard — plus four
+// actions that rewrite the routing lists. Applied through saveRules, so a quick
+// action is the same write as editing the Proxied or Rules tab by hand.
+let streamActionDomain = '';
+let streamActionScope = 'exact';
+
+// streamActionTarget resolves a domain under the chosen scope. A wildcard is only
+// offered when it would still be specific: the naive leftmost-label strip means
+// api.target.com -> *.target.com, but target.com has no parent wildcard to offer
+// (its parent is "com", and *.com is not a rule anybody wants), so it returns the
+// empty string and the caller refuses rather than writing it.
+function streamActionTarget(domain, scope) {
+  const host = String(domain || '').trim().toLowerCase().replace(/^\.+/, '');
+  if (!host) return '';
+  const labels = host.split('.').filter(Boolean);
+  if (scope === 'host') {
+    return labels.length >= 2 ? '*.' + host : '';
+  }
+  if (scope === 'parent') {
+    return labels.length >= 3 ? '*.' + labels.slice(1).join('.') : '';
+  }
+  return host;
+}
+
+function streamActionScopeButtons() {
+  const menu = document.getElementById('stream-action-menu');
+  return menu ? menu.querySelectorAll('.stream-action-scope') : [];
+}
+
+function openStreamActionMenu(trigger) {
+  const menu = document.getElementById('stream-action-menu');
+  if (!menu) return;
+  streamActionDomain = trigger.dataset.domain || '';
+  streamActionScope = 'exact';
+  const domainEl = document.getElementById('stream-action-domain');
+  if (domainEl) domainEl.textContent = streamActionDomain;
+  streamActionScopeButtons().forEach((b) => {
+    const active = b.dataset.scope === 'exact';
+    b.classList.toggle('is-active', active);
+    b.setAttribute('aria-checked', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('.stream-action-btn[aria-expanded="true"]')
+    .forEach((b) => b.setAttribute('aria-expanded', 'false'));
+  trigger.setAttribute('aria-expanded', 'true');
+  menu.classList.remove('hidden');
+  positionStreamActionMenu(trigger, menu);
+}
+
+// positionStreamActionMenu anchors the menu under the badge, flipping above it and
+// clamping to the viewport so a badge in the last row or at the right edge still
+// opens a menu that is fully on screen.
+function positionStreamActionMenu(trigger, menu) {
+  const r = trigger.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  let left = Math.min(r.left, window.innerWidth - mw - 8);
+  let top = r.bottom + 6;
+  if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
+  menu.style.left = Math.max(8, left) + 'px';
+  menu.style.top = top + 'px';
+}
+
+function closeStreamActionMenu() {
+  const menu = document.getElementById('stream-action-menu');
+  if (menu) menu.classList.add('hidden');
+  document.querySelectorAll('.stream-action-btn[aria-expanded="true"]')
+    .forEach((b) => b.setAttribute('aria-expanded', 'false'));
+}
+
+// The log badge an applied action should show, so the row reflects the choice
+// immediately instead of waiting for the next matching query.
+const STREAM_ACTION_LOG_BADGE = { proxy: 'PROXY', block: 'BLOCK', direct: 'DIRECT' };
+
+function applyStreamAction(action) {
+  if (!currentConfig || !currentConfig.rules || !streamActionDomain) return;
+  const target = streamActionTarget(streamActionDomain, streamActionScope);
+  if (!target) {
+    showToast('That scope has no specific domain to match', 'error');
+    closeStreamActionMenu();
+    return;
+  }
+  const rules = currentConfig.rules;
+  const lists = {
+    custom_proxied: Array.isArray(rules.custom_proxied) ? rules.custom_proxied : [],
+    custom_proxied_disabled: Array.isArray(rules.custom_proxied_disabled) ? rules.custom_proxied_disabled : [],
+    custom_blocked: Array.isArray(rules.custom_blocked) ? rules.custom_blocked : [],
+    custom_direct: Array.isArray(rules.custom_direct) ? rules.custom_direct : [],
+  };
+  // Every action starts from a clean slate: a domain lives in exactly one list,
+  // so switching it from blocked to proxied is a move, not an addition to both.
+  for (const key of Object.keys(lists)) lists[key] = lists[key].filter((x) => x !== target);
+  if (action === 'proxy') lists.custom_proxied.push(target);
+  else if (action === 'block') lists.custom_blocked.push(target);
+  else if (action === 'direct') lists.custom_direct.push(target);
+  else if (action !== 'remove') return;
+
+  rules.custom_proxied = lists.custom_proxied;
+  rules.custom_proxied_disabled = lists.custom_proxied_disabled;
+  rules.custom_blocked = lists.custom_blocked;
+  rules.custom_direct = lists.custom_direct;
+
+  // Rewrite the buffered rows for this exact host so the badge the operator just
+  // acted on (and any sibling row for the same host) shows the new action at once.
+  const logBadge = STREAM_ACTION_LOG_BADGE[action];
+  if (logBadge) {
+    streamBuffer.forEach((q) => {
+      if ((q.domain || '') === streamActionDomain) q.action = logBadge;
+    });
+  }
+
+  const label = { proxy: 'Proxied', block: 'Blocked', direct: 'Set direct', remove: 'Removed' }[action] || 'Updated';
+  saveRules();
+  renderConfig(currentConfig);
+  renderQueryStream();
+  showToast(`${label} ${target}`, 'success');
+  closeStreamActionMenu();
+}
+
+function onStreamActionMenuClick(e) {
+  const scopeBtn = e.target.closest('.stream-action-scope');
+  if (scopeBtn) {
+    streamActionScope = scopeBtn.dataset.scope || 'exact';
+    streamActionScopeButtons().forEach((b) => {
+      const active = b === scopeBtn;
+      b.classList.toggle('is-active', active);
+      b.setAttribute('aria-checked', active ? 'true' : 'false');
+    });
+    return;
+  }
+  const actionBtn = e.target.closest('.stream-action-item');
+  if (actionBtn) applyStreamAction(actionBtn.dataset.action || '');
+}
+
+
 // per-second DOM work on it: the SSE stream keeps buffering on every tab,
 // but its rows are only painted while the stream view (the sidebar's Logs tab, id "stream") is actually showing.
 let activeDashTab = 'dashboard';
@@ -2088,6 +2394,7 @@ function pushChartData(val) {
 // =======================================================
 const tabRoutes = {
   'dashboard': '/home',
+  'proxied': '/proxied',
   'clients': '/clients',
   'stream': '/logs',
   'api': '/api',
@@ -2100,6 +2407,7 @@ const routeTabs = {
   '/dashboard': 'dashboard',
   '/panel': 'dashboard',
   '/login': 'dashboard',
+  '/proxied': 'proxied',
   '/clients': 'clients',
   '/logs': 'stream',
   '/stream': 'stream',
@@ -2141,6 +2449,12 @@ function switchTab(target, updateUrl = true) {
     // pushStreamQuery), so this is where the queued history becomes rows.
     if (target === 'stream') {
       renderQueryStream();
+    }
+    // The Proxied list fills as the region scrolls, but a panel that was hidden
+    // while it rendered has no height to measure against, so the first batch is
+    // topped up once the tab is actually on screen.
+    if (target === 'proxied') {
+      proxiedFillViewport();
     }
   }
 
@@ -2861,6 +3175,18 @@ function initEventListeners() {
   document.getElementById('bulk-proxied-btn')?.addEventListener('click', () => openBulkImport('proxied'));
   document.getElementById('bulk-blocked-btn')?.addEventListener('click', () => openBulkImport('blocked'));
 
+  // Proxied-list sort and batch controls, and the sentinel that appends the next
+  // batch as the region scrolls. Every one of these re-renders through
+  // renderProxiedList, which reads proxiedSort / proxiedVisible rather than
+  // taking arguments, so the controls only have to update the state.
+  document.getElementById('proxied-sort')?.addEventListener('change', (e) => {
+    proxiedSort = e.target.value || 'added-desc';
+    proxiedResetSlice();
+  });
+  document.getElementById('proxied-load-size')?.addEventListener('change', proxiedResetSlice);
+  document.getElementById('proxied-load-more')?.addEventListener('click', proxiedShowMore);
+  setupProxiedObserver();
+
   // The × names itself through data-modal-close so Escape and a backdrop click reach
   // it; both still need their own handler or those paths click a dead button.
   document.getElementById('bulk-import-cancel-btn')?.addEventListener('click', closeBulkImport);
@@ -2889,8 +3215,14 @@ function initEventListeners() {
     if (!currentConfig || !bulkImportTarget) return;
     const ta = document.getElementById('bulk-import-textarea');
     const key = bulkImportTarget === 'proxied' ? 'custom_proxied' : 'custom_blocked';
-    const existing = Array.isArray(currentConfig.rules[key]) ? currentConfig.rules[key] : [];
-    const { accepted, duplicates, invalid } = parseDomainList(ta ? ta.value : '', existing);
+    const active = Array.isArray(currentConfig.rules[key]) ? currentConfig.rules[key] : [];
+    // On the proxied page a switched-off domain is still "already listed", so the
+    // duplicate check sees both lists — importing it again must not silently
+    // re-enable a domain the operator turned off.
+    const known = bulkImportTarget === 'proxied'
+      ? active.concat(Array.isArray(currentConfig.rules.custom_proxied_disabled) ? currentConfig.rules.custom_proxied_disabled : [])
+      : active;
+    const { accepted, duplicates, invalid } = parseDomainList(ta ? ta.value : '', known);
 
     const parts = [`${accepted.length} added`];
     if (duplicates.length) parts.push(`${duplicates.length} already listed`);
@@ -2902,7 +3234,8 @@ function initEventListeners() {
       return;
     }
 
-    currentConfig.rules[key] = existing.concat(accepted);
+    // Imported domains always land enabled; the operator can switch them off after.
+    currentConfig.rules[key] = active.concat(accepted);
     saveRules();
     renderConfig(currentConfig);
 
@@ -2915,11 +3248,18 @@ function initEventListeners() {
   });
 
   // Add Custom Proxied
-  document.getElementById('add-proxied-btn')?.addEventListener('click', () => {    const input = document.getElementById('new-proxied-input');
+  document.getElementById('add-proxied-btn')?.addEventListener('click', () => {
+    const input = document.getElementById('new-proxied-input');
     const val = input ? input.value.trim().toLowerCase() : '';
     if (!val || !currentConfig) return;
-    if (!currentConfig.rules.custom_proxied.includes(val)) {
-      currentConfig.rules.custom_proxied.push(val);
+    if (!currentConfig.rules.custom_proxied_disabled) currentConfig.rules.custom_proxied_disabled = [];
+    // Re-adding a domain that sits in the disabled list turns it back on, rather
+    // than leaving the same name in both lists.
+    const wasDisabled = currentConfig.rules.custom_proxied_disabled.includes(val);
+    currentConfig.rules.custom_proxied_disabled = currentConfig.rules.custom_proxied_disabled.filter(x => x !== val);
+    const alreadyActive = currentConfig.rules.custom_proxied.includes(val);
+    if (!alreadyActive) currentConfig.rules.custom_proxied.push(val);
+    if (!alreadyActive || wasDisabled) {
       if (input) input.value = '';
       saveRules();
       renderConfig(currentConfig);
@@ -3005,7 +3345,12 @@ function initEventListeners() {
     } else if (btn.classList.contains('remove-proxied')) {
       const val = btn.dataset.val;
       if (currentConfig) {
+        // Delete from both lists: the × on a switched-off row must remove it for
+        // good, not just from the active set the row no longer lives in.
         currentConfig.rules.custom_proxied = currentConfig.rules.custom_proxied.filter(x => x !== val);
+        if (Array.isArray(currentConfig.rules.custom_proxied_disabled)) {
+          currentConfig.rules.custom_proxied_disabled = currentConfig.rules.custom_proxied_disabled.filter(x => x !== val);
+        }
         saveRules();
         renderConfig(currentConfig);
       }
@@ -3038,6 +3383,27 @@ function initEventListeners() {
     }
   };
 
+  // Per-domain proxy switches. Delegated on the list container, whose innerHTML is
+  // replaced by renderProxiedList on every save — a listener bound to each row
+  // would be thrown away by the next render. Flipping off does not delete the
+  // domain: it moves it to custom_proxied_disabled, which the matcher never sees,
+  // so it stops being proxied and resolves normally. Flipping on moves it back.
+  document.getElementById('custom-proxied-list')?.addEventListener('change', (e) => {
+    const box = e.target.closest('.toggle-proxied');
+    if (!box || !currentConfig) return;
+    const val = box.dataset.val;
+    if (!currentConfig.rules.custom_proxied_disabled) currentConfig.rules.custom_proxied_disabled = [];
+    if (box.checked) {
+      currentConfig.rules.custom_proxied_disabled = currentConfig.rules.custom_proxied_disabled.filter(x => x !== val);
+      if (!currentConfig.rules.custom_proxied.includes(val)) currentConfig.rules.custom_proxied.push(val);
+    } else {
+      currentConfig.rules.custom_proxied = currentConfig.rules.custom_proxied.filter(x => x !== val);
+      if (!currentConfig.rules.custom_proxied_disabled.includes(val)) currentConfig.rules.custom_proxied_disabled.push(val);
+    }
+    saveRules();
+    renderConfig(currentConfig);
+  });
+
   // Live Stream Controls
   //
   // The filter and the search box had no listeners at all: both were read inside the append
@@ -3051,6 +3417,14 @@ function initEventListeners() {
   // every keystroke — a listener bound to the button itself would be discarded by the next
   // render.
   document.getElementById('stream-tbody')?.addEventListener('click', (e) => {
+    // The ACTION badge opens the quick-action menu. Same delegation reason as the
+    // clear button below: the badge is rebuilt with the row on every render.
+    const badge = e.target.closest('.stream-action-btn');
+    if (badge) {
+      e.stopPropagation();
+      openStreamActionMenu(badge);
+      return;
+    }
     if (!e.target.closest('.clear-stream-filter-btn')) return;
     const filterEl = document.getElementById('stream-filter');
     const searchEl = document.getElementById('stream-search');
@@ -3058,6 +3432,19 @@ function initEventListeners() {
     if (searchEl) searchEl.value = '';
     renderQueryStream();
   });
+
+  // The shared quick-action menu. Its buttons are static, so they bind once, and
+  // the three ways out — an outside click, Escape, or scrolling the log — all
+  // call the same close.
+  document.getElementById('stream-action-menu')?.addEventListener('click', onStreamActionMenuClick);
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.stream-action-btn') || e.target.closest('#stream-action-menu')) return;
+    closeStreamActionMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeStreamActionMenu();
+  });
+  document.querySelector('.stream-viewport')?.addEventListener('scroll', closeStreamActionMenu);
 
   const pauseBtn = document.getElementById('stream-pause-btn');
   if (pauseBtn) {

@@ -1,4 +1,10 @@
-# ⚡ HyperDNS — HyperRAIN Standalone SmartDNS & Gaming Gateway
+# ⚡ DigitDNS — Anti-Sanction SmartDNS & Gaming Gateway
+
+> **DigitDNS is a fork of [HyperDNS](https://github.com/IzumiRain/HyperDNS)** by HyperRAIN,
+> maintained by [Digitrob](https://github.com/digitrob). The engine, dashboard, API and CLI
+> are unchanged; the served web UI is rebranded as **DigitDNS** and this fork ships its own
+> signed auto-updates. Upstream's history, licence and RFC work are preserved — see
+> [NOTICE](NOTICE) and the [License](#-license) section.
 
 <p align="center">
   <img src="https://img.shields.io/badge/Release-v2.8.0-00f0ff?style=for-the-badge&logo=rocket" alt="Version">
@@ -48,7 +54,7 @@
 
 ## 📖 Overview
 
-**HyperDNS** is an ultra-fast, single-binary SmartDNS server and transparent SNI Proxy engine with an embedded cyberpunk/gaming web dashboard, developer REST API, and interactive terminal interface (`hdns`).
+**DigitDNS** is an ultra-fast, single-binary SmartDNS server and transparent SNI Proxy engine with an embedded cyberpunk/gaming web dashboard, developer REST API, and interactive terminal interface (`hdns`).
 
 It transforms any single cloud VPS (even a \$3/month 1-Core CPU / 1GB RAM instance) into a private **Anti-Sanction (403 Bypass)** and **Low-Latency Gaming Gateway** for **PC, PlayStation 4/5, Xbox Series X/S, Nintendo Switch, Android, iOS, and Routers** with:
 - **0 Client Software Required:** Users only set their DNS IP address on their console or router.
@@ -59,7 +65,7 @@ It transforms any single cloud VPS (even a \$3/month 1-Core CPU / 1GB RAM instan
 
 ## 🖥️ Server Requirements
 
-HyperDNS is a single static Go binary. There is no database server, no runtime,
+DigitDNS is a single static Go binary. There is no database server, no runtime,
 no container image underneath it — the sizing question is only how many
 subscribers you serve and whether they relay downloads through you.
 
@@ -142,7 +148,7 @@ curl -fsSL https://raw.githubusercontent.com/IzumiRain/HyperDNS/v2.8.0-beta.1/sc
 ```
 
 > [!IMPORTANT]
-> **The installer never upgrades in place.** An existing install is archived to `/root/hyperdns-preinstall-<date>.tar.gz` (its sha256 printed — the only copy of the old data), then **replaced**: fresh config, fresh credentials, fresh certificates. An interactive run types `FRESH` to confirm the wipe; a piped `curl | bash` run refuses unless `HYPERDNS_FRESH=1` is set. Coming from **HyperDNS 1.x**, run `bash migrate-from-v1.sh` from the offline bundle first.
+> **The installer never upgrades in place.** An existing install is archived to `/root/hyperdns-preinstall-<date>.tar.gz` (its sha256 printed — the only copy of the old data), then **replaced**: fresh config, fresh credentials, fresh certificates. An interactive run types `FRESH` to confirm the wipe; a piped `curl | bash` run refuses unless `HYPERDNS_FRESH=1` is set. Coming from **HyperDNS/DigitDNS 1.x**, run `bash migrate-from-v1.sh` from the offline bundle first.
 >
 > **A panel domain is mandatory** — its A record must point at the server. The daemon issues the Let's Encrypt certificate **itself** over its own port-80 listener: no certbot, no acme.sh, nothing to stop the service for. Non-interactive: `HYPERDNS_DOMAIN=dns.example.com HYPERDNS_EMAIL=you@example.com bash install.sh`. If issuance fails the installer states the cause and exits rather than printing success. Renewal is daily and automatic.
 >
@@ -193,7 +199,7 @@ This build ships **no built-in catalogue**. Routing is entirely the operator's, 
 - **Real icons for named groups (v2.7).** A custom group can carry an uploaded logo: **SVG ≤ 16 KB or PNG ≤ 64 KB**, validated server-side (SVG is re-encoded through an allowlist; scripts, event handlers and external references cannot survive it) and stored in the encrypted database so backups carry them.
 
 ### 🛡️ 2. Transparent SNI Proxy Relay
-- Layer-4 TCP relaying without SSL termination: the TLS session stays end-to-end between the client and the origin, and HyperDNS never holds the keys for it.
+- Layer-4 TCP relaying without SSL termination: the TLS session stays end-to-end between the client and the origin, and DigitDNS never holds the keys for it.
 - Anti-DPI TLS ClientHello fragmentation, on by default (`enable_fragmentation`, with a configurable chunk size and inter-chunk delay).
 - A `sync.Pool` of 32 KB buffers, so a relayed connection does not allocate its own — the payload is still copied through user space, and each direction carries an inactivity deadline that is refreshed per chunk so half-open connections are reaped instead of pinned.
 - Up to 4096 concurrent relays; beyond that new connections are rejected rather than queued, which keeps a flood from exhausting memory.
@@ -300,7 +306,7 @@ report-a-vulnerability process, see **[SECURITY.md](docs/SECURITY.md)**.
 
 ## 🖥️ Interactive TUI Controller (`hdns`)
 
-Run HyperDNS in terminal mode to read live metrics, provision subscribers and run diagnostics over SSH without opening a browser:
+Run DigitDNS in terminal mode to read live metrics, provision subscribers and run diagnostics over SSH without opening a browser:
 ```bash
 ./hyperdns
 # or if installed system-wide:
@@ -410,7 +416,7 @@ carries it automatically. Full walkthrough: [TUTORIAL.md → Brand the subscribe
 
 ## 🔌 Developer REST API
 
-HyperDNS exposes a developer-first REST API for bots and billing systems, in
+DigitDNS exposes a developer-first REST API for bots and billing systems, in
 two versions:
 
 - **v2** (the successor contract, `/api/v2/…`): symmetric field names
@@ -440,7 +446,7 @@ curl -s -X POST "https://$HOST/api/v2/clients" \
   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
   -d '{"display_name":"Ali","allowed_ips":["185.10.20.30"],"validity_days":30}'
 
-# Check whether a newer HyperDNS release is published (v2.6+)
+# Check whether a newer DigitDNS release is published (v2.6+)
 curl -s "https://$HOST/api/v1/version"  # the running build
 curl -s "https://$HOST/api/update/check" -H "Authorization: Bearer <dashboard-session-token>"
 
@@ -506,7 +512,7 @@ panel that requires authentication has no public page to light up.
 
 ## 📐 Standards & RFC Compliance
 
-HyperDNS implements and honours the following IETF specifications — the full
+DigitDNS implements and honours the following IETF specifications — the full
 table, with what each RFC means in this project, lives in
 [SECURITY.md → Standards & RFC Compliance](docs/SECURITY.md#-standards--rfc-compliance):
 
@@ -521,8 +527,9 @@ UUID v4 [RFC 9562].
 
 ## ☕ Support / Donate
 
-HyperDNS is built and maintained by one person, free and open source. If it
-unblocked your games or your work, consider buying me a coffee.
+DigitDNS is a free and open-source fork of [HyperDNS](https://github.com/IzumiRain/HyperDNS).
+The upstream project is built and maintained by one person — if it unblocked your
+games or your work, consider supporting the original author.
 
 | Method | Address / Link |
 | :--- | :--- |
@@ -536,4 +543,15 @@ All methods, with copy buttons: **[izumirain.github.io](https://izumirain.github
 ---
 
 ## 📜 License
-HyperDNS is distributed under the **AGPL-3.0 License**.
+DigitDNS is distributed under the **AGPL-3.0 License**, the same licence as the
+upstream project it is forked from.
+
+This program includes code from **HyperDNS** by HyperRAIN
+([github.com/IzumiRain/HyperDNS](https://github.com/IzumiRain/HyperDNS)),
+licensed under the GNU Affero General Public License v3.0. DigitDNS is a
+modified fork; the original copyright notices are retained in full. See
+[LICENSE](LICENSE) for the full licence text and [NOTICE](NOTICE) for the
+attribution and modification summary.
+
+Source code for this fork is available at
+[github.com/digitrob/HyperDNS](https://github.com/digitrob/HyperDNS).

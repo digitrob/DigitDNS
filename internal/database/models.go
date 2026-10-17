@@ -288,7 +288,7 @@ type SubscriptionSettings struct {
 	// future custom mount migrates without another schema change.
 	URIPath string `json:"uri_path"`
 
-	// Title is the brand line on the portal. Default "HyperDNS".
+	// Title is the brand line on the portal. Default "DigitDNS".
 	Title string `json:"title"`
 
 	// ThemeCSS is the operator's stylesheet injected after the built-in portal

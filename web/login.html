@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300f0ff' stroke-width='2'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3C/svg%3E">
-  <title>HyperDNS — Sign in</title>
+  <title>DigitDNS — Sign in</title>
   <!--
     Standalone login document (v2.1.0 Phase A).
 
@@ -136,7 +136,7 @@
         <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
       </div>
       <div>
-        <h1 class="brand-name">HyperDNS</h1>
+        <h1 class="brand-name">DigitDNS</h1>
         <div class="brand-sub" data-i18n="sub">Standalone Controller</div>
       </div>
     </div>
@@ -160,7 +160,7 @@
 
     <div class="foot">
       <button type="button" class="lang" id="lang-btn">فارسی</button>
-      <span>HyperDNS Secure Panel</span>
+      <span>DigitDNS Secure Panel</span>
     </div>
   </main>
 
@@ -211,7 +211,7 @@
         var t = DICT[lang];
         document.documentElement.lang = lang;
         document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
-        document.title = 'HyperDNS — ' + (lang === 'fa' ? 'ورود' : 'Sign in');
+        document.title = 'DigitDNS — ' + (lang === 'fa' ? 'ورود' : 'Sign in');
         var nodes = document.querySelectorAll('[data-i18n]');
         for (var i = 0; i < nodes.length; i++) {
           var k = nodes[i].getAttribute('data-i18n');

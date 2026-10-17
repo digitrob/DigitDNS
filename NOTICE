@@ -1,0 +1,63 @@
+DigitDNS
+========
+
+Copyright (C) 2026 Digitrob
+Copyright (C) HyperRAIN / IzumiRain and HyperDNS contributors
+
+This product is a modified fork of HyperDNS.
+
+    Upstream project : HyperDNS
+    Upstream author  : HyperRAIN (IzumiRain)
+    Upstream source  : https://github.com/IzumiRain/HyperDNS
+    Upstream licence : GNU Affero General Public License, version 3.0
+
+    This fork        : DigitDNS
+    Maintainer       : Digitrob
+    Fork source      : https://github.com/digitrob/HyperDNS
+
+DigitDNS is free software: you can redistribute it and/or modify it under the
+terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version. DigitDNS is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+more details.
+
+The full licence text is in the LICENSE file in this repository. The complete
+corresponding source of this fork is available at
+https://github.com/digitrob/HyperDNS.
+
+Modifications relative to upstream HyperDNS
+-------------------------------------------
+
+DigitDNS is a rebranded and extended fork. In accordance with section 5 of the
+GNU AGPL-3.0, the following changes were made to the upstream work:
+
+  * The browser-facing web interface (landing page, login page, dashboard,
+    subscriber portal, i18n strings, error pages and subscription defaults) is
+    rebranded from "HyperDNS" to "DigitDNS". This is the primary modification.
+  * The dashboard section formerly titled "Custom Proxied Domains" is renamed
+    to "Proxied Domains".
+  * The Proxied Domains list gained sorting controls and incremental
+    (infinite-scroll) loading.
+  * The Live Query Log view was made full-height and each row gained a quick
+    action menu (Proxy / Block / Direct / Remove).
+  * The in-dashboard self-updater is repointed from the upstream release
+    channel to this fork's release channel and re-signed with this fork's own
+    pinned ed25519 release key.
+  * A GitHub Actions workflow (`upstream-sync`) periodically merges upstream
+    changes into this fork's `custom` branch.
+
+Internal, non-UI identifiers are intentionally left unchanged from upstream for
+compatibility, including but not limited to: the `X-HyperDNS-*` HTTP headers,
+the systemd unit and service names, log prefixes, the Go module path, the
+certificate subject, and the interactive terminal (`hdns`) interface strings.
+
+Third-party components
+----------------------
+
+  * Swagger UI under `web/swagger/` is bundled under the Apache License 2.0.
+  * Tailwind CSS (build-time only, purged) — MIT License.
+  * Feather Icons — MIT License.
+
+All third-party components retain their original copyright notices and licences.

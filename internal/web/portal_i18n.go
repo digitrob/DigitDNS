@@ -204,7 +204,7 @@ type portalText struct {
 var portalFa = portalText{
 	DocTitle:     "اشتراک هوشمند",
 	ErrDocTitle:  "خطا در اشتراک",
-	Subtitle:     "HyperDNS %s • سرویس دامنه‌شکن کم‌تأخیر",
+	Subtitle:     "DigitDNS %s • سرویس دامنه‌شکن کم‌تأخیر",
 	PillActive:   "فعال",
 	ThemeToLight: "حالت روشن",
 	ThemeToDark:  "حالت تیره",
@@ -346,7 +346,7 @@ var portalFa = portalText{
 var portalEn = portalText{
 	DocTitle:     "Smart Subscription",
 	ErrDocTitle:  "Subscription Error",
-	Subtitle:     "HyperDNS %s • Low-Latency SmartDNS Engine",
+	Subtitle:     "DigitDNS %s • Low-Latency SmartDNS Engine",
 	PillActive:   "ACTIVE",
 	ThemeToLight: "Light mode",
 	ThemeToDark:  "Dark mode",

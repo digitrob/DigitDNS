@@ -44,7 +44,7 @@ func (s *SubscriptionSettings) Snapshot() SubscriptionSnapshot {
 		return SubscriptionSnapshot{
 			Enabled:             true,
 			URIPath:             "/sub",
-			Title:               "HyperDNS",
+			Title:               "DigitDNS",
 			UsePanelCertificate: true,
 		}
 	}
@@ -72,12 +72,12 @@ func (s *SubscriptionSettings) Snapshot() SubscriptionSnapshot {
 // default when the record carries none.
 func (s *SubscriptionSettings) GetTitle() string {
 	if s == nil {
-		return "HyperDNS"
+		return "DigitDNS"
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.Title == "" {
-		return "HyperDNS"
+		return "DigitDNS"
 	}
 	return s.Title
 }
@@ -251,7 +251,7 @@ func EnsureSubscriptionDefaults(s *SubscriptionSettings, panelDomain string, pan
 
 	s.Enabled = true
 	s.URIPath = "/sub"
-	s.Title = "HyperDNS"
+	s.Title = "DigitDNS"
 	s.UsePanelCertificate = true
 	if panelDomain != "" {
 		s.Domain = panelDomain

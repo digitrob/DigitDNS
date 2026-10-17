@@ -171,7 +171,7 @@ func (ws *WebServer) handleAuth2FASetup(w http.ResponseWriter, r *http.Request) 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success":     true,
 		"secret":      secret,
-		"otpauth_uri": auth.OTPAuthURI("HyperDNS", adminUser, secret),
+		"otpauth_uri": auth.OTPAuthURI("DigitDNS", adminUser, secret),
 	})
 }
 

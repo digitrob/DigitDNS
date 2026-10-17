@@ -296,7 +296,7 @@ func (ws *WebServer) handleIPPage(w http.ResponseWriter, r *http.Request) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
-  <title>HyperDNS — IP registration API</title>
+  <title>DigitDNS — IP registration API</title>
   <link rel="stylesheet" href="/css/portal.css">
 </head>
 <body class="portal center">
@@ -315,7 +315,7 @@ func (ws *WebServer) handleIPPage(w http.ResponseWriter, r *http.Request) {
         <div class="label">FA</div>
         <div class="value-lg mono" style="font-size:.9rem">این آدرس برای ثبت برنامه‌ای آی‌پی است و با «رمز ثبت» کار می‌کند.<br>برای مدیریت آی‌پی، لینک پورتال <b>/sub/…</b> خود را باز کنید.</div>
       </div>
-      <div class="footer">HyperDNS Secure Portal</div>
+      <div class="footer">DigitDNS Secure Portal</div>
     </div>
   </div>
 </body>
@@ -407,7 +407,7 @@ type portalData struct {
 	ClientIP  string
 	ServerDNS string
 	// Title is the operator's brand line from the subscription settings
-	// ("HyperDNS" when they never chose one). It replaces the literal product
+	// ("DigitDNS" when they never chose one). It replaces the literal product
 	// name in the page title so a reseller's customers see the reseller's name.
 	Title string
 	// Version is the running build, for the footer. It is a field rather than a
@@ -771,7 +771,7 @@ const portalErrorHTML = `<!DOCTYPE html>
         {{- end}}
       </div>
 
-      <div class="footer">HyperDNS {{.Version}}</div>
+      <div class="footer">DigitDNS {{.Version}}</div>
     </div>
   </div>
 </body>
@@ -813,7 +813,7 @@ const portalPageHTML = `<!DOCTYPE html>
         <div class="brand-text">
           <div class="brand-row">
             <!-- The operator's brand line, not the generic bundle heading. Title
-                 falls back to "HyperDNS" when unset (see GetTitle), so an install
+                 falls back to "DigitDNS" when unset (see GetTitle), so an install
                  that never touched the setting still renders a name — but one
                  that did now sees it on the page a subscriber actually opens,
                  not only in the browser tab. -->
@@ -1168,7 +1168,7 @@ const portalPageHTML = `<!DOCTYPE html>
          data-msg-reason-conflict="{{.T.MsgRegisterConflict}}"></div>
 
     <div class="footer">
-      HyperDNS Smart Controller • UDP/TCP SmartDNS &amp; Transparent SNI Proxy Engine
+      DigitDNS Smart Controller • UDP/TCP SmartDNS &amp; Transparent SNI Proxy Engine
     </div>
 
   </div>

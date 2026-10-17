@@ -32,7 +32,7 @@ var bigJS = []byte(strings.Repeat("console.log('hyperdns');\n", 200))
 
 func testAssets() *staticServer {
 	return newStaticServer(fstest.MapFS{
-		"index.html":       {Data: []byte("<!DOCTYPE html><title>HyperDNS</title>")},
+		"index.html":       {Data: []byte("<!DOCTYPE html><title>DigitDNS</title>")},
 		"js/app.js":        {Data: bigJS},
 		"css/style.css":    {Data: []byte(strings.Repeat(".glass-panel{color:#00f0ff}\n", 100))},
 		"js/tiny.js":       {Data: []byte("x=1")},
