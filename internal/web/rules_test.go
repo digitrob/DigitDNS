@@ -75,8 +75,8 @@ func domainsAt(t *testing.T, rules map[string]any, key string) []string {
 }
 
 // TestConfigRulesPartialSaveKeepsCustomLists covers the whole point of the
-// "start from the persisted state" fallback: a payload that carries only a
-// preset toggle must not touch the custom domain lists. Before toStringSlice
+// "start from the persisted state" fallback: a payload that carries only an
+// unknown key must not touch the custom domain lists. Before toStringSlice
 // accepted []string it silently returned nil for all three, and this save wrote
 // three empty lists over the operator's domains — in the database and in the
 // live matcher.
@@ -88,10 +88,10 @@ func TestConfigRulesPartialSaveKeepsCustomLists(t *testing.T) {
 		t.Fatalf("full save = %d — %s", w.Code, w.Body.String())
 	}
 
-	// A body with nothing but a preset toggle: any non-dashboard API client, or
+	// A body with nothing but an unknown key: any non-dashboard API client, or
 	// the dashboard before currentConfig has loaded.
-	if w := postJSON(t, h, "/api/config/rules", `{"enable_riot":false}`, tok); w.Code != http.StatusOK {
-		t.Fatalf("preset-only save = %d — %s", w.Code, w.Body.String())
+	if w := postJSON(t, h, "/api/config/rules", `{"some_unknown_key":false}`, tok); w.Code != http.StatusOK {
+		t.Fatalf("unknown-key save = %d — %s", w.Code, w.Body.String())
 	}
 
 	rules := rulesFromConfig(t, h, tok)
@@ -101,21 +101,12 @@ func TestConfigRulesPartialSaveKeepsCustomLists(t *testing.T) {
 		"custom_direct":  "intranet.example.test",
 	} {
 		if got := domainsAt(t, rules, key); !slices.Equal(got, []string{want}) {
-			t.Errorf("after a preset-only save, rules[%q] = %v, want [%s]", key, got, want)
+			t.Errorf("after an unknown-key save, rules[%q] = %v, want [%s]", key, got, want)
 		}
 	}
 	recs, _ := rules["custom_records"].(map[string]any)
 	if recs["pin.example.com"] != "203.0.113.9" {
 		t.Errorf("custom_records = %#v, want pin.example.com preserved", rules["custom_records"])
-	}
-
-	// The toggle in that payload still has to have landed, or every assertion
-	// above would also pass on a handler that ignored the request outright.
-	if enabled, _ := rules["enable_riot"].(bool); enabled {
-		t.Error("enable_riot survived a save that set it to false")
-	}
-	if ws.matcher.IsRuleEnabled("enable_riot") {
-		t.Error("the live matcher still has the Riot preset enabled")
 	}
 
 	// The matcher has to agree with what was persisted; the wipe hit both.

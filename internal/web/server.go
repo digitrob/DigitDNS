@@ -27,7 +27,6 @@ import (
 	"hyperdns/internal/core/upstream"
 	"hyperdns/internal/database"
 	"hyperdns/internal/httpx"
-	"hyperdns/internal/presetupd"
 	"hyperdns/internal/selfupdate"
 	"hyperdns/internal/service"
 	"hyperdns/internal/service/acme"
@@ -40,7 +39,6 @@ type WebServer struct {
 	stats          *service.StatsService
 	cache          *cache.Cache
 	matcher        *matcher.Matcher
-	presetUpdater  *presetupd.Updater
 	customGroups   *service.CustomGroupService
 	upstreams      *upstream.UpstreamPool
 	dohHandler     http.Handler
@@ -165,29 +163,27 @@ func NewWebServer(
 	dnsCfg *database.DNSSettings,
 	sessions *service.SessionManager,
 	staticFS fs.FS,
-	presetUpdater *presetupd.Updater,
 ) *WebServer {
 	apiInst := api.NewAPI(db, clients, stats, cache, matcher, upstreams, settings, tlsSettings, sessions)
 
 	ws := &WebServer{
-		db:            db,
-		clients:       clients,
-		stats:         stats,
-		cache:         cache,
-		matcher:       matcher,
-		upstreams:     upstreams,
-		dohHandler:    dohHandler,
-		settings:      settings,
-		tlsSettings:   tlsSettings,
-		dnsCfg:        dnsCfg,
-		sessions:      sessions,
-		staticFS:      staticFS,
-		presetUpdater: presetUpdater,
-		api:           apiInst,
-		sseTickets:    newSSETicketStore(),
-		ldapAuth:      auth.GoLDAPAuthenticator{},
-		kdfGate:       make(chan struct{}, kdfConcurrency()),
-		totpReplay:    newTOTPReplayGuard(),
+		db:          db,
+		clients:     clients,
+		stats:       stats,
+		cache:       cache,
+		matcher:     matcher,
+		upstreams:   upstreams,
+		dohHandler:  dohHandler,
+		settings:    settings,
+		tlsSettings: tlsSettings,
+		dnsCfg:      dnsCfg,
+		sessions:    sessions,
+		staticFS:    staticFS,
+		api:         apiInst,
+		sseTickets:  newSSETicketStore(),
+		ldapAuth:    auth.GoLDAPAuthenticator{},
+		kdfGate:     make(chan struct{}, kdfConcurrency()),
+		totpReplay:  newTOTPReplayGuard(),
 	}
 	ws.loginLimiter = service.NewLoginAttemptTracker()
 	ws.benchmark = service.NewBenchmarkRunner(func() {
@@ -748,10 +744,6 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/custom-groups", ws.requireAuth(ws.handleCustomGroups))
 	mux.HandleFunc("/api/custom-groups/", ws.requireAuth(ws.handleCustomGroupByID))
 	mux.HandleFunc("/api/cache/flush", ws.requireAuth(ws.handleFlushCache))
-	mux.HandleFunc("/api/presets/update", ws.requireAuth(ws.handlePresetUpdateStatus))
-	mux.HandleFunc("/api/presets/update/check", ws.requireAuth(ws.handlePresetUpdateCheck))
-	mux.HandleFunc("/api/presets/update/apply", ws.requireAuth(ws.handlePresetUpdateApply))
-	mux.HandleFunc("/api/presets/update/rollback", ws.requireAuth(ws.handlePresetUpdateRollback))
 	mux.HandleFunc("/api/settings", ws.requireAuth(ws.handleSettings))
 	mux.HandleFunc("/api/settings/regenerate-api-key", ws.requireAuth(ws.handleRegenerateAPIKey))
 	mux.HandleFunc("/api/settings/regenerate-admin-path", ws.requireAuth(ws.handleRegenerateAdminPath))
@@ -767,11 +759,6 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/upstreams/delete", ws.requireAuth(ws.handleUpstreamsDelete))
 	mux.HandleFunc("/api/tls/issue", ws.requireAuth(ws.handleTLSSettings))
 	mux.HandleFunc("/api/tls/acme/status", ws.requireAuth(ws.handleACMEStatus))
-
-	// Policy preset icons: the theme-adaptive SVG glyphs for the built-in
-	// policies (v2.7), served below the admin prefix like every other dashboard
-	// asset. Registered before the SPA catch-all so the prefix always wins.
-	mux.HandleFunc("/icons/policy/", ws.handlePolicyIcon)
 
 	// 7. Embedded Offline SPA Static Assets & Clean Routes
 	//
@@ -1386,16 +1373,10 @@ func redirectHost(host string) string {
 	return host
 }
 
-// loadRulesConfig builds the effective rules state: defaults first, then any
-// persisted overrides from the policies bucket.
+// loadRulesConfig builds the effective rules state: the four custom lists, then
+// any persisted values from the policies bucket.
 func (ws *WebServer) loadRulesConfig() map[string]any {
 	rules := map[string]any{}
-	for key := range matcher.PresetRuleKeys {
-		// Sensible defaults: sinkholing categories off, the bulk-download veto off,
-		// everything else on. The matcher owns which categories those are, so this asks
-		// it rather than naming them here and drifting from NewMatcher's own defaults.
-		rules[key] = matcher.DefaultRuleEnabled(key)
-	}
 	rules["custom_proxied"] = []string{}
 	rules["custom_blocked"] = []string{}
 	rules["custom_direct"] = []string{}
@@ -1419,10 +1400,6 @@ func (ws *WebServer) loadRulesConfig() map[string]any {
 				}
 			}
 			rules["custom_records"] = recs
-		default:
-			if _, ok := matcher.PresetRuleKeys[p.Key]; ok {
-				rules[p.Key] = p.Enabled
-			}
 		}
 	}
 	return rules
@@ -1529,7 +1506,7 @@ func (ws *WebServer) handleConfigAccess(w http.ResponseWriter, r *http.Request) 
 // state" fallback in handleConfigRules a no-op. A Go type assertion is exact, so
 // val.([]any) fails on every []string, and the three lists were reset to nil
 // before the request was even inspected — meaning a payload carrying just one
-// preset toggle saved three empty lists over the operator's custom domains.
+// rule change saved three empty lists over the operator's custom domains.
 func toStringSlice(val any) []string {
 	add := func(out []string, s string) []string {
 		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
@@ -1572,8 +1549,8 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	var customProxied, customBlocked, customDirect []string
 	customRecords := map[string]string{}
 
-	// Start from the persisted state so a partial update (e.g. only a preset
-	// toggle in the payload) never wipes the saved custom domain lists.
+	// Start from the persisted state so a partial update never wipes the saved
+	// custom domain lists.
 	persisted := ws.loadRulesConfig()
 	customProxied = toStringSlice(persisted["custom_proxied"])
 	customBlocked = toStringSlice(persisted["custom_blocked"])
@@ -1583,25 +1560,6 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for key, val := range req {
-		if presetName, ok := matcher.PresetRuleKeys[key]; ok {
-			enabled, isBool := val.(bool)
-			if !isBool {
-				continue
-			}
-			// Persist first and check the error (audit fix, v2.8): a discarded
-			// error meant a failing store write still applied the rule to the
-			// live matcher and answered success, so the operator's change looked
-			// saved but silently reverted on the next restart. The live push now
-			// happens only after the write has actually landed.
-			if err := ws.db.SavePolicy(database.Policy{Key: key, Name: presetName, Category: "preset", Enabled: enabled}); err != nil {
-				httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not save the policy settings")
-				return
-			}
-			if ws.matcher != nil {
-				ws.matcher.SetRuleEnabled(presetName, enabled)
-			}
-			continue
-		}
 		switch key {
 		case "custom_proxied":
 			customProxied = toStringSlice(val)
@@ -2098,14 +2056,12 @@ func (ws *WebServer) handlePolicies(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteJSONErrorFor(w, http.StatusInternalServerError, err)
 			return
 		}
-		// The catalogue is served alongside the stored overrides because the dashboard's
-		// per-client policy picker was filled from a 26-entry map transcribed into
-		// app.js. Nothing could check that copy against this one, and it had drifted:
-		// four labels were shorter, and a preset added on the Go side stayed
-		// unselectable until someone remembered to retype it there too.
+		// The catalogue stays in the response so clients that read it keep a
+		// well-formed (now empty) list. This build ships no presets, so there is
+		// nothing selectable to advertise.
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"policies": policies,
-			"catalog":  matcher.PolicyCatalog(),
+			"catalog":  []any{},
 		})
 
 	case http.MethodPost:
@@ -2117,9 +2073,6 @@ func (ws *WebServer) handlePolicies(w http.ResponseWriter, r *http.Request) {
 		if err := ws.db.SavePolicy(p); err != nil {
 			httpx.WriteJSONErrorFor(w, http.StatusInternalServerError, err)
 			return
-		}
-		if ws.matcher != nil {
-			ws.matcher.SetRuleEnabled(p.Key, p.Enabled)
 		}
 		_ = json.NewEncoder(w).Encode(p)
 

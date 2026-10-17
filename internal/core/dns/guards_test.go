@@ -295,7 +295,7 @@ func TestServeDoesNotClampAStreamTransport(t *testing.T) {
 
 func TestHandlerDoesNotLeakTheRealHostOverAAAA(t *testing.T) {
 	h, _, m := newGuardHandler(t)
-	m.SetCustomRules(nil, []string{"ads.internal.test"}, nil,
+	m.SetCustomRules([]string{"playvalorant.com"}, []string{"ads.internal.test"}, nil,
 		map[string]string{"pin.internal.test": "203.0.113.77"})
 
 	cases := []struct {

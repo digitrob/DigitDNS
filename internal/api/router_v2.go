@@ -23,7 +23,6 @@ import (
 	"strconv"
 	"strings"
 
-	"hyperdns/internal/core/matcher"
 	"hyperdns/internal/database"
 	"hyperdns/internal/httpx"
 	"hyperdns/internal/service"
@@ -364,7 +363,7 @@ func (a *API) handleV2Policies(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"items":   policies,
-			"catalog": matcher.PolicyCatalog(),
+			"catalog": []any{},
 		})
 	default:
 		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD")

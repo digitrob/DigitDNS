@@ -710,9 +710,9 @@ func (ws *WebServer) renderIPResultPage(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
-	// Display labels only: "enable_riot" reads as "RIOT" on the page. These used
-	// to be escaped by hand here because they were pasted into markup; the
-	// template does it now, and does it for the right context.
+	// Display labels only: "custom_proxied" reads as "CUSTOM PROXIED" on the page.
+	// These used to be escaped by hand here because they were pasted into markup;
+	// the template does it now, and does it for the right context.
 	for _, p := range client.CustomPolicies {
 		label := strings.ToUpper(strings.ReplaceAll(strings.TrimPrefix(p, "enable_"), "_", " "))
 		data.Policies = append(data.Policies, label)

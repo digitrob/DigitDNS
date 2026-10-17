@@ -4,7 +4,6 @@
   <a href="../README.md">README</a> •
   <a href="API.md">REST API</a> •
   <a href="SECURITY.md">Security</a> •
-  <a href="PRESET_CATALOG.md">Preset Catalog</a> •
   <a href="CHANGELOG.md">Changelog</a> •
   <a href="TUTORIAL.fa.md">نسخهٔ فارسی</a>
 </p>
@@ -28,7 +27,7 @@
 6. [Add your first client](#6-add-your-first-client)
 7. [How the subscriber registers their IP](#7-how-the-subscriber-registers-their-ip)
 8. [Connect devices](#8-connect-devices)
-9. [Turn policy presets on or off](#9-turn-policy-presets-on-or-off)
+9. [Edit your routing rules](#9-edit-your-routing-rules)
 10. [Watch live traffic](#10-watch-live-traffic)
 11. [Limits, expiry, and day-to-day client management](#11-limits-expiry-and-day-to-day-client-management)
 12. [Advanced rules: custom proxied / blocked / direct / static records](#12-advanced-rules-custom-proxied--blocked--direct--static-records)
@@ -171,16 +170,15 @@ section).
 
 ## 3. Dashboard tour
 
-The sidebar has seven sections; this tutorial visits each:
+The sidebar has six sections; this tutorial visits each:
 
 | Tab | Route | What it is for |
 | :--- | :--- | :--- |
 | **Dashboard** | `/home` | Live telemetry: QPS graph, active subscribers, cache hit rate, per-upstream latency. |
 | **Clients** | `/clients` | Add/edit/delete subscribers, quotas, expiry, registration links and secrets. |
-| **Policy Presets** | `/rules` | The one-click toggles for 171+ games and services, plus custom rule lists. |
 | **Live Stream** | `/logs` | Live DNS query stream over SSE, with per-query action labels (`PROXY`, `DIRECT`, `BLOCK`). |
-| **API** | `/api` | Generate the Master API key, see ready-to-copy code samples, check public exposure. |
-| **Settings** | `/settings` | Whitelist mode, policies, API binding, 2FA, LDAP, hidden admin path, **Subscription Portal**, SSL/TLS. |
+| **REST API Gateway** | `/api` | Generate the Master API key, see ready-to-copy code samples, check public exposure. |
+| **Settings & SSL** | `/settings` | Whitelist mode, **routing rules** (custom proxied/blocked/direct lists, bulk import), API binding, 2FA, LDAP, hidden admin path, **Subscription Portal**, SSL/TLS. |
 | **Connect Guide** | `/guide` | Per-platform connection instructions you can hand to a subscriber. |
 
 The sidebar footer also has the **server's public IP** (click to copy), a
@@ -381,23 +379,18 @@ that connection; an answer with the real CDN IP means it is going direct.
 
 ---
 
-## 9. Turn policy presets on or off
+## 9. Edit your routing rules
 
-**Policy Presets** groups 171+ games and services into categories, each one
-toggle. They are **all on by default except three**:
+This build ships **no built-in catalogue** — there are no game presets to toggle. Routing is the operator's own lists, edited under **Settings & SSL → Routing Rules** (`/settings`):
 
-- `enable_downloads` — multi-gigabyte game installs. Off, because egress is
-  billed by the gigabyte and a relayed download is usually slower than a direct
-  one. See the README's "Before you turn it on" paragraph before flipping it.
-- `enable_adblock` — ad blocking.
-- `enable_familysafe` — adult-content filtering.
+- **Custom Proxied** — names sent through the SNI proxy.
+- **Custom Blocked** — names sinkholed to `0.0.0.0`.
+- **Custom Direct** — names forced to resolve normally, overriding a proxy rule for that name.
+- **Custom Records** — static `domain=IP` overrides.
 
-Each toggle shows the domains it covers. Changes apply immediately to the live
-engine; after a big change, hit **Flush Cache** (sidebar) or
-`POST /api/v1/cache/flush` so cached answers do not keep their old routing for
-the rest of their TTL.
+Add names one at a time, or use **Bulk Import** (see [section 12](#12-advanced-rules-custom-proxied--blocked--direct--static-records)) to paste or upload a whole list.
 
-The full catalog, by category, is in [PRESET_CATALOG.md](PRESET_CATALOG.md).
+Changes apply to the live engine immediately; after a big change, hit **Flush Cache** (sidebar) or `POST /api/v1/cache/flush` so cached answers do not keep their old routing for the rest of their TTL.
 
 ---
 
@@ -450,20 +443,19 @@ Two behaviours worth knowing:
 
 ## 12. Advanced rules: custom proxied / blocked / direct / static records
 
-Under **Policy Presets**, below the toggles, four lists let you override
-everything:
+Under **Settings & SSL → Routing Rules**, these four lists decide routing:
 
 | List | Effect | Typical use |
 | :--- | :--- | :--- |
-| **Custom Proxied** | Route these names through the SNI proxy. | One game not in any preset; or rescuing one subscriber stuck on a blocked CDN. |
+| **Custom Proxied** | Route these names through the SNI proxy. | A service no other rule covers; or rescuing one subscriber stuck on a blocked CDN. |
 | **Custom Blocked** | Sinkhole these names. Outranks everything. | Telemetry, a game you don't want proxied, ad domains. |
 | **Custom Direct** | Force real answers, never proxied. | A service whose CDN blocks proxies, or a domain you don't pay for. |
 | **Custom Records** | Static DNS answers you control. | Split-horizon: `git.lab.example.com → 10.0.0.5` for insiders, real answer elsewhere. |
 
 Matching is **longest-suffix-wins** with an exact-match index, so
 `cdn.example.com` can be proxied while `*.example.com` goes direct — the more
-specific rule wins. Custom rules on a **client's plan** are layered on top of
-the global ones, and the more specific name always decides.
+specific rule wins. These lists apply to **every** client; the per-client policy
+list the API still accepts is inert in this build.
 
 ---
 
@@ -621,8 +613,8 @@ curl -s -X POST "https://<host>:<panel-port>/api/update/apply" \
 | **I lost the admin path** | `hdns status`, or `journalctl -u hyperdns | head` — it is reprinted on every start. |
 | **I lost the admin password** | Not recoverable, only resettable — run the installer with `HYPERDNS_FRESH=1` (it archives the old install first), or boot the binary with a fresh config. |
 | **Subscriber says "nothing works"** | Did they register their IP? Their link is `/sub/<token>`; the secret is separate. Check **Clients** for their current bound IP, and ask them to re-register on the network they're using. |
-| **Queries answered but game still lags** | Check **Live Stream** for the game's domains: are they `PROXY` (going through the SNI proxy) or `DIRECT`? A `DIRECT` answer means the preset for that game is off. |
-| **Downloads stuck at 0 B/s, store page loads fine** | The one case `enable_downloads` exists for — their line cannot reach the CDN at all. Turn it on, or add the specific CDN host to **Custom Proxied**. |
+| **Queries answered but game still lags** | Check **Live Stream** for the game's domains: are they `PROXY` (going through the SNI proxy) or `DIRECT`? A `DIRECT` answer means the name is not in **Custom Proxied**. |
+| **Downloads stuck at 0 B/s, store page loads fine** | Their line cannot reach the CDN at all. Add the specific CDN host to **Custom Proxied** (proxying whole multi-gigabyte downloads is usually slower than fixing the route). |
 | **Changed a rule, nothing changed** | Cached answers keep their old routing until TTL expiry. **Flush Cache** (sidebar) or `hdns flush`. |
 | **Port 53 already in use** | `systemd-resolved`. The installer handles it; if you uninstalled and reinstalled manually, check `/etc/systemd/resolved.conf.d/hyperdns.conf`. |
 | **Dashboard loads but `hdns status` shows a listener NOT answering** | Firewall. Verify with `ss -lnup` locally and a port checker from outside. |

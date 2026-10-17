@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/hyperdns-dashboard.png" alt="HyperDNS dashboard — live telemetry, QPS graph and policy presets" width="880">
+  <img src="docs/hyperdns-dashboard.png" alt="HyperDNS dashboard — live telemetry, QPS graph and custom routing rules" width="880">
 </p>
 
 > [!IMPORTANT]
@@ -24,7 +24,7 @@
   <a href="#-quick-installation--deployment">🚀 Install</a> •
   <a href="#-first-run-hardening">🔒 Harden</a> •
   <a href="#-key-features">🌟 Features</a> •
-  <a href="docs/PRESET_CATALOG.md">🎮 Games (171+)</a> •
+  <a href="#-web-administration-dashboard">🎮 Routing Rules</a> •
   <a href="#-web-administration-dashboard">🖥️ Dashboard</a> •
   <a href="docs/API.md">🔌 REST API</a> •
   <a href="#-technical-architecture--codebase-design">🏛️ Internals</a> •
@@ -42,7 +42,6 @@
 | **[docs/TUTORIAL.md](docs/TUTORIAL.md)** | Step-by-step walkthrough: first boot, custom domain for the subscriber portal, adding clients, issuing registration tokens. **Start here.** |
 | **[SECURITY.md](docs/SECURITY.md)** | Threat model, encryption specifics, hardening checklist, RFC compliance, vulnerability reporting. **Read before exposing the install.** |
 | **[API.md](docs/API.md)** | REST API v1 (deprecated) and v2, with Python / Node.js / cURL samples. |
-| **[docs/PRESET_CATALOG.md](docs/PRESET_CATALOG.md)** | The full 171+ preset catalog, by category. |
 | **[CHANGELOG.md](docs/CHANGELOG.md)** | Release history and the fix behind each one. |
 | **[docs/RELEASING.md](docs/RELEASING.md)** | Versioning policy, the stable/beta channels, and how the in-dashboard updater decides what to offer. |
 | **[README.fa.md](README.fa.md)** | راهنمای فارسی. |
@@ -68,7 +67,7 @@ subscribers you serve and whether they relay downloads through you.
 | :--- | :--- | :--- | :--- |
 | **Floor** — runs, personal use | 1 | 1 GB | 1–3 devices, policies on, downloads direct. This is the smallest VPS the daemon starts on. |
 | **Recommended** — small reseller | 2 | 2 GB | up to ~10 subscribers on gameplay-only plans, DoT + DoH + portal all enabled |
-| **Comfortable** — many clients | 4 | 4 GB | 20+ subscribers, `enable_downloads` on, benchmark runs while serving |
+| **Comfortable** — many clients | 4 | 4 GB | 20+ subscribers, benchmark runs while serving |
 
 Honest history behind these numbers: on **v1.2.0**, a 1-core / 1-GB box was
 pegged at **100% CPU with just 3 clients** — that build also had a serious
@@ -183,17 +182,15 @@ The container runs with `network_mode: host` on purpose. A NAT hop on every UDP 
 
 ## 🌟 Key Features
 
-### 🎮 1. Categorized Smart Policies (171+ Games & Services)
-- **Gaming & Tactical Shooters:** Valorant, CS2, Call of Duty (Warzone / Mobile / BO6), The Finals, Escape from Tarkov, Delta Force: Hawk Ops, HellDivers 2, PUBG, Apex Legends, Rainbow Six Siege, Rust, Squad, DayZ, ArmA, Dead by Daylight.
-- **Anime, Gacha & MMORPGs:** Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, Wuthering Waves, Arknights: Endfield, Lost Ark, Throne & Liberty, Path of Exile 1 & 2, Warframe, Elden Ring, Black Desert, Final Fantasy XIV.
-- **Sports, Fighting & Racing:** EA Sports FC 25, eFootball, Street Fighter 6, Mortal Kombat 1, Tekken 8, 2XKO, Assetto Corsa, Euro Truck Simulator 2, Forza Horizon 5, F1 24.
-- **Platforms, Anti-Cheats & Cloud Gaming:** Faceit AC, Riot Vanguard, EasyAntiCheat (EAC), BattlEye, Ricochet, GeForce NOW, Boosteroid, Xbox Cloud Gaming, Razer Synapse, Logitech G Hub, Corsair iCUE.
-- **Social & Media:** Discord Voice & Gateway (Anti-Filter Encrypted TCP Relay), Spotify, Twitch, Kick.
-- **Google Services:** Search, Gmail, Drive, YouTube — with the shared CDN zones deliberately excluded and the update CDNs forced direct (v2.2.0).
-- **AI Assistants & Platforms:** Copilot, Perplexity, Grok, DeepSeek, Mistral, OpenRouter, and more (v2.2.0).
-- **Social & Messaging:** X, Instagram, Facebook, WhatsApp, Telegram, Reddit (v2.2.0).
-- **Developer 403 Bypass:** Docker Hub, Gradle, Android Developers, NPM, PyPI, OpenAI, Anthropic, Claude, Hugging Face, Cursor, Copilot, Kaggle.
-- **Real policy icons (v2.7).** Every policy card shows its actual service logo (from the CC0 [Simple Icons](https://simpleicons.org) set) or a matching glyph for brand-less categories — baked into the binary, theme-following, no external requests. Named custom groups can carry an uploaded icon too: **SVG ≤ 16 KB or PNG ≤ 64 KB**, validated server-side (SVG is re-encoded through an allowlist; scripts, event handlers and external references cannot survive it) and stored in the encrypted database so backups carry them.
+### 🎮 1. Domain Rules You Control
+This build ships **no built-in catalogue**. Routing is entirely the operator's, edited from the dashboard or the REST API and stored in the encrypted database:
+- **Custom Proxied** — names relayed through the SNI proxy.
+- **Custom Blocked** — names sinkholed to `0.0.0.0` (ads, telemetry, anything you want gone).
+- **Custom Direct** — names forced to resolve normally, overriding a proxy rule for that name.
+- **Named groups** — a set of domains sharing one action (`proxy` / `direct` / `block`), enabled or disabled as a unit.
+- **Bulk import** — add a whole list at once: paste it or upload a file (≤ 1 MiB), one name per line or comma-separated, `*.` wildcards and `#` comments understood. The import reports how many names were added, already present, and invalid.
+- **A small forced-direct plane stays built in.** A handful of names cannot work through a Layer-4 relay — Discord voice/video media, Vivox voice, Steam's connection manager, and Google's update CDNs — so they are always resolved directly, ahead of every rule, and cannot be lost to a wildcard. See [Bulk Downloads Stay Direct](#-6-bulk-downloads-stay-direct).
+- **Real icons for named groups (v2.7).** A custom group can carry an uploaded logo: **SVG ≤ 16 KB or PNG ≤ 64 KB**, validated server-side (SVG is re-encoded through an allowlist; scripts, event handlers and external references cannot survive it) and stored in the encrypted database so backups carry them.
 
 ### 🛡️ 2. Transparent SNI Proxy Relay
 - Layer-4 TCP relaying without SSL termination: the TLS session stays end-to-end between the client and the origin, and HyperDNS never holds the keys for it.
@@ -259,35 +256,13 @@ The container runs with `network_mode: host` on purpose. A NAT hop on every UDP 
   DoH/DoT domain, e.g. for Android Private DNS), hot-swapped on issue, while
   everything else rides the panel certificate.
 
-### 📥 6. Bulk Downloads Stay Off the Proxy by Default
+### 📥 6. Bulk Downloads Stay Direct
 
-A game preset unblocks a whole publisher: the store, sign-in, matchmaking, patch metadata — and the depot hosts that carry the actual multi-gigabyte payload. Those last ones are the only part of a gaming DNS that is measured in gigabytes rather than kilobytes, and relaying them is almost never what you want. So HyperDNS separates them into their own category, **Game & App Downloads** (`enable_downloads`), and ships it **off**.
+A game unblocks a whole publisher: the store, sign-in, matchmaking, patch metadata — and the depot hosts that carry the actual multi-gigabyte payload. Those last ones are the only part of a gaming DNS that is measured in gigabytes rather than kilobytes, and relaying them is almost never what you want.
 
-With it off, `steamcontent.com`, `download.epicgames.com`, `dl.playstation.net`, `cdn.blizzard.com`, `dlassets.xboxlive.com`, `cdn.gog.com` and the rest resolve to their **real** addresses. Steam still opens, the library still loads its art, the game still connects — the download itself just runs on the subscriber's own connection. The query log labels those answers `DIRECT · Game & App Downloads`, so you can see it happening rather than guess.
+So this build resolves them directly, out of the box. Discord voice, Vivox voice, Steam's connection manager and Google's update CDNs (`dl.google.com`, `gvt1.com`, `gvt2.com`) sit on the built-in **forced-direct** plane, ahead of every rule, so a download like a Chrome or Android SDK package resolves to its **real** address rather than the VPS. Steam still opens, the library still loads its art, the game still connects — the download itself just runs on the subscriber's own connection.
 
-Turn it on from **Policy Presets → Bandwidth & Traffic Policy** in the dashboard, or `POST /api/v1/policies {"key":"enable_downloads","enabled":true}`.
-
-#### ⚠️ Before you turn it on
-
-The short version: **egress is billed by the gigabyte, quotas cannot tell a download from a match, and a relayed download is usually slower than a direct one.** Ten subscribers installing a 100 GB game is 2 TB of paid traffic from one toggle, and a subscriber on a metered plan can exhaust it in an evening and then be unable to play at all. Turn it on only for the one case it exists for — a subscriber whose line **cannot reach the CDN at all** (a hard block, not a throttle): the symptom is a download stuck at 0 B/s with no error while the store page loads fine.
-
-Two mechanics worth knowing: the SNI proxy caps at 4096 concurrent relays, and a download client opens dozens of parallel connections per install — that budget goes much faster than gameplay does, and what gets rejected is whatever connects next, including somebody's match. After toggling, flush the cache (`POST /api/v1/cache/flush`) or cached answers keep their old routing.
-
-#### Scope: global switch and per-client plan
-
-The category behaves like any other policy in a subscriber's plan, with the global switch as the ceiling:
-
-| Global `enable_downloads` | Client's plan lists it | Result |
-|---|---|---|
-| off | — | Direct. The operator pays the bill, so the operator's off wins even if a plan sold it. |
-| on | not listed | Direct for that account, proxied for accounts that do list it. |
-| on | listed | Proxied. |
-| on | plan is empty (all-inclusive) | Proxied. |
-
-Two more things worth knowing:
-
-- **It cannot proxy a game you have switched off.** The category only ever *subtracts* from what the game presets already route. With `enable_steam` off, a Steam depot is direct either way.
-- **To excuse one host without opening the category**, add it to **Custom Proxied**. That outranks the veto for that name and its subdomains, which is the cheap way to rescue one subscriber stuck on one blocked CDN. **Custom Blocked** still outranks both.
+If you *do* want one CDN relayed — for a subscriber whose line cannot reach it at all (a hard block, not a throttle: the symptom is a download stuck at 0 B/s while the store page loads fine) — add that host to **Custom Proxied**. A custom rule outranks the forced-direct plane for the name and its subdomains, so one host can be rescued without opening a whole category. Two mechanics worth knowing: the SNI proxy caps at 4096 concurrent relays and a download client opens dozens of parallel connections per install, so a relayed download spends that budget far faster than gameplay; and after changing a rule, flush the cache (`POST /api/v1/cache/flush`) or already-cached answers keep their old routing.
 
 ---
 
@@ -355,7 +330,7 @@ clears it without a restart. Option `12` prints the master API key in the
 clear — treat that screen the way you would treat the key itself; rotation
 stops the previous key the moment it lands, with no grace period.
 
-Gaming presets are **not** toggled from here — that is the dashboard or the
+Domain rules are **not** edited from here — that is the dashboard or the
 REST API.
 
 ---
@@ -381,8 +356,7 @@ on every start.
 - **Clients & Whitelist:** Add/edit clients, assign the single allowed IP,
   configure traffic limits, view and regenerate the **registration secret**, and
   copy the Persian Telegram card.
-- **Gaming Policies:** 1-click toggles for every preset category, plus custom
-  proxied/blocked domains, DoH tokens and static records.
+- **Routing Rules:** custom proxied, blocked and direct domain lists with bulk download/upload, named groups, DoH tokens and static records.
 - **Live Stream:** Real-time Server-Sent Events (SSE) stream of DNS queries.
 - **Settings & SSL:** the subscription portal (title, domain, port),
   two-factor authentication, LDAP, session idle window, hidden admin path,
@@ -488,7 +462,7 @@ A query walks four layers, in this order:
 
 1. **Access control** — `IsIPAllowed(clientIP)` is a single map read behind a `sync.RWMutex`. Four indexes (`idMap`, `ipMap`, `tokenMap`, `uuidMap`) are rebuilt from BoltDB on change and re-filed one account at a time on a subscriber IP registration, so the public `/ip/{token}` endpoint never triggers a full rescan. Under `access.allow_all: true` an address that matches no index is served as anonymous `Public` rather than refused — see the warning in [First-Run Hardening](#-first-run-hardening).
 2. **Cache** — a 64-shard LRU keyed by name+type+class. A hit returns a *copy* of the stored message, because the caller has to rewrite the transaction ID and count the TTLs down.
-3. **Policy match** — an exact-match map plus a longest-suffix wildcard index over the 171+ presets and any per-subscriber or admin-wide custom rules. Longest suffix wins, so `cdn.example.com` can be routed differently from `*.example.com`.
+3. **Rule match** — an exact-match map plus a longest-suffix wildcard index over the operator's custom proxied, blocked and direct lists and any named groups. Longest suffix wins, so `cdn.example.com` can be routed differently from `*.example.com`.
 4. **Action** — `proxy` spoofs the answer to this server so the SNI relay picks the connection up; `direct` races the configured upstreams and forwards the unaltered reply; `block` sinkholes it.
 
 Measured on a **13th Gen Intel i5-13420H (12 threads), windows/amd64**, `go test -bench`, `-count 3`:
@@ -507,7 +481,7 @@ Measured on a **13th Gen Intel i5-13420H (12 threads), windows/amd64**, `go test
 
 **Storage.** One BoltDB file. Secret fields — subscriber name, bound IP list, subscription token, REST API key, TLS paths — are individually sealed with AES-256-GCM under the 32-byte key in `master.key`; tokens additionally carry a keyed blind index so `/ip/{token}` stays one lookup. The admin password is never stored, only a PBKDF2-HMAC-SHA256 verifier (600,000 iterations) — so it cannot be read back out of `data.db` *even with `master.key` in hand*; a lost password is a reset, not a recovery. Traffic counters are accumulated in memory and flushed in a single transaction every 30 seconds, because every BoltDB commit is an fsync.
 
-Deliberately in the clear: **policy presets** and their domain lists (no credential, no subscriber name — the same data the binary and [docs/PRESET_CATALOG.md](docs/PRESET_CATALOG.md) publish), and the BoltDB structure itself. **Query logs are never written to disk** in any form — DNS telemetry lives in memory and on the SSE stream only.
+Deliberately in the clear: the **stored rule lists** (no credential, no subscriber name), and the BoltDB structure itself. **Query logs are never written to disk** in any form — DNS telemetry lives in memory and on the SSE stream only.
 
 Keep `master.key` backed up and off the server. Losing it makes every subscriber record unreadable; leaking it makes them readable — it must never enter a git repository, and `.gitignore` already covers it.
 

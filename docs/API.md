@@ -19,7 +19,7 @@ HyperDNS provides a high-performance, developer-first **REST API v1** designed f
   - [Regenerate Client UUID](#post-apiv1clientsidregenerate-uuid---regenerate-uuid)
   - [Delete Client](#delete-apiv1clientsid---delete-client)
 - [🔑 4. Master API Key Management (`/api-key`)](#-4-master-api-key-management-api-key)
-- [🎮 5. SmartDNS Rules & Presets (`/policies`)](#-5-smartdns-rules--presets-policies)
+- [🎮 5. Domain Rule Entries (`/policies`)](#-5-domain-rule-entries-policies)
 - [🧹 6. Cache Management (`/cache/flush`)](#-6-cache-management-cacheflush)
 - [🔗 7. Subscriber Portal Links (`/sub/`, `/ip/`)](#-7-subscriber-portal-links-sub-ip)
 - [🤖 8. Practical Implementation Samples](#-8-practical-implementation-samples)
@@ -107,7 +107,7 @@ v2 exists because v1's field names grew asymmetric (`ip` on create, `allowed_ip`
       "expires_at": "2026-10-14T00:00:00Z",
       "quota_limit_gb": 50,
       "quota_reset_cycle": "monthly",
-      "policy_ids": ["enable_riot"],
+      "policy_ids": [],
       "note": "",
       "enabled": true
     }
@@ -359,12 +359,14 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/clients \
     "ip": "2.189.86.32",
     "traffic_limit_gb": 50,
     "traffic_reset_cycle": "monthly",
-    "custom_policies": ["enable_riot", "enable_discord"],
+    "custom_policies": [],
     "note": "Purchased 50GB VIP Plan"
   }'
 ```
 
 `name` is the only required field.
+
+`custom_policies` (v2: `policy_ids`) is accepted and stored, but it is **inert** in this build: the resolver applies one set of rules to everybody, so the list does not narrow an account's routing. Send `[]` or omit it.
 
 **`days` has no server-side default, and omitting it does not mean "short trial" — it means the account never expires.** A zero or absent `days` stores no expiry date at all, which is how the *Lifetime* plan is created and also how a billing integration with a missing field silently gives away a permanent account. Always send it explicitly, even when your product's default is 30.
 
@@ -385,7 +387,7 @@ Omit it and the account behaves exactly as it did before v1.5.0: one quota, spen
   "traffic_reset_cycle": "monthly",
   "next_traffic_reset": "2026-10-01T19:30:00Z",
   "quota_exceeded": false,
-  "custom_policies": ["enable_riot", "enable_discord"],
+  "custom_policies": [],
   "note": "Purchased 50GB VIP Plan",
   "created_at": "2026-09-01T19:30:00Z",
   "expires_at": "2026-10-01T19:30:00Z",
@@ -461,7 +463,7 @@ curl -s -X PUT http://127.0.0.1:8080/api/v1/clients/c4b8e219 \
     "allowed_ip": "2.189.86.32",
     "traffic_limit_gb": 100,
     "traffic_reset_cycle": "monthly",
-    "custom_policies": ["enable_riot", "enable_discord", "enable_steam"],
+    "custom_policies": [],
     "enabled": true,
     "note": "Upgraded to 100GB plan"
   }'
@@ -595,10 +597,13 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/api-key \
 
 ---
 
-## 🎮 5. SmartDNS Rules & Presets (`/policies`)
+## 🎮 5. Domain Rule Entries (`/policies`)
 
-### `GET /api/v1/policies` — List All Policies
-Returns two lists: the full catalogue of selectable presets, and the ones whose global state has been changed from the default.
+This build ships **no built-in catalogue**. `catalog` is always an empty array, and every rule the resolver applies comes from the operator's own lists, stored as rule entries under `/policies` and edited from the dashboard.
+
+### `GET /api/v1/policies` — List stored rule entries
+
+Returns two lists: `catalog` (always `[]`) and `policies` (the stored entries).
 
 ```bash
 curl -s http://127.0.0.1:8080/api/v1/policies \
@@ -608,18 +613,14 @@ curl -s http://127.0.0.1:8080/api/v1/policies \
 #### Response (`200 OK`)
 ```json
 {
-  "catalog": [
-    { "key": "enable_riot",       "label": "Riot Games & Valorant",  "blocking": false },
-    { "key": "enable_downloads",  "label": "Game & App Downloads",   "blocking": false },
-    { "key": "enable_familysafe", "label": "FamilySafe Protection",  "blocking": true }
-  ],
+  "catalog": [],
   "policies": [
     {
-      "key": "enable_adblock",
-      "name": "AdBlock & Tracker Sinkhole",
-      "category": "security",
+      "key": "custom_proxied",
+      "name": "Custom Proxied Domains",
+      "category": "custom",
       "enabled": true,
-      "custom_domains": []
+      "custom_domains": ["cdn.example.com", "*.example.net"]
     }
   ]
 }
@@ -627,41 +628,33 @@ curl -s http://127.0.0.1:8080/api/v1/policies \
 
 | Field | Meaning |
 |---|---|
-| `catalog` | Every preset that can be toggled globally or attached to one client, in display order. `label` is the same text the resolver and the dashboard use; `blocking: true` marks a category that **sinkholes** what it matches instead of routing it, which is the opposite kind of decision from attaching a game. Build policy pickers from this — do not hardcode the list, and do not sort it. |
-| `policies` | Only the presets whose state was **explicitly changed and persisted**. A preset missing from this array is at its built-in default, not absent from the product. On a fresh install this array is empty. Three categories default to **off** — `enable_adblock`, `enable_familysafe` and `enable_downloads` — and every other key defaults to on. Do not infer that from `blocking`: the first two are blocking and the third is not. |
+| `catalog` | Always `[]`. Kept so a client that renders a picker from it shows nothing rather than falling back to a guess. |
+| `policies` | The stored rule entries. The dashboard writes four keys — `custom_proxied`, `custom_blocked`, `custom_direct` and `custom_records` — each with its domains in `custom_domains`. A fresh install answers `[]`. |
 
-`custom_policies` on a client accepts any `key` from `catalog`. An **empty** list means the account gets every preset that is globally on — it is not a lockout — and a non-empty list **narrows** that account to the intersection of its own selection and the global state. It cannot widen it, so a key listed here for a preset that is globally off does nothing.
+`custom_policies` on a client is still accepted and stored, but it is **inert**: the resolver applies one set of rules to everybody, so the list no longer narrows an account's routing.
 
-### `POST /api/v1/policies` — Toggle Policy Rule
-Enables or disables a specific gaming policy rule globally.
+### `POST /api/v1/policies` — Store a rule entry
+
+Writes the record under its `key` and echoes back what was stored. Nothing is applied by this call: the four `custom_*` keys are read back by the daemon at its **next restart**, so a change made here reaches the resolver then rather than now. The dashboard's Settings tab saves the same lists and applies them in one step.
 
 ```bash
-curl -s -X POST http://127.0.0.1:8080/api/v1/policies \
-  -H "X-API-Key: hdns_live_your_key_here" \
+curl -s -X POST "http://127.0.0.1:8080/api/v1/policies" -H "X-API-Key: $KEY" \
   -H "Content-Type: application/json" \
-  -d '{"key": "enable_riot", "enabled": true}'
+  -d '{"key":"custom_proxied","custom_domains":["cdn.example.com","*.example.net"]}'
 ```
 
-The response echoes the stored policy record. `key` is required; anything else is a `400`. The change takes effect on the resolver immediately — it is not deferred to a restart — but **already-cached answers are not re-decided**, so a name resolved a minute ago keeps its old routing until its TTL runs out. Follow a toggle with `POST /cache/flush` when you need the switch to be visible at once.
-
-A globally disabled preset also overrides every per-client selection: `custom_policies` **narrows** what an account gets from the presets that are on, it cannot switch one back on for that account. So disabling a preset here revokes it for everyone, whatever their plan says.
-
-#### `enable_downloads` behaves backwards from the rest
-
-Every other key in the catalogue *adds* routing: on means those domains are proxied, off means they are not matched at all. `enable_downloads` **subtracts**. Its domains are the depot and CDN hosts already covered by the game presets, and the key decides which side of the proxy they land on:
-
-| `enable_downloads` | What a depot host resolves to |
+| Field | Meaning |
 |---|---|
-| `false` (default) | Its real address — `action: "DIRECT"`, `rule: "Game & App Downloads"` in the query log. The install runs on the subscriber's own line. |
-| `true` | Whatever the owning game preset says, normally `action: "PROXY"` with that preset's own label. |
+| `key` | Required; an empty key is a `400`. The four keys the daemon reads back are `custom_proxied`, `custom_blocked`, `custom_direct` and `custom_records`. Any other key is persisted and matches nothing, so a typo here is silent. |
+| `custom_domains` | The payload that matters: one domain per entry (for `custom_records`, one `domain=IP` per entry). |
+| `enabled`, `name`, `category` | Stored and echoed; the dashboard sets `enabled: true` and `category: "custom"`. |
 
-Three consequences for anything automated:
+- **`custom_proxied`** — names relayed through the SNI proxy.
+- **`custom_blocked`** — names sinkholed to `0.0.0.0`.
+- **`custom_direct`** — names forced to resolve normally, overriding a proxy rule for that name.
+- **`custom_records`** — static A/AAAA overrides.
 
-- **`GET /stats` proxied/blocked/direct rule counts do not move** when this key is toggled. The category is not an action index of its own; it only vetoes. A monitor that watches those numbers to confirm a write landed will see nothing — read the value back from `/policies` instead.
-- **It cannot proxy a game whose own preset is off.** With `enable_steam` off, a Steam depot is direct in both states, because there is nothing to subtract from.
-- **A single host can be excused** without switching the whole category on: add it to `custom_proxied`, which outranks the veto. `custom_blocked` outranks both.
-
-Read the bandwidth warnings in the README before turning this on for a paying subscriber base — the traffic meter counts these bytes and has no per-domain accounting.
+Rule precedence, and the small built-in forced-direct plane (Discord/Vivox media, Steam's connection manager, Google's update CDNs), are described in the README and [TUTORIAL.md](TUTORIAL.md). Once a change reaches the resolver, flush the cache (`POST /api/v1/cache/flush`) or answers already in cache keep their old routing until their TTL runs out.
 
 ---
 
@@ -754,7 +747,9 @@ def create_gamer_account(telegram_user_id: str, days: int = 30, traffic_gb: floa
         # "" | "daily" | "weekly" | "monthly". With a cycle the allowance comes back on
         # its own; without one, a spent account stays dead until you reset it by hand.
         "traffic_reset_cycle": cycle,
-        "custom_policies": ["enable_riot", "enable_discord", "enable_steam"]
+        # Inert in this build (the resolver applies one rule set to everyone); the
+        # field is only kept so older integrations keep working.
+        "custom_policies": []
     }
     res = requests.post(f"{HYPERDNS_API}/clients", json=payload, headers=HEADERS)
     res.raise_for_status()
@@ -890,9 +885,9 @@ curl -s -X PUT "http://127.0.0.1:8080/api/v1/clients/c4b8e219" -H "X-API-Key: $K
 ```
 
 ```bash
-# Turn a preset on globally, then drop the cache so the change is visible at once.
+# Store a proxied-domain entry, then drop the cache so a change is visible at once.
 curl -s -X POST "http://127.0.0.1:8080/api/v1/policies" -H "X-API-Key: $KEY" \
-  -H "Content-Type: application/json" -d '{"key":"enable_riot","enabled":true}'
+  -H "Content-Type: application/json" -d '{"key":"custom_proxied","custom_domains":["cdn.example.com"]}'
 curl -s -X POST "http://127.0.0.1:8080/api/v1/cache/flush" -H "X-API-Key: $KEY"
 ```
 

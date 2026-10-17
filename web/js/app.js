@@ -471,7 +471,7 @@ function hideChangePwdModal() {
 // button whenever the modal is forced, and modalCloseControl below returns null for a hidden
 // control — so Escape is a no-op in exactly the mode where cancelling is not offered, and the
 // two can never drift apart.
-const MODAL_IDS = ['login-modal', 'change-pwd-modal', 'diagnostics-modal', 'edit-client-modal', 'add-client-modal', 'client-created-modal'];
+const MODAL_IDS = ['login-modal', 'change-pwd-modal', 'diagnostics-modal', 'edit-client-modal', 'add-client-modal', 'client-created-modal', 'bulk-import-modal'];
 
 // Every one of these modals is shown and hidden by toggling .hidden, so reading the class is
 // both the truth and cheap enough for a keydown handler.
@@ -664,10 +664,10 @@ async function bootDashboard() {
 //
 // The /api/config half was the damaging one. A 500 returns a JSON error body, so `currentConfig`
 // became {error: "…"} — truthy, which is all `saveRules` guards on — and renderConfig then read
-// cfg.rules?.enable_riot off it and got undefined for every preset, painting the whole policy
-// grid as OFF. Press Save on that screen and getSwitch reads those unchecked boxes and writes
-// them back: every game preset disabled on the server because one fetch returned 500. The
-// operator sees a plausible screen and one click destroys the configuration.
+// cfg.rules?.custom_proxied off it and got an empty list, painting the proxy list as empty. Press
+// Save on that screen and saveRules writes those empty arrays back: every custom domain erased on
+// the server because one fetch returned 500. The operator sees a plausible screen and one click
+// destroys the configuration.
 //
 // The /api/auth/me half failed quietly instead. meData.password_weak is undefined in an error
 // body, so `weak` came out false and the forced credential-change modal was skipped — the weak
@@ -783,10 +783,6 @@ function renderConfig(cfg) {
     checkForUpdate();
   }
 
-  // v2.7: swap the policy cards' Feather placeholders for their embedded SVG
-  // icons. Idempotent: only spans without the iconDone marker are touched.
-  upgradePolicyIcons();
-
   // Header & guide public IP
   const pubIP = cfg.server.public_ip || '127.0.0.1';
   const headerIPEl = document.getElementById('header-public-ip');
@@ -867,45 +863,6 @@ function renderConfig(cfg) {
 
   updateCodeSnippets(pubIP, cfg.server?.api_key || 'hdns_live_your_key_here');
 
-  // Preset Switches
-  setSwitch('preset-riot', cfg.rules.enable_riot);
-  setSwitch('preset-epic', cfg.rules.enable_epic);
-  setSwitch('preset-steam', cfg.rules.enable_steam);
-  setSwitch('preset-pubg', cfg.rules.enable_pubg);
-  setSwitch('preset-cod', cfg.rules.enable_call_of_duty);
-  setSwitch('preset-supercell', cfg.rules.enable_supercell);
-  setSwitch('preset-discord', cfg.rules.enable_discord);
-  setSwitch('preset-ea', cfg.rules.enable_ea);
-  setSwitch('preset-blizzard', cfg.rules.enable_blizzard);
-  setSwitch('preset-ubisoft', cfg.rules.enable_ubisoft);
-  setSwitch('preset-rockstar', cfg.rules.enable_rockstar);
-  setSwitch('preset-xbox', cfg.rules.enable_xbox);
-  setSwitch('preset-playstation', cfg.rules.enable_playstation);
-  setSwitch('preset-roblox', cfg.rules.enable_roblox);
-  setSwitch('preset-shooters-extra', cfg.rules.enable_shooters_extra);
-  setSwitch('preset-anime-gacha', cfg.rules.enable_anime_gacha);
-  setSwitch('preset-sports-racing', cfg.rules.enable_sports_racing);
-  setSwitch('preset-coop-survival', cfg.rules.enable_coop_survival);
-  setSwitch('preset-platforms-extra', cfg.rules.enable_platforms_extra);
-  // One switch drives both music presets: the card is labelled "Spotify &
-  // SoundCloud" and its copy promises SoundCloud CDN streams, but only
-  // enable_spotify was ever sent, so SoundCloud could not be toggled from the
-  // dashboard at all. Shown as on when either category is on.
-  setSwitch('preset-spotify', cfg.rules.enable_spotify || cfg.rules.enable_soundcloud);
-  setSwitch('preset-twitch', cfg.rules.enable_twitch);
-  setSwitch('preset-kick', cfg.rules.enable_kick);
-  setSwitch('preset-google', cfg.rules.enable_google);
-  setSwitch('preset-ai', cfg.rules.enable_ai);
-  setSwitch('preset-social', cfg.rules.enable_social);
-  setSwitch('preset-dev403', cfg.rules.enable_dev403);
-  setSwitch('preset-adblock', cfg.rules.enable_adblock);
-  setSwitch('preset-familysafe', cfg.rules.enable_familysafe);
-  // Off by default, unlike every switch above it. The server sends the value, so a
-  // missing key means an older config.json that predates the category — treat that
-  // as off rather than letting `undefined` read as "leave it wherever the DOM was",
-  // which on a re-render after a save is whatever the operator last clicked.
-  setSwitch('preset-downloads', cfg.rules.enable_downloads === true);
-
   // Render Custom Rules Lists (with safe optional chaining)
   renderList('custom-proxied-list', cfg.rules?.custom_proxied || [], 'remove-proxied');
   renderList('custom-blocked-list', cfg.rules?.custom_blocked || [], 'remove-blocked');
@@ -914,14 +871,40 @@ function renderConfig(cfg) {
   loadCustomGroups();
 }
 
-function setSwitch(id, val) {
-  const el = document.getElementById(id);
-  if (el) el.checked = !!val;
-}
+// A domain, optionally wildcarded, as the matcher accepts it: labels of [a-z0-9-]
+// joined by dots, at least two labels, and an optional leading "*." to cover a whole
+// subtree. Deliberately not anchored to a TLD list — the matcher does not consult one
+// either, and a country or brand TLD would only be rejected here for looking unusual.
+const DOMAIN_RE = /^(\*\.)?([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?:\.([a-z0-9](?:[a-z0-9-]*[a-z0-9])?))+$/;
 
-function getSwitch(id) {
-  const el = document.getElementById(id);
-  return el ? el.checked : false;
+// parseDomainList turns a free-form blob into the domains worth keeping. Newlines,
+// commas, semicolons and any run of spaces are separators; a "#" starts a comment that
+// runs to the end of its line. Each token is lowercased, a trailing root dot is
+// stripped, and the survivors are sorted into three buckets — ready to add, already
+// present (in the list or earlier in the blob), or malformed. Nothing here touches the
+// DOM; the caller merges `accepted` and reports the other two.
+function parseDomainList(text, existing) {
+  const have = new Set(existing || []);
+  const seen = new Set();
+  const accepted = [];
+  const duplicates = [];
+  const invalid = [];
+  const tokens = String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.split('#')[0])
+    .join('\n')
+    .split(/[\s,;]+/);
+  for (const raw of tokens) {
+    let d = raw.trim().toLowerCase();
+    if (!d) continue;
+    if (d.endsWith('.')) d = d.slice(0, -1);
+    if (!d) continue;
+    if (!DOMAIN_RE.test(d)) { invalid.push(d); continue; }
+    if (have.has(d) || seen.has(d)) { duplicates.push(d); continue; }
+    seen.add(d);
+    accepted.push(d);
+  }
+  return { accepted, duplicates, invalid };
 }
 
 function renderList(containerId, items, removeClass) {
@@ -1185,36 +1168,6 @@ async function saveRules() {
   if (!currentConfig) return;
 
   const payload = {
-    enable_riot: getSwitch('preset-riot'),
-    enable_epic: getSwitch('preset-epic'),
-    enable_steam: getSwitch('preset-steam'),
-    enable_pubg: getSwitch('preset-pubg'),
-    enable_call_of_duty: getSwitch('preset-cod'),
-    enable_supercell: getSwitch('preset-supercell'),
-    enable_discord: getSwitch('preset-discord'),
-    enable_ea: getSwitch('preset-ea'),
-    enable_blizzard: getSwitch('preset-blizzard'),
-    enable_ubisoft: getSwitch('preset-ubisoft'),
-    enable_rockstar: getSwitch('preset-rockstar'),
-    enable_xbox: getSwitch('preset-xbox'),
-    enable_playstation: getSwitch('preset-playstation'),
-    enable_roblox: getSwitch('preset-roblox'),
-    enable_shooters_extra: getSwitch('preset-shooters-extra'),
-    enable_anime_gacha: getSwitch('preset-anime-gacha'),
-    enable_sports_racing: getSwitch('preset-sports-racing'),
-    enable_coop_survival: getSwitch('preset-coop-survival'),
-    enable_platforms_extra: getSwitch('preset-platforms-extra'),
-    enable_spotify: getSwitch('preset-spotify'),
-    enable_soundcloud: getSwitch('preset-spotify'),
-    enable_twitch: getSwitch('preset-twitch'),
-    enable_kick: getSwitch('preset-kick'),
-    enable_google: getSwitch('preset-google'),
-    enable_ai: getSwitch('preset-ai'),
-    enable_social: getSwitch('preset-social'),
-    enable_dev403: getSwitch('preset-dev403'),
-    enable_adblock: getSwitch('preset-adblock'),
-    enable_familysafe: getSwitch('preset-familysafe'),
-    enable_downloads: getSwitch('preset-downloads'),
     custom_proxied: currentConfig.rules.custom_proxied,
     custom_blocked: currentConfig.rules.custom_blocked,
     custom_direct: currentConfig.rules.custom_direct,
@@ -1233,10 +1186,10 @@ async function saveRules() {
 
     if (res.ok) {
       currentConfig.rules = payload;
-      showToast('Policies updated & active!', 'success');
+      showToast('Routing rules saved & active!', 'success');
     }
   } catch (e) {
-    showToast('Failed to save policies', 'error');
+    showToast('Failed to save routing rules', 'error');
   }
 }
 
@@ -2136,7 +2089,6 @@ function pushChartData(val) {
 const tabRoutes = {
   'dashboard': '/home',
   'clients': '/clients',
-  'policy': '/rules',
   'stream': '/logs',
   'api': '/api',
   'rules': '/settings',
@@ -2149,8 +2101,6 @@ const routeTabs = {
   '/panel': 'dashboard',
   '/login': 'dashboard',
   '/clients': 'clients',
-  '/rules': 'policy',
-  '/policy': 'policy',
   '/logs': 'stream',
   '/stream': 'stream',
   '/api': 'api',
@@ -2776,150 +2726,7 @@ function initEventListeners() {
   const dotDomainInput = document.getElementById('dot-domain-input');
   if (dotDomainInput && currentConfig && currentConfig.tls) dotDomainInput.value = currentConfig.tls.dot_domain || '';
 
-  // Quick Action Profiles
-  document.getElementById('profile-gaming-btn')?.addEventListener('click', () => {
-    ['preset-riot', 'preset-epic', 'preset-steam', 'preset-pubg', 'preset-cod', 'preset-supercell',
-     'preset-ea', 'preset-blizzard', 'preset-ubisoft', 'preset-rockstar', 'preset-xbox', 'preset-playstation', 'preset-roblox',
-     'preset-shooters-extra', 'preset-anime-gacha', 'preset-sports-racing', 'preset-coop-survival', 'preset-platforms-extra'].forEach(id => {
-      setSwitch(id, true);
-    });
-    saveRules();
-    showToast('Pro Gamer Profile (All 171 Games) Activated!', 'success');
-  });
-
-  document.getElementById('profile-streamer-btn')?.addEventListener('click', () => {
-    ['preset-discord', 'preset-twitch', 'preset-kick', 'preset-spotify'].forEach(id => {
-      setSwitch(id, true);
-    });
-    saveRules();
-    showToast('Streamer & Media Profile Activated!', 'success');
-  });
-
-  document.getElementById('profile-dev-btn')?.addEventListener('click', () => {
-    setSwitch('preset-dev403', true);
-    saveRules();
-    showToast('Developer 403 Profile Activated!', 'success');
-  });
-
-  document.getElementById('profile-privacy-btn')?.addEventListener('click', () => {
-    setSwitch('preset-adblock', true);
-    setSwitch('preset-familysafe', true);
-    saveRules();
-    showToast('AdBlock & Safe Profile Activated!', 'success');
-  });
-
-  // Preset switches
-  const switches = [
-    'preset-riot', 'preset-epic', 'preset-steam', 'preset-pubg', 'preset-cod', 'preset-supercell',
-    'preset-discord', 'preset-ea', 'preset-blizzard', 'preset-ubisoft', 'preset-rockstar', 
-    'preset-xbox', 'preset-playstation', 'preset-roblox',
-    'preset-shooters-extra', 'preset-anime-gacha', 'preset-sports-racing', 'preset-coop-survival', 'preset-platforms-extra',
-    'preset-spotify', 'preset-twitch', 'preset-kick', 
-    'preset-dev403', 'preset-adblock', 'preset-familysafe',
-    // Deliberately absent from every Quick Action profile above: "Pro Gamer" turning
-    // this on with one click is the exact bill nobody expects. It is opt-in only.
-    'preset-downloads'
-  ];
-  switches.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.onchange = () => saveRules();
-    }
-  });
-
   // Flush Cache
-  // Preset update channel (v2.3.0): check / apply / rollback.
-  const presetCheckBtn = document.getElementById('preset-check-btn');
-  const presetApplyBtn = document.getElementById('preset-apply-btn');
-  const presetRollbackBtn = document.getElementById('preset-rollback-btn');
-  const presetStatus = document.getElementById('preset-update-status');
-  const presetBadge = document.getElementById('preset-update-badge');
-
-  async function presetPost(path) {
-    const res = await fetch(api(path), {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${authToken}` }
-    });
-    return { ok: res.ok, data: await res.json().catch(() => ({})) };
-  }
-
-  if (presetCheckBtn) {
-    presetCheckBtn.onclick = async () => {
-      presetCheckBtn.disabled = true;
-      presetStatus.textContent = 'Checking the preset channel…';
-      try {
-        const { ok, data } = await presetPost('/api/presets/update/check');
-        if (!ok) {
-          presetStatus.textContent = `Channel check failed: ${data.error || 'unknown error'}`;
-          return;
-        }
-        if (data.up_to_date) {
-          presetStatus.textContent = 'Policy catalog is already up to date.';
-          presetBadge.classList.add('hidden');
-          presetApplyBtn.classList.add('hidden');
-        } else {
-          const parts = data.updates.map(u => `${u.name} v${u.from_version}→v${u.to_version}`);
-          presetStatus.textContent = `Update available: ${parts.join(', ')}`;
-          presetBadge.classList.remove('hidden');
-          presetApplyBtn.classList.remove('hidden');
-        }
-      } catch (e) {
-        presetStatus.textContent = 'Channel check failed: network error';
-      } finally {
-        presetCheckBtn.disabled = false;
-      }
-    };
-  }
-
-  if (presetApplyBtn) {
-    presetApplyBtn.onclick = async () => {
-      presetApplyBtn.disabled = true;
-      presetStatus.textContent = 'Downloading, verifying and applying…';
-      try {
-        const { ok, data } = await presetPost('/api/presets/update/apply');
-        if (!ok) {
-          presetStatus.textContent = `Apply failed (rolled back): ${data.error || 'unknown error'}`;
-          presetApplyBtn.classList.remove('hidden');
-          return;
-        }
-        presetStatus.textContent = `Catalog updated${data.applied ? `: ${data.applied} policy file(s)` : ''}. Flushing cache…`;
-        presetBadge.classList.add('hidden');
-        presetApplyBtn.classList.add('hidden');
-        presetRollbackBtn.classList.remove('hidden');
-        await fetch(api('/api/cache/flush'), {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        presetStatus.textContent += ' done.';
-        showToast('Policy catalog updated', 'success');
-      } catch (e) {
-        presetStatus.textContent = 'Apply failed: network error';
-        presetApplyBtn.classList.remove('hidden');
-      } finally {
-        presetApplyBtn.disabled = false;
-      }
-    };
-  }
-
-  if (presetRollbackBtn) {
-    presetRollbackBtn.onclick = async () => {
-      presetRollbackBtn.disabled = true;
-      try {
-        const { ok } = await presetPost('/api/presets/update/rollback');
-        if (ok) {
-          presetStatus.textContent = 'Rolled back to the previous policy set.';
-          presetRollbackBtn.classList.add('hidden');
-          showToast('Policy catalog rolled back', 'success');
-        } else {
-          presetStatus.textContent = 'Rollback failed — see the daemon log.';
-          presetRollbackBtn.classList.remove('hidden');
-        }
-      } finally {
-        presetRollbackBtn.disabled = false;
-      }
-    };
-  }
-
   const flushBtn = document.getElementById('flush-cache-btn');
   if (flushBtn) {
     flushBtn.onclick = async () => {
@@ -3012,6 +2819,99 @@ function initEventListeners() {
     }
     const delBtn = e.target.closest('.delete-group-btn');
     if (delBtn) deleteCustomGroup(delBtn.dataset.id);
+  });
+
+  // Bulk import: one modal serves both lists. The target is chosen when the modal
+  // opens, not when Import is pressed, so the heading and the button label can name
+  // exactly what is about to change.
+  let bulkImportTarget = null;
+  const bulkImportModal = document.getElementById('bulk-import-modal');
+
+  function setBulkImportStatus(msg, kind) {
+    const el = document.getElementById('bulk-import-status');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.className = 'text-[11px] ' + (kind === 'error' ? 'text-red-400' : kind === 'ok' ? 'text-emerald-400' : 'text-slate-400');
+  }
+
+  function closeBulkImport() {
+    if (bulkImportModal) bulkImportModal.classList.add('hidden');
+  }
+
+  function openBulkImport(target) {
+    bulkImportTarget = target;
+    const proxied = target === 'proxied';
+    const titleEl = document.getElementById('bulk-import-title');
+    if (titleEl) titleEl.textContent = proxied ? 'Bulk Import Proxied Domains' : 'Bulk Import Blocked Domains';
+    const subtitleEl = document.getElementById('bulk-import-subtitle');
+    if (subtitleEl) subtitleEl.textContent = proxied
+      ? 'Each name listed will resolve to this server through the SNI proxy.'
+      : 'Each name listed will be sinkholed to 0.0.0.0.';
+    const applyBtn = document.getElementById('bulk-import-apply-btn');
+    if (applyBtn) applyBtn.textContent = proxied ? 'Import Proxied' : 'Import Blocked';
+    const ta = document.getElementById('bulk-import-textarea');
+    if (ta) ta.value = '';
+    const fileEl = document.getElementById('bulk-import-file');
+    if (fileEl) fileEl.value = '';
+    setBulkImportStatus('');
+    if (bulkImportModal) bulkImportModal.classList.remove('hidden');
+    if (ta) ta.focus();
+  }
+
+  document.getElementById('bulk-proxied-btn')?.addEventListener('click', () => openBulkImport('proxied'));
+  document.getElementById('bulk-blocked-btn')?.addEventListener('click', () => openBulkImport('blocked'));
+
+  // The × names itself through data-modal-close so Escape and a backdrop click reach
+  // it; both still need their own handler or those paths click a dead button.
+  document.getElementById('bulk-import-cancel-btn')?.addEventListener('click', closeBulkImport);
+  document.getElementById('bulk-import-cancel-btn-bottom')?.addEventListener('click', closeBulkImport);
+
+  document.getElementById('bulk-import-file')?.addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    // The server caps the rules payload anyway; refuse here so the operator is told
+    // before a large paste is silently truncated on the wire.
+    if (file.size > 1024 * 1024) {
+      setBulkImportStatus('That file is larger than 1 MB — trim it or paste the list instead.', 'error');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const ta = document.getElementById('bulk-import-textarea');
+      if (ta) ta.value = String(reader.result || '');
+      setBulkImportStatus('');
+    };
+    reader.onerror = () => setBulkImportStatus('Could not read that file.', 'error');
+    reader.readAsText(file);
+  });
+
+  document.getElementById('bulk-import-apply-btn')?.addEventListener('click', () => {
+    if (!currentConfig || !bulkImportTarget) return;
+    const ta = document.getElementById('bulk-import-textarea');
+    const key = bulkImportTarget === 'proxied' ? 'custom_proxied' : 'custom_blocked';
+    const existing = Array.isArray(currentConfig.rules[key]) ? currentConfig.rules[key] : [];
+    const { accepted, duplicates, invalid } = parseDomainList(ta ? ta.value : '', existing);
+
+    const parts = [`${accepted.length} added`];
+    if (duplicates.length) parts.push(`${duplicates.length} already listed`);
+    if (invalid.length) parts.push(`${invalid.length} invalid`);
+    const summary = parts.join(', ');
+
+    if (accepted.length === 0) {
+      setBulkImportStatus(`Nothing to import — ${summary}.`, 'error');
+      return;
+    }
+
+    currentConfig.rules[key] = existing.concat(accepted);
+    saveRules();
+    renderConfig(currentConfig);
+
+    if (invalid.length || duplicates.length) {
+      setBulkImportStatus(`Imported (${summary}). Skipped entries are ignored, not added.`, 'ok');
+      return;
+    }
+    closeBulkImport();
+    showToast(`Imported ${accepted.length} domain(s)`, 'success');
   });
 
   // Add Custom Proxied
@@ -3535,11 +3435,6 @@ function renderClientsView(data) {
       statusBadge = '<span class="badge badge-block">NO QUOTA</span>';
     }
 
-    let policyBadge = '';
-    if (c.custom_policies && c.custom_policies.length > 0) {
-      policyBadge = `<span class="badge bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[9px]" title="${escapeHTML(c.custom_policies.join(', '))}">${c.custom_policies.length} Policies</span>`;
-    }
-
     // Two forms of the same instant, because the card shows it in a 103px column and the
     // Bot Card copies it into a message. expText stays precise — full date, hours, minutes,
     // seconds — and goes to the tooltip and to data-exp. expShort is what the cell renders.
@@ -3689,7 +3584,6 @@ function renderClientsView(data) {
             <div class="flex items-center gap-2 flex-wrap">
               <h4 class="text-sm font-bold text-white font-heading">${escapeHTML(c.name)}</h4>
               ${statusBadge}
-              ${policyBadge}
             </div>
             <div class="text-[10px] text-slate-400 font-mono mt-0.5 truncate" title="Code: ${escapeHTML(c.id)} · Slug: ${escapeHTML(c.token)}">
               Code: <span class="text-amber-300 font-bold">${escapeHTML(c.id)}</span> · Slug: <span class="text-slate-500">${escapeHTML(c.token)}</span>
@@ -3894,8 +3788,7 @@ function initClientEventListeners() {
             initial_ip: initIP,
             traffic_limit_gb: trafficGB,
             traffic_reset_cycle: cycle,
-            max_devices: maxDevices,
-            custom_policies: addPolicyPicker.get()
+            max_devices: maxDevices
           })
         });
 
@@ -4495,297 +4388,12 @@ function showToast(msg, type = 'info') {
   // EDIT CLIENT MODAL EVENT LISTENERS (Advanced Client Controls)
   // =======================================================
 
-  // The selectable policies, fetched from the daemon instead of transcribed here.
-  //
-  // This used to be a 26-entry object literal copied from matcher.PresetRuleKeys by
-  // hand, and a copy of a Go map in a JS literal is something no test and no compiler
-  // can check. It had already drifted: four labels here were shorter than the ones the
-  // resolver uses, so the panel and the daemon named the same category two ways. The
-  // worse direction was silence — a preset added on the Go side was invisible to this
-  // picker until somebody remembered to retype it, which is how enable_soundcloud
-  // spent a release unselectable.
-  //
-  // Order comes from the server (see matcher.policyCatalogOrder), because a picker
-  // filled from a Go map reshuffles on every open.
-  let policyCatalog = [];
-  let policyLabels = {};
-  let policyCatalogError = '';
-  let policyCatalogPromise = null;
-
-  // Fetched once per page load, lazily: an operator who never opens the edit modal
-  // never pays for it. The promise itself is the cache, so two callers racing on modal
-  // open share one request.
-  function loadPolicyCatalog() {
-    if (policyCatalogPromise) return policyCatalogPromise;
-    policyCatalogPromise = (async () => {
-      try {
-        const res = await fetch(api('/api/policies'), {
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        if (!res.ok) throw new Error(`http ${res.status}`);
-        const data = await res.json();
-        const list = Array.isArray(data.catalog) ? data.catalog : [];
-        // A daemon too old to send a catalogue is the one case where an empty list is
-        // not an error worth blocking on — but it is still an empty picker, so say so
-        // rather than leave the operator looking at "No matching policies found".
-        if (list.length === 0) throw new Error('empty catalog');
-        policyCatalog = list.filter(e => e && typeof e.key === 'string' && e.key !== '');
-        policyLabels = {};
-        policyCatalog.forEach(e => { policyLabels[e.key] = e.label || e.key; });
-        policyCatalogError = '';
-      } catch (e) {
-        // Deliberately not falling back to a bundled list. A stale copy that disagrees
-        // with the resolver is what this change removed; showing nothing and saying why
-        // is worse for one session and better every session after it.
-        policyCatalog = [];
-        policyCatalogError = 'Could not load the policy list from the server.';
-        policyCatalogPromise = null; // let the next open retry
-      }
-      return policyCatalog;
-    })();
-    return policyCatalogPromise;
-  }
-
-  // =======================================================
-  // ANT-DESIGN MULTI-SELECT & HIGHLIGHTING FOR POLICIES
-  // =======================================================
-  // One picker per form. The create and the edit modals both offer policy
-  // selection now, and a single module-level selection array they both wrote
-  // through meant the chips an operator attached while editing one subscriber
-  // would be sitting in the create form the next time it opened — and silently
-  // sold to whoever was created next.
-  //
-  // The catalogue itself stays shared: one fetch, lazily, for both pickers.
-  function createPolicyMultiselect(ids) {
-    const box = document.getElementById(ids.box);
-    const dropdown = document.getElementById(ids.dropdown);
-    const search = document.getElementById(ids.search);
-    const tags = document.getElementById(ids.tags);
-    let selected = [];
-
-    const noop = { get: () => [], set: () => {}, reset: () => {} };
-    if (!box || !dropdown) return noop;
-
-    function renderTags() {
-      if (!tags) return;
-      if (selected.length === 0) {
-        tags.innerHTML = '<span class="text-slate-500 text-[11px] italic py-0.5">Inheriting all global policies</span>';
-      } else {
-        tags.innerHTML = selected.map(p => {
-          // Every value here is server-supplied now — the label from the catalogue, the
-          // raw key from the client record when the catalogue does not know it (a policy
-          // stored by a newer build, or one that has since been removed).
-          const label = policyLabels[p] || p;
-          return `
-          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-cyan-950/80 border border-cyan-500/40 text-[10px] font-semibold text-cyan-200">
-            <span>${escapeHTML(label)}</span>
-            <button type="button" class="remove-policy-tag-btn hover:text-red-400 ms-1 text-slate-400" data-policy="${escapeHTML(p)}"
-              title="Remove policy" aria-label="Remove policy"><i data-feather="x" class="w-3 h-3"></i></button>
-          </span>
-        `;
-        }).join('');
-        // The ✕ this button used to hold was its accessible name as well as its icon; an
-        // <i> has neither, so the label moved into title/aria-label — which i18n.js
-        // translates — and the glyph has to be drawn, because nothing else in this
-        // function redraws.
-        safeFeatherReplace();
-      }
-      renderDropdown(search ? search.value : '');
-    }
-
-    function renderDropdown(filterText = '') {
-      const q = (filterText || '').toLowerCase().trim();
-
-      if (policyCatalog.length === 0) {
-        dropdown.innerHTML = policyCatalogError
-          ? `<div class="p-3 text-center text-red-400 text-xs">${escapeHTML(policyCatalogError)}</div>`
-          : '<div class="p-3 text-center text-slate-500 text-xs">Loading policies…</div>';
-        return;
-      }
-
-      const matched = policyCatalog.filter(e => {
-        const label = e.label || e.key;
-        return label.toLowerCase().includes(q) || e.key.toLowerCase().includes(q);
-      });
-
-      if (matched.length === 0) {
-        dropdown.innerHTML = '<div class="p-3 text-center text-slate-500 text-xs">No matching policies found</div>';
-        return;
-      }
-
-      // Every interpolation below is server-supplied, so every one is escaped. The keys
-      // and labels are the daemon's, and a policy key reaches the store from the REST API
-      // without a charset check — see TestPortalEscapesCustomPolicies, which covers the
-      // same value arriving on the subscriber's page.
-      dropdown.innerHTML = matched.map(e => {
-        const k = e.key;
-        const label = e.label || k;
-        const isSelected = selected.includes(k);
-        // A sinkholing category takes domains away instead of routing them. Marked,
-        // because "FamilySafe Protection" beside twenty games reads like one more game.
-        const kindDot = e.blocking
-          ? '<span class="w-1.5 h-1.5 rounded-full bg-red-400" title="Blocks (sinkholes) these domains"></span>'
-          : `<span class="w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-cyan-400' : 'bg-slate-600'}"></span>`;
-
-        if (isSelected) {
-          return `
-          <div class="policy-option-item flex items-center justify-between px-3 py-2 bg-blue-600/25 border-s-2 border-blue-400 text-blue-200 cursor-pointer hover:bg-blue-600/35 transition text-xs font-semibold" data-key="${escapeHTML(k)}">
-            <div class="flex items-center gap-2">
-              ${kindDot}
-              <span>${escapeHTML(label)}</span>
-            </div>
-            <i data-feather="check" class="w-3.5 h-3.5 text-blue-400 shrink-0"></i>
-          </div>
-        `;
-        } else {
-          return `
-          <div class="policy-option-item flex items-center justify-between px-3 py-2 text-slate-300 hover:bg-slate-800/80 cursor-pointer transition text-xs" data-key="${escapeHTML(k)}">
-            <div class="flex items-center gap-2">
-              ${kindDot}
-              <span>${escapeHTML(label)}</span>
-            </div>
-            <i data-feather="plus" class="w-3.5 h-3.5 text-slate-600 shrink-0"></i>
-          </div>
-        `;
-        }
-      }).join('');
-      // border-s-2 rather than border-l-2, so the marker stays on the reading edge in
-      // Persian, and the two glyphs are drawn here because this list is rebuilt on every
-      // keystroke in the search box and nothing downstream redraws it.
-      safeFeatherReplace();
-    }
-
-    box.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (e.target.closest('.remove-policy-tag-btn')) return;
-      dropdown.classList.toggle('hidden');
-      if (!dropdown.classList.contains('hidden')) {
-        if (search) search.focus();
-        // Renders "Loading policies…" first, then again with the real list. Awaiting
-        // before the first render would leave the dropdown blank on a slow request,
-        // which reads as "there are no policies".
-        renderDropdown(search ? search.value : '');
-        loadPolicyCatalog().then(() => {
-          renderDropdown(search ? search.value : '');
-        });
-      }
-    });
-
-    if (search) {
-      search.addEventListener('input', (e) => {
-        dropdown.classList.remove('hidden');
-        renderDropdown(e.target.value);
-      });
-      search.addEventListener('focus', () => {
-        dropdown.classList.remove('hidden');
-        renderDropdown(search.value);
-        loadPolicyCatalog().then(() => {
-          renderDropdown(search.value);
-        });
-      });
-    }
-
-    dropdown.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const option = e.target.closest('.policy-option-item');
-      if (!option) return;
-      const key = option.getAttribute('data-key');
-      if (!key) return;
-
-      if (selected.includes(key)) {
-        selected = selected.filter(p => p !== key);
-      } else {
-        selected.push(key);
-      }
-      renderTags();
-      if (search) search.focus();
-    });
-
-    document.addEventListener('click', (e) => {
-      if (!box.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.classList.add('hidden');
-      }
-    });
-
-    const selectAllBtn = document.getElementById(ids.selectAll);
-    if (selectAllBtn) {
-      selectAllBtn.addEventListener('click', async () => {
-        // Awaited, because "select all" on an unloaded catalogue would silently select
-        // nothing and then render "Inheriting all global policies" — the exact opposite
-        // of what was asked for.
-        await loadPolicyCatalog();
-        selected = policyCatalog.map(e => e.key);
-        if (selected.length === 0) {
-          showToast(policyCatalogError || 'No policies available to select', 'error');
-        }
-        renderTags();
-      });
-    }
-
-    const clearAllBtn = document.getElementById(ids.clearAll);
-    if (clearAllBtn) {
-      clearAllBtn.addEventListener('click', () => {
-        selected = [];
-        renderTags();
-      });
-    }
-
-    // Delegated, because the tags are re-rendered on every change. Scoped to this
-    // picker's own chips container so the instance's document-level listener above
-    // is the only other one that sees the click.
-    document.addEventListener('click', (e) => {
-      const removeTagBtn = e.target.closest('.remove-policy-tag-btn');
-      if (removeTagBtn && tags && tags.contains(removeTagBtn)) {
-        const p = removeTagBtn.getAttribute('data-policy');
-        selected = selected.filter(item => item !== p);
-        renderTags();
-      }
-    });
-
-    return {
-      get: () => [...selected],
-      // set() also prefetches the catalogue: the tags fall back to the raw key until
-      // it arrives, so an operator who only glances at the attached policies should
-      // read "Riot Games & Valorant", not "enable_riot".
-      set: (arr) => {
-        selected = Array.isArray(arr) ? [...arr] : [];
-        renderTags();
-        loadPolicyCatalog().then(() => renderTags());
-      },
-      reset: () => {
-        selected = [];
-        if (search) search.value = '';
-        dropdown.classList.add('hidden');
-        renderTags();
-      }
-    };
-  }
-
-  const editPolicyPicker = createPolicyMultiselect({
-    box: 'policies-multiselect-box',
-    dropdown: 'policies-dropdown-list',
-    search: 'policies-search-input',
-    tags: 'edit-client-policies-tags',
-    selectAll: 'edit-client-policies-select-all',
-    clearAll: 'edit-client-policies-clear-all'
-  });
-
-  const addPolicyPicker = createPolicyMultiselect({
-    box: 'add-policies-multiselect-box',
-    dropdown: 'add-policies-dropdown-list',
-    search: 'add-policies-search-input',
-    tags: 'add-client-policies-tags',
-    selectAll: 'add-client-policies-select-all',
-    clearAll: 'add-client-policies-clear-all'
-  });
-
   // =======================================================
   // ANT-DESIGN STYLE GREGORIAN DATETIME PICKER
   // =======================================================
-  // One picker per form, for the same reason the policy multiselect is a factory:
-  // the create form and the edit form both carry an expiry now, and a shared set
-  // of selection variables would have the calendar in one modal showing the date
-  // the other modal last confirmed.
+  // One picker per form. The create and the edit forms both carry an expiry now,
+  // and a shared set of selection variables would have the calendar in one modal
+  // showing the date the other modal last confirmed.
   const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   function createExpiryDatePicker(ids) {
@@ -4846,7 +4454,7 @@ function showToast(msg, type = 'info') {
     }
 
     // Reads the field this picker owns, or defaults a month out — the same default
-    // the create form seeds and the preset select used to ship.
+    // the create form seeds.
     function parseInputToState() {
       const val = expiryInput ? expiryInput.value.trim() : '';
       if (val) {
@@ -5023,13 +4631,11 @@ function showToast(msg, type = 'info') {
   });
 
   // The create form's blank slate: the fields the browser's reset() covers plus
-  // the two components that live outside it — the readonly expiry field and the
-  // policy picker's chips.
+  // the readonly expiry field that lives outside it.
   function resetAddClientForm() {
     const form = document.getElementById('add-client-form');
     if (form) form.reset();
     addDatePicker.applyDefaultDays(30);
-    addPolicyPicker.reset();
   }
 
   // showClientCreatedModal puts the just-minted credentials on screen. The
@@ -5168,11 +4774,6 @@ function showToast(msg, type = 'info') {
         enabledCheckbox.dispatchEvent(new Event('change'));
       }
 
-      // set() renders the chips from the raw keys immediately and prefetches the
-      // catalogue so they read as labels: an operator who only glances at the
-      // attached policies should read "Riot Games & Valorant", not "enable_riot".
-      editPolicyPicker.set(Array.isArray(client.custom_policies) ? client.custom_policies : []);
-
       if (editClientModal) editClientModal.classList.remove('hidden');
       safeFeatherReplace();
     }
@@ -5293,8 +4894,7 @@ function showToast(msg, type = 'info') {
         traffic_reset_cycle: cycle,
         expires_at: expiresAtISO,
         enabled: isEnabled,
-        note: note,
-        custom_policies: editPolicyPicker.get()
+        note: note
       };
 
       try {
@@ -5327,35 +4927,6 @@ function showToast(msg, type = 'info') {
 // SELF-UPDATE (v2.6): check the main-branch version, then apply a
 // SHA256-verified binary swap + restart. Data is preserved and backed up.
 // =======================================================
-// =======================================================
-// POLICY ICONS (v2.7): each built-in policy card carries a data-preset id; the
-// embedded SVG glyph for it (a real brand mark, or the Feather glyph for
-// categories) is served at /icons/policy/<id>.svg. The Feather <i> stays in
-// place until the SVG actually loads, so a preset whose icon has not shipped
-// yet (a channel delivery ahead of the release) keeps its old glyph instead of
-// showing a broken image.
-// =======================================================
-function upgradePolicyIcons() {
-  document.querySelectorAll('.policy-icon[data-preset]').forEach((span) => {
-    if (span.dataset.iconDone) return;
-    const id = span.dataset.preset;
-    if (!/^[a-z0-9_]{1,64}$/.test(id)) return;
-    const img = new Image();
-    img.className = 'w-4 h-4';
-    img.alt = '';
-    img.decoding = 'async';
-    img.onload = () => {
-      // The card may have re-rendered between load and swap; only swap if our
-      // Feather glyph is still the child of this span.
-      const glyph = span.querySelector('i');
-      if (glyph) glyph.replaceWith(img);
-      span.dataset.iconDone = '1';
-    };
-    img.onerror = () => { span.dataset.iconDone = '1'; };
-    img.src = '/icons/policy/' + id + '.svg';
-  });
-}
-
 async function checkForUpdate() {
   try {
     const res = await fetch(api('/api/update/check'), { headers: { 'Authorization': 'Bearer ' + authToken } });

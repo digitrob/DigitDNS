@@ -18,7 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	"context"
 	"hyperdns/internal/bootstrap"
 	"hyperdns/internal/control"
 	"hyperdns/internal/core/cache"
@@ -30,7 +29,6 @@ import (
 	"hyperdns/internal/crypto"
 	"hyperdns/internal/database"
 	"hyperdns/internal/netutil"
-	"hyperdns/internal/presetupd"
 	"hyperdns/internal/selfupdate"
 	"hyperdns/internal/service"
 	"hyperdns/internal/service/acme"
@@ -225,10 +223,6 @@ func main() {
 	if fileAccess != nil && fileAccess.PresentAllowAll {
 		allowAll = fileAccess.AllowAll
 	}
-	var presetUpdateSettings struct {
-		PresetsURL string `json:"presets_url"`
-		AutoApply  bool   `json:"auto_apply"`
-	}
 	var accessSettings struct {
 		DoHTokens []string `json:"doh_tokens"`
 	}
@@ -241,7 +235,6 @@ func main() {
 		bootstrap.SettingSpec{Key: "auth", Target: authSettings},
 		bootstrap.SettingSpec{Key: "allow_all", Target: &allowAll},
 		bootstrap.SettingSpec{Key: "access", Target: &accessSettings},
-		bootstrap.SettingSpec{Key: "preset_updates", Target: &presetUpdateSettings},
 	); err != nil {
 		log.Fatalf("[Main] Refusing to start with unreadable persisted settings: %v", err)
 	}
@@ -455,34 +448,15 @@ func main() {
 	defer c.Close()
 	defer statsService.Close()
 
-	// The rule sources apply in precedence order, opposite of the old sequence:
-	// config.json seeds first, the database lands last. The config file supplies
-	// defaults (config.go's contract: "any value already stored in the database
-	// always wins over the file"), so the DB restore has to run after it — with
-	// the old order, every restart re-applied the file's toggles over the
-	// operator's dashboard-saved ones, and a policy disabled in the panel came
-	// back on at the next boot. A key with no database row keeps the file's
-	// value, which is the fresh-install seeding the file exists for.
-	if *configPath != "" {
-		applyRulesFromConfig(*configPath, m)
-	}
+	// Custom rule state lives only in the database: the restore lands after every
+	// other source so the operator's dashboard-saved lists win over anything
+	// earlier, and they survive a restart unchanged.
 	loadPersistedRules(db, m)
 
 	// Named custom policy groups (v2.3): loaded after the flat rules so the
 	// matcher's stored custom state is complete before the first query. The
 	// service keeps the matcher and the database in sync on every edit.
 	customGroupService := service.NewCustomGroupService(db, m)
-
-	// The preset-update channel (v2.3.0): the embedded baseline is permanent;
-	// a signed channel override is re-applied at boot and updated from the
-	// dashboard or the console. Constructed here so both the dashboard and the
-	// control socket share one updater state.
-	presetUpdater := presetupd.New(
-		presetUpdateSettings.PresetsURL, nil, m, db, log.Printf)
-	if err := presetUpdater.LoadPersisted(); err != nil {
-		log.Printf("[Main] preset channel override load failed: %v", err)
-	}
-	presetUpdater.SetAutoApply(presetUpdateSettings.AutoApply)
 
 	// Phase D: the operator's configured idle window wins when present, and it
 	// is re-applied live from the dashboard (SessionManager.SetIdleTimeout).
@@ -584,7 +558,6 @@ func main() {
 		dnsSettings,
 		sessionManager,
 		webAssets.StaticFS,
-		presetUpdater,
 	)
 	webServer.SetSubscriptionSettings(subscriptionSettings)
 	webServer.SetAuthSettings(authSettings)
@@ -661,16 +634,12 @@ func main() {
 		tlsCfg:    tlsSettings,
 		subs:      subscriptionSettings,
 	}
-	// The console's update-presets verb drives the same updater the dashboard
-	// uses: check-and-apply in one call, with the updater's own rollback.
-	presetsSource := controlPresetSource{updater: presetUpdater}
 	controlOps := control.NewDaemonOperations(control.DaemonDependencies{
 		Status:    controlAdapter,
 		Clients:   controlAdapter,
 		Cache:     c,
 		Benchmark: benchmarkRunner,
 		Settings:  controlAdapter,
-		Presets:   presetsSource,
 	})
 
 	// 6. Handle the one remaining pre-listener local utility. Informational and
@@ -877,25 +846,6 @@ func isLockTimeout(err error) bool {
 // re-open, so it answers false there and a NUL stdin would still read as
 // interactive; that is the safe direction (a desktop console keeps its menu), and
 // no HyperDNS service runs headless on Windows.
-// controlPresetSource adapts the preset-updater for the control socket: the
-// boundary returns DTOs, so a network failure surfaces as LastError text rather
-// than a wrapped error type crossing the socket.
-type controlPresetSource struct {
-	updater *presetupd.Updater
-}
-
-func (s controlPresetSource) UpdatePresets(ctx context.Context) control.UpdatePresetsResult {
-	res, err := s.updater.Apply(ctx)
-	if err != nil {
-		return control.UpdatePresetsResult{LastError: err.Error()}
-	}
-	out := control.UpdatePresetsResult{Message: res.Message}
-	if res.Applied != nil {
-		out.Applied = len(res.Applied)
-	}
-	return out
-}
-
 func stdinIsInteractive(f *os.File) bool {
 	if f == nil {
 		return false
@@ -1087,8 +1037,8 @@ func checkVersionDrift(workDir string) {
 	}
 }
 
-// loadPersistedRules re-applies dashboard policy toggles and custom rule lists
-// that were saved in the policies bucket, so they survive daemon restarts.
+// loadPersistedRules re-applies the custom rule lists that were saved in the
+// policies bucket, so they survive daemon restarts.
 func loadPersistedRules(db *database.DB, m *matcher.Matcher) {
 	if db == nil || m == nil {
 		return
@@ -1100,7 +1050,6 @@ func loadPersistedRules(db *database.DB, m *matcher.Matcher) {
 
 	var customProxied, customBlocked, customDirect []string
 	customRecords := map[string]string{}
-	applied := 0
 
 	for _, p := range policies {
 		switch p.Key {
@@ -1116,16 +1065,11 @@ func loadPersistedRules(db *database.DB, m *matcher.Matcher) {
 					customRecords[strings.TrimSpace(d)] = strings.TrimSpace(ip)
 				}
 			}
-		default:
-			if presetName, ok := matcher.PresetRuleKeys[p.Key]; ok {
-				m.SetRuleEnabled(presetName, p.Enabled)
-				applied++
-			}
 		}
 	}
 
 	m.SetCustomRules(customProxied, customBlocked, customDirect, customRecords)
-	log.Printf("[Main] Restored %d policy toggle(s) and custom rule lists from database", applied)
+	log.Printf("[Main] Restored custom rule lists from database")
 }
 
 // detectPublicIP probes well-known echo services for this host's public IPv4.

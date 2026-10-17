@@ -31,9 +31,6 @@ func (c *controlClientStub) FlushCache(context.Context) error {
 	return nil
 }
 
-func (c *controlClientStub) UpdatePresets(context.Context) (control.UpdatePresetsResult, error) {
-	return control.UpdatePresetsResult{}, nil
-}
 func (*controlClientStub) StartBenchmark(context.Context) error { return nil }
 func (*controlClientStub) Settings(context.Context) (control.SettingsView, error) {
 	return control.SettingsView{}, nil

@@ -40,9 +40,6 @@ func (s *operationsStub) FlushCache(context.Context) error {
 	return nil
 }
 
-func (s *operationsStub) UpdatePresets(context.Context) (UpdatePresetsResult, error) {
-	return UpdatePresetsResult{}, nil
-}
 func (s *operationsStub) StartBenchmark(context.Context) error {
 	s.calls = append(s.calls, "benchmark")
 	return nil

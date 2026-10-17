@@ -117,7 +117,7 @@ with **AES-256-GCM** under the 32-byte key in `master.key`:
 
 | Sealed | In the clear (deliberately) |
 | :--- | :--- |
-| Subscriber name | Policy presets and their domain lists |
+| Subscriber name | Rule entries and their domain lists |
 | Subscriber bound-IP list | The BoltDB structure itself |
 | Subscription token | Traffic counters, timestamps |
 | Registration secret | |
@@ -136,10 +136,9 @@ Subscription tokens additionally carry a **keyed blind index** alongside the
 ciphertext, so `/ip/<token>` remains a single constant-time lookup without the
 token ever being stored in the clear for indexing.
 
-The reason presets are in the clear is that they are not secrets: the same list
-is published in [`PRESET_CATALOG.md`](PRESET_CATALOG.md) and embedded in the
-binary. Sealing them would cost a decrypt per query on the hot path and protect
-nothing.
+The reason rule entries are in the clear is that they are not secrets: they are
+the operator's own domain names, and every one of them is already public in DNS.
+Sealing them would cost a decrypt per query on the hot path and protect nothing.
 
 **Query logs are never written to disk in any form.** DNS telemetry lives in
 memory and on the SSE stream only. This is a design constraint, not a setting.
@@ -282,8 +281,9 @@ They are the reason several classes of issue are "by design" rather than bugs.
 - **The relay cannot be aimed inward**: a relay target that resolves to a
   loopback, link-local, or private address is refused, so the SNI proxy is not
   an SSRF pivot into the server or its subnet.
-- **Bulk-download traffic stays off the relay by default** (`enable_downloads`
-  ships off) — see the README for the operational reasoning.
+- **Nothing is relayed until you say so.** A name is proxied only if it is in
+  **Custom Proxied**, so a multi-gigabyte game install rides the relay only when
+  an operator puts its CDN there deliberately — see the README for the reasoning.
 
 ---
 
@@ -425,6 +425,5 @@ the successor.
 <p align="center">
   <a href="../README.md">README</a> •
   <a href="API.md">REST API</a> •
-  <a href="CHANGELOG.md">Changelog</a> •
-  <a href="PRESET_CATALOG.md">Preset Catalog</a>
+  <a href="CHANGELOG.md">Changelog</a>
 </p>

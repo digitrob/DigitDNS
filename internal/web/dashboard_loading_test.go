@@ -83,16 +83,16 @@ func TestJSFilledListsShipALoadingStateRatherThanAnEmptyContainer(t *testing.T) 
 	}
 }
 
-// loadConfig fetched /api/auth/me and /api/config, checked each one for 401, and then called
-// res.json() whatever the status was. On a 500 the JSON error body parsed fine, so currentConfig
-// became {error: "…"} — truthy, which is the whole of saveRules' guard — and renderConfig read
-// cfg.rules?.enable_riot off it, got undefined for every preset, and painted the entire policy
-// grid as OFF.
+// loadConfig checked /api/auth/me and /api/config for 401 only, and then called res.json()
+// whatever the status was. On a 500 the JSON error body parsed fine, so currentConfig became
+// {error: "…"} — truthy, which is the whole of saveRules' guard — and renderConfig read
+// cfg.rules?.custom_proxied off it, got undefined, and painted every rule list as if the
+// operator had entered nothing.
 //
 // That is the failure mode worth a test of its own, because it is not a display bug. The screen
-// is plausible: every game switch off, as though the operator had turned them off. One press of
-// Save then reads those switches with getSwitch and writes the false values back. A transient 500
-// on a status probe, plus one ordinary click, disables every game preset on the server.
+// is plausible: empty lists, as though the operator had cleared them. A later save then writes
+// that emptiness back over the real lists. A transient 500 on a status probe, plus one ordinary
+// click, wipes the operator's domains on the server.
 func TestConfigLoadRefusesToRenderAResponseItDidNotCheck(t *testing.T) {
 	body := functionBody(t, readAsset(t, "js/app.js"), "loadConfig")
 

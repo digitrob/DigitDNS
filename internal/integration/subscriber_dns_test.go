@@ -2,6 +2,7 @@ package integration
 
 import (
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -31,14 +32,10 @@ const (
 	// makes a proxied answer identifiable with no network involved.
 	testPublicIP = "198.51.100.1"
 
-	// proxiedName is routed through the relay by the default presets, so the
+	// proxiedName is routed through the relay by the fixture's custom rules, so the
 	// handler answers it locally from testPublicIP. internal/core/dns's own tests
 	// rest on the same property.
 	proxiedName = "playvalorant.com."
-
-	// unselectedName belongs to a different preset, so it is relayed for an account
-	// with no policy selection and must not be for one that bought only Riot.
-	unselectedName = "discord.com."
 
 	subscriberIP = "203.0.113.10"
 	strangerIP   = "203.0.113.77"
@@ -125,9 +122,15 @@ func newFixture(t *testing.T, allowAll bool) *fixture {
 	dnsCache := cache.NewCache(1000, 60, 3600)
 	t.Cleanup(dnsCache.Close)
 
+	// The resolver's matcher carries no preset catalogue, so the fixture states the
+	// routing the tests assert on directly: proxiedName is relayed, everything else
+	// falls through to the dead upstream above.
+	m := matcher.NewMatcher()
+	m.SetCustomRules([]string{strings.TrimSuffix(proxiedName, ".")}, nil, nil, nil)
+
 	return &fixture{
 		svc: svc,
-		dns: resolver.NewHandler(svc, dnsCache, matcher.NewMatcher(), pool, sink, testPublicIP),
+		dns: resolver.NewHandler(svc, dnsCache, m, pool, sink, testPublicIP),
 		log: sink,
 	}
 }
@@ -361,42 +364,5 @@ func TestAllowAllStopsEnforcingQuotaOnceTheAccountExpires(t *testing.T) {
 		t.Errorf("the expired account resolves as %q, want %q — if this now fails because the "+
 			"query was refused, the behaviour was tightened on purpose and this test should be "+
 			"replaced rather than repaired", got, "Public")
-	}
-}
-
-// Per-client policies are how one plan is sold with Riot and another with everything:
-// a non-empty selection narrows the presets that apply to that account. The list is
-// stored inside the encrypted client record, which makes it exactly the sort of field
-// that can be lost in the round trip without anything looking broken — an account whose
-// policies came back empty is relayed *every* preset, which reads as a working
-// subscriber rather than as a bug.
-func TestPerClientPoliciesNarrowWhatIsRelayedForThatAccount(t *testing.T) {
-	f := newFixture(t, false)
-	c := f.provision(t, service.CreateClientRequest{
-		Name:           "Riot Only Plan",
-		Days:           30,
-		IP:             subscriberIP,
-		CustomPolicies: []string{"enable_riot"},
-	})
-	if len(c.CustomPolicies) != 1 {
-		t.Fatalf("the account was stored with policies %v, want one entry", c.CustomPolicies)
-	}
-
-	// The preset the plan includes.
-	wantServed(t, f.resolve(t, subscriberIP))
-	if got := f.log.last(t).Action; got != "PROXY" {
-		t.Fatalf("the query for %s was logged as %q, want PROXY", proxiedName, got)
-	}
-
-	// One it does not. The answer itself cannot be asserted — an unselected name falls
-	// through to DIRECT, which here means the deliberately dead upstream — so the
-	// assertion is that the relay's own address is not what came back.
-	for _, rr := range f.resolveName(t, subscriberIP, unselectedName).Answer {
-		a, ok := rr.(*dns.A)
-		if ok && a.A.String() == testPublicIP {
-			t.Errorf("%s was relayed for an account whose plan is %v, so the policy list did "+
-				"not survive storage and the account is being given every preset",
-				unselectedName, c.CustomPolicies)
-		}
 	}
 }

@@ -30,8 +30,8 @@ package matcher
 // forcedDirectGroups lists the names for which that is known to be true, each
 // with the label the query log should carry for it. They are indexed into their
 // own rule set and consulted ahead of every proxy rule, so the invariant lives in
-// one place that a test can assert, rather than as an absence in a thousand-line
-// preset file that the next person to add a domain will never know about.
+// one place that a test can assert, rather than as an absence in a large
+// managed list that the next person to add a domain will never know about.
 //
 // A name listed here behaves exactly as it would with no rule at all, which is
 // already what the matcher returns for anything it does not recognise — so adding
@@ -60,7 +60,7 @@ var forcedDirectGroups = []forcedDirectGroup{
 		rule: RuleRealtimeDirect,
 		domains: []string{
 			// Discord voice and video: WebRTC media over UDP in the ephemeral
-			// range. Removed from PresetDiscord in favour of this list.
+			// range. Held here rather than left to a wildcard rule.
 			//
 			// The wildcard also covers latency.discord.media, which is how the
 			// client measures each voice region before picking one. Proxying that
@@ -71,9 +71,9 @@ var forcedDirectGroups = []forcedDirectGroup{
 			"*.discord.media",
 
 			// Vivox — the voice backend for Valorant, League of Legends, Rainbow
-			// Six Siege and other Unity titles. Media is RTP over UDP. Removed
-			// from PresetRiot in favour of this list, which also covers the
-			// bop.vivox.com and v5.vivox.com hosts that preset named individually.
+			// Six Siege and other Unity titles. Media is RTP over UDP. Held
+			// explicitly here, which also covers the bop.vivox.com and
+			// v5.vivox.com hosts a wildcard rule would otherwise miss.
 			"vivox.com",
 			"*.vivox.com",
 		},
@@ -82,9 +82,9 @@ var forcedDirectGroups = []forcedDirectGroup{
 		rule: RuleUnproxyableDirect,
 		domains: []string{
 			// Steam's connection manager: the client's control channel for login,
-			// friends, chat and presence. Covered by *.steampowered.com in
-			// PresetSteam, and the last name in the presets whose port assumption
-			// was recorded as untested rather than settled.
+			// friends, chat and presence. Covered by *.steampowered.com, and the
+			// last name whose port assumption was recorded as untested rather than
+			// settled.
 			//
 			// Settled here from this daemon's side rather than Valve's, which is
 			// the half that can be checked. The connection manager is reached on
@@ -93,10 +93,10 @@ var forcedDirectGroups = []forcedDirectGroup{
 			// a connect timeout each behind any default-deny firewall; and the
 			// fallback on 443 is Valve's own binary framing, not TLS, so there is
 			// no SNI for the relay to read and the connection is dropped. Neither
-			// outcome is the degradation the preset was assuming.
+			// outcome is the degradation a proxy path assumes.
 			//
-			// Forcing it direct costs nothing that the operator wanted. What the
-			// Steam preset is for is the store, the community pages and the CDN,
+			// Forcing it direct costs nothing an operator wanted. What the Steam
+			// zone is for is the store, the community pages and the CDN,
 			// all HTTPS with SNI and all still proxied; and a current client does
 			// not log in through this name at all — it fetches a connection-manager
 			// list from api.steampowered.com over HTTPS and connects to a
@@ -106,8 +106,8 @@ var forcedDirectGroups = []forcedDirectGroup{
 			// being advertised as one it can.
 			"cm.steampowered.com",
 
-			// Google's update CDNs (v2.2.0 Google preset). *.google.com in
-			// PresetGoogle unavoidably covers these subdomains, and proxying them
+			// Google's update CDNs. A *.google.com wildcard unavoidably covers
+			// these subdomains, and proxying them
 			// buys an operator nothing: they serve large package downloads —
 			// Chrome installers, Android SDK parts — whose bytes land on the VPS
 			// NIC for traffic nobody buys a subscription to unblock. gvt1/gvt2

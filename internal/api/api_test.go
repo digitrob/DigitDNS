@@ -240,10 +240,9 @@ func TestAPI_ClientsCRUD(t *testing.T) {
 	}
 }
 
-// The dashboard's policy picker is filled from this response, so `catalog` is part of
-// the contract now rather than an extra field. Without it the picker is empty on a
-// healthy install and the operator reads "No matching policies found".
-func TestAPI_PoliciesServesTheCatalogueNotJustTheOverrides(t *testing.T) {
+// This build ships no presets, so `catalog` is present but empty. The route keeps
+// the key so an integration that reads it gets a well-formed list, not null.
+func TestAPI_PoliciesServesAnEmptyCatalogue(t *testing.T) {
 	apiInst, _, _, cleanup := setupTestAPI(t)
 	defer cleanup()
 
@@ -261,49 +260,20 @@ func TestAPI_PoliciesServesTheCatalogueNotJustTheOverrides(t *testing.T) {
 	}
 
 	var body struct {
-		Policies []database.Policy            `json:"policies"`
-		Catalog  []matcher.PolicyCatalogEntry `json:"catalog"`
+		Policies []database.Policy `json:"policies"`
+		Catalog  []any             `json:"catalog"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode the policies response: %v", err)
 	}
 
-	// A fresh install has no overrides at all, and that is the whole reason the
-	// catalogue had to exist: this array being empty is correct, and the picker that
-	// used to be fed from it had nothing to show.
+	// A fresh install has no overrides, and with no presets there is nothing to
+	// advertise either.
 	if len(body.Policies) != 0 {
 		t.Errorf("a fresh install already reports %d policy overrides", len(body.Policies))
 	}
-	if len(body.Catalog) == 0 {
-		t.Fatal("catalog is empty, so the dashboard picker would be too")
-	}
-	if len(body.Catalog) != len(matcher.PresetRuleKeys) {
-		t.Errorf("catalog carries %d presets, the matcher knows %d",
-			len(body.Catalog), len(matcher.PresetRuleKeys))
-	}
-
-	// Every row has to carry a label the panel can print and a key the resolver will
-	// accept. A row with one and not the other is a policy an operator can attach and
-	// the matcher then silently ignores.
-	blocking := 0
-	for _, e := range body.Catalog {
-		want, known := matcher.PresetRuleKeys[e.Key]
-		if !known {
-			t.Errorf("catalog offers %q, which the matcher does not implement", e.Key)
-			continue
-		}
-		if e.Label != want {
-			t.Errorf("catalog labels %q as %q, the matcher calls it %q", e.Key, e.Label, want)
-		}
-		if e.Blocking {
-			blocking++
-		}
-	}
-
-	// The flag has to survive the encoding, not just exist in Go: it is the only thing
-	// separating "add another game" from "take these domains away" in the picker.
-	if blocking == 0 {
-		t.Error("no catalog entry is marked blocking, so sinkholing categories look like games")
+	if len(body.Catalog) != 0 {
+		t.Errorf("catalog carries %d entries, want none in a build without presets", len(body.Catalog))
 	}
 }
 

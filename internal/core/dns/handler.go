@@ -508,7 +508,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		return m
 	}
 
-	// 3. Custom record overrides outrank every preset rule. Both address
+	// 3. Custom record overrides outrank every other rule. Both address
 	// families are answered here — previously only A was intercepted, so a
 	// client could reach the real host by asking for AAAA instead.
 	if customIP, ok := h.matcher.GetCustomRecord(domain); ok && (q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA) {
@@ -531,14 +531,10 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		}
 	}
 
-	// 4. Rule matcher (honoring per-client policy exceptions if configured)
-	var action matcher.Action
-	var ruleName string
-	if activeClient != nil && len(activeClient.CustomPolicies) > 0 {
-		action, ruleName = h.matcher.MatchForClient(domain, activeClient.CustomPolicies)
-	} else {
-		action, ruleName = h.matcher.Match(domain)
-	}
+	// 4. Rule matcher. Every client is matched against the same admin-wide
+	// rules: the per-client policy lists a stored account may still carry are
+	// inert in this build.
+	action, ruleName := h.matcher.Match(domain)
 
 	switch action {
 	case matcher.ActionBlock:

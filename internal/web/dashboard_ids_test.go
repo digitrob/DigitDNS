@@ -218,10 +218,13 @@ func TestDashboardTabsAndPanelsAgree(t *testing.T) {
 // operator typing it — and the server has to answer index.html for all of them or the SPA
 // never gets a chance to route.
 //
-// Three of them used to 404: /policy, /stream and /connect, the aliases routeTabs accepts
-// alongside the /rules, /logs and /guide paths that switchTab actually pushes. Nothing in
-// the panel links to them, so no amount of clicking through the UI finds it; the bug only
-// shows up for someone who typed a URL that the front-end router plainly claims to know.
+// Two of them used to 404: /stream and /connect, the aliases routeTabs accepts alongside
+// the /logs and /guide paths that switchTab actually pushes. Nothing in the panel links
+// to them, so no amount of clicking through the UI finds it; the bug only shows up for
+// someone who typed a URL that the front-end router plainly claims to know. The retired
+// /policy and /rules aliases are still in spaRoutes in server.go so those bookmarks keep
+// rendering the dashboard shell instead of 404ing, but they are no longer routeTabs keys
+// and this test no longer walks them.
 //
 // Derived from app.js rather than listed here, so the two sides cannot drift apart again:
 // adding a route to routeTabs and forgetting spaRoutes in server.go fails this test.

@@ -389,7 +389,7 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 	}
 	if err != nil || hostname == "" {
 		// This used to return in complete silence: no counter, no log line. That
-		// silence is how a preset can advertise a proxy path for a service whose
+		// silence is how a rule can advertise a proxy path for a service whose
 		// protocol this relay cannot read and have nobody find out — DNS answered,
 		// TCP connected, and the client sits waiting for a peer that will never
 		// speak. cm.steampowered.com was exactly that case (see

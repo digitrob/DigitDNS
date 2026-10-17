@@ -67,13 +67,13 @@ type Client struct {
 	TrafficPrevCycleBytes uint64 `json:"traffic_prev_cycle_bytes"`
 }
 
-// Policy represents a rule toggle or custom domain list
+// Policy is one stored rule entry: a key plus the domains it carries.
 type Policy struct {
-	Key           string   `json:"key"`      // e.g. "enable_riot", "enable_steam"
-	Name          string   `json:"name"`     // e.g. "Riot Games & Valorant"
-	Category      string   `json:"category"` // "gaming", "streaming", "dev", "custom"
+	Key           string   `json:"key"`      // e.g. "custom_proxied", "custom_blocked"
+	Name          string   `json:"name"`     // optional display label
+	Category      string   `json:"category"` // optional grouping; "custom" for the built-in lists
 	Enabled       bool     `json:"enabled"`
-	CustomDomains []string `json:"custom_domains"` // for custom rules
+	CustomDomains []string `json:"custom_domains"` // the domains this entry carries
 }
 
 // QueryLogItem represents a real-time DNS telemetry record

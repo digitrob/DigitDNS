@@ -12,8 +12,7 @@
 // unauthenticated self-consistency test: both artifacts come from the same
 // origin, so whoever can serve one can serve the other. The signature is what
 // makes the expected hash trustworthy, and it is verified over the raw file
-// bytes before any parsing happens. This mirrors the preset channel's pinned
-// ed25519 verification (internal/presetupd); the private half lives only in
+// bytes before any parsing happens. The private half of that key lives only in
 // the GitHub Actions release-signing secret, so nothing in this repository can
 // sign a release bundle.
 //

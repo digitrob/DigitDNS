@@ -383,7 +383,7 @@
                 <!-- Days populated dynamically -->
               </div>
 
-              <!-- Time Selector & Quick Presets -->
+              <!-- Time Selector -->
               <div class="flex items-center justify-between pt-2.5 border-t border-slate-800 text-[11px]">
                 <div class="flex items-center gap-1.5 font-mono">
                   <span class="text-slate-500">Time:</span>
@@ -439,41 +439,6 @@
           <label for="edit-client-note" class="block text-[11px] font-semibold text-slate-400 mb-1">Comment / Note</label>
           <input type="text" id="edit-client-note" placeholder="e.g. customer-a / VIP Gamer Plan"
             class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
-        </div>
-
-        <!-- Row 5: Attached Inbounds equivalent -> Attached DNS Policies (Ant Design Multi-Select) -->
-        <div class="space-y-2 p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 relative">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <span class="block text-xs font-bold text-cyan-300 font-heading">Attached DNS Policies</span>
-              <span class="text-[10px] text-slate-400">Leave empty to inherit all global policies, or select specific games.</span>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <button type="button" id="edit-client-policies-select-all" class="px-2 py-0.5 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] font-semibold transition">
-                Select all
-              </button>
-              <button type="button" id="edit-client-policies-clear-all" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold transition">
-                Clear all (Inherit)
-              </button>
-            </div>
-          </div>
-
-          <!-- Multi-Select Input Box (Ant Design / 3x-ui Style) -->
-          <div id="policies-multiselect-box" class="relative min-h-[38px] p-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-cyan-500/60 focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/40 transition cursor-pointer flex flex-wrap items-center gap-1.5">
-            <div id="edit-client-policies-tags" class="flex flex-wrap items-center gap-1.5">
-              <!-- Dynamically populated chips with remove buttons -->
-            </div>
-            <input type="text" id="policies-search-input" aria-label="Search policies" placeholder="Click or search policies..."
-              class="flex-1 min-w-[140px] bg-transparent text-xs text-slate-200 placeholder-slate-500 focus:outline-none cursor-pointer">
-            <div class="pe-1.5 text-slate-500 pointer-events-none">
-              <i data-feather="chevron-down" class="w-3.5 h-3.5"></i>
-            </div>
-          </div>
-
-          <!-- Multi-Select Dropdown List with Highlighted Selected Options & Checkmarks -->
-          <div id="policies-dropdown-list" class="hidden absolute inset-x-3.5 top-full mt-1 z-50 max-h-56 overflow-y-auto rounded-xl bg-slate-900 border border-slate-700 shadow-2xl divide-y divide-slate-800/60">
-            <!-- Dynamically populated options list with highlighted active states and checkmarks -->
-          </div>
         </div>
 
         <!-- Row 6: Enabled Toggle Switch -->
@@ -586,7 +551,7 @@
         <!-- Row 2: the exact expiry the plan ends on, and the optional first IP — the
              same pairing as the edit modal, so an operator who has learned one form
              already knows where both fields are in the other. The picker replaces the
-             old duration preset select: a preset could only speak in whole days, so a
+             old duration dropdown: it could only speak in whole days, so a
              plan meant to end at a specific moment could not be sold as such at
              creation and had to be corrected in the editor afterwards. -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 relative">
@@ -652,42 +617,6 @@
             <input type="text" id="client-initial-ip" placeholder="e.g. 2.189.86.32 (or leave blank for auto-link)"
               class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
             <p class="text-[10px] text-slate-500 mt-1">If blank, client can self-register using their personal URL.</p>
-          </div>
-        </div>
-
-        <!-- The policies the plan carries, decided at creation for the same reason the
-             quota is: an account created inheriting everything and then corrected in
-             the editor is live with the wrong rules for the whole gap between the two
-             writes. -->
-        <div class="space-y-2 p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 relative">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <span class="block text-xs font-bold text-cyan-300 font-heading">Attached DNS Policies</span>
-              <span class="text-[10px] text-slate-400">Leave empty to inherit all global policies, or select specific games.</span>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <button type="button" id="add-client-policies-select-all" class="px-2 py-0.5 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] font-semibold transition">
-                Select all
-              </button>
-              <button type="button" id="add-client-policies-clear-all" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold transition">
-                Clear all (Inherit)
-              </button>
-            </div>
-          </div>
-
-          <div id="add-policies-multiselect-box" class="relative min-h-[38px] p-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-cyan-500/60 focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/40 transition cursor-pointer flex flex-wrap items-center gap-1.5">
-            <div id="add-client-policies-tags" class="flex flex-wrap items-center gap-1.5">
-              <!-- Dynamically populated chips with remove buttons -->
-            </div>
-            <input type="text" id="add-policies-search-input" aria-label="Search policies" placeholder="Click or search policies..."
-              class="flex-1 min-w-[140px] bg-transparent text-xs text-slate-200 placeholder-slate-500 focus:outline-none cursor-pointer">
-            <div class="pe-1.5 text-slate-500 pointer-events-none">
-              <i data-feather="chevron-down" class="w-3.5 h-3.5"></i>
-            </div>
-          </div>
-
-          <div id="add-policies-dropdown-list" class="hidden absolute inset-x-3.5 top-full mt-1 z-50 max-h-56 overflow-y-auto rounded-xl bg-slate-900 border border-slate-700 shadow-2xl divide-y divide-slate-800/60">
-            <!-- Dynamically populated options list with highlighted active states and checkmarks -->
           </div>
         </div>
 
@@ -769,6 +698,53 @@
     </div>
   </div>
 
+  <!-- BULK DOMAIN IMPORT (fork feature). One modal serves both the proxied and the
+       blocklist panel: the caller sets the title, the action label and the target
+       list, so the parsing rules and the merge logic live in exactly one place. -->
+  <div id="bulk-import-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-import-title"
+    data-modal-close="bulk-import-cancel-btn"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md px-4 hidden">
+    <div class="glass-panel p-6 sm:p-7 w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-cyan-500/40 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3.5 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-cyan-500/20 flex items-center justify-center text-cyan-400 border border-cyan-500/30">
+            <i data-feather="upload-cloud" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h2 id="bulk-import-title" class="text-sm sm:text-base font-bold text-white font-heading">Bulk Import Domains</h2>
+            <p id="bulk-import-subtitle" class="text-[11px] text-slate-400">Paste a list or upload a file — one domain per line</p>
+          </div>
+        </div>
+        <button id="bulk-import-cancel-btn" aria-label="Close bulk import" class="text-slate-400 hover:text-white p-1">
+          <i data-feather="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div>
+        <label for="bulk-import-file" class="block text-[11px] font-semibold text-slate-400 mb-1">Load from a file (optional)</label>
+        <input type="file" id="bulk-import-file" accept=".txt,.csv,.list,text/plain"
+          class="w-full text-xs text-slate-300 file:me-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-slate-800 file:text-slate-200 file:text-xs file:font-semibold hover:file:bg-slate-700">
+      </div>
+
+      <div>
+        <label for="bulk-import-textarea" class="block text-[11px] font-semibold text-slate-400 mb-1">Domains</label>
+        <textarea id="bulk-import-textarea" rows="10" spellcheck="false"
+          placeholder="example.com&#10;*.sub.example.com&#10;another.example.net, third.example.org"
+          class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400"></textarea>
+        <p class="text-[10px] text-slate-500 mt-1">One name per line, or separated by commas, semicolons or spaces. Lines starting with <code>#</code> are ignored. A leading <code>*.</code> covers every subdomain.</p>
+      </div>
+
+      <p id="bulk-import-status" class="text-[11px] text-slate-400"></p>
+
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+        <button type="button" id="bulk-import-cancel-btn-bottom"
+          class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg text-xs transition">Cancel</button>
+        <button type="button" id="bulk-import-apply-btn"
+          class="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Import Domains</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ================================================================= -->
   <!-- VERTICAL LEFT SIDEBAR (Desktop - Sticky on Left) -->
   <!-- ================================================================= -->
@@ -801,10 +777,6 @@
         <button class="sidebar-nav-item" data-tab="clients" data-route="/clients">
           <i data-feather="users" class="w-4 h-4"></i>
           <span>Clients &amp; Whitelist</span>
-        </button>
-        <button class="sidebar-nav-item" data-tab="policy" data-route="/rules">
-          <i data-feather="layers" class="w-4 h-4"></i>
-          <span>Gaming Policies</span>
         </button>
         <button class="sidebar-nav-item" data-tab="stream" data-route="/logs">
           <i data-feather="terminal" class="w-4 h-4"></i>
@@ -1252,783 +1224,6 @@
 
       </section>
 
-      <!-- ============================================== -->
-      <!-- TAB 2: CATEGORIZED POLICIES -->
-      <!-- ============================================== -->
-      <section id="tab-policy" class="tab-content space-y-6 hidden">
-        
-        <!-- Quick Action Profiles -->
-        <div class="glass-panel p-5 border border-cyan-500/30">
-          <div class="mb-3">
-            <h3 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-heading flex items-center gap-1.5">
-              <i data-feather="command" class="text-cyan-400 w-4 h-4"></i> Quick Policy Profiles
-            </h3>
-            <p class="text-[11px] text-slate-400">1-Click activate targeted optimization bundles</p>
-          </div>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-            <button id="profile-gaming-btn" class="quick-mode-btn p-3 rounded-xl bg-gradient-to-r from-red-500/20 to-orange-500/20 border border-red-500/40 text-start hover:border-red-400">
-              <div class="flex items-center gap-1.5 mb-0.5">
-                <i data-feather="award" class="w-3.5 h-3.5 text-red-300"></i>
-                <span class="text-xs font-bold text-white font-heading">Pro Gamer</span>
-              </div>
-              <p class="text-[10px] text-slate-400 leading-tight">All 18 game routes</p>
-            </button>
-
-            <button id="profile-streamer-btn" class="quick-mode-btn p-3 rounded-xl bg-gradient-to-r from-purple-500/20 to-blue-500/20 border border-purple-500/40 text-start hover:border-purple-400">
-              <div class="flex items-center gap-1.5 mb-0.5">
-                <i data-feather="video" class="w-3.5 h-3.5 text-purple-300"></i>
-                <span class="text-xs font-bold text-white font-heading">Streamer</span>
-              </div>
-              <p class="text-[10px] text-slate-400 leading-tight">Discord, Twitch, Kick</p>
-            </button>
-
-            <button id="profile-dev-btn" class="quick-mode-btn p-3 rounded-xl bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 border border-cyan-500/40 text-start hover:border-cyan-400">
-              <div class="flex items-center gap-1.5 mb-0.5">
-                <i data-feather="terminal" class="w-3.5 h-3.5 text-cyan-300"></i>
-                <span class="text-xs font-bold text-white font-heading">Dev 403</span>
-              </div>
-              <p class="text-[10px] text-slate-400 leading-tight">Docker, AI, npm</p>
-            </button>
-
-            <button id="profile-privacy-btn" class="quick-mode-btn p-3 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/40 text-start hover:border-emerald-400">
-              <div class="flex items-center gap-1.5 mb-0.5">
-                <i data-feather="umbrella" class="w-3.5 h-3.5 text-emerald-300"></i>
-                <span class="text-xs font-bold text-emerald-300 font-heading">Safe DNS</span>
-              </div>
-              <p class="text-[10px] text-slate-400 leading-tight">AdBlock & Family</p>
-            </button>
-          </div>
-        </div>
-
-        <!-- Preset update channel (v2.3.0): signed catalog from the Pages host.
-             Check lists what changed, Apply downloads+verifies+swaps+health-checks
-             in one call (any failure rolls back), Rollback restores the previous set. -->
-        <div id="preset-update-card" class="glass-panel p-4 mb-6 border border-slate-800">
-          <div class="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div class="flex-1">
-              <div class="flex items-center gap-2">
-                <i data-feather="download-cloud" class="w-4 h-4 text-cyan-400"></i>
-                <h3 class="text-xs sm:text-sm font-bold text-white font-heading">Policy Catalog Updates</h3>
-                <span id="preset-update-badge" class="hidden text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">UPDATE AVAILABLE</span>
-              </div>
-              <p id="preset-update-status" class="text-[10px] text-slate-500 mt-1" data-i18n="presetUpdateHint">Checks the signed preset channel for newer routing lists.</p>
-            </div>
-            <div class="flex items-center gap-2 shrink-0">
-              <button id="preset-check-btn" class="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-[11px] font-semibold transition">Check</button>
-              <button id="preset-apply-btn" class="hidden px-3 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-[11px] font-bold transition">Apply</button>
-              <button id="preset-rollback-btn" class="hidden px-3 py-2 rounded-lg bg-slate-900 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-slate-700 text-[11px] font-semibold transition">Rollback</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- SECTION 1: GAMING POLICIES -->
-        <div class="space-y-4">
-          <div class="flex items-center gap-2 border-b border-slate-800/80 pb-3">
-            <span class="policy-icon"><i data-feather="target" class="w-4 h-4"></i></span>
-            <div>
-              <h3 class="text-sm sm:text-base font-bold text-white tracking-wide font-heading">Gaming Policies</h3>
-              <p class="text-[11px] text-slate-400">Anti-sanction & low-latency routing for competitive PC, Console & Mobile games</p>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            
-            <!-- Policy: Riot Games -->
-            <div class="glass-panel policy-card card-valorant p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="riot"><i data-feather="aperture" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Riot Games</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Valorant · LoL · Vanguard</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-riot" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Bypasses 403 errors and optimizes Vanguard matchmaking route.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Epic Games -->
-            <div class="glass-panel policy-card card-epic p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="epic"><i data-feather="shopping-bag" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Epic Games</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Store · Fortnite · EAC</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-epic" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Unblocks Store, Unreal Engine, and Easy Anti-Cheat handshake servers.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Steam & Valve -->
-            <div class="glass-panel policy-card card-steam p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="steam"><i data-feather="package" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Steam & Valve</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Community · CS2 · Dota 2</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-steam" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Fixes Steam Community marketplace, friends chat, and Valve servers.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: PUBG Mobile & PC -->
-            <div class="glass-panel policy-card card-pubg p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="pubg"><i data-feather="map" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-amber-400 font-heading">PUBG Mobile & PC</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Krafton · Level Infinite</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-pubg" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Fixes loading/handshake errors, optimizes matchmaking, and unblocks in-game events.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Call of Duty Mobile & Warzone -->
-            <div class="glass-panel policy-card card-codm p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="call_of_duty"><i data-feather="flag" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-emerald-400 font-heading">Call of Duty Mobile</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">CODM · Warzone Mobile</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-cod" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Unblocks Activision login, Demonware matchmaking, and token validation.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Supercell Games -->
-            <div class="glass-panel policy-card p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="supercell"><i data-feather="star" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-cyan-400 font-heading">Supercell Games</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Brawl Stars · Clash Royale</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-supercell" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Fixes Brawl Stars, Clash of Clans, and Squad Busters connection lock.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Electronic Arts -->
-            <div class="glass-panel policy-card card-ea p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="ea"><i data-feather="zap" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">EA & Origin</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">EA App · Apex Legends</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-ea" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Fixes EA App authentication and Apex Legends token refresh.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Blizzard -->
-            <div class="glass-panel policy-card card-battlenet p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="blizzard"><i data-feather="hexagon" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Battle.net</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Blizzard · Overwatch · WoW</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-blizzard" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Ensures Battle.net launcher connectivity and Blizzard game servers access.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Ubisoft -->
-            <div class="glass-panel policy-card card-ubisoft p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="ubisoft"><i data-feather="compass" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Ubisoft Connect</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Rainbow Six · AC</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-ubisoft" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Bypasses Ubisoft Connect login issues and sync errors.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Rockstar Games -->
-            <div class="glass-panel policy-card card-rockstar p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="rockstar"><i data-feather="navigation-2" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Rockstar Games</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">GTA Online · RDR2</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-rockstar" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Fixes Social Club offline mode and GTA Online cloud save sync.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Xbox & Microsoft -->
-            <div class="glass-panel policy-card card-xbox p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="xbox"><i data-feather="grid" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Xbox & Microsoft</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Xbox Live · Minecraft</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-xbox" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Optimizes Xbox Live party chat and Microsoft gaming authentication.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: PlayStation -->
-            <div class="glass-panel policy-card card-playstation p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="playstation"><i data-feather="play-circle" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">PlayStation Network</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">PSN · PS5 / PS4 Store</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-playstation" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Unblocks PlayStation Network login and store connection.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Roblox -->
-            <div class="glass-panel policy-card card-roblox p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="roblox"><i data-feather="box" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Roblox</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Client · Assets CDN</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-roblox" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Bypasses Roblox client connection blocks and asset download errors.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Tactical Shooters Extra -->
-            <div class="glass-panel policy-card card-valorant p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="shooters_extra"><i data-feather="crosshair" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-red-400 font-heading">Tactical Shooters Extra</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Tarkov · The Finals · R6 · HellDivers 2</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-shooters-extra" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Rainbow Six, Tarkov, The Finals, HellDivers 2, FragPunk, Marvel Rivals, Delta Force, Rust, Ready Or Not, Squad, DayZ.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Anime, Gacha & MMORPGs -->
-            <div class="glass-panel policy-card card-epic p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="anime_gacha"><i data-feather="feather" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-purple-400 font-heading">Anime & Modern MMOs</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Genshin · Wuthering Waves · ZZZ · PoE 2</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-anime-gacha" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Genshin Impact, Honkai Star Rail, Zenless Zone Zero, Wuthering Waves, Arknights, Lost Ark, Throne & Liberty, PoE 2, Warframe.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Sports, Fighting & Racing -->
-            <div class="glass-panel policy-card card-rockstar p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="sports_racing"><i data-feather="dribbble" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-amber-400 font-heading">Sports, Fighting & Racing</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">FC 25 · eFootball · SF6 · MK1 · Tekken 8</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-sports-racing" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  EA FC 25, eFootball, UFL, Street Fighter 6, Mortal Kombat, Tekken 8, Assetto Corsa, Euro Truck 2, 2XKO.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Co-Op, Survival & Classics -->
-            <div class="glass-panel policy-card card-xbox p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="coop_survival"><i data-feather="users" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-emerald-400 font-heading">Co-Op, Survival & Strategy</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Palworld · Among Us · Terraria · War Thunder</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-coop-survival" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Palworld, Among Us, Phasmophobia, Terraria, VRChat, Conan Exiles, Dune, ARK, Warhammer 40k, War Thunder, World of Tanks.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Gaming Platforms & Hardware -->
-            <div class="glass-panel policy-card p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="platforms_extra"><i data-feather="cpu" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-cyan-400 font-heading">Platforms & Hardware Tools</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">GeForce Now · AMD · GameLoop · RED</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-platforms-extra" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Nvidia GeForce Now cloud gaming, AMD Adrenaline, GameLoop emulator, GameRanger, CD Projekt REDlauncher.
-                </p>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        <!-- SECTION 2: STREAMING & MEDIA POLICIES -->
-        <div class="space-y-4">
-          <div class="flex items-center gap-2 border-b border-slate-800/80 pb-3">
-            <span class="policy-icon"><i data-feather="film" class="w-4 h-4"></i></span>
-            <div>
-              <h3 class="text-sm sm:text-base font-bold text-white tracking-wide font-heading">Streaming & Media Policies</h3>
-              <p class="text-[11px] text-slate-400">Bypass restrictions on live streaming, voice channels, and music</p>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            
-            <!-- Policy: Discord -->
-            <div class="glass-panel policy-card card-discord p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="discord"><i data-feather="message-circle" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Discord</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Updates · RTC Voice</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-discord" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Fixes updater downloading loop and RTC connecting voice lock.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Spotify & SoundCloud -->
-            <div class="glass-panel policy-card card-spotify p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="spotify"><i data-feather="music" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Spotify & SoundCloud</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Music Streaming Anti-Sanction</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-spotify" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Bypasses 403 sanctions on Spotify music playback, login, and SoundCloud CDN streams.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Twitch -->
-            <div class="glass-panel policy-card card-twitch p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="twitch"><i data-feather="twitch" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-purple-400 font-heading">Twitch</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Live Streams & Chat</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-twitch" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Ensures high-speed Twitch streaming and websocket chat connectivity.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Kick -->
-            <div class="glass-panel policy-card card-kick p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="kick"><i data-feather="radio" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-emerald-400 font-heading">Kick.com</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Live Streaming</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-kick" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Bypasses Kick live stream playback blocks and chat websocket blocks.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Google Services (v2.2.0). The card copy names what is
-                 NOT proxied as clearly as what is: googleapis/gstatic are the
-                 shared web's infrastructure, and routing them here would drag
-                 half the internet onto the proxy. -->
-            <div class="glass-panel policy-card p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="google"><i data-feather="globe" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Google Services</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Search · Gmail · Drive · YouTube</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-google" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Proxies Google consumer apps and YouTube. Shared CDN zones (googleapis, gstatic) and update servers stay direct. YouTube video bytes count toward server bandwidth.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: AI Assistants (v2.2.0) -->
-            <div class="glass-panel policy-card p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="ai"><i data-feather="cpu" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-cyan-300 font-heading">AI Assistants</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Copilot · Gemini · Perplexity · Grok · DeepSeek</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-ai" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Unblocks AI chat platforms and their sign-in flows. OpenAI and Claude ride the Developer 403 policy.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Social & Messaging (v2.2.0) -->
-            <div class="glass-panel policy-card p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="social"><i data-feather="message-circle" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-sky-300 font-heading">Social & Messaging</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">X · Instagram · Facebook · Telegram · Reddit</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-social" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Proxies social feeds, DMs and media CDNs. Discord is covered by its own policy.
-                </p>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        <!-- SECTION 3: DEVELOPER & SECURITY POLICIES -->
-        <div class="space-y-4">
-          <div class="flex items-center gap-2 border-b border-slate-800/80 pb-3">
-            <span class="policy-icon"><i data-feather="shield" class="w-4 h-4"></i></span>
-            <div>
-              <h3 class="text-sm sm:text-base font-bold text-white tracking-wide font-heading">Developer & Security Policies</h3>
-              <p class="text-[11px] text-slate-400">Developer 403 bypass, ad-blocking sinkhole, and parental controls</p>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            
-            <!-- Policy: Developer 403 -->
-            <div class="glass-panel policy-card p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="dev403"><i data-feather="code" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Developer 403 Suite</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Docker · OpenAI · Claude · npm</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-dev403" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Bypasses 403 blocks on Docker, Android SDK, OpenAI, Claude, npm, and Gradle.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: AdBlock & Privacy Sinkhole -->
-            <div class="glass-panel policy-card card-xbox p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="adblock"><i data-feather="slash" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-emerald-400 font-heading">AdBlock & Trackers</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Sinkhole · 0.0.0.0</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-adblock">
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Pi-hole/AdGuard style blocking of telemetry, in-app trackers, and banner ads.
-                </p>
-              </div>
-            </div>
-
-            <!-- Policy: Family Safe Protection -->
-            <div class="glass-panel policy-card card-valorant p-4 flex flex-col justify-between col-span-1 sm:col-span-2 md:col-span-1">
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="policy-icon" data-preset="familysafe"><i data-feather="eye-off" class="w-4 h-4"></i></span>
-                    <div>
-                      <h4 class="text-xs sm:text-sm font-bold text-red-400 font-heading">Family Safe Filter</h4>
-                      <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Adult Content Filter</span>
-                    </div>
-                  </div>
-                  <label class="switch">
-                    <input type="checkbox" id="preset-familysafe">
-                    <span class="slider"></span>
-                  </label>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                  Sinkholes adult and pornographic domains for safe household browsing.
-                </p>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        <!-- SECTION 4: BANDWIDTH & TRAFFIC POLICY -->
-        <div class="space-y-4">
-          <div class="flex items-center gap-2 border-b border-slate-800/80 pb-3">
-            <span class="policy-icon"><i data-feather="download-cloud" class="w-4 h-4"></i></span>
-            <div>
-              <h3 class="text-sm sm:text-base font-bold text-white tracking-wide font-heading">Bandwidth &amp; Traffic Policy</h3>
-              <p class="text-[11px] text-slate-400">Whether bulk downloads travel through the proxy or the subscriber's own line</p>
-            </div>
-          </div>
-
-          <div class="glass-panel policy-card card-rockstar p-4">
-            <div class="flex items-start justify-between gap-3 mb-1.5">
-              <div class="flex items-center gap-2">
-                <span class="policy-icon" data-preset="downloads"><i data-feather="download-cloud" class="w-4 h-4"></i></span>
-                <div>
-                  <h4 class="text-xs sm:text-sm font-bold text-amber-400 font-heading">Game &amp; App Downloads via DNS</h4>
-                  <span class="text-[9px] sm:text-[10px] text-slate-400 font-mono">Steam · Epic · Xbox · PSN · Battle.net · Riot · EA · Ubisoft · Rockstar · Roblox · GOG</span>
-                </div>
-              </div>
-              <label class="switch shrink-0">
-                <input type="checkbox" id="preset-downloads">
-                <span class="slider"></span>
-              </label>
-            </div>
-            <p class="text-[11px] text-slate-400 leading-relaxed">
-              OFF, the default: store pages, sign-in, matchmaking and patch metadata still go through the proxy, but the depot and CDN hosts carrying the multi-gigabyte payload resolve to their real addresses, so installs and updates run on the subscriber's own connection. ON: that payload is relayed too.
-            </p>
-            <div class="mt-3 rounded-lg border-s-2 border-amber-500 bg-amber-500/10 p-3 space-y-1.5">
-              <div class="flex items-center gap-1.5 text-[11px] font-bold text-amber-400">
-                <i data-feather="alert-triangle" class="w-3.5 h-3.5"></i>
-                <span>Read this before switching it on</span>
-              </div>
-              <ul class="text-[11px] text-slate-400 leading-relaxed space-y-1 list-none ps-0">
-                <li>A single 100 GB install crosses this server twice, in and out again. Most providers bill egress by the gigabyte.</li>
-                <li>Traffic quotas count those bytes and there is no per-domain accounting, so one subscriber can burn a monthly plan in an evening.</li>
-                <li>A relayed download is usually slower, not faster. The proxy adds a hop, and the CDN edge nearest the subscriber is closer than this server is.</li>
-                <li>Switch it on when a line cannot reach the CDN at all — a hard block, not a slow one. With it off those installs fail instead of crawling, and launchers retry forever without saying why.</li>
-                <li>Per-client scope: a plan has to select this category as well. The global switch is the ceiling, so off here overrides every plan.</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
-      </section>
 
       <!-- ============================================== -->
       <!-- TAB 3: LIVE QUERY STREAM CONSOLE -->
@@ -2628,6 +1823,11 @@ async function onBuySubscription(ctx, username) {
               <button id="add-proxied-btn" class="shrink-0 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Add</button>
             </div>
 
+            <button type="button" id="bulk-proxied-btn"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">
+              <i data-feather="upload-cloud" class="w-3.5 h-3.5"></i> Bulk import
+            </button>
+
             <!-- The line inside is the pre-config state. renderList overwrites the container
                  outright, so it survives exactly until the settings fetch lands — and an empty
                  rules list is not a neutral thing to show while that is in flight: on a
@@ -2649,6 +1849,11 @@ async function onBuySubscription(ctx, username) {
                 class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-red-400">
               <button id="add-blocked-btn" class="shrink-0 px-4 py-2 bg-red-600 hover:bg-red-700 text-onfill font-bold rounded-lg text-xs transition font-heading">Block</button>
             </div>
+
+            <button type="button" id="bulk-blocked-btn"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-red-300 border border-red-500/30 text-[11px] font-semibold transition">
+              <i data-feather="upload-cloud" class="w-3.5 h-3.5"></i> Bulk import
+            </button>
 
             <div id="custom-blocked-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">Loading rules…</div></div>
           </div>
@@ -2884,10 +2089,6 @@ async function onBuySubscription(ctx, username) {
       <button class="mobile-nav-item flex flex-col items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-white transition" data-tab="clients" data-route="/clients">
         <i data-feather="users" class="w-4 h-4"></i>
         <span>Clients</span>
-      </button>
-      <button class="mobile-nav-item flex flex-col items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-white transition" data-tab="policy" data-route="/rules">
-        <i data-feather="layers" class="w-4 h-4"></i>
-        <span>Policy</span>
       </button>
       <button class="mobile-nav-item flex flex-col items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-white transition" data-tab="stream" data-route="/logs">
         <i data-feather="terminal" class="w-4 h-4"></i>

@@ -26,7 +26,6 @@ type ControlClient interface {
 	CreateClient(context.Context, control.CreateClientRequest) (control.ClientView, error)
 	DeleteClient(context.Context, string) error
 	FlushCache(context.Context) error
-	UpdatePresets(context.Context) (control.UpdatePresetsResult, error)
 	StartBenchmark(context.Context) error
 	Settings(context.Context) (control.SettingsView, error)
 	RotateAPIKey(context.Context, control.RotateAPIKeyRequest) (control.RotateAPIKeyResult, error)
@@ -235,7 +234,7 @@ func printMenu(ctx context.Context, out io.Writer, p palette, client ControlClie
 	fmt.Fprintln(out, "  [8] 🗑️  Delete subscriber")
 	fmt.Fprintln(out, p.Bold(" 🌐 Engine & Network"))
 	fmt.Fprintln(out, "  [9] ⚡ Benchmark DNS upstreams   [10] 🧹 Flush DNS cache")
-	fmt.Fprintln(out, "  [11] 📥 Update policy catalog    [12] 🔌 Change dashboard panel port")
+	fmt.Fprintln(out, "  [11] 🔌 Change dashboard panel port")
 	fmt.Fprintln(out, p.Bold(" 🔒 Security & System"))
 	fmt.Fprintln(out, "  [13] 🔑 View / rotate API key    [14] 🔓 Clear login lockouts")
 	fmt.Fprintln(out, "  [15] 🛡️  Change admin credentials [16] 🚨 Emergency admin reset")
@@ -348,19 +347,6 @@ func runChoice(ctx context.Context, choice string, scanner *bufio.Scanner, out, 
 			return err
 		}
 		fmt.Fprintln(out, "Panel port saved; restart the service to apply it.")
-	case "12":
-		res, err := client.UpdatePresets(ctx)
-		if err != nil {
-			return err
-		}
-		if res.Applied > 0 {
-			fmt.Fprintf(out, "Policy catalog updated: %d file(s). %s\n", res.Applied, res.Message)
-		} else {
-			fmt.Fprintf(out, "Policy catalog is up to date.\n")
-		}
-		if res.LastError != "" {
-			fmt.Fprintf(out, "Warning: %s\n", res.LastError)
-		}
 	case "13":
 		return apiKeyFlow(ctx, scanner, out, client)
 	case "14":

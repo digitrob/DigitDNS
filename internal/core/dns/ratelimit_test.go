@@ -242,15 +242,16 @@ func TestHandlerRateLimitDropsUDPAndRefusesTCP(t *testing.T) {
 	c := cache.NewCache(1000, 60, 3600)
 	defer c.Close()
 	m := matcher.NewMatcher()
+	m.SetCustomRules([]string{"playvalorant.com"}, nil, nil, nil)
 	u := upstream.NewUpstreamPool([]string{"1.1.1.1:53"}, 2*time.Second, true, "")
 	h := NewHandler(&dummyAccess{}, c, m, u, nil, "198.51.100.1")
 
 	clk := newFakeClock()
 	h.limiter = limiterAt(1, clk)
 
-	// A non-loopback source, so the exemption does not apply. The name is one the
-	// default Riot preset proxies, so draining the burst is answered from the
-	// PROXY branch and the test never depends on a reachable upstream.
+	// A non-loopback source, so the exemption does not apply. The name is one this
+	// fixture proxies, so draining the burst is answered from the PROXY branch and
+	// the test never depends on a reachable upstream.
 	const ip = "203.0.113.40"
 	req := new(dns.Msg)
 	req.SetQuestion("playvalorant.com.", dns.TypeA)
@@ -299,6 +300,7 @@ func TestHandlerRefusesOverQuotaClient(t *testing.T) {
 	c := cache.NewCache(1000, 60, 3600)
 	defer c.Close()
 	m := matcher.NewMatcher()
+	m.SetCustomRules([]string{"playvalorant.com"}, nil, nil, nil)
 	u := upstream.NewUpstreamPool([]string{"1.1.1.1:53"}, 2*time.Second, true, "")
 
 	access := &quotaAccess{client: &database.Client{ID: "c1", Name: "Metered"}, exceeded: true}
@@ -330,6 +332,7 @@ func TestHandlerQuotaDoesNotApplyToUnknownSource(t *testing.T) {
 	c := cache.NewCache(1000, 60, 3600)
 	defer c.Close()
 	m := matcher.NewMatcher()
+	m.SetCustomRules([]string{"playvalorant.com"}, nil, nil, nil)
 	u := upstream.NewUpstreamPool([]string{"1.1.1.1:53"}, 2*time.Second, true, "")
 
 	// allow_all with no matching account: there is no allowance to exceed, so the

@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🔧 [Unreleased] — Preset Catalogue Removed, Bulk Domain Import Added
+
+This fork ([digitrob/HyperDNS](https://github.com/digitrob/HyperDNS)) tracks upstream from v2.8.0-beta.1 with one deliberate divergence: the built-in policy preset catalogue is gone, and routing is entirely the operator's own domain lists.
+
+### ✨ Added
+- **Bulk domain import.** The Custom Proxied and Custom Blocked lists can be filled a whole list at a time: paste names into the dashboard dialog or upload a file (≤ 1 MiB). Entries may be newline-, comma- or semicolon-separated, `#` starts a comment, `*.` wildcards are accepted, and the import reports how many names were added, already listed, and invalid.
+
+### 🗑️ Removed
+- **The built-in preset catalogue** — the 171+ game/streaming/service presets, their embedded JSON (`presets/`), the `internal/presetupd` signed update channel, the bundled policy-icon set, the preset generator tools, and the preset CI workflows.
+- **The "Gaming Policies" dashboard tab and every preset switch**, the quick-profile buttons, the per-client policy picker, and the "Policy Catalog Updates" card.
+- **The `config.json` `rules` block and the `enable_*` keys** — routing lives in the database and is edited from the dashboard, not seeded from the config file.
+
+### 🔄 Changed
+- `GET /api/v1/policies` (and v2) now answers an empty `catalog`; `POST` stores a rule entry (the four `custom_*` keys) instead of toggling a preset.
+- `custom_policies` on a client is accepted and stored but is **inert** — the resolver applies one rule set to everyone.
+- The `update-presets` console command is gone and the TUI menu is renumbered; the `/rules` and `/policy` SPA paths still resolve so old bookmarks keep working.
+
+### ⚠️ Note for future merges
+- The upstream changelog below is kept as **history** — those releases really did ship the preset catalogue. When merging a newer upstream tag, drop the preset-specific changes rather than reintroducing them.
+
+---
+
 ## 🔐 [v2.8.0-beta.1] — Signed Self-Update, Atomic Operator Writes & an Audit Pass
 
 Codename **HyperFORGE**. A security release responding to an independent security audit of v2.6/v2.7: the update channel is now cryptographically signed, every operator write path is atomic, and the two "answered success but didn't persist" anti-patterns left over from the v2.6 pass are gone.

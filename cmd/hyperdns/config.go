@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"hyperdns/internal/core/matcher"
 	"hyperdns/internal/database"
 )
 
@@ -96,7 +95,6 @@ type fileConfig struct {
 		CertFile *string `json:"cert_file"`
 		KeyFile  *string `json:"key_file"`
 	} `json:"tls"`
-	Rules map[string]any `json:"rules"`
 }
 
 // applyConfigFile loads and merges a config.json file into the given settings
@@ -267,36 +265,4 @@ func applyConfigFile(path string, server *database.ServerSettings, dns *database
 
 	log.Printf("[Main] Loaded config overrides from %s", path)
 	return access
-}
-
-// applyRulesFromConfig applies rule toggles from a config file's "rules" block
-// into the matcher. Only keys we understand are applied (e.g. enable_riot).
-func applyRulesFromConfig(path string, m *matcher.Matcher) {
-	if path == "" || m == nil {
-		return
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return
-	}
-	var cfg fileConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return
-	}
-	applied := 0
-	for key, val := range cfg.Rules {
-		presetName, ok := matcher.PresetRuleKeys[key]
-		if !ok {
-			continue
-		}
-		enabled, isBool := val.(bool)
-		if !isBool {
-			continue
-		}
-		m.SetRuleEnabled(presetName, enabled)
-		applied++
-	}
-	if applied > 0 {
-		log.Printf("[Main] Applied %d rule toggles from config file %s", applied, path)
-	}
 }

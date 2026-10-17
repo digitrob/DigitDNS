@@ -261,7 +261,7 @@ func TestReadHandshakePartialThenClose(t *testing.T) {
 // TestUnreadableDestinationIsCountedSeparately is the regression test for the
 // silent drop that let cm.steampowered.com be advertised as proxied for months.
 // A connection whose opening bytes name no destination used to return with no
-// counter and no log line at all, so a preset pointing clients at a service this
+// counter and no log line at all, so a rule pointing clients at a service this
 // relay cannot carry produced no evidence anywhere: DNS answered, TCP connected,
 // and the client waited for a peer that would never speak.
 //

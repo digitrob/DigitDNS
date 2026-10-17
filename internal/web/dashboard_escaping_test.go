@@ -56,7 +56,6 @@ var safeAttrInterp = map[string]string{
 	"c.enabled ? 'Disable Client' : 'Enable Client'": "two literals",
 	"c.enabled ? 'pause' : 'play'":                   "two literals",
 	"r.success ? 'bg-emerald-400' : 'bg-red-400'":    "two literals",
-	"isSelected ? 'bg-cyan-400' : 'bg-slate-600'":    "two literals, in the policy multi-select's kind dot",
 }
 
 // A quoted attribute is the easier half of this to get wrong, because breaking out of
@@ -120,7 +119,6 @@ var storedValueExprs = []string{
 	"dom",                // a static record's domain
 	"u.address",          // an upstream address
 	"r.name", "r.target", // a diagnostics result
-	"label",             // a policy label, raw key when the map does not know it
 	"domain", "ruleStr", // query log
 	"clientIP", "protoStr", // query log, the two that can come off-box
 	"accountName", // query log, resolved from the client record
@@ -182,9 +180,9 @@ func TestEscapeHTMLCoversEveryMarkupCharacter(t *testing.T) {
 	app := readAsset(t, "js/app.js")
 
 	// A top-level declaration, so it is hoisted and reachable from the nested scopes
-	// that call it — renderList inside its own function, the policy tag renderer inside
-	// the DOMContentLoaded handler. Moved inside a block, those calls become a
-	// ReferenceError at render time and the list simply never appears.
+	// that call it — renderList inside its own function, the client and group
+	// renderers inside the DOMContentLoaded handler. Moved inside a block, those calls
+	// become a ReferenceError at render time and the list simply never appears.
 	body := functionBody(t, app, "escapeHTML")
 
 	replacements := []struct{ char, entity string }{

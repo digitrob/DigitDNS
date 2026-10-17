@@ -2,12 +2,9 @@ package matcher
 
 import "testing"
 
-// TestCustomGroupProxyBeatsPresetAndSurvivesCatalogSwap covers the two
-// properties a named custom group has to hold: it resolves to its action, and it
-// is still there after a preset-channel catalog swap — the swap rebuilds the
-// preset indexes, and a group that vanished on update would silently stop
-// routing.
-func TestCustomGroupProxyBeatsPresetAndSurvivesCatalogSwap(t *testing.T) {
+// TestCustomGroupProxyResolves covers the property a named custom group has to
+// hold: it resolves to its action.
+func TestCustomGroupProxyResolves(t *testing.T) {
 	m := NewMatcher()
 	m.SetCustomGroups([]CustomGroup{{
 		Name:    "My Bundle",
@@ -18,12 +15,6 @@ func TestCustomGroupProxyBeatsPresetAndSurvivesCatalogSwap(t *testing.T) {
 
 	if action, rule := m.Match("cdn.example-game.test"); action != ActionProxy || rule != "Custom Group: My Bundle" {
 		t.Fatalf("group proxy = (%v, %q), want (PROXY, Custom Group: My Bundle)", action, rule)
-	}
-
-	// A catalog swap (what the preset channel does) must not drop the group.
-	m.SetCatalog(map[string][]string{"Riot Games & Valorant": {"riotgames.com"}})
-	if action, _ := m.Match("cdn.example-game.test"); action != ActionProxy {
-		t.Fatalf("custom group did not survive a catalog swap")
 	}
 }
 

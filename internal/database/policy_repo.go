@@ -10,18 +10,17 @@ import (
 //
 // Everything else in the database that a copied data.db would expose is sealed:
 // the subscriber's name, bound IP and subscription token, and the settings records
-// (admin verifier, REST API key). A policy holds none of that — it is a preset
-// toggle plus, at most, a list of domains the operator chose to proxy, block or
-// send direct. That is the same information the shipped presets already publish in
-// the binary and in docs/PRESET_CATALOG.md, so sealing it would buy nothing while
-// adding a format migration and a decrypt on every rule reload, which happens on
-// the DNS hot path at startup.
+// (admin verifier, REST API key). A policy holds none of that — it is a rule entry:
+// an identifier plus, at most, a list of domains the operator chose to proxy, block
+// or send direct. Those domain lists are configuration an operator typed in, not
+// credentials, so sealing them would buy nothing while adding a format migration and
+// a decrypt on every rule reload, which happens on the DNS hot path at startup.
 //
 // The line to hold: if a policy ever carries a credential, an endpoint URL with a
 // token in it, or anything naming a specific subscriber, it stops being
 // configuration and has to be sealed like the client record is.
 
-// SavePolicy stores or updates a policy preset
+// SavePolicy stores or updates a rule entry
 func (db *DB) SavePolicy(p Policy) error {
 	data, err := json.Marshal(p)
 	if err != nil {

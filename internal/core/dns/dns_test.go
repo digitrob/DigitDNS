@@ -22,6 +22,7 @@ func TestDNSHandler_ProcessQuery(t *testing.T) {
 	c := cache.NewCache(1000, 60, 3600)
 	defer c.Close()
 	m := matcher.NewMatcher()
+	m.SetCustomRules([]string{"playvalorant.com"}, nil, nil, nil)
 	u := upstream.NewUpstreamPool([]string{"1.1.1.1:53", "8.8.8.8:53"}, 2*time.Second, true, "")
 
 	handler := NewHandler(&dummyAccess{}, c, m, u, nil, "198.51.100.1")

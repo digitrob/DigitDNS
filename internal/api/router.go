@@ -356,15 +356,12 @@ func (a *API) handlePolicies(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteJSONErrorFor(w, http.StatusInternalServerError, err)
 			return
 		}
-		// API.md has always described this route as "every gaming and streaming
-		// preset", and it never was: ListPolicies returns the persisted *overrides*, so
-		// a fresh install answered with an empty array and an integration reading it had
-		// no way to learn which policy keys exist. The catalogue is what that
-		// description promised, and it comes from the matcher — the package that decides
-		// what a key means — rather than from a second list kept in step by hand.
+		// The catalogue was described as "every gaming and streaming preset". This
+		// build ships no presets, so the list is well-formed but empty; the route
+		// stays for integrations that read it.
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"policies": policies,
-			"catalog":  matcher.PolicyCatalog(),
+			"catalog":  []any{},
 		})
 
 	case http.MethodPost:
@@ -377,9 +374,6 @@ func (a *API) handlePolicies(w http.ResponseWriter, r *http.Request) {
 		if err := a.db.SavePolicy(p); err != nil {
 			httpx.WriteJSONErrorFor(w, http.StatusInternalServerError, err)
 			return
-		}
-		if a.matcher != nil {
-			a.matcher.SetRuleEnabled(p.Key, p.Enabled)
 		}
 		_ = json.NewEncoder(w).Encode(p)
 
@@ -525,15 +519,18 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
       <li>PUT&nbsp;&nbsp;&nbsp;/api/v1/clients/{id} &mdash; <code>days_to_add</code> renews (from now if the plan
         already lapsed); <code>allowed_ip</code> rebinds, and <code>""</code> unbinds; also
         <code>name</code>, <code>uuid</code>, <code>enabled</code>, <code>traffic_limit_gb</code>,
-        <code>traffic_reset_cycle</code>, <code>expires_at</code>, <code>custom_policies</code>,
-        <code>note</code>. Unknown field names are ignored silently</li>
+        <code>traffic_reset_cycle</code>, <code>expires_at</code>, <code>custom_policies</code> (stored,
+        but it no longer narrows an account's rules), <code>note</code>. Unknown field names are
+        ignored silently</li>
       <li>DELETE /api/v1/clients/{id} &mdash; delete permanently</li>
       <li>POST&nbsp;&nbsp;/api/v1/clients/{id}/regenerate-uuid &mdash; invalidates the old UUID at once</li>
       <li>POST&nbsp;&nbsp;/api/v1/clients/{id}/reset-traffic &mdash; consumed bytes back to zero</li>
-      <li>GET&nbsp;&nbsp;&nbsp;/api/v1/policies &mdash; <code>catalog</code>: every preset with its label and
-        whether it blocks; <code>policies</code>: the ones whose state was changed from the default</li>
-      <li>POST&nbsp;&nbsp;/api/v1/policies &mdash; toggle one: <code>{"key":"enable_riot","enabled":true}</code>;
-        a key that is not in <code>catalog</code> is saved and answered 200 but matches nothing</li>
+      <li>GET&nbsp;&nbsp;&nbsp;/api/v1/policies &mdash; <code>catalog</code>: the built-in rule
+        catalogue, which this build ships none of, so it is always <code>[]</code>; <code>policies</code>:
+        the stored rule entries &mdash; the four <code>custom_*</code> lists the dashboard writes</li>
+      <li>POST&nbsp;&nbsp;/api/v1/policies &mdash; store one rule entry under its <code>key</code>
+        (e.g. <code>{"key":"custom_proxied","custom_domains":["example.net"]}</code>); the record is saved,
+        not applied &mdash; a daemon restart is what reads it back</li>
       <li>POST&nbsp;&nbsp;/api/v1/cache/flush &mdash; empty the DNS cache</li>
       <li>GET&nbsp;&nbsp;&nbsp;/api/v1/api-key &mdash; read the master key and its bind address</li>
       <li>POST&nbsp;&nbsp;/api/v1/api-key &mdash; rotate it; every integration must be reconfigured</li>
@@ -575,7 +572,7 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
         info: {
           title: "HyperDNS Core REST API",
           version: "%s",
-          description: "REST API for the HyperDNS SmartDNS Controller: AES-256-GCM encrypted subscribers, gaming presets and real-time DNS telemetry.\n\n**Authentication.** Press Authorize and paste the master API key from Settings. It travels as the X-API-Key header, or as Authorization: Bearer <key> — both are accepted, and a live dashboard session token works in either.\n\n**If Try it out answers 403 rather than 401**, the key is not the problem: the REST API is bound to localhost and this browser is not on the server. Turn on Public API in Settings, or call the API from the machine itself."
+          description: "REST API for the HyperDNS SmartDNS Controller: AES-256-GCM encrypted subscribers, operator-maintained domain rule lists and real-time DNS telemetry.\n\n**Authentication.** Press Authorize and paste the master API key from Settings. It travels as the X-API-Key header, or as Authorization: Bearer <key> — both are accepted, and a live dashboard session token works in either.\n\n**If Try it out answers 403 rather than 401**, the key is not the problem: the REST API is bound to localhost and this browser is not on the server. Turn on Public API in Settings, or call the API from the machine itself."
         },
         servers: [{ url: "%s", description: "This HyperDNS instance. Since v2.1 the API lives below the install's hidden 16-hex admin path, so the base is that path and not the host root — Try it out resolves against this value." }],
         security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
@@ -607,7 +604,7 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
                   ip: { type: "string", description: "Optional fixed IP for this subscriber. Leave it empty to let them bind their own address by opening /sub/{token}.", example: "" },
                   traffic_limit_gb: { type: "number", description: "0 or omitted means unmetered.", example: 100 },
                   traffic_reset_cycle: { type: "string", enum: ["", "daily", "weekly", "monthly"], description: "Period after which the quota returns on its own. Omitted means it never does, which is the pre-1.5.0 behaviour. The cycle is anchored at the moment of this request, so the first reset is a whole period away.", example: "monthly" },
-                  custom_policies: { type: "array", items: { type: "string" }, description: "Preset keys from GET /api/v1/policies (the catalog array), e.g. enable_riot. A non-empty list narrows this account to those presets; an empty list gives it every preset that is globally enabled. Unknown keys are accepted and match nothing.", example: ["enable_riot", "enable_discord"] },
+                  custom_policies: { type: "array", items: { type: "string" }, description: "Accepted, stored and echoed back by GET, but inert: the resolver applies one set of rules to everybody, so this list no longer narrows an account's. Sending it keeps older integrations working; send [] to clear it.", example: [] },
                   note: { type: "string", example: "" }
                 }
               } } } },
@@ -631,7 +628,7 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
                   traffic_reset_cycle: { type: "string", enum: ["", "daily", "weekly", "monthly"], description: "Sending a different cycle re-anchors the period at now and restarts the counter; sending the one already stored changes nothing, so an unrelated edit cannot postpone a subscriber's reset. An empty value stops the quota resetting without touching the usage already recorded." },
                   days_to_add: { type: "integer", description: "The renewal field. Extends from the current expires_at, or from now if that date has already passed, so renewing a lapsed customer sells them a full period rather than a retroactive one. Negative values shorten the plan; 0 is ignored. It does not return spent volume — a plan with no traffic_reset_cycle also needs POST /clients/{id}/reset-traffic.", example: 30 },
                   expires_at: { type: "string", format: "date-time", description: "Sets the expiry absolutely, ignoring what was stored. Use days_to_add to renew and this only to correct a date. If both are sent this one lands first and days_to_add counts from it." },
-                  custom_policies: { type: "array", items: { type: "string" }, description: "Replaces the account's selection wholesale; send [] to give it every globally enabled preset again." },
+                  custom_policies: { type: "array", items: { type: "string" }, description: "Replaces the stored list wholesale. Like on POST, the value no longer changes how this account resolves; send [] to drop it." },
                   note: { type: "string" }
                 }
               } } } },
@@ -648,13 +645,13 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
             post: { summary: "Reset consumed traffic to 0 bytes", responses: { 200: { description: "Reset" }, 404: { description: "Client not found" }, 405: { description: "POST only" } } }
           },
           "/api/v1/policies": {
-            get: { summary: "List game and policy rules", description: "Two arrays. catalog is every preset this build knows, each with its key, label and whether it blocks rather than routes — that is the list to populate a UI from. policies holds only the presets whose state was changed from the default, so a fresh install answers with an empty array there and that is not an error.", responses: { 200: { description: "OK" } } },
+            get: { summary: "List stored rule entries", description: "Two arrays. catalog is the built-in rule catalogue the old preset switches rendered from; this build ships none, so it is always [] and a caller should render nothing rather than guess. policies holds the stored rule entries — the four custom_* lists (custom_proxied, custom_blocked, custom_direct, custom_records) the dashboard writes, so a fresh install answers with an empty array there too and that is not an error.", responses: { 200: { description: "OK" } } },
             post: {
-              summary: "Enable or disable a game / policy rule",
-              description: "The key must be one of the keys in the catalog array of GET /api/v1/policies — they all look like enable_riot. Unknown keys are stored and answered 200 but match no domain, so a typo here is silent. A toggle reaches the resolver at once, but answers already in the cache keep their old routing until their TTL runs out; follow it with POST /api/v1/cache/flush to make the change visible immediately. Disabling a preset here also overrides every per-account custom_policies selection: an account cannot be given a preset that is globally off.",
+              summary: "Store a rule entry",
+              description: "Writes the record under its key and echoes back what was stored; nothing is applied by this call. The four custom_* keys are read back by the daemon at its next restart, so a change made here reaches the resolver then rather than now — the dashboard's Settings tab saves the same lists and applies them in one step. Any other key is persisted and matches nothing, which makes a typo here silent. There is no built-in toggle list to flip anymore; the route stays for integrations that read the store.",
               requestBody: { required: true, content: { "application/json": { schema: {
                 type: "object", required: ["key"],
-                properties: { key: { type: "string", example: "enable_riot" }, enabled: { type: "boolean", example: true } }
+                properties: { key: { type: "string", example: "custom_proxied" }, enabled: { type: "boolean", example: true }, custom_domains: { type: "array", items: { type: "string" }, description: "The domains this entry carries — the payload that matters for the custom_* keys.", example: ["example.net"] } }
               } } } },
               responses: { 200: { description: "Saved; the body echoes the stored record" }, 400: { description: "Invalid request payload, or an empty key" } }
             }
@@ -667,7 +664,7 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
             post: { summary: "Regenerate the master API key", description: "The previous key stops working the moment this returns, there is no grace period, and it is the only copy — every bot, billing hook and monitoring probe holding it starts getting 401 immediately, including whatever made this call. If the write to disk fails the answer is a 500 and the OLD key stays in force, so a failed rotation never locks the daemon out.", responses: { 200: { description: "New key" }, 500: { description: "Could not save the new API key; the previous key still works" } } }
           },
           "/api/server/restart": {
-            post: { summary: "Restart the resolver's runtime state", description: "POST only. Flushes the in-memory DNS cache so the next query for every name is resolved fresh from upstream. This does not tear down and rebuild the UDP/TCP/DoT/DoH listeners — a full process restart is systemd's job (systemctl restart hyperdns) and is deliberately outside the API's reach, because an endpoint that can kill the process that serves it can lock an operator out of the panel. Use this after changing upstreams or policies, when stale answers are the problem.", responses: { 200: { description: "Runtime state reset" }, 405: { description: "POST only" } } }
+            post: { summary: "Restart the resolver's runtime state", description: "POST only. Flushes the in-memory DNS cache so the next query for every name is resolved fresh from upstream. This does not tear down and rebuild the UDP/TCP/DoT/DoH listeners — a full process restart is systemd's job (systemctl restart hyperdns) and is deliberately outside the API's reach, because an endpoint that can kill the process that serves it can lock an operator out of the panel. Use this after changing upstreams or rule lists, when stale answers are the problem.", responses: { 200: { description: "Runtime state reset" }, 405: { description: "POST only" } } }
           }
         }
       }

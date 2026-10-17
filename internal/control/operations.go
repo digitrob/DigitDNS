@@ -28,10 +28,6 @@ type benchmarkSource interface {
 	Start() bool
 }
 
-type presetUpdateSource interface {
-	UpdatePresets(ctx context.Context) UpdatePresetsResult
-}
-
 type settingsSource interface {
 	ControlSettings() SettingsView
 	ControlRotateAPIKey(RotateAPIKeyRequest) (RotateAPIKeyResult, error)
@@ -49,7 +45,6 @@ type DaemonDependencies struct {
 	Cache     cacheSource
 	Benchmark benchmarkSource
 	Settings  settingsSource
-	Presets   presetUpdateSource
 }
 
 // DaemonOperations implements the management boundary over the daemon's shared
@@ -60,7 +55,6 @@ type DaemonOperations struct {
 	cache     cacheSource
 	benchmark benchmarkSource
 	settings  settingsSource
-	presets   presetUpdateSource
 }
 
 func NewDaemonOperations(deps DaemonDependencies) *DaemonOperations {
@@ -105,13 +99,6 @@ func (o *DaemonOperations) DeleteClient(_ context.Context, id string) error {
 		return NewError(http.StatusInternalServerError, "unavailable", "client management is unavailable", nil)
 	}
 	return o.clients.ControlDeleteClient(id)
-}
-
-func (o *DaemonOperations) UpdatePresets(ctx context.Context) (UpdatePresetsResult, error) {
-	if o == nil || o.presets == nil {
-		return UpdatePresetsResult{}, NewError(http.StatusServiceUnavailable, "unavailable", "the preset-update channel is unavailable", nil)
-	}
-	return o.presets.UpdatePresets(ctx), nil
 }
 
 func (o *DaemonOperations) FlushCache(context.Context) error {
