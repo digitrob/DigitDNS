@@ -246,7 +246,7 @@ func TestAddUpstreamRejectsUnknownScheme(t *testing.T) {
 	defer cleanup()
 	seedDNSRecord(t, db)
 
-	for _, bad := range []string{"http://dns.google/dns-query", "quic://dns.example", "tls://1.1.1.1:0"} {
+	for _, bad := range []string{"http://dns.google/dns-query", "foo://dns.example", "tls://1.1.1.1:0"} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/upstreams/add",
 			strings.NewReader(fmt.Sprintf(`{"address":%q}`, bad)))

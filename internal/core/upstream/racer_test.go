@@ -282,7 +282,20 @@ func TestNormalizeUpstreams(t *testing.T) {
 		{"doh without host dropped", []string{"https:///dns-query"}, []string{}},
 		{"doh with userinfo dropped", []string{"https://user@dns.google/dns-query"}, []string{}},
 		{"http scheme rejected", []string{"http://dns.google/dns-query"}, []string{}},
-		{"unknown scheme rejected", []string{"quic://dns.example"}, []string{}},
+		// DoQ and DoH3 are their own schemes with their own defaults: 853 for DoQ
+		// (RFC 9250) and 443 plus /dns-query for DoH3. "doq" and "doh3" are aliases
+		// that canonicalise to the "quic" and "h3" spellings.
+		{"quic host gains the 853 default port", []string{"quic://dns.adguard.com"}, []string{"quic://dns.adguard.com:853"}},
+		{"doq alias canonicalises to quic", []string{"doq://dns.adguard.com"}, []string{"quic://dns.adguard.com:853"}},
+		{"quic explicit port kept", []string{"quic://dns.adguard.com:8853"}, []string{"quic://dns.adguard.com:8853"}},
+		{"quic bracketed ipv6 gets the default port", []string{"quic://[2606:4700:4700::1111]"}, []string{"quic://[2606:4700:4700::1111]:853"}},
+		{"quic port zero dropped", []string{"quic://1.1.1.1:0"}, []string{}},
+		{"quic bad host dropped", []string{"quic://bad..example"}, []string{}},
+		{"h3 host gains default path", []string{"h3://dns.google"}, []string{"h3://dns.google/dns-query"}},
+		{"h3 default port dropped", []string{"h3://dns.google:443/dns-query"}, []string{"h3://dns.google/dns-query"}},
+		{"h3 non-default port kept", []string{"h3://dns.example:8443/dns-query"}, []string{"h3://dns.example:8443/dns-query"}},
+		{"doh3 alias canonicalises to h3", []string{"doh3://dns.google"}, []string{"h3://dns.google/dns-query"}},
+		{"unknown scheme rejected", []string{"foo://dns.example"}, []string{}},
 		{"dot host gains the 853 default port", []string{"tls://1.1.1.1"}, []string{"tls://1.1.1.1:853"}},
 		{"dot explicit port kept", []string{"tls://dns.google:8853"}, []string{"tls://dns.google:8853"}},
 		{"dot bracketed ipv6 gets the default port", []string{"tls://[2606:4700:4700::1111]"}, []string{"tls://[2606:4700:4700::1111]:853"}},

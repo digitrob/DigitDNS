@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go/http3"
 )
 
 type UpstreamPool struct {
@@ -29,6 +30,9 @@ type UpstreamPool struct {
 	tcpClient   *dns.Client
 	tlsClient   *dns.Client
 	httpClient  *http.Client
+	h3Client    *http.Client
+	quicTLS     *tls.Config
+	dnscrypt    *dnscryptTransport
 	racing      bool
 	ecsClientIP net.IP
 	stats       map[string]*upstreamStatInternal
@@ -41,12 +45,20 @@ const (
 	schemeTCP   = "tcp"
 	schemeTLS   = "tls"
 	schemeHTTPS = "https"
+	schemeQUIC  = "quic"
+	schemeH3    = "h3"
 )
 
-// dohDefaultPath is appended when a DoH URL carries no path of its own. RFC 8484
-// does not fix an endpoint, but /dns-query is the de-facto convention every
-// public resolver documents, so "https://dns.google" does the obvious thing.
+// dohDefaultPath is appended when a DoH (or DoH3) URL carries no path of its own.
+// RFC 8484 does not fix an endpoint, but /dns-query is the de-facto convention
+// every public resolver documents, so "https://dns.google" does the obvious thing.
 const dohDefaultPath = "/dns-query"
+
+// sdnsPrefix marks a DNS stamp (https://dnscrypt.info/stamps). A DNSCrypt stamp
+// has no native scheme in this pool, so it is kept verbatim and spoken by the
+// DNSCrypt client; the DoH, DoT and DoQ stamp types are translated to the
+// matching native scheme so a pasted stamp and a hand-typed URL are one entry.
+const sdnsPrefix = "sdns://"
 
 // splitUpstreamScheme separates a leading "scheme://" from the rest of an
 // upstream string. Only the first occurrence counts, and the scheme is
@@ -95,10 +107,19 @@ func splitHostPortDefault(s, defPort string) (host, port string, ok bool) {
 //	tcp://dns.google   -> "tcp://dns.google:53"
 //	tls://1.1.1.1      -> "tls://1.1.1.1:853"
 //	https://dns.google -> "https://dns.google/dns-query"
+//	quic://dns.adguard.com -> "quic://dns.adguard.com:853"
+//	h3://dns.google    -> "h3://dns.google/dns-query"
+//	sdns://...         -> "sdns://..." (DNSCrypt, kept verbatim) or the native
+//	                      scheme for a DoH/DoT/DoQ stamp
 func normalizeUpstream(raw string) (string, bool) {
 	u := strings.TrimSpace(raw)
 	if u == "" {
 		return "", false
+	}
+	// A stamp is a single opaque "sdns://<base64>" token, not a "scheme://rest"
+	// pair, so it must be decoded whole rather than split.
+	if strings.HasPrefix(strings.ToLower(u), sdnsPrefix) {
+		return normalizeStamp(u)
 	}
 	scheme, rest := splitUpstreamScheme(u)
 
@@ -110,22 +131,19 @@ func normalizeUpstream(raw string) (string, bool) {
 		}
 		return net.JoinHostPort(host, port), true
 	case schemeTCP:
-		host, port, ok := splitHostPortDefault(rest, "53")
-		if !ok || !validUpstreamHost(host) {
-			return "", false
-		}
-		return schemeTCP + "://" + net.JoinHostPort(host, port), true
+		return normalizeHostPortScheme(schemeTCP, rest, "53")
 	case schemeTLS:
 		// DoT has its own IANA-assigned port; the TLS handshake still validates
 		// the certificate against the host, so a plain hostname is the robust
 		// form and an IP literal needs a cert with an IP SAN.
-		host, port, ok := splitHostPortDefault(rest, "853")
-		if !ok || !validUpstreamHost(host) {
-			return "", false
-		}
-		return schemeTLS + "://" + net.JoinHostPort(host, port), true
+		return normalizeHostPortScheme(schemeTLS, rest, "853")
+	case schemeQUIC, "doq":
+		// RFC 9250 registers 853 for DoQ, the same port DoT uses over TCP.
+		return normalizeHostPortScheme(schemeQUIC, rest, "853")
 	case schemeHTTPS:
-		return normalizeDoHURL(rest)
+		return normalizeHTTPResolverURL(schemeHTTPS, rest)
+	case schemeH3, "doh3":
+		return normalizeHTTPResolverURL(schemeH3, rest)
 	default:
 		// "http://" (unauthenticated DoH) and anything else unrecognised is
 		// rejected rather than silently downgraded to plaintext.
@@ -133,11 +151,23 @@ func normalizeUpstream(raw string) (string, bool) {
 	}
 }
 
-// normalizeDoHURL canonicalises the part after "https://". The port defaults to
-// 443 and is dropped when it is the default, so "host/dns-query" and
-// "host:443/dns-query" are one entry; the path defaults to /dns-query.
-func normalizeDoHURL(rest string) (string, bool) {
-	u, err := url.Parse("https://" + rest)
+// normalizeHostPortScheme canonicalises a "host[:port]" upstream for a scheme that
+// addresses one host and port (TCP, DoT, DoQ), giving a port-less host defPort.
+func normalizeHostPortScheme(scheme, rest, defPort string) (string, bool) {
+	host, port, ok := splitHostPortDefault(rest, defPort)
+	if !ok || !validUpstreamHost(host) {
+		return "", false
+	}
+	return scheme + "://" + net.JoinHostPort(host, port), true
+}
+
+// normalizeHTTPResolverURL canonicalises the part after "https://" or "h3://".
+// The port defaults to 443 and is dropped when it is the default, so
+// "host/dns-query" and "host:443/dns-query" are one entry; the path defaults to
+// /dns-query. DoH (RFC 8484) and DoH3 are the same service over a different
+// transport, so they share this canonicalisation and differ only in scheme.
+func normalizeHTTPResolverURL(scheme, rest string) (string, bool) {
+	u, err := url.Parse(scheme + "://" + rest)
 	if err != nil || u.User != nil || u.Fragment != "" {
 		return "", false
 	}
@@ -164,7 +194,7 @@ func normalizeDoHURL(rest string) (string, bool) {
 		authority = net.JoinHostPort(host, port)
 	}
 
-	out := "https://" + authority + path
+	out := scheme + "://" + authority + path
 	if u.RawQuery != "" {
 		out += "?" + u.RawQuery
 	}
@@ -326,6 +356,20 @@ func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecs
 				DisableCompression: true,
 			},
 		},
+		// DoH3 posts the same RFC 8484 body over HTTP/3. The http3.Transport
+		// negotiates the "h3" ALPN itself and verifies the certificate like the
+		// HTTP/2 client above; there is no skip-verify escape hatch here either.
+		h3Client: &http.Client{
+			Timeout: timeout,
+			Transport: &http3.Transport{
+				TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12},
+				DisableCompression: true,
+			},
+		},
+		// DoQ dials a QUIC connection per query. NextProtos carries the RFC 9250
+		// "doq" ALPN token; ServerName is filled in per dial from the upstream.
+		quicTLS:  &tls.Config{MinVersion: tls.VersionTLS12, NextProtos: []string{doqALPN}},
+		dnscrypt: newDNSCryptTransport(timeout),
 	}
 
 	for _, u := range normalized {
@@ -538,18 +582,36 @@ func (p *UpstreamPool) queryOne(ctx context.Context, req *dns.Msg, addr string) 
 		rtt  time.Duration
 		err  error
 	)
-	switch scheme {
-	case schemeTLS:
-		// The client's ID rule above still holds: query under a fresh ID.
+	switch {
+	case strings.HasPrefix(addr, sdnsPrefix):
+		// DNSCrypt encrypts the whole DNS message, ID included, so a fresh random
+		// ID still carries entropy and there is no transport-level correlation to
+		// replace it.
 		q.Id = dns.Id()
-		resp, rtt, err = p.tlsClient.ExchangeContext(ctx, q, endpoint)
-	case schemeHTTPS:
+		resp, rtt, err = p.dnscrypt.exchange(addr, q)
+	case scheme == schemeQUIC:
+		// RFC 9250 §4.2.1: a DoQ query MUST use transaction ID 0. Correlation is
+		// by the QUIC stream, so a nonzero ID is a protocol violation.
+		q.Id = 0
+		resp, rtt, err = p.exchangeDoQ(ctx, q, endpoint)
+	case scheme == schemeH3:
+		// RFC 8484 §4.1 over HTTP/3: transaction ID 0, correlation by the request.
+		// net/http only speaks the "https" scheme, so the canonical "h3://" URL is
+		// retargeted at the HTTP/3 client as "https://" — the ALPN is what selects
+		// HTTP/3, not the URL scheme.
+		q.Id = 0
+		resp, rtt, err = p.exchangeDoH(ctx, p.h3Client, q, schemeHTTPS+"://"+endpoint)
+	case scheme == schemeHTTPS:
 		// RFC 8484 §4.1: a DoH query MUST use transaction ID 0. Correlation is
 		// by the HTTP request, so the ID carries no entropy and every client's
 		// query would otherwise be a fingerprintable value.
 		q.Id = 0
-		resp, rtt, err = p.exchangeDoH(ctx, q, addr)
-	case schemeTCP:
+		resp, rtt, err = p.exchangeDoH(ctx, p.httpClient, q, addr)
+	case scheme == schemeTLS:
+		// The client's ID rule above still holds: query under a fresh ID.
+		q.Id = dns.Id()
+		resp, rtt, err = p.tlsClient.ExchangeContext(ctx, q, endpoint)
+	case scheme == schemeTCP:
 		q.Id = dns.Id()
 		resp, rtt, err = p.tcpClient.ExchangeContext(ctx, q, endpoint)
 	default:
@@ -578,8 +640,9 @@ func (p *UpstreamPool) queryOne(ctx context.Context, req *dns.Msg, addr string) 
 // exchangeDoH sends one DNS query over DNS-over-HTTPS (RFC 8484) and returns the
 // decoded reply. The binary message is POSTed as application/dns-message; a
 // non-200, an unreadable body, or a body that will not unpack is an upstream
-// failure like any other. The caller has already set q.Id = 0.
-func (p *UpstreamPool) exchangeDoH(ctx context.Context, q *dns.Msg, rawURL string) (*dns.Msg, time.Duration, error) {
+// failure like any other. The caller has already set q.Id = 0. client is the
+// HTTP/2 client for "https://" or the HTTP/3 client for "h3://".
+func (p *UpstreamPool) exchangeDoH(ctx context.Context, client *http.Client, q *dns.Msg, rawURL string) (*dns.Msg, time.Duration, error) {
 	packed, err := q.Pack()
 	if err != nil {
 		return nil, 0, fmt.Errorf("pack DoH query for %s: %w", rawURL, err)
@@ -593,7 +656,7 @@ func (p *UpstreamPool) exchangeDoH(ctx context.Context, q *dns.Msg, rawURL strin
 	httpReq.Header.Set("Accept", "application/dns-message")
 
 	start := time.Now()
-	httpResp, err := p.httpClient.Do(httpReq)
+	httpResp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, time.Since(start), err
 	}
