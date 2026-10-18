@@ -24,7 +24,7 @@ allowed to operate.
 
 <p align="center">
   <a href="#-install">🚀 Install</a> •
-  <a href="#-what-it-does">💡 What it does</a> •
+  <a href="#-what-it-does">💡 What It Does</a> •
   <a href="#-features">🌟 Features</a> •
   <a href="#-after-you-install">🔒 Setup</a> •
   <a href="#-dashboard">🖥️ Dashboard</a> •
@@ -35,7 +35,7 @@ allowed to operate.
 
 ---
 
-## 💡 What it does
+## 💡 What It Does
 
 DigitDNS is one program that does three jobs:
 
@@ -68,7 +68,7 @@ dependencies.
 
 ## 🚀 Install
 
-**Three ways to get it — pick whatever fits you:**
+**Four ways to get it — pick whatever fits you:**
 
 | Way | Best for |
 | :--- | :--- |
@@ -91,7 +91,8 @@ curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.0.0/scripts/in
 
 The installer needs a **domain pointed at your server** (A record → server IP).
 It obtains a Let's Encrypt certificate by itself — no certbot, no manual steps —
-and prints your dashboard address and admin password when it's done.
+and prints your dashboard address (including its random port), secret admin
+path and admin password when it's done.
 
 Non-interactive example:
 
@@ -145,6 +146,13 @@ config). The container uses host networking on purpose — the server needs to
 see real client IP addresses to recognize subscribers and rate-limit
 correctly.
 
+On first start the daemon generates your admin password, a secret dashboard
+path, and a random dashboard port — all printed once to the container log:
+
+```bash
+docker logs digitdns
+```
+
 **Which tag should I use?**
 
 | Tag | What it is |
@@ -175,7 +183,7 @@ chmod +x digitdns
 sudo ./digitdns -server
 ```
 
-### Option 4: Build from source
+### Option 4: Build from Source
 
 ```bash
 git clone https://github.com/digitrob/DigitDNS.git
@@ -186,7 +194,7 @@ go build -ldflags="-s -w" -o bin/digitdns ./cmd/digitdns
 
 ---
 
-## 🖥️ What you need
+## 🖥️ What You Need
 
 | | Minimum | Recommended |
 | :--- | :--- | :--- |
@@ -199,10 +207,11 @@ go build -ldflags="-s -w" -o bin/digitdns ./cmd/digitdns
 | Port | What it's for |
 | :--- | :--- |
 | 53 (UDP+TCP) | DNS — the main service clients connect to |
-| 443 (TCP) | Web dashboard + proxy relay for HTTPS traffic |
+| 443 (TCP) | Proxy relay for proxied HTTPS traffic |
 | 80 (TCP) | Certificate issuance + HTTP relay |
 | 8443 (TCP) | DNS-over-HTTPS |
 | 853 (TCP) | DNS-over-TLS |
+| **random port** (TCP) | Web dashboard — picked automatically at first install (between 20000 and 60000), printed in your login URL, and opened in the firewall by the installer. You can change it later in Settings or with TUI option `11`. |
 
 If something else already owns port 53, 443, or 8443, the installer warns you
 before anything is installed.
@@ -211,7 +220,7 @@ before anything is installed.
 
 ## 🌟 Features
 
-### Your rules, not ours
+### Proxy, Block, or Direct — Your Choice
 
 You decide which domains are proxied, blocked, or resolved normally — no
 built-in "recommended" list is forced on you. Manage it all from the dashboard:
@@ -231,7 +240,7 @@ A handful of high-bandwidth services (Discord voice, Steam's connection
 manager, Google update CDNs) are always resolved directly so game downloads
 and voice chat use the player's own connection, not your server's bandwidth.
 
-### The proxy relay (why consoles don't need a VPN)
+### The Proxy Relay (Why Consoles Don't Need a VPN)
 
 When a device looks up a proxied domain, DigitDNS answers with *your server's*
 address. The device then opens a connection to your server, and the server
@@ -247,7 +256,7 @@ device is talking to your server.
 - No client software needed: change the DNS address on the console, phone, or
   router, and you're done.
 
-### Subscribers & accounts
+### Subscribers & Accounts
 
 - Add clients from the dashboard or API, each with their own traffic quota,
   expiry date, and allowed devices.
@@ -271,26 +280,26 @@ Clients can use encrypted connections instead of plain DNS:
 Connections are kept alive between queries so phones don't re-handshake every
 time they look something up — less latency, less battery use.
 
-### Upstream servers
+### Upstream Servers
 
 Forward queries to whatever upstream you like — Cloudflare, Google, your own
 recursive server, or a chain of them. Encrypted upstreams (DoT, DoH, DoQ,
 DNSCrypt) are supported too, and the dashboard benchmarks each one so you can
 see which is fastest from your server.
 
-### Certificates without certbot
+### Certificates Without Certbot
 
 The server obtains and renews its own HTTPS certificates (Let's Encrypt) while
 running — no certbot, no cron jobs, no downtime when a certificate renews.
 Point your domain at the server and it handles the rest.
 
-### Web dashboard & API
+### Web Dashboard & API
 
 Full admin panel for everything above, plus a REST API with Swagger docs for
 automation (billing bots, client provisioning, monitoring). See
 [docs/API.md](docs/API.md).
 
-### Terminal interface
+### Terminal Interface
 
 Run the `digitdns` command with no arguments for a simple text menu: check
 status, restart the service, add/remove subscribers, benchmark upstreams,
@@ -298,7 +307,7 @@ flush the cache — handy over SSH when you don't want to open a browser.
 
 ---
 
-## 🔒 After you install
+## 🔒 After You Install
 
 A few things to know before you let anyone else use it:
 
@@ -307,8 +316,9 @@ A few things to know before you let anyone else use it:
 
 2. **The dashboard is hidden.** On first start, the server generates a secret
    path and prints your login URL once — something like
-   `https://yourdomain.com/a1b2c3d4e5f6g7h8/login`. Bookmark it. The main
-   website shows a blank page on purpose so scanners don't find your panel.
+   `https://yourdomain.com:28443/a1b2c3d4e5f6g7h8/login` (note the random
+   port). Bookmark it. The main website shows a blank page on purpose so
+   scanners don't find your panel.
 
 3. **Back up `master.key`.** It's in the data directory and encrypts all your
    subscriber records. Lose it and your data is unreadable; keep it off the
