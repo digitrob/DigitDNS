@@ -13,7 +13,16 @@ const parserCode = source.slice(source.indexOf('const DOMAIN_RE'), source.indexO
 function parse(text, existing) {
   const context = vm.createContext({});
   vm.runInContext(parserCode, context);
-  return vm.runInContext('parseDomainList', context)(text, existing);
+  const result = vm.runInContext('parseDomainList', context)(text, existing);
+  // The arrays were built inside the sandbox, so their prototype is the
+  // sandbox realm's Array.prototype — assert.deepEqual (strict) compares
+  // prototypes and would reject structurally identical cross-realm arrays.
+  // Copy them into host-realm arrays before asserting.
+  return {
+    accepted: [...result.accepted],
+    duplicates: [...result.duplicates],
+    invalid: [...result.invalid],
+  };
 }
 
 test('splits on newlines, commas, semicolons and runs of spaces', () => {
@@ -43,7 +52,9 @@ test('drops names already present and repeats inside the blob', () => {
 test('rejects a bare label, a leading dot, a bad label and a lone wildcard', () => {
   const { accepted, invalid } = parse(['localhost', '.example.com', 'bad_label.example.com', '*.', 'ok.example.com'].join('\n'));
   assert.deepEqual(accepted, ['ok.example.com']);
-  assert.deepEqual(invalid.sort(), ['.example.com', '*.', 'bad_label.example.com', 'localhost']);
+  // invalid entries are the normalized tokens the parser rejected: '*.'
+  // loses its trailing dot like every other token before validation.
+  assert.deepEqual(invalid.sort(), ['*', '.example.com', 'bad_label.example.com', 'localhost']);
 });
 
 test('an empty or comment-only blob imports nothing', () => {
