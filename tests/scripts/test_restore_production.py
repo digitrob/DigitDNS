@@ -198,7 +198,7 @@ def test_production_restore_replaces_members_and_leaves_service_stopped():
     assert ['systemctl', ['show', 'hyperdns', '--property=ActiveState', '--value']] in calls, calls
     assert not any(args[:1] == ['start'] for _, args in calls), 'restore started the service'
     assert 'Restore complete' in result.stdout, result.stdout
-    assert 'HyperDNS is STOPPED' in result.stdout, 'script did not report the service stopped'
+    assert 'HyperDNS is STOPPED' in result.stdout or 'DigitDNS is STOPPED' in result.stdout, 'script did not report the service stopped'
     assert not (FIXTURE / 'unexpected').exists(), 'restore.sh made an unstubbed call'
 
 
@@ -250,7 +250,7 @@ def test_missing_production_binary_fails_before_service_control():
     (Path('/opt/hyperdns') / 'hyperdns').unlink()
     result = run_restore(make_archive({'data.db': b'new-db', 'master.key': b'new-key'}), '--yes')
     assert result.returncode != 0, 'an empty install must not be restored into'
-    assert 'Install the HyperDNS binary before restoring' in result.stderr, result.stderr
+    assert ('Install the HyperDNS binary before restoring' in result.stderr or 'Install the DigitDNS binary before restoring' in result.stderr), result.stderr
     for name, value in OLD.items():
         assert (Path('/opt/hyperdns') / name).read_bytes() == value, f'changed: {name}'
     assert backup_tarballs() == []
@@ -262,7 +262,7 @@ def test_unloaded_service_fails_without_stopping_or_writing():
     write_state(loadstate='not-found')
     result = run_restore(make_archive({'data.db': b'new-db', 'master.key': b'new-key'}), '--yes')
     assert result.returncode != 0, 'an unloaded unit must not be restored against'
-    assert 'Install the HyperDNS systemd service before restoring' in result.stderr, result.stderr
+    assert ('Install the HyperDNS systemd service before restoring' in result.stderr or 'Install the DigitDNS systemd service before restoring' in result.stderr), result.stderr
     assert_untouched()
     assert not (FIXTURE / 'stopped').exists(), 'restore stopped a unit it never verified'
     assert ['systemctl', 'stop', 'hyperdns'] not in read_calls()
