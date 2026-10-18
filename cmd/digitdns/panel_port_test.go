@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
 )
 
 // openCmdTestDB builds a real encrypted store, the same shape the daemon opens.
@@ -44,7 +44,7 @@ func TestPanelPortChangeCarriesTheSubscriptionCopy(t *testing.T) {
 	}
 	// The seeded copy: same port as the panel, panel certificate, same domain.
 	if err := subs.Apply(database.SubscriptionSnapshot{
-		Enabled: true, URIPath: "/sub", Title: "HyperDNS",
+		Enabled: true, URIPath: "/sub", Title: "DigitDNS",
 		Domain: "dns.example", Port: 32604, UsePanelCertificate: true,
 	}, nil); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -86,7 +86,7 @@ func TestPanelPortChangePreservesADeliberatePortalPort(t *testing.T) {
 	settings := &database.ServerSettings{WebPort: 32604, AdminPath: "0123456789abcdef"}
 	subs := &database.SubscriptionSettings{}
 	if err := subs.Apply(database.SubscriptionSnapshot{
-		Enabled: true, URIPath: "/sub", Title: "HyperDNS",
+		Enabled: true, URIPath: "/sub", Title: "DigitDNS",
 		Domain: "sub.example", Port: 18443, UsePanelCertificate: false,
 		CertPath: "certs/acme/sub.example.crt", KeyPath: "certs/acme/sub.example.key",
 	}, nil); err != nil {
@@ -111,7 +111,7 @@ func TestRepairSubscriptionPortDriftHealsTheStaleCopy(t *testing.T) {
 	subs := &database.SubscriptionSettings{}
 	// The stale state: seeded at 32604, panel moved to 48224 by an old build.
 	if err := subs.Apply(database.SubscriptionSnapshot{
-		Enabled: true, URIPath: "/sub", Title: "HyperDNS",
+		Enabled: true, URIPath: "/sub", Title: "DigitDNS",
 		Domain: "dns.example", Port: 32604, UsePanelCertificate: true,
 	}, nil); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -182,7 +182,7 @@ func TestRepairSubscriptionPortDriftRespectsTheExplicitPort(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	subs := &database.SubscriptionSettings{}
 	if err := subs.Apply(database.SubscriptionSnapshot{
-		Enabled: true, URIPath: "/sub", Title: "HyperDNS",
+		Enabled: true, URIPath: "/sub", Title: "DigitDNS",
 		Domain: "panel.example", Port: 18443, UsePanelCertificate: true,
 		PortExplicit: true,
 	}, nil); err != nil {
@@ -205,7 +205,7 @@ func TestRepairSubscriptionPortDriftHealsTheClearedDomain(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	subs := &database.SubscriptionSettings{}
 	if err := subs.Apply(database.SubscriptionSnapshot{
-		Enabled: true, URIPath: "/sub", Title: "HyperDNS",
+		Enabled: true, URIPath: "/sub", Title: "DigitDNS",
 		Domain: "", Port: 32604, UsePanelCertificate: true,
 	}, nil); err != nil {
 		t.Fatalf("apply: %v", err)

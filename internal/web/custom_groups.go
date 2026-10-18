@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"hyperdns/internal/httpx"
-	"hyperdns/internal/service"
+	"digitdns/internal/httpx"
+	"digitdns/internal/service"
 )
 
 // The named custom policy group endpoints (v2.3). A group is an operator-defined

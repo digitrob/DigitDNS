@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/service/acme"
+	"digitdns/internal/service/acme"
 )
 
 // TestMantisStartACMEIfNeededDoesNotHoldTheGate is the F7 reproducer. A

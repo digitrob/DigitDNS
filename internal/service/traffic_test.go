@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 func newTrafficClient(t *testing.T, db *database.DB, id string, limitGB float64, used uint64) *database.Client {

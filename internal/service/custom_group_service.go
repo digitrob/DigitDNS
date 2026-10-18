@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"hyperdns/internal/core/matcher"
-	"hyperdns/internal/database"
+	"digitdns/internal/core/matcher"
+	"digitdns/internal/database"
 )
 
 // CustomGroupService owns the operator's named custom policy groups: it loads

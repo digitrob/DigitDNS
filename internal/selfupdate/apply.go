@@ -78,7 +78,7 @@ func targetHasChannel(v string) bool {
 // apply runs the full update pipeline. Every step updates progress so the modal
 // can narrate it; any error is returned and surfaced by StartApply.
 func (u *Updater) apply(ctx context.Context) error {
-	binName := "hyperdns-linux-" + runtime.GOARCH // hyperdns-linux-amd64 / -arm64
+	binName := "digitdns-linux-" + runtime.GOARCH // digitdns-linux-amd64 / -arm64
 
 	// 1. Resolve the newest release and the two assets we need from it.
 	u.setProgress("resolve", "Finding the latest release…", 5)
@@ -275,7 +275,7 @@ func (u *Updater) downloadTo(ctx context.Context, url string) (path, sum string,
 		return "", "", fmt.Errorf("download returned HTTP %d", resp.StatusCode)
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(u.binPath), ".hyperdns-update-*")
+	tmp, err := os.CreateTemp(filepath.Dir(u.binPath), ".digitdns-update-*")
 	if err != nil {
 		return "", "", err
 	}

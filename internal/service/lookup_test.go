@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // LookupByToken is the read-only half of the portal's token resolution: it exists so a

@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/miekg/dns"
-	"hyperdns/internal/netutil"
+	"digitdns/internal/netutil"
 )
 
 type DoHHandler struct {

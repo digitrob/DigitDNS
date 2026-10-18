@@ -18,24 +18,24 @@ import (
 	"syscall"
 	"time"
 
-	"hyperdns/internal/bootstrap"
-	"hyperdns/internal/control"
-	"hyperdns/internal/core/cache"
-	"hyperdns/internal/core/dns"
+	"digitdns/internal/bootstrap"
+	"digitdns/internal/control"
+	"digitdns/internal/core/cache"
+	"digitdns/internal/core/dns"
 
-	"hyperdns/internal/core/matcher"
-	"hyperdns/internal/core/proxy"
-	"hyperdns/internal/core/upstream"
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
-	"hyperdns/internal/netutil"
-	"hyperdns/internal/selfupdate"
-	"hyperdns/internal/service"
-	"hyperdns/internal/service/acme"
-	"hyperdns/internal/tui"
-	"hyperdns/internal/version"
-	internalWeb "hyperdns/internal/web"
-	webAssets "hyperdns/web"
+	"digitdns/internal/core/matcher"
+	"digitdns/internal/core/proxy"
+	"digitdns/internal/core/upstream"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
+	"digitdns/internal/netutil"
+	"digitdns/internal/selfupdate"
+	"digitdns/internal/service"
+	"digitdns/internal/service/acme"
+	"digitdns/internal/tui"
+	"digitdns/internal/version"
+	internalWeb "digitdns/internal/web"
+	webAssets "digitdns/web"
 )
 
 const banner = `
@@ -50,8 +50,8 @@ const banner = `
 `
 
 func main() {
-	dbPath := flag.String("db", "", "Path to database file (e.g. /opt/hyperdns/data.db)")
-	keyPath := flag.String("key", "", "Path to master encryption key (e.g. /opt/hyperdns/master.key)")
+	dbPath := flag.String("db", "", "Path to database file (e.g. /opt/digitdns/data.db)")
+	keyPath := flag.String("key", "", "Path to master encryption key (e.g. /opt/digitdns/master.key)")
 	configPath := flag.String("config", "", "Path to config.json (default settings used when DB has no value)")
 	bindHost := flag.String("host", "", "Override bind host IP (e.g. 0.0.0.0)")
 	dnsPort := flag.Int("dns-port", 0, "Override DNS Port (e.g. 53)")
@@ -80,8 +80,8 @@ func main() {
 	// 1. Resolve DB and Key paths
 	dPath := *dbPath
 	if dPath == "" {
-		if _, err := os.Stat("/opt/hyperdns"); err == nil {
-			dPath = "/opt/hyperdns/data.db"
+		if _, err := os.Stat("/opt/digitdns"); err == nil {
+			dPath = "/opt/digitdns/data.db"
 		} else {
 			dPath = "data.db"
 		}
@@ -89,8 +89,8 @@ func main() {
 
 	kPath := *keyPath
 	if kPath == "" {
-		if _, err := os.Stat("/opt/hyperdns"); err == nil {
-			kPath = "/opt/hyperdns/master.key"
+		if _, err := os.Stat("/opt/digitdns"); err == nil {
+			kPath = "/opt/digitdns/master.key"
 		} else {
 			kPath = "master.key"
 		}
@@ -121,16 +121,16 @@ func main() {
 	}
 	if err != nil {
 		// The overwhelmingly common cause is that the background daemon already
-		// holds the bbolt file lock (bbolt is single-writer). `hdns` in an SSH
+		// holds the bbolt file lock (bbolt is single-writer). `digitdns` in an SSH
 		// session hits exactly this. Tell the operator what to do instead of a
 		// bare "timeout" (v2.1.0 installer-feedback fix #4).
 		if isLockTimeout(err) {
-			log.Printf("[Main] The database at %s is locked — another HyperDNS service process owns the bbolt store.", dPath)
+			log.Printf("[Main] The database at %s is locked — another DigitDNS service process owns the bbolt store.", dPath)
 			log.Printf("[Main] Client commands do not need direct database access:")
-			log.Printf("[Main]   1. Open the live control console: hdns")
-			log.Printf("[Main]   2. Show live status: hdns status")
-			log.Printf("[Main]   3. Flush the daemon cache: hdns flush")
-			log.Printf("[Main]   4. Use the web dashboard or inspect logs: journalctl -u hyperdns -f")
+			log.Printf("[Main]   1. Open the live control console: digitdns")
+			log.Printf("[Main]   2. Show live status: digitdns status")
+			log.Printf("[Main]   3. Flush the daemon cache: digitdns flush")
+			log.Printf("[Main]   4. Use the web dashboard or inspect logs: journalctl -u digitdns -f")
 			log.Fatalf("[Main] Refusing to start a second service process while the database is owned")
 		}
 		log.Fatalf("[Main] Failed to open database at %s: %v", dPath, err)
@@ -323,6 +323,15 @@ func main() {
 		settingsDirty = true
 	}
 
+	// A database carried over by the installer's in-place migration still holds a
+	// key stamped with HyperDNS's old marker, which this build's auth gate no
+	// longer recognises. Rewrite the marker so the credential the operator
+	// already has keeps working — see migrateAPIKeyPrefix.
+	if migrateAPIKeyPrefix(serverSettings) {
+		log.Printf("[Main] Master API key prefix migrated to %q; the secret itself is unchanged. Read the current key from Settings, the console's option 7, or GET /api/v1/api-key.", crypto.APIKeyPrefix)
+		settingsDirty = true
+	}
+
 	// Auto-detect the public IPv4 when it is still a placeholder. The DNS handler
 	// answers proxied domains with this address, so a loopback value silently
 	// breaks every redirect.
@@ -342,7 +351,7 @@ func main() {
 	//
 	// The plaintext goes to STDOUT ONLY (fmt.Println), never through the log
 	// package (v2.1.0 A-04 remediation): log output is what systemd/journald and
-	// the hyperdns_out.log the service wrapper captures persist, and a rotating
+	// the digitdns_out.log the service wrapper captures persist, and a rotating
 	// log file is readable by anything that can read the box's logs. The banner
 	// lines around it still go through log.Printf so they show up wherever the
 	// operator looks; only the credential itself is stdout-only.
@@ -350,7 +359,7 @@ func main() {
 		log.Printf("[Main] No admin password was configured. Generated one for this install — printed to STDOUT below, NOT to this log.")
 		log.Printf("[Main]     username : %s", serverSettings.AdminUsername)
 		fmt.Println("──────────────────────────────────────────────────────────")
-		fmt.Printf("  HyperDNS first-run credentials (save them now — shown once)\n")
+		fmt.Printf("  DigitDNS first-run credentials (save them now — shown once)\n")
 		fmt.Printf("    username : %s\n", serverSettings.AdminUsername)
 		fmt.Printf("    password : %s\n", generatedAdminPassword)
 		fmt.Println("──────────────────────────────────────────────────────────")
@@ -598,8 +607,8 @@ func main() {
 	if err := db.GetSetting("acme", &acmeState); err == nil && len(acmeState.AccountKeyPEM) > 0 {
 		acmeAccountKey = acmeState.AccountKeyPEM
 	}
-	acmeDir := "/opt/hyperdns/certs/acme"
-	if _, err := os.Stat("/opt/hyperdns"); err != nil {
+	acmeDir := "/opt/digitdns/certs/acme"
+	if _, err := os.Stat("/opt/digitdns"); err != nil {
 		acmeDir = "certs/acme" // a non-installed (dev) run keeps its tree local
 	}
 	_, acmeContactEmail := tlsSettings.ACMEContact()
@@ -646,7 +655,7 @@ func main() {
 	// daemon-client commands were dispatched before storage access above.
 	args := flag.Args()
 	if len(args) > 0 && strings.ToLower(args[0]) == "uninstall" {
-		tui.UninstallHyperDNS()
+		tui.UninstallDigitDNS()
 		return
 	}
 
@@ -715,10 +724,10 @@ func main() {
 	// Only explicit service modes reach runtime ownership. A bare invocation was
 	// already dispatched to the storage-free control client above.
 	fmt.Print(banner)
-	log.Printf("[Main] Starting HyperDNS Engine (Public IP: %s)...", serverSettings.PublicIP)
+	log.Printf("[Main] Starting DigitDNS Engine (Public IP: %s)...", serverSettings.PublicIP)
 
 	// The daemon owns the only control socket. Start it after all shared services
-	// exist and before public listeners are announced ready. Bare `hdns` is a
+	// exist and before public listeners are announced ready. Bare `digitdns` is a
 	// client process and never reaches this branch.
 	controlServer, err := startDaemonControl(*daemonMode, *serverMode, func() localControlServer {
 		return control.NewServer(control.DefaultSocketPath, control.NewHandler(controlOps))
@@ -730,9 +739,9 @@ func main() {
 		// Linux-only by design: the transport authorizes its peer with
 		// SO_PEERCRED and there is deliberately no TCP fallback. A host without
 		// it still runs the resolver, the relay and the dashboard; only the
-		// `hdns` console and `hdns flush` need the socket.
+		// `digitdns` console and `digitdns flush` need the socket.
 		log.Printf("[Main] Local control console unavailable on this platform: %v", err)
-		log.Printf("[Main] The resolver, relay and dashboard are unaffected; `hdns` client commands require a Linux host.")
+		log.Printf("[Main] The resolver, relay and dashboard are unaffected; `digitdns` client commands require a Linux host.")
 	}
 
 	if dnsSettings.Enabled {
@@ -778,9 +787,9 @@ func main() {
 	// control endpoint first so no new mutation races with public listener drain.
 	shutdownDone := make(chan struct{})
 	gracefulStop := func() {
-		log.Println("[Main] Shutting down HyperDNS gracefully...")
+		log.Println("[Main] Shutting down DigitDNS gracefully...")
 		shutdownDaemonRuntime(controlServer, dnsServer.Stop, sniServer.Stop, webServer.Stop)
-		log.Println("[Main] HyperDNS stopped successfully.")
+		log.Println("[Main] DigitDNS stopped successfully.")
 	}
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -802,7 +811,7 @@ func main() {
 	// The dashboard URL carries the hidden admin namespace: the panel has not
 	// lived at /dashboard since v2.1, and a banner that printed the retired
 	// route would send the operator to a 404.
-	log.Printf(" HyperDNS Dashboard : %s://%s/%s/dash/", dashboardScheme, net.JoinHostPort(listenHost, strconv.Itoa(serverSettings.WebPort)), serverSettings.AdminPath)
+	log.Printf(" DigitDNS Dashboard : %s://%s/%s/dash/", dashboardScheme, net.JoinHostPort(listenHost, strconv.Itoa(serverSettings.WebPort)), serverSettings.AdminPath)
 	log.Printf(" Standard DNS       : %s (UDP/TCP)", net.JoinHostPort(listenHost, strconv.Itoa(dnsSettings.Port)))
 	log.Printf(" DNS-over-TLS (DoT) : %s (TCP/TLS)", net.JoinHostPort(listenHost, strconv.Itoa(dnsSettings.DoTPort)))
 	log.Printf(" DNS-over-HTTPS     : https://%s/dns-query", net.JoinHostPort(listenHost, strconv.Itoa(dnsSettings.DoHPort)))
@@ -845,7 +854,7 @@ func isLockTimeout(err error) bool {
 // it was opened. On Windows the handle-based stat carries no path for SameFile to
 // re-open, so it answers false there and a NUL stdin would still read as
 // interactive; that is the safe direction (a desktop console keeps its menu), and
-// no HyperDNS service runs headless on Windows.
+// no DigitDNS service runs headless on Windows.
 func stdinIsInteractive(f *os.File) bool {
 	if f == nil {
 		return false
@@ -854,7 +863,7 @@ func stdinIsInteractive(f *os.File) bool {
 	if err != nil {
 		return false
 	}
-	// Pipes, regular files and sockets: `echo 1 | hyperdns`, `hyperdns < answers`.
+	// Pipes, regular files and sockets: `echo 1 | digitdns`, `digitdns < answers`.
 	if fi.Mode()&os.ModeCharDevice == 0 {
 		return false
 	}
@@ -946,6 +955,31 @@ func ensureAPIKey(s *database.ServerSettings) bool {
 	}
 	s.APIKey = crypto.GenerateAPIKey()
 	log.Printf("[Main] No master API key was configured; generated one. Read it from Settings, the console's option 7, or GET /api/v1/api-key.")
+	return true
+}
+
+// migrateAPIKeyPrefix rewrites a master API key minted before the HyperDNS →
+// DigitDNS rename to the current visible marker, and reports whether it changed
+// anything.
+//
+// The rename changed crypto.APIKeyPrefix from "hdns_live_" to "digitdns_live_",
+// but the installer migrates a HyperDNS box in place, so its database still
+// holds a key carrying the OLD marker. Both authentication paths dispatch on
+// that marker (see internal/web/auth.go), which means the key stops
+// authenticating the moment the daemon starts: every request it signed answers
+// 401, and nothing distinguishes that from the operator having mistyped it.
+//
+// Rewriting the marker in place — the random tail is byte-for-byte untouched —
+// keeps the credential the operator already holds and may have distributed,
+// rather than silently revoking it, while converging the stored record to what
+// this build mints. Only the exact legacy marker is recognised; an empty key is
+// left to ensureAPIKey, and a key the operator set by hand is never touched, so
+// the pass is idempotent and cannot replace a credential it does not know.
+func migrateAPIKeyPrefix(s *database.ServerSettings) bool {
+	if s == nil || !strings.HasPrefix(s.APIKey, crypto.LegacyAPIKeyPrefix) {
+		return false
+	}
+	s.APIKey = crypto.APIKeyPrefix + strings.TrimPrefix(s.APIKey, crypto.LegacyAPIKeyPrefix)
 	return true
 }
 

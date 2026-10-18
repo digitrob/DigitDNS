@@ -26,7 +26,7 @@ func TestAPIKeyRotationConsultsTOTPGate(t *testing.T) {
 	apiInst.RegisterRoutes(mux)
 	call := func(method string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "/api/v1/api-key", nil)
-		req.Header.Set("X-API-Key", "hdns_live_testkey123")
+		req.Header.Set("X-API-Key", "digitdns_live_testkey123")
 		req.RemoteAddr = "127.0.0.1:12345"
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
@@ -52,7 +52,7 @@ func TestAPIKeyRotationConsultsTOTPGate(t *testing.T) {
 
 	// POST with a valid code: through, and the key rotates.
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/api-key?code=123456", nil)
-	req.Header.Set("X-API-Key", "hdns_live_testkey123")
+	req.Header.Set("X-API-Key", "digitdns_live_testkey123")
 	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -74,7 +74,7 @@ func TestAPIKeyRotationUngatedWithoutPredicate(t *testing.T) {
 	mux := http.NewServeMux()
 	apiInst.RegisterRoutes(mux)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/api-key", nil)
-	req.Header.Set("X-API-Key", "hdns_live_testkey123")
+	req.Header.Set("X-API-Key", "digitdns_live_testkey123")
 	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)

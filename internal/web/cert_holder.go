@@ -5,7 +5,7 @@ import (
 	"log"
 	"sync"
 
-	"hyperdns/internal/service/acme"
+	"digitdns/internal/service/acme"
 )
 
 // certHolder is the process-lifetime TLS certificate source with hot-swap.

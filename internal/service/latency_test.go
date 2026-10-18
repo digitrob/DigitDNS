@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // What these tests defend: an operator uses these numbers to decide whether the

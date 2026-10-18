@@ -66,7 +66,7 @@ func unlockLoginLockouts(baseURL, apiKey, adminPath string) {
 	}
 	if err != nil {
 		fmt.Printf("\n%s✗ Could not reach the daemon: %v%s\n", Red, err, Reset)
-		fmt.Println("  Is the service running? Check: systemctl status hyperdns")
+		fmt.Println("  Is the service running? Check: systemctl status digitdns")
 		return
 	}
 

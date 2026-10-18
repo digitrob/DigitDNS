@@ -20,13 +20,13 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 	bolterrors "go.etcd.io/bbolt/errors"
-	"hyperdns/internal/control"
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
+	"digitdns/internal/control"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
 )
 
 const (
-	processControlDir  = "/run/hyperdns"
+	processControlDir  = "/run/digitdns"
 	processControlSock = processControlDir + "/control.sock"
 	processControlLock = processControlSock + ".lock"
 )
@@ -167,7 +167,7 @@ func startDaemonProcessFixture(t *testing.T) *daemonProcessFixture {
 		Enabled:             true,
 		Port:                fixture.webPort,
 		URIPath:             "/sub",
-		Title:               "HyperDNS",
+		Title:               "DigitDNS",
 		UsePanelCertificate: true,
 	}); err != nil {
 		t.Fatalf("seed fixture subscription settings: %v", err)
@@ -248,14 +248,14 @@ func startDaemonProcessFixture(t *testing.T) *daemonProcessFixture {
 
 func processTestBinary(t *testing.T) string {
 	t.Helper()
-	if path := os.Getenv("HYPERDNS_PROCESS_TEST_BINARY"); path != "" {
+	if path := os.Getenv("DIGITDNS_PROCESS_TEST_BINARY"); path != "" {
 		absolute, err := filepath.Abs(path)
 		if err != nil {
-			t.Fatalf("resolve HYPERDNS_PROCESS_TEST_BINARY: %v", err)
+			t.Fatalf("resolve DIGITDNS_PROCESS_TEST_BINARY: %v", err)
 		}
 		return absolute
 	}
-	t.Skip("set HYPERDNS_PROCESS_TEST_BINARY to a Linux hyperdns executable")
+	t.Skip("set DIGITDNS_PROCESS_TEST_BINARY to a Linux digitdns executable")
 	return ""
 }
 

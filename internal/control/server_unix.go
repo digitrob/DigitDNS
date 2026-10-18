@@ -199,7 +199,7 @@ func ensurePrivateRootDirectory(dir string) error {
 	if errors.Is(err, os.ErrNotExist) {
 		if err := os.Mkdir(dir, controlDirectoryMode); err != nil {
 			// ErrRuntimeDir marks the "cannot create the directory at all"
-			// class (an unprivileged run against /run/hyperdns, a read-only
+			// class (an unprivileged run against /run/digitdns, a read-only
 			// /run). The daemon classifies it as a capability limit — keep
 			// serving DNS and the panel, lose only the console — rather than
 			// a fatal misconfiguration. The wrap keeps the OS error visible.
@@ -243,7 +243,7 @@ func listenUnixSocket(path string) (*net.UnixListener, error) {
 	if err := unix.Listen(fd, unix.SOMAXCONN); err != nil {
 		return nil, err
 	}
-	file := os.NewFile(uintptr(fd), "hyperdns-control")
+	file := os.NewFile(uintptr(fd), "digitdns-control")
 	listener, err := net.FileListener(file)
 	_ = file.Close()
 	if err != nil {

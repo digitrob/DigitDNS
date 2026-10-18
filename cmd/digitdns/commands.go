@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"hyperdns/internal/bootstrap"
-	"hyperdns/internal/control"
-	"hyperdns/internal/tui"
-	"hyperdns/internal/version"
+	"digitdns/internal/bootstrap"
+	"digitdns/internal/control"
+	"digitdns/internal/tui"
+	"digitdns/internal/version"
 )
 
 var errExplicitBootstrapRequired = errors.New("storage is uninitialized; start with -daemon or -server to initialize it")
@@ -120,15 +120,15 @@ func dispatchPreDBCommand(args []string, cfgPath string, out, errOut io.Writer) 
 
 	switch strings.ToLower(args[0]) {
 	case "help", "-h", "--help":
-		fmt.Fprintln(out, "HyperDNS - Standalone Next-Gen SmartDNS Controller")
-		fmt.Fprintln(out, "Usage: hyperdns [flags] [subcommand]")
+		fmt.Fprintln(out, "DigitDNS - Standalone Next-Gen SmartDNS Controller")
+		fmt.Fprintln(out, "Usage: digitdns [flags] [subcommand]")
 		fmt.Fprintln(out, "Subcommands:")
 		fmt.Fprintln(out, "  status      live service report (no database needed; works beside the daemon)")
 		fmt.Fprintln(out, "  flush       ask the running daemon to flush its DNS cache")
 		fmt.Fprintln(out, "  uninstall   interactive uninstaller")
 		return true, nil
 	case "version", "-version", "-v", "--version":
-		fmt.Fprintln(out, "HyperDNS "+version.Short())
+		fmt.Fprintln(out, "DigitDNS "+version.Short())
 		return true, nil
 	case "status":
 		return true, preDBStatusCommand(cfgPath, out)

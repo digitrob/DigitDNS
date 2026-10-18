@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	"hyperdns/internal/database"
-	"hyperdns/internal/service"
+	"digitdns/internal/database"
+	"digitdns/internal/service"
 )
 
 // This file is the one place in httpx that knows anything about the domain, and it

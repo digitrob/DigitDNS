@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // fakeChallengeResponder stands in for the ACME manager: it knows exactly one

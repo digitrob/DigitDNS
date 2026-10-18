@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"hyperdns/internal/service"
+	"digitdns/internal/service"
 )
 
 // Phase C: the unlock endpoint. The lockout lives in the daemon's memory, so

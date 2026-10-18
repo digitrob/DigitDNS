@@ -1,4 +1,4 @@
-# Release policy (how HyperDNS is versioned, published and updated)
+# Release policy (how DigitDNS is versioned, published and updated)
 
 This is the short operator-facing version of the README's *Versioning & release
 policy* section, kept here so it sits next to the changelog it describes.
@@ -7,12 +7,13 @@ policy* section, kept here so it sits next to the changelog it describes.
 
 `MAJOR.MINOR.PATCH`.
 
-- **MINOR** for new features — `2.8.0` → `2.9.0`.
-- **PATCH** for backwards-compatible fixes — `2.8.0` → `2.8.1`.
-- **MAJOR** for a breaking change (none so far; the whole `2.x` line is one
-  contract).
-- A pre-release tag (`v2.9.0-beta.1`, `v2.9.0-beta.2`, …) **precedes** the final
-  `v2.9.0` of the same number. It is never after it.
+- **MINOR** for new features — `3.0.0` → `3.1.0`.
+- **PATCH** for backwards-compatible fixes — `3.0.0` → `3.0.1`.
+- **MAJOR** for a breaking change — `2.x` → `3.0.0` (the HyperDNS → DigitDNS
+  rebrand: install paths, service name, CLI and environment variables all
+  changed, so automation written against `2.x` must be updated).
+- A pre-release tag (`v3.0.0-beta.1`, `v3.0.0-beta.2`, …) **precedes** the final
+  `v3.0.0` of the same number. It is never after it.
 
 ## One source of truth
 
@@ -24,8 +25,8 @@ that is the whole release.
 
 | Line | Tag shape | GitHub state | Who installs it |
 |---|---|---|---|
-| **Stable** | `v2.9.0` (no channel suffix) | Full release, takes *Latest* | everyone — the README one-liner and the in-dashboard updater |
-| **Beta** | `v2.9.0-beta.1` | **Prerelease**, never *Latest* | anyone who opts in by hand (`install.sh`) |
+| **Stable** | `v3.0.0` (no channel suffix) | Full release, takes *Latest* | everyone — the README one-liner and the in-dashboard updater |
+| **Beta** | `v3.0.0-beta.1` | **Prerelease**, never *Latest* | anyone who opts in by hand (`install.sh`) |
 
 ## How the in-dashboard updater decides
 

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
-	"hyperdns/internal/service/acme"
+	"digitdns/internal/database"
+	"digitdns/internal/service/acme"
 )
 
 // hangACMEDir starts a directory server that accepts connections and never

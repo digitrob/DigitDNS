@@ -13,12 +13,12 @@ import (
 	"runtime"
 	"sync"
 
-	hdns "hyperdns"
+	digitdns "digitdns"
 )
 
 // Commit may be overridden at build time via:
 //
-//	go build -ldflags "-X hyperdns/internal/version.Commit=$(git rev-parse --short HEAD)"
+//	go build -ldflags "-X digitdns/internal/version.Commit=$(git rev-parse --short HEAD)"
 var Commit string
 
 // Info is the version payload shared by every surface of the application.
@@ -47,7 +47,7 @@ func load() (Info, error) {
 			Codename string `json:"codename"`
 			Homepage string `json:"homepage"`
 		}
-		if err := json.Unmarshal(hdns.EmbeddedVersionJSON, &raw); err != nil {
+		if err := json.Unmarshal(digitdns.EmbeddedVersionJSON, &raw); err != nil {
 			loadErr = fmt.Errorf("invalid embedded version.json: %w", err)
 			return
 		}

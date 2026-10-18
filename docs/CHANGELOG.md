@@ -6,11 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## 🏷️ [Unreleased] — DigitDNS Rebrand, Proxied Domains UX & Forked Self-Updates
+## 🏷️ [Unreleased] — Full DigitDNS Rebrand, Proxied Domains UX & Forked Self-Updates
 
-The browser-facing interface in this fork is **DigitDNS**. The engine, REST API, CLI and
-internal identifiers stay unchanged from upstream (see `NOTICE`), and every change below is
-carried on the `custom` branch.
+This fork is named **DigitDNS** throughout: the install tree, the systemd unit and service,
+the Go module path, the CLI, the environment variables, the API-key and session prefixes and
+the HTTP control headers all carry the new name (see `NOTICE` for what is deliberately kept).
+Every change below is carried on the `custom` branch.
+
+> **A note on the history below.** Every section from `v2.8.0-beta.1` downward is inherited
+> from upstream HyperDNS and is reproduced verbatim, so its product names, service names,
+> command examples and `HYPERDNS_*` environment variables describe the upstream project as it
+> was at that release — not this fork's current names. Where this fork changed a name, the
+> instructions that follow from it live in [`README.md`](../README.md),
+> [`TUTORIAL.md`](TUTORIAL.md) and the installer banners.
+
+### 🏷️ Rebrand
+- **The project is renamed HyperDNS → DigitDNS across the whole tree.** Concretely: the Go module is `digitdns` and the command lives at `./cmd/digitdns`; the install tree moves `/opt/hyperdns` → `/opt/digitdns`; the systemd unit and service become `digitdns.service` / `digitdns` with the resolved drop-in `digitdns.conf` and `RuntimeDirectory=digitdns` on `/run/digitdns`; the console command and its symlink become `digitdns` (the `hdns` name is retired); every environment variable is `DIGITDNS_*` (`DIGITDNS_DOMAIN`, `DIGITDNS_EMAIL`, `DIGITDNS_FRESH`, `DIGITDNS_REF`, `DIGITDNS_PUBLIC_IP`, `DIGITDNS_HEALTH_PORT`, …) with no `HYPERDNS_*` fallback; the API key stamps `digitdns_live_`, sessions use `digitdns_session_`, and the HTTP control headers are `X-DigitDNS-*`. Release assets, backups and logs follow suit (`digitdns-linux-<arch>`, `digitdns-preinstall-*`, `digitdns-backup-*`, `digitdns-before-restore-*`, `digitdns-premigration-*`, `digitdns_out.log`).
+- **An existing HyperDNS install is migrated in place.** Both installers detect a legacy `/opt/hyperdns` tree, archive it to `/root/hyperdns-premigration-<ts>.tar.gz`, move it to `/opt/digitdns`, rename the old binary and the systemd unit and drop-in, and then continue the install — so `data.db`, `master.key`, `config.json` and `certs/` are preserved exactly, and the panel port, admin path and credentials survive. The safe-install wipe is skipped on such a run and no fresh credentials are generated.
+- **A stored API key is rotated to the new prefix once, at daemon start.** A migrated database still holds an `hdns_live_…` key, and the dashboard gate routes on the current prefix, so `migrateAPIKeyPrefix` rewrites the marker to `digitdns_live_` (the random secret tail is untouched) the first time the upgraded binary opens the database. Legacy `hdns_live_` remains recognised only by that migration.
 
 ### ✨ Added
 - **Encrypted upstreams (DoT, DoH, DoQ, DoH3 and DNSCrypt) in the Upstream Racers.** An upstream entry may now name a transport: plain `1.1.1.1` stays UDP, `tcp://host:53`, `tls://host` (DoT, default port 853), `https://host/dns-query` (DoH, RFC 8484, default path `/dns-query`), `quic://host` (DoQ, RFC 9250, default port 853, alias `doq://`), `h3://host/dns-query` (DNS-over-HTTP/3, default path `/dns-query`, alias `doh3://`) and `sdns://…` DNS stamps (DNSCrypt plus stamped DoH/DoT) are queried on their own transport and benchmarked the same way. Every encrypted transport verifies the upstream's certificate (no `InsecureSkipVerify`). The add box accepts and canonicalises any of these forms, and the dashboard shows the reason when a value is rejected.

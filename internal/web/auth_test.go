@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/service"
+	"digitdns/internal/crypto"
+	"digitdns/internal/service"
 )
 
 // postJSON issues a POST with a JSON body and returns the recorder.
@@ -53,8 +53,8 @@ func TestLoginAcceptsCorrectCredentials(t *testing.T) {
 	body := decodeBody(t, w)
 
 	tok, _ := body["token"].(string)
-	if !strings.HasPrefix(tok, "hdns_session_") {
-		t.Fatalf("token = %q, want an hdns_session_ token", tok)
+	if !strings.HasPrefix(tok, "digitdns_session_") {
+		t.Fatalf("token = %q, want an digitdns_session_ token", tok)
 	}
 	if body["username"] != "admin" {
 		t.Errorf("username = %v, want admin", body["username"])
@@ -455,8 +455,8 @@ func TestConfigServerChangesPasswordAndRevokesSessions(t *testing.T) {
 		t.Errorf("changed = %v, want true", resp["changed"])
 	}
 	newTok, _ := resp["token"].(string)
-	if !strings.HasPrefix(newTok, "hdns_session_") {
-		t.Fatalf("replacement token = %q, want an hdns_session_ token", newTok)
+	if !strings.HasPrefix(newTok, "digitdns_session_") {
+		t.Fatalf("replacement token = %q, want an digitdns_session_ token", newTok)
 	}
 
 	// Stored form: a hash, and nothing resembling either plaintext.
@@ -574,7 +574,7 @@ func TestConfigServerRejectsGetAndUnauthenticated(t *testing.T) {
 	if w := postJSON(t, h, "/api/config/server", `{}`, ""); w.Code != http.StatusUnauthorized {
 		t.Errorf("unauthenticated credential change = %d, want 401", w.Code)
 	}
-	if w := postJSON(t, h, "/api/config/server", `{}`, "hdns_session_deadbeef"); w.Code != http.StatusUnauthorized {
+	if w := postJSON(t, h, "/api/config/server", `{}`, "digitdns_session_deadbeef"); w.Code != http.StatusUnauthorized {
 		t.Errorf("forged token = %d, want 401", w.Code)
 	}
 }

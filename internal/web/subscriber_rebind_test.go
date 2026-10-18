@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // TestMantisRebindToTakenPortKillsTheRunningPortal is the F3 reproducer. A

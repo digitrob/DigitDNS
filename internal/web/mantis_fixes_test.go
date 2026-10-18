@@ -1,14 +1,14 @@
 package web
 
 import (
-	"hyperdns/internal/auth"
+	"digitdns/internal/auth"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // Regression tests for the findings fixed from REPORT-MANTIS-v2.1.0-26.9.8.

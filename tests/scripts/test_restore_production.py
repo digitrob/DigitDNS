@@ -3,10 +3,10 @@
 
 tests/scripts/test_restore.py covers --data-dir (offline/disposable) mode only. This
 suite covers PRODUCTION mode: the path that checks the installed binary and systemd
-unit, stops the hyperdns service, replaces /opt/hyperdns members, and deliberately
+unit, stops the digitdns service, replaces /opt/digitdns members, and deliberately
 leaves the service stopped for the operator to verify before starting it again.
 
-The production path mutates a real systemd unit and a real /opt/hyperdns, so like
+The production path mutates a real systemd unit and a real /opt/digitdns, so like
 tests/scripts/test_install_smoke.py it never runs on the host. Allowlisted public
 inputs are streamed into a networkless container where systemctl is a stub on PATH;
 nothing is installed, started, pulled, or networked.
@@ -14,7 +14,7 @@ nothing is installed, started, pulled, or networked.
 Run from any directory: python3 tests/scripts/test_restore_production.py
 Windows: MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-24.04 -u root -e python3 \
          "/mnt/c/OTHER/AI/codespace/DNS Controller/tests/scripts/test_restore_production.py"
-Requires a cached golang:1.26-bookworm image and build/hyperdns-restore-fixture
+Requires a cached golang:1.26-bookworm image and build/digitdns-restore-fixture
 (Linux amd64), which the host builds offline with GOPROXY=off.
 """
 
@@ -33,8 +33,8 @@ import uuid
 
 
 FIXTURE = Path('/restore')
-GATE = 'HYPERDNS_RESTORE_PROD_CONTAINER'
-BINARY_NAME = 'hyperdns-restore-fixture'
+GATE = 'DIGITDNS_RESTORE_PROD_CONTAINER'
+BINARY_NAME = 'digitdns-restore-fixture'
 
 # A realistic production target before restore: a binary, its scripts, its version
 # file, and a live config/database/key/cert set that the archive is about to replace.
@@ -81,16 +81,16 @@ def systemctl(args):
     with (FIXTURE / 'calls.jsonl').open('a') as log:
         log.write(json.dumps(['systemctl', args]) + '\n')
     state = load_state()
-    if args == ['show', 'hyperdns', '--property=LoadState', '--value']:
+    if args == ['show', 'digitdns', '--property=LoadState', '--value']:
         print(state.get('loadstate', 'loaded'))
         return 0
-    if args == ['show', 'hyperdns', '--property=ActiveState', '--value']:
+    if args == ['show', 'digitdns', '--property=ActiveState', '--value']:
         if (FIXTURE / 'stopped').exists():
             print(state.get('active_after_stop', 'inactive'))
         else:
             print(state.get('active_before_stop', 'active'))
         return 0
-    if args == ['stop', 'hyperdns']:
+    if args == ['stop', 'digitdns']:
         (FIXTURE / 'stopped').touch()  # Never stops a daemon; there is none.
         return int(state.get('stop_status', 0))
     with (FIXTURE / 'unexpected').open('a') as log:
@@ -102,20 +102,20 @@ def systemctl(args):
 # ----------------------------------------------------------------------- container
 
 def reset():
-    """Return /opt/hyperdns to a freshly installed, unrestored production state."""
+    """Return /opt/digitdns to a freshly installed, unrestored production state."""
     for path in (FIXTURE / 'state.json', FIXTURE / 'calls.jsonl',
                  FIXTURE / 'stopped', FIXTURE / 'unexpected'):
         if path.exists():
             path.unlink()
-    for stale in Path('/root').glob('hyperdns-before-restore-*.tar.gz'):
+    for stale in Path('/root').glob('digitdns-before-restore-*.tar.gz'):
         stale.unlink()
-    target = Path('/opt/hyperdns')
+    target = Path('/opt/digitdns')
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True)
     target.chmod(0o755)
-    shutil.copyfile(FIXTURE / 'hyperdns', target / 'hyperdns')
-    (target / 'hyperdns').chmod(0o755)
+    shutil.copyfile(FIXTURE / 'digitdns', target / 'digitdns')
+    (target / 'digitdns').chmod(0o755)
     scripts = target / 'scripts'
     scripts.mkdir()
     for name in ('restore.sh', 'uninstall.sh'):
@@ -151,15 +151,15 @@ def run_restore(archive, *flags):
 
 
 def backup_tarballs():
-    return sorted(Path('/root').glob('hyperdns-before-restore-*.tar.gz'))
+    return sorted(Path('/root').glob('digitdns-before-restore-*.tar.gz'))
 
 
 def assert_untouched():
     """Nothing was replaced, archived, or asked of systemd beyond the preflight."""
-    target = Path('/opt/hyperdns')
+    target = Path('/opt/digitdns')
     for name, value in OLD.items():
         assert (target / name).read_bytes() == value, f'destination changed: {name}'
-    assert (target / 'hyperdns').read_bytes() == (FIXTURE / 'hyperdns').read_bytes(), \
+    assert (target / 'digitdns').read_bytes() == (FIXTURE / 'digitdns').read_bytes(), \
         'production binary was rewritten'
     assert backup_tarballs() == [], 'a pre-restore backup should not exist'
     assert not (FIXTURE / 'unexpected').exists(), 'restore.sh made an unstubbed call'
@@ -175,14 +175,14 @@ def test_production_restore_replaces_members_and_leaves_service_stopped():
            'certs/new.crt': b'new-cert-payload'}
     result = run_restore(make_archive(new), '--yes')
     assert result.returncode == 0, result.stderr
-    target = Path('/opt/hyperdns')
+    target = Path('/opt/digitdns')
     for name, value in new.items():
         assert (target / name).read_bytes() == value, f'not restored: {name}'
     for name in ('data.db', 'master.key', 'config.json', 'certs/new.crt'):
         assert (target / name).stat().st_mode & 0o777 == 0o600, f'not private: {name}'
     assert (target / 'certs').stat().st_mode & 0o777 == 0o700, 'certs not private'
     assert not (target / 'certs' / 'old.crt').exists(), 'certs was not replaced wholesale'
-    assert (target / 'hyperdns').read_bytes() == (FIXTURE / 'hyperdns').read_bytes(), \
+    assert (target / 'digitdns').read_bytes() == (FIXTURE / 'digitdns').read_bytes(), \
         'restore rewrote the production binary'
 
     backups = backup_tarballs()
@@ -193,12 +193,12 @@ def test_production_restore_replaces_members_and_leaves_service_stopped():
             assert backup.extractfile(name).read() == value, f'backup missing: {name}'
 
     calls = read_calls()
-    assert ['systemctl', ['show', 'hyperdns', '--property=LoadState', '--value']] in calls, calls
-    assert ['systemctl', ['stop', 'hyperdns']] in calls, 'service was not stopped'
-    assert ['systemctl', ['show', 'hyperdns', '--property=ActiveState', '--value']] in calls, calls
+    assert ['systemctl', ['show', 'digitdns', '--property=LoadState', '--value']] in calls, calls
+    assert ['systemctl', ['stop', 'digitdns']] in calls, 'service was not stopped'
+    assert ['systemctl', ['show', 'digitdns', '--property=ActiveState', '--value']] in calls, calls
     assert not any(args[:1] == ['start'] for _, args in calls), 'restore started the service'
     assert 'Restore complete' in result.stdout, result.stdout
-    assert 'HyperDNS is STOPPED' in result.stdout or 'DigitDNS is STOPPED' in result.stdout, 'script did not report the service stopped'
+    assert 'DigitDNS is STOPPED' in result.stdout, 'script did not report the service stopped'
     assert not (FIXTURE / 'unexpected').exists(), 'restore.sh made an unstubbed call'
 
 
@@ -206,7 +206,7 @@ def test_optional_members_preserved_when_absent_from_archive():
     reset()
     result = run_restore(make_archive({'data.db': b'new-db', 'master.key': b'new-key'}), '--yes')
     assert result.returncode == 0, result.stderr
-    target = Path('/opt/hyperdns')
+    target = Path('/opt/digitdns')
     assert (target / 'data.db').read_bytes() == b'new-db'
     assert (target / 'master.key').read_bytes() == b'new-key'
     for name in ('config.json', 'certs/old.crt'):
@@ -231,8 +231,8 @@ def test_prompt_without_tty_fails_and_changes_nothing():
     assert 'No terminal available' in result.stderr, result.stderr
     assert_untouched()
     calls = read_calls()
-    assert ['systemctl', ['show', 'hyperdns', '--property=LoadState', '--value']] in calls, calls
-    assert ['systemctl', ['stop', 'hyperdns']] not in calls, \
+    assert ['systemctl', ['show', 'digitdns', '--property=LoadState', '--value']] in calls, calls
+    assert ['systemctl', ['stop', 'digitdns']] not in calls, \
         'a declined prompt must not stop the service'
 
 
@@ -247,12 +247,12 @@ def test_archive_missing_master_key_fails_before_any_destination_change():
 
 def test_missing_production_binary_fails_before_service_control():
     reset()
-    (Path('/opt/hyperdns') / 'hyperdns').unlink()
+    (Path('/opt/digitdns') / 'digitdns').unlink()
     result = run_restore(make_archive({'data.db': b'new-db', 'master.key': b'new-key'}), '--yes')
     assert result.returncode != 0, 'an empty install must not be restored into'
-    assert ('Install the HyperDNS binary before restoring' in result.stderr or 'Install the DigitDNS binary before restoring' in result.stderr), result.stderr
+    assert 'Install the DigitDNS binary before restoring' in result.stderr, result.stderr
     for name, value in OLD.items():
-        assert (Path('/opt/hyperdns') / name).read_bytes() == value, f'changed: {name}'
+        assert (Path('/opt/digitdns') / name).read_bytes() == value, f'changed: {name}'
     assert backup_tarballs() == []
     assert read_calls() == [], 'binary check must precede every systemctl call'
 
@@ -262,10 +262,10 @@ def test_unloaded_service_fails_without_stopping_or_writing():
     write_state(loadstate='not-found')
     result = run_restore(make_archive({'data.db': b'new-db', 'master.key': b'new-key'}), '--yes')
     assert result.returncode != 0, 'an unloaded unit must not be restored against'
-    assert ('Install the HyperDNS systemd service before restoring' in result.stderr or 'Install the DigitDNS systemd service before restoring' in result.stderr), result.stderr
+    assert 'Install the DigitDNS systemd service before restoring' in result.stderr, result.stderr
     assert_untouched()
     assert not (FIXTURE / 'stopped').exists(), 'restore stopped a unit it never verified'
-    assert ['systemctl', 'stop', 'hyperdns'] not in read_calls()
+    assert ['systemctl', 'stop', 'digitdns'] not in read_calls()
 
 
 def test_stop_failure_aborts_before_any_destination_change():
@@ -289,9 +289,9 @@ def test_service_still_active_after_stop_aborts_without_replacing_data():
 def test_data_dir_on_production_target_is_rejected():
     reset()
     result = run_restore(make_archive({'data.db': b'new-db', 'master.key': b'new-key'}),
-                         '--data-dir', '/opt/hyperdns', '--yes')
+                         '--data-dir', '/opt/digitdns', '--yes')
     assert result.returncode != 0, '--data-dir must not bypass service control'
-    assert 'Use the default mode for /opt/hyperdns' in result.stderr, result.stderr
+    assert 'Use the default mode for /opt/digitdns' in result.stderr, result.stderr
     assert_untouched()
     assert read_calls() == []
 
@@ -299,7 +299,7 @@ def test_data_dir_on_production_target_is_rejected():
 def test_concurrent_restore_lock_is_taken_and_released():
     reset()
     archive = make_archive({'data.db': b'new-db', 'master.key': b'new-key'})
-    target = Path('/opt/hyperdns')
+    target = Path('/opt/digitdns')
     holder = subprocess.Popen(
         ['python3', '-c',
          'import fcntl,os,sys,time;'
@@ -374,7 +374,7 @@ def inside():
             print('  failed: ' + name)
         sys.exit(1)
     print('REAL: unchanged scripts/restore.sh bytes, Go production binary on disk, '
-          'tar/gzip/rename/chmod/flock syscall results under /opt/hyperdns and /root')
+          'tar/gzip/rename/chmod/flock syscall results under /opt/digitdns and /root')
     print('MOCKED: systemctl (load/active state and stop); no daemon, systemd or network')
 
 
@@ -386,7 +386,7 @@ def build_fixture(repo, goproxy):
         return fixture
     env = dict(os.environ, GOOS='linux', GOARCH='amd64', CGO_ENABLED='0',
                GOPROXY=goproxy, GOSUMDB='off')
-    build = ['go', 'build', '-trimpath', '-o', str(fixture), './cmd/hyperdns']
+    build = ['go', 'build', '-trimpath', '-o', str(fixture), './cmd/digitdns']
     print('BUILD (offline, linux/amd64): ' + ' '.join(build), flush=True)
     subprocess.run(build, cwd=repo, env=env, check=True, timeout=600)
     return fixture
@@ -415,9 +415,9 @@ def main():
     # Do not tar the repo: it may contain private configs, databases and keys.
     # .gitattributes requires eol=lf for *.sh; CRLF would abort bash on Linux, and
     # the test says so instead of silently rewriting the script under test.
-    # HYPERDNS_RESTORE_SCRIPT points this suite at a deliberately broken copy of the
+    # DIGITDNS_RESTORE_SCRIPT points this suite at a deliberately broken copy of the
     # script for negative verification (it must go red). Empty means the real one.
-    script = repo / (os.environ.get('HYPERDNS_RESTORE_SCRIPT') or 'scripts/restore.sh')
+    script = repo / (os.environ.get('DIGITDNS_RESTORE_SCRIPT') or 'scripts/restore.sh')
     script_bytes = script.read_bytes()
     assert b'\x00' not in script_bytes, 'scripts/restore.sh is not text'
     assert b'\r' not in script_bytes, \
@@ -425,7 +425,7 @@ def main():
 
     payload = io.BytesIO()
     with tarfile.open(fileobj=payload, mode='w') as archive:
-        members = [(fixture, 'hyperdns'),
+        members = [(fixture, 'digitdns'),
                    (script, 'restore.sh'),
                    (repo / 'scripts' / 'uninstall.sh', 'uninstall.sh'),
                    (repo / 'config.example.json', 'config.example.json'),
@@ -438,7 +438,7 @@ def main():
             info.mode = 0o755
             archive.addfile(info, io.BytesIO(raw))
 
-    container = 'hyperdns-restore-prod-' + uuid.uuid4().hex[:12]
+    container = 'digitdns-restore-prod-' + uuid.uuid4().hex[:12]
     command = docker + ['run', '--rm', '--pull=never', '--network=none',
                         '--cap-drop=ALL', '--security-opt=no-new-privileges',
                         '--pids-limit=128', '--memory=512m', '--user=0:0',

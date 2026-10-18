@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
 )
 
 type serverSettingsStore interface {

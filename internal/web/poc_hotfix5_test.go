@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // Mantis PoC set for the v2.1.0 Hotfix 5 attack surface.

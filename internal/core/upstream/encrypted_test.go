@@ -36,7 +36,7 @@ func newTestCert(t *testing.T) (tls.Certificate, *x509.Certificate) {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "hyperdns-test"},
+		Subject:               pkix.Name{CommonName: "digitdns-test"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature,

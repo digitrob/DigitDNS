@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
 )
 
 // funcIP resolves the account's register secret and binds ip — the test stand-in

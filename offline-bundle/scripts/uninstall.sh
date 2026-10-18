@@ -3,7 +3,7 @@
 # DigitDNS Clean & Complete Uninstaller
 #
 # Reverses scripts/install.sh, including the parts of it that reach outside
-# /opt/hyperdns: the systemd-resolved drop-in, the /etc/resolv.conf the installer
+# /opt/digitdns: the systemd-resolved drop-in, the /etc/resolv.conf the installer
 # replaced, and the firewall rules it opened.
 #
 # The default run archives config.json, data.db, master.key and certs/ to /root
@@ -25,10 +25,10 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-INSTALL_DIR="/opt/hyperdns"
+INSTALL_DIR="/opt/digitdns"
 RESOLV_MARKER="${INSTALL_DIR}/.resolv-backup"
 FIREWALL_MARKER="${INSTALL_DIR}/.firewall-backup"
-BACKUP_ARCHIVE="/root/hyperdns-backup-$(date +%Y%m%d_%H%M%S).tar.gz"
+BACKUP_ARCHIVE="/root/digitdns-backup-$(date +%Y%m%d_%H%M%S).tar.gz"
 
 ASSUME_YES=false
 PURGE=false
@@ -43,8 +43,8 @@ for arg in "$@"; do
             ;;
         -h|--help)
             cat <<'USAGE'
-HyperDNS uninstaller — reverses the installer, including the changes it makes outside
-/opt/hyperdns (the systemd-resolved drop-in, /etc/resolv.conf, firewall rules).
+DigitDNS uninstaller — reverses the installer, including the changes it makes outside
+/opt/digitdns (the systemd-resolved drop-in, /etc/resolv.conf, firewall rules).
 
   uninstall.sh              interactive; archives your data to /root first
   uninstall.sh -y, --yes    no confirmation prompt; still archives your data
@@ -74,12 +74,12 @@ echo -e "${RED}${BOLD} DigitDNS Clean & Complete Uninstaller${NC}"
 echo -e "${RED}${BOLD}=========================================================================${NC}"
 echo ""
 echo "This uninstaller will completely remove DigitDNS from this server:"
-echo "  1. Stop and disable the systemd service ('hyperdns')"
-echo "  2. Remove the systemd service unit (/etc/systemd/system/hyperdns.service)"
+echo "  1. Stop and disable the systemd service ('digitdns')"
+echo "  2. Remove the systemd service unit (/etc/systemd/system/digitdns.service)"
 echo "  3. Restore the system DNS resolver that was replaced to free port 53"
 echo "  4. Remove only the firewall rules this server's installer opened"
 echo "  5. Archive config.json, data.db, master.key and certs/ to /root"
-echo "  6. Remove the global 'hdns' command (/usr/local/bin/hdns)"
+echo "  6. Remove the global 'digitdns' command (/usr/local/bin/digitdns)"
 echo "  7. Remove ${INSTALL_DIR} entirely"
 echo ""
 
@@ -124,16 +124,16 @@ if [ "${ASSUME_YES}" != true ]; then
 fi
 
 echo ""
-echo -e "${CYAN}[1/7] Stopping and disabling the hyperdns service...${NC}"
-systemctl stop hyperdns 2>/dev/null || true
-systemctl disable hyperdns 2>/dev/null || true
+echo -e "${CYAN}[1/7] Stopping and disabling the digitdns service...${NC}"
+systemctl stop digitdns 2>/dev/null || true
+systemctl disable digitdns 2>/dev/null || true
 
 echo -e "${CYAN}[2/7] Removing the systemd service unit...${NC}"
-rm -f /etc/systemd/system/hyperdns.service
+rm -f /etc/systemd/system/digitdns.service
 systemctl daemon-reload 2>/dev/null || true
 
 echo -e "${CYAN}[3/7] Restoring the system DNS resolver...${NC}"
-rm -f /etc/systemd/resolved.conf.d/hyperdns.conf
+rm -f /etc/systemd/resolved.conf.d/digitdns.conf
 
 # The drop-in is only half of what step [2/6] of the installer changed. It also replaced
 # /etc/resolv.conf, because with DNSStubListener=no the 127.0.0.53 that every generated
@@ -179,7 +179,7 @@ echo -e "${CYAN}[4/7] Removing the firewall rules this installer opened...${NC}"
 
 # Only the rules recorded at install time, and only the ones that were not already there.
 # An uninstaller that closed every port unconditionally would close 80, 443 or 8080 on a
-# server that was using them before HyperDNS was ever installed.
+# server that was using them before DigitDNS was ever installed.
 if [ -f "${FIREWALL_MARKER}" ]; then
     REMOVED=0
     ABSENT=0
@@ -260,13 +260,13 @@ else
     echo -e "  ${YELLOW}! ${INSTALL_DIR} does not exist; nothing to archive.${NC}"
 fi
 
-echo -e "${CYAN}[6/7] Removing the global CLI command 'hdns'...${NC}"
+echo -e "${CYAN}[6/7] Removing the global CLI command 'digitdns'...${NC}"
 # Only if it is this installation's symlink. install.sh creates it with `ln -sf`, so a
 # regular file of the same name belongs to something else and is left where it is.
-if [ -L /usr/local/bin/hdns ]; then
-    rm -f /usr/local/bin/hdns
-elif [ -e /usr/local/bin/hdns ]; then
-    echo -e "  ${YELLOW}! /usr/local/bin/hdns is not a symlink; leaving it in place.${NC}"
+if [ -L /usr/local/bin/digitdns ]; then
+    rm -f /usr/local/bin/digitdns
+elif [ -e /usr/local/bin/digitdns ]; then
+    echo -e "  ${YELLOW}! /usr/local/bin/digitdns is not a symlink; leaving it in place.${NC}"
 fi
 
 echo -e "${CYAN}[7/7] Removing ${INSTALL_DIR}...${NC}"

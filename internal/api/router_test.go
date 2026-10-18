@@ -10,7 +10,7 @@ import (
 
 	"github.com/miekg/dns"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // These tests cover the parts of SecurityMiddleware and the handlers that are easy
@@ -18,7 +18,7 @@ import (
 // that is not there, a loopback check that compares strings, and an error body that
 // says "application/json" while carrying something that is not JSON.
 
-const testKey = "hdns_live_testkey123"
+const testKey = "digitdns_live_testkey123"
 
 func authedRequest(method, path string, body []byte) *http.Request {
 	var req *http.Request

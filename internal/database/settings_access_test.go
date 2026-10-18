@@ -88,7 +88,7 @@ func fullSettings() *ServerSettings {
 		AdminUsername:      "admin",
 		AdminPassword:      "pbkdf2-sha256$600000$c2FsdHNhbHQ$aGFzaGhhc2g",
 		AdminPasswordWeak:  true,
-		APIKey:             "hdns_live_0123456789abcdef",
+		APIKey:             "digitdns_live_0123456789abcdef",
 		APIBind:            "127.0.0.1",
 		AdminPath:          "a1b2c3d4e5f67890",
 		SessionIdleMinutes: 30,
@@ -128,7 +128,7 @@ func TestSnapshotReportsTheCurrentValues(t *testing.T) {
 		WebPort:            8080,
 		AdminUsername:      "admin",
 		AdminPasswordWeak:  true,
-		APIKey:             "hdns_live_0123456789abcdef",
+		APIKey:             "digitdns_live_0123456789abcdef",
 		APIBind:            "127.0.0.1",
 		AdminPath:          "a1b2c3d4e5f67890",
 		SessionIdleMinutes: 30,
@@ -148,7 +148,7 @@ func TestUpdateAndPersistAppliesBeforeItStores(t *testing.T) {
 	var seenKey, seenBind string
 	err := s.UpdateAndPersist(
 		func(m *MutableSettings) {
-			m.APIKey = "hdns_live_rotated"
+			m.APIKey = "digitdns_live_rotated"
 			m.APIBind = "0.0.0.0"
 		},
 		func(cur *ServerSettings) error {
@@ -159,10 +159,10 @@ func TestUpdateAndPersistAppliesBeforeItStores(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateAndPersist: %v", err)
 	}
-	if seenKey != "hdns_live_rotated" || seenBind != "0.0.0.0" {
+	if seenKey != "digitdns_live_rotated" || seenBind != "0.0.0.0" {
 		t.Errorf("persist saw %q/%q, want the new values already applied", seenKey, seenBind)
 	}
-	if got := s.GetAPIKey(); got != "hdns_live_rotated" {
+	if got := s.GetAPIKey(); got != "digitdns_live_rotated" {
 		t.Errorf("GetAPIKey after a successful update = %q", got)
 	}
 	if got := s.GetAPIBind(); got != "0.0.0.0" {
@@ -184,7 +184,7 @@ func TestUpdateAndPersistRestoresEveryFieldOnFailure(t *testing.T) {
 		func(m *MutableSettings) {
 			m.PublicIP = "198.51.100.1"
 			m.APIBind = "0.0.0.0"
-			m.APIKey = "hdns_live_rotated"
+			m.APIKey = "digitdns_live_rotated"
 			m.AdminUsername = "root"
 			m.AdminPassword = "pbkdf2-sha256$600000$bmV3c2FsdA$bmV3aGFzaA"
 			m.AdminPasswordWeak = false
@@ -237,7 +237,7 @@ func TestConcurrentRotationsKeepMemoryAndStorageInAgreement(t *testing.T) {
 	const (
 		writers = 8
 		rounds  = 250
-		seed    = "hdns_live_seed"
+		seed    = "digitdns_live_seed"
 	)
 	s := &ServerSettings{APIKey: seed, APIBind: "127.0.0.1"}
 
@@ -250,7 +250,7 @@ func TestConcurrentRotationsKeepMemoryAndStorageInAgreement(t *testing.T) {
 		go func(w int) {
 			defer wg.Done()
 			for i := range rounds {
-				key := fmt.Sprintf("hdns_live_%d_%d", w, i)
+				key := fmt.Sprintf("digitdns_live_%d_%d", w, i)
 				// Every fourth write fails. A run where they all succeed would pass
 				// even with the broken rollback in place.
 				fail := i%4 == 3
@@ -289,7 +289,7 @@ func TestReadersOnlyObserveAssignedValues(t *testing.T) {
 		{"203.0.113.9", "127.0.0.1"},
 		{"198.51.100.1", "0.0.0.0"},
 	}
-	keys := [2]string{"hdns_live_aaaaaaaaaaaaaaaa", "hdns_live_bb"} // deliberately different lengths
+	keys := [2]string{"digitdns_live_aaaaaaaaaaaaaaaa", "digitdns_live_bb"} // deliberately different lengths
 
 	s := &ServerSettings{PublicIP: pairs[0][0], APIBind: pairs[0][1], APIKey: keys[0]}
 

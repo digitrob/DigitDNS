@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regression test: installer drop-ins stay readable under a restrictive umask.
 
-The online and offline installers write /etc/systemd/resolved.conf.d/hyperdns.conf
+The online and offline installers write /etc/systemd/resolved.conf.d/digitdns.conf
 via a shell redirect. The drop-in is consumed by systemd-resolved, which runs as
 its own unprivileged user — not root — so a file created under umask 077 is
 unreadable by it, silently ignored, and the 127.0.0.53:53 stub listener stays
@@ -29,12 +29,12 @@ DOMAIN = 'installer-umask.invalid'
 ADMIN_PATH = '0123456789abcdef'
 
 DROPIN_DIR = Path('/etc/systemd/resolved.conf.d')
-DROPIN = DROPIN_DIR / 'hyperdns.conf'
+DROPIN = DROPIN_DIR / 'digitdns.conf'
 
 
 def require_container():
     if (not Path('/.dockerenv').exists()
-            or os.environ.get('HYPERDNS_UMASK_CONTAINER') != '1'
+            or os.environ.get('DIGITDNS_UMASK_CONTAINER') != '1'
             or Path(__file__).resolve() != FIXTURE / 'test_installer_umask.py'):
         raise RuntimeError('Refusing container-only operations outside the umask container')
 
@@ -43,19 +43,19 @@ def stub(command, args):
     require_container()
     if command == 'systemctl':
         # systemd-resolved reports active so the port-53 step actually runs;
-        # hyperdns is never started by this test.
+        # digitdns is never started by this test.
         if args == ['is-active', '--quiet', 'systemd-resolved']:
             return 0
-        if args == ['is-active', '--quiet', 'hyperdns']:
+        if args == ['is-active', '--quiet', 'digitdns']:
             return 3
         if args in (['restart', 'systemd-resolved'],
-                    ['daemon-reload'], ['enable', 'hyperdns'],
-                    ['restart', 'hyperdns'], ['stop', 'hyperdns']):
+                    ['daemon-reload'], ['enable', 'digitdns'],
+                    ['restart', 'digitdns'], ['stop', 'digitdns']):
             return 0
-        if args == ['show', 'hyperdns', '--property=LoadState', '--value']:
+        if args == ['show', 'digitdns', '--property=LoadState', '--value']:
             print('loaded')
             return 0
-        if args == ['show', 'hyperdns', '--property=ActiveState', '--value']:
+        if args == ['show', 'digitdns', '--property=ActiveState', '--value']:
             print('inactive')
             return 0
     elif command == 'curl':
@@ -66,8 +66,8 @@ def stub(command, args):
         if len(urls) == 1 and '-o' in args:
             url = urls[0]
             out = args[args.index('-o') + 1]
-            if '/hyperdns-linux-amd64' in url:
-                shutil.copyfile(FIXTURE / 'hyperdns', out)
+            if '/digitdns-linux-amd64' in url:
+                shutil.copyfile(FIXTURE / 'digitdns', out)
                 return 0
             if url.endswith('/config.example.json'):
                 shutil.copyfile(FIXTURE / 'config.example.json', out)
@@ -103,8 +103,8 @@ def inside():
         script.write_text(f'#!/bin/sh\nexec /usr/bin/python3 {FIXTURE}/test_installer_umask.py --stub {command} "$@"\n')
         script.chmod(0o755)
     env = dict(os.environ, PATH=f'{stubs}:/usr/bin:/bin', TERM='dumb',
-               HYPERDNS_REF=REF, HYPERDNS_DOMAIN=DOMAIN,
-               HYPERDNS_EMAIL='umask@example.invalid')
+               DIGITDNS_REF=REF, DIGITDNS_DOMAIN=DOMAIN,
+               DIGITDNS_EMAIL='umask@example.invalid')
 
     failures = []
     # The archive preserves paths (scripts/install.sh), so the staged copies live
@@ -160,10 +160,10 @@ def main():
     (repo / 'build').mkdir(exist_ok=True)
     # The fixture binary is cross-built on the Windows host (WSL has no Go) and
     # staged by relative path; the script finds it next to the repo layout.
-    binary = repo / 'build' / 'hyperdns-umask-fixture'
+    binary = repo / 'build' / 'digitdns-umask-fixture'
     if not binary.exists():
         raise SystemExit(f'Build the fixture first: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 '
-                         f'go build -trimpath -o {binary} ./cmd/hyperdns')
+                         f'go build -trimpath -o {binary} ./cmd/digitdns')
     assert binary.read_bytes()[:4] == b'\x7fELF', 'fixture is not a Linux ELF'
 
     payload = io.BytesIO()
@@ -177,7 +177,7 @@ def main():
                    repo / 'config.example.json',
                    repo / 'offline-bundle' / 'version.json',
                    Path(__file__).resolve()]
-        extra = {binary: 'hyperdns'}
+        extra = {binary: 'digitdns'}
         for source in members:
             if not Path(source).exists():
                 continue
@@ -196,12 +196,12 @@ def main():
             info.mode = 0o755
             archive.addfile(info, io.BytesIO(raw))
 
-    name = 'hyperdns-umask-' + uuid.uuid4().hex[:12]
+    name = 'digitdns-umask-' + uuid.uuid4().hex[:12]
     command = docker + ['run', '--rm', '--pull=never', '--network=none',
                         '--cap-drop=ALL', '--cap-add=CHOWN',
                         '--security-opt=no-new-privileges', '--pids-limit=128',
                         '--memory=512m', '--user=0:0', '--name', name, '-i',
-                        '-e', 'HYPERDNS_UMASK_CONTAINER=1',
+                        '-e', 'DIGITDNS_UMASK_CONTAINER=1',
                         '--entrypoint=/bin/bash', args.image, '-c',
                         'mkdir /umask && tar xf - -C /umask && '
                         'cp /umask/tests/scripts/test_installer_umask.py /umask/test_installer_umask.py && '

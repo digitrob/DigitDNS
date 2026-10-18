@@ -31,7 +31,7 @@ import (
 // probeName is the name the tests query. It is deliberately not cloudflare.com.,
 // the name BenchmarkAll asks for: keeping them distinct means a reply function
 // that stalls the test's query cannot also stall an explicit BenchmarkAll call.
-const probeName = "probe.hyperdns.test."
+const probeName = "probe.digitdns.test."
 
 // answer describes how a test resolver replies to one query.
 type answer struct {

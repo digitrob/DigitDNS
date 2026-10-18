@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 const (

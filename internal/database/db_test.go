@@ -9,14 +9,14 @@ import (
 	"time"
 
 	bolt "go.etcd.io/bbolt"
-	"hyperdns/internal/crypto"
+	"digitdns/internal/crypto"
 )
 
 func TestDatabase_ClientEncryptionAndCRUD(t *testing.T) {
 	// A fixed filename in the package directory would survive a panic and be
 	// reused by the next run, and bbolt's exclusive lock makes that a hang rather
 	// than an error.
-	tmpDB := filepath.Join(t.TempDir(), "test_hyperdns.db")
+	tmpDB := filepath.Join(t.TempDir(), "test_digitdns.db")
 
 	key := make([]byte, 32)
 	for i := range key {

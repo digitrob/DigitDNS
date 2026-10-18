@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/core/upstream"
-	"hyperdns/internal/service"
+	"digitdns/internal/core/upstream"
+	"digitdns/internal/service"
 )
 
 // bearerFor logs the test admin in and returns the session token.

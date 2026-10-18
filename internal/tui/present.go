@@ -10,7 +10,7 @@ import (
 
 // ANSI presentation for the console. The constants are inert data; whether
 // they are emitted at all is decided by NewPalette, because a non-terminal
-// consumer (a test harness, `hdns | tee`, a CI pipe) must never receive the
+// consumer (a test harness, `digitdns | tee`, a CI pipe) must never receive the
 // escape sequences — they would corrupt whatever is reading it.
 type palette struct {
 	cyan   string
@@ -76,14 +76,14 @@ func (p palette) ClearScreen(w io.Writer) {
 // so the string stays a pure template here.
 func Banner(version string) string {
 	return strings.Join([]string{
-		"  _    _                           _____  _   _  _____ ",
-		" | |  | |                         |  __ \\| \\ | |/ ____|",
-		" | |__| |_   _ _ __   ___ _ __    | |  | |  \\| | (___  ",
-		" |  __| | | | | '_ \\ / _ \\ '__|   | |  | | . ` |\\___ \\ ",
-		" | |  | | |_| | |_) |  __/ |      | |__| | |\\  |____) |",
-		" |_|  |_|\\__, | .__/ \\___|_|      |_____/|_| \\_|_____/ ",
-		"          __/ | |                                      ",
-		"         |___/|_|      Standalone SmartDNS Controller",
+		"  _____  _       _ _   _____  _   _  _____",
+		" |  __ \\(_)     (_) | |  __ \\| \\ | |/ ____|",
+		" | |  | |_  __ _ _| |_| |  | |  \\| | (___",
+		" | |  | | |/ _` | | __| |  | | . ` |\\___ \\",
+		" | |__| | | (_| | | |_| |__| | |\\  |____) |",
+		" |_____/|_|\\__, |_|\\__|_____/|_| \\_|_____/",
+		"            __/ |",
+		"           |___/      Standalone SmartDNS Controller",
 	}, "\n")
 }
 

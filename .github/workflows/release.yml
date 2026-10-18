@@ -70,34 +70,34 @@ jobs:
           mkdir -p dist
           
           # Linux AMD64
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o dist/hyperdns-linux-amd64 ./cmd/hyperdns
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o dist/digitdns-linux-amd64 ./cmd/digitdns
           
           # Linux ARM64
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w" -o dist/hyperdns-linux-arm64 ./cmd/hyperdns
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w" -o dist/digitdns-linux-arm64 ./cmd/digitdns
           
           # Windows AMD64
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-s -w" -o dist/hyperdns-windows-amd64.exe ./cmd/hyperdns
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-s -w" -o dist/digitdns-windows-amd64.exe ./cmd/digitdns
           
           # macOS ARM64 (Apple Silicon)
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o dist/hyperdns-darwin-arm64 ./cmd/hyperdns
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o dist/digitdns-darwin-arm64 ./cmd/digitdns
           
           # macOS AMD64 (Intel)
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w" -o dist/hyperdns-darwin-amd64 ./cmd/hyperdns
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w" -o dist/digitdns-darwin-amd64 ./cmd/digitdns
           
           # Build Offline Bundle. scripts/uninstall.sh is the canonical copy;
           # offline-bundle/scripts/ holds the mirror kept
           # byte-identical. The uninstaller is not optional: install.sh copies it
-          # to /opt/hyperdns/scripts/uninstall.sh, and when it is missing the
+          # to /opt/digitdns/scripts/uninstall.sh, and when it is missing the
           # TUI's "Complete Uninstall" falls back to an rm -rf that takes data.db
           # and master.key with it and restores neither the resolver nor the
           # firewall. version.json ships so the daemon's startup drift check has
           # a matching file.
           # config.example.json keeps its example name in the bundle: install.sh
-          # looks for exactly that file to seed a fresh /opt/hyperdns/config.json
+          # looks for exactly that file to seed a fresh /opt/digitdns/config.json
           # with per-install credentials. Shipping it as config.json would skip
           # that branch entirely (the beta zip shipped it correctly).
           mkdir -p offline_temp/scripts
-          cp dist/hyperdns-linux-amd64 offline_temp/hyperdns
+          cp dist/digitdns-linux-amd64 offline_temp/digitdns
           cp offline-bundle/install.sh offline_temp/install.sh
           cp config.example.json offline_temp/config.example.json
           cp offline-bundle/version.json offline_temp/version.json
@@ -105,10 +105,10 @@ jobs:
           cp scripts/restore.sh offline_temp/scripts/restore.sh
           cp offline-bundle/README.txt offline_temp/README.txt
           cp offline-bundle/migrate-from-v1.sh offline_temp/migrate-from-v1.sh
-          chmod +x offline_temp/install.sh offline_temp/hyperdns offline_temp/scripts/*.sh offline_temp/migrate-from-v1.sh
+          chmod +x offline_temp/install.sh offline_temp/digitdns offline_temp/scripts/*.sh offline_temp/migrate-from-v1.sh
           
-          tar -czvf dist/hyperdns-offline-bundle.tar.gz -C offline_temp .
-          (cd offline_temp && zip -r ../dist/hyperdns-offline-bundle.zip .)
+          tar -czvf dist/digitdns-offline-bundle.tar.gz -C offline_temp .
+          (cd offline_temp && zip -r ../dist/digitdns-offline-bundle.zip .)
           
           # Generate SHA256 Checksums
           cd dist
@@ -145,6 +145,27 @@ jobs:
       # unverifiable one bricks every self-update.
       - name: Verify the bundle signature
         run: go run ./tools/releasesign verify -in dist/checksums.txt -header dist/checksums.sig
+
+      # The release body differs by channel: a "-beta" tag is a development
+      # build and must say so, while a stable cut must not carry that warning.
+      # Built here rather than inlined so the wording tracks the same
+      # contains(github.ref_name, 'beta') test that drives the prerelease flag.
+      - name: Compose the release body
+        run: |
+          {
+            if [[ "${GITHUB_REF_NAME}" == *beta* ]]; then
+              echo "> ⚠️ **UNSTABLE — development pre-release (${GITHUB_REF_NAME}).**"
+              echo "> This build is a work in progress and is **not** recommended for production."
+              echo "> New installs should use the current stable line the README points at"
+              echo "> (\`v3.0.0\`); this tag exists for testing the features in flight."
+            else
+              echo "> **Stable release (${GITHUB_REF_NAME}).**"
+              echo "> Recommended for production. Install with the one-liner in the README,"
+              echo "> or upgrade in place from the dashboard's self-updater."
+            fi
+            echo "> Full list of changes: [docs/CHANGELOG.md](https://github.com/digitrob/DigitDNS/blob/${GITHUB_REF_NAME}/docs/CHANGELOG.md)."
+          } > "${RUNNER_TEMP}/release-body.md"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
@@ -158,10 +179,5 @@ jobs:
           # A tag without "-beta" (a future stable cut) publishes normally.
           prerelease: ${{ contains(github.ref_name, 'beta') }}
           make_latest: ${{ contains(github.ref_name, 'beta') && 'false' || 'legacy' }}
-          body: |
-            > ⚠️ **UNSTABLE — development pre-release (${{ github.ref_name }}).**
-            > This build is a work in progress and is **not** recommended for production.
-            > New installs should use the current stable line the README points at
-            > (`v2.2.0-beta.1`); this tag exists for testing the features in flight.
-            > Full list of changes: [docs/CHANGELOG.md](https://github.com/digitrob/DigitDNS/blob/${{ github.ref_name }}/docs/CHANGELOG.md).
+          body_path: ${{ runner.temp }}/release-body.md
 

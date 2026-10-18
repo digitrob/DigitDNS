@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# HyperDNS SSL Certificate Issuer (Powered by ACME & Let's Encrypt / ZeroSSL)
+# DigitDNS SSL Certificate Issuer (Powered by ACME & Let's Encrypt / ZeroSSL)
 # ==============================================================================
 
 set -e
 
 DOMAIN="$1"
 EMAIL="${2:-admin@$DOMAIN}"
-DEST_DIR="${3:-/opt/hyperdns/certs}"
+DEST_DIR="${3:-/opt/digitdns/certs}"
 
 if [ -z "$DOMAIN" ]; then
     echo "Usage: $0 <domain> [email] [dest_dir]"
@@ -65,7 +65,7 @@ $ACME --set-default-ca --server letsencrypt || true
 
 echo "[SSL] Issuing certificate for $DOMAIN via standalone HTTP-01 (port 80)..."
 # NOTE: Let's Encrypt always validates HTTP-01 on port 80. Ports 80/443 are
-# normally occupied by the HyperDNS SNI proxy, so stop the service for the
+# normally occupied by the DigitDNS SNI proxy, so stop the service for the
 # duration of the challenge and start it again right after (post-hook).
 #
 # The post-hook is not enough on its own. acme.sh only runs it after a successful
@@ -74,8 +74,8 @@ echo "[SSL] Issuing certificate for $DOMAIN via standalone HTTP-01 (port 80)..."
 # `set -e` the script would exit right there and never restart anything. The trap makes
 # the restart unconditional, whichever way this script ends.
 restore_service() {
-    if command -v systemctl >/dev/null 2>&1 && systemctl is-enabled hyperdns >/dev/null 2>&1; then
-        systemctl start hyperdns >/dev/null 2>&1 || true
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-enabled digitdns >/dev/null 2>&1; then
+        systemctl start digitdns >/dev/null 2>&1 || true
     fi
 }
 trap restore_service EXIT
@@ -86,11 +86,11 @@ trap restore_service EXIT
 # Let's Encrypt's five duplicate-certificate slots per name per week every
 # single time.
 $ACME --issue -d "$DOMAIN" --standalone \
-    --pre-hook "systemctl stop hyperdns || true" \
-    --post-hook "systemctl start hyperdns || true" || \
+    --pre-hook "systemctl stop digitdns || true" \
+    --post-hook "systemctl start digitdns || true" || \
 $ACME --issue -d "$DOMAIN" --alpn \
-    --pre-hook "systemctl stop hyperdns || true" \
-    --post-hook "systemctl start hyperdns || true"
+    --pre-hook "systemctl stop digitdns || true" \
+    --post-hook "systemctl start digitdns || true"
 
 echo "[SSL] Installing certificate to $DEST_DIR..."
 # cert.pem holds the full chain, and --cert-file is deliberately absent. Both used to be
@@ -102,7 +102,7 @@ echo "[SSL] Installing certificate to $DEST_DIR..."
 $ACME --install-cert -d "$DOMAIN" \
     --key-file "$DEST_DIR/key.pem" \
     --fullchain-file "$DEST_DIR/cert.pem" \
-    --reloadcmd "systemctl restart hyperdns || true"
+    --reloadcmd "systemctl restart digitdns || true"
 
 chmod 600 "$DEST_DIR/key.pem"
 chmod 644 "$DEST_DIR/cert.pem"

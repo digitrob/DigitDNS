@@ -242,14 +242,14 @@ func (ws *WebServer) validateSubscriptionCertificate() string {
 }
 
 // acmeDir names where this daemon's embedded ACME client stores issued
-// pairs. It mirrors the layout choice in cmd/hyperdns/main.go: under
-// /opt/hyperdns when installed, beside the working directory otherwise.
+// pairs. It mirrors the layout choice in cmd/digitdns/main.go: under
+// /opt/digitdns when installed, beside the working directory otherwise.
 func (ws *WebServer) acmeDir() string {
 	if ws.acmeManager != nil && ws.acmeManager.CertDir != "" {
 		return ws.acmeManager.CertDir
 	}
-	if _, err := os.Stat("/opt/hyperdns"); err == nil {
-		return "/opt/hyperdns/certs/acme"
+	if _, err := os.Stat("/opt/digitdns"); err == nil {
+		return "/opt/digitdns/certs/acme"
 	}
 	return "certs/acme"
 }

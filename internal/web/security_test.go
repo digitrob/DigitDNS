@@ -439,7 +439,7 @@ func writeTestChainPair(t *testing.T, dnsName string) (certPath, keyPath, caPath
 	}
 	caTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "HyperDNS Test CA"},
+		Subject:               pkix.Name{CommonName: "DigitDNS Test CA"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
 		KeyUsage:              x509.KeyUsageCertSign,

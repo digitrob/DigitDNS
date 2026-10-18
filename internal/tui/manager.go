@@ -8,12 +8,12 @@ import (
 	"runtime"
 	"strings"
 
-	"hyperdns/internal/core/cache"
-	"hyperdns/internal/core/upstream"
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
-	"hyperdns/internal/service"
-	"hyperdns/internal/version"
+	"digitdns/internal/core/cache"
+	"digitdns/internal/core/upstream"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
+	"digitdns/internal/service"
+	"digitdns/internal/version"
 )
 
 const (
@@ -78,7 +78,7 @@ func RunInteractiveManager(
 		// the three lines below cannot disagree with each other.
 		publicIP, apiBind := settings.Endpoint()
 
-		fmt.Printf("\n %s• HyperDNS Version:%s %s%s%s [%s]%s\n", Bold, Reset, Cyan, version.Get().Display, Reset, version.Get().Hash, Reset)
+		fmt.Printf("\n %s• DigitDNS Version:%s %s%s%s [%s]%s\n", Bold, Reset, Cyan, version.Get().Display, Reset, version.Get().Hash, Reset)
 		fmt.Printf(" %s• Server Status:%s %sONLINE%s | %sPublic IP:%s %s%s%s\n", Bold, Reset, Green, Reset, Bold, Reset, Cyan, publicIP, Reset)
 		fmt.Printf(" %s• Dashboard:%s http://%s:%d\n", Bold, Reset, publicIP, settings.WebPort)
 		fmt.Printf(" %s• REST API:%s  http://%s:%d/api/v1 (Bind: %s)\n", Bold, Reset, publicIP, settings.WebPort, apiBind)
@@ -90,9 +90,9 @@ func RunInteractiveManager(
 		fmt.Printf("  %s[5]%s 🚀 Benchmark DNS Upstreams\n", Cyan, Reset)
 		fmt.Printf("  %s[6]%s 🧹 Flush DNS Cache\n", Cyan, Reset)
 		fmt.Printf("  %s[7]%s 🔑 View / Regenerate Master API Key\n", Cyan, Reset)
-		fmt.Printf("  %s[8]%s 🔄 Restart HyperDNS Service\n", Cyan, Reset)
+		fmt.Printf("  %s[8]%s 🔄 Restart DigitDNS Service\n", Cyan, Reset)
 		fmt.Printf("  %s[9]%s 🩺 Run Diagnostics & Port Tests\n", Cyan, Reset)
-		fmt.Printf("  %s[10]%s 🗑️ Complete Uninstall HyperDNS\n", Red, Reset)
+		fmt.Printf("  %s[10]%s 🗑️ Complete Uninstall DigitDNS\n", Red, Reset)
 		fmt.Printf("  %s[11]%s 🔌 Change Dashboard Panel Port (currently %d)\n", Cyan, Reset, settings.WebPort)
 		fmt.Printf("  %s[12]%s 🔓 Clear Login Lockouts (works while the service runs)\n", Cyan, Reset)
 		fmt.Printf("  %s[0]%s 🚪 Exit Controller\n", Yellow, Reset)
@@ -138,7 +138,7 @@ func RunInteractiveManager(
 			RunConsoleDiagnostics()
 			waitEnter(scanner)
 		case "10":
-			UninstallHyperDNS()
+			UninstallDigitDNS()
 			return true
 		case "11":
 			manageWebPort(db, settings, dnsSettings, sniSettings, scanner)
@@ -160,7 +160,7 @@ func RunInteractiveManager(
 
 func showTelemetry(stats *service.StatsService, s *bufio.Scanner) {
 	st := stats.GetLiveStats()
-	fmt.Printf("\n=== HyperDNS Telemetry ===\n")
+	fmt.Printf("\n=== DigitDNS Telemetry ===\n")
 	fmt.Printf(" Total Queries:  %d\n", st.TotalQueries)
 	fmt.Printf(" Query Rate:     %.1f QPS\n", st.QPS)
 	fmt.Printf(" Active Relays:  %d\n", st.ActiveRelays)
@@ -370,8 +370,8 @@ func waitEnter(s *bufio.Scanner) {
 }
 
 func RestartService() {
-	fmt.Println("\nRestarting hyperdns service...")
-	cmd := exec.Command("systemctl", "restart", "hyperdns")
+	fmt.Println("\nRestarting digitdns service...")
+	cmd := exec.Command("systemctl", "restart", "digitdns")
 	if err := cmd.Run(); err != nil {
 		fmt.Printf("Warning: failed to restart service via systemctl: %v\n", err)
 	} else {
@@ -380,13 +380,13 @@ func RestartService() {
 }
 
 func RunConsoleDiagnostics() {
-	fmt.Println("\n=== HyperDNS Diagnostics ===")
+	fmt.Println("\n=== DigitDNS Diagnostics ===")
 	fmt.Println("Checking network listeners and service status...")
 	fmt.Println("✓ Core DNS engine: Ready")
 	fmt.Println("✓ SNI Proxy engine: Ready")
 	fmt.Println("✓ Database storage: Operational")
 }
 
-// UninstallHyperDNS lives in uninstall.go. The version that used to be here deleted
-// /opt/hyperdns — data.db and master.key included — without a backup and without removing
+// UninstallDigitDNS lives in uninstall.go. The version that used to be here deleted
+// /opt/digitdns — data.db and master.key included — without a backup and without removing
 // the resolved drop-in, so the host it "uninstalled" from was left with no resolver at all.

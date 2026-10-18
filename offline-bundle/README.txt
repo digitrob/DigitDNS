@@ -1,11 +1,11 @@
 ========================================================================
-   HYPERDNS v2.2.0-beta (Codename: HyperSHIELD) — OFFLINE INSTALLER
+   DigitDNS v3.0.0 — OFFLINE INSTALLER
    100% Standalone · Zero Internet Required · Single Binary
 ========================================================================
 
 WHAT'S IN THIS PACKAGE
 ----------------------
-  hyperdns              The complete daemon (Linux amd64, static, zero CGO).
+  digitdns              The complete daemon (Linux amd64, static, zero CGO).
                         DNS 53 (UDP/TCP) + DoT 853 + DoH (own port) + Panel
                         + REST API v1/v2 + Subscriber portal + TUI — all
                         embedded. The ACME client is IN the binary: the
@@ -14,16 +14,16 @@ WHAT'S IN THIS PACKAGE
   install.sh            The installer (systemd service, user, firewall,
                         backups, first-run credentials, panel domain).
   config.example.json   Optional configuration template. The installer seeds
-                        /opt/hyperdns/config.json from it on a FRESH install.
+                        /opt/digitdns/config.json from it on a FRESH install.
                         You do NOT need to edit it beforehand.
   migrate-from-v1.sh    Coming from a HyperDNS 1.x install? Run this FIRST:
                         it sweeps every trace of the old version (service,
-                        units, resolver drop-in, CLI links, /opt/hyperdns,
+                        units, resolver drop-in, CLI links, /opt/digitdns,
                         cron, leftover processes), archives the old data to
                         /root, then hands over to install.sh.
                         bash migrate-from-v1.sh        (asks MIGRATE)
                         bash migrate-from-v1.sh -y    (no prompt)
-  version.json          Build version metadata (2.2.0-beta / HyperSHIELD).
+  version.json          Build version metadata (3.0.0).
   scripts/uninstall.sh  Clean uninstaller.
   scripts/restore.sh    Restore an uninstall backup (requires Python 3).
   LICENSE               AGPL-3.0.
@@ -53,15 +53,15 @@ INSTALL (3 STEPS)
 -----------------
 1) Upload the WHOLE folder to the server (from your PC):
 
-     scp -r offline-bundle root@YOUR_SERVER_IP:/root/hyperdns-offline
+     scp -r offline-bundle root@YOUR_SERVER_IP:/root/digitdns-offline
 
 2) Connect and run the installer:
 
      ssh root@YOUR_SERVER_IP
-     cd /root/hyperdns-offline
-     chmod +x install.sh hyperdns
-     export HYPERDNS_DOMAIN=panel.example.com      # optional: non-interactive
-     export HYPERDNS_EMAIL=you@example.com         # optional
+     cd /root/digitdns-offline
+     chmod +x install.sh digitdns
+     export DIGITDNS_DOMAIN=panel.example.com      # optional: non-interactive
+     export DIGITDNS_EMAIL=you@example.com         # optional
      ./install.sh
 
 3) The installer prints, ONCE:
@@ -96,22 +96,22 @@ FIRST THINGS TO DO AFTER LOGIN
 
 USEFUL COMMANDS
 ---------------
-     systemctl status hyperdns      # service status
-     journalctl -u hyperdns -f      # live logs
-     hdns                           # interactive TUI console
-     hdns status                    # listener + certificate state, no DB
+     systemctl status digitdns      # service status
+     journalctl -u digitdns -f      # live logs
+     digitdns                           # interactive TUI console
+     digitdns status                    # listener + certificate state, no DB
 
 UNINSTALL
 ---------
-     /opt/hyperdns/scripts/uninstall.sh
-     (or: hdns, option 16, typed UNINSTALL confirmation)
+     /opt/digitdns/scripts/uninstall.sh
+     (or: digitdns, option 16, typed UNINSTALL confirmation)
 
 RESTORE AN UNINSTALL BACKUP
 ---------------------------
-  Install HyperDNS first, then run as root:
+  Install DigitDNS first, then run as root:
 
-     bash /opt/hyperdns/scripts/restore.sh /root/hyperdns-backup-TIMESTAMP.tar.gz --check
-     bash /opt/hyperdns/scripts/restore.sh /root/hyperdns-backup-TIMESTAMP.tar.gz
+     bash /opt/digitdns/scripts/restore.sh /root/digitdns-backup-TIMESTAMP.tar.gz --check
+     bash /opt/digitdns/scripts/restore.sh /root/digitdns-backup-TIMESTAMP.tar.gz
 
   Type RESTORE when prompted, or pass --yes for unattended use. Python 3 is
   required. Only the uninstall archive layout is supported, not full-tree
@@ -119,12 +119,12 @@ RESTORE AN UNINSTALL BACKUP
   --check validates archive layout and JSON, NOT database integrity or whether
   the key decrypts the database. Use only a trusted backup from your installation.
 
-  Existing data is backed up to /root/hyperdns-before-restore-*.tar.gz (0600).
+  Existing data is backed up to /root/digitdns-before-restore-*.tar.gz (0600).
   The service is stopped before the backup/replacement and remains STOPPED.
   Check the restored domains, ports and firewall rules, then explicitly run:
 
-     systemctl start hyperdns
-     systemctl status hyperdns
+     systemctl start digitdns
+     systemctl status digitdns
 
   Restoring config.json brings back the old panel port, path and credentials.
   Missing optional config.json/certs are left unchanged. Host resolver/firewall
@@ -136,16 +136,16 @@ TROUBLESHOOTING
 ---------------
   - Installer died with "TERM environment variable not set" → this build
     guards `clear`; if you still see it, run:  TERM=xterm ./install.sh
-  - Panel does not open → check:  ss -tlnp | grep hyperdns
+  - Panel does not open → check:  ss -tlnp | grep digitdns
   - Certificate not issued → the A record must point here and port 80 must
     be reachable; Let's Encrypt allows 5 duplicate certificates per name
     per week. The daemon retries daily; or re-issue from Dashboard →
     Settings → Issue SSL (the built-in ACME client).
-  - Forgot the password → rm /opt/hyperdns/data.db is WRONG (destroys all
+  - Forgot the password → rm /opt/digitdns/data.db is WRONG (destroys all
     subscribers). Ask on the project channel for the reset procedure.
   - Wrong admin path / locked out → the path is in the journal:
-     journalctl -u hyperdns | grep "admin panel path"
+     journalctl -u digitdns | grep "admin panel path"
 
 ========================================================================
-   HyperDNS v2.2.0-beta · AGPL-3.0 · single Go binary · no dependencies
+   DigitDNS v2.2.0-beta · AGPL-3.0 · single Go binary · no dependencies
 ========================================================================

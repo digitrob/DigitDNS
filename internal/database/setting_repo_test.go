@@ -8,7 +8,7 @@ import (
 	"time"
 
 	bolt "go.etcd.io/bbolt"
-	"hyperdns/internal/crypto"
+	"digitdns/internal/crypto"
 )
 
 // settingsFixture opens a database in a fresh directory. bbolt takes an exclusive
@@ -87,7 +87,7 @@ func TestSettingsAreEncryptedAtRest(t *testing.T) {
 	db := settingsFixture(t)
 
 	const verifier = "pbkdf2-sha256$600000$c2FsdHNhbHQ$aGFzaGhhc2g"
-	const apiKey = "hdns_live_9f2c41aa77b0d3e5"
+	const apiKey = "digitdns_live_9f2c41aa77b0d3e5"
 	want := settingsProbe{AdminPassword: verifier, APIKey: apiKey, WebPort: 8080}
 	if err := db.SetSetting("server", want); err != nil {
 		t.Fatalf("SetSetting: %v", err)
@@ -266,7 +266,7 @@ func TestOpenEncryptsLegacySettings(t *testing.T) {
 func TestEncryptLegacySettingsIsIdempotent(t *testing.T) {
 	db := settingsFixture(t)
 
-	if err := db.SetSetting("server", settingsProbe{APIKey: "hdns_live_stable", WebPort: 443}); err != nil {
+	if err := db.SetSetting("server", settingsProbe{APIKey: "digitdns_live_stable", WebPort: 443}); err != nil {
 		t.Fatalf("SetSetting: %v", err)
 	}
 	before := rawSetting(t, db, "server")
@@ -288,7 +288,7 @@ func TestEncryptLegacySettingsIsIdempotent(t *testing.T) {
 	if err := db.GetSetting("server", &got); err != nil {
 		t.Fatalf("GetSetting: %v", err)
 	}
-	if got.APIKey != "hdns_live_stable" || got.WebPort != 443 {
+	if got.APIKey != "digitdns_live_stable" || got.WebPort != 443 {
 		t.Fatalf("value drifted to %+v", got)
 	}
 }
@@ -308,7 +308,7 @@ func TestGetSettingRejectsTheWrongMasterKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := db.SetSetting("server", settingsProbe{APIKey: "hdns_live_secret"}); err != nil {
+	if err := db.SetSetting("server", settingsProbe{APIKey: "digitdns_live_secret"}); err != nil {
 		t.Fatalf("SetSetting: %v", err)
 	}
 	if err := db.Close(); err != nil {
@@ -347,7 +347,7 @@ func TestGetSettingRejectsTheWrongMasterKey(t *testing.T) {
 	if err := db3.GetSetting("server", &got); err != nil {
 		t.Fatalf("GetSetting after restoring the key: %v", err)
 	}
-	if got.APIKey != "hdns_live_secret" {
+	if got.APIKey != "digitdns_live_secret" {
 		t.Fatalf("restored setting = %+v", got)
 	}
 }
@@ -410,7 +410,7 @@ func TestSettingExistsReportsPresenceAndErrors(t *testing.T) {
 
 func TestValidateSettingsRejectsAnyUnreadableRecord(t *testing.T) {
 	db := settingsFixture(t)
-	if err := db.SetSetting("server", settingsProbe{APIKey: "hdns_live_valid"}); err != nil {
+	if err := db.SetSetting("server", settingsProbe{APIKey: "digitdns_live_valid"}); err != nil {
 		t.Fatalf("SetSetting(server): %v", err)
 	}
 	if err := db.bolt.Update(func(tx *bolt.Tx) error {
@@ -426,7 +426,7 @@ func TestValidateSettingsRejectsAnyUnreadableRecord(t *testing.T) {
 
 func TestValidateSettingsAcceptsLegacyAndEncryptedRecords(t *testing.T) {
 	db := settingsFixture(t)
-	if err := db.SetSetting("server", settingsProbe{APIKey: "hdns_live_valid"}); err != nil {
+	if err := db.SetSetting("server", settingsProbe{APIKey: "digitdns_live_valid"}); err != nil {
 		t.Fatalf("SetSetting(server): %v", err)
 	}
 	legacy := []byte(`{"enabled":false}`)

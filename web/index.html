@@ -1488,7 +1488,7 @@
               <span class="policy-icon"><i data-feather="key" class="w-4 h-4"></i></span>
               <div>
                 <h3 class="text-sm font-bold text-white font-heading">Master API Authentication Key</h3>
-                <p class="text-xs text-slate-400">Full administrative access key for headers (<code class="text-cyan-400">X-API-Key: hdns_live_...</code>)</p>
+                <p class="text-xs text-slate-400">Full administrative access key for headers (<code class="text-cyan-400">X-API-Key: digitdns_live_...</code>)</p>
               </div>
             </div>
             <button id="regenerate-api-key-btn" class="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-bold font-heading flex items-center gap-1.5 transition">
@@ -1529,18 +1529,18 @@
 
           <pre id="snippet-curl" class="api-snippet-content p-4 rounded-xl bg-slate-950 font-mono text-xs text-slate-300 overflow-x-auto border border-slate-800/80"># 1. Check Engine Health
 curl -X GET "http://127.0.0.1:8080/api/v1/status" \
-  -H "X-API-Key: hdns_live_your_key_here"
+  -H "X-API-Key: digitdns_live_your_key_here"
 
 # 2. Create User Account (30 Days)
 curl -X POST "http://127.0.0.1:8080/api/v1/clients" \
-  -H "X-API-Key: hdns_live_your_key_here" \
+  -H "X-API-Key: digitdns_live_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{"name":"Gamer-VIP","expires_days":30}'</pre>
 
           <pre id="snippet-python" class="api-snippet-content p-4 rounded-xl bg-slate-950 font-mono text-xs text-slate-300 overflow-x-auto border border-slate-800/80 hidden">import requests
 
 API_URL = "http://127.0.0.1:8080/api/v1"
-HEADERS = {"X-API-Key": "hdns_live_your_key_here"}
+HEADERS = {"X-API-Key": "digitdns_live_your_key_here"}
 
 # Create subscriber account on plan purchase
 def create_smartdns_user(username, days=30):
@@ -1556,7 +1556,7 @@ def create_smartdns_user(username, days=30):
 
 const client = axios.create({
   baseURL: 'http://127.0.0.1:8080/api/v1',
-  headers: { 'X-API-Key': 'hdns_live_your_key_here' }
+  headers: { 'X-API-Key': 'digitdns_live_your_key_here' }
 });
 
 // Example Telegram Bot Handler

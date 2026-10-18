@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // The live-log stream is the one handler in this package that never returns while a

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // The v2.4 URL-source theme CSS never loaded a single byte: the static CSP's

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // The two upstream editors are the only handlers that persist the whole "dns"

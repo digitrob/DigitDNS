@@ -17,7 +17,7 @@ import tarfile
 import tempfile
 
 parser = argparse.ArgumentParser(description='Restore a DigitDNS uninstall backup. Install DigitDNS first. The service is left stopped after restoration.')
-parser.add_argument('archive', type=Path, help='hyperdns-backup-*.tar.gz (uninstall format only)')
+parser.add_argument('archive', type=Path, help='digitdns-backup-*.tar.gz (uninstall format only)')
 parser.add_argument('--yes', '-y', action='store_true', help='confirm replacement without a prompt; current data is still backed up')
 parser.add_argument('--check', action='store_true', help='validate archive layout without changing files or stopping the service')
 parser.add_argument('--data-dir', type=Path, help='data-only restore to an existing disposable/offline directory; no service control')
@@ -108,16 +108,16 @@ def stage_archive(archive, stage):
 
 def run():
     os.umask(0o077)
-    with tempfile.TemporaryDirectory(prefix='hyperdns-restore-check-') as scratch:
+    with tempfile.TemporaryDirectory(prefix='digitdns-restore-check-') as scratch:
         staged = Path(scratch)
         stage_archive(args.archive, staged)
         print('Archive layout validated. This does not verify database integrity or that its key decrypts it.', flush=True)
         if args.check:
             return
         data_only = args.data_dir is not None
-        target = Path(os.path.abspath(args.data_dir or '/opt/hyperdns'))
-        if data_only and target == Path('/opt/hyperdns'):
-            fail('Use the default mode for /opt/hyperdns so its service is stopped safely.')
+        target = Path(os.path.abspath(args.data_dir or '/opt/digitdns'))
+        if data_only and target == Path('/opt/digitdns'):
+            fail('Use the default mode for /opt/digitdns so its service is stopped safely.')
         if not data_only and os.geteuid() != 0:
             fail('Run with sudo or as root.')
         if target == Path('/') or not target.is_dir():
@@ -138,9 +138,9 @@ def run():
                 if (name == 'certs') != path.is_dir():
                     fail('Destination has an unexpected file type.')
         if not data_only:
-            if not (target / 'hyperdns').is_file():
+            if not (target / 'digitdns').is_file():
                 fail('Install the DigitDNS binary before restoring.')
-            state = subprocess.check_output(['systemctl', 'show', 'hyperdns', '--property=LoadState', '--value'], text=True).strip()
+            state = subprocess.check_output(['systemctl', 'show', 'digitdns', '--property=LoadState', '--value'], text=True).strip()
             if state != 'loaded':
                 fail('Install the DigitDNS systemd service before restoring.')
         print('Target: ' + str(target), flush=True)
@@ -157,7 +157,7 @@ def run():
             except OSError:
                 fail('No terminal available. Use --yes only after reviewing the backup and target.')
         # Prepare on the destination filesystem so each replacement is a rename.
-        with tempfile.TemporaryDirectory(prefix='.hyperdns-restore-', dir=target.parent) as work:
+        with tempfile.TemporaryDirectory(prefix='.digitdns-restore-', dir=target.parent) as work:
             work = Path(work)
             incoming = work / 'incoming'
             shutil.copytree(staged, incoming)
@@ -165,12 +165,12 @@ def run():
             original = work / 'original'
             original.mkdir(mode=0o700)
             if not data_only:
-                subprocess.run(['systemctl', 'stop', 'hyperdns'], check=True)
-                state = subprocess.check_output(['systemctl', 'show', 'hyperdns', '--property=ActiveState', '--value'], text=True).strip()
+                subprocess.run(['systemctl', 'stop', 'digitdns'], check=True)
+                state = subprocess.check_output(['systemctl', 'show', 'digitdns', '--property=ActiveState', '--value'], text=True).strip()
                 if state not in ('inactive', 'failed'):
                     fail('Service did not stop; no data was replaced.')
             backup_dir = target.parent if data_only else Path('/root')
-            fd, backup = tempfile.mkstemp(prefix='hyperdns-before-restore-', suffix='.tar.gz', dir=backup_dir)
+            fd, backup = tempfile.mkstemp(prefix='digitdns-before-restore-', suffix='.tar.gz', dir=backup_dir)
             os.close(fd)
             with tarfile.open(backup, 'w:gz', dereference=False) as out:
                 for name in NAMES:
@@ -201,7 +201,7 @@ def run():
                     for name in moved:
                         os.replace(original / name, target / name)
                 except BaseException:
-                    recovery = Path(tempfile.mkdtemp(prefix='hyperdns-restore-recovery-', dir=target.parent))
+                    recovery = Path(tempfile.mkdtemp(prefix='digitdns-restore-recovery-', dir=target.parent))
                     os.replace(original, recovery / 'original')
                     print('Rollback incomplete. Original files retained at: ' + str(recovery), file=sys.stderr)
                     print('Complete pre-restore archive: ' + backup, file=sys.stderr)
@@ -209,7 +209,7 @@ def run():
                 raise
         print('Restore complete. Database and key were both restored; retain backups until the application has been checked.')
         if not data_only:
-            print('DigitDNS is STOPPED. Check restored domains, ports and firewall rules, then run: systemctl start hyperdns')
+            print('DigitDNS is STOPPED. Check restored domains, ports and firewall rules, then run: systemctl start digitdns')
             print('Restored credentials and panel path replace those from the fresh installation.')
         print('Keep the original archive and the pre-restore backup private.')
 

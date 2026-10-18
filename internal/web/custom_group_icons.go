@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"errors"
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 	"image/png"
 	"io"
 	"strconv"

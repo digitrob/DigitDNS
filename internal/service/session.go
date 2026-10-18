@@ -13,7 +13,7 @@ import (
 // the logout route, which has a session to revoke only in the first case — reads
 // the same constant the minting and validation paths use instead of re-spelling
 // it.
-const SessionTokenPrefix = "hdns_session_"
+const SessionTokenPrefix = "digitdns_session_"
 
 const sessionPrefix = SessionTokenPrefix
 
@@ -92,7 +92,7 @@ func NewSessionManagerWithIdle(ttl, idleTTL time.Duration) *SessionManager {
 	return s
 }
 
-// Create mints a new random session token prefixed with hdns_session_.
+// Create mints a new random session token prefixed with digitdns_session_.
 //
 // The read from crypto/rand is not error-checked because as of Go 1.24 it cannot
 // fail: rand.Read always fills the buffer and panics if the operating system's

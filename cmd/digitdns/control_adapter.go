@@ -9,14 +9,14 @@ import (
 	"strconv"
 	"strings"
 
-	"hyperdns/internal/auth"
-	"hyperdns/internal/control"
-	"hyperdns/internal/core/cache"
-	"hyperdns/internal/core/upstream"
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
-	"hyperdns/internal/netutil"
-	"hyperdns/internal/service"
+	"digitdns/internal/auth"
+	"digitdns/internal/control"
+	"digitdns/internal/core/cache"
+	"digitdns/internal/core/upstream"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
+	"digitdns/internal/netutil"
+	"digitdns/internal/service"
 )
 
 // daemonControl is the only production adapter between the daemon's live
@@ -209,7 +209,7 @@ func (d *daemonControl) ControlPersistPanelPort(port int) error {
 	// next start is a fatal collision in service mode — log.Fatalf takes the
 	// resolver down with the panel — so it is refused here, at the moment of
 	// the change, instead of at the next boot. The probe catches what the
-	// settings cannot see: something outside HyperDNS already holding the
+	// settings cannot see: something outside DigitDNS already holding the
 	// port.
 	snap := d.settings.Snapshot()
 	_, _, err := netutil.ValidatePort(strconv.Itoa(port), snap.WebPort, d.dnsCfg, d.sniCfg, d.tlsCfg)
@@ -217,7 +217,7 @@ func (d *daemonControl) ControlPersistPanelPort(port int) error {
 		return control.NewError(400, "invalid_port", "panel port refused: "+err.Error(), nil)
 	}
 	if err := netutil.ProbeBind(snap.BindHost, port); err != nil {
-		return control.NewError(400, "port_busy", "something outside HyperDNS is already binding that port: "+err.Error(), nil)
+		return control.NewError(400, "port_busy", "something outside DigitDNS is already binding that port: "+err.Error(), nil)
 	}
 	if err := d.settings.PersistWebPort(port, func(s *database.ServerSettings) error {
 		return d.db.SetSetting("server", s)

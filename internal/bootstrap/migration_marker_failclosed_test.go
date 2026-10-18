@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
 )
 
 // Audit finding #7: a migration marker that is valid JSON of the wrong type

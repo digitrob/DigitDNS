@@ -4,9 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"hyperdns/internal/core/matcher"
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
+	"digitdns/internal/core/matcher"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
 )
 
 func newGroupTestDeps(t *testing.T) (*database.DB, *matcher.Matcher) {

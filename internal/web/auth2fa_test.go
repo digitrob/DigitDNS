@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/auth"
-	"hyperdns/internal/database"
+	"digitdns/internal/auth"
+	"digitdns/internal/database"
 )
 
 // jsLineCommentRe strips // comments from a slice of js/app.js, so a scan can

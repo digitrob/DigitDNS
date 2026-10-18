@@ -219,7 +219,7 @@ var commonPasswords = map[string]struct{}{
 	"qwertyuiop": {}, "asdfghjkl": {}, "zxcvbnm": {}, "iloveyou": {},
 	"dragon": {}, "monkey": {}, "sunshine": {}, "princess": {}, "football": {},
 	"baseball": {}, "superman": {}, "trustno1": {}, "starwars": {},
-	"hyperdns": {}, "hyperrain": {}, "smartdns": {}, "dnsadmin": {},
+	"digitdns": {}, "hyperdns": {}, "hyperrain": {}, "smartdns": {}, "dnsadmin": {},
 	"adminadmin": {}, "admin1234": {}, "admin12345": {}, "administrator1": {},
 	"password1": {}, "password12": {}, "password123": {}, "password1234": {},
 	"1234567890": {}, "0987654321": {}, "12345678": {}, "123456789": {},

@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // repairSubscriptionPortDrift re-points the subscription record's seeded copy

@@ -59,7 +59,7 @@ func TestCrypto_Keygen(t *testing.T) {
 		t.Fatalf("failed to reload master key: %v", err)
 	}
 
-	text := "HyperDNS v2.0 Next-Gen"
+	text := "DigitDNS v2.0 Next-Gen"
 	enc, _ := c1.EncryptString(text)
 	dec, _ := c2.DecryptString(enc)
 

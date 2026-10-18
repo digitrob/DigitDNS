@@ -1,7 +1,7 @@
-// Package hyperdns is the module root package. Its sole purpose is to embed
+// Package digitdns is the module root package. Its sole purpose is to embed
 // version.json (the single source of truth for the build version) into the
 // binary so every surface (API, Web UI, TUI, CLI) reports the same values.
-package hyperdns
+package digitdns
 
 import _ "embed"
 

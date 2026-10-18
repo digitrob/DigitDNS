@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"hyperdns/internal/crypto"
+	"digitdns/internal/crypto"
 )
 
 func newMaxDevDB(t *testing.T) *DB {

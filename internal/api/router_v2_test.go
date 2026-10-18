@@ -13,7 +13,7 @@ import (
 // cannot drift silently.
 
 // v2TestKey is the fixed key the harness's ServerSettings carries.
-const v2TestKey = "hdns_live_testkey123"
+const v2TestKey = "digitdns_live_testkey123"
 
 // v2Mux builds a fresh mux with both route versions registered.
 func v2Mux(a *API) http.Handler {
@@ -194,7 +194,7 @@ func TestV2StrictDecodeRefusesTrailingData(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v2/clients",
 		strings.NewReader(`{"display_name":"first"}{"display_name":"second"}`))
-	req.Header.Set("X-API-Key", "hdns_live_testkey123")
+	req.Header.Set("X-API-Key", "digitdns_live_testkey123")
 	req.RemoteAddr = "127.0.0.1:1234"
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)

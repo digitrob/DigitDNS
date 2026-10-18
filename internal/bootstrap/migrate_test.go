@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
 )
 
 // openTestStore creates a real encrypted database in a temp dir, because the

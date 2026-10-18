@@ -41,7 +41,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALL_DIR="/opt/hyperdns"
+INSTALL_DIR="/opt/digitdns"
 
 # Progress spinner. The HTTPS certificate is issued by the daemon itself at
 # first start (embedded Let's Encrypt client, ~7s observed, up to 5m advertised),
@@ -165,7 +165,7 @@ fi
 # geolocates it to Azerbaijan/UAE/Russia, so auto-detection hands back an IP
 # that is not the server's — and that the panel certificate is then issued
 # against. Let the operator correct it at install time instead of discovering it
-# when SSL and subscriber links fail. HYPERDNS_PUBLIC_IP overrides
+# when SSL and subscriber links fail. DIGITDNS_PUBLIC_IP overrides
 # non-interactively; an interactive run is offered the detected value to accept
 # or replace, and whatever is chosen is written into config.json's public_ip so
 # the daemon uses it verbatim rather than re-detecting the wrong one.
@@ -179,12 +179,12 @@ validate_ip() {
     esac
 }
 PUBLIC_IP_MANUAL=0
-if [ -n "${HYPERDNS_PUBLIC_IP:-}" ]; then
-    if validate_ip "${HYPERDNS_PUBLIC_IP}"; then
-        PUBLIC_IP="${HYPERDNS_PUBLIC_IP}"; PUBLIC_IP_MANUAL=1
-        echo -e "  ${CYAN}Using HYPERDNS_PUBLIC_IP=${PUBLIC_IP} (manual override).${NC}"
+if [ -n "${DIGITDNS_PUBLIC_IP:-}" ]; then
+    if validate_ip "${DIGITDNS_PUBLIC_IP}"; then
+        PUBLIC_IP="${DIGITDNS_PUBLIC_IP}"; PUBLIC_IP_MANUAL=1
+        echo -e "  ${CYAN}Using DIGITDNS_PUBLIC_IP=${PUBLIC_IP} (manual override).${NC}"
     else
-        echo -e "  ${RED}HYPERDNS_PUBLIC_IP='${HYPERDNS_PUBLIC_IP}' is not a valid IP address; ignoring it.${NC}"
+        echo -e "  ${RED}DIGITDNS_PUBLIC_IP='${DIGITDNS_PUBLIC_IP}' is not a valid IP address; ignoring it.${NC}"
     fi
 elif [ -t 0 ] || (exec </dev/tty) 2>/dev/null; then
     _ip_reply=""
@@ -238,7 +238,7 @@ if [ -n "${_port_lister}" ]; then
         else
             _row="$(netstat -ltnup 2>/dev/null | awk -v p=":${_rp}$" '$4 ~ p' || true)"
         fi
-        if [ -n "${_row}" ] && ! printf '%s' "${_row}" | grep -q "hyperdns"; then
+        if [ -n "${_row}" ] && ! printf '%s' "${_row}" | grep -qE "hyperdns|digitdns"; then
             # systemd-resolved on :53 is expected and freed in step 2 — do not scare the operator about it.
             if [ "${_rp}" = "53" ] && printf '%s' "${_row}" | grep -q "systemd-resolve"; then continue; fi
             _conflicts="${_conflicts} ${_rp}"
@@ -279,19 +279,19 @@ echo -e "  ${GREEN}✓ Architecture detected: ${ARCH} (${BIN_ARCH})${NC}"
 # one-liner pins it to the tag the user is installing, so the binary, the config
 # template and version.json can never disagree with the installer itself.
 # RELEASE CHECKLIST: bump this to the new tag on every release.
-HYPERDNS_REF="${HYPERDNS_REF:-v2.8.0-beta.1}"
-RAW_BASE="https://raw.githubusercontent.com/IzumiRain/HyperDNS/${HYPERDNS_REF}"
-RELEASE_BASE="https://github.com/IzumiRain/HyperDNS/releases/download/${HYPERDNS_REF}"
+DIGITDNS_REF="${DIGITDNS_REF:-v3.0.0}"
+RAW_BASE="https://raw.githubusercontent.com/digitrob/DigitDNS/${DIGITDNS_REF}"
+RELEASE_BASE="https://github.com/digitrob/DigitDNS/releases/download/${DIGITDNS_REF}"
 
-DL_BIN="$(mktemp /tmp/hyperdns-bin.XXXXXX)"
-if curl -fL --retry 3 --connect-timeout 10 "${RELEASE_BASE}/hyperdns-linux-${BIN_ARCH}" -o "${DL_BIN}" 2>/dev/null && [ -s "${DL_BIN}" ]; then
+DL_BIN="$(mktemp /tmp/digitdns-bin.XXXXXX)"
+if curl -fL --retry 3 --connect-timeout 10 "${RELEASE_BASE}/digitdns-linux-${BIN_ARCH}" -o "${DL_BIN}" 2>/dev/null && [ -s "${DL_BIN}" ]; then
     # Verify the downloaded binary against the release's published checksums
     # (audit hardening note: the installer used to trust the TLS stream alone).
     # The comparison is exact-match on the recorded digest — a missing or
     # mismatching checksums.txt is a hard failure, not a warning.
-    SUM_TMP="$(mktemp /tmp/hyperdns-sum.XXXXXX)"
+    SUM_TMP="$(mktemp /tmp/digitdns-sum.XXXXXX)"
     if curl -fL --retry 3 --connect-timeout 10 "${RELEASE_BASE}/checksums.txt" -o "${SUM_TMP}" 2>/dev/null && [ -s "${SUM_TMP}" ]; then
-        WANT_SUM="$(awk -v n="hyperdns-linux-${BIN_ARCH}" '$2 == n {print $1}' "${SUM_TMP}")"
+        WANT_SUM="$(awk -v n="digitdns-linux-${BIN_ARCH}" '$2 == n {print $1}' "${SUM_TMP}")"
         GOT_SUM="$(sha256sum "${DL_BIN}" | awk '{print $1}')"
         if [ -z "${WANT_SUM}" ] || [ "${GOT_SUM}" != "${WANT_SUM}" ]; then
             echo -e "${RED}[Error] Binary checksum mismatch against the release's checksums.txt.${NC}"
@@ -316,31 +316,103 @@ else
     exit 1
 fi
 
-ONLINE_CONFIG_EXAMPLE="$(mktemp /tmp/hyperdns-cfg.XXXXXX)"
+ONLINE_CONFIG_EXAMPLE="$(mktemp /tmp/digitdns-cfg.XXXXXX)"
 if ! curl -fsL --retry 3 "${RAW_BASE}/config.example.json" -o "${ONLINE_CONFIG_EXAMPLE}" || [ ! -s "${ONLINE_CONFIG_EXAMPLE}" ]; then
-    echo -e "${RED}[Error] Could not download config.example.json from ${HYPERDNS_REF}.${NC}"
+    echo -e "${RED}[Error] Could not download config.example.json from ${DIGITDNS_REF}.${NC}"
     exit 1
 fi
 
-ONLINE_RESTORE="$(mktemp /tmp/hyperdns-restore.XXXXXX)"
+ONLINE_RESTORE="$(mktemp /tmp/digitdns-restore.XXXXXX)"
 if ! curl -fsL --retry 3 "${RAW_BASE}/scripts/restore.sh" -o "${ONLINE_RESTORE}" || [ ! -s "${ONLINE_RESTORE}" ]; then
-    echo -e "${RED}[Error] Could not download restore.sh from ${HYPERDNS_REF}.${NC}"
+    echo -e "${RED}[Error] Could not download restore.sh from ${DIGITDNS_REF}.${NC}"
     exit 1
 fi
 
 # The uninstaller is not optional: the TUI's "Uninstall" runs
-# /opt/hyperdns/scripts/uninstall.sh, and a piped curl|bash install has no
+# /opt/digitdns/scripts/uninstall.sh, and a piped curl|bash install has no
 # local scripts/ directory to copy it from — so an online install that never
 # fetched it left the console pointing at a file that was never written
 # (GitHub issue #1). Download it the same way restore.sh is fetched.
-ONLINE_UNINSTALL="$(mktemp /tmp/hyperdns-uninstall.XXXXXX)"
+ONLINE_UNINSTALL="$(mktemp /tmp/digitdns-uninstall.XXXXXX)"
 if ! curl -fsL --retry 3 "${RAW_BASE}/scripts/uninstall.sh" -o "${ONLINE_UNINSTALL}" || [ ! -s "${ONLINE_UNINSTALL}" ]; then
-    echo -e "${RED}[Error] Could not download uninstall.sh from ${HYPERDNS_REF}.${NC}"
+    echo -e "${RED}[Error] Could not download uninstall.sh from ${DIGITDNS_REF}.${NC}"
     exit 1
 fi
 
-ONLINE_VERSION_JSON="$(mktemp /tmp/hyperdns-ver.XXXXXX)"
+ONLINE_VERSION_JSON="$(mktemp /tmp/digitdns-ver.XXXXXX)"
 curl -fsL --retry 3 "${RAW_BASE}/offline-bundle/version.json" -o "${ONLINE_VERSION_JSON}" 2>/dev/null || true
+
+# ==============================================================================
+# LEGACY (HyperDNS) IN-PLACE MIGRATION
+# ==============================================================================
+# This fork renames HyperDNS to DigitDNS: the install tree moves from
+# /opt/hyperdns to /opt/digitdns and the systemd unit from hyperdns.service to
+# digitdns.service. A box that still carries the old layout is migrated here,
+# BEFORE the safe-install logic below — that logic only looks at /opt/digitdns,
+# so it would otherwise treat the old tree as absent and install a fresh, empty
+# /opt/digitdns beside it, abandoning the operator's data.db, master.key and
+# certificates. The move is in place and preserves every record; a full archive
+# is written to /root first, so the migration is reversible.
+LEGACY_DIR="/opt/hyperdns"
+MIGRATED=false
+PREV_VERSION=""
+if [ -d "${LEGACY_DIR}" ] && { [ -f "${LEGACY_DIR}/data.db" ] || [ -f "${LEGACY_DIR}/master.key" ] || [ -f "${LEGACY_DIR}/config.json" ]; }; then
+    if [ -f "${INSTALL_DIR}/data.db" ] || [ -f "${INSTALL_DIR}/master.key" ] || [ -f "${INSTALL_DIR}/config.json" ]; then
+        echo -e "${RED}[Error] Both ${LEGACY_DIR} and ${INSTALL_DIR} hold an installation.${NC}"
+        echo -e "${RED}  Refusing to guess which one to keep. Back up and remove the stale tree, then re-run.${NC}"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}${BOLD}\u250c${NC}"
+    echo -e "${YELLOW}│ LEGACY HYPERDNS INSTALL DETECTED — migrating to DigitDNS in place${NC}"
+    echo -e "${YELLOW}│ • From : ${CYAN}${LEGACY_DIR}${NC}"
+    echo -e "${YELLOW}│ • To   : ${CYAN}${INSTALL_DIR}${NC}"
+    echo -e "${YELLOW}│ • Data : ${GREEN}preserved — data.db, master.key, config.json, certs${NC}"
+    echo -e "${YELLOW}\u2514${NC}"
+    echo ""
+
+    if [ -x "${LEGACY_DIR}/hyperdns" ]; then
+        PREV_VERSION="$("${LEGACY_DIR}/hyperdns" -version 2>/dev/null | head -n1 || true)"
+    fi
+
+    # Stop and unschedule the old unit first: moving the tree out from under a
+    # running daemon leaves it writing to a path that no longer exists, and the
+    # old unit would race the new one for the same listeners.
+    systemctl stop hyperdns 2>/dev/null || true
+    systemctl disable hyperdns 2>/dev/null || true
+
+    ARCHIVE="/root/hyperdns-premigration-$(date +%Y%m%d_%H%M%S).tar.gz"
+    if tar czf "${ARCHIVE}" -C / opt/hyperdns 2>/dev/null && [ -s "${ARCHIVE}" ]; then
+        echo -e "  ${GREEN}\u2713 Pre-migration archive: ${ARCHIVE}${NC}"
+        echo -e "  ${YELLOW}  Kept as the rollback copy — the move below does not delete it.${NC}"
+    else
+        echo -e "  ${RED}\u2717 Could not archive ${LEGACY_DIR}; aborting so nothing is lost.${NC}"
+        exit 1
+    fi
+
+    # The destination must not exist, or `mv` would nest the old tree inside it
+    # (/opt/digitdns/hyperdns). It is either absent or an empty tree — the guard
+    # above already refused the one case that matters, a second real install.
+    rm -rf "${INSTALL_DIR}"
+    mv "${LEGACY_DIR}" "${INSTALL_DIR}"
+
+    # The old binary carries the old name; rename it so the health probes and the
+    # copy below agree. It is replaced with the new build regardless.
+    if [ -f "${INSTALL_DIR}/hyperdns" ] && [ ! -f "${INSTALL_DIR}/digitdns" ]; then
+        mv "${INSTALL_DIR}/hyperdns" "${INSTALL_DIR}/digitdns"
+    fi
+
+    # Tear down the old unit and resolver drop-in; both are recreated for
+    # digitdns below (steps 2 and 5).
+    rm -f /etc/systemd/system/hyperdns.service
+    rm -f /etc/systemd/resolved.conf.d/hyperdns.conf
+    systemctl daemon-reload 2>/dev/null || true
+
+    echo -e "  ${GREEN}✓ Installation moved — data, credentials and certificates kept${NC}"
+    echo -e "  ${CYAN}  The master API key's visible prefix is updated by the daemon on next start.${NC}"
+    MIGRATED=true
+    echo ""
+fi
 
 install -d -o root -g root -m 0755 "${INSTALL_DIR}"
 install -d -o root -g root -m 0700 "${INSTALL_DIR}/certs"
@@ -355,34 +427,34 @@ install -d -o root -g root -m 0700 "${INSTALL_DIR}/certs"
 # never leave an old record behind to drift.
 # ==============================================================================
 IS_UPGRADE=false
-PREV_VERSION=""
+PREV_VERSION="${PREV_VERSION:-}"
 
-if [ -f "${INSTALL_DIR}/hyperdns" ] || [ -f "${INSTALL_DIR}/config.json" ] || [ -f "${INSTALL_DIR}/data.db" ] || [ -f "${INSTALL_DIR}/master.key" ] || systemctl is-active --quiet hyperdns 2>/dev/null || systemctl is-enabled --quiet hyperdns 2>/dev/null; then
+if [ "${MIGRATED:-false}" != true ] && { [ -f "${INSTALL_DIR}/digitdns" ] || [ -f "${INSTALL_DIR}/config.json" ] || [ -f "${INSTALL_DIR}/data.db" ] || [ -f "${INSTALL_DIR}/master.key" ] || systemctl is-active --quiet digitdns 2>/dev/null || systemctl is-enabled --quiet digitdns 2>/dev/null; }; then
     IS_UPGRADE=true
-    if [ -x "${INSTALL_DIR}/hyperdns" ]; then
-        PREV_VERSION="$("${INSTALL_DIR}/hyperdns" -version 2>/dev/null | head -n1 || true)"
+    if [ -x "${INSTALL_DIR}/digitdns" ]; then
+        PREV_VERSION="$("${INSTALL_DIR}/digitdns" -version 2>/dev/null | head -n1 || true)"
     fi
     [ -z "${PREV_VERSION}" ] && PREV_VERSION="unknown (pre-2.2.0)"
 
     echo -e "${YELLOW}${BOLD}\u250c${NC}"
     echo -e "${YELLOW}│ SAFE INSTALL — an existing DigitDNS installation was detected${NC}"
     echo -e "${YELLOW}│ • Installed Version : ${CYAN}${PREV_VERSION}${NC}"
-    echo -e "${YELLOW}│ • Target Version    : ${GREEN}${HYPERDNS_REF} (this package)${NC}"
+    echo -e "${YELLOW}│ • Target Version    : ${GREEN}${DIGITDNS_REF} (this package)${NC}"
     echo -e "${YELLOW}│ • Mode              : ${GREEN}Fresh install — old data ARCHIVED, then REPLACED${NC}"
     echo -e "${YELLOW}\u2514${NC}"
     echo ""
 
-    # Archive the WHOLE install tree to /root — outside /opt/hyperdns, so it
+    # Archive the WHOLE install tree to /root — outside /opt/digitdns, so it
     # survives the wipe below. data.db + master.key + config.json + certs are
     # one unit; the archive keeps them together. 600 on the archive: it holds
     # master.key and plaintext credentials.
-    if systemctl is-active --quiet hyperdns 2>/dev/null; then
+    if systemctl is-active --quiet digitdns 2>/dev/null; then
         echo -e "  ${CYAN}Gracefully stopping the running service...${NC}"
-        systemctl stop hyperdns || true
+        systemctl stop digitdns || true
     fi
 
-    ARCHIVE="/root/hyperdns-preinstall-$(date +%Y%m%d_%H%M%S).tar.gz"
-    tar czf "${ARCHIVE}" -C / opt/hyperdns 2>/dev/null || true
+    ARCHIVE="/root/digitdns-preinstall-$(date +%Y%m%d_%H%M%S).tar.gz"
+    tar czf "${ARCHIVE}" -C / opt/digitdns 2>/dev/null || true
     chmod 600 "${ARCHIVE}" 2>/dev/null || true
     if [ -s "${ARCHIVE}" ]; then
         echo -e "  ${GREEN}\u2713 Previous install archived to: ${ARCHIVE}${NC}"
@@ -396,17 +468,17 @@ if [ -f "${INSTALL_DIR}/hyperdns" ] || [ -f "${INSTALL_DIR}/config.json" ] || [ 
     fi
 
     # The wipe is destructive and must never happen silently: an interactive
-    # run types FRESH, an unattended run (piped stdin) sets HYPERDNS_FRESH=1.
-    if [ "${HYPERDNS_FRESH:-0}" = "1" ]; then
-        echo -e "  ${CYAN}HYPERDNS_FRESH=1 — wipe confirmed by environment.${NC}"
+    # run types FRESH, an unattended run (piped stdin) sets DIGITDNS_FRESH=1.
+    if [ "${DIGITDNS_FRESH:-0}" = "1" ]; then
+        echo -e "  ${CYAN}DIGITDNS_FRESH=1 — wipe confirmed by environment.${NC}"
     elif [ -t 0 ]; then
         printf "%b" "${YELLOW}Type ${RED}FRESH${YELLOW} to wipe the existing install and reinstall: ${NC}"
         read -r CONFIRM
         [ "${CONFIRM}" = "FRESH" ] || { echo -e "  ${YELLOW}Cancelled — the existing install is untouched (archive kept).${NC}"; exit 0; }
     else
-        echo -e "  ${RED}\u2717 Non-interactive run detected and HYPERDNS_FRESH=1 is not set.${NC}"
+        echo -e "  ${RED}\u2717 Non-interactive run detected and DIGITDNS_FRESH=1 is not set.${NC}"
         echo -e "  ${RED}  Refusing to wipe an existing install silently. Re-run with:${NC}"
-        echo -e "  ${RED}    HYPERDNS_FRESH=1 bash install.sh${NC}"
+        echo -e "  ${RED}    DIGITDNS_FRESH=1 bash install.sh${NC}"
         exit 1
     fi
 
@@ -420,10 +492,10 @@ install -d -o root -g root -m 0755 "${INSTALL_DIR}"
 install -d -o root -g root -m 0700 "${INSTALL_DIR}/certs"
 
 # Copy binary atomically
-cp -f "${SRC_BIN}" "${INSTALL_DIR}/hyperdns.new"
-chmod +x "${INSTALL_DIR}/hyperdns.new"
-mv -f "${INSTALL_DIR}/hyperdns.new" "${INSTALL_DIR}/hyperdns"
-ln -sf "${INSTALL_DIR}/hyperdns" /usr/local/bin/hdns
+cp -f "${SRC_BIN}" "${INSTALL_DIR}/digitdns.new"
+chmod +x "${INSTALL_DIR}/digitdns.new"
+mv -f "${INSTALL_DIR}/digitdns.new" "${INSTALL_DIR}/digitdns"
+ln -sf "${INSTALL_DIR}/digitdns" /usr/local/bin/digitdns
 
 
 install -d -o root -g root -m 0755 "${INSTALL_DIR}/scripts"
@@ -467,7 +539,7 @@ elif [ ! -f "${INSTALL_DIR}/config.json" ] && [ -f "./config.example.json" ]; th
     FRESH_CONFIG_SOURCE="./config.example.json"
 fi
 
-if [ -n "${FRESH_CONFIG_SOURCE}" ]; then
+if [ -n "${FRESH_CONFIG_SOURCE}" ] && [ "${MIGRATED:-false}" != true ]; then
     cp -f "${FRESH_CONFIG_SOURCE}" "${INSTALL_DIR}/config.json"
 
     # config.example.json is a public template, so its placeholder credentials are
@@ -475,7 +547,7 @@ if [ -n "${FRESH_CONFIG_SOURCE}" ]; then
     # ever reads the file. The password is printed once in the closing banner.
     # Both values are hex-only, so they are safe inside the sed replacement.
     GENERATED_ADMIN_PASSWORD="$(openssl rand -hex 12 2>/dev/null || tr -dc 'a-f0-9' < /dev/urandom | head -c 24)"
-    GENERATED_API_KEY="hdns_live_$(openssl rand -hex 16 2>/dev/null || tr -dc 'a-f0-9' < /dev/urandom | head -c 32)"
+    GENERATED_API_KEY="digitdns_live_$(openssl rand -hex 16 2>/dev/null || tr -dc 'a-f0-9' < /dev/urandom | head -c 32)"
     sed -i "s|\"admin_password\": \"[^\"]*\"|\"admin_password\": \"${GENERATED_ADMIN_PASSWORD}\"|" "${INSTALL_DIR}/config.json"
     sed -i "s|\"api_key\": \"[^\"]*\"|\"api_key\": \"${GENERATED_API_KEY}\"|" "${INSTALL_DIR}/config.json"
 
@@ -521,6 +593,15 @@ if [ -n "${FRESH_CONFIG_SOURCE}" ]; then
     fi
 fi
 
+# A migrated install keeps its existing config.json (the fresh-config block above
+# is skipped), so the panel port never lands in PANEL_PORT. Recover it from the
+# kept file for the firewall rule and the closing banner; the daemon itself reads
+# the authoritative copy from the database.
+if [ "${MIGRATED:-false}" = true ] && [ -z "${PANEL_PORT:-}" ] && [ -f "${INSTALL_DIR}/config.json" ]; then
+    PANEL_PORT="$(python3 -c "import json;print(json.load(open('${INSTALL_DIR}/config.json'))['server'].get('web_port',''))" 2>/dev/null || true)"
+    [ "${PANEL_PORT:-0}" = "0" ] && PANEL_PORT=""
+fi
+
 # config.json holds server.admin_password and server.api_key in plaintext, so it must
 # not be world-readable. `cp -f` above inherits 644 from config.example.json, which is a
 # public template and rightly readable, and the copy then keeps that mode through both
@@ -542,8 +623,8 @@ if [ "${PUBLIC_IP_MANUAL:-0}" = "1" ] && [ -f "${INSTALL_DIR}/config.json" ]; th
     echo -e "  ${GREEN}✓ Wrote public IP ${PUBLIC_IP} into config.json${NC}"
 fi
 
-echo -e "  ${GREEN}✓ Binary installed to ${INSTALL_DIR}/hyperdns${NC}"
-echo -e "  ${GREEN}✓ Global CLI command installed: 'hdns'${NC}"
+echo -e "  ${GREEN}✓ Binary installed to ${INSTALL_DIR}/digitdns${NC}"
+echo -e "  ${GREEN}✓ Global CLI command installed: 'digitdns'${NC}"
 
 # ==============================================================================
 # STEP 2: RESOLVE PORT 53 CONFLICTS (SYSTEMD-RESOLVED)
@@ -552,7 +633,7 @@ echo -e "${CYAN}${BOLD}[2/6] Freeing Port 53 (systemd-resolved resolver)...${NC}
 if systemctl is-active --quiet systemd-resolved; then
     echo -e "  ${YELLOW}Configuring systemd-resolved to release port 53 listener...${NC}"
     mkdir -p /etc/systemd/resolved.conf.d/
-    cat << 'EOF' > /etc/systemd/resolved.conf.d/hyperdns.conf
+    cat << 'EOF' > /etc/systemd/resolved.conf.d/digitdns.conf
 [Resolve]
 DNSStubListener=no
 EOF
@@ -565,7 +646,7 @@ EOF
     # told the installer to resolve. Both the directory and the file are pinned
     # to world-readable explicitly, as the unit file already is below.
     chmod 755 /etc/systemd/resolved.conf.d
-    chmod 644 /etc/systemd/resolved.conf.d/hyperdns.conf
+    chmod 644 /etc/systemd/resolved.conf.d/digitdns.conf
     systemctl restart systemd-resolved || true
 
     # /etc/resolv.conf is a symlink to /run/systemd/resolve/stub-resolv.conf on a stock
@@ -714,7 +795,7 @@ IS_HTTPS=false
 # offered (v2.2.0 installer contract).
 #
 # The existing config's domain is offered as the default so an upgrade only
-# needs Enter, and HYPERDNS_DOMAIN covers every shell with no terminal — an
+# needs Enter, and DIGITDNS_DOMAIN covers every shell with no terminal — an
 # offline bundle is often run from a provisioning script.
 EXISTING_DOMAIN=""
 if [ -f "${INSTALL_DIR}/config.json" ]; then
@@ -727,12 +808,12 @@ echo -e "${YELLOW}The dashboard will NOT be reachable as a bare IP over plain HT
 echo -e "${YELLOW}Point an A record at ${PUBLIC_IP} first, then enter the domain.${NC}"
 echo ""
 
-if [ -n "${HYPERDNS_DOMAIN:-}" ]; then
-    if validate_domain "${HYPERDNS_DOMAIN}"; then
-        USER_DOMAIN="${HYPERDNS_DOMAIN}"
-        echo -e "  ${GREEN}✓ Using domain from HYPERDNS_DOMAIN: ${USER_DOMAIN}${NC}"
+if [ -n "${DIGITDNS_DOMAIN:-}" ]; then
+    if validate_domain "${DIGITDNS_DOMAIN}"; then
+        USER_DOMAIN="${DIGITDNS_DOMAIN}"
+        echo -e "  ${GREEN}✓ Using domain from DIGITDNS_DOMAIN: ${USER_DOMAIN}${NC}"
     else
-        echo -e "${RED}[Error] HYPERDNS_DOMAIN='${HYPERDNS_DOMAIN}' is not a valid hostname.${NC}" >&2
+        echo -e "${RED}[Error] DIGITDNS_DOMAIN='${DIGITDNS_DOMAIN}' is not a valid hostname.${NC}" >&2
         echo -e "${YELLOW}Expected a bare name such as dns.example.com -- no scheme, port or path.${NC}" >&2
         exit 1
     fi
@@ -758,7 +839,7 @@ else
         fi
     done
 fi
-USER_EMAIL="${HYPERDNS_EMAIL:-}"
+USER_EMAIL="${DIGITDNS_EMAIL:-}"
 if [ -z "${USER_EMAIL}" ]; then
     USER_EMAIL=$(ask_user " ${BOLD}${CYAN}? Admin email for Let's Encrypt (optional, press Enter to skip): ${NC}" "")
 fi
@@ -807,7 +888,7 @@ fi
 # STEP 5: SYSTEMD SERVICE SETUP
 # ==============================================================================
 echo -e "${CYAN}${BOLD}[5/6] Creating & Starting Systemd Background Service...${NC}"
-cat << 'EOF' > /etc/systemd/system/hyperdns.service
+cat << 'EOF' > /etc/systemd/system/digitdns.service
 [Unit]
 Description=DigitDNS — Standalone SmartDNS & Gaming Gateway
 Documentation=https://github.com/digitrob/DigitDNS
@@ -817,25 +898,25 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/hyperdns
-RuntimeDirectory=hyperdns
+WorkingDirectory=/opt/digitdns
+RuntimeDirectory=digitdns
 RuntimeDirectoryMode=0700
 
-# The daemon binds its root-local control socket at /run/hyperdns/control.sock.
+# The daemon binds its root-local control socket at /run/digitdns/control.sock.
 
 # Every path is named explicitly. The daemon can work them out on its own — it
-# probes for /opt/hyperdns and otherwise falls back to the working directory — but
+# probes for /opt/digitdns and otherwise falls back to the working directory — but
 # a unit that states them is a unit an operator can read the state locations out
 # of, and it keeps being correct if the binary is ever installed elsewhere.
-ExecStart=/opt/hyperdns/hyperdns -daemon \
-    -config /opt/hyperdns/config.json \
-    -db /opt/hyperdns/data.db \
-    -key /opt/hyperdns/master.key
+ExecStart=/opt/digitdns/digitdns -daemon \
+    -config /opt/digitdns/config.json \
+    -db /opt/digitdns/data.db \
+    -key /opt/digitdns/master.key
 
 Restart=always
 RestartSec=3s
 TimeoutStopSec=15s
-SyslogIdentifier=hyperdns
+SyslogIdentifier=digitdns
 
 # 65535 because connection caps are what bound this daemon's stream listeners:
 # 512 on TCP, 1024 on DoT, 512 on HTTPS/DoH — 2048 sockets before UDP, the
@@ -851,7 +932,7 @@ OOMPolicy=continue
 
 # Deliberately NOT sandboxed further: the daemon binds 53/80/443/853 and now
 # performs its own ACME issuance in-process (writes only under
-# /opt/hyperdns/certs). The full note is in scripts/hyperdns.service in the
+# /opt/digitdns/certs). The full note is in scripts/digitdns.service in the
 # repository.
 
 [Install]
@@ -861,10 +942,10 @@ EOF
 # The heredoc above inherits the caller's umask, and a unit file is not a place to trust
 # it: under `umask 000` the redirect creates the file 0666, and a world-writable unit means
 # any local user can rewrite ExecStart and have systemd run it as root on the next boot.
-chmod 644 /etc/systemd/system/hyperdns.service
+chmod 644 /etc/systemd/system/digitdns.service
 
 systemctl daemon-reload
-systemctl enable hyperdns >/dev/null 2>&1
+systemctl enable digitdns >/dev/null 2>&1
 
 # Mark the journal position BEFORE this start. The health step below reads the
 # daemon's own log lines to find the port and admin path it actually bound,
@@ -877,10 +958,10 @@ systemctl enable hyperdns >/dev/null 2>&1
 # cursor could not be captured. Both exclude a reinstall in the same boot,
 # which -b would not.
 BOOT_TIME=$(date +%s)
-BOOT_CURSOR="$(journalctl -u hyperdns -n 0 --show-cursor 2>/dev/null | sed -n 's/^-- cursor: //p')"
+BOOT_CURSOR="$(journalctl -u digitdns -n 0 --show-cursor 2>/dev/null | sed -n 's/^-- cursor: //p')"
 export BOOT_CURSOR BOOT_TIME
 
-systemctl restart hyperdns
+systemctl restart digitdns
 
 sleep 2
 
@@ -896,7 +977,7 @@ echo -e "${CYAN}${BOLD}[6/6] Verifying Service Health...${NC}"
 # to restart.
 SERVICE_UP=false
 for _hc in $(seq 1 20); do
-    if systemctl is-active --quiet hyperdns; then
+    if systemctl is-active --quiet digitdns; then
         SERVICE_UP=true
         break
     fi
@@ -906,7 +987,7 @@ done
 if [ "${SERVICE_UP}" = true ]; then
     echo -e "  ${GREEN}✓ DigitDNS core engine is ACTIVE and RUNNING!${NC}"
 else
-    echo -e "  ${RED}✕ Service failed to start. Run 'journalctl -u hyperdns -n 50' to inspect.${NC}"
+    echo -e "  ${RED}✕ Service failed to start. Run 'journalctl -u digitdns -n 50' to inspect.${NC}"
     echo -e "  ${YELLOW}If the journal says the HTTPS certificate is not usable, the domain has no${NC}"
     echo -e "  ${YELLOW}CA-signed certificate yet — see the issuance step above for the fix.${NC}"
     exit 1
@@ -936,12 +1017,12 @@ spinner_start "Starting the daemon and issuing the ${USER_DOMAIN} certificate (L
 for _ in $(seq 1 40); do
     _JOURNAL=""
     if [ -n "${BOOT_CURSOR}" ]; then
-        _JOURNAL=$(journalctl -u hyperdns --no-pager --after-cursor="${BOOT_CURSOR}" 2>/dev/null)
+        _JOURNAL=$(journalctl -u digitdns --no-pager --after-cursor="${BOOT_CURSOR}" 2>/dev/null)
     fi
     # Fall back to a time bound — never back to -n 120, which would re-read a
     # previous install's port from this same boot.
     if [ -z "${_JOURNAL}" ]; then
-        _JOURNAL=$(journalctl -u hyperdns --no-pager --since "@${BOOT_TIME}" 2>/dev/null)
+        _JOURNAL=$(journalctl -u digitdns --no-pager --since "@${BOOT_TIME}" 2>/dev/null)
     fi
     ADMIN_PATH=$(printf '%s' "${_JOURNAL}" | grep -oE "/[0-9a-f]{16}/dash/login" | tail -1 | cut -d'/' -f2)
     PANEL_PORT_LIVE=$(printf '%s' "${_JOURNAL}" | grep -oE "Dashboard : https://0\.0\.0\.0:[0-9]+/" | grep -oE "[0-9]+" | tail -1)
@@ -1025,11 +1106,11 @@ if [ "${HEALTH_OK}" != true ]; then
     echo ""
     echo -e "${RED}${BOLD}  ✕ HEALTH CHECK FAILED — the install is NOT complete.${NC}"
     echo -e "${YELLOW}  Failing probe: ${HEALTH_DETAIL:-see above}${NC}"
-    echo -e "${YELLOW}  Inspect:  journalctl -u hyperdns -n 80 --no-pager${NC}"
+    echo -e "${YELLOW}  Inspect:  journalctl -u digitdns -n 80 --no-pager${NC}"
     echo -e "${YELLOW}  The most likely cause is a DNS record that has not reached this server yet:${NC}"
     echo -e "${YELLOW}  the daemon issues its own certificate at first start and retries daily.${NC}"
     echo -e "${YELLOW}  Verify the A record for ${USER_DOMAIN} points at ${PUBLIC_IP} and that port 80${NC}"
-    echo -e "${YELLOW}  is open to the internet, then:  systemctl restart hyperdns${NC}"
+    echo -e "${YELLOW}  is open to the internet, then:  systemctl restart digitdns${NC}"
     exit 1
 fi
 
@@ -1042,10 +1123,10 @@ echo ""
 if [ "$IS_HTTPS" = true ] && [ -n "$USER_DOMAIN" ]; then
     if [ -n "$ADMIN_PATH" ]; then
         echo -e "  ${BOLD}?? Web Dashboard (HTTPS):${NC}  ${CYAN}https://${USER_DOMAIN}:${PANEL_PORT:-8443}/${ADMIN_PATH}/dash/${NC}"
-        echo -e "  ${BOLD}?? Hidden admin path:${NC}      ${YELLOW}${ADMIN_PATH}${NC}  ${YELLOW}(recovered: journalctl -u hyperdns | grep 'admin panel path')${NC}"
+        echo -e "  ${BOLD}?? Hidden admin path:${NC}      ${YELLOW}${ADMIN_PATH}${NC}  ${YELLOW}(recovered: journalctl -u digitdns | grep 'admin panel path')${NC}"
     else
         echo -e "  ${BOLD}?? Web Dashboard (HTTPS):${NC}  ${CYAN}https://${USER_DOMAIN}:${PANEL_PORT:-8443}/<admin-path>/dash/${NC}"
-        echo -e "  ${BOLD}?? Hidden admin path:${NC}      read it with: ${YELLOW}journalctl -u hyperdns | grep 'admin panel path'${NC}"
+        echo -e "  ${BOLD}?? Hidden admin path:${NC}      read it with: ${YELLOW}journalctl -u digitdns | grep 'admin panel path'${NC}"
     fi
     echo -e "  ${BOLD}?? Private DNS (DoT):${NC}      ${CYAN}${USER_DOMAIN}:853${NC}"
     echo -e "  ${BOLD}?? DNS-over-HTTPS (DoH):${NC}   ${CYAN}https://${USER_DOMAIN}:8443/dns-query${NC}"
@@ -1069,8 +1150,8 @@ else
 fi
 echo ""
 echo -e "  ${BOLD}🎮 Dedicated Primary DNS IP:${NC} ${CYAN}${PUBLIC_IP}${NC}"
-echo -e "  ${BOLD}🖥️  Terminal console:${NC}       run ${PURPLE}hdns${NC} anytime — it talks to the running service over its control socket (live telemetry, stop/start/uninstall included); ${PURPLE}hdns status${NC} and ${PURPLE}hdns flush${NC} also work beside the daemon"
-echo -e "  ${BOLD}📂 Config File Location:${NC}   ${YELLOW}/opt/hyperdns/config.json${NC}"
+echo -e "  ${BOLD}🖥️  Terminal console:${NC}       run ${PURPLE}digitdns${NC} anytime — it talks to the running service over its control socket (live telemetry, stop/start/uninstall included); ${PURPLE}digitdns status${NC} and ${PURPLE}digitdns flush${NC} also work beside the daemon"
+echo -e "  ${BOLD}📂 Config File Location:${NC}   ${YELLOW}/opt/digitdns/config.json${NC}"
 echo ""
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════════════════════════════════${NC}"
 echo ""

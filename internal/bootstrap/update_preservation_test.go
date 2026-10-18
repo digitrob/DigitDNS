@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
 )
 
 // TestUpdatePreservesDataAcrossReopen simulates what a binary update does to the

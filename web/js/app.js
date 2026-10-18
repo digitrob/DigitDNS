@@ -983,7 +983,7 @@ function renderConfig(cfg) {
     if (isCustom) customInput.value = apiBind;
   }
 
-  updateCodeSnippets(pubIP, cfg.server?.api_key || 'hdns_live_your_key_here');
+  updateCodeSnippets(pubIP, cfg.server?.api_key || 'digitdns_live_your_key_here');
 
   // Render Custom Rules Lists (with safe optional chaining)
   renderProxiedList();

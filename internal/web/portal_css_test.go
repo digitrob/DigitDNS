@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // TestResolvePortalThemeCSS covers the three v2.4 CSS sources: inline text and a

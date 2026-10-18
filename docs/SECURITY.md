@@ -1,6 +1,6 @@
 # 🔐 Security Policy
 
-HyperDNS is a **DNS resolver and TLS relay** — by design it answers queries from
+DigitDNS is a **DNS resolver and TLS relay** — by design it answers queries from
 the public internet on port 53 and can relay TLS sessions on ports 80/443. That
 places it in a different risk class from an ordinary web application, and this
 document states what the project does about it, what it deliberately does not,
@@ -26,19 +26,17 @@ and how to report a problem.
 
 | Version | Status | Security fixes |
 | :--- | :--- | :--- |
-| `v2.8.0-beta` (HyperFORGE) | Current beta | ✅ Yes |
-| `v2.7.0-beta` (HyperFORGE) | Superseded | ❌ Upgrade first |
-| `v2.6.0-beta` (HyperFORGE) | Superseded | ❌ Upgrade first |
-| `v2.5.0-beta` (HyperFORGE) | Superseded | ❌ Upgrade first |
-| `v2.4.0-beta` (HyperFORGE) | Superseded | ❌ Upgrade first |
-| `v2.3.0-beta` (HyperFORGE) | Superseded | ❌ Upgrade first |
-| `v2.2.0-beta` (HyperSHIELD) | Superseded | ❌ Upgrade first |
-| `v2.0.x`–`v2.1.x` beta | Superseded | ❌ Upgrade first |
-| `v1.x` | End of life | ❌ No |
+| `v3.0.0` | Current stable | ✅ Yes |
+| `v2.8.0-beta` and earlier | Superseded | ❌ Upgrade first |
+| `v2.0.x`–`v2.7.0-beta` | Superseded | ❌ Upgrade first |
+| `v1.x` (upstream HyperDNS) | End of life | ❌ No |
 
-Only the current beta line receives fixes. The project does not backport to
-earlier betas — the release cadence is fast enough that upgrading is the
-supported path.
+Only the current release line receives fixes. The project does not backport to
+earlier versions — upgrading is the supported path. Note that `3.0.0` is a
+breaking rename of the upstream HyperDNS project: install paths, the systemd
+service name, the CLI and every environment variable changed, so an in-place
+upgrade from `2.x` is performed by the installer (which migrates the existing
+install tree, database and credentials) rather than by a plain binary swap.
 
 ---
 
@@ -54,7 +52,7 @@ contact the maintainer through the address on the repository profile.
 
 **What to include.** The more of this you have, the faster the fix:
 
-- The affected version (`hdns -version`).
+- The affected version (`digitdns -version`).
 - Whether the panel is on a domain (HTTPS) or loopback-only, and whether
   `access.allow_all` is on or off — several issues are only reachable in one of
   those states.
@@ -375,11 +373,11 @@ from report to fix.
 
 ## 📐 Standards & RFC Compliance
 
-HyperDNS implements and honours the following IETF specifications. Compliance
+DigitDNS implements and honours the following IETF specifications. Compliance
 is verified by the test suite and — for the externally observable behaviour —
 by an external-attacker pass against a live deployment.
 
-| RFC | Scope in HyperDNS |
+| RFC | Scope in DigitDNS |
 | :--- | :--- |
 | [RFC 1035](https://www.rfc-editor.org/rfc/rfc1035) / [RFC 2181](https://www.rfc-editor.org/rfc/rfc2181) | Core DNS message format and transport; the label/hostname rules the ACME and domain validators enforce |
 | [RFC 7766](https://www.rfc-editor.org/rfc/rfc7766) | DNS over TCP: persistent connections, reuse, pipelining, and connection management |
@@ -388,7 +386,7 @@ by an external-attacker pass against a live deployment.
 | [RFC 7828](https://www.rfc-editor.org/rfc/rfc7828) | `edns-tcp-keepalive` on connection-oriented transports, never on UDP, and only when the query asked |
 | [RFC 8914](https://www.rfc-editor.org/rfc/rfc8914) | Extended DNS Errors: unauthorized `REFUSED` responses carry EDE 18 (`Prohibited`) with an explanatory string, where the query carried OPT — on UDP, TCP and DoT alike |
 | [RFC 8555](https://www.rfc-editor.org/rfc/rfc8555) | ACME certificate issuance and HTTP-01 challenge handling |
-| [RFC 6238](https://www.rfc-editor.org/rfc/rfc6238) | TOTP authentication; HyperDNS additionally enforces cross-endpoint single-use of successfully validated codes (see below) |
+| [RFC 6238](https://www.rfc-editor.org/rfc/rfc6238) | TOTP authentication; DigitDNS additionally enforces cross-endpoint single-use of successfully validated codes (see below) |
 | [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) | HTTP semantics and method handling, including the HTTPS URI scheme |
 | [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) | `application/problem+json` problem details on the v2 API surface |
 | [RFC 9745](https://www.rfc-editor.org/rfc/rfc9745) | `Deprecation` response header on the v1 API |
@@ -400,7 +398,7 @@ by an external-attacker pass against a live deployment.
 deliberate product choices, stated here so the table above is about the RFCs
 and nothing else: the relay forwards TLS without terminating it and may
 fragment ClientHello records as a traffic-handling technique (not something
-RFC 6066 standardizes); HyperDNS imposes no fixed per-connection DNS-query
+RFC 6066 standardizes); DigitDNS imposes no fixed per-connection DNS-query
 count limit (RFC 7766 leaves resource policy to the implementation — ours are
 the connection and rate caps above); the ACME client runs issuance and daily
 renewal from the daemon, single-flighted, against Let's Encrypt's production

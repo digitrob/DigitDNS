@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
 )
 
 // Disposable-local-instance helper: reset the admin password to a known

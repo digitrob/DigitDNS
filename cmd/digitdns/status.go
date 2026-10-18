@@ -1,4 +1,4 @@
-// `hdns status` — a no-database status report.
+// `digitdns status` — a no-database status report.
 //
 // This command is dispatched before storage initialization, so it can inspect a
 // running daemon without reading master.key or competing for bbolt ownership.
@@ -23,8 +23,8 @@ import (
 
 	"github.com/miekg/dns"
 
-	"hyperdns/internal/database"
-	"hyperdns/internal/version"
+	"digitdns/internal/database"
+	"digitdns/internal/version"
 )
 
 // runStatusCommand prints the report and returns an error only when something
@@ -34,12 +34,12 @@ func runStatusCommand(configPath string, out io.Writer) error {
 	if out == nil {
 		out = io.Discard
 	}
-	fmt.Fprintf(out, " HyperDNS %s\n", version.Short())
+	fmt.Fprintf(out, " DigitDNS %s\n", version.Short())
 	fmt.Fprintln(out, strings.Repeat("─", 62))
 
 	// 1. Service state (systemd only; the installers always create the unit).
 	if runtime.GOOS != "windows" {
-		if commandOutput, err := exec.Command("systemctl", "is-active", "hyperdns").Output(); err == nil {
+		if commandOutput, err := exec.Command("systemctl", "is-active", "digitdns").Output(); err == nil {
 			state := strings.TrimSpace(string(commandOutput))
 			if state == "active" {
 				fmt.Fprintln(out, " Service        : active (systemd)")
@@ -155,7 +155,7 @@ func runStatusCommand(configPath string, out io.Writer) error {
 	// which this command does not open; the startup banner records it in the
 	// journal, so on a systemd box that is where it comes from.
 	if runtime.GOOS != "windows" {
-		if journalOutput, err := exec.Command("journalctl", "-u", "hyperdns", "--no-pager", "-b", "-n", "400").Output(); err == nil {
+		if journalOutput, err := exec.Command("journalctl", "-u", "digitdns", "--no-pager", "-b", "-n", "400").Output(); err == nil {
 			for _, line := range strings.Split(string(journalOutput), "\n") {
 				if i := strings.Index(line, "/dash/"); i >= 16 {
 					ap := line[i-16 : i]
@@ -173,20 +173,20 @@ func runStatusCommand(configPath string, out io.Writer) error {
 	}
 
 	fmt.Fprintln(out, strings.Repeat("─", 62))
-	fmt.Fprintln(out, " Run `hdns` to open the live control console; the daemon keeps running.")
-	fmt.Fprintln(out, " Use `hdns flush` to flush its DNS cache directly.")
+	fmt.Fprintln(out, " Run `digitdns` to open the live control console; the daemon keeps running.")
+	fmt.Fprintln(out, " Use `digitdns flush` to flush its DNS cache directly.")
 	return nil
 }
 
 // resolveDataPath mirrors the daemon's own resolution order for the relative
-// cert paths a config usually carries: /opt/hyperdns when it exists, the
+// cert paths a config usually carries: /opt/digitdns when it exists, the
 // working directory otherwise.
 func resolveDataPath(p string) string {
 	if p == "" || filepath.IsAbs(p) {
 		return p
 	}
-	if _, err := os.Stat("/opt/hyperdns"); err == nil {
-		return filepath.Join("/opt/hyperdns", p)
+	if _, err := os.Stat("/opt/digitdns"); err == nil {
+		return filepath.Join("/opt/digitdns", p)
 	}
 	return p
 }

@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// installDir is where every installer under scripts/ puts HyperDNS.
-const installDir = "/opt/hyperdns"
+// installDir is where every installer under scripts/ puts DigitDNS.
+const installDir = "/opt/digitdns"
 
 // irreplaceableFiles are the files under installDir that a reinstall cannot bring back.
 // data.db holds every subscriber, policy and quota counter; master.key is the AES-256-GCM
@@ -24,22 +24,22 @@ const installDir = "/opt/hyperdns"
 // (which handles the normal path) archives it anyway.
 var irreplaceableFiles = []string{"config.json", "data.db", "master.key"}
 
-// UninstallHyperDNS runs the uninstaller shipped alongside the binary, and falls back to
+// UninstallDigitDNS runs the uninstaller shipped alongside the binary, and falls back to
 // removing the installation itself when that script is missing.
 //
-// The fallback used to be six unconditional exec calls ending in RemoveAll("/opt/hyperdns"):
+// The fallback used to be six unconditional exec calls ending in RemoveAll("/opt/digitdns"):
 // no backup, no mention of the database, and — the part that broke the host rather than
-// merely the install — it left /etc/systemd/resolved.conf.d/hyperdns.conf in place. With
-// that drop-in still setting DNSStubListener=no and HyperDNS no longer listening on 53,
+// merely the install — it left /etc/systemd/resolved.conf.d/digitdns.conf in place. With
+// that drop-in still setting DNSStubListener=no and DigitDNS no longer listening on 53,
 // the machine had no resolver at all after "uninstalling".
-func UninstallHyperDNS() {
+func UninstallDigitDNS() {
 	fmt.Println("\n=======================================================")
-	fmt.Println(" 🗑️  COMPLETE HYPERDNS UNINSTALLATION")
+	fmt.Println(" 🗑️  COMPLETE DIGITDNS UNINSTALLATION")
 	fmt.Println("=======================================================")
 	fmt.Println("This will permanently remove:")
-	fmt.Println("  1. HyperDNS service and systemd configuration")
+	fmt.Println("  1. DigitDNS service and systemd configuration")
 	fmt.Println("  2. The system resolver override and the firewall rules it added")
-	fmt.Println("  3. /usr/local/bin/hdns and everything in " + installDir)
+	fmt.Println("  3. /usr/local/bin/digitdns and everything in " + installDir)
 	fmt.Println("")
 	fmt.Printf("%sIncluding your data:%s\n", Yellow, Reset)
 	fmt.Printf("%s  • data.db    — every subscriber, policy, and quota counter%s\n", Yellow, Reset)
@@ -49,7 +49,7 @@ func UninstallHyperDNS() {
 	fmt.Println("")
 	fmt.Printf("%sA copy of those three is kept outside %s before anything is deleted.%s\n",
 		Cyan, installDir, Reset)
-	fmt.Print("\nAre you sure you want to completely uninstall HyperDNS? (y/N): ")
+	fmt.Print("\nAre you sure you want to completely uninstall DigitDNS? (y/N): ")
 
 	scanner := bufio.NewScanner(os.Stdin)
 	if !scanner.Scan() {
@@ -106,9 +106,9 @@ func fallbackUninstall() {
 	}
 
 	fmt.Println("Stopping the service...")
-	_ = exec.Command("systemctl", "stop", "hyperdns").Run()
-	_ = exec.Command("systemctl", "disable", "hyperdns").Run()
-	_ = os.Remove("/etc/systemd/system/hyperdns.service")
+	_ = exec.Command("systemctl", "stop", "digitdns").Run()
+	_ = exec.Command("systemctl", "disable", "digitdns").Run()
+	_ = os.Remove("/etc/systemd/system/digitdns.service")
 	_ = exec.Command("systemctl", "daemon-reload").Run()
 
 	restoreSystemResolver()
@@ -116,11 +116,11 @@ func fallbackUninstall() {
 
 	// Only this installation's symlink. A regular file of the same name belongs to
 	// something else, which is why install.sh creates the link with `ln -sf`.
-	if info, statErr := os.Lstat("/usr/local/bin/hdns"); statErr == nil {
+	if info, statErr := os.Lstat("/usr/local/bin/digitdns"); statErr == nil {
 		if info.Mode()&os.ModeSymlink != 0 {
-			_ = os.Remove("/usr/local/bin/hdns")
+			_ = os.Remove("/usr/local/bin/digitdns")
 		} else {
-			fmt.Printf("%s! /usr/local/bin/hdns is not a symlink; left in place.%s\n", Yellow, Reset)
+			fmt.Printf("%s! /usr/local/bin/digitdns is not a symlink; left in place.%s\n", Yellow, Reset)
 		}
 	}
 
@@ -129,7 +129,7 @@ func fallbackUninstall() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("\n%s✓ HyperDNS has been completely removed.%s\n", Green, Reset)
+	fmt.Printf("\n%s✓ DigitDNS has been completely removed.%s\n", Green, Reset)
 	if backupDir != "" {
 		fmt.Printf("%sYour data is in %s — keep master.key with the database.%s\n",
 			Cyan, backupDir, Reset)
@@ -156,7 +156,7 @@ func backupIrreplaceableFiles() (string, error) {
 	if info, err := os.Stat(parent); err != nil || !info.IsDir() {
 		parent = os.TempDir()
 	}
-	dest := filepath.Join(parent, "hyperdns-backup-"+time.Now().Format("20060102_150405"))
+	dest := filepath.Join(parent, "digitdns-backup-"+time.Now().Format("20060102_150405"))
 	if err := os.MkdirAll(dest, 0o700); err != nil {
 		return "", err
 	}
@@ -228,11 +228,11 @@ func parseResolvMarker(raw []byte) (kind, body string) {
 // Removing the drop-in without restarting resolved leaves the host exactly as broken as
 // before, and restoring resolv.conf matters even more: the installer replaced a symlink to
 // resolved's generated file with a static "nameserver 1.1.1.1". Left in place, that file
-// keeps answering after HyperDNS is gone, and no DHCP- or netplan-supplied nameserver ever
+// keeps answering after DigitDNS is gone, and no DHCP- or netplan-supplied nameserver ever
 // takes effect again on that machine.
 func restoreSystemResolver() {
 	fmt.Println("Restoring the system DNS resolver...")
-	_ = os.Remove("/etc/systemd/resolved.conf.d/hyperdns.conf")
+	_ = os.Remove("/etc/systemd/resolved.conf.d/digitdns.conf")
 
 	marker := filepath.Join(installDir, ".resolv-backup")
 	if raw, err := os.ReadFile(marker); err != nil {
@@ -329,7 +329,7 @@ const (
 //	ufw delete allow 9999                    → "Could not delete non-existent rule", exit 0
 //	firewall-cmd --permanent --remove-port=… → "Warning: NOT_ENABLED: 9999:tcp",     exit 0
 //
-// Counting exit statuses therefore over-reports: a HyperDNS rule the operator had already
+// Counting exit statuses therefore over-reports: a DigitDNS rule the operator had already
 // deleted by hand would be counted again here, and the total is printed to them as a fact
 // about their own firewall.
 func classifyFirewallDelete(out []byte, err error) firewallDeleteOutcome {
@@ -347,7 +347,7 @@ func classifyFirewallDelete(out []byte, err error) firewallDeleteOutcome {
 //
 // The list is what install.sh actually opened, skipping ports that were already allowed, so
 // nothing here can close 80, 443 or 8080 on a server that was serving something else on them
-// before HyperDNS was installed.
+// before DigitDNS was installed.
 func removeRecordedFirewallRules() {
 	raw, err := os.ReadFile(filepath.Join(installDir, ".firewall-backup"))
 	if err != nil {

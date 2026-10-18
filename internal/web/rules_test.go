@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"hyperdns/internal/core/matcher"
+	"digitdns/internal/core/matcher"
 )
 
 // rulesFullSave is a save of the shape the dashboard sends: every key present.

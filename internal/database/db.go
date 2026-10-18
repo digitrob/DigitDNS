@@ -9,7 +9,7 @@ import (
 	"time"
 
 	bolt "go.etcd.io/bbolt"
-	"hyperdns/internal/crypto"
+	"digitdns/internal/crypto"
 )
 
 var (
@@ -179,7 +179,7 @@ func openDatabase(dbPath string, cipher *crypto.Cipher, existing bool) (*DB, err
 		// Not counted as a conversion: the pages those buckets used never held a
 		// secret, so they are not worth a whole-file rewrite on their own. If a real
 		// migration runs on the same start, the compaction below reclaims them anyway.
-		log.Printf("[DB] Dropped %d empty bucket(s) that no version of HyperDNS ever wrote to.", dropped)
+		log.Printf("[DB] Dropped %d empty bucket(s) that no version of DigitDNS ever wrote to.", dropped)
 	}
 	if n, err := db.encryptLegacySettings(); err != nil {
 		log.Printf("[DB] Could not encrypt the legacy settings records: %v; they stay in cleartext.", err)

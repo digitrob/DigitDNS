@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // validateWebPort is the only thing standing between a typed line and a stored

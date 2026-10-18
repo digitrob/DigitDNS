@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // bytesPerGB converts the operator-facing TrafficLimitGB into the unit usage is

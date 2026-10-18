@@ -11,7 +11,7 @@
 > run it only on servers and networks you are authorised to operate.
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Release-v2.8.0-00f0ff?style=for-the-badge&logo=rocket" alt="Version">
+  <img src="https://img.shields.io/badge/Release-v3.0.0-00f0ff?style=for-the-badge&logo=rocket" alt="Version">
   <img src="https://img.shields.io/badge/Status-Production--Ready%20Beta-amber?style=for-the-badge" alt="Status">
   <img src="https://img.shields.io/badge/Language-Go%201.26-00ADD8?style=for-the-badge&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/Architecture-Single%20Binary%20(Zero%20CGO)-a855f7?style=for-the-badge" alt="Single Binary">
@@ -52,7 +52,7 @@
 
 ## 📖 Overview
 
-**DigitDNS** is an ultra-fast, single-binary SmartDNS server and transparent SNI Proxy engine with an embedded cyberpunk/gaming web dashboard, developer REST API, and interactive terminal interface (`hdns`).
+**DigitDNS** is an ultra-fast, single-binary SmartDNS server and transparent SNI Proxy engine with an embedded cyberpunk/gaming web dashboard, developer REST API, and interactive terminal interface (`digitdns`).
 
 It transforms any single cloud VPS (even a \$3/month 1-Core CPU / 1GB RAM instance) into a private **Anti-Sanction (403 Bypass)** and **Low-Latency Gaming Gateway** for **PC, PlayStation 4/5, Xbox Series X/S, Nintendo Switch, Android, iOS, and Routers** with:
 - **0 Client Software Required:** Users only set their DNS IP address on their console or router.
@@ -109,7 +109,7 @@ This project follows **[SemVer](https://semver.org)** — `MAJOR.MINOR.PATCH`:
 - **MINOR** bump (`2.8.0` → `2.9.0`) for new features.
 - **PATCH** bump (`2.8.0` → `2.8.1`) for backwards-compatible fixes.
 - **MAJOR** bump for a breaking change (none so far; `2.x` is one line).
-- A pre-release tag (`v2.9.0-beta.1`) precedes the final `v2.9.0` of the same
+- A pre-release tag (`v3.0.0-beta.1`) precedes the final `v3.0.0` of the same
   number — it is never *after* it.
 
 **Two channels, one source of truth.** `version.json` in the repository is what
@@ -142,38 +142,38 @@ lives in **[docs/RELEASING.md](docs/RELEASING.md)**.
 ### Option 1: One-Line Linux Installer (Recommended)
 Run as `root` on Ubuntu 20.04+, Debian 11+, or AlmaLinux/Rocky 8+:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/IzumiRain/HyperDNS/v2.8.0-beta.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.0.0/scripts/install.sh | sudo bash
 ```
 
 > [!IMPORTANT]
-> **The installer never upgrades in place.** An existing install is archived to `/root/hyperdns-preinstall-<date>.tar.gz` (its sha256 printed — the only copy of the old data), then **replaced**: fresh config, fresh credentials, fresh certificates. An interactive run types `FRESH` to confirm the wipe; a piped `curl | bash` run refuses unless `HYPERDNS_FRESH=1` is set. Coming from **HyperDNS/DigitDNS 1.x**, run `bash migrate-from-v1.sh` from the offline bundle first.
+> **The installer never upgrades in place.** An existing install is archived to `/root/digitdns-preinstall-<date>.tar.gz` (its sha256 printed — the only copy of the old data), then **replaced**: fresh config, fresh credentials, fresh certificates. An interactive run types `FRESH` to confirm the wipe; a piped `curl | bash` run refuses unless `DIGITDNS_FRESH=1` is set. Coming from **HyperDNS 1.x**, run `bash migrate-from-v1.sh` from the offline bundle first.
 >
-> **A panel domain is mandatory** — its A record must point at the server. The daemon issues the Let's Encrypt certificate **itself** over its own port-80 listener: no certbot, no acme.sh, nothing to stop the service for. Non-interactive: `HYPERDNS_DOMAIN=dns.example.com HYPERDNS_EMAIL=you@example.com bash install.sh`. If issuance fails the installer states the cause and exits rather than printing success. Renewal is daily and automatic.
+> **A panel domain is mandatory** — its A record must point at the server. The daemon issues the Let's Encrypt certificate **itself** over its own port-80 listener: no certbot, no acme.sh, nothing to stop the service for. Non-interactive: `DIGITDNS_DOMAIN=dns.example.com DIGITDNS_EMAIL=you@example.com bash install.sh`. If issuance fails the installer states the cause and exits rather than printing success. Renewal is daily and automatic.
 >
 > **Subscribers self-serve IP changes** through a secret: `/sub/<token>` is a read-only portal, and moving the binding is `POST /ip/<token>` with the account's registration secret. A leaked portal link alone cannot steal the binding.
 
 ### Option 2: Pre-Compiled Standalone Binary
 ```bash
 # On Linux:
-chmod +x ./bin/hyperdns_linux_amd64
-sudo ./bin/hyperdns_linux_amd64 -server -web-port 8080
+chmod +x ./bin/digitdns_linux_amd64
+sudo ./bin/digitdns_linux_amd64 -server -web-port 8080
 
 # On Windows (PowerShell or cmd, from the folder you extracted):
-.\bin\hyperdns.exe -server -web-port 8080
+.\bin\digitdns.exe -server -web-port 8080
 ```
 
 ### Option 3: Compile from Source
 ```bash
-git clone https://github.com/IzumiRain/HyperDNS.git
-cd "HyperDNS"
-go build -ldflags="-s -w" -o bin/hyperdns ./cmd/hyperdns
-./bin/hyperdns -server
+git clone https://github.com/digitrob/DigitDNS.git
+cd "DigitDNS"
+go build -ldflags="-s -w" -o bin/digitdns ./cmd/digitdns
+./bin/digitdns -server
 ```
 
 ### Option 4: Docker / Docker Compose
 ```bash
-git clone https://github.com/IzumiRain/HyperDNS.git
-cd "HyperDNS"
+git clone https://github.com/digitrob/DigitDNS.git
+cd "DigitDNS"
 mkdir -p data certs
 docker compose up -d
 ```
@@ -303,11 +303,11 @@ report-a-vulnerability process, see **[SECURITY.md](docs/SECURITY.md)**.
 
 ---
 
-## 🖥️ Interactive TUI Controller (`hdns`)
+## 🖥️ Interactive TUI Controller (`digitdns`)
 
 Run DigitDNS in terminal mode to read live metrics, provision subscribers and run diagnostics over SSH without opening a browser:
 ```bash
-./hyperdns
+./digitdns
 # or if installed system-wide:
 hdns
 ```
@@ -323,7 +323,7 @@ It is a **numbered menu**, not a full-screen keyboard interface: it prints the b
 | `5` | Start the service (after a stop) | | `13` | Clear login lockouts |
 | `6` | List subscriber accounts | | `14` | Change admin credentials |
 | `7` | Add a subscriber | | `15` | Emergency admin reset |
-| `8` | Delete a subscriber | | `16` | Uninstall HyperDNS |
+| `8` | Delete a subscriber | | `16` | Uninstall DigitDNS |
 | `0`, `q` or `exit` | Quit (daemon keeps running) | | <kbd>Ctrl</kbd>+<kbd>C</kbd> | Quit at any prompt |
 
 Options `3`–`5` and `16` reach **runtime ownership**: the console is a client
@@ -346,7 +346,7 @@ The dashboard is not at the host root. On first start the daemon prints its one
 **hidden login address** to the log — `https://<domain>/<admin-path>/login` — and
 that is the only URL that reaches it. Bookmark it then; the path is a random
 16-hex string, and the address is printed exactly once. To recover it later: the
-TUI banner shows the dashboard URL, `hdns status` reports listener and
+TUI banner shows the dashboard URL, `digitdns status` reports listener and
 certificate state without opening the database, and the log line is printed again
 on every start.
 
@@ -528,17 +528,15 @@ UUID v4 [RFC 9562].
 ## ☕ Support / Donate
 
 DigitDNS is a free and open-source fork of [HyperDNS](https://github.com/IzumiRain/HyperDNS).
-The upstream project is built and maintained by one person — if it unblocked your
-games or your work, consider supporting the original author.
+If it unblocked your games or your work and you'd like to support ongoing
+development of this fork, the addresses below reach the DigitDNS maintainer
+directly.
 
 | Method | Address / Link |
 | :--- | :--- |
-| 💳 **Rial (Iran)** | [coffeebede.com/amtherain](https://coffeebede.com/amtherain) |
-| 💰 **USDT · TRC20** | `TKBHWNoeygcaCK8N78e7dQX5Yco3WTb6ZN` |
-| 💰 **USDT · BEP20** | `0x0F982640a69D3B9FB944840D7DA8bECCfcF0bb9E` |
-| 💰 **TON** | `UQAyLUyxew-eggwhxbzsAZZZ9ULM8MYOk-3IXFh7tNC33LNt` |
-
-All methods, with copy buttons: **[izumirain.github.io](https://izumirain.github.io/)**
+| 💰 **USDT · TRC20** | `TWrapnstisV3ZZsEgrfKDs2552SMc86VLE` |
+| 💰 **USDT · ERC20** | `0xd52Edf3767080cfE3E7037b9bAd2f9Aa7a8833C4` |
+| 💰 **TON** | `UQBV9O4TlKdnrqVqsbPD83ClBE_POBHHXD-HFYqWnqhvWDo` |
 
 ---
 

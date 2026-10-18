@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"hyperdns/internal/auth"
-	"hyperdns/internal/database"
-	"hyperdns/internal/httpx"
+	"digitdns/internal/auth"
+	"digitdns/internal/database"
+	"digitdns/internal/httpx"
 )
 
 // The authentication surface: TOTP enrollment and the change-credential

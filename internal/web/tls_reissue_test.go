@@ -31,7 +31,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/service/acme"
+	"digitdns/internal/service/acme"
 )
 
 // mantisCASignedPair builds a leaf for dnsName signed by a fresh test CA — the

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // Audit finding #3 (v2.8): operator and sweep writes used to read the client

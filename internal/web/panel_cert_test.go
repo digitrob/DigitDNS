@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"hyperdns/internal/database"
-	"hyperdns/internal/service/acme"
+	"digitdns/internal/database"
+	"digitdns/internal/service/acme"
 )
 
 // The panel-certificate resolver (v2.2.0 field report): renaming the panel

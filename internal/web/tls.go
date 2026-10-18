@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"hyperdns/internal/database"
-	"hyperdns/internal/httpx"
-	"hyperdns/internal/service/acme"
+	"digitdns/internal/database"
+	"digitdns/internal/httpx"
+	"digitdns/internal/service/acme"
 )
 
 // ACME issuance for the operator's own domain.

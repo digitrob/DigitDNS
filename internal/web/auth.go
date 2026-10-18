@@ -20,12 +20,12 @@ import (
 	"runtime"
 	"strings"
 
-	"hyperdns/internal/auth"
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
-	"hyperdns/internal/httpx"
-	"hyperdns/internal/netutil"
-	"hyperdns/internal/service"
+	"digitdns/internal/auth"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
+	"digitdns/internal/httpx"
+	"digitdns/internal/netutil"
+	"digitdns/internal/service"
 )
 
 // kdfConcurrency is how many password verifications may run at once: half the
@@ -340,7 +340,7 @@ func (ws *WebServer) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		ws.loginLimiter.RecordSuccess(clientIP)
 	}
 
-	// Mint a real server-side session token (hdns_session_...) that the
+	// Mint a real server-side session token (digitdns_session_...) that the
 	// requireAuth middleware validates on every subsequent dashboard call.
 	var token string
 	if ws.sessions != nil {
@@ -348,7 +348,7 @@ func (ws *WebServer) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	} else {
 		tokBytes := make([]byte, 16)
 		_, _ = rand.Read(tokBytes)
-		token = "hdns_session_" + hex.EncodeToString(tokBytes)
+		token = "digitdns_session_" + hex.EncodeToString(tokBytes)
 	}
 
 	adminUser, _, _ := ws.settings.AdminCredentials()

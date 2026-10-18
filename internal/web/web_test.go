@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/core/cache"
-	"hyperdns/internal/core/matcher"
-	"hyperdns/internal/core/upstream"
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
-	"hyperdns/internal/service"
-	webAssets "hyperdns/web"
+	"digitdns/internal/core/cache"
+	"digitdns/internal/core/matcher"
+	"digitdns/internal/core/upstream"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
+	"digitdns/internal/service"
+	webAssets "digitdns/web"
 )
 
 // testAdminPassword is the credential the web tests log in with. It has to
@@ -86,7 +86,7 @@ func setupTestWebServer(t *testing.T) (*WebServer, *database.DB, func()) {
 		WebPort:       8080,
 		AdminUsername: "admin",
 		AdminPassword: testAdminHash(t, testAdminPassword),
-		APIKey:        "hdns_live_testkey123",
+		APIKey:        "digitdns_live_testkey123",
 		APIBind:       "127.0.0.1",
 	}
 	tlsSettings := &database.TLSSettings{}

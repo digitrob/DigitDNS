@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	webAssets "hyperdns/web"
+	webAssets "digitdns/web"
 )
 
 // The dashboard's Content-Security-Policy carries two relaxations — 'unsafe-inline'

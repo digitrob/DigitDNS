@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"hyperdns/internal/httpx"
-	"hyperdns/internal/selfupdate"
+	"digitdns/internal/httpx"
+	"digitdns/internal/selfupdate"
 )
 
 // SetUpdater wires the self-update engine (v2.6). Called from main once the

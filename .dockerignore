@@ -1,5 +1,5 @@
 # ==============================================================================
-# HyperDNS — Docker build context exclusions
+# DigitDNS — Docker build context exclusions
 # ==============================================================================
 # `COPY . .` in the Dockerfile copies whatever the daemon does not exclude here,
 # and what it copied before this file existed was the whole working tree: the
@@ -95,9 +95,9 @@ web/css/tailwind.min.css
 **/*.so
 **/*.dylib
 **/*.out
-hyperdns
-hyperdns-*
-hyperdns_*
+digitdns
+digitdns-*
+digitdns_*
 
 # ------------------------------------------------------------------------------
 # 6. Editor, OS and tooling noise

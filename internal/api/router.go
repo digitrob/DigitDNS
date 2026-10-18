@@ -10,15 +10,15 @@ import (
 	"strings"
 	"time"
 
-	"hyperdns/internal/core/cache"
-	"hyperdns/internal/core/matcher"
-	"hyperdns/internal/core/upstream"
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
-	"hyperdns/internal/httpx"
-	"hyperdns/internal/netutil"
-	"hyperdns/internal/service"
-	"hyperdns/internal/version"
+	"digitdns/internal/core/cache"
+	"digitdns/internal/core/matcher"
+	"digitdns/internal/core/upstream"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
+	"digitdns/internal/httpx"
+	"digitdns/internal/netutil"
+	"digitdns/internal/service"
+	"digitdns/internal/version"
 )
 
 type API struct {

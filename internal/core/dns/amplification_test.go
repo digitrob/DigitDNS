@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
-	"hyperdns/internal/core/cache"
-	"hyperdns/internal/core/matcher"
-	"hyperdns/internal/core/upstream"
-	"hyperdns/internal/database"
+	"digitdns/internal/core/cache"
+	"digitdns/internal/core/matcher"
+	"digitdns/internal/core/upstream"
+	"digitdns/internal/database"
 )
 
 // An open resolver is worth something to an attacker for exactly one reason: the number

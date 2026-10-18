@@ -109,7 +109,7 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 		}
 		body = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, "http://hyperdns"+path, body)
+	req, err := http.NewRequestWithContext(ctx, method, "http://digitdns"+path, body)
 	if err != nil {
 		return fmt.Errorf("build control request: %w", err)
 	}

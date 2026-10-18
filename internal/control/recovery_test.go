@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
-	"hyperdns/internal/service"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
+	"digitdns/internal/service"
 )
 
 type recoveryStoreStub struct {
@@ -51,7 +51,7 @@ func recoverySettings(t *testing.T) *database.ServerSettings {
 	return &database.ServerSettings{
 		PublicIP: "203.0.113.8", BindHost: "127.0.0.1", WebPort: 8443,
 		AdminUsername: "old-admin", AdminPassword: verifier,
-		AdminPasswordWeak: true, APIKey: "hdns_live_keep_this_secret",
+		AdminPasswordWeak: true, APIKey: "digitdns_live_keep_this_secret",
 		APIBind: "127.0.0.1", AdminPath: "0123456789abcdef",
 		SessionIdleMinutes: 47, TrustedProxyCIDRs: []string{"10.0.0.0/8"},
 	}
@@ -98,7 +98,7 @@ func TestAdminRecoveryCommitsBeforeRevokingSessionsAndPreservesState(t *testing.
 	if got := audit.String(); !strings.Contains(got, "root-local admin reset") {
 		t.Fatalf("audit = %q, want root-local reset event", got)
 	} else {
-		for _, secret := range []string{"old-admin", "recovered-admin", "Fresh-Phrase-92!", verifier, "JBSWY3DPEHPK3PXP", "hdns_live_keep_this_secret"} {
+		for _, secret := range []string{"old-admin", "recovered-admin", "Fresh-Phrase-92!", verifier, "JBSWY3DPEHPK3PXP", "digitdns_live_keep_this_secret"} {
 			if strings.Contains(got, secret) {
 				t.Fatalf("audit leaked sensitive value %q", secret)
 			}
@@ -112,7 +112,7 @@ func assertRecoveryStatePreserved(t *testing.T, settings *database.ServerSetting
 	if snap.PublicIP != "203.0.113.8" || snap.BindHost != "127.0.0.1" || snap.WebPort != 8443 || snap.APIBind != "127.0.0.1" || snap.AdminPath != "0123456789abcdef" || snap.SessionIdleMinutes != 47 {
 		t.Fatalf("unrelated server settings changed: %+v", snap)
 	}
-	if settings.GetAPIKey() != "hdns_live_keep_this_secret" || len(settings.TrustedProxyCIDRs) != 1 || settings.TrustedProxyCIDRs[0] != "10.0.0.0/8" {
+	if settings.GetAPIKey() != "digitdns_live_keep_this_secret" || len(settings.TrustedProxyCIDRs) != 1 || settings.TrustedProxyCIDRs[0] != "10.0.0.0/8" {
 		t.Fatal("API key or trusted proxies changed")
 	}
 	if got := authSettings.Snapshot(); got != authBefore {

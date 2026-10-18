@@ -1,5 +1,5 @@
 # ==============================================================================
-# HyperDNS — Comprehensive Security & Privacy .gitignore
+# DigitDNS — Comprehensive Security & Privacy .gitignore
 # Prevents accidental leaking of secrets, certificates, credentials, and local data
 # ==============================================================================
 
@@ -38,18 +38,18 @@ config.dev.json
 config.prod.json
 
 # 4. Compiled Binaries & Executables
-/hyperdns
-/hyperdns.exe
-/hyperdns-linux
-/hyperdns-*
-/hyperdns_*
+/digitdns
+/digitdns.exe
+/digitdns-linux
+/digitdns-*
+/digitdns_*
 *.exe
 *.dll
 *.so
 *.dylib
 *.bin
 *.out
-/offline-bundle/hyperdns
+/offline-bundle/digitdns
 
 # 5. Compressed Archives & Release Bundles
 *.tar.gz
@@ -141,7 +141,7 @@ __pycache__/
 # JSON/TXT dumps, and a local run wrapper. They are dot-prefixed so an editor hides
 # them, but `git add .` would still pick them up, which is what these rules prevent.
 /.extract*.py
-/.hdns-run.ps1
+/.digitdns-run.ps1
 /.i18n-*.json
 /.i18n-*.txt
 

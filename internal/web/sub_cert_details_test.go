@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
-	"hyperdns/internal/service/acme"
+	"digitdns/internal/database"
+	"digitdns/internal/service/acme"
 )
 
 // writeTestCert generates a self-signed certificate for domain, valid in the

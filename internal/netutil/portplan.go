@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 var (
@@ -24,7 +24,7 @@ var (
 	ErrPortSyntax    = errors.New("not a number")
 	ErrPortRange     = errors.New("outside the 1-65535 range")
 	ErrPortUnchanged = errors.New("already the current port")
-	ErrPortInUse     = errors.New("port already claimed by another HyperDNS listener")
+	ErrPortInUse     = errors.New("port already claimed by another DigitDNS listener")
 )
 
 // PortUse is one port this daemon already binds, or would bind if its
@@ -89,7 +89,7 @@ func ListenerPorts(dns *database.DNSSettings, sni *database.SNIProxySettings, tl
 // operator has to read before it is stored.
 //
 // The split between an error and a warning is the whole design. An error is a
-// change that would stop the daemon from starting (a port another HyperDNS
+// change that would stop the daemon from starting (a port another DigitDNS
 // listener binds is fatal in service mode — log.Fatalf takes the resolver
 // down with the panel). A warning is a change that will work and might still
 // surprise. The returned slice is ordered most-consequential first.
@@ -151,7 +151,7 @@ func InstallerOpensPort(port int) bool {
 }
 
 // ProbeBind answers the question the settings cannot: is this port free on
-// this host, right now, including to processes HyperDNS knows nothing about?
+// this host, right now, including to processes DigitDNS knows nothing about?
 // A validator built only on the settings structs sees collisions with our own
 // listeners and nothing else — the common real case is an nginx, a Docker
 // publish, another panel. The listener is closed immediately; one that never

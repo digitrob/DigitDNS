@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"hyperdns/internal/database"
-	"hyperdns/internal/service"
+	"digitdns/internal/database"
+	"digitdns/internal/service"
 )
 
 // TestWriteJSONErrorIsParseable is the regression test for the habit this package

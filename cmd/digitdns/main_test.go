@@ -9,10 +9,10 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 
-	"hyperdns/internal/bootstrap"
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
-	"hyperdns/internal/web"
+	"digitdns/internal/bootstrap"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
+	"digitdns/internal/web"
 )
 
 func TestUnreadableSettingsAbortBeforeWrites(t *testing.T) {
@@ -308,6 +308,57 @@ func TestEnsureAPIKeyGeneratesADistinctKeyPerRecord(t *testing.T) {
 	}
 }
 
+// A database migrated in place from HyperDNS still holds a key stamped with the
+// old marker, which this build's auth gate no longer recognises. The marker is
+// rewritten while the secret tail is kept, so the operator's existing credential
+// keeps authenticating instead of being silently revoked.
+func TestMigrateAPIKeyPrefixRewritesLegacyMarker(t *testing.T) {
+	const tail = "0123456789abcdef0123456789abcdef"
+
+	s := &database.ServerSettings{APIKey: crypto.LegacyAPIKeyPrefix + tail}
+	if !migrateAPIKeyPrefix(s) {
+		t.Fatal("migrateAPIKeyPrefix reported no change for a legacy-prefixed key")
+	}
+	want := crypto.APIKeyPrefix + tail
+	if s.APIKey != want {
+		t.Errorf("APIKey became %q, want %q (secret must be preserved)", s.APIKey, want)
+	}
+}
+
+// Running the pass twice must be a no-op the second time: startup persists the
+// record every boot, and a rewrite that kept firing would churn the settings.
+func TestMigrateAPIKeyPrefixIsIdempotent(t *testing.T) {
+	s := &database.ServerSettings{APIKey: crypto.APIKeyPrefix + "deadbeef"}
+	if migrateAPIKeyPrefix(s) {
+		t.Error("migrateAPIKeyPrefix reported a change for an already-current key")
+	}
+	if s.APIKey != crypto.APIKeyPrefix+"deadbeef" {
+		t.Errorf("APIKey became %q", s.APIKey)
+	}
+}
+
+// An empty key belongs to ensureAPIKey, and a key the operator chose by hand is
+// a credential this pass has no business rewriting.
+func TestMigrateAPIKeyPrefixLeavesForeignAndEmptyKeysAlone(t *testing.T) {
+	cases := map[string]string{
+		"empty":      "",
+		"prefixless": "no-prefix-at-all",
+		"other":      "acme_live_deadbeef",
+	}
+	for name, key := range cases {
+		s := &database.ServerSettings{APIKey: key}
+		if migrateAPIKeyPrefix(s) {
+			t.Errorf("%s: migrateAPIKeyPrefix reported a change", name)
+		}
+		if s.APIKey != key {
+			t.Errorf("%s: APIKey became %q, want %q", name, s.APIKey, key)
+		}
+	}
+	if migrateAPIKeyPrefix(nil) {
+		t.Error("migrateAPIKeyPrefix reported a change for nil")
+	}
+}
+
 // A record with no admin path is a genuine first run, or a database migrated from
 // a pre-v2.1 release. The path has to be generated and reported as a change, so
 // the caller persists it in the same pass.
@@ -381,7 +432,7 @@ func TestStdinIsInteractiveRejectsTheNullDevice(t *testing.T) {
 	}
 }
 
-// `hyperdns < answers.txt` and any wrapper that redirects a file into the daemon.
+// `digitdns < answers.txt` and any wrapper that redirects a file into the daemon.
 // A regular file is not a character device, so this is the easy case — it is here
 // so a future rewrite of the helper cannot regress it silently.
 func TestStdinIsInteractiveRejectsARegularFile(t *testing.T) {
@@ -396,11 +447,11 @@ func TestStdinIsInteractiveRejectsARegularFile(t *testing.T) {
 	defer f.Close()
 
 	if stdinIsInteractive(f) {
-		t.Error("a regular file was reported interactive, so `hyperdns < file` would run the menu instead of serving")
+		t.Error("a regular file was reported interactive, so `digitdns < file` would run the menu instead of serving")
 	}
 }
 
-// A pipe is what `echo 1 | hyperdns` and most process supervisors provide. Same
+// A pipe is what `echo 1 | digitdns` and most process supervisors provide. Same
 // class of mistake as the null device: something that produces one line and then
 // EOF must never be mistaken for an operator.
 func TestStdinIsInteractiveRejectsAPipe(t *testing.T) {

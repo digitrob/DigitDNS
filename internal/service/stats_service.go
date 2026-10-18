@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"hyperdns/internal/database"
-	"hyperdns/internal/sysmetrics"
+	"digitdns/internal/database"
+	"digitdns/internal/sysmetrics"
 )
 
 type StatsService struct {

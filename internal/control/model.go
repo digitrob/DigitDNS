@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	DefaultSocketPath     = "/run/hyperdns/control.sock"
+	DefaultSocketPath     = "/run/digitdns/control.sock"
 	ProtocolVersion       = "v1"
-	ProtocolVersionHeader = "X-HyperDNS-Control-Version"
+	ProtocolVersionHeader = "X-DigitDNS-Control-Version"
 )
 
 // ErrUnsupported reports that this build has no root-local control transport.
@@ -18,14 +18,14 @@ const (
 // cannot offer the management socket" and distinguish it from "the socket could
 // not be secured on a host that should have one". The first is a capability
 // limit the daemon runs without; the second is fatal.
-var ErrUnsupported = errors.New("HyperDNS control server requires Linux Unix peer credentials")
+var ErrUnsupported = errors.New("DigitDNS control server requires Linux Unix peer credentials")
 
 // ErrRuntimeDir reports that the control runtime directory could not be
-// created — an unprivileged run against /run/hyperdns, or a read-only /run.
+// created — an unprivileged run against /run/digitdns, or a read-only /run.
 // Same class as ErrUnsupported for the caller: a capability limit the daemon
 // runs without (DNS, relay and panel are unaffected), not a fatal
 // misconfiguration.
-var ErrRuntimeDir = errors.New("HyperDNS control runtime directory is unavailable")
+var ErrRuntimeDir = errors.New("DigitDNS control runtime directory is unavailable")
 
 // Operations is the complete daemon-owned management boundary. It exposes DTOs,
 // never database records or service implementations.

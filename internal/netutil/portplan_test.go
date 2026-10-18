@@ -10,7 +10,7 @@ import (
 	"errors"
 	"testing"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 func TestListenerPortsIncludesRedirectPort(t *testing.T) {

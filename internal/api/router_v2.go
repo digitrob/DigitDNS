@@ -23,12 +23,12 @@ import (
 	"strconv"
 	"strings"
 
-	"hyperdns/internal/core/upstream"
-	"hyperdns/internal/database"
-	"hyperdns/internal/httpx"
-	"hyperdns/internal/netutil"
-	"hyperdns/internal/service"
-	"hyperdns/internal/version"
+	"digitdns/internal/core/upstream"
+	"digitdns/internal/database"
+	"digitdns/internal/httpx"
+	"digitdns/internal/netutil"
+	"digitdns/internal/service"
+	"digitdns/internal/version"
 )
 
 // v2LimitMax bounds list sizes; v2LimitDefault applies when the caller asks
@@ -46,7 +46,7 @@ func writeProblem(w http.ResponseWriter, status int, typ, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"type":     "https://hyperdns.dev/problems/" + typ,
+		"type":     "https://digitdns.dev/problems/" + typ,
 		"title":    http.StatusText(status),
 		"status":   status,
 		"detail":   detail,

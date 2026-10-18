@@ -53,10 +53,31 @@ GNU AGPL-3.0, the following changes were made to the upstream work:
   * A GitHub Actions workflow (`upstream-sync`) periodically merges upstream
     changes into this fork's `custom` branch.
 
-Internal, non-UI identifiers are intentionally left unchanged from upstream for
-compatibility, including but not limited to: the `X-HyperDNS-*` HTTP headers,
-the systemd unit and service names, log prefixes, the Go module path, the
-certificate subject, and the interactive terminal (`hdns`) interface strings.
+Internal identifiers were renamed with the rest of the rebrand: the
+`X-HyperDNS-*` HTTP headers became `X-DigitDNS-*`, the systemd unit and
+service became `digitdns`, the Go module path is `digitdns`, the certificate
+subject uses `digitdns.local`, and the interactive terminal command is
+`digitdns` (the `hdns` name is retired).
+
+Two classes of identifier are deliberately left unchanged, because renaming
+them would break existing installs rather than rebrand them:
+
+  * Storage keys. The persisted API-key stamp keeps its legacy `hdns_live_`
+    prefix in stored data; an existing `hdns_live_` API key is rotated in
+    place to `digitdns_live_` at first start of the upgraded binary, with the
+    secret preserved, so callers of the REST API keep working. Dashboard
+    login sessions are held in memory only, so the restart that the upgrade
+    already requires ends them and the operator simply logs in once more; no
+    session data is stored or migrated. The blind-index HKDF label
+    (`hyperdns:blind-index:v1`) and the weak-password dictionary entry
+    `hyperdns` must never change: the first would silently invalidate every
+    operator's stored blind indexes, and the second would silently stop
+    flagging that password.
+
+  * Local browser state. The dashboard keeps its existing `window.__hdns`
+    bridge name and the `hyperdns_token` / `hyperdns_theme` localStorage
+    keys so that a browser already logged into the panel stays logged in
+    across the upgrade. These are never rendered to the operator.
 
 Third-party components
 ----------------------

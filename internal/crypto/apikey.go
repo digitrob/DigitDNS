@@ -11,7 +11,13 @@ import (
 // prefix is treated as an API key rather than a dashboard session cookie, so the
 // prefix is load-bearing and not decoration. Changing it invalidates every key
 // an operator has already distributed.
-const APIKeyPrefix = "hdns_live_"
+const APIKeyPrefix = "digitdns_live_"
+
+// LegacyAPIKeyPrefix is the marker the upstream HyperDNS build stamped on every
+// master key before this fork renamed it. Because the installer migrates a
+// HyperDNS install in place, a database carried across still holds keys carrying
+// this marker; migrateAPIKeyPrefix rewrites them to APIKeyPrefix once, at boot.
+const LegacyAPIKeyPrefix = "hdns_live_"
 
 // apiKeyEntropyBytes is 128 bits, hex-encoded to 32 characters. The key is a
 // bearer credential compared for equality, never stretched or derived from, so

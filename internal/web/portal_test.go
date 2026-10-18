@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/service"
+	"digitdns/internal/service"
 )
 
 func TestSafeHostDisplay(t *testing.T) {

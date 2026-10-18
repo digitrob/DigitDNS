@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // ErrInvalidIP reports an address that an operator typed or pasted and that is not

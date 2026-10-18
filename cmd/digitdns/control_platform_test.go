@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"hyperdns/internal/control"
+	"digitdns/internal/control"
 )
 
 // The control plane is a Linux-only, root-local management transport by design:
@@ -13,12 +13,12 @@ import (
 // correct security decision about the CONTROL SOCKET, and it was wrongly applied
 // to the whole process — a non-Linux daemon refused to start at all:
 //
-//	[Main] Failed to start local control server: HyperDNS control server
+//	[Main] Failed to start local control server: DigitDNS control server
 //	       requires Linux Unix peer credentials
 //
 // The resolver, the SNI relay and the dashboard have nothing to do with that
-// socket. Refusing to boot turns "this host cannot offer the `hdns` console"
-// into "this host cannot run HyperDNS", which is a regression for every
+// socket. Refusing to boot turns "this host cannot offer the `digitdns` console"
+// into "this host cannot run DigitDNS", which is a regression for every
 // Windows/macOS/BSD install and for the cross-builds this repo ships. The
 // invariant that must hold is narrower: never fall back to a weaker transport.
 func TestControlStartupUnsupportedPlatformIsNotFatal(t *testing.T) {

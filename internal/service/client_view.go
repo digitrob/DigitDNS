@@ -3,7 +3,7 @@ package service
 import (
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // A subscriber record as a front-end has to show it, rather than as it is stored.

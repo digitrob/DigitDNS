@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"hyperdns/internal/httpx"
+	"digitdns/internal/httpx"
 )
 
 // Custom-group icon endpoints (v2.7): GET serves the stored icon, PUT replaces

@@ -20,17 +20,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"hyperdns/internal/api"
-	"hyperdns/internal/core/cache"
-	"hyperdns/internal/core/matcher"
-	"hyperdns/internal/core/upstream"
-	"hyperdns/internal/database"
-	"hyperdns/internal/httpx"
-	"hyperdns/internal/netutil"
-	"hyperdns/internal/selfupdate"
-	"hyperdns/internal/service"
-	"hyperdns/internal/service/acme"
-	"hyperdns/internal/version"
+	"digitdns/internal/api"
+	"digitdns/internal/core/cache"
+	"digitdns/internal/core/matcher"
+	"digitdns/internal/core/upstream"
+	"digitdns/internal/database"
+	"digitdns/internal/httpx"
+	"digitdns/internal/netutil"
+	"digitdns/internal/selfupdate"
+	"digitdns/internal/service"
+	"digitdns/internal/service/acme"
+	"digitdns/internal/version"
 )
 
 type WebServer struct {

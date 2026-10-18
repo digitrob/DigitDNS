@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // selfSignedPEM produces a self-signed leaf certificate naming dnsName — the
@@ -27,7 +27,7 @@ func selfSignedPEM(t *testing.T, dnsName string) (certPEM, keyPEM []byte) {
 	}
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{Organization: []string{"HyperDNS Controller"}, CommonName: dnsName},
+		Subject:      pkix.Name{Organization: []string{"DigitDNS Controller"}, CommonName: dnsName},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
@@ -65,7 +65,7 @@ func caSignedPEMWithValidity(t *testing.T, dnsName string, notBefore, notAfter t
 	}
 	caTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "HyperDNS Test CA"},
+		Subject:               pkix.Name{CommonName: "DigitDNS Test CA"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
 		KeyUsage:              x509.KeyUsageCertSign,
@@ -274,7 +274,7 @@ func TestLoadOrGenerateTLSConfigFallsThroughToNextCandidate(t *testing.T) {
 // TestLoadOrGenerateTLSConfigWithoutDomainFallsBack: with no panel domain the
 // self-signed fallback is the documented behaviour (SSH-tunnel deployments)
 // and must keep working — generate, persist, and return a config. The function
-// writes certs/cert.pem relative to the working directory when /opt/hyperdns
+// writes certs/cert.pem relative to the working directory when /opt/digitdns
 // does not exist, so the test chdirs into a temp dir to keep the repository
 // tree untouched.
 func TestLoadOrGenerateTLSConfigWithoutDomainFallsBack(t *testing.T) {

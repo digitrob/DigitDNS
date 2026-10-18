@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-HyperDNS v1.5.0-beta (HyperRAIN) — Telegram Bot Controller & Provisioner
-A full-featured Telegram bot for managing HyperDNS smart DNS proxy, subscribers,
-game routing policies, and real-time telemetry via the HyperDNS REST API v1.
+DigitDNS v1.5.0-beta (HyperRAIN) — Telegram Bot Controller & Provisioner
+A full-featured Telegram bot for managing DigitDNS smart DNS proxy, subscribers,
+game routing policies, and real-time telemetry via the DigitDNS REST API v1.
 """
 
 import html
@@ -22,8 +22,8 @@ import requests
 # the repository, and a Telegram bot token is full control of the bot.
 # -----------------------------------------------------------------------------
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-HYPERDNS_API_BASE = os.getenv("HYPERDNS_API_BASE", "http://127.0.0.1:8080/api/v2")
-HYPERDNS_API_KEY = os.getenv("HYPERDNS_API_KEY", "")
+DIGITDNS_API_BASE = os.getenv("DIGITDNS_API_BASE", "http://127.0.0.1:8080/api/v2")
+DIGITDNS_API_KEY = os.getenv("DIGITDNS_API_KEY", "")
 
 # The chat IDs allowed to command the bot, comma-separated. Telegram chat IDs
 # are public knowledge to anyone who can message the bot, and the bot speaks
@@ -44,7 +44,7 @@ def parse_admin_chat_ids(raw: str) -> set:
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("HyperDNS-Bot")
+logger = logging.getLogger("DigitDNS-Bot")
 
 
 def require_env(name: str, value: str) -> str:
@@ -58,12 +58,12 @@ def require_env(name: str, value: str) -> str:
             f"[FATAL] {name} is not set.\n"
             f"        Set it in the environment, your systemd unit, or a .env file:\n"
             f"            export {name}=...\n"
-            f"        HyperDNS deliberately ships no credential defaults in source."
+            f"        DigitDNS deliberately ships no credential defaults in source."
         )
     return value.strip()
 
-class HyperDNSClient:
-    """HTTP client wrapping the HyperDNS REST API v2."""
+class DigitDNSClient:
+    """HTTP client wrapping the DigitDNS REST API v2."""
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -149,9 +149,9 @@ class HyperDNSClient:
         return r.json().get("api_key", "")
 
 
-class HyperDNSTelegramBot:
+class DigitDNSTelegramBot:
     """Telegram Bot implementation handling user interactions."""
-    def __init__(self, token: str, api_client: HyperDNSClient, admin_chat_ids: set = None):
+    def __init__(self, token: str, api_client: DigitDNSClient, admin_chat_ids: set = None):
         self.token = token
         self.api = api_client
         self.api_url = f"https://api.telegram.org/bot{token}"
@@ -185,7 +185,7 @@ class HyperDNSTelegramBot:
         telemetry = data.get("telemetry", {})
         v_info = data.get("version", {})
         return (
-            f"⚡ <b>HyperDNS Server Status</b>\n"
+            f"⚡ <b>DigitDNS Server Status</b>\n"
             f"━━━━━━━━━━━━━━━━━━━\n"
             f"• <b>Version:</b> <code>{v_info.get('display', 'v1.5.0-beta')}</code> ({v_info.get('codename', 'HyperRAIN')})\n"
             f"• <b>Public IP:</b> <code>{data.get('public_ip', 'Unknown')}</code>\n"
@@ -262,10 +262,10 @@ class HyperDNSTelegramBot:
 
         if text.startswith("/start"):
             welcome = (
-                f"⚡ <b>Welcome to HyperDNS Controller Bot!</b>\n\n"
+                f"⚡ <b>Welcome to DigitDNS Controller Bot!</b>\n\n"
                 f"Manage your SmartDNS high-speed proxy, subscribers, bandwidth quotas, "
                 f"and game routing policies in real time.\n\n"
-                f"Use the buttons below to interact with your HyperDNS engine:"
+                f"Use the buttons below to interact with your DigitDNS engine:"
             )
             self.send_message(chat_id, welcome, self.build_main_keyboard())
 
@@ -332,7 +332,7 @@ class HyperDNSTelegramBot:
 
 if __name__ == "__main__":
     token = require_env("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN)
-    api_key = require_env("HYPERDNS_API_KEY", HYPERDNS_API_KEY)
+    api_key = require_env("DIGITDNS_API_KEY", DIGITDNS_API_KEY)
     # The allowlist is as much a credential as the token: without it the bot
     # would answer whoever messages it, and it answers with the master API key.
     admin_ids = parse_admin_chat_ids(require_env("TELEGRAM_ADMIN_CHAT_IDS", TELEGRAM_ADMIN_CHAT_IDS))
@@ -342,9 +342,9 @@ if __name__ == "__main__":
             "        Set it to a comma-separated list of the chats allowed to\n"
             "        command the bot, e.g. export TELEGRAM_ADMIN_CHAT_IDS=123456789."
         )
-    client = HyperDNSClient(HYPERDNS_API_BASE, api_key)
-    bot = HyperDNSTelegramBot(token, client, admin_ids)
-    logger.info("HyperDNS Telegram Bot Controller initialized successfully.")
+    client = DigitDNSClient(DIGITDNS_API_BASE, api_key)
+    bot = DigitDNSTelegramBot(token, client, admin_ids)
+    logger.info("DigitDNS Telegram Bot Controller initialized successfully.")
     logger.info("Serving %d authorized chat(s); polling for updates.", len(admin_ids))
     # The loop is the bot: without it __main__ initialized and exited, and the
     # process was a very slow no-op.

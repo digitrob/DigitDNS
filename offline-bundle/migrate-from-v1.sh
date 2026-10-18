@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# HyperDNS v1 → v2.2.0 MIGRATION SCRIPT
+# HyperDNS v1 → DigitDNS v2.2.0 MIGRATION SCRIPT
 #
 # Run this on a server that still carries an old HyperDNS 1.x install.
-# It removes EVERY trace of the old install, then hands over to the v2.2.0
-# offline installer sitting in the same directory as this script.
+# It removes EVERY trace of the old install, then hands over to the DigitDNS
+# v2.2.0 offline installer sitting in the same directory as this script.
 #
 #   bash migrate-from-v1.sh [-y] [--no-backup]
 #
@@ -56,9 +56,9 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ ! -f "${SCRIPT_DIR}/install.sh" ] || [ ! -f "${SCRIPT_DIR}/hyperdns" ]; then
-    say "${RED}Error: install.sh and the hyperdns binary must sit next to this script.${NC}"
-    say "Put this file inside the v2.2.0 offline bundle directory and run it from there."
+if [ ! -f "${SCRIPT_DIR}/install.sh" ] || [ ! -f "${SCRIPT_DIR}/digitdns" ]; then
+    say "${RED}Error: install.sh and the digitdns binary must sit next to this script.${NC}"
+    say "Put this file inside the DigitDNS v2.2.0 offline bundle directory and run it from there."
     exit 1
 fi
 
@@ -85,7 +85,7 @@ OLD_VERSION="unknown"
 
 if [ "${#FOOTPRINT[@]}" -eq 0 ]; then
     say "${YELLOW}No HyperDNS v1 footprint found on this server. Nothing to remove.${NC}"
-    say "Jumping straight to the v2.2.0 installer."
+    say "Jumping straight to the DigitDNS v2.2.0 installer."
 else
     say "Found ${BOLD}${#FOOTPRINT[@]}${NC} traces of an old install (version: ${OLD_VERSION}):"
     for item in "${FOOTPRINT[@]}"; do say "  - $item"; done
@@ -99,7 +99,7 @@ fi
 # ── Confirmation + archive ───────────────────────────────────────────────────
 if [ "$ASSUME_YES" -ne 1 ]; then
     say ""
-    say "${RED}${BOLD}This will DELETE every trace listed above and install HyperDNS v2.2.0.${NC}"
+    say "${RED}${BOLD}This will DELETE every trace listed above and install DigitDNS v2.2.0.${NC}"
     say "The old database is NOT compatible with v2 — subscribers start from scratch."
     printf "%b" "${YELLOW}Type MIGRATE to continue: ${NC}"
     read -r CONFIRM
@@ -194,13 +194,13 @@ fi
 # Firewall rules are printed, not deleted — the operator decides.
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qiE 'active'; then
     RULES="$(ufw status 2>/dev/null | grep -E '^(53|80|443|853|8443)(/tcp)? ' || true)"
-    [ -n "$RULES" ] && { say ""; warn "ufw rules for the HyperDNS ports (left in place, remove by hand if unwanted):"; echo "$RULES" | sed 's/^/    /'; }
+    [ -n "$RULES" ] && { say ""; warn "ufw rules for the DigitDNS ports (left in place, remove by hand if unwanted):"; echo "$RULES" | sed 's/^/    /'; }
 fi
 
 # ── Install v2.2.0 ───────────────────────────────────────────────────────────
-step "8/8" "Installing HyperDNS v2.2.0"
+step "8/8" "Installing DigitDNS v2.2.0"
 cd "$SCRIPT_DIR" || exit 1
-chmod +x install.sh hyperdns 2>/dev/null || true
+chmod +x install.sh digitdns 2>/dev/null || true
 say "Handing over to the v2.2.0 installer (it asks for the panel domain —"
 say "HTTPS is mandatory and the daemon issues its own certificate)."
 say ""

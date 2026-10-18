@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
-	"hyperdns/internal/service/acme"
+	"digitdns/internal/database"
+	"digitdns/internal/service/acme"
 )
 
 // The dedicated subscriber listener exists because the Subscription Portal's

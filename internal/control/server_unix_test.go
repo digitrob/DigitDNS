@@ -27,7 +27,7 @@ func requireRootControlTest(t *testing.T) {
 func controlSocketPath(t *testing.T) string {
 	t.Helper()
 	requireRootControlTest(t)
-	return filepath.Join(t.TempDir(), "hyperdns", "control.sock")
+	return filepath.Join(t.TempDir(), "digitdns", "control.sock")
 }
 
 func startTestControlServer(t *testing.T, srv *Server) {
@@ -213,7 +213,7 @@ func TestServerPreservesPathOnAmbiguousProbeFailure(t *testing.T) {
 func TestServerRejectsUnsafeParentAndNonSocketPaths(t *testing.T) {
 	requireRootControlTest(t)
 	t.Run("parent mode", func(t *testing.T) {
-		dir := filepath.Join(t.TempDir(), "hyperdns")
+		dir := filepath.Join(t.TempDir(), "digitdns")
 		if err := os.Mkdir(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -225,7 +225,7 @@ func TestServerRejectsUnsafeParentAndNonSocketPaths(t *testing.T) {
 	t.Run("parent symlink", func(t *testing.T) {
 		base := t.TempDir()
 		realDir := filepath.Join(base, "real")
-		linkDir := filepath.Join(base, "hyperdns")
+		linkDir := filepath.Join(base, "digitdns")
 		if err := os.Mkdir(realDir, 0o700); err != nil {
 			t.Fatal(err)
 		}

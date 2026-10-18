@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // recorder is a net.Conn that records the size of every Write, so a test can

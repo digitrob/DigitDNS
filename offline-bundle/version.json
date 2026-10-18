@@ -1,6 +1,5 @@
 {
-  "version": "2.8.0",
-  "channel": "beta",
-  "codename": "HyperFORGE",
-  "homepage": "https://github.com/IzumiRain/hyperdns"
+  "version": "3.0.0",
+  "channel": "stable",
+  "homepage": "https://github.com/digitrob/DigitDNS"
 }

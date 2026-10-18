@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // newDotHarness builds a test web server wired the way main wires a fresh

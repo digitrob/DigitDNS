@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"hyperdns/internal/bootstrap"
+	"digitdns/internal/bootstrap"
 )
 
 type settingsStoreStub struct {

@@ -6,7 +6,7 @@ import (
 	"time"
 	_ "time/tzdata"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // A recurring quota is what turns a limit an operator has to administer by hand

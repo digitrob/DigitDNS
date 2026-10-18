@@ -19,11 +19,11 @@ import (
 	"strings"
 	"time"
 
-	"hyperdns/internal/database"
-	"hyperdns/internal/httpx"
-	"hyperdns/internal/netutil"
-	"hyperdns/internal/service"
-	"hyperdns/internal/version"
+	"digitdns/internal/database"
+	"digitdns/internal/httpx"
+	"digitdns/internal/netutil"
+	"digitdns/internal/service"
+	"digitdns/internal/version"
 )
 
 // handleSubDataAPI serves the subscriber portal's read-only JSON, keyed by the

@@ -53,7 +53,7 @@ class RestoreTests(unittest.TestCase):
         for name in ['data.db', 'master.key', 'config.json', 'certs/new.crt']:
             self.assertEqual((self.target / name).stat().st_mode & 0o777, 0o600)
         self.assertEqual((self.target / 'certs').stat().st_mode & 0o777, 0o700)
-        backups = list(self.root.glob('hyperdns-before-restore-*.tar.gz'))
+        backups = list(self.root.glob('digitdns-before-restore-*.tar.gz'))
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].stat().st_mode & 0o777, 0o600)
         with tarfile.open(backups[0]) as backup:
@@ -70,7 +70,7 @@ class RestoreTests(unittest.TestCase):
         self.archive_with()
         self.assertEqual(self.run_restore('--check').returncode, 0)
         self.assert_old()
-        self.assertFalse(list(self.root.glob('hyperdns-before-restore-*')))
+        self.assertFalse(list(self.root.glob('digitdns-before-restore-*')))
 
     def test_invalid_pairs_and_json_are_rejected(self):
         cases = [
@@ -124,7 +124,7 @@ class RestoreTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('injected rename failure', result.stderr)
         self.assert_old()
-        self.assertEqual(len(list(self.root.glob('hyperdns-before-restore-*.tar.gz'))), 1)
+        self.assertEqual(len(list(self.root.glob('digitdns-before-restore-*.tar.gz'))), 1)
 
 
 if __name__ == '__main__':

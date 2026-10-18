@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/service"
+	"digitdns/internal/service"
 )
 
 // Opening a /sub/ link re-binds the subscription's one allowed address. These tests

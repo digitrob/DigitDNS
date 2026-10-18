@@ -30,10 +30,10 @@ ADMIN_PATH = '0123456789abcdef'
 
 
 def downloads():
-    raw = f'https://raw.githubusercontent.com/IzumiRain/HyperDNS/{REF}'
-    release = f'https://github.com/IzumiRain/HyperDNS/releases/download/{REF}'
+    raw = f'https://raw.githubusercontent.com/digitrob/DigitDNS/{REF}'
+    release = f'https://github.com/digitrob/DigitDNS/releases/download/{REF}'
     return {
-        f'{release}/hyperdns-linux-amd64': 'hyperdns',
+        f'{release}/digitdns-linux-amd64': 'digitdns',
         f'{raw}/config.example.json': 'config.example.json',
         f'{raw}/scripts/restore.sh': 'restore.sh',
         f'{raw}/offline-bundle/version.json': 'version.json',
@@ -42,7 +42,7 @@ def downloads():
 
 def require_container():
     if (not Path('/.dockerenv').exists()
-            or os.environ.get('HYPERDNS_SMOKE_CONTAINER') != '1'
+            or os.environ.get('DIGITDNS_SMOKE_CONTAINER') != '1'
             or Path(__file__).resolve() != FIXTURE / 'test_install_smoke.py'):
         raise RuntimeError('Refusing container-only operations outside the smoke container')
 
@@ -61,29 +61,29 @@ def stub(command, args):
             if url == 'https://api.ipify.org':
                 print('192.0.2.10')
                 return 0
-            port = json.loads(Path('/opt/hyperdns/config.json').read_text())['server']['web_port'] if Path('/opt/hyperdns/config.json').exists() else 0
+            port = json.loads(Path('/opt/digitdns/config.json').read_text())['server']['web_port'] if Path('/opt/digitdns/config.json').exists() else 0
             probes = [f'https://{DOMAIN}:{port}/{ADMIN_PATH}/{path}'
                       for path in ('dash/', 'css/tailwind.purged.css', 'js/app.js')]
             if url in probes and '-w' in args:
                 print('200', end='')  # Synthetic health, NOT a TLS/ACME test.
                 return 0
     elif command == 'systemctl':
-        if args == ['is-active', '--quiet', 'hyperdns']:
+        if args == ['is-active', '--quiet', 'digitdns']:
             return 0 if (FIXTURE / 'started').exists() else 3
-        if args in (['is-enabled', '--quiet', 'hyperdns'],
+        if args in (['is-enabled', '--quiet', 'digitdns'],
                     ['is-active', '--quiet', 'systemd-resolved']):
             return 3
-        if args == ['restart', 'hyperdns']:
+        if args == ['restart', 'digitdns']:
             (FIXTURE / 'started').touch()  # Never starts the daemon.
             return 0
-        if args in (['daemon-reload'], ['enable', 'hyperdns']):
+        if args in (['daemon-reload'], ['enable', 'digitdns']):
             return 0
     elif command == 'journalctl':
-        if args == ['-u', 'hyperdns', '-n', '0', '--show-cursor']:
+        if args == ['-u', 'digitdns', '-n', '0', '--show-cursor']:
             print('-- cursor: smoke-cursor')
             return 0
-        if args == ['-u', 'hyperdns', '--no-pager', '--after-cursor=smoke-cursor']:
-            port = json.loads(Path('/opt/hyperdns/config.json').read_text())['server']['web_port']
+        if args == ['-u', 'digitdns', '--no-pager', '--after-cursor=smoke-cursor']:
+            port = json.loads(Path('/opt/digitdns/config.json').read_text())['server']['web_port']
             print(f'Dashboard : https://0.0.0.0:{port}/{ADMIN_PATH}/dash/login')
             return 0
     elif command == 'ufw':
@@ -101,7 +101,7 @@ def stub(command, args):
 
 def inside():
     require_container()
-    target = Path('/opt/hyperdns')
+    target = Path('/opt/digitdns')
     assert not target.exists(), 'Expected a clean container, not an existing install'
     Path('/etc/systemd/system').mkdir(parents=True, exist_ok=True)
     stubs = FIXTURE / 'stubs'
@@ -111,8 +111,8 @@ def inside():
         script.write_text(f'#!/bin/sh\nexec /usr/bin/python3 /smoke/test_install_smoke.py --stub {command} "$@"\n')
         script.chmod(0o755)
     env = dict(os.environ, PATH=f'{stubs}:/usr/bin:/bin', TERM='dumb',
-               HYPERDNS_REF=REF, HYPERDNS_DOMAIN=DOMAIN,
-               HYPERDNS_EMAIL='smoke@example.invalid')
+               DIGITDNS_REF=REF, DIGITDNS_DOMAIN=DOMAIN,
+               DIGITDNS_EMAIL='smoke@example.invalid')
     result = subprocess.run(['bash', '-x', '/smoke/install.sh'], cwd=FIXTURE,
                             env=env, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -134,16 +134,16 @@ def inside():
                    and args[args.index('-o') + 1] != '/dev/null']
         assert sorted(fetched) == sorted(downloads()), f'Wrong pinned downloads: {fetched}'
         assert all(f'/{REF}/' in url for url in fetched)
-        for name, installed in [('hyperdns', target / 'hyperdns'),
+        for name, installed in [('digitdns', target / 'digitdns'),
                                 ('restore.sh', target / 'scripts/restore.sh'),
                                 ('version.json', target / 'version.json')]:
             assert installed.read_bytes() == (FIXTURE / name).read_bytes(), f'Not exact: {name}'
-        assert (target / 'hyperdns').read_bytes()[:4] == b'\x7fELF', 'Not a real Linux binary'
-        assert os.access(target / 'hyperdns', os.X_OK)
+        assert (target / 'digitdns').read_bytes()[:4] == b'\x7fELF', 'Not a real Linux binary'
+        assert os.access(target / 'digitdns', os.X_OK)
         assert (target / 'scripts/restore.sh').stat().st_mode & 0o777 == 0o755
-        assert Path('/usr/local/bin/hdns').resolve() == target / 'hyperdns'
+        assert Path('/usr/local/bin/digitdns').resolve() == target / 'digitdns'
         # Execute ONLY the real pre-DB version command, never daemon/ACME startup.
-        version = subprocess.check_output([str(target / 'hyperdns'), '-version'],
+        version = subprocess.check_output([str(target / 'digitdns'), '-version'],
                                           cwd=target, text=True, timeout=10).strip()
         metadata = json.loads((target / 'version.json').read_text())
         display = 'v' + metadata['version'] + ('-' + metadata['channel'] if metadata['channel'] else '')
@@ -154,14 +154,14 @@ def inside():
         assert not (target / 'data.db').exists(), 'Version command unexpectedly initialized DB'
         assert sum('endpoint verified on port' in line for line in result.stdout.splitlines()
                    if not line.startswith('+')) == 3, 'Did not exercise all health probes'
-        print('PASS: actual scripts/install.sh exit 0; all four artifact URLs share HYPERDNS_REF')
+        print('PASS: actual scripts/install.sh exit 0; all four artifact URLs share DIGITDNS_REF')
         for url in fetched:
             print('  ' + url)
         print('PASS: installed binary is byte-identical to the local Go build, executable ELF')
-        print('  binary sha256: ' + hashlib.sha256((target / 'hyperdns').read_bytes()).hexdigest())
+        print('  binary sha256: ' + hashlib.sha256((target / 'digitdns').read_bytes()).hexdigest())
         print('PASS: installed version.json is exact and matches real binary -version + semantic hash')
         print('  ' + version)
-        print('PASS: installed scripts/restore.sh is byte-identical and mode 0755; hdns symlink correct')
+        print('PASS: installed scripts/restore.sh is byte-identical and mode 0755; digitdns symlink correct')
         print('REAL: full unchanged installer, Go binary -version, file writes/copies/modes, config generation')
         print('MOCKED: curl downloads/IP/HTTPS, systemctl, journalctl, dig, ufw; no daemon or ACME started')
     except Exception:
@@ -180,10 +180,10 @@ def main():
     subprocess.run(docker + ['image', 'inspect', args.image], check=True, stdout=subprocess.DEVNULL)
     (repo / 'build').mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='installer-smoke-', dir=repo / 'build') as temp:
-        binary = Path(temp) / 'hyperdns'
+        binary = Path(temp) / 'digitdns'
         env = dict(os.environ, GOOS='linux', GOARCH='amd64', CGO_ENABLED='0',
                    GOPROXY='off', GOSUMDB='off', GOTOOLCHAIN='local')
-        build = ['go', 'build', '-trimpath', '-o', str(binary), './cmd/hyperdns']
+        build = ['go', 'build', '-trimpath', '-o', str(binary), './cmd/digitdns']
         print('BUILD (offline, linux/amd64): ' + ' '.join(build), flush=True)
         subprocess.run(build, cwd=repo, env=env, check=True, timeout=180)
         # Do not tar the repo: it may contain private configs, databases, and keys.
@@ -197,7 +197,7 @@ def main():
             'Normalize scripts/install.sh to LF first; this test never rewrites it.'
         payload = io.BytesIO()
         with tarfile.open(fileobj=payload, mode='w') as archive:
-            for source, name in [(binary, 'hyperdns'),
+            for source, name in [(binary, 'digitdns'),
                                  (repo / 'scripts/install.sh', 'install.sh'),
                                  (repo / 'scripts/restore.sh', 'restore.sh'),
                                  (repo / 'config.example.json', 'config.example.json'),
@@ -208,11 +208,11 @@ def main():
                 info.size = len(raw)
                 info.mode = 0o755
                 archive.addfile(info, io.BytesIO(raw))
-        name = 'hyperdns-installer-smoke-' + uuid.uuid4().hex[:12]
+        name = 'digitdns-installer-smoke-' + uuid.uuid4().hex[:12]
         command = docker + ['run', '--rm', '--pull=never', '--network=none',
                             '--cap-drop=ALL', '--cap-add=CHOWN', '--security-opt=no-new-privileges',
                             '--pids-limit=128', '--memory=512m', '--user=0:0',
-                            '--name', name, '-i', '-e', 'HYPERDNS_SMOKE_CONTAINER=1',
+                            '--name', name, '-i', '-e', 'DIGITDNS_SMOKE_CONTAINER=1',
                             '--entrypoint=/bin/bash', args.image, '-c',
                             'mkdir /smoke && tar xf - -C /smoke && python3 /smoke/test_install_smoke.py --inside']
         print('RUN: ' + subprocess.list2cmdline(command), flush=True)

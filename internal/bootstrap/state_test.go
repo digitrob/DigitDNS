@@ -8,7 +8,7 @@ import (
 	"sort"
 	"testing"
 
-	"hyperdns/internal/bootstrap"
+	"digitdns/internal/bootstrap"
 )
 
 func TestClassifyPaths(t *testing.T) {

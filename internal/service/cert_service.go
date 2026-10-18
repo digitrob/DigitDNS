@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 func LoadOrGenerateTLSConfig(tlsCfg *database.TLSSettings) (*tls.Config, error) {
@@ -38,13 +38,13 @@ func LoadOrGenerateTLSConfig(tlsCfg *database.TLSSettings) (*tls.Config, error) 
 		certCandidates := []string{
 			fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", tlsCfg.Domain),
 			tlsCfg.CertPath,
-			"/opt/hyperdns/certs/cert.pem",
+			"/opt/digitdns/certs/cert.pem",
 			"certs/cert.pem",
 		}
 		keyCandidates := []string{
 			fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", tlsCfg.Domain),
 			tlsCfg.KeyPath,
-			"/opt/hyperdns/certs/key.pem",
+			"/opt/digitdns/certs/key.pem",
 			"certs/key.pem",
 		}
 		for i := range certCandidates {
@@ -96,12 +96,12 @@ func LoadOrGenerateTLSConfig(tlsCfg *database.TLSSettings) (*tls.Config, error) 
 
 	certCandidates := []string{
 		tlsCfg.CertPath,
-		"/opt/hyperdns/certs/cert.pem",
+		"/opt/digitdns/certs/cert.pem",
 		"certs/cert.pem",
 	}
 	keyCandidates := []string{
 		tlsCfg.KeyPath,
-		"/opt/hyperdns/certs/key.pem",
+		"/opt/digitdns/certs/key.pem",
 		"certs/key.pem",
 	}
 
@@ -122,9 +122,9 @@ func LoadOrGenerateTLSConfig(tlsCfg *database.TLSSettings) (*tls.Config, error) 
 	}
 
 	// Generate fallback self-signed certificate
-	certPath := "/opt/hyperdns/certs/cert.pem"
-	keyPath := "/opt/hyperdns/certs/key.pem"
-	if _, err := os.Stat("/opt/hyperdns"); err != nil {
+	certPath := "/opt/digitdns/certs/cert.pem"
+	keyPath := "/opt/digitdns/certs/key.pem"
+	if _, err := os.Stat("/opt/digitdns"); err != nil {
 		certPath = "certs/cert.pem"
 		keyPath = "certs/key.pem"
 	}
@@ -160,7 +160,7 @@ func generateSelfSignedCert(certPath, keyPath, customDomain string) error {
 		return err
 	}
 
-	dnsNames := []string{"localhost", "hyperdns.local"}
+	dnsNames := []string{"localhost", "digitdns.local"}
 	if customDomain != "" {
 		dnsNames = append(dnsNames, customDomain)
 	}
@@ -168,8 +168,8 @@ func generateSelfSignedCert(certPath, keyPath, customDomain string) error {
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"HyperDNS Controller"},
-			CommonName:   "HyperDNS Standalone",
+			Organization: []string{"DigitDNS Controller"},
+			CommonName:   "DigitDNS Standalone",
 		},
 		NotBefore:             time.Now().Add(-1 * time.Hour),
 		NotAfter:              time.Now().Add(3650 * 24 * time.Hour),

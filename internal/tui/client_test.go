@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"hyperdns/internal/control"
+	"digitdns/internal/control"
 )
 
 type controlClientStub struct {

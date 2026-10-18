@@ -290,8 +290,8 @@ func TestRegenerateAPIKeyOnlyRotatesOnPost(t *testing.T) {
 	if rotated == "" || rotated == original {
 		t.Fatalf("POST returned %q, want a new key", rotated)
 	}
-	if !strings.HasPrefix(rotated, "hdns_live_") {
-		t.Errorf("rotated key = %q, want the hdns_live_ prefix", rotated)
+	if !strings.HasPrefix(rotated, "digitdns_live_") {
+		t.Errorf("rotated key = %q, want the digitdns_live_ prefix", rotated)
 	}
 	if ws.settings.APIKey != rotated {
 		t.Errorf("in-memory key = %q, want the rotated one", ws.settings.APIKey)

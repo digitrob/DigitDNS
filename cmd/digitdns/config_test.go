@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // applyConfigFile is the layer between an operator's config.json and a live

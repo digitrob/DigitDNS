@@ -13,8 +13,8 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 
-	"hyperdns/internal/bootstrap"
-	"hyperdns/internal/control"
+	"digitdns/internal/bootstrap"
+	"digitdns/internal/control"
 )
 
 type flushClientStub struct {
@@ -97,9 +97,9 @@ func TestBareInvocationSubprocessDoesNotTouchStorage(t *testing.T) {
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestBareInvocationSubprocessHelper$")
 	cmd.Env = append(os.Environ(),
-		"HYPERDNS_BARE_CLIENT_HELPER=1",
-		"HYPERDNS_TEST_DB_PATH="+dbPath,
-		"HYPERDNS_TEST_KEY_PATH="+keyPath,
+		"DIGITDNS_BARE_CLIENT_HELPER=1",
+		"DIGITDNS_TEST_DB_PATH="+dbPath,
+		"DIGITDNS_TEST_KEY_PATH="+keyPath,
 	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -115,13 +115,13 @@ func TestBareInvocationSubprocessDoesNotTouchStorage(t *testing.T) {
 }
 
 func TestBareInvocationSubprocessHelper(t *testing.T) {
-	if os.Getenv("HYPERDNS_BARE_CLIENT_HELPER") != "1" {
+	if os.Getenv("DIGITDNS_BARE_CLIENT_HELPER") != "1" {
 		return
 	}
 	os.Args = []string{
 		os.Args[0],
-		"-db", os.Getenv("HYPERDNS_TEST_DB_PATH"),
-		"-key", os.Getenv("HYPERDNS_TEST_KEY_PATH"),
+		"-db", os.Getenv("DIGITDNS_TEST_DB_PATH"),
+		"-key", os.Getenv("DIGITDNS_TEST_KEY_PATH"),
 	}
 	preDBInput = func() io.Reader { return strings.NewReader("0\n") }
 	main()
@@ -228,8 +228,8 @@ func TestPreDBCommandsRunWhileDatabaseIsLockedAndKeyIsAbsent(t *testing.T) {
 		want string
 	}{
 		{name: "help", args: []string{"help"}, want: "Usage:"},
-		{name: "version", args: []string{"version"}, want: "HyperDNS "},
-		{name: "version flag alias", args: []string{"-version"}, want: "HyperDNS "},
+		{name: "version", args: []string{"version"}, want: "DigitDNS "},
+		{name: "version flag alias", args: []string{"-version"}, want: "DigitDNS "},
 		{name: "status", args: []string{"status"}, want: "status-without-database"},
 	}
 
@@ -262,10 +262,10 @@ func TestStatusGuidanceUsesLiveClientWithoutStoppingDaemon(t *testing.T) {
 		t.Fatalf("runStatusCommand: %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "Run `hdns` to open the live control console") {
+	if !strings.Contains(got, "Run `digitdns` to open the live control console") {
 		t.Fatalf("status guidance = %q, want live control-console guidance", got)
 	}
-	if strings.Contains(got, "systemctl stop hyperdns") || strings.Contains(got, "needs the service stopped") {
+	if strings.Contains(got, "systemctl stop digitdns") || strings.Contains(got, "needs the service stopped") {
 		t.Fatalf("status guidance still tells the operator to stop the daemon: %q", got)
 	}
 }
@@ -312,7 +312,7 @@ func TestRunPreDBCommandReturnsTruthfulExitCodes(t *testing.T) {
 		if !handled || exitCode != 0 {
 			t.Fatalf("handled=%v exitCode=%d, want true/0", handled, exitCode)
 		}
-		if !strings.Contains(out.String(), "HyperDNS ") {
+		if !strings.Contains(out.String(), "DigitDNS ") {
 			t.Fatalf("stdout = %q", out.String())
 		}
 		if errOut.Len() != 0 {
@@ -354,7 +354,7 @@ func TestPreDBCommandSubprocessExitStatus(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command(os.Args[0], "-test.run=^TestPreDBCommandSubprocessHelper$")
-			cmd.Env = append(os.Environ(), "HYPERDNS_PREDB_TEST_COMMAND="+tt.command)
+			cmd.Env = append(os.Environ(), "DIGITDNS_PREDB_TEST_COMMAND="+tt.command)
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr
 			err := cmd.Run()
@@ -374,7 +374,7 @@ func TestPreDBCommandSubprocessExitStatus(t *testing.T) {
 }
 
 func TestPreDBCommandSubprocessHelper(t *testing.T) {
-	command, ok := os.LookupEnv("HYPERDNS_PREDB_TEST_COMMAND")
+	command, ok := os.LookupEnv("DIGITDNS_PREDB_TEST_COMMAND")
 	if !ok {
 		return
 	}

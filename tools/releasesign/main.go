@@ -3,7 +3,8 @@
 // (ReleasePubKey). It exists for the release workflow only: nothing in the
 // daemon or the installer imports it, and the private key never enters the
 // repository — RELEASE_SIGNING_KEY comes from the Actions secret as base64 of
-// the raw 32-byte ed25519 key.
+// the raw 64-byte ed25519 private key (seed || public), NOT the 32-byte public
+// half. decodeKey below enforces that size.
 //
 // The signature is detached: it covers exactly the bytes of checksums.txt as
 // published, and is published as the release asset checksums.sig (GitHub passes
@@ -23,7 +24,7 @@ import (
 	"os"
 	"strings"
 
-	"hyperdns/internal/selfupdate"
+	"digitdns/internal/selfupdate"
 )
 
 func main() {

@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
-	"hyperdns/internal/core/cache"
-	resolver "hyperdns/internal/core/dns"
-	"hyperdns/internal/core/matcher"
-	"hyperdns/internal/core/upstream"
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
-	"hyperdns/internal/service"
+	"digitdns/internal/core/cache"
+	resolver "digitdns/internal/core/dns"
+	"digitdns/internal/core/matcher"
+	"digitdns/internal/core/upstream"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
+	"digitdns/internal/service"
 )
 
 // These two assertions are the cheapest lines in the package and half the reason it

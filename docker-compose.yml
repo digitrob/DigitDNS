@@ -1,4 +1,4 @@
-# HyperDNS — single-container deployment.
+# DigitDNS — single-container deployment.
 #
 #   mkdir -p data certs && docker compose up -d
 #
@@ -8,10 +8,10 @@
 # and the ENTRYPOINT names all three explicitly for that reason.
 
 services:
-  hyperdns:
+  digitdns:
     build: .
-    image: hyperdns:local
-    container_name: hyperdns
+    image: digitdns:local
+    container_name: digitdns
     restart: always
 
     # Host networking, not a port list. Two reasons, and the first one is the
@@ -32,7 +32,7 @@ services:
       # Rendered expiry timestamps and quota-cycle boundaries follow this.
       - TZ=UTC
       # Only the health check reads this; set it if web_port is not 8080.
-      - HYPERDNS_HEALTH_PORT=8080
+      - DIGITDNS_HEALTH_PORT=8080
 
     # The systemd unit raises the file-descriptor limit to 65535 and this path
     # has to match it. The daemon's stream listeners are capped at 512 (TCP),

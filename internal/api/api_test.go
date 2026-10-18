@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/core/cache"
-	"hyperdns/internal/core/matcher"
-	"hyperdns/internal/core/upstream"
-	"hyperdns/internal/crypto"
-	"hyperdns/internal/database"
-	"hyperdns/internal/service"
-	"hyperdns/internal/version"
+	"digitdns/internal/core/cache"
+	"digitdns/internal/core/matcher"
+	"digitdns/internal/core/upstream"
+	"digitdns/internal/crypto"
+	"digitdns/internal/database"
+	"digitdns/internal/service"
+	"digitdns/internal/version"
 )
 
 func setupTestAPI(t *testing.T) (*API, *database.DB, *database.ServerSettings, func()) {
@@ -55,7 +55,7 @@ func setupTestAPI(t *testing.T) (*API, *database.DB, *database.ServerSettings, f
 		// The REST API authenticates with APIKey only; this field is here to make
 		// the record realistic, never to be verified against.
 		AdminPassword: "unused-by-the-rest-api",
-		APIKey:        "hdns_live_testkey123",
+		APIKey:        "digitdns_live_testkey123",
 		APIBind:       "127.0.0.1",
 	}
 	tlsSettings := &database.TLSSettings{}
@@ -93,7 +93,7 @@ func TestAPI_AuthWithAPIKey(t *testing.T) {
 
 	// 2. Authenticated Request with X-API-Key -> 200 OK
 	reqAuth := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
-	reqAuth.Header.Set("X-API-Key", "hdns_live_testkey123")
+	reqAuth.Header.Set("X-API-Key", "digitdns_live_testkey123")
 	reqAuth.RemoteAddr = "127.0.0.1:12345"
 	wAuth := httptest.NewRecorder()
 	mux.ServeHTTP(wAuth, reqAuth)
@@ -159,7 +159,7 @@ func TestAPI_ClientsCRUD(t *testing.T) {
 		"note":             "VIP Annual Pass",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/clients", bytes.NewReader(body))
-	req.Header.Set("X-API-Key", "hdns_live_testkey123")
+	req.Header.Set("X-API-Key", "digitdns_live_testkey123")
 	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -191,7 +191,7 @@ func TestAPI_ClientsCRUD(t *testing.T) {
 		"note":             "Upgraded to 200GB plan",
 	})
 	reqPut := httptest.NewRequest(http.MethodPut, "/api/v1/clients/"+created.ID, bytes.NewReader(putBody))
-	reqPut.Header.Set("X-API-Key", "hdns_live_testkey123")
+	reqPut.Header.Set("X-API-Key", "digitdns_live_testkey123")
 	reqPut.RemoteAddr = "127.0.0.1:12345"
 	wPut := httptest.NewRecorder()
 	mux.ServeHTTP(wPut, reqPut)
@@ -208,7 +208,7 @@ func TestAPI_ClientsCRUD(t *testing.T) {
 
 	// 3. Test Reset Traffic via POST
 	reqReset := httptest.NewRequest(http.MethodPost, "/api/v1/clients/"+created.ID+"/reset-traffic", nil)
-	reqReset.Header.Set("X-API-Key", "hdns_live_testkey123")
+	reqReset.Header.Set("X-API-Key", "digitdns_live_testkey123")
 	reqReset.RemoteAddr = "127.0.0.1:12345"
 	wReset := httptest.NewRecorder()
 	mux.ServeHTTP(wReset, reqReset)
@@ -219,7 +219,7 @@ func TestAPI_ClientsCRUD(t *testing.T) {
 
 	// 4. Test Regenerate UUID via POST
 	reqUUID := httptest.NewRequest(http.MethodPost, "/api/v1/clients/"+created.ID+"/regenerate-uuid", nil)
-	reqUUID.Header.Set("X-API-Key", "hdns_live_testkey123")
+	reqUUID.Header.Set("X-API-Key", "digitdns_live_testkey123")
 	reqUUID.RemoteAddr = "127.0.0.1:12345"
 	wUUID := httptest.NewRecorder()
 	mux.ServeHTTP(wUUID, reqUUID)
@@ -230,7 +230,7 @@ func TestAPI_ClientsCRUD(t *testing.T) {
 
 	// 5. Delete Client via DELETE
 	reqDel := httptest.NewRequest(http.MethodDelete, "/api/v1/clients/"+created.ID, nil)
-	reqDel.Header.Set("X-API-Key", "hdns_live_testkey123")
+	reqDel.Header.Set("X-API-Key", "digitdns_live_testkey123")
 	reqDel.RemoteAddr = "127.0.0.1:12345"
 	wDel := httptest.NewRecorder()
 	mux.ServeHTTP(wDel, reqDel)
@@ -250,7 +250,7 @@ func TestAPI_PoliciesServesAnEmptyCatalogue(t *testing.T) {
 	apiInst.RegisterRoutes(mux)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/policies", nil)
-	req.Header.Set("X-API-Key", "hdns_live_testkey123")
+	req.Header.Set("X-API-Key", "digitdns_live_testkey123")
 	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -306,7 +306,7 @@ func TestListFieldsEncodeAsArraysNotNull(t *testing.T) {
 			rdr = bytes.NewReader(nil)
 		}
 		req := httptest.NewRequest(method, path, rdr)
-		req.Header.Set("X-API-Key", "hdns_live_testkey123")
+		req.Header.Set("X-API-Key", "digitdns_live_testkey123")
 		req.RemoteAddr = "127.0.0.1:12345"
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)

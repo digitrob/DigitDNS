@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"hyperdns/internal/database"
-	"hyperdns/internal/service/acme"
+	"digitdns/internal/database"
+	"digitdns/internal/service/acme"
 )
 
 // Phase 4 (v2.1): the effective-URL layer and the subscription settings record.

@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // tlsPanelConfig carries the TLS switchboard settings an integration test needs

@@ -13,7 +13,7 @@ import (
 // compare is an unauthenticated self-consistency test. These pin that the
 // signature gate is the decisive check.
 func TestChecksumsSignatureGate(t *testing.T) {
-	body := []byte("abc123  hyperdns-linux-amd64\n")
+	body := []byte("abc123  digitdns-linux-amd64\n")
 	goodPub, goodPriv, _ := ed25519.GenerateKey(nil)
 	otherPub, _, _ := ed25519.GenerateKey(nil)
 
@@ -28,7 +28,7 @@ func TestChecksumsSignatureGate(t *testing.T) {
 		t.Fatal("a signature from a foreign key must be refused")
 	}
 	// Tampered body: refused.
-	if err := verifyChecksumsSignatureWith([]byte("deadbeef  hyperdns-linux-amd64\n"), sig, goodPub); err == nil {
+	if err := verifyChecksumsSignatureWith([]byte("deadbeef  digitdns-linux-amd64\n"), sig, goodPub); err == nil {
 		t.Fatal("a signature over different bytes must be refused")
 	}
 	// Missing signature: refused — an unsigned bundle is never installable.
@@ -101,7 +101,7 @@ func TestChannelAndCoreHelpers(t *testing.T) {
 // update through a locally-trusted TLS-intercepting middlebox defeats the whole
 // origin-authentication chain.
 func TestUpdaterTransportIgnoresProxies(t *testing.T) {
-	u := New("/nonexistent/hyperdns", nil, "")
+	u := New("/nonexistent/digitdns", nil, "")
 	tr, ok := u.client.Transport.(*http.Transport)
 	if !ok || tr == nil {
 		t.Fatalf("the update client must use an explicit *http.Transport, got %T", u.client.Transport)

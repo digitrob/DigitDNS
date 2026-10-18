@@ -58,7 +58,7 @@ func apiReq(method, path string, withKey bool) *http.Request {
 	req := httptest.NewRequest(method, path, nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	if withKey {
-		req.Header.Set("X-API-Key", "hdns_live_testkey123")
+		req.Header.Set("X-API-Key", "digitdns_live_testkey123")
 	}
 	return req
 }

@@ -24,7 +24,7 @@ COPY . .
 # CGO_ENABLED=0 is what makes the result runnable on a distroless or scratch base
 # and on a VPS with no matching libc. -trimpath keeps the build path out of the
 # binary, so two people building the same commit get the same bytes.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/hyperdns ./cmd/hyperdns
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/digitdns ./cmd/digitdns
 
 # ------------------------------------------------------------------------------
 # Final Runtime Stage
@@ -38,7 +38,7 @@ WORKDIR /app
 # operator's zone, and without this every container is UTC whatever TZ says.
 RUN apk add --no-cache ca-certificates tzdata
 
-COPY --from=builder /out/hyperdns /app/hyperdns
+COPY --from=builder /out/digitdns /app/digitdns
 
 # Created here as well as declared below, so a run with no bind mount still has
 # somewhere to put the key: the master key is written before anything else, and a
@@ -57,9 +57,9 @@ VOLUME ["/app/data", "/app/certs"]
 # moved the dashboard. /api/v1/version needs no key and is GET/HEAD only, and the
 # request arrives from 127.0.0.1, which passes the api_bind peer-address gate.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -q -O /dev/null "http://127.0.0.1:${HYPERDNS_HEALTH_PORT:-8080}/api/v1/version" || exit 1
+    CMD wget -q -O /dev/null "http://127.0.0.1:${DIGITDNS_HEALTH_PORT:-8080}/api/v1/version" || exit 1
 
-# -daemon is not optional here, for the same reason scripts/hyperdns.service passes
+# -daemon is not optional here, for the same reason scripts/digitdns.service passes
 # it: a container must never be left guessing whether it is a server. `docker run -d`
 # and `docker compose up -d` both hand the process /dev/null on stdin, and /dev/null
 # is a character device, so the old "is stdin a terminal?" heuristic answered yes,
@@ -68,7 +68,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # entry point has no business depending on a heuristic at all.
 #
 # -db and -key are passed explicitly, and this is not a style choice. Without them
-# the daemon resolves both relative to the working directory — /opt/hyperdns does
+# the daemon resolves both relative to the working directory — /opt/digitdns does
 # not exist in this image, so it falls back to ./data.db and ./master.key — which
 # puts them in /app, inside the container's writable layer and outside the volume
 # declared right above. `docker compose up --build`, or anything else that
@@ -76,7 +76,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # freshly generated master key: every subscriber, the admin password and the API
 # key gone, and the previous data.db no longer decryptable even if a copy of it
 # survived. All three persistent artefacts belong under /app/data.
-ENTRYPOINT ["/app/hyperdns", "-daemon", \
+ENTRYPOINT ["/app/digitdns", "-daemon", \
     "-config", "/app/data/config.json", \
     "-db", "/app/data/data.db", \
     "-key", "/app/data/master.key"]

@@ -218,7 +218,7 @@ func (s *settingsSourceStub) ControlResetAdmin(req ResetAdminRequest) error {
 func TestDaemonOperationsSettingsBoundary(t *testing.T) {
 	source := &settingsSourceStub{
 		view:    SettingsView{PublicIP: "203.0.113.8", AdminUsername: "admin", TOTPEnabled: true},
-		rotated: RotateAPIKeyResult{APIKey: "hdns_live_new"},
+		rotated: RotateAPIKeyResult{APIKey: "digitdns_live_new"},
 		cleared: 3,
 	}
 	ops := NewDaemonOperations(DaemonDependencies{Settings: source})

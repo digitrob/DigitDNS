@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // The recurring-quota cycles an operator may choose.

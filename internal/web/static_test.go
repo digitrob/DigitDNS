@@ -28,7 +28,7 @@ import (
 
 // bigJS is comfortably over the 1 KiB floor and highly compressible, standing in
 // for the vendored libraries that dominate the real payload.
-var bigJS = []byte(strings.Repeat("console.log('hyperdns');\n", 200))
+var bigJS = []byte(strings.Repeat("console.log('digitdns');\n", 200))
 
 func testAssets() *staticServer {
 	return newStaticServer(fstest.MapFS{

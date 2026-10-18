@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"hyperdns/internal/httpx"
+	"digitdns/internal/httpx"
 )
 
 // One-time SSE tickets (v2.1.0 A-06 remediation).

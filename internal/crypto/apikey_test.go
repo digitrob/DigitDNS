@@ -7,16 +7,18 @@ import (
 )
 
 // The prefix is not cosmetic: internal/web/auth.go decides whether a credential
-// is an API key or a session token by testing for it. A rename here would make
-// every distributed key stop authenticating, which is why it is pinned.
+// is an API key or a session token by testing for it, so the value is pinned.
+// Changing it revokes every key already in the field — which is why the fork
+// rewrites migrated HyperDNS keys to the new marker on boot (migrateAPIKeyPrefix)
+// rather than accepting either one.
 func TestGeneratedAPIKeyCarriesTheRoutingPrefix(t *testing.T) {
 	key := GenerateAPIKey()
 	if !strings.HasPrefix(key, APIKeyPrefix) {
 		t.Fatalf("GenerateAPIKey() = %q, want the %q prefix that auth.go routes on", key, APIKeyPrefix)
 	}
-	if APIKeyPrefix != "hdns_live_" {
-		t.Errorf("APIKeyPrefix = %q, want %q: every key already handed to an operator carries the old "+
-			"value, and auth.go recognises credentials by it", APIKeyPrefix, "hdns_live_")
+	if APIKeyPrefix != "digitdns_live_" {
+		t.Errorf("APIKeyPrefix = %q, want %q: auth.go recognises credentials by this marker, and "+
+			"migrated HyperDNS keys are rewritten to it on boot", APIKeyPrefix, "digitdns_live_")
 	}
 }
 

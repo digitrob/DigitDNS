@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"hyperdns/internal/control"
-	"hyperdns/internal/database"
-	"hyperdns/internal/service"
+	"digitdns/internal/control"
+	"digitdns/internal/database"
+	"digitdns/internal/service"
 )
 
 func TestControlClientViewRedactsStoredCredentialsFromLists(t *testing.T) {

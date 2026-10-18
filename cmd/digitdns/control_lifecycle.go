@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"hyperdns/internal/control"
+	"digitdns/internal/control"
 )
 
 const controlShutdownTimeout = 3 * time.Second
@@ -20,9 +20,9 @@ type localControlServer interface {
 //
 // A platform with no root-local transport (anything but Linux) is a capability
 // limit, not a misconfiguration: the resolver, the relay and the dashboard are
-// unaffected, so the daemon runs and only the `hdns` console is unavailable.
+// unaffected, so the daemon runs and only the `digitdns` console is unavailable.
 // A Linux host where the runtime directory cannot be created — an unprivileged
-// run hitting /run/hyperdns, a read-only /run — is the same class of limit for
+// run hitting /run/digitdns, a read-only /run — is the same class of limit for
 // the same reason: everything the subscribers touch still works, only the
 // console is gone. Every other failure — a refused bind on an existing
 // directory, a directory that is not root-owned mode 0700, a lifecycle lock

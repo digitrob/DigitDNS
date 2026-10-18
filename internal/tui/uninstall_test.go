@@ -12,14 +12,14 @@ import (
 )
 
 // The two markers parsed here are read on exactly one occasion: an uninstall, on a live
-// host, as the last thing that happens before /opt/hyperdns is deleted. Nothing about that
+// host, as the last thing that happens before /opt/digitdns is deleted. Nothing about that
 // path can be exercised for real — it replaces /etc/resolv.conf and runs firewall commands
 // as root — so the parsing is split out into pure functions and pinned here instead. A
 // mis-read marker does not produce a wrong log line; it leaves a machine with no resolver,
 // or closes a port that belonged to something else.
 //
 // backupIrreplaceableFiles is deliberately not tested: installDir is a constant, so calling
-// it on a host that really has HyperDNS installed would copy the live data.db into /root as
+// it on a host that really has DigitDNS installed would copy the live data.db into /root as
 // a side effect of `go test`. copyPrivateFile, the part that can actually lose the database,
 // is tested below on its own.
 
@@ -120,7 +120,7 @@ func TestParseResolvMarkerReportsAnEmptySymlinkTarget(t *testing.T) {
 
 // The marker a normal install leaves behind on a ufw host: one line per port install.sh
 // opened itself, in the order it opened them. Every one of them has to come back — a port
-// left open after an uninstall is a port HyperDNS asked for and nothing is listening on.
+// left open after an uninstall is a port DigitDNS asked for and nothing is listening on.
 func TestParseFirewallMarkerReadsEveryRecordedPort(t *testing.T) {
 	raw := []byte("ufw 53/udp\nufw 53/tcp\nufw 853/tcp\nufw 8080/tcp\nufw 443/tcp\n")
 

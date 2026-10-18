@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"hyperdns/internal/database"
+	"digitdns/internal/database"
 )
 
 // Changing the dashboard port from the console.
@@ -24,7 +24,7 @@ import (
 //     doing at all.
 //
 //  2. The command line beats the stored record. `-web-port` is applied after the
-//     database read, and scripts/hyperdns.service passes no such flag — so the
+//     database read, and scripts/digitdns.service passes no such flag — so the
 //     stored port does take effect in production, and the flag remains available as
 //     the way back in if a change goes wrong. Both halves have to be said out loud,
 //     because the second one is the lockout recovery path.
@@ -47,7 +47,7 @@ var (
 	errPortSyntax    = errors.New("not a number")
 	errPortRange     = errors.New("outside the 1-65535 range")
 	errPortUnchanged = errors.New("already the current port")
-	errPortInUse     = errors.New("port already claimed by another HyperDNS listener")
+	errPortInUse     = errors.New("port already claimed by another DigitDNS listener")
 )
 
 // portUse is one port this daemon already binds, or would bind if its service were
@@ -187,7 +187,7 @@ func installerOpensPort(port int) bool {
 }
 
 // probeBind answers the question the settings cannot: is this port free on this
-// host, right now, including to processes HyperDNS knows nothing about?
+// host, right now, including to processes DigitDNS knows nothing about?
 //
 // A validator built only on the settings structs sees collisions with our own
 // listeners and nothing else. The common real case is different — an nginx, a
@@ -258,7 +258,7 @@ func manageWebPort(
 	// Free according to our own settings is not the same as free on this host.
 	if err := probeBind(snap.BindHost, port); err != nil {
 		fmt.Printf("\n%s✗ Port %d cannot be bound on %s: %v%s\n", Red, port, snap.BindHost, err, Reset)
-		fmt.Printf(" Something outside HyperDNS is holding it. Storing it anyway would leave the\n")
+		fmt.Printf(" Something outside DigitDNS is holding it. Storing it anyway would leave the\n")
 		fmt.Printf(" daemon unable to start, so nothing was changed.\n")
 		waitEnter(s)
 		return
@@ -302,7 +302,7 @@ func manageWebPort(
 	} else {
 		fmt.Printf("  %s1.%s Port %d is already open — the installer's firewall rules cover it.\n", Bold, Reset, port)
 	}
-	fmt.Printf("  %s2.%s Restart to apply: menu option [8], or systemctl restart hyperdns\n", Bold, Reset)
+	fmt.Printf("  %s2.%s Restart to apply: menu option [8], or systemctl restart digitdns\n", Bold, Reset)
 	fmt.Printf("  %s3.%s If the new port turns out to be wrong, start with -web-port %d on the\n", Bold, Reset, snap.WebPort)
 	fmt.Printf("       command line. The flag overrides the stored value, and it is how you get\n")
 	fmt.Printf("       back into a panel you have locked yourself out of.\n")

@@ -1,6 +1,6 @@
-# 🔌 HyperDNS Developer REST API v1 — Official Specification & Guide
+# 🔌 DigitDNS Developer REST API v1 — Official Specification & Guide
 
-HyperDNS provides a high-performance, developer-first **REST API v1** designed for bot developers, subscription managers, automated billing systems, Discord/Telegram bots, and enterprise monitoring platforms.
+DigitDNS provides a high-performance, developer-first **REST API v1** designed for bot developers, subscription managers, automated billing systems, Discord/Telegram bots, and enterprise monitoring platforms.
 
 ---
 
@@ -38,7 +38,7 @@ Pass the API Key in the `X-API-Key` HTTP header:
 ```http
 GET /api/v1/status HTTP/1.1
 Host: YOUR_SERVER_IP:8080
-X-API-Key: hdns_live_your_secret_api_key_here
+X-API-Key: digitdns_live_your_secret_api_key_here
 ```
 
 ### Method 2: Bearer Token (For Web Panels)
@@ -46,7 +46,7 @@ Pass the admin session token in the `Authorization` header:
 ```http
 GET /api/v1/status HTTP/1.1
 Host: YOUR_SERVER_IP:8080
-Authorization: Bearer hdns_session_your_token_here
+Authorization: Bearer digitdns_session_your_token_here
 ```
 
 ### Status Codes You Should Handle
@@ -119,7 +119,7 @@ v2 exists because v1's field names grew asymmetric (`ip` on create, `allowed_ip`
 ### `POST /api/v2/clients` → `201 Created`
 ```bash
 curl -s -X POST "https://dns.example.com/<admin-path>/api/v2/clients" \
-  -H "X-API-Key: hdns_live_…" \
+  -H "X-API-Key: digitdns_live_…" \
   -H "Content-Type: application/json" \
   -d '{"display_name":"Gamer-VIP","validity_days":30,"quota_limit_gb":50,"quota_reset_cycle":"monthly"}'
 ```
@@ -138,7 +138,7 @@ Send only what changes: `{"allowed_ips":["203.0.113.9"]}` moves the binding; `{"
 > **Deprecated surface.** Sections 1–8 below document the v1 contract, kept
 > for integrations already built on it. New integrations: use [API v2](#-api-v2--the-current-contract) above.
 
-Returns the build version, channel, release codename, and semantic sync hash.
+Returns the build version, channel, display string, and semantic sync hash.
 
 ### `GET /api/v1/version`
 *(Unauthenticated)*
@@ -151,10 +151,9 @@ curl -s http://127.0.0.1:8080/api/v1/version
 #### Response (`200 OK`)
 ```json
 {
-  "version": "1.5.0",
-  "channel": "beta",
-  "codename": "HyperRAIN",
-  "display": "v1.5.0-beta",
+  "version": "3.0.0",
+  "channel": "stable",
+  "display": "v3.0.0-stable",
   "hash": "3585f9bf",
   "go": "go1.26"
 }
@@ -171,7 +170,7 @@ Returns real-time server health, QPS rate, CPU/Memory telemetry, cache performan
 #### Request
 ```bash
 curl -s http://127.0.0.1:8080/api/v1/status \
-  -H "X-API-Key: hdns_live_your_key_here"
+  -H "X-API-Key: digitdns_live_your_key_here"
 ```
 
 #### Response (`200 OK`)
@@ -183,10 +182,9 @@ same payload the dashboard polls. Every field below is present on every response
 {
   "status": "healthy",
   "version": {
-    "version": "1.5.0",
-    "channel": "beta",
-    "codename": "HyperRAIN",
-    "display": "v1.5.0-beta",
+    "version": "3.0.0",
+    "channel": "stable",
+    "display": "v3.0.0-stable",
     "hash": "3585f9bf",
     "go": "go1.26"
   },
@@ -351,7 +349,7 @@ Creates a new subscriber account, generates an RFC 4122 v4 UUID, and creates the
 #### Request
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/v1/clients \
-  -H "X-API-Key: hdns_live_your_key_here" \
+  -H "X-API-Key: digitdns_live_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Alex (PS5 & PC)",
@@ -417,7 +415,7 @@ Returns all registered clients.
 #### Request
 ```bash
 curl -s http://127.0.0.1:8080/api/v1/clients \
-  -H "X-API-Key: hdns_live_your_key_here"
+  -H "X-API-Key: digitdns_live_your_key_here"
 ```
 
 #### Response (`200 OK`)
@@ -439,7 +437,7 @@ Returns details of a single subscriber.
 #### Request
 ```bash
 curl -s http://127.0.0.1:8080/api/v1/clients/c4b8e219 \
-  -H "X-API-Key: hdns_live_your_key_here"
+  -H "X-API-Key: digitdns_live_your_key_here"
 ```
 
 #### Response (`200 OK`)
@@ -456,7 +454,7 @@ Update client name, UUID, IP address, traffic limit, reset cycle, duration, poli
 #### Request
 ```bash
 curl -s -X PUT http://127.0.0.1:8080/api/v1/clients/c4b8e219 \
-  -H "X-API-Key: hdns_live_your_key_here" \
+  -H "X-API-Key: digitdns_live_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Alex (VIP-Pro)",
@@ -484,7 +482,7 @@ Two mutually compatible ways to move the expiry date, plus the field that releas
 ```bash
 # Renew for another 30 days, whether or not the account already lapsed.
 curl -s -X PUT http://127.0.0.1:8080/api/v1/clients/c4b8e219 \
-  -H "X-API-Key: hdns_live_your_key_here" \
+  -H "X-API-Key: digitdns_live_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{"days_to_add": 30}'
 ```
@@ -503,7 +501,7 @@ It clears the in-memory ledger too, so bytes counted but not yet written cannot 
 #### Request
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/v1/clients/c4b8e219/reset-traffic \
-  -H "X-API-Key: hdns_live_your_key_here"
+  -H "X-API-Key: digitdns_live_your_key_here"
 ```
 
 #### Response (`200 OK`)
@@ -521,7 +519,7 @@ Generates a new RFC 4122 v4 UUID for the specified client.
 #### Request
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/v1/clients/c4b8e219/regenerate-uuid \
-  -H "X-API-Key: hdns_live_your_key_here"
+  -H "X-API-Key: digitdns_live_your_key_here"
 ```
 
 #### Response (`200 OK`)
@@ -539,7 +537,7 @@ Deletes the client account immediately from BoltDB and memory.
 #### Request
 ```bash
 curl -s -X DELETE http://127.0.0.1:8080/api/v1/clients/c4b8e219 \
-  -H "X-API-Key: hdns_live_your_key_here"
+  -H "X-API-Key: digitdns_live_your_key_here"
 ```
 
 #### Response (`200 OK`)
@@ -556,17 +554,17 @@ There is no undo and no soft-delete: the record, its token, its UUID and its usa
 ### `GET /api/v1/api-key` — Get Master API Key
 ```bash
 curl -s http://127.0.0.1:8080/api/v1/api-key \
-  -H "X-API-Key: hdns_live_your_key_here"
+  -H "X-API-Key: digitdns_live_your_key_here"
 ```
 
 #### Response (`200 OK`)
 ```json
 {
   "success": true,
-  "api_key": "hdns_live_2f8c41a90b7d4e63",
+  "api_key": "digitdns_live_2f8c41a90b7d4e63",
   "api_bind": "127.0.0.1",
   "data": {
-    "api_key": "hdns_live_2f8c41a90b7d4e63",
+    "api_key": "digitdns_live_2f8c41a90b7d4e63",
     "api_bind": "127.0.0.1"
   }
 }
@@ -581,15 +579,15 @@ Generates a new administrative Master API Key.
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/v1/api-key \
-  -H "X-API-Key: hdns_live_your_key_here"
+  -H "X-API-Key: digitdns_live_your_key_here"
 ```
 
 #### Response (`200 OK`)
 ```json
 {
   "success": true,
-  "api_key": "hdns_live_9d1e77b4c2a05f38",
-  "data": { "api_key": "hdns_live_9d1e77b4c2a05f38" }
+  "api_key": "digitdns_live_9d1e77b4c2a05f38",
+  "data": { "api_key": "digitdns_live_9d1e77b4c2a05f38" }
 }
 ```
 
@@ -607,7 +605,7 @@ Returns two lists: `catalog` (always `[]`) and `policies` (the stored entries).
 
 ```bash
 curl -s http://127.0.0.1:8080/api/v1/policies \
-  -H "X-API-Key: hdns_live_your_key_here"
+  -H "X-API-Key: digitdns_live_your_key_here"
 ```
 
 #### Response (`200 OK`)
@@ -666,7 +664,7 @@ Immediately purges all entries from the 64-shard LRU DNS cache.
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/v1/cache/flush \
-  -H "X-API-Key: hdns_live_your_key_here"
+  -H "X-API-Key: digitdns_live_your_key_here"
 ```
 
 #### Response (`200 OK`)
@@ -715,7 +713,7 @@ All of these live **inside the admin namespace** (`/<admin-path>/api/...` below 
 | `POST /api/settings/regenerate-admin-path` | Replaces the hidden namespace. Body **must** be `{"confirm":true}`; every session and bookmark under the old path dies immediately. |
 | `GET/POST /api/settings/subscription` | The subscriber-surface record (enabled, domain, port, title, certificate paths, `use_panel_certificate`). A different domain is refused without a valid certificate naming it; `restart_required` is always stated. |
 | `GET /api/update/check` | *(v2.6)* Reports the running version, the version published on the project's `main` branch, and whether a newer one is available. Read-only. |
-| `POST /api/update/apply` | *(v2.6)* Starts a background update and restart (**Linux/systemd only**). Since **v2.8** the release bundle must carry a valid detached **ed25519 signature over `checksums.txt`** (verified against the key pinned in the binary, `X-HyperDNS-Checksums-Signature`) **and** a matching SHA-256; the file is re-hashed immediately before it is installed. The data files are snapshotted first and never rewritten. An unsigned or wrongly-signed bundle is refused with the reason in the response. |
+| `POST /api/update/apply` | *(v2.6)* Starts a background update and restart (**Linux/systemd only**). Since **v2.8** the release bundle must carry a valid detached **ed25519 signature over `checksums.txt`** (verified against the key pinned in the binary, `X-DigitDNS-Checksums-Signature`) **and** a matching SHA-256; the file is re-hashed immediately before it is installed. The data files are snapshotted first and never rewritten. An unsigned or wrongly-signed bundle is refused with the reason in the response. |
 | `GET /api/update/status` | *(v2.6)* Live progress of an in-flight update, for the dashboard's progress modal to poll. |
 | `POST /api/access/mode` | Switches the access mode (`{"allow_all": true|false}`) — persist first, apply second: a failed store write answers **500** and leaves the live gate where it was (v2.8). |
 | `POST /api/config/rules` | Saves policy settings. Persists every key before touching the live matcher and answers **500** on a failed write (v2.8). |
@@ -733,8 +731,8 @@ The password-change endpoint (`POST /api/config/server`) accepts a `code` field 
 ```python
 import requests
 
-HYPERDNS_API = "http://127.0.0.1:8080/api/v1"
-API_KEY = "hdns_live_your_key_here"
+DIGITDNS_API = "http://127.0.0.1:8080/api/v1"
+API_KEY = "digitdns_live_your_key_here"
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 def create_gamer_account(telegram_user_id: str, days: int = 30, traffic_gb: float = 50.0,
@@ -750,7 +748,7 @@ def create_gamer_account(telegram_user_id: str, days: int = 30, traffic_gb: floa
         # field is only kept so older integrations keep working.
         "custom_policies": []
     }
-    res = requests.post(f"{HYPERDNS_API}/clients", json=payload, headers=HEADERS)
+    res = requests.post(f"{DIGITDNS_API}/clients", json=payload, headers=HEADERS)
     res.raise_for_status()
     client = res.json()
 
@@ -764,7 +762,7 @@ To tell a subscriber where they stand, read the account back and use the daemon'
 
 ```python
 def account_status(client_id: str) -> str:
-    c = requests.get(f"{HYPERDNS_API}/clients/{client_id}", headers=HEADERS).json()
+    c = requests.get(f"{DIGITDNS_API}/clients/{client_id}", headers=HEADERS).json()
     if not c["enabled"]:
         return "suspended"
     if c["quota_exceeded"]:                      # the resolver's verdict, not a percentage
@@ -783,11 +781,11 @@ The shape a checkout page or a payment webhook wants. No dependencies beyond Exp
 import express from "express";
 
 const API = "http://127.0.0.1:8080/api/v1";
-const KEY = process.env.HYPERDNS_API_KEY;          // never hardcode it
+const KEY = process.env.DIGITDNS_API_KEY;          // never hardcode it
 const HOOK_SECRET = process.env.PROVISION_SECRET;  // your own shared secret
 const PORTAL = process.env.PORTAL_BASE ?? "http://YOUR_SERVER_IP:8080";
 
-async function hdns(path, method = "GET", body) {
+async function digitdns(path, method = "GET", body) {
   const res = await fetch(`${API}${path}`, {
     method,
     headers: { "X-API-Key": KEY, ...(body && { "Content-Type": "application/json" }) },
@@ -802,14 +800,14 @@ const app = express();
 app.use(express.json());
 
 // This service mints paid accounts, so it authenticates callers in its own right.
-// The HyperDNS key stays on this side and never reaches a browser.
+// The DigitDNS key stays on this side and never reaches a browser.
 app.use((req, res, next) =>
   req.get("X-Provision-Secret") === HOOK_SECRET ? next() : res.sendStatus(401));
 
 app.post("/provision", async (req, res) => {
   const { orderId, days = 30, gb = 50 } = req.body;
   try {
-    const c = await hdns("/clients", "POST", {
+    const c = await digitdns("/clients", "POST", {
       name: `order_${orderId}`,
       days,
       traffic_limit_gb: gb,
@@ -827,7 +825,7 @@ app.post("/provision", async (req, res) => {
 app.post("/renew/:id", async (req, res) => {
   // enabled:true as well as the extension — an account suspended for non-payment
   // stays suspended, and a renewal that only moves the date leaves it dead.
-  const c = await hdns(`/clients/${req.params.id}`, "PUT",
+  const c = await digitdns(`/clients/${req.params.id}`, "PUT",
     { days_to_add: 30, enabled: true });
   res.json({ expires_at: c.expires_at, quota_exceeded: c.quota_exceeded });
 });
@@ -835,13 +833,13 @@ app.post("/renew/:id", async (req, res) => {
 app.listen(3000);
 ```
 
-This service runs **on the HyperDNS host**, which is what lets it reach `127.0.0.1:8080` with nothing exposed: the `403` gate is decided by the address that opened the connection, so a same-host caller passes it without **Public API** ever being turned on. Keep it that way if you can — a provisioning key is an admin key.
+This service runs **on the DigitDNS host**, which is what lets it reach `127.0.0.1:8080` with nothing exposed: the `403` gate is decided by the address that opened the connection, so a same-host caller passes it without **Public API** ever being turned on. Keep it that way if you can — a provisioning key is an admin key.
 
 The renewal route returns `quota_exceeded` because the two ledgers are independent, and on a plan with no `traffic_reset_cycle` a paid renewal can come back with it still `true`. If that is your product, call `reset-traffic` in the same handler.
 
 ### 🧪 Sample C: cURL CLI One-Liners
 
-Run these on the server itself. Each assumes `KEY=hdns_live_your_key_here` is exported and `jq` is installed.
+Run these on the server itself. Each assumes `KEY=digitdns_live_your_key_here` is exported and `jq` is installed.
 
 ```bash
 # Is it alive, and is it actually resolving? (`/version` needs no key at all.)
