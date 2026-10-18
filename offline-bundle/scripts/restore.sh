@@ -16,7 +16,7 @@ import sys
 import tarfile
 import tempfile
 
-parser = argparse.ArgumentParser(description='Restore a HyperDNS uninstall backup. Install HyperDNS first. The service is left stopped after restoration.')
+parser = argparse.ArgumentParser(description='Restore a DigitDNS uninstall backup. Install DigitDNS first. The service is left stopped after restoration.')
 parser.add_argument('archive', type=Path, help='hyperdns-backup-*.tar.gz (uninstall format only)')
 parser.add_argument('--yes', '-y', action='store_true', help='confirm replacement without a prompt; current data is still backed up')
 parser.add_argument('--check', action='store_true', help='validate archive layout without changing files or stopping the service')
@@ -121,7 +121,7 @@ def run():
         if not data_only and os.geteuid() != 0:
             fail('Run with sudo or as root.')
         if target == Path('/') or not target.is_dir():
-            fail('Restore directory must already exist. Install HyperDNS first.')
+            fail('Restore directory must already exist. Install DigitDNS first.')
         for ancestor in (target, *target.parents):
             if ancestor.is_symlink():
                 fail('Restore directory and its parents must not be symlinks.')
@@ -139,10 +139,10 @@ def run():
                     fail('Destination has an unexpected file type.')
         if not data_only:
             if not (target / 'hyperdns').is_file():
-                fail('Install the HyperDNS binary before restoring.')
+                fail('Install the DigitDNS binary before restoring.')
             state = subprocess.check_output(['systemctl', 'show', 'hyperdns', '--property=LoadState', '--value'], text=True).strip()
             if state != 'loaded':
-                fail('Install the HyperDNS systemd service before restoring.')
+                fail('Install the DigitDNS systemd service before restoring.')
         print('Target: ' + str(target), flush=True)
         print('Replaces archived data and settings. Missing optional config/certs are left unchanged.', flush=True)
         if data_only:
@@ -209,7 +209,7 @@ def run():
                 raise
         print('Restore complete. Database and key were both restored; retain backups until the application has been checked.')
         if not data_only:
-            print('HyperDNS is STOPPED. Check restored domains, ports and firewall rules, then run: systemctl start hyperdns')
+            print('DigitDNS is STOPPED. Check restored domains, ports and firewall rules, then run: systemctl start hyperdns')
             print('Restored credentials and panel path replace those from the fresh installation.')
         print('Keep the original archive and the pre-restore backup private.')
 
@@ -223,6 +223,6 @@ try:
     run()
 except (Exception, KeyboardInterrupt) as exc:
     print('Restore failed: ' + str(exc), file=sys.stderr)
-    print('If service shutdown was reached, HyperDNS remains stopped. Do not start it until the error is resolved.', file=sys.stderr)
+    print('If service shutdown was reached, DigitDNS remains stopped. Do not start it until the error is resolved.', file=sys.stderr)
     sys.exit(1)
 PY
