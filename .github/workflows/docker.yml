@@ -1,0 +1,120 @@
+name: Docker
+
+# Builds the multi-arch container image and publishes it to GitHub Container
+# Registry. Three triggers, three jobs' worth of meaning:
+#
+#   - push to `custom`        -> :edge   (tracks the default branch)
+#   - push of a `v*` tag      -> :X.Y.Z + :vX.Y.Z, and :latest on a stable
+#                                cut (a "-beta" tag is a prerelease and never
+#                                takes :latest, matching the release policy in
+#                                docs/RELEASING.md)
+#   - workflow_dispatch       -> backfills a release that predates this
+#         (image-tag input)      workflow: builds from the current branch and
+#                                publishes that version plus :latest. The
+#                                daemon code at a docs/CI-only commit is
+#                                identical to the tag's, so the image matches
+#                                the release binaries.
+#
+# Every push is signed with keyless cosign (Sigstore/OIDC — no long-lived key
+# in the repository). The public half of identity is this workflow file; the
+# verify command is documented in README.md.
+
+on:
+  push:
+    branches: [custom]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      image-tag:
+        description: 'Version to publish (e.g. 3.0.0) — backfills a release that predates this workflow'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write # push to GHCR
+  id-token: write # keyless cosign signing
+
+# A second push to the same branch makes the first run's image stale. Tags are
+# never cancelled — a release image build must finish, not get interrupted by
+# its own follow-up.
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
+jobs:
+  build:
+    name: Build & publish multi-arch image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Emulation for the final stage's `apk add` on arm64. The Go compile
+      # itself does NOT run emulated: the Dockerfile cross-compiles natively
+      # via TARGETOS/TARGETARCH (CGO is off, so no cross C toolchain needed).
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tag and label rules. `latest=auto` (the default flavour) adds :latest
+      # only for a non-prerelease semver tag, so a "-beta" cut can never take
+      # the stable badge — the same rule the binary release workflow applies.
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/digitdns
+          tags: |
+            # branch push -> edge
+            type=raw,value=edge,enable=${{ (github.event_name == 'push' && github.ref_type == 'branch') || (github.ref_type == 'tag' && contains(github.ref_name, 'beta')) }}
+            # v3.0.0 -> 3.0.0, 3.0 (+ latest when stable, via flavour)
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            # backfill dispatch: 3.0.0, v3.0.0, latest
+            type=raw,value=${{ inputs.image-tag }},enable=${{ inputs.image-tag != '' }}
+            type=raw,value=v${{ inputs.image-tag }},enable=${{ inputs.image-tag != '' }}
+            type=raw,value=latest,enable=${{ inputs.image-tag != '' }}
+          labels: |
+            org.opencontainers.image.title=DigitDNS
+            org.opencontainers.image.description=Self-hosted DNS resolver, SNI proxy and subscriber portal — a fork of HyperDNS
+            org.opencontainers.image.licenses=AGPL-3.0-only
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Keyless (OIDC) signature over the image digest. No private key lives in
+      # the repository or in an Actions secret — Sigstore's transparency log
+      # binds the signature to this repository, this workflow file and this run.
+      # Verify with the command documented in README.md.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign the image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          OWNER: ${{ github.repository_owner }}
+        # ${OWNER,,} lowercases the owner: GHCR requires lowercase image names
+        # and a fork under a mixed-case org would otherwise fail to sign.
+        run: |
+          image="ghcr.io/${OWNER,,}/digitdns"
+          cosign sign --yes "${image}@${DIGEST}"

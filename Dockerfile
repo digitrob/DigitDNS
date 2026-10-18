@@ -24,7 +24,14 @@ COPY . .
 # CGO_ENABLED=0 is what makes the result runnable on a distroless or scratch base
 # and on a VPS with no matching libc. -trimpath keeps the build path out of the
 # binary, so two people building the same commit get the same bytes.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/digitdns ./cmd/digitdns
+#
+# TARGETOS/TARGETARCH are what buildx fills in per --platform: under a multi-arch
+# build they let the Go compile cross natively (amd64 runner building arm64) with
+# CGO off, instead of emulating the whole compiler through QEMU. The defaults keep
+# a plain `docker build` working on the host's own architecture.
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/digitdns ./cmd/digitdns
 
 # ------------------------------------------------------------------------------
 # Final Runtime Stage
