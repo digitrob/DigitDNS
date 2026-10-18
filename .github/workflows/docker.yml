@@ -35,12 +35,14 @@ permissions:
   packages: write # push to GHCR
   id-token: write # keyless cosign signing
 
-# A second push to the same branch makes the first run's image stale. Tags are
-# never cancelled — a release image build must finish, not get interrupted by
-# its own follow-up.
+# A second push to the same branch makes the first run's image stale, so branch
+# builds supersede each other. The event name is part of the group because a
+# workflow_dispatch backfill runs on the same ref as the branch: without it, a
+# push arriving while a backfill is building cancels it — observed exactly once,
+# when a README edit killed the v3.0.0 image build before it pushed any tags.
 concurrency:
-  group: docker-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+  group: docker-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref_type == 'branch' }}
 
 jobs:
   build:
