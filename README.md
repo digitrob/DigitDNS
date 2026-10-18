@@ -1,4 +1,4 @@
-# ⚡ DigitDNS — Anti-Sanction SmartDNS & Gaming Gateway
+# ⚡ DigitDNS — Standalone SmartDNS & Multi-Port SNI Proxy
 
 [![Release](https://img.shields.io/github/v/release/digitrob/DigitDNS?display=tag&style=for-the-badge&label=Release)](https://github.com/digitrob/DigitDNS/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/digitrob/DigitDNS/ci.yml?branch=custom&style=for-the-badge&label=CI)](https://github.com/digitrob/DigitDNS/actions/workflows/ci.yml)
