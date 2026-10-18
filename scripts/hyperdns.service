@@ -10,8 +10,8 @@
 # note, this file passed no `-daemon` and all three installers did.
 
 [Unit]
-Description=HyperDNS — Standalone SmartDNS & Gaming Gateway
-Documentation=https://github.com/IzumiRain/hyperdns
+Description=DigitDNS — Standalone SmartDNS & Gaming Gateway
+Documentation=https://github.com/digitrob/DigitDNS
 After=network.target network-online.target
 Wants=network-online.target
 

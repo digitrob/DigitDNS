@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# HyperDNS Clean & Complete Uninstaller
+# DigitDNS Clean & Complete Uninstaller
 #
 # Reverses scripts/install.sh, including the parts of it that reach outside
 # /opt/hyperdns: the systemd-resolved drop-in, the /etc/resolv.conf the installer
@@ -70,10 +70,10 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 echo -e "${RED}${BOLD}=========================================================================${NC}"
-echo -e "${RED}${BOLD} HyperDNS Clean & Complete Uninstaller${NC}"
+echo -e "${RED}${BOLD} DigitDNS Clean & Complete Uninstaller${NC}"
 echo -e "${RED}${BOLD}=========================================================================${NC}"
 echo ""
-echo "This uninstaller will completely remove HyperDNS from this server:"
+echo "This uninstaller will completely remove DigitDNS from this server:"
 echo "  1. Stop and disable the systemd service ('hyperdns')"
 echo "  2. Remove the systemd service unit (/etc/systemd/system/hyperdns.service)"
 echo "  3. Restore the system DNS resolver that was replaced to free port 53"
@@ -109,13 +109,13 @@ echo ""
 if [ "${ASSUME_YES}" != true ]; then
     if [ "${PURGE}" = true ]; then
         # A typed word rather than y/n, because this branch has no undo.
-        read -rp "$(echo -e "${YELLOW}Type DELETE to erase HyperDNS and all subscriber data with no backup: ${NC}")" CONFIRM
+        read -rp "$(echo -e "${YELLOW}Type DELETE to erase DigitDNS and all subscriber data with no backup: ${NC}")" CONFIRM
         if [ "${CONFIRM}" != "DELETE" ]; then
             echo -e "${YELLOW}Uninstall cancelled. No files were modified.${NC}"
             exit 0
         fi
     else
-        read -rp "$(echo -e "${YELLOW}Are you sure you want to completely uninstall HyperDNS? (yes/no): ${NC}")" CONFIRM
+        read -rp "$(echo -e "${YELLOW}Are you sure you want to completely uninstall DigitDNS? (yes/no): ${NC}")" CONFIRM
         if [ "${CONFIRM}" != "yes" ] && [ "${CONFIRM}" != "y" ] && [ "${CONFIRM}" != "YES" ]; then
             echo -e "${YELLOW}Uninstall cancelled. No files were modified.${NC}"
             exit 0
@@ -273,10 +273,10 @@ echo -e "${CYAN}[7/7] Removing ${INSTALL_DIR}...${NC}"
 rm -rf "${INSTALL_DIR}"
 
 echo ""
-echo -e "${GREEN}${BOLD}✓ HyperDNS has been cleanly and completely uninstalled.${NC}"
+echo -e "${GREEN}${BOLD}✓ DigitDNS has been cleanly and completely uninstalled.${NC}"
 if [ "${PURGE}" != true ] && [ -f "${BACKUP_ARCHIVE}" ]; then
     echo -e "${CYAN}Your data is not gone — it is in ${BACKUP_ARCHIVE}${NC}"
     echo -e "${CYAN}Keep master.key with it: the database inside cannot be decrypted without it.${NC}"
 fi
-echo -e "${CYAN}System DNS resolvers have been restored. Thank you for using HyperDNS! 👋${NC}"
+echo -e "${CYAN}System DNS resolvers have been restored. Thank you for using DigitDNS! 👋${NC}"
 echo ""

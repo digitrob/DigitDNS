@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# HyperDNS — 100% Offline Standalone Installer
+# DigitDNS — 100% Offline Standalone Installer
 # Works with ZERO internet connection using pre-packaged binary & assets.
 # Supported OS: Ubuntu 20.04+, Debian 11+, CentOS/RHEL/Alma/Rocky 8+
 # ==============================================================================
@@ -24,14 +24,15 @@ NC='\033[0m'
 # "TERM environment variable not set." and installed nothing.
 clear 2>/dev/null || true
 echo -e "${CYAN}${BOLD}"
-echo "  ██╗  ██╗██╗   ██╗██████╗ ███████╗██████╗ ██████╗ ███╗   ██╗███████╗"
-echo "  ██║  ██║╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗██╔══██╗████╗  ██║██╔════╝"
-echo "  ███████║ ╚████╔╝ ██████╔╝█████╗  ██████╔╝██║  ██║██╔██╗ ██║███████╗"
-echo "  ██╔══██║  ╚██╔╝  ██╔═══╝ ██╔══╝  ██╔══██╗██║  ██║██║╚██╗██║╚════██║"
-echo "  ██║  ██║   ██║   ██║     ███████╗██║  ██║██████╔╝██║ ╚████║███████║"
-echo "  ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚══════╝╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═══╝╚══════╝"
+echo "  ██████╗ ██╗ ██████╗ ██╗████████╗██████╗ ███╗   ██╗███████╗"
+echo "  ██╔══██╗██║██╔════╝ ██║╚══██╔══╝██╔══██╗████╗  ██║██╔════╝"
+echo "  ██║  ██║██║██║  ███╗██║   ██║   ██║  ██║██╔██╗ ██║███████╗"
+echo "  ██║  ██║██║██║   ██║██║   ██║   ██║  ██║██║╚██╗██║╚════██║"
+echo "  ██████╔╝██║╚██████╔╝██║   ██║   ██████╔╝██║ ╚████║███████║"
+echo "  ╚═════╝ ╚═╝ ╚═════╝ ╚═╝   ╚═╝   ╚═════╝ ╚═╝  ╚═══╝╚══════╝"
 echo -e "       ${PURPLE}⚡ Standalone Low-Latency SmartDNS & Anti-Sanction Gaming Gateway ⚡${NC}"
 echo -e "       ${YELLOW}Package: 100% OFFLINE INSTALLER · Single Binary · Go 1.26 · OWASP Hardened${NC}"
+echo -e "       ${CYAN}DigitDNS — a fork of HyperDNS by HyperRAIN · https://github.com/digitrob/DigitDNS${NC}"
 echo ""
 
 if [ "$EUID" -ne 0 ]; then
@@ -161,7 +162,7 @@ if [ -f "${INSTALL_DIR}/hyperdns" ] || [ -f "${INSTALL_DIR}/config.json" ] || [ 
     [ -z "${PREV_VERSION}" ] && PREV_VERSION="unknown (pre-2.2.0)"
 
     echo -e "${YELLOW}${BOLD}\u250c${NC}"
-    echo -e "${YELLOW}│ SAFE INSTALL — an existing HyperDNS installation was detected${NC}"
+    echo -e "${YELLOW}│ SAFE INSTALL — an existing DigitDNS installation was detected${NC}"
     echo -e "${YELLOW}│ • Installed Version : ${CYAN}${PREV_VERSION}${NC}"
     echo -e "${YELLOW}│ • Target Version    : ${GREEN}v2.2.0 (this package)${NC}"
     echo -e "${YELLOW}│ • Mode              : ${GREEN}Fresh install — old data ARCHIVED, then REPLACED${NC}"
@@ -386,7 +387,7 @@ fi
 
 # Every rule this step creates is recorded, and the uninstaller removes only what it finds
 # recorded. Closing all ten unconditionally on uninstall would take down whatever was
-# already listening on 80, 443 or 8080 before HyperDNS was installed here.
+# already listening on 80, 443 or 8080 before DigitDNS was installed here.
 FIREWALL_MARKER="${INSTALL_DIR}/.firewall-backup"
 
 if command -v ufw >/dev/null 2>&1; then
@@ -585,7 +586,7 @@ fi
 echo -e "${CYAN}${BOLD}[5/6] Creating & Starting Systemd Background Service...${NC}"
 cat << 'EOF' > /etc/systemd/system/hyperdns.service
 [Unit]
-Description=HyperDNS — Standalone SmartDNS & Gaming Gateway
+Description=DigitDNS — Standalone SmartDNS & Gaming Gateway
 Documentation=https://github.com/IzumiRain/hyperdns
 After=network.target network-online.target
 Wants=network-online.target
@@ -665,7 +666,7 @@ for _hc in $(seq 1 20); do
 done
 
 if [ "${SERVICE_UP}" = true ]; then
-    echo -e "  ${GREEN}✓ HyperDNS core engine is ACTIVE and RUNNING!${NC}"
+    echo -e "  ${GREEN}✓ DigitDNS core engine is ACTIVE and RUNNING!${NC}"
 else
     echo -e "  ${RED}✕ Service failed to start. Run 'journalctl -u hyperdns -n 50' to inspect.${NC}"
     echo -e "  ${YELLOW}If the journal says the HTTPS certificate is not usable, the domain has no${NC}"
@@ -734,7 +735,7 @@ fi
 
 echo ""
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}${BOLD}       🎉 HYPERDNS OFFLINE INSTALLATION COMPLETED SUCCESSFULLY!       ${NC}"
+echo -e "${GREEN}${BOLD}       🎉 DIGITDNS INSTALLATION COMPLETED SUCCESSFULLY!       ${NC}"
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════════════════════════════════${NC}"
 echo ""
 
