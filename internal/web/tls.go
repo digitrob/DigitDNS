@@ -321,6 +321,44 @@ func (ws *WebServer) handleTLSSettings(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleTLSAutoRenew saves the DoH/DoT certificate's auto-renew preference
+// (the SSL card's toggle). It is a separate endpoint from /api/tls/issue
+// because the toggle must not trigger issuance: flipping it only moves the
+// flag the daily loop reads, and the manual Let's Encrypt button keeps
+// working either way. Only the DoH/DoT purpose is accepted — the panel's
+// certificate has no toggle in this build, and the subscription portal's
+// rides its own settings card.
+func (ws *WebServer) handleTLSAutoRenew(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		httpx.WriteMethodNotAllowed(w, "POST")
+		return
+	}
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil {
+		httpx.WriteJSONError(w, http.StatusBadRequest, "the request body could not be read as JSON")
+		return
+	}
+	if req.Enabled == nil {
+		httpx.WriteJSONError(w, http.StatusBadRequest, "enabled is required")
+		return
+	}
+	if err := ws.tlsSettings.SetDotAutoRenew(*req.Enabled, func(s *database.TLSSettings) error {
+		return ws.db.SetSetting("tls", s)
+	}); err != nil {
+		log.Printf("[TLS] storing the DoH/DoT auto-renew preference failed: %v", err)
+		httpx.WriteJSONError(w, http.StatusInternalServerError, "the auto-renew preference could not be stored; see the daemon log")
+		return
+	}
+	log.Printf("[TLS] DoH/DoT auto-renew %v", map[bool]string{true: "enabled", false: "disabled"}[*req.Enabled])
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success": true,
+		"enabled": ws.tlsSettings.IsDotAutoRenewEnabled(),
+	})
+}
+
 // certDetails is the view of one certificate the dashboard renders: enough to
 // tell the operator when it was issued, when it dies, and whether it has
 // already died — nothing more, because /api/config is the response it rides.
@@ -384,6 +422,77 @@ func (ws *WebServer) subscriptionCertDetails() *certDetails {
 		NotAfter:  leaf.NotAfter.UTC(),
 		Expired:   time.Now().After(leaf.NotAfter),
 	}
+}
+
+// certDetailsFromPair loads and parses a certificate pair into the view the
+// dashboard renders, or nil when the pair is absent or unreadable — the same
+// swallow-the-error contract as subscriptionCertDetails above: a broken pair
+// reads as "no details", not as a toast on every config fetch.
+func certDetailsFromPair(domain, certPath, keyPath string) *certDetails {
+	if strings.TrimSpace(certPath) == "" || strings.TrimSpace(keyPath) == "" {
+		return nil
+	}
+	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil || len(pair.Certificate) == 0 {
+		return nil
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return nil
+	}
+	return &certDetails{
+		Domain:    domain,
+		Subject:   leaf.Subject.CommonName,
+		NotBefore: leaf.NotBefore.UTC(),
+		NotAfter:  leaf.NotAfter.UTC(),
+		Expired:   time.Now().After(leaf.NotAfter),
+	}
+}
+
+// dotCertDetails reports the certificate the DoH/DoT (853/8443) listeners
+// serve, with the SAME precedence the listeners themselves use: a custom
+// DoTDomain is served by its ACME pair under certs/acme/<domain>.crt; no
+// custom name rides the panel pair. Nil when nothing is configured or the
+// pair will not load — the UI renders that as "none".
+func (ws *WebServer) dotCertDetails() *certDetails {
+	if ws.tlsSettings == nil {
+		return nil
+	}
+	if domain := strings.TrimSpace(ws.tlsSettings.GetDoTDomain()); domain != "" {
+		return certDetailsFromPair(domain,
+			filepath.Join(ws.acmeDir(), domain+".crt"),
+			filepath.Join(ws.acmeDir(), domain+".key"))
+	}
+	return ws.panelCertDetails()
+}
+
+// panelCertDetails reports the certificate the ADMIN PANEL listener serves,
+// resolving the pair the same way panelCertificatePair does — stored paths
+// first, then the ACME directory — but WITHOUT that validator's refusal of
+// expired pairs: showing an expired panel certificate is exactly what the
+// SSL card's dates and the "Renew" label flip exist for.
+func (ws *WebServer) panelCertDetails() *certDetails {
+	if ws.tlsSettings == nil {
+		return nil
+	}
+	snap := ws.tlsSettings.Snapshot()
+	domain := strings.TrimSpace(snap.Domain)
+	if domain == "" {
+		domain = ws.effectivePanelDomain()
+	}
+	if domain == "" {
+		domain = ws.settings.GetPublicIP()
+	}
+	certPath, keyPath := snap.CertPath, snap.KeyPath
+	if d := certDetailsFromPair(domain, certPath, keyPath); d != nil {
+		return d
+	}
+	if snap.Domain == "" {
+		return nil
+	}
+	return certDetailsFromPair(domain,
+		filepath.Join(ws.acmeDir(), snap.Domain+".crt"),
+		filepath.Join(ws.acmeDir(), snap.Domain+".key"))
 }
 
 // handleACMEStatus answers the progress poll: the manager's live RunState
@@ -651,6 +760,12 @@ func (ws *WebServer) RenewSubscriptionIfDue() {
 	if !snap.Enabled || snap.Domain == "" || snap.UsePanelCertificate {
 		return
 	}
+	// The settings card's auto-renew toggle. The flag is stored inverted so
+	// every pre-field record reads as "renew"; here it is the positive form
+	// the snapshot already computed.
+	if !snap.AutoRenewACME {
+		return
+	}
 	// A panel without a domain (IP-addressed) is not "the same origin" — the
 	// subscription portal on its own ACME domain is a supported shape and its
 	// pair still needs its own renewal. Skip only a genuine mirror.
@@ -668,6 +783,12 @@ func (ws *WebServer) RenewSubscriptionIfDue() {
 func (ws *WebServer) RenewDOTIfDue() {
 	domain := strings.TrimSpace(ws.tlsSettings.GetDoTDomain())
 	if domain == "" {
+		return
+	}
+	// The SSL card's auto-renew toggle (stored inverted; the accessor
+	// translates). Opting out must not stop the manual Let's Encrypt button —
+	// only the daily loop.
+	if !ws.tlsSettings.IsDotAutoRenewEnabled() {
 		return
 	}
 	_, email := ws.tlsSettings.ACMEContact()

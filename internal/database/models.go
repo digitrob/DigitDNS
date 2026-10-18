@@ -220,8 +220,9 @@ type SNIProxySettings struct {
 // field read of a string another goroutine may be writing is not safe. CertPath,
 // KeyPath and AutoRenewACME are fixed at startup and may be read directly.
 type TLSSettings struct {
-	// mu guards Domain, Email and DoTDomain. It is unexported, so encoding/json
-	// skips it and it never reaches the stored record.
+	// mu guards Domain, Email, DoTDomain and NoDotAutoRenewACME. It is
+	// unexported, so encoding/json skips it and it never reaches the stored
+	// record.
 	mu sync.RWMutex
 
 	Domain        string `json:"domain"`
@@ -236,6 +237,14 @@ type TLSSettings struct {
 	// Empty means "use the panel domain" (v2.2.0). Guarded by mu like Domain:
 	// /api/tls/issue rewrites it while the daemon serves.
 	DoTDomain string `json:"dot_domain"`
+
+	// NoDotAutoRenewACME opts the DoH/DoT certificate out of the daily
+	// renewal loop. It is inverted — false, the zero value and the value
+	// every record written before this field existed decodes to, means
+	// renewal keeps running — so adding the field changed no behaviour for
+	// existing installs. Guarded by mu like Domain: the dashboard's
+	// auto-renew toggle rewrites it while the daemon serves.
+	NoDotAutoRenewACME bool `json:"no_dot_auto_renew_acme"`
 
 	// PanelHTTPS makes the dashboard listener serve TLS instead of plain HTTP on
 	// WebPort. It is fixed at startup (it therefore sits outside mu, like the
@@ -327,4 +336,13 @@ type SubscriptionSettings struct {
 	// pre-marker deliberate ports, and one re-save of the card marks those
 	// permanently.
 	PortExplicit bool `json:"port_explicit"`
+
+	// NoAutoRenewACME opts the subscription origin's certificate out of the
+	// daily renewal loop. Inverted like TLSSettings.NoDotAutoRenewACME: the
+	// zero value — and every record written before this field existed —
+	// decodes to false, which keeps renewal running, so no migration is
+	// needed to preserve the always-renew behaviour this build shipped with.
+	// Guarded by mu: the settings card's toggle rewrites it while the daemon
+	// serves.
+	NoAutoRenewACME bool `json:"no_auto_renew_acme"`
 }

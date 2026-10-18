@@ -185,6 +185,7 @@ function initSubscriptionSettings() {
   const statusEl = document.getElementById('sub-save-status');
   const originPreview = document.getElementById('sub-origin-preview');
   const leBtn = document.getElementById('sub-issue-ssl-btn');
+  const autoRenew = document.getElementById('sub-auto-renew-input');
 
   // Show only the input that matches the selected CSS source.
   function syncCSSSourceFields() {
@@ -209,6 +210,11 @@ function initSubscriptionSettings() {
     if (cssInline) cssInline.value = sub.theme_css || '';
     if (cssPath) cssPath.value = sub.theme_css_path || '';
     if (cssUrl) cssUrl.value = sub.theme_css_url || '';
+    // The snapshot carries the POSITIVE form of the stored inverted flag; a
+    // config that predates the field has no auto_renew_acme key at all, and
+    // defaulting that to checked matches the daemon's "renewal keeps running"
+    // reading of the same absence.
+    if (autoRenew) autoRenew.checked = sub.auto_renew_acme !== false;
     syncCSSSourceFields();
     renderSubOriginPreview();
     renderSubCertDetails();
@@ -276,7 +282,11 @@ function initSubscriptionSettings() {
       theme_css_source: (cssSource ? cssSource.value : 'inline'),
       theme_css: (cssInline ? cssInline.value : ''),
       theme_css_path: (cssPath ? cssPath.value.trim() : ''),
-      theme_css_url: (cssUrl ? cssUrl.value.trim() : '')
+      theme_css_url: (cssUrl ? cssUrl.value.trim() : ''),
+      // Sent as a definite value whenever the checkbox exists: the daemon
+      // treats an absent key as "keep the stored choice", so only a form
+      // that cannot show the toggle (element missing) leaves it alone.
+      auto_renew_acme: autoRenew ? autoRenew.checked : undefined
     };
     saveBtn.disabled = true;
     if (statusEl) statusEl.textContent = 'Saving…';

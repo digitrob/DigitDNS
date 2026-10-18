@@ -1232,3 +1232,11 @@ input:checked + .slider:before {
 #api-bind-custom-wrap:not(.hidden) {
   display: flex;
 }
+
+/* accent-cyan-500 is not in the purged Tailwind sheet (only emerald, indigo
+   and violet checkboxes were ever generated), so the DoH/DoT auto-renew
+   checkbox's accent colour is declared here in plain CSS — the same escape
+   hatch as .upstream-col above. */
+.accent-cyan-500 {
+  accent-color: rgb(var(--c-cyan-500) / 1);
+}

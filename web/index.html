@@ -740,7 +740,7 @@
           </div>
           <div class="flex items-center gap-1.5 text-[11px] text-emerald-400 font-mono mt-0.5">
             <span class="pulse-dot"></span>
-            <span>ONLINE · SMARTDNS</span>
+            <span>ONLINE</span>
           </div>
         </div>
       </div>
@@ -1726,6 +1726,10 @@ async function onBuySubscription(ctx, username) {
               class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
               Let's Encrypt
             </button>
+            <label class="flex items-center gap-2 text-xs text-slate-300 whitespace-nowrap">
+              <input type="checkbox" id="sub-auto-renew-input" class="accent-emerald-500 w-4 h-4">
+              Auto-renew certificate
+            </label>
             <p class="text-[11px] text-slate-400 leading-relaxed flex-1">
               Issue a certificate for the subscription domain above. Empty the domain field and click to go back to the panel's name.
             </p>
@@ -1820,6 +1824,14 @@ async function onBuySubscription(ctx, username) {
             </div>
             <p id="dot-le-progress-text" class="text-[11px] text-slate-400 font-mono"></p>
           </div>
+          <!-- Validity window of the certificate the DoH/DoT listeners serve,
+               rendered from config.dot_cert. The button above flips to "Renew"
+               when this line says the certificate has expired. -->
+          <p id="dot-cert-details" class="text-[11px] font-mono text-slate-500 mt-1"></p>
+          <label class="flex items-center gap-2 text-xs text-slate-300 mt-1">
+            <input type="checkbox" id="dot-auto-renew-input" class="accent-cyan-500 w-4 h-4">
+            Auto-renew certificate (daily check; saves immediately)
+          </label>
           <p class="text-[10px] text-slate-500 mt-1">This is the hostname for DNS-over-TLS and DNS-over-HTTPS — what Android's Private DNS field expects. Leave empty to use the panel domain.</p>
 
           <!-- Panel domain — second, under its own heading, so its wider
@@ -1840,6 +1852,10 @@ async function onBuySubscription(ctx, username) {
             </div>
             <p id="panel-le-progress-text" class="text-[11px] text-slate-400 font-mono"></p>
           </div>
+          <!-- Validity window of the panel's own certificate, rendered from
+               config.panel_cert. The button above flips to "Renew SSL
+               Certificate" when this line says the certificate has expired. -->
+          <p id="panel-cert-details" class="text-[11px] font-mono text-slate-500 mt-1"></p>
           <p class="text-[10px] text-slate-500 mt-1">Changing this renames the dashboard itself — every panel link and the admin cert follow it. Not the field for your DoH/DoT hostname.</p>
         </div>
 
@@ -1913,71 +1929,72 @@ async function onBuySubscription(ctx, username) {
             </button>
           </div>
 
-
-
-        </div>
-
-        <!-- Named custom policy groups (v2.3): operator-defined bundles of
-             domains with one action, toggled as a unit and selectable later. -->
-        <div class="glass-panel p-5 sm:p-6 space-y-4">
-          <div class="flex items-center justify-between gap-2">
-            <div>
-              <h3 class="text-xs sm:text-sm font-bold uppercase text-white flex items-center gap-2 font-heading">
-                <i data-feather="layers" class="w-4 h-4 text-violet-400"></i> Custom Policy Groups
-              </h3>
-              <p class="text-[11px] text-slate-400 mt-0.5">Named bundles of domains with one action (proxy / direct / block), switchable as a unit.</p>
-            </div>
-            <button id="add-custom-group-btn" class="shrink-0 px-4 py-2 bg-violet-500 hover:bg-violet-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">New Group</button>
-          </div>
-          <div id="custom-groups-list" class="space-y-2"><div class="text-slate-500 text-xs py-1">Loading groups…</div></div>
-
-          <!-- Inline editor, hidden until New Group / Edit -->
-          <div id="custom-group-editor" class="hidden space-y-3 border-t border-slate-800 pt-4">
-            <input type="hidden" id="custom-group-id">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- Named custom policy groups (v2.3): operator-defined bundles of
+               domains with one action, toggled as a unit and selectable later.
+               Sits inside the same 2-column grid as the panels above, so it
+               fills the row beside Custom Static Records instead of spanning
+               the full width on a row of its own. -->
+          <div class="glass-panel p-5 sm:p-6 space-y-4">
+            <div class="flex items-center justify-between gap-2">
               <div>
-                <label for="custom-group-name" class="block text-[11px] font-semibold text-slate-400 mb-1">Group name</label>
-                <input type="text" id="custom-group-name" placeholder="e.g. My Streaming Bundle"
-                  class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-violet-400">
+                <h3 class="text-xs sm:text-sm font-bold uppercase text-white flex items-center gap-2 font-heading">
+                  <i data-feather="layers" class="w-4 h-4 text-violet-400"></i> Custom Policy Groups
+                </h3>
+                <p class="text-[11px] text-slate-400 mt-0.5">Named bundles of domains with one action (proxy / direct / block), switchable as a unit.</p>
               </div>
-              <div>
-                <label for="custom-group-action" class="block text-[11px] font-semibold text-slate-400 mb-1">Action</label>
-                <select id="custom-group-action" class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-violet-400">
-                  <option value="proxy">Proxy (SNI)</option>
-                  <option value="direct">Direct</option>
-                  <option value="block">Block</option>
-                </select>
-              </div>
+              <button id="add-custom-group-btn" class="shrink-0 px-4 py-2 bg-violet-500 hover:bg-violet-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">New Group</button>
             </div>
-            <div>
-              <label for="custom-group-domains" class="block text-[11px] font-semibold text-slate-400 mb-1">Domains (one per line; <code>*.example.com</code> covers subdomains)</label>
-              <textarea id="custom-group-domains" rows="4" placeholder="example.com&#10;*.example.com"
-                class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-violet-400"></textarea>
-            </div>
-            <label class="flex items-center gap-2 text-xs text-slate-300">
-              <input type="checkbox" id="custom-group-enabled" checked class="accent-violet-500"> Enabled
-            </label>
-            <!-- Group icon (v2.7): one SVG or PNG per group, validated and stored
-                 server-side. The Feather placeholder shows until a real icon loads. -->
-            <div class="flex items-center gap-3">
-              <span id="custom-group-icon-preview" class="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0">
-                <i data-feather="image" class="w-4 h-4 text-slate-600"></i>
-              </span>
-              <div class="min-w-0">
-                <div class="flex items-center gap-2">
-                  <label for="custom-group-icon-file" class="cursor-pointer px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-[11px] transition">Upload icon…</label>
-                  <input type="file" id="custom-group-icon-file" accept=".svg,image/svg+xml,.png,image/png" class="hidden">
-                  <button type="button" id="custom-group-icon-remove" class="hidden px-2.5 py-1 rounded bg-slate-900 hover:bg-red-500/10 text-slate-300 hover:text-red-400 border border-slate-700 text-[11px] transition">Remove</button>
+            <div id="custom-groups-list" class="space-y-2"><div class="text-slate-500 text-xs py-1">Loading groups…</div></div>
+
+            <!-- Inline editor, hidden until New Group / Edit -->
+            <div id="custom-group-editor" class="hidden space-y-3 border-t border-slate-800 pt-4">
+              <input type="hidden" id="custom-group-id">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label for="custom-group-name" class="block text-[11px] font-semibold text-slate-400 mb-1">Group name</label>
+                  <input type="text" id="custom-group-name" placeholder="e.g. My Streaming Bundle"
+                    class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-violet-400">
                 </div>
-                <p class="text-[10px] text-slate-500 mt-1">SVG ≤ 16 KB (scripts/refs stripped) or PNG ≤ 64 KB, ≤ 512×512.</p>
+                <div>
+                  <label for="custom-group-action" class="block text-[11px] font-semibold text-slate-400 mb-1">Action</label>
+                  <select id="custom-group-action" class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-violet-400">
+                    <option value="proxy">Proxy (SNI)</option>
+                    <option value="direct">Direct</option>
+                    <option value="block">Block</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label for="custom-group-domains" class="block text-[11px] font-semibold text-slate-400 mb-1">Domains (one per line; <code>*.example.com</code> covers subdomains)</label>
+                <textarea id="custom-group-domains" rows="4" placeholder="example.com&#10;*.example.com"
+                  class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-violet-400"></textarea>
+              </div>
+              <label class="flex items-center gap-2 text-xs text-slate-300">
+                <input type="checkbox" id="custom-group-enabled" checked class="accent-violet-500"> Enabled
+              </label>
+              <!-- Group icon (v2.7): one SVG or PNG per group, validated and stored
+                   server-side. The Feather placeholder shows until a real icon loads. -->
+              <div class="flex items-center gap-3">
+                <span id="custom-group-icon-preview" class="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0">
+                  <i data-feather="image" class="w-4 h-4 text-slate-600"></i>
+                </span>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <label for="custom-group-icon-file" class="cursor-pointer px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-[11px] transition">Upload icon…</label>
+                    <input type="file" id="custom-group-icon-file" accept=".svg,image/svg+xml,.png,image/png" class="hidden">
+                    <button type="button" id="custom-group-icon-remove" class="hidden px-2.5 py-1 rounded bg-slate-900 hover:bg-red-500/10 text-slate-300 hover:text-red-400 border border-slate-700 text-[11px] transition">Remove</button>
+                  </div>
+                  <p class="text-[10px] text-slate-500 mt-1">SVG ≤ 16 KB (scripts/refs stripped) or PNG ≤ 64 KB, ≤ 512×512.</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <button id="save-custom-group-btn" class="px-4 py-2 bg-violet-500 hover:bg-violet-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Save Group</button>
+                <button id="cancel-custom-group-btn" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg text-xs transition">Cancel</button>
+                <span id="custom-group-status" class="text-[11px] text-slate-400"></span>
               </div>
             </div>
-            <div class="flex items-center gap-2">
-              <button id="save-custom-group-btn" class="px-4 py-2 bg-violet-500 hover:bg-violet-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Save Group</button>
-              <button id="cancel-custom-group-btn" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg text-xs transition">Cancel</button>
-              <span id="custom-group-status" class="text-[11px] text-slate-400"></span>
-            </div>
           </div>
+
         </div>
 
                 <!-- Session idle window (Phase D): how long a dashboard session may sit

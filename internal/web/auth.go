@@ -797,6 +797,15 @@ func (ws *WebServer) handleSubscriptionSettings(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// The auto-renew toggle is a pointer in the input for the same reason a
+	// form field older than the daemon might omit it: absent means "keep the
+	// stored choice", never "stop renewing". Resolve it once, before Apply,
+	// so the snapshot carries a definite value either way.
+	autoRenew := ws.subSettings.Snapshot().AutoRenewACME
+	if in.AutoRenewACME != nil {
+		autoRenew = *in.AutoRenewACME
+	}
+
 	if err := ws.subSettings.Apply(database.SubscriptionSnapshot{
 		Enabled:             normalized.Enabled,
 		Domain:              normalized.Domain,
@@ -814,6 +823,7 @@ func (ws *WebServer) handleSubscriptionSettings(w http.ResponseWriter, r *http.R
 		// dropping it here would silently unmark every deliberate portal
 		// port, and the next panel-port change would copy-follow it.
 		PortExplicit: normalized.PortExplicit,
+		AutoRenewACME: autoRenew,
 	}, func(s *database.SubscriptionSettings) error { return ws.db.SetSetting("subscription", s) }); err != nil {
 		log.Printf("[Web] Could not persist subscription settings: %v", err)
 		httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not save the subscription settings")

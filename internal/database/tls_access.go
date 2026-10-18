@@ -37,24 +37,35 @@ type TLSSnapshot struct {
 	DoTDomain     string `json:"dot_domain"`
 	PanelHTTPS    bool   `json:"panel_https"`
 	RedirectPort  int    `json:"redirect_port"`
+	// DotAutoRenewACME is the positive form of the stored inverted
+	// TLSSettings.NoDotAutoRenewACME: true — the complement of the zero
+	// value, and what every pre-field record reads as — means the daily
+	// renewal loop keeps renewing the DoH/DoT certificate. The dashboard and
+	// the API see this field; only the stored record uses the inverted one.
+	// (AutoRenewACME above is the pre-existing startup-fixed field for the
+	// panel pair and is deliberately left alone.)
+	DotAutoRenewACME bool `json:"dot_auto_renew_acme"`
 }
 
 // Snapshot copies every field under a single lock.
 func (t *TLSSettings) Snapshot() TLSSnapshot {
 	if t == nil {
-		return TLSSnapshot{}
+		// DotAutoRenewACME true matches the inverted field's zero-complement:
+		// an absent record means renewal runs, as it always has.
+		return TLSSnapshot{DotAutoRenewACME: true}
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return TLSSnapshot{
-		Domain:        t.Domain,
-		Email:         t.Email,
-		CertPath:      t.CertPath,
-		KeyPath:       t.KeyPath,
-		AutoRenewACME: t.AutoRenewACME,
-		DoTDomain:     t.DoTDomain,
-		PanelHTTPS:    t.PanelHTTPS,
-		RedirectPort:  t.RedirectPort,
+		Domain:           t.Domain,
+		Email:            t.Email,
+		CertPath:         t.CertPath,
+		KeyPath:          t.KeyPath,
+		AutoRenewACME:    t.AutoRenewACME,
+		DoTDomain:        t.DoTDomain,
+		PanelHTTPS:       t.PanelHTTPS,
+		RedirectPort:     t.RedirectPort,
+		DotAutoRenewACME: !t.NoDotAutoRenewACME,
 	}
 }
 
@@ -90,6 +101,39 @@ func (t *TLSSettings) GetDoTDomain() string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.DoTDomain
+}
+
+// IsDotAutoRenewEnabled reports whether the daily renewal loop should renew
+// the DoH/DoT certificate. A nil record means "yes": the field was added to
+// opt out, so the historical behaviour is the safe default.
+func (t *TLSSettings) IsDotAutoRenewEnabled() bool {
+	if t == nil {
+		return true
+	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return !t.NoDotAutoRenewACME
+}
+
+// SetDotAutoRenew opts the DoH/DoT certificate in or out of the daily renewal
+// loop, with the same rollback-on-persist-failure contract as SetDoTDomain.
+func (t *TLSSettings) SetDotAutoRenew(enabled bool, persist func(*TLSSettings) error) error {
+	if t == nil {
+		return ErrTLSSettingsNil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	before := t.NoDotAutoRenewACME
+	t.NoDotAutoRenewACME = !enabled
+	if persist == nil {
+		return nil
+	}
+	if err := persist(t); err != nil {
+		t.NoDotAutoRenewACME = before
+		return err
+	}
+	return nil
 }
 
 // SetDoTDomain applies the custom DoH/DoT hostname with the same

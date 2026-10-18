@@ -785,6 +785,51 @@ async function loadConfig() {
 
 let isAPIKeyMasked = true;
 
+// renderTLSCertDetails fills the SSL/TLS Manager card's two validity lines
+// (DoH/DoT and ADMIN PANEL) from config.dot_cert / config.panel_cert and
+// flips each Let's Encrypt button to its Renew label when that row's
+// certificate has expired. Same contract as renderSubCertDetails in
+// twofa.js: nil means "no details", which renders as a slate "none" line
+// and leaves the button's issue label alone — the button that CREATES the
+// first certificate must never announce a renewal that cannot exist yet.
+function renderTLSCertDetails(cfg) {
+  const fmt = ts => new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+
+  function render(detailsId, cert, issueLabel, renewLabel, btnId) {
+    const details = document.getElementById(detailsId);
+    const btn = document.getElementById(btnId);
+    if (!details) return;
+    if (!cert || !cert.not_after) {
+      details.textContent = 'No certificate yet — this listener is not serving TLS, or its pair could not be read.';
+      details.className = 'text-[11px] font-mono text-slate-500 mt-1';
+      if (btn) btn.textContent = issueLabel;
+      return;
+    }
+    if (cert.expired) {
+      details.textContent = `Certificate expired ${fmt(cert.not_after)} — renew below.`;
+      details.className = 'text-[11px] font-mono text-red-400 mt-1';
+      if (btn) btn.textContent = renewLabel;
+    } else {
+      const daysLeft = Math.ceil((new Date(cert.not_after) - Date.now()) / 86400000);
+      details.textContent = `Certificate for ${cert.domain || 'this listener'}: valid ${fmt(cert.not_before)} → ${fmt(cert.not_after)} · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
+      details.className = 'text-[11px] font-mono text-emerald-400/80 mt-1';
+      if (btn) btn.textContent = issueLabel;
+    }
+  }
+
+  render('dot-cert-details', cfg.dot_cert, "Let's Encrypt", 'Renew', 'issue-dot-ssl-btn');
+  render('panel-cert-details', cfg.panel_cert, 'Issue SSL Certificate', 'Renew SSL Certificate', 'issue-ssl-btn');
+
+  // The DoH/DoT auto-renew toggle's live state. The snapshot carries the
+  // positive form; a config predating the field reads as undefined, and
+  // defaulting that to checked matches the daemon's "renewal keeps running"
+  // reading of the same absence.
+  const dotAutoRenew = document.getElementById('dot-auto-renew-input');
+  if (dotAutoRenew) {
+    dotAutoRenew.checked = !cfg.tls || cfg.tls.dot_auto_renew_acme !== false;
+  }
+}
+
 function renderConfig(cfg) {
   if (!cfg) return;
   currentConfig = cfg;
@@ -893,6 +938,8 @@ function renderConfig(cfg) {
     const sslEmailInput = document.getElementById('ssl-email-input');
     if (sslEmailInput) sslEmailInput.value = cfg.tls.email;
   }
+
+  renderTLSCertDetails(cfg);
 
   // Render API Key & Bind
   renderAPIKeyDisplay();
@@ -3346,6 +3393,39 @@ function initEventListeners() {
   window.bindLEButton(document.getElementById('issue-dot-ssl-btn'), document.getElementById('dot-domain-input'), 'dot', 'dot-le-progress');
   const dotDomainInput = document.getElementById('dot-domain-input');
   if (dotDomainInput && currentConfig && currentConfig.tls) dotDomainInput.value = currentConfig.tls.dot_domain || '';
+
+  // The DoH/DoT auto-renew toggle saves the moment it is clicked — the card
+  // has no Save button, and the pattern matches the session-idle toggle: a
+  // preference, not a form field. A failed save flips the checkbox back so
+  // the UI never claims a state the daemon refused.
+  const dotAutoRenewInput = document.getElementById('dot-auto-renew-input');
+  if (dotAutoRenewInput) {
+    dotAutoRenewInput.onchange = async () => {
+      const enabled = dotAutoRenewInput.checked;
+      dotAutoRenewInput.disabled = true;
+      try {
+        const res = await fetch(api('/api/tls/auto-renew'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+          body: JSON.stringify({ enabled })
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          dotAutoRenewInput.checked = !enabled;
+          showToast((body && body.error) || 'The auto-renew preference could not be saved.', 'error');
+          return;
+        }
+        showToast(enabled ? 'DoH/DoT auto-renew enabled.' : 'DoH/DoT auto-renew disabled.', 'success');
+        await loadConfig();
+        if (typeof window.renderSubscriptionSettings === 'function') window.renderSubscriptionSettings();
+      } catch (e) {
+        dotAutoRenewInput.checked = !enabled;
+        showToast('Could not reach the server.', 'error');
+      } finally {
+        dotAutoRenewInput.disabled = false;
+      }
+    };
+  }
 
   // Flush Cache
   const flushBtn = document.getElementById('flush-cache-btn');

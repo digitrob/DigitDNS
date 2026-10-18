@@ -390,6 +390,12 @@ type SubscriptionSettingsInput struct {
 	CertPath            string `json:"cert_path"`
 	KeyPath             string `json:"key_path"`
 	UsePanelCertificate bool   `json:"use_panel_certificate"`
+	// AutoRenewACME turns the daily renewal loop's work on the subscription
+	// origin's certificate on or off. It is a pointer so the JSON contract can
+	// tell "absent" from "false": a form that predates the field omits it, and
+	// treating that omission as false would silently stop renewal on every
+	// stale browser tab. Nil means "leave the stored choice alone".
+	AutoRenewACME *bool `json:"auto_renew_acme"`
 	// PortExplicit is derived, never accepted from the form: the sanitiser
 	// sets it from the relationship between the submitted port and the
 	// panel's. It rides the input struct only so the normalised result can

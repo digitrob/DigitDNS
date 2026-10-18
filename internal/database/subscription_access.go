@@ -34,6 +34,12 @@ type SubscriptionSnapshot struct {
 	// PortExplicit mirrors SubscriptionSettings.PortExplicit (models.go): the
 	// operator chose this port, so panel-port changes must not follow-copy it.
 	PortExplicit bool `json:"port_explicit"`
+	// AutoRenewACME is the positive form of the stored inverted
+	// SubscriptionSettings.NoAutoRenewACME: true, the zero-complement and the
+	// value every pre-field record reads as, means the daily renewal loop
+	// keeps renewing the subscription origin's certificate. The UI and the
+	// API see this field; only the stored record uses the inverted one.
+	AutoRenewACME bool `json:"auto_renew_acme"`
 }
 
 // Snapshot copies every field under a single lock. A nil receiver yields the
@@ -46,6 +52,7 @@ func (s *SubscriptionSettings) Snapshot() SubscriptionSnapshot {
 			URIPath:             "/sub",
 			Title:               "DigitDNS",
 			UsePanelCertificate: true,
+			AutoRenewACME:       true,
 		}
 	}
 	s.mu.RLock()
@@ -65,6 +72,7 @@ func (s *SubscriptionSettings) Snapshot() SubscriptionSnapshot {
 		KeyPath:             s.KeyPath,
 		UsePanelCertificate: s.UsePanelCertificate,
 		PortExplicit:        s.PortExplicit,
+		AutoRenewACME:       !s.NoAutoRenewACME,
 	}
 }
 
@@ -185,6 +193,7 @@ func (s *SubscriptionSettings) Apply(next SubscriptionSnapshot, persist func(*Su
 		KeyPath:             s.KeyPath,
 		UsePanelCertificate: s.UsePanelCertificate,
 		PortExplicit:        s.PortExplicit,
+		AutoRenewACME:       !s.NoAutoRenewACME,
 	}
 
 	s.Enabled = next.Enabled
@@ -201,6 +210,7 @@ func (s *SubscriptionSettings) Apply(next SubscriptionSnapshot, persist func(*Su
 	s.KeyPath = next.KeyPath
 	s.UsePanelCertificate = next.UsePanelCertificate
 	s.PortExplicit = next.PortExplicit
+	s.NoAutoRenewACME = !next.AutoRenewACME
 
 	if persist == nil {
 		return nil
@@ -220,6 +230,7 @@ func (s *SubscriptionSettings) Apply(next SubscriptionSnapshot, persist func(*Su
 		s.KeyPath = before.KeyPath
 		s.UsePanelCertificate = before.UsePanelCertificate
 		s.PortExplicit = before.PortExplicit
+		s.NoAutoRenewACME = !before.AutoRenewACME
 		return err
 	}
 	return nil

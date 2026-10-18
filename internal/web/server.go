@@ -752,6 +752,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/upstreams/add", ws.requireAuth(ws.handleUpstreamsAdd))
 	mux.HandleFunc("/api/upstreams/delete", ws.requireAuth(ws.handleUpstreamsDelete))
 	mux.HandleFunc("/api/tls/issue", ws.requireAuth(ws.handleTLSSettings))
+	mux.HandleFunc("/api/tls/auto-renew", ws.requireAuth(ws.handleTLSAutoRenew))
 	mux.HandleFunc("/api/tls/acme/status", ws.requireAuth(ws.handleACMEStatus))
 
 	// 7. Embedded Offline SPA Static Assets & Clean Routes
@@ -1428,6 +1429,12 @@ func (ws *WebServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 		// has expired. Nil when the portal is plain HTTP or the pair will not
 		// load.
 		"subscription_cert": ws.subscriptionCertDetails(),
+		// The certificates the SSL/TLS Manager card reports on: the DoH/DoT
+		// listeners' pair (falling back to the panel's when no custom Private
+		// DNS name is set) and the ADMIN PANEL row's own pair. Same rendering
+		// contract as subscription_cert — nil means "none to show".
+		"dot_cert":   ws.dotCertDetails(),
+		"panel_cert": ws.panelCertDetails(),
 		// The origin the daemon will actually hand subscribers — scheme, host and
 		// port as the listener serves them. The dashboard builds its Reg Link and
 		// Bot Card URLs from this rather than reconstructing it, because the
