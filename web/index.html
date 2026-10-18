@@ -1044,14 +1044,14 @@
               </button>
             </div>
             <p class="text-[11px] text-slate-400 mb-1 shrink-0">Parallel DNS queries across fastest global upstreams</p>
-            <p class="text-[10px] text-slate-500 mb-3 font-mono shrink-0">Plain <span class="text-slate-400">1.1.1.1</span> · DoT <span class="text-slate-400">tls://1.1.1.1</span> · DoH <span class="text-slate-400">https://dns.google/dns-query</span></p>
+            <p class="text-[10px] text-slate-500 mb-3 font-mono shrink-0">Plain <span class="text-slate-400">1.1.1.1</span> · DoT <span class="text-slate-400">tls://1.1.1.1</span> · DoH <span class="text-slate-400">https://dns.google/dns-query</span> · DoQ <span class="text-slate-400">quic://dns.adguard-dns.com</span> · DoH3 <span class="text-slate-400">h3://dns.google/dns-query</span> · DNSCrypt <span class="text-slate-400">sdns://…</span></p>
 
             <!-- Add Custom Upstream Input -->
             <!-- Same `min-w-0` + `shrink-0` pair as the four rules-tab rows: a `flex-1` form
                  control keeps its intrinsic ~170px as its min-width unless told otherwise,
                  and would evict the Add button from the card instead of shrinking. -->
             <div class="flex gap-1.5 mb-3 shrink-0">
-              <input type="text" id="new-upstream-input" aria-label="New upstream resolver address" placeholder="1.1.1.1, tls://1.1.1.1, https://dns.google/dns-query"
+              <input type="text" id="new-upstream-input" aria-label="New upstream resolver address" placeholder="1.1.1.1, tls://1.1.1.1, https://dns.google/dns-query, quic://dns.adguard-dns.com, h3://dns.google/dns-query, sdns://…"
                 class="flex-1 min-w-0 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
               <button id="add-upstream-btn" class="shrink-0 px-3 py-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-xs font-heading transition">Add</button>
             </div>

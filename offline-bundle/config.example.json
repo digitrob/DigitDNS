@@ -20,6 +20,7 @@
       "1.0.0.1:53",
       "77.88.8.1:53"
     ],
+    "_comment_upstreams": "Supported forms: 1.1.1.1 or 1.1.1.1:53 (UDP), tcp://host (TCP), tls://host (DoT, default port 853), https://host/dns-query (DoH, RFC 8484, default path /dns-query), quic://host (DoQ, RFC 9250, default port 853), h3://host/dns-query (DoH3), sdns://... (DNSCrypt stamp; DoH/DoT/DoQ stamps are also accepted). This key is ignored by the daemon.",
     "cache_size": 20000,
     "cache_min_ttl": 60,
     "cache_max_ttl": 86400,
