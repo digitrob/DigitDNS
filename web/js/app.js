@@ -822,9 +822,6 @@ function renderConfig(cfg) {
     const versionOnly = cfg.version.display;
     const versionWithHash = `${cfg.version.display} [${cfg.version.hash}]`;
 
-    const headerBadge = document.getElementById('app-version-badge');
-    if (headerBadge) headerBadge.innerText = versionOnly;
-
     const footer = document.getElementById('app-version-footer');
     if (footer) footer.innerText = versionWithHash;
 
@@ -1998,13 +1995,18 @@ function renderUpstreams(upstreams) {
 
     const row = document.createElement('div');
     row.className = 'flex items-center justify-between py-1.5 px-3 rounded-lg bg-slate-950/70 border border-slate-800 text-xs';
+    // The left half is `min-w-0 truncate`: a flex item's default min-width:auto
+    // resolves to its content width, so a long DoH URL (https://dns.google/dns-query)
+    // would refuse to shrink and crush the latency badge on the right into a
+    // square. min-w-0 lets the name shrink, truncate ellipsizes it, and the
+    // badge keeps shrink-0 so it never wraps.
     row.innerHTML = `
-      <div class="flex items-center gap-2">
-        <span class="${dotClass}" aria-hidden="true"></span>
-        <span class="font-mono text-slate-200">${escapeHTML(u.address)}</span>
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="${dotClass} shrink-0" aria-hidden="true"></span>
+        <span class="font-mono text-slate-200 truncate">${escapeHTML(u.address)}</span>
       </div>
-      <div class="flex items-center gap-2">
-        <span class="px-2 py-0.5 rounded border ${badgeClass} text-[10px] font-bold font-mono" title="${latTitle}">${latText}</span>
+      <div class="flex items-center gap-2 shrink-0">
+        <span class="shrink-0 px-2 py-0.5 rounded border ${badgeClass} text-[10px] font-bold font-mono whitespace-nowrap" title="${latTitle}">${latText}</span>
         <!-- 24x24, up from the 16x16 that a p-0.5 box around a 12px icon gave: this
              deletes a resolver from the live racer set and it sat under the WCAG 2.2
              SC 2.5.8 floor on the surface where it is only ever touched. Enlarging a
@@ -5713,8 +5715,10 @@ function showUpdateAvailable(st) {
     btn.type = 'button';
     btn.className = 'mt-1 inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition';
     btn.addEventListener('click', () => openUpdateModal(st));
-    const anchor = document.getElementById('app-version-badge');
-    if (anchor && anchor.parentElement) anchor.parentElement.appendChild(btn);
+    // The version badge this used to sit next to is gone (the sidebar shows
+    // only the wordmark now), so the anchor is the brand row itself.
+    const anchor = document.getElementById('sidebar-brand');
+    if (anchor) anchor.appendChild(btn);
     else document.body.appendChild(btn);
     hdnsUpdateBtn = btn;
   }
