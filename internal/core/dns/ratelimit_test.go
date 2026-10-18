@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/miekg/dns"
 	"digitdns/internal/core/cache"
 	"digitdns/internal/core/matcher"
 	"digitdns/internal/core/upstream"
 	"digitdns/internal/database"
+	"github.com/miekg/dns"
 )
 
 // fakeClock drives the limiter's refill without sleeping, so a refill test is

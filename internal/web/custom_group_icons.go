@@ -2,9 +2,9 @@ package web
 
 import (
 	"bytes"
+	"digitdns/internal/database"
 	"encoding/xml"
 	"errors"
-	"digitdns/internal/database"
 	"image/png"
 	"io"
 	"strconv"

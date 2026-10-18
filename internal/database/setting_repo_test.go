@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	bolt "go.etcd.io/bbolt"
 	"digitdns/internal/crypto"
+	bolt "go.etcd.io/bbolt"
 )
 
 // settingsFixture opens a database in a fresh directory. bbolt takes an exclusive

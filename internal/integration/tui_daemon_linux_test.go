@@ -18,11 +18,11 @@ import (
 	"testing"
 	"time"
 
-	bolt "go.etcd.io/bbolt"
-	bolterrors "go.etcd.io/bbolt/errors"
 	"digitdns/internal/control"
 	"digitdns/internal/crypto"
 	"digitdns/internal/database"
+	bolt "go.etcd.io/bbolt"
+	bolterrors "go.etcd.io/bbolt/errors"
 )
 
 const (

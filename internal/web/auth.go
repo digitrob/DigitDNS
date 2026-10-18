@@ -822,7 +822,7 @@ func (ws *WebServer) handleSubscriptionSettings(w http.ResponseWriter, r *http.R
 		// The sanitiser derived this from the port the operator submitted —
 		// dropping it here would silently unmark every deliberate portal
 		// port, and the next panel-port change would copy-follow it.
-		PortExplicit: normalized.PortExplicit,
+		PortExplicit:  normalized.PortExplicit,
 		AutoRenewACME: autoRenew,
 	}, func(s *database.SubscriptionSettings) error { return ws.db.SetSetting("subscription", s) }); err != nil {
 		log.Printf("[Web] Could not persist subscription settings: %v", err)

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/miekg/dns"
 	"digitdns/internal/netutil"
+	"github.com/miekg/dns"
 )
 
 type DoHHandler struct {

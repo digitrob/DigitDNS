@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	bolt "go.etcd.io/bbolt"
 	"digitdns/internal/crypto"
+	bolt "go.etcd.io/bbolt"
 )
 
 var (

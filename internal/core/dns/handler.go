@@ -9,11 +9,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/miekg/dns"
 	"digitdns/internal/core/cache"
 	"digitdns/internal/core/matcher"
 	"digitdns/internal/core/upstream"
 	"digitdns/internal/database"
+	"github.com/miekg/dns"
 )
 
 type AccessProvider interface {

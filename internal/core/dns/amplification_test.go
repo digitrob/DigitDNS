@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/miekg/dns"
 	"digitdns/internal/core/cache"
 	"digitdns/internal/core/matcher"
 	"digitdns/internal/core/upstream"
 	"digitdns/internal/database"
+	"github.com/miekg/dns"
 )
 
 // An open resolver is worth something to an attacker for exactly one reason: the number

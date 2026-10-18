@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	bolt "go.etcd.io/bbolt"
 	"digitdns/internal/crypto"
+	bolt "go.etcd.io/bbolt"
 )
 
 func TestDatabase_ClientEncryptionAndCRUD(t *testing.T) {

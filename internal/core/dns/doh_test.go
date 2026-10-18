@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/miekg/dns"
 	"digitdns/internal/core/cache"
 	"digitdns/internal/core/matcher"
 	"digitdns/internal/core/upstream"
 	"digitdns/internal/database"
 	"digitdns/internal/netutil"
+	"github.com/miekg/dns"
 )
 
 // The DoH endpoint, which is the one transport where the client's address arrives in

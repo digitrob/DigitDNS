@@ -601,7 +601,6 @@ func (a *API) handleDocs(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(html))
 }
 
-
 func (a *API) handleDocsV2(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
@@ -645,7 +644,6 @@ func (a *API) handleOpenAPIV2(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 	_, _ = w.Write(openAPIV2Spec)
 }
-
 
 // adminServerURL builds the OpenAPI "servers" entry from the install's hidden
 // admin path. The spec document is served below the same namespace it

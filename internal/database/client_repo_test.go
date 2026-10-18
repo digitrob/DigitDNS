@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	bolt "go.etcd.io/bbolt"
 	"digitdns/internal/crypto"
+	bolt "go.etcd.io/bbolt"
 )
 
 // clientsFixture opens a database in a fresh directory, keyed differently from

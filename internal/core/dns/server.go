@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/miekg/dns"
 	"digitdns/internal/netutil"
+	"github.com/miekg/dns"
 )
 
 // alpnDoT is the ALPN identifier RFC 7858 registers for DNS-over-TLS.

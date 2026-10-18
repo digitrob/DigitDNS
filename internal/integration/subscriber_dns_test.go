@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/miekg/dns"
 	"digitdns/internal/core/cache"
 	resolver "digitdns/internal/core/dns"
 	"digitdns/internal/core/matcher"
@@ -15,6 +14,7 @@ import (
 	"digitdns/internal/crypto"
 	"digitdns/internal/database"
 	"digitdns/internal/service"
+	"github.com/miekg/dns"
 )
 
 // These two assertions are the cheapest lines in the package and half the reason it
