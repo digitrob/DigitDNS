@@ -271,6 +271,52 @@ func TestLoadOrGenerateTLSConfigFallsThroughToNextCandidate(t *testing.T) {
 	}
 }
 
+// TestLoadOrGenerateTLSConfigFindsACMEPair: the embedded ACME client persists
+// issued pairs at certs/acme/<domain>.crt/.key — the pair the web panel serves
+// — and the boot path feeding DoT and DoH must probe the same location. The
+// migrated-install shape: config.json names a cert_path that does not exist,
+// the real material sits in the ACME store, and DoT/DoH came up dark because
+// the loader exhausted its candidates. The function resolves the relative
+// certs/acme path when /opt/digitdns is absent, so the test chdirs into a
+// temp dir like TestLoadOrGenerateTLSConfigWithoutDomainFallsBack.
+func TestLoadOrGenerateTLSConfigFindsACMEPair(t *testing.T) {
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	tmp := t.TempDir()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	acmeDir := filepath.Join(tmp, "certs", "acme")
+	if err := os.MkdirAll(acmeDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	certPEM, keyPEM := caSignedPEM(t, "panel.example")
+	if err := os.WriteFile(filepath.Join(acmeDir, "panel.example.crt"), certPEM, 0o600); err != nil {
+		t.Fatalf("write acme crt: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(acmeDir, "panel.example.key"), keyPEM, 0o600); err != nil {
+		t.Fatalf("write acme key: %v", err)
+	}
+
+	missing := filepath.Join(tmp, "nonexistent")
+	cfg := &database.TLSSettings{
+		Domain:   "panel.example",
+		CertPath: filepath.Join(missing, "cert.pem"),
+		KeyPath:  filepath.Join(missing, "key.pem"),
+	}
+	tlsCfg, err := LoadOrGenerateTLSConfig(cfg)
+	if err != nil {
+		t.Fatalf("LoadOrGenerateTLSConfig did not find the ACME pair: %v", err)
+	}
+	if len(tlsCfg.Certificates) != 1 {
+		t.Fatalf("got %d certificates, want 1", len(tlsCfg.Certificates))
+	}
+}
+
 // TestLoadOrGenerateTLSConfigWithoutDomainFallsBack: with no panel domain the
 // self-signed fallback is the documented behaviour (SSH-tunnel deployments)
 // and must keep working — generate, persist, and return a config. The function

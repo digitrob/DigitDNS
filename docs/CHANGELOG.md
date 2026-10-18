@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## 🏷️ [Unreleased] — Full DigitDNS Rebrand, Proxied Domains UX & Forked Self-Updates
+## 🏷️ [v3.0.0] — Full DigitDNS Rebrand, Proxied Domains UX & Forked Self-Updates
 
 This fork is named **DigitDNS** throughout: the install tree, the systemd unit and service,
 the Go module path, the CLI, the environment variables, the API-key and session prefixes and
@@ -43,6 +43,9 @@ Every change below is carried on the `custom` branch.
 
 ### 🗑️ Removed
 - **LDAP directory login.** The `internal/auth` LDAP client, the `GET/POST /api/auth/ldap` routes, the Settings-tab panel, the sealed bind password and the `ldap_enabled`/`ldap_login_mode` config were all removed; operators authenticate with the local admin account plus optional TOTP. `github.com/go-ldap/ldap/v3` and its now-unused transitive dependencies were dropped from `go.mod`.
+
+### 🐛 Fixed
+- **DoT (853) and DoH (8443) now come up on a domain install whose certificate lives in the built-in ACME store.** The boot-time TLS loader that feeds the encrypted DNS listeners probed `/etc/letsencrypt/live/<domain>/`, the configured `cert_path`/`key_path`, and the generic `certs/cert.pem` — but never `certs/acme/<domain>.crt`, the pair the embedded ACME client writes and the web panel itself serves. An install (or a migrated one) whose config pointed at a path that does not exist therefore exhausted every candidate, logged `TLS configuration error … no CA-signed certificate covers it`, and left both ports dark while the panel stayed up. The loader now probes the ACME pair at the same resolved directory the rest of the daemon uses.
 
 ---
 

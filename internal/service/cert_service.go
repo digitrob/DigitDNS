@@ -35,15 +35,29 @@ func LoadOrGenerateTLSConfig(tlsCfg *database.TLSSettings) (*tls.Config, error) 
 	// caller reports, and the ACME paths (daemon startup, dashboard button
 	// startup, dashboard button) are how one arrives.
 	if tlsCfg.Domain != "" {
+		// The embedded ACME client persists issued pairs at
+		// <acmeDir>/<domain>.crt/.key (see acme.Persist) and the web layer
+		// already resolves them there (panelCertificatePair), but the boot
+		// path feeding DoT and DoH never looked. A migrated install whose
+		// config.json still names a cert_path that never existed then failed
+		// to load anything, tlsConfig stayed nil and startDoT/startHTTPS
+		// bailed — the encrypted DNS ports came up dark. Probe the ACME
+		// pair too, resolved exactly the way main.go resolves acmeDir.
+		acmeDir := "/opt/digitdns/certs/acme"
+		if _, err := os.Stat("/opt/digitdns"); err != nil {
+			acmeDir = "certs/acme"
+		}
 		certCandidates := []string{
 			fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", tlsCfg.Domain),
 			tlsCfg.CertPath,
+			filepath.Join(acmeDir, tlsCfg.Domain+".crt"),
 			"/opt/digitdns/certs/cert.pem",
 			"certs/cert.pem",
 		}
 		keyCandidates := []string{
 			fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", tlsCfg.Domain),
 			tlsCfg.KeyPath,
+			filepath.Join(acmeDir, tlsCfg.Domain+".key"),
 			"/opt/digitdns/certs/key.pem",
 			"certs/key.pem",
 		}
