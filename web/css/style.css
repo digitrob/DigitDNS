@@ -986,15 +986,6 @@ input:checked + .slider:before {
   min-height: 0;
 }
 
-/* The Bulk import button is a flex child of that column panel, where every
- * child stretches to full width (align-items: stretch is the default) — even
- * an inline-flex button. Pull it back to its content width. Plain CSS rather
- * than the Tailwind self-start utility, which is not in the committed purged
- * sheet and cannot be regenerated here. */
-#bulk-proxied-btn {
-  align-self: flex-start;
-}
-
 /* The row checkbox and the proxied table's columns. Plain CSS for the same reason as
  * the stream table: the purged utility sheet cannot be regenerated here. The two
  * checkbox class names are the same control: proxied-check carries the size, and

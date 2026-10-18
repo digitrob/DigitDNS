@@ -1151,16 +1151,19 @@
                exactly what the Save button below did at 768px, where a 256px sidebar leaves
                the grid cell 207px wide. `shrink-0` then keeps the button's label from being
                squashed once the input is the only thing giving way. -->
+          <!-- Input + Add + Bulk import on one row: the panel is a flex column, so a
+               standalone button would stretch to full width; sitting here in the row
+               it keeps its content width. `flex-1 min-w-0` on the input lets it give
+               way rather than evicting the two shrink-0 buttons. -->
           <div class="flex gap-2">
             <input type="text" id="new-proxied-input" aria-label="New proxied domain" placeholder="e.g. *.newgame.com or api.target.com"
               class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
             <button id="add-proxied-btn" class="shrink-0 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Add</button>
+            <button type="button" id="bulk-proxied-btn"
+              class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">
+              <i data-feather="upload-cloud" class="w-3.5 h-3.5"></i> Bulk import
+            </button>
           </div>
-
-          <button type="button" id="bulk-proxied-btn"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">
-            <i data-feather="upload-cloud" class="w-3.5 h-3.5"></i> Bulk import
-          </button>
 
           <!-- Sort for the routing list. A proxy list can run to thousands of
                entries, so the panel renders a fixed batch at a time: changing
