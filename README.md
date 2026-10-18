@@ -5,19 +5,19 @@
 > are unchanged; the served web UI is rebranded as **DigitDNS** and this fork ships its own
 > signed auto-updates. Upstream's history, licence and RFC work are preserved — see
 > [NOTICE](NOTICE) and the [License](#-license) section.
+>
+> This fork exists for **educational and self-hosting purposes** — to document, study and
+> extend the upstream project. It is not a commercial product and comes with no warranty;
+> run it only on servers and networks you are authorised to operate.
 
 <p align="center">
   <img src="https://img.shields.io/badge/Release-v2.8.0-00f0ff?style=for-the-badge&logo=rocket" alt="Version">
   <img src="https://img.shields.io/badge/Status-Production--Ready%20Beta-amber?style=for-the-badge" alt="Status">
   <img src="https://img.shields.io/badge/Language-Go%201.26-00ADD8?style=for-the-badge&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/Architecture-Single%20Binary%20(Zero%20CGO)-a855f7?style=for-the-badge" alt="Single Binary">
-  <img src="https://img.shields.io/badge/Protocols-UDP%20%7C%20DoH%20%7C%20DoT-10b981?style=for-the-badge" alt="Protocols">
+  <img src="https://img.shields.io/badge/Protocols-UDP%20%7C%20DoT%20%7C%20DoH%20%7C%20DoQ%20%7C%20DNSCrypt-10b981?style=for-the-badge" alt="Protocols">
   <img src="https://img.shields.io/badge/Gaming-Zero%20Loss%20%26%20Low%20Ping-ff4655?style=for-the-badge" alt="Gaming">
   <img src="https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge&logo=gnu" alt="License">
-</p>
-
-<p align="center">
-  <img src="docs/hyperdns-dashboard.png" alt="HyperDNS dashboard — live telemetry, QPS graph and custom routing rules" width="880">
 </p>
 
 > [!IMPORTANT]
@@ -246,7 +246,7 @@ This build ships **no built-in catalogue**. Routing is entirely the operator's, 
 - **An idle DoT connection is held for 60 seconds** (30 s on plain TCP), and there is no per-connection query limit. What a DoT client pays for a new connection is a full TLS handshake, so a phone on Android Private DNS that looks something up every few seconds used to re-handshake for nearly every name — tens of milliseconds, on mobile data, on the query that starts a game.
 - **The reply tells the client how long it may hold the connection** (`edns-tcp-keepalive`, RFC 7828), so it does not have to guess. Guessing long means writing a query into a socket the server already closed; guessing short means throwing away a handshake that would have been reused.
 - **Concurrent connections are capped** (512 TCP / 1024 DoT / 512 HTTPS) with header and idle timeouts on the HTTPS listener, so connection reuse cannot be turned into a way to hold the daemon's resources open.
-- **The racer also speaks DoT and DoH upstream.** An upstream entry may be a plain `1.1.1.1` (UDP, unchanged), `tcp://host:53`, `tls://host` (DoT, default port 853) or an `https://host/dns-query` URL (DoH, RFC 8484, default path `/dns-query`). Each scheme is queried on its own transport, and both encrypted transports verify the upstream's certificate — there is no `InsecureSkipVerify` escape hatch. Add one from Dashboard → **Upstream Racers**.
+- **The racer also speaks encrypted upstreams: DoT, DoH, DoQ, DoH3 and DNSCrypt.** An upstream entry may be a plain `1.1.1.1` (UDP, unchanged), `tcp://host:53`, `tls://host` (DoT, default port 853), an `https://host/dns-query` URL (DoH, RFC 8484, default path `/dns-query`), `quic://host` (DoQ, RFC 9250, default port 853, alias `doq://`), `h3://host/dns-query` (DNS-over-HTTP/3, default path `/dns-query`, alias `doh3://`), or an `sdns://…` DNS stamp (DNSCrypt plus stamped DoH/DoT). Each scheme is queried on its own transport and benchmarked the same way, and every encrypted transport verifies the upstream's certificate — there is no `InsecureSkipVerify` escape hatch. Add one from Dashboard → **Upstream Racers**.
 
 ### 📜 5. Certificates Issued by the Daemon (v2.2.0)
 - **An embedded ACME client (RFC 8555) replaces certbot and acme.sh entirely.**
@@ -516,10 +516,11 @@ table, with what each RFC means in this project, lives in
 [SECURITY.md → Standards & RFC Compliance](docs/SECURITY.md#-standards--rfc-compliance):
 
 DNS core [RFC 1035/2181] · DNS-over-TCP [RFC 7766] · DNS-over-TLS [RFC 7858] ·
-DNS-over-HTTPS [RFC 8484] · Extended DNS Errors [RFC 8914, verified live] ·
-`edns-tcp-keepalive` [RFC 7828] · ACME [RFC 8555] · TOTP [RFC 6238] ·
-HTTP semantics & HTTPS [RFC 9110] · problem+json [RFC 9457] · API
-Deprecation [RFC 9745] and Sunset [RFC 8594] · TLS SNI [RFC 6066] ·
+DNS-over-HTTPS [RFC 8484] · DNS-over-QUIC [RFC 9250] · DNS-over-HTTP/3
+[RFC 9114] · DNSCrypt (via DNS stamps, `sdns://`) · Extended DNS Errors
+[RFC 8914, verified live] · `edns-tcp-keepalive` [RFC 7828] · ACME [RFC 8555] ·
+TOTP [RFC 6238] · HTTP semantics & HTTPS [RFC 9110] · problem+json [RFC 9457] ·
+API Deprecation [RFC 9745] and Sunset [RFC 8594] · TLS SNI [RFC 6066] ·
 UUID v4 [RFC 9562].
 
 ---

@@ -42,6 +42,11 @@ GNU AGPL-3.0, the following changes were made to the upstream work:
     (infinite-scroll) loading.
   * The Live Query Log view was made full-height and each row gained a quick
     action menu (Proxy / Block / Direct / Remove).
+  * The upstream resolver ("racer") gained DoQ (`quic://` / `doq://`, RFC 9250),
+    DNS-over-HTTP/3 (`h3://` / `doh3://`) and DNSCrypt (`sdns://` DNS stamps)
+    transports alongside the upstream UDP, TCP, DoT and DoH ones. This adds the
+    third-party dependencies `github.com/quic-go/quic-go`,
+    `github.com/ameshkov/dnscrypt/v2` and `github.com/ameshkov/dnsstamps`.
   * The in-dashboard self-updater is repointed from the upstream release
     channel to this fork's release channel and re-signed with this fork's own
     pinned ed25519 release key.
@@ -59,5 +64,8 @@ Third-party components
   * Swagger UI under `web/swagger/` is bundled under the Apache License 2.0.
   * Tailwind CSS (build-time only, purged) — MIT License.
   * Feather Icons — MIT License.
+  * quic-go (`github.com/quic-go/quic-go`) — MIT License.
+  * dnscrypt/v2 (`github.com/ameshkov/dnscrypt/v2`) — MIT License.
+  * dnsstamps (`github.com/ameshkov/dnsstamps`) — MIT License.
 
 All third-party components retain their original copyright notices and licences.
