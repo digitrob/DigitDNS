@@ -2,6 +2,8 @@ package web
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -317,6 +319,71 @@ func (ws *WebServer) handleTLSSettings(w http.ResponseWriter, r *http.Request) {
 		"issuing": true,
 		"detail":  detail,
 	})
+}
+
+// certDetails is the view of one certificate the dashboard renders: enough to
+// tell the operator when it was issued, when it dies, and whether it has
+// already died — nothing more, because /api/config is the response it rides.
+type certDetails struct {
+	Domain    string    `json:"domain"`
+	Subject   string    `json:"subject"`
+	NotBefore time.Time `json:"not_before"`
+	NotAfter  time.Time `json:"not_after"`
+	Expired   bool      `json:"expired"`
+}
+
+// subscriptionCertDetails reports the certificate the subscription portal
+// serves, with the SAME precedence as subscriberTLSConfig: a domain distinct
+// from the panel's is served by its ACME pair under certs/acme/<domain>/; any
+// other shape rides the panel pair; no certificate at all (plain-HTTP portal,
+// or a pair that will not load) is a nil result the UI renders as "none".
+//
+// It deliberately does not reuse ValidatePanelCertificate: that gate refuses an
+// expired or self-signed pair, which is exactly the state this view exists to
+// SHOW. Loading and parsing failures are swallowed the same way — a broken pair
+// reads as "no details", not as an error toast on every config fetch.
+func (ws *WebServer) subscriptionCertDetails() *certDetails {
+	if ws.subSettings == nil {
+		return nil
+	}
+	snap := ws.subSettings.Snapshot()
+
+	certPath, keyPath := "", ""
+	domain := strings.TrimSpace(snap.Domain)
+	panel := ws.effectivePanelDomain()
+	if panel == "" {
+		panel = ws.settings.GetPublicIP()
+	}
+	if domain != "" && (panel == "" || !strings.EqualFold(domain, panel)) {
+		certPath = filepath.Join(ws.acmeDir(), domain+".crt")
+		keyPath = filepath.Join(ws.acmeDir(), domain+".key")
+	} else {
+		if !ws.panelHTTPS() || ws.tlsSettings == nil {
+			return nil
+		}
+		certPath = ws.tlsSettings.CertPath
+		keyPath = ws.tlsSettings.KeyPath
+		domain = panel
+	}
+	if strings.TrimSpace(certPath) == "" || strings.TrimSpace(keyPath) == "" {
+		return nil
+	}
+
+	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil || len(pair.Certificate) == 0 {
+		return nil
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return nil
+	}
+	return &certDetails{
+		Domain:    domain,
+		Subject:   leaf.Subject.CommonName,
+		NotBefore: leaf.NotBefore.UTC(),
+		NotAfter:  leaf.NotAfter.UTC(),
+		Expired:   time.Now().After(leaf.NotAfter),
+	}
 }
 
 // handleACMEStatus answers the progress poll: the manager's live RunState

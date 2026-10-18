@@ -1423,6 +1423,11 @@ func (ws *WebServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 		// The subscription record is display-only data (no secrets), so it can
 		// ride the same response the settings page already renders from.
 		"subscription": ws.subSettings.Snapshot(),
+		// The certificate the portal serves, so the dashboard can show its
+		// validity window and rename the Let's Encrypt button to Renew when it
+		// has expired. Nil when the portal is plain HTTP or the pair will not
+		// load.
+		"subscription_cert": ws.subscriptionCertDetails(),
 		// The origin the daemon will actually hand subscribers — scheme, host and
 		// port as the listener serves them. The dashboard builds its Reg Link and
 		// Bot Card URLs from this rather than reconstructing it, because the

@@ -1730,6 +1730,10 @@ async function onBuySubscription(ctx, username) {
               Issue a certificate for the subscription domain above. Empty the domain field and click to go back to the panel's name.
             </p>
           </div>
+          <!-- Validity window of the certificate the portal currently serves,
+               rendered from config.subscription_cert. The button above flips to
+               "Renew" when this line says the certificate has expired. -->
+          <p id="sub-cert-details" class="text-[11px] font-mono text-slate-500"></p>
           <div id="sub-le-progress" class="hidden space-y-1.5">
             <div class="h-2 rounded-full bg-slate-800 overflow-hidden" role="progressbar" aria-label="Certificate issuance progress">
               <div id="sub-le-progress-bar" class="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300" style="width: 0%"></div>
