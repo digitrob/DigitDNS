@@ -13,6 +13,7 @@ umask 077. systemctl/curl/journalctl are stubbed; nothing is installed on the
 host, no network is reached, no daemon is started.
 """
 import argparse
+import hashlib
 import io
 import os
 from pathlib import Path
@@ -66,14 +67,30 @@ def stub(command, args):
         if len(urls) == 1 and '-o' in args:
             url = urls[0]
             out = args[args.index('-o') + 1]
-            if '/digitdns-linux-amd64' in url:
+            # Match any arch: the fixture binary is never executed here (the
+            # service is never started), only copied and checksummed.
+            if '/digitdns-linux-' in url:
                 shutil.copyfile(FIXTURE / 'digitdns', out)
+                return 0
+            if url.endswith('/checksums.txt'):
+                # The installer hard-fails unless the binary's sha256 matches
+                # a line in the release checksums. The stub serves the staged
+                # fixture, so record its digest for both arch names — the
+                # installer greps for its own BIN_ARCH and verifies the bytes
+                # it actually downloaded, which is the invariant under test.
+                digest = hashlib.sha256((FIXTURE / 'digitdns').read_bytes()).hexdigest()
+                Path(out).write_text(
+                    f'{digest}  digitdns-linux-amd64\n'
+                    f'{digest}  digitdns-linux-arm64\n')
                 return 0
             if url.endswith('/config.example.json'):
                 shutil.copyfile(FIXTURE / 'config.example.json', out)
                 return 0
             if url.endswith('/scripts/restore.sh'):
                 shutil.copyfile(FIXTURE / 'scripts' / 'restore.sh', out)
+                return 0
+            if url.endswith('/scripts/uninstall.sh'):
+                shutil.copyfile(FIXTURE / 'scripts' / 'uninstall.sh', out)
                 return 0
             if url.endswith('/version.json'):
                 shutil.copyfile(FIXTURE / 'offline-bundle' / 'version.json', out)
@@ -108,7 +125,9 @@ def inside():
 
     failures = []
     # The archive preserves paths (scripts/install.sh), so the staged copies live
-    # one level under the fixture, not in it.
+    # one level under the fixture, not in it. The installers are run from the
+    # fixture ROOT (not their own directory) so the offline/bundle variants find
+    # the flat-staged ./digitdns exactly as a real bundle extraction lays it out.
     for name, script in (('online', 'scripts/install.sh'),
                          ('offline', 'scripts/install-offline.sh'),
                          ('bundle', 'offline-bundle/install.sh')):
@@ -116,7 +135,14 @@ def inside():
         if not path.exists():
             failures.append(f'{name}: {script} was not staged into the container')
             continue
-        result = subprocess.run(['bash', str(path)], cwd=path.parent, env=env,
+        # Each installer must be tested as a FRESH install. They share one
+        # container, so a leftover /opt/digitdns from the previous run would
+        # push the next one into the safe-install (upgrade) path, which refuses
+        # to proceed non-interactively and exits before writing the drop-in —
+        # and a leftover drop-in would then mask that failure.
+        shutil.rmtree('/opt/digitdns', ignore_errors=True)
+        shutil.rmtree(DROPIN_DIR, ignore_errors=True)
+        result = subprocess.run(['bash', str(path)], cwd=FIXTURE, env=env,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, timeout=90)
         # The installer may legitimately fail on a stubbed environment; the
@@ -174,6 +200,7 @@ def main():
                    repo / 'scripts' / 'install-offline.sh',
                    repo / 'offline-bundle' / 'install.sh',
                    repo / 'scripts' / 'restore.sh',
+                   repo / 'scripts' / 'uninstall.sh',
                    repo / 'config.example.json',
                    repo / 'offline-bundle' / 'version.json',
                    Path(__file__).resolve()]
@@ -208,7 +235,10 @@ def main():
                         'python3 /umask/test_installer_umask.py --inside']
     print('RUN: ' + subprocess.list2cmdline(command), flush=True)
     try:
-        subprocess.run(command, input=payload.getvalue(), check=True, timeout=120)
+        # 240s, not 120: each installer now reaches the service health poll
+        # (~25s of sleep against the stubbed systemctl), so three sequential
+        # runs need ~80s plus container start and extraction overhead.
+        subprocess.run(command, input=payload.getvalue(), check=True, timeout=240)
     finally:
         subprocess.run(docker + ['rm', '-f', name], stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, timeout=20)
