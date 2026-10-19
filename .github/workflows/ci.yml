@@ -6,8 +6,8 @@ name: CI
 # suite is actually compiled, vetted, shuffled and race-checked.
 
 on:
-  push:
-    branches: [main, custom]
+  # push:
+   # branches: [custom]
   pull_request:
   workflow_dispatch:
 
