@@ -30,7 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 This fork is named **DigitDNS** throughout: the install tree, the systemd unit and service,
 the Go module path, the CLI, the environment variables, the API-key and session prefixes and
 the HTTP control headers all carry the new name (see `NOTICE` for what is deliberately kept).
-Every change below is carried on the `custom` branch.
+Every change below is carried on the `main` branch.
 
 > **A note on the history below.** Every section from `v2.8.0-beta.1` downward is inherited
 > from upstream HyperDNS and is reproduced verbatim, so its product names, service names,
@@ -56,7 +56,7 @@ Every change below is carried on the `custom` branch.
 ### 🔄 Changed
 - The dashboard section formerly called **"Custom Proxied Domains"** is now **"Proxied Domains"** (sidebar, heading, mobile label and i18n string).
 - The **Live Query Log** fills the available height (the centred max-width is preserved) instead of a fixed 500px scroll box.
-- **Self-updates are repointed to this fork**: `internal/selfupdate` targets `digitrob/DigitDNS` on the `custom` branch and pins the fork's own ed25519 release key.
+- **Self-updates are repointed to this fork**: `internal/selfupdate` targets `digitrob/DigitDNS` on the `main` branch and pins the fork's own ed25519 release key.
 - **Proxied Domains table headers** are aligned with the columns they label.
 - **The interface is English-only.** The Persian locale, its RTL font stack and every translated string were removed from the dashboard and the subscriber portal, and the shipped `README.fa.md` and `docs/TUTORIAL.fa.md` translations were dropped. Vazirmatn remains only as a Latin-capable display font.
 

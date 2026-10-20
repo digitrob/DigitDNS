@@ -51,7 +51,7 @@ GNU AGPL-3.0, the following changes were made to the upstream work:
     channel to this fork's release channel and re-signed with this fork's own
     pinned ed25519 release key.
   * This fork does not track or merge upstream: the `upstream-sync` GitHub
-    Actions workflow that once merged upstream changes into the `custom`
+    Actions workflow that once merged upstream changes into the `main`
     branch was removed, and no automatic sync is performed.
 
 Internal identifiers were renamed with the rest of the rebrand: the

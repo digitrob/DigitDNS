@@ -68,7 +68,7 @@ func TestSelfUpdateRepointedToFork(t *testing.T) {
 	for _, pin := range []string{
 		`ghOwner  = "digitrob"`,
 		`ghRepo   = "DigitDNS"`,
-		`ghBranch = "custom"`,
+		`ghBranch = "main"`,
 	} {
 		if !strings.Contains(src, pin) {
 			t.Errorf("internal/selfupdate/selfupdate.go no longer pins %q — a fork build would follow upstream", pin)

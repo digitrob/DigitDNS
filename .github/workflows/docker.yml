@@ -3,7 +3,7 @@ name: Docker
 # Builds the multi-arch container image and publishes it to GitHub Container
 # Registry. Three triggers, three jobs' worth of meaning:
 #
-#   - push to `custom`        -> :edge   (tracks the default branch)
+#   - push to `main`        -> :edge   (tracks the default branch)
 #   - push of a `v*` tag      -> :X.Y.Z + :vX.Y.Z, and :latest on a stable
 #                                cut (a "-beta" tag is a prerelease and never
 #                                takes :latest, matching the release policy in
@@ -21,7 +21,7 @@ name: Docker
 
 on:
   push:
-    branches: [custom]
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
     inputs:
