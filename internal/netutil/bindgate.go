@@ -85,3 +85,88 @@ func APIBindAllowsPeer(bind, peer string) bool {
 	}
 	return rule.Allows(peer)
 }
+
+// APIBindList is a parsed api_bind_list: an ordered set of rules, any one of
+// which may admit a peer (v3.1.0). It is the multi-CIDR successor to the single
+// APIBind rule and inherits every one of its properties:
+//
+//   - an empty list is loopback-only, the fail-closed default;
+//   - a rule of "0.0.0.0" (or "::" / the /0 blocks) admits every peer;
+//   - loopback is ALWAYS admitted, whatever the rules say, so a tailnet-only
+//     list does not lock out the machine's own scripts and control plane.
+//
+// The semantics are union, not intersection: a peer is accepted if ANY rule
+// admits it. That is what makes the list a widening of the single rule rather
+// than a further restriction — an operator who lists a home /32 and a tailnet
+// /10 wants either to work, not both at once.
+type APIBindList struct {
+	rules []APIBind
+}
+
+// ParseAPIBindList validates and normalises an api_bind_list. Each entry must be
+// a rule ParseAPIBind accepts (a bare IP, a CIDR block, or the 127.0.0.1 /
+// 0.0.0.0 sentinels); blank entries are dropped so a textarea with a stray blank
+// line does not fail the whole save. An empty or all-blank list is valid and
+// means loopback-only.
+func ParseAPIBindList(entries []string) (APIBindList, error) {
+	list := APIBindList{}
+	for _, raw := range entries {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		rule, err := ParseAPIBind(raw)
+		if err != nil {
+			return APIBindList{}, err
+		}
+		list.rules = append(list.rules, rule)
+	}
+	return list, nil
+}
+
+// Allows reports whether peer may reach the REST API under this list. A peer
+// that is not a parseable IP is refused; loopback is always allowed.
+func (l APIBindList) Allows(peer string) bool {
+	ip := net.ParseIP(strings.TrimSpace(peer))
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	for _, rule := range l.rules {
+		if rule.allowAll || (rule.ipnet != nil && rule.ipnet.Contains(ip)) {
+			return true
+		}
+	}
+	return false
+}
+
+// APIBindListAllowsPeer is the request-path convenience for the multi-CIDR rule.
+// An unparseable stored entry fails closed to loopback-only, matching
+// APIBindAllowsPeer's posture rather than opening the API on a typo.
+func APIBindListAllowsPeer(entries []string, peer string) bool {
+	list, err := ParseAPIBindList(entries)
+	if err != nil {
+		ip := net.ParseIP(strings.TrimSpace(peer))
+		return ip != nil && ip.IsLoopback()
+	}
+	return list.Allows(peer)
+}
+
+// NormalizeAPIBindList trims each entry and drops blanks, preserving order and
+// duplicates. It is what the handlers store, so the persisted list has no
+// whitespace that would make one entry compare unequal to itself.
+func NormalizeAPIBindList(entries []string) []string {
+	out := make([]string, 0, len(entries))
+	for _, raw := range entries {
+		v := strings.TrimSpace(raw)
+		if v == "" {
+			continue
+		}
+		out = append(out, v)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}

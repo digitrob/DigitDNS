@@ -111,12 +111,13 @@ type SettingsView struct {
 	// APIKey is returned only over the root-local control socket. It is omitted
 	// by the public web/API settings views; the TUI uses it for the explicit
 	// "view/rotate" workflow.
-	APIKey             string `json:"api_key,omitempty"`
-	AdminPasswordWeak  bool   `json:"admin_password_weak"`
-	APIBind            string `json:"api_bind"`
-	AdminPath          string `json:"admin_path"`
-	SessionIdleMinutes int    `json:"session_idle_minutes"`
-	TOTPEnabled        bool   `json:"totp_enabled"`
+	APIKey             string   `json:"api_key,omitempty"`
+	AdminPasswordWeak  bool     `json:"admin_password_weak"`
+	APIBind            string   `json:"api_bind"`
+	APIBindList        []string `json:"api_bind_list,omitempty"`
+	AdminPath          string   `json:"admin_path"`
+	SessionIdleMinutes int      `json:"session_idle_minutes"`
+	TOTPEnabled        bool     `json:"totp_enabled"`
 }
 
 type RotateAPIKeyRequest struct {

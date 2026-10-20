@@ -90,10 +90,12 @@ func (a *API) SecurityMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		// is an address or CIDR (netutil.ParseAPIBind) whose default is loopback;
 		// loopback is always accepted, so binding the API to e.g. a tailnet block
 		// does not also lock out the machine's own scripts and the root-local
-		// control plane.
-		if bind := a.settings.GetAPIBind(); !netutil.APIBindAllowsPeer(bind, netutil.PeerIP(r)) {
+		// control plane. v3.1.0: the rule may be a list of such entries, any one of
+		// which admits a peer; GetAPIExposure resolves the list-vs-single precedence
+		// so the gate and the status endpoints cannot disagree about which is in force.
+		if list, single := a.settings.GetAPIExposure(); !apiExposureAllows(list, single, netutil.PeerIP(r)) {
 			httpx.WriteJSONError(w, http.StatusForbidden,
-				fmt.Sprintf("REST API is not exposed to this address (api_bind = %s). Set it to 0.0.0.0 or a matching IP/CIDR in Settings to allow remote access.", bindLabel(bind)))
+				fmt.Sprintf("REST API is not exposed to this address (%s). Set api_bind to 0.0.0.0 or a matching IP/CIDR in Settings to allow remote access.", apiExposureLabel(list, single)))
 			return
 		}
 
@@ -135,13 +137,33 @@ func (a *API) SecurityMiddleware(next http.HandlerFunc) http.HandlerFunc {
 // believed the whole REST surface was loopback-only.
 func (a *API) BindGate(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if bind := a.settings.GetAPIBind(); !netutil.APIBindAllowsPeer(bind, netutil.PeerIP(r)) {
+		if list, single := a.settings.GetAPIExposure(); !apiExposureAllows(list, single, netutil.PeerIP(r)) {
 			httpx.WriteJSONError(w, http.StatusForbidden,
-				fmt.Sprintf("REST API is not exposed to this address (api_bind = %s). Set it to 0.0.0.0 or a matching IP/CIDR in Settings to allow remote access.", bindLabel(bind)))
+				fmt.Sprintf("REST API is not exposed to this address (%s). Set api_bind to 0.0.0.0 or a matching IP/CIDR in Settings to allow remote access.", apiExposureLabel(list, single)))
 			return
 		}
 		next(w, r)
 	}
+}
+
+// apiExposureAllows applies the resolved exposure rule: a non-empty list is the
+// multi-CIDR rule (any entry may admit), and an empty list falls back to the
+// single legacy value. A caller passes the two results of
+// ServerSettings.GetAPIExposure(), which has already made one of them meaningful.
+func apiExposureAllows(list []string, single, peer string) bool {
+	if len(list) > 0 {
+		return netutil.APIBindListAllowsPeer(list, peer)
+	}
+	return netutil.APIBindAllowsPeer(single, peer)
+}
+
+// apiExposureLabel renders the rule for an error message. A list is joined with
+// commas; an empty one falls back to the single value, which renders as before.
+func apiExposureLabel(list []string, single string) string {
+	if len(list) > 0 {
+		return "api_bind_list = " + strings.Join(list, ", ")
+	}
+	return "api_bind = " + bindLabel(single)
 }
 
 // RegisterRoutes attaches all /api/v1/ endpoints to the HTTP mux. Every
@@ -189,13 +211,19 @@ func (a *API) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	stats := a.stats.GetLiveStats()
 	publicIP, apiBind := a.settings.Endpoint()
+	list, single := a.settings.GetAPIExposure()
+	// api_bind keeps its legacy meaning for consumers that read it: the single rule
+	// in force, or the resolved list joined for display. api_bind_list carries the
+	// multi-CIDR rule verbatim (empty when the single field is authoritative).
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"status":    "healthy",
-		"version":   version.Get(),
-		"timestamp": time.Now(),
-		"telemetry": stats,
-		"public_ip": publicIP,
-		"api_bind":  apiBind,
+		"status":        "healthy",
+		"version":       version.Get(),
+		"timestamp":     time.Now(),
+		"telemetry":     stats,
+		"public_ip":     publicIP,
+		"api_bind":      apiBind,
+		"api_bind_list": list,
+		"api_exposure":  apiExposureLabel(list, single),
 	})
 }
 

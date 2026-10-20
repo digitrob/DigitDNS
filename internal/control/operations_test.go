@@ -3,6 +3,7 @@ package control
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -223,7 +224,7 @@ func TestDaemonOperationsSettingsBoundary(t *testing.T) {
 	}
 	ops := NewDaemonOperations(DaemonDependencies{Settings: source})
 
-	if got, err := ops.Settings(context.Background()); err != nil || got != source.view {
+	if got, err := ops.Settings(context.Background()); err != nil || !reflect.DeepEqual(got, source.view) {
 		t.Fatalf("Settings = %+v, %v", got, err)
 	}
 	rotateReq := RotateAPIKeyRequest{CurrentPassword: "current-secret", TOTPCode: "123456"}

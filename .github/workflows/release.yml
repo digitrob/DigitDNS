@@ -49,7 +49,7 @@ jobs:
         run: go test -race -count=1 -timeout 10m ./...
 
   build-and-release:
-    name: Build & Release Cross-Platform Binaries
+    name: Build & Release Linux Binaries
     needs: verify
     runs-on: ubuntu-latest
     steps:
@@ -65,7 +65,7 @@ jobs:
           go-version-file: go.mod
           check-latest: true
 
-      - name: Build Cross-Platform Binaries
+      - name: Build Linux Binaries
         run: |
           mkdir -p dist
           
@@ -74,15 +74,6 @@ jobs:
           
           # Linux ARM64
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w" -o dist/digitdns-linux-arm64 ./cmd/digitdns
-          
-          # Windows AMD64
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-s -w" -o dist/digitdns-windows-amd64.exe ./cmd/digitdns
-          
-          # macOS ARM64 (Apple Silicon)
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o dist/digitdns-darwin-arm64 ./cmd/digitdns
-          
-          # macOS AMD64 (Intel)
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w" -o dist/digitdns-darwin-amd64 ./cmd/digitdns
           
           # Build Offline Bundle. scripts/uninstall.sh is the canonical copy;
           # offline-bundle/scripts/ holds the mirror kept

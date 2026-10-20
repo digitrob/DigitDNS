@@ -244,10 +244,20 @@
 
   /* --- The sync button ------------------------------------------------------- */
 
-  // /api/sub/<token>/sync re-binds the caller's current address to the subscription
-  // and answers with the whole record. The old handler read one field of that
-  // answer — detected_ip — and left the quota bar and the countdown showing what
-  // the page had been rendered with, so a subscriber who pressed sync to check
+  // /ip/<token> re-binds an address to the subscription, gated by the out-of-band
+  // secret. Two buttons drive it (v3.1.0), and they differ only in whether the
+  // request carries an explicit address:
+  //
+  //   - #register-btn ("Update my IP") posts with no ip field, so the server binds
+  //     the address it sees the request from — the 1-click flow after a modem reset.
+  //   - #register-ip-btn posts the address typed into #register-ip, for a subscriber
+  //     whose gaming device sits behind a different NAT than the phone holding the
+  //     page.
+  //
+  // Both read the same #register-secret field: the secret is the write credential
+  // and there is exactly one of it (Mantis C-03). The old handler read one field of
+  // the answer — detected_ip — and left the quota bar and the countdown showing what
+  // the page had been rendered with, so a subscriber who pressed the button to check
   // their usage was shown a stale figure by the very action meant to refresh it.
   function runRegister(btn) {
     var url = btn.getAttribute('data-reg');
@@ -258,17 +268,30 @@
       showToast(msg('register-fail'), 'is-bad');
       return;
     }
+
+    // The custom-address button carries the address; the plain one sends none, so
+    // the server falls back to the caller's own address.
+    var wantsIP = btn.id === 'register-ip-btn';
+    var ipEl = document.getElementById('register-ip');
+    var body = { secret: secret };
+    if (wantsIP) {
+      var ip = ipEl ? ipEl.value.trim() : '';
+      if (!ip) {
+        // An empty custom row is a no-op, not a bind of the caller's address: the
+        // subscriber pressed the button whose whole purpose is the typed address.
+        showToast(msg('register-fail'), 'is-bad');
+        return;
+      }
+      body.ip = ip;
+    }
+
     btn.setAttribute('aria-busy', 'true');
 
-    // The one write the portal offers: the out-of-band secret is what stands
-    // between a leaked link and the subscription's binding (Mantis C-03).
-    // Without an explicit ip field the server binds the address it sees this
-    // request from — the 1-click flow.
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ secret: secret })
+      body: JSON.stringify(body)
     })
       .then(function (res) {
         return res.json().catch(function () { return {}; }).then(function (data) {
@@ -314,6 +337,11 @@
         );
         showToast(msg('register-ok'), 'is-ok');
         if (secretEl) secretEl.value = '';
+        if (ipEl && wantsIP) ipEl.value = '';
+        // The registered-address list is the record the write just changed, so it
+        // is rebuilt from the answer rather than left showing the pre-bind list.
+        // r.data.client is the decorated record; allowed_ips is the stored list.
+        renderBoundIPs(r.data.client && r.data.client.allowed_ips);
       })
       .catch(function () {
         showToast(msg('register-fail'), 'is-bad');
@@ -321,6 +349,42 @@
       .then(function () {
         btn.removeAttribute('aria-busy');
       });
+  }
+
+  // Rebuilds the registered-address list from the record the API answered with.
+  // The list is server-rendered for the first paint; this is what keeps it honest
+  // after a write, so a subscriber who just registered a second address sees two,
+  // not the one the page was drawn with. It rebuilds text nodes with textContent —
+  // never innerHTML — because a stored CIDR or IP is data and this page's URL is
+  // itself a bearer token.
+  function renderBoundIPs(list) {
+    var host = document.getElementById('registered-ips');
+    if (!host) return;
+    var ips = (list && list.length) ? list : [];
+    if (!ips.length) {
+      // The empty state is the same element with the same id, so the markup
+      // carries it as a div rather than a list. Rebuilding it means swapping the
+      // node type, which happens only when the list emptied — an edge a subscriber
+      // reaches by removing their last address by hand on the dashboard. The text
+      // is a data- attribute so the script still owns no copy of its own.
+      var div = document.createElement('div');
+      div.className = 'ip-none';
+      div.id = 'registered-ips';
+      div.textContent = host.getAttribute('data-none-text') || '';
+      div.setAttribute('data-none-text', host.getAttribute('data-none-text') || '');
+      host.parentNode.replaceChild(div, host);
+      return;
+    }
+    var ul = document.createElement('ul');
+    ul.className = 'ip-list';
+    ul.id = 'registered-ips';
+    ips.forEach(function (ip) {
+      var li = document.createElement('li');
+      li.className = 'ip-list-item mono';
+      li.textContent = ip;
+      ul.appendChild(li);
+    });
+    host.parentNode.replaceChild(ul, host);
   }
 
   /* --- Boot ------------------------------------------------------------------ */

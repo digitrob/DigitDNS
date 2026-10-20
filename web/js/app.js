@@ -945,6 +945,10 @@ function renderConfig(cfg) {
   renderAPIKeyDisplay();
 
   const apiBind = (cfg.server && cfg.server.api_bind) ? cfg.server.api_bind : '127.0.0.1';
+  // v3.1.0: the multi-CIDR list outranks the single api_bind. When it is
+  // non-empty it is what the REST gate enforces, so the page must reflect it.
+  const apiBindList = (cfg.server && Array.isArray(cfg.server.api_bind_list)) ? cfg.server.api_bind_list : [];
+  const hasList = apiBindList.length > 0;
   // Phase D: reflect the live idle window (the accessor clamps; 0 here means
   // the default 15 the server applies).
   const idleEl = document.getElementById('session-idle-minutes');
@@ -953,9 +957,12 @@ function renderConfig(cfg) {
     idleEl.value = Number.isFinite(live) && live > 0 ? live : 15;
   }
   const apiBindBadge = document.getElementById('api-bind-badge');
-  
+
   if (apiBindBadge) {
-    if (apiBind === '0.0.0.0') {
+    if (hasList) {
+      apiBindBadge.innerText = apiBindList.length + ' rule' + (apiBindList.length === 1 ? '' : 's') + ' (Restricted)';
+      apiBindBadge.className = 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30';
+    } else if (apiBind === '0.0.0.0') {
       apiBindBadge.innerText = '0.0.0.0 (Public HTTPS)';
       apiBindBadge.className = 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
     } else if (apiBind === '127.0.0.1') {
@@ -966,21 +973,28 @@ function renderConfig(cfg) {
       apiBindBadge.className = 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30';
     }
   }
-  // Reflect the current api_bind into the 3-way selector. Custom values
-  // (any IP or CIDR other than the two sentinels) select the "Custom"
-  // button and prefill the CIDR input.
+  // Reflect the effective rule into the selector. A non-empty list selects the
+  // "Custom" button and fills the textarea; otherwise the single value selects
+  // one of the two sentinels, or — for a lone custom IP/CIDR — the Custom button
+  // with that one value in the textarea.
   document.querySelectorAll('.api-bind-opt').forEach(btn => {
     const bind = btn.getAttribute('data-bind');
-    const isActive = (bind === apiBind) ||
-      (bind === '__custom__' && apiBind !== '127.0.0.1' && apiBind !== '0.0.0.0');
+    const isActive = hasList
+      ? bind === '__custom__'
+      : (bind === apiBind) ||
+        (bind === '__custom__' && apiBind !== '127.0.0.1' && apiBind !== '0.0.0.0');
     btn.classList.toggle('is-active', isActive);
   });
   const customWrap = document.getElementById('api-bind-custom-wrap');
   const customInput = document.getElementById('api-bind-custom-input');
-  if (customWrap && customInput) {
-    const isCustom = apiBind !== '127.0.0.1' && apiBind !== '0.0.0.0';
+  const customList = document.getElementById('api-bind-list-input');
+  if (customWrap && customList) {
+    const isCustom = hasList || (apiBind !== '127.0.0.1' && apiBind !== '0.0.0.0');
     customWrap.classList.toggle('hidden', !isCustom);
-    if (isCustom) customInput.value = apiBind;
+    // The textarea always shows the list in force. A lone custom single value is
+    // seeded into it so "Convert this to a list" starts from what is there.
+    customList.value = hasList ? apiBindList.join('\n') : (isCustom ? apiBind : '');
+    if (customInput) customInput.value = '';
   }
 
   updateCodeSnippets(pubIP, cfg.server?.api_key || 'digitdns_live_your_key_here');
@@ -3019,6 +3033,9 @@ function initAPIEvents() {
       const data = await res.json().catch(() => null);
       if (currentConfig?.server) {
         currentConfig.server.api_bind = (data && data.api_bind) || targetBind;
+        // A single save clears the list server-side, so the page must drop it too
+        // or it would keep showing rules the gate no longer enforces.
+        currentConfig.server.api_bind_list = [];
       }
       renderConfig(currentConfig);
       showToast(label, 'success');
@@ -3029,12 +3046,57 @@ function initAPIEvents() {
     }
   };
 
+  // saveApiBindList posts the multi-CIDR rule (v3.1.0). An empty array is a
+  // deliberate save meaning "no list, fall back to the single rule", which the
+  // server reads back as api_bind = 127.0.0.1.
+  const saveApiBindList = async (list, label) => {
+    try {
+      const res = await fetch(api('/api/settings'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ api_bind_list: list })
+      });
+      if (!res.ok) {
+        showToast(await errorMessage(res, 'Failed to update API access list'), 'error');
+        return false;
+      }
+      const data = await res.json().catch(() => null);
+      if (currentConfig?.server) {
+        currentConfig.server.api_bind_list = (data && data.api_bind_list) || list;
+        currentConfig.server.api_bind = (data && data.api_bind) || '127.0.0.1';
+      }
+      renderConfig(currentConfig);
+      showToast(label, 'success');
+      return true;
+    } catch (err) {
+      showToast('Error communicating with server', 'error');
+      return false;
+    }
+  };
+
+  // The list textarea's current entries: one per line, blank lines dropped. The
+  // server validates every entry, so nothing is checked here beyond emptiness —
+  // a typo comes back as a 400 the operator can see, rather than a silent drop.
+  const readBindListInput = () => (document.getElementById('api-bind-list-input')?.value || '')
+    .split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+
   document.querySelectorAll('.api-bind-opt').forEach(btn => {
     btn.addEventListener('click', async () => {
       const bind = btn.getAttribute('data-bind');
       if (bind === '__custom__') {
-        document.getElementById('api-bind-custom-wrap')?.classList.remove('hidden');
-        document.getElementById('api-bind-custom-input')?.focus();
+        const wrap = document.getElementById('api-bind-custom-wrap');
+        wrap?.classList.remove('hidden');
+        // Seed the textarea from the single rule in force so converting to a list
+        // starts from what the gate actually uses rather than a blank box.
+        const listInput = document.getElementById('api-bind-list-input');
+        if (listInput && !listInput.value.trim()) {
+          const current = currentConfig?.server?.api_bind;
+          if (current && current !== '127.0.0.1' && current !== '0.0.0.0') listInput.value = current;
+        }
+        listInput?.focus();
         return;
       }
       if (bind === '0.0.0.0' && (!currentConfig?.tls?.domain || !currentConfig.tls.domain.trim())) {
@@ -3046,15 +3108,41 @@ function initAPIEvents() {
         : 'REST API restricted to localhost (127.0.0.1)');
     });
   });
-  const customSave = document.getElementById('api-bind-custom-save');
-  if (customSave) {
-    customSave.addEventListener('click', async () => {
-      const raw = (document.getElementById('api-bind-custom-input')?.value || '').trim();
-      if (!raw) {
+
+  // "Add" appends the single-entry input to the textarea, then clears it. It does
+  // not save: the operator assembles the whole list and presses "Apply list", so a
+  // half-typed multi-address rule cannot become the live gate.
+  const addBindBtn = document.getElementById('api-bind-add');
+  if (addBindBtn) {
+    addBindBtn.addEventListener('click', () => {
+      const entry = (document.getElementById('api-bind-custom-input')?.value || '').trim();
+      if (!entry) {
         showToast('Enter an IP address or CIDR block (e.g. 100.64.0.0/10)', 'error');
         return;
       }
-      await saveApiBind(raw, `API exposure restricted to ${raw}`);
+      const listInput = document.getElementById('api-bind-list-input');
+      if (!listInput) return;
+      const entries = readBindListInput();
+      if (!entries.includes(entry)) entries.push(entry);
+      listInput.value = entries.join('\n');
+      const customInput = document.getElementById('api-bind-custom-input');
+      if (customInput) customInput.value = '';
+      listInput.focus();
+    });
+  }
+
+  const customSave = document.getElementById('api-bind-custom-save');
+  if (customSave) {
+    customSave.addEventListener('click', async () => {
+      const list = readBindListInput();
+      if (!list.length) {
+        // An empty list is a valid save: it clears the multi-CIDR rule and drops
+        // the gate back to the single api_bind field, which the editor has kept in
+        // step. Say what will happen rather than refusing.
+        await saveApiBindList([], 'API access list cleared — the single rule applies again');
+        return;
+      }
+      await saveApiBindList(list, `API exposure restricted to ${list.length} rule${list.length === 1 ? '' : 's'}`);
     });
   }
 
@@ -3235,7 +3323,10 @@ function initEventListeners() {
   const openDiag = () => {
     if (diagModal) {
       diagModal.classList.remove('hidden');
-      runFullDiagnostics();
+      // Load the operator's server list first, then run the probe against it.
+      // The run reads the same record server-side, so an in-flight save is
+      // already reflected; the load is what fills the editable list on screen.
+      loadDiagTargets().finally(() => runFullDiagnostics());
     }
   };
 
@@ -3249,6 +3340,14 @@ function initEventListeners() {
 
   const rerunDiagBtn = document.getElementById('rerun-diagnostics-btn');
   if (rerunDiagBtn) rerunDiagBtn.onclick = () => runFullDiagnostics();
+
+  const diagTargetForm = document.getElementById('diag-target-form');
+  if (diagTargetForm) {
+    diagTargetForm.onsubmit = (e) => {
+      e.preventDefault();
+      addDiagTarget();
+    };
+  }
 
   // Mobile Logout Button
   const mobileLogout = document.getElementById('mobile-logout-btn');
@@ -3945,6 +4044,156 @@ function initEventListeners() {
 // the older run could land second and overwrite the newer one's numbers, with nothing on
 // screen to say which run the operator was looking at. Opening the modal starts a run too, so
 // close-and-reopen did the same thing.
+// =======================================================
+// DIAGNOSTIC TARGETS (operator-owned server list)
+// =======================================================
+// The suite used to dial eight hardcoded game endpoints. v3.1.0 made the list
+// wholly operator-owned, so this pair of functions owns the editable list and the
+// server owns the persisted record: every write answers with the full list, and
+// the renderer draws whatever the server returns rather than what was sent, so a
+// rejected entry never appears as though it had saved.
+
+let diagTargets = [];
+
+// renderDiagTargets draws the operator's server list with a remove button per row.
+// Every value goes in through textContent or a createElement attribute: the name
+// and host are operator input and are echoed back by the GET, so innerHTML here
+// would be a stored-XSS sink reached through the panel itself.
+function renderDiagTargets() {
+  const container = document.getElementById('diag-targets-list');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (!Array.isArray(diagTargets) || diagTargets.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'text-xs text-slate-500 text-center py-3';
+    empty.textContent = 'No servers yet — add one below to measure its latency.';
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const t of diagTargets) {
+    const row = document.createElement('div');
+    row.className = 'flex items-center justify-between gap-2 py-1.5 px-2.5 rounded-lg bg-slate-900/60 border border-slate-800 text-xs';
+
+    const label = document.createElement('div');
+    label.className = 'min-w-0 flex-1';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'font-bold text-white truncate';
+    nameEl.textContent = t.name || t.host || '';
+    const hostEl = document.createElement('div');
+    hostEl.className = 'text-[10px] text-slate-500 font-mono truncate';
+    hostEl.textContent = t.host || '';
+    label.appendChild(nameEl);
+    label.appendChild(hostEl);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'text-slate-500 hover:text-red-400 p-1 rounded transition shrink-0';
+    remove.setAttribute('aria-label', `Remove ${t.host || 'target'}`);
+    remove.title = 'Remove';
+    remove.dataset.diagRemove = t.host || '';
+    remove.innerHTML = '<i data-feather="trash-2" class="w-3.5 h-3.5"></i>';
+    remove.onclick = () => removeDiagTarget(t.host || '');
+
+    row.appendChild(label);
+    row.appendChild(remove);
+    container.appendChild(row);
+  }
+  safeFeatherReplace();
+}
+
+// loadDiagTargets fetches the server list and renders it. It returns a promise so
+// openDiag can sequence "load the list, then run the probe".
+async function loadDiagTargets() {
+  if (!authToken) return;
+  try {
+    const res = await fetch(api('/api/diagnostics/targets'), {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (res.status === 401) { showLoginModal(); return; }
+    if (!res.ok) {
+      showToast(await errorMessage(res, 'Could not load your diagnostic servers'), 'error');
+      return;
+    }
+    const data = await res.json();
+    diagTargets = Array.isArray(data.targets) ? data.targets : [];
+    renderDiagTargets();
+  } catch (e) {
+    showToast('Could not reach the server to load your diagnostic servers.', 'error');
+  }
+}
+
+// addDiagTarget posts one entry. A 400 carries the validation reason from the
+// server (empty name, bad host), which is surfaced verbatim so the operator knows
+// what to fix. The input is cleared only on success.
+async function addDiagTarget() {
+  const nameEl = document.getElementById('diag-target-name');
+  const hostEl = document.getElementById('diag-target-host');
+  const addBtn = document.getElementById('diag-target-add');
+  const name = nameEl ? nameEl.value.trim() : '';
+  const host = hostEl ? hostEl.value.trim() : '';
+
+  if (!name || !host) {
+    showToast('Enter both a name and a host for the server.', 'error');
+    return;
+  }
+
+  if (addBtn) addBtn.disabled = true;
+  try {
+    const res = await fetch(api('/api/diagnostics/targets'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, host })
+    });
+    if (res.status === 401) { showLoginModal(); return; }
+    if (!res.ok) {
+      showToast(await errorMessage(res, 'The server refused the new target'), 'error');
+      return;
+    }
+    const data = await res.json();
+    diagTargets = Array.isArray(data.targets) ? data.targets : [];
+    renderDiagTargets();
+    if (nameEl) nameEl.value = '';
+    if (hostEl) hostEl.value = '';
+    // The list changed, so the previous run's score describes a different set of
+    // servers. Clear it so the banner cannot outlive the list it was measured on.
+    const scoreEl = document.getElementById('diag-score');
+    const qualEl = document.getElementById('diag-quality');
+    if (scoreEl) scoreEl.innerText = '--%';
+    if (qualEl) qualEl.innerText = 'Ready to test';
+  } catch (e) {
+    showToast('Could not reach the server to add the target.', 'error');
+  } finally {
+    if (addBtn) addBtn.disabled = false;
+  }
+}
+
+// removeDiagTarget deletes one entry by its stored host.
+async function removeDiagTarget(host) {
+  if (!host) return;
+  try {
+    const res = await fetch(api('/api/diagnostics/targets?host=' + encodeURIComponent(host)), {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (res.status === 401) { showLoginModal(); return; }
+    if (!res.ok) {
+      showToast(await errorMessage(res, 'The server refused to remove the target'), 'error');
+      return;
+    }
+    const data = await res.json();
+    diagTargets = Array.isArray(data.targets) ? data.targets : [];
+    renderDiagTargets();
+    const scoreEl = document.getElementById('diag-score');
+    const qualEl = document.getElementById('diag-quality');
+    if (scoreEl) scoreEl.innerText = '--%';
+    if (qualEl) qualEl.innerText = 'Ready to test';
+  } catch (e) {
+    showToast('Could not reach the server to remove the target.', 'error');
+  }
+}
+
 let diagRunning = false;
 
 async function runFullDiagnostics() {
@@ -3967,7 +4216,7 @@ async function runFullDiagnostics() {
     rerunBtn.classList.add('opacity-50', 'cursor-not-allowed');
   }
   if (container) {
-    container.innerHTML = '<div class="text-center py-8 text-cyan-400 font-mono text-xs"><span class="pulse-dot inline-block me-2"></span> Testing VPS connectivity to Riot, Epic, Steam, Discord, EA, Battle.net, PUBG, Spotify...</div>';
+    container.innerHTML = '<div class="text-center py-8 text-cyan-400 font-mono text-xs"><span class="pulse-dot inline-block me-2"></span> Testing your servers\' reachability and latency...</div>';
   }
 
   const fail = (msg) => {
@@ -4051,7 +4300,7 @@ function renderDiagnosticsReport(rep) {
   if (!container) return;
 
   if (results.length === 0) {
-    container.innerHTML = '<div class="text-center py-6 text-slate-500 text-xs">The server reported no diagnostic targets.</div>';
+    container.innerHTML = '<div class="text-center py-6 text-slate-500 text-xs">No servers configured. Add a name and host above, then run the test again.</div>';
     return;
   }
 
@@ -4607,7 +4856,12 @@ function initClientEventListeners() {
       }
 
       const name = document.getElementById('client-name-input')?.value.trim();
-      const initIP = document.getElementById('client-initial-ip')?.value.trim();
+      // A comma- or space-separated list, same split the edit modal uses for its
+      // single field (app.js edit handler): bare IPs and operator CIDRs both
+      // survive to the server, which normalises each entry. An empty field stays
+      // an empty array, so "disregard the initial IP" is simply leaving it blank.
+      const initIPs = (document.getElementById('client-initial-ip')?.value || '')
+        .split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
 
       // The whole plan in one request. Until these fields were on this form, the
       // volume had to be added afterwards by reopening the account in the edit modal —
@@ -4636,7 +4890,8 @@ function initClientEventListeners() {
           body: JSON.stringify({
             name: name,
             expires_at: expiresAtISO || undefined,
-            initial_ip: initIP,
+            initial_ip: initIPs[0] || '',
+            ips: initIPs,
             traffic_limit_gb: trafficGB,
             traffic_reset_cycle: cycle,
             max_devices: maxDevices
@@ -4708,6 +4963,41 @@ function initClientEventListeners() {
       }
     } catch (e) {
       showToast('Failed to update access mode', 'error');
+    }
+  });
+
+  // Server-wide resolver allowlist (v3.1.0). Loaded with the access card and
+  // saved through the same /api/config/access record the DoH tokens live in.
+  async function loadAccessAllowlist() {
+    const field = document.getElementById('access-allow-cidrs');
+    if (!field) return;
+    try {
+      const res = await fetch(api('/api/config/access'), { headers: { 'Authorization': 'Bearer ' + authToken } });
+      if (!res.ok) return;
+      const cfg = await res.json();
+      field.value = (cfg.allowed_ips || []).join(', ');
+    } catch (ignore) { /* leave the field empty on a failed read */ }
+  }
+  loadAccessAllowlist();
+
+  document.getElementById('access-allow-cidrs-save')?.addEventListener('click', async () => {
+    const field = document.getElementById('access-allow-cidrs');
+    if (!field) return;
+    const cidrs = field.value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+    try {
+      const res = await fetch(api('/api/config/access'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ allowed_ips: cidrs })
+      });
+      if (res.ok) {
+        showToast('Resolver allowlist saved', 'success');
+        loadAccessAllowlist();
+      } else {
+        showToast(await errorMessage(res, 'Could not save the resolver allowlist'), 'error');
+      }
+    } catch (e) {
+      showToast('Network error saving the resolver allowlist', 'error');
     }
   });
 
@@ -5604,7 +5894,7 @@ function showToast(msg, type = 'info') {
       document.getElementById('edit-client-name').value = client.name || '';
       document.getElementById('edit-client-uuid').value = client.uuid || '';
       document.getElementById('edit-client-secret').value = client.register_secret || '';
-      document.getElementById('edit-client-ip').value = (client.allowed_ips && client.allowed_ips.length > 0) ? client.allowed_ips[0] : '';
+      document.getElementById('edit-client-ip').value = (client.allowed_ips && client.allowed_ips.length > 0) ? client.allowed_ips.join(', ') : '';
       document.getElementById('edit-client-traffic').value = client.traffic_limit_gb || '';
       document.getElementById('edit-client-max-devices').value = client.max_devices || '';
       // The stored cycle, normalised to the empty option when the record predates
@@ -5736,7 +6026,9 @@ function showToast(msg, type = 'info') {
       const payload = {
         name: name,
         uuid: uuid,
-        allowed_ip: ip,
+        // Split the comma/newline-separated field into the list the server now
+        // stores, so an operator can attach a host address and a CIDR together.
+        allowed_ips: ip.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
         traffic_limit_gb: trafficGB,
         max_devices: maxDevices,
         // Sent on every save, including as "" — the field is a pointer on the server,

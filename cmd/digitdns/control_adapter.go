@@ -166,6 +166,7 @@ func (d *daemonControl) ControlSettings() control.SettingsView {
 		APIKey:             s.APIKey,
 		AdminPasswordWeak:  s.AdminPasswordWeak,
 		APIBind:            s.APIBind,
+		APIBindList:        s.APIBindList,
 		AdminPath:          s.AdminPath,
 		SessionIdleMinutes: s.SessionIdleMinutes,
 	}

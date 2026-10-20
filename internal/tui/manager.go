@@ -77,11 +77,18 @@ func RunInteractiveManager(
 		// both are read through the settings accessors. One Endpoint() call also means
 		// the three lines below cannot disagree with each other.
 		publicIP, apiBind := settings.Endpoint()
+		// v3.1.0: the REST exposure rule may be a multi-CIDR list, which outranks
+		// the single api_bind. Show the rule actually in force so the console banner
+		// does not advertise a stale single value while the list gates requests.
+		bindDisplay := apiBind
+		if list := settings.GetAPIBindList(); len(list) > 0 {
+			bindDisplay = strings.Join(list, ", ")
+		}
 
 		fmt.Printf("\n %s• DigitDNS Version:%s %s%s%s [%s]%s\n", Bold, Reset, Cyan, version.Get().Display, Reset, version.Get().Hash, Reset)
 		fmt.Printf(" %s• Server Status:%s %sONLINE%s | %sPublic IP:%s %s%s%s\n", Bold, Reset, Green, Reset, Bold, Reset, Cyan, publicIP, Reset)
 		fmt.Printf(" %s• Dashboard:%s http://%s:%d\n", Bold, Reset, publicIP, settings.WebPort)
-		fmt.Printf(" %s• REST API:%s  http://%s:%d/api/v1 (Bind: %s)\n", Bold, Reset, publicIP, settings.WebPort, apiBind)
+		fmt.Printf(" %s• REST API:%s  http://%s:%d/api/v1 (Bind: %s)\n", Bold, Reset, publicIP, settings.WebPort, bindDisplay)
 		fmt.Println(" ────────────────────────────────────────────────────────")
 		fmt.Printf("  %s[1]%s 📊 Service Status & Telemetry\n", Cyan, Reset)
 		fmt.Printf("  %s[2]%s 👥 List Subscriber Accounts & Tokens\n", Cyan, Reset)

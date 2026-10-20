@@ -113,9 +113,9 @@ jobs:
     runs-on: ubuntu-latest
 
     # Every target the release workflow publishes, compiled on every commit rather than
-    # for the first time while a tag is being cut. The daemon has per-OS files — CPU
-    # time is read one way on Unix and another on Windows — so a break here is a break
-    # that no amount of testing on one platform would surface.
+    # for the first time while a tag is being cut. The project ships Linux amd64 and
+    # arm64 only — the two architectures a VPS is bought in — so those are the only
+    # two the release build must not discover a break in while a tag is being cut.
     strategy:
       fail-fast: false
       matrix:
@@ -124,12 +124,6 @@ jobs:
             goarch: amd64
           - goos: linux
             goarch: arm64
-          - goos: windows
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
 
     steps:
       - uses: actions/checkout@v4

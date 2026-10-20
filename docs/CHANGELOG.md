@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.1.0] — Multi-CIDR Resolver & API Access, Portal IP Self-Service & a Rebuilt Diagnostic Suite
+
+### ✨ Added
+- **Multi-CIDR resolver access.** The allow/deny gate now accepts full CIDR blocks as well as single addresses, so an operator can admit a whole subnet without listing every host. Server-wide CIDR entries are edited in the whitelist card (whitelist mode only) and are logged and metered as the anonymous `Public` account — no quota, no expiry, never counted against a subscriber's `MaxDevices`. Subscriber-registered exact IPs continue to count toward device limits; operator CIDRs do not.
+- **Subscriber portal IP self-service.** A registered subscriber can see the list of IPs currently bound to their account and register an additional IP through a dedicated "Update my IP" flow. The register secret remains mandatory, so an address is only ever bound by someone who holds its credential.
+- **Multi-CIDR REST API access.** The API bind gate accepts a **list** of addresses and CIDR blocks (`api_bind_list`) in addition to the single `api_bind` rule, over both the dashboard and the v2 REST API. The union admits a peer if any rule matches; loopback is always admitted and an unparseable rule fails closed.
+- **Rebuilt Server Diagnostic Suite.** The built-in game presets are gone. The suite is now wholly operator-owned: you add your own servers by name and host, and the dashboard and the v2 REST API run the same shared probe so the two surfaces can never drift. Results report per-target reachability and latency, summarised as a rounded percentage of reachable targets.
+
+### 🔄 Changed
+- **`api_bind_list` outranks `api_bind` when both are set.** A non-empty list is authoritative and the single rule is reported back as `127.0.0.1`; clearing the list falls back to the single `api_bind` rule. The precedence is resolved once, in `ServerSettings.GetAPIExposure()`.
+- The dashboard exposes the resolver allowlist as a dedicated **Custom addresses / CIDRs** editor alongside the single **Custom IP / CIDR** editor, and the root `config.json` accepts an `api_bind_list` array (normalised on load).
+- The API status responses now report `api_bind_list` and a resolved `api_exposure` field.
+- The whitelist card copy now reads "…use the service".
+
+### 🐳 Distribution
+- Binary targets are **Linux only** — `linux/amd64` and `linux/arm64` — alongside the published Docker image; the cross-build matrix and release workflow were narrowed accordingly.
+
+---
+
 ## 🏷️ [v3.0.0] — Full DigitDNS Rebrand, Proxied Domains UX & Forked Self-Updates
 
 This fork is named **DigitDNS** throughout: the install tree, the systemd unit and service,

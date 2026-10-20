@@ -26,13 +26,14 @@ and how to report a problem.
 
 | Version | Status | Security fixes |
 | :--- | :--- | :--- |
-| `v3.0.0` | Current stable | ✅ Yes |
+| `v3.1.0` | Current stable | ✅ Yes |
+| `v3.0.0` | Superseded | ❌ Upgrade first |
 | `v2.8.0-beta` and earlier | Superseded | ❌ Upgrade first |
 | `v2.0.x`–`v2.7.0-beta` | Superseded | ❌ Upgrade first |
 | `v1.x` (upstream HyperDNS) | End of life | ❌ No |
 
 Only the current release line receives fixes. The project does not backport to
-earlier versions — upgrading is the supported path. Note that `3.0.0` is a
+earlier versions — upgrading is the supported path. Note that `3.0.0` was a
 breaking rename of the upstream HyperDNS project: install paths, the systemd
 service name, the CLI and every environment variable changed, so an in-place
 upgrade from `2.x` is performed by the installer (which migrates the existing

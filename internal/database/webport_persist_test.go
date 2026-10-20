@@ -117,7 +117,7 @@ func TestPersistWebPortLeavesTheRunningRecordAlone(t *testing.T) {
 		t.Fatalf("PersistWebPort returned %v", err)
 	}
 
-	if after := s.Snapshot(); after != before {
+	if after := s.Snapshot(); !reflect.DeepEqual(after, before) {
 		t.Errorf("PersistWebPort changed the live settings: %+v became %+v. The port it "+
 			"stores takes effect on the next start; mutating the running value only makes "+
 			"the daemon misreport the port it is actually listening on.", before, after)

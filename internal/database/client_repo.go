@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"slices"
+	"strings"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -558,11 +560,14 @@ func (db *DB) FindClientByToken(token string) (*Client, error) {
 }
 
 // FindClientByIP checks if an IP belongs to any active, non-expired client account.
+// An entry that is a CIDR block (v3.1.0) matches by containment, so a caller that
+// holds only a source address still resolves the account it was attached to.
 func (db *DB) FindClientByIP(ip string) (*Client, bool) {
 	clients, err := db.ListClients()
 	if err != nil {
 		return nil, false
 	}
+	parsed := net.ParseIP(ip)
 	now := time.Now()
 	for _, c := range clients {
 		if !c.Enabled {
@@ -573,6 +578,13 @@ func (db *DB) FindClientByIP(ip string) (*Client, bool) {
 		}
 		if slices.Contains(c.AllowedIPs, ip) {
 			return &c, true
+		}
+		if parsed != nil {
+			for _, entry := range c.AllowedIPs {
+				if _, network, err := net.ParseCIDR(entry); err == nil && network.Contains(parsed) {
+					return &c, true
+				}
+			}
 		}
 	}
 	return nil, false
@@ -750,22 +762,30 @@ func putClientTx(db *DB, b *bolt.Bucket, c *Client) error {
 }
 
 // applyDeviceBind appends newIP as the most-recent allowed address, dropping any
-// earlier copy of it and evicting the oldest once MaxDevices is exceeded (v2.5).
-// MaxDevices 0 reads as 1, so an upgraded record with no value keeps the old
-// single-address behaviour.
+// earlier copy of it and evicting the oldest host address once MaxDevices is
+// exceeded (v2.5). Operator-added CIDRs (v3.1.0) are exempt from the cap and are
+// never evicted — a subscriber's own re-registration must not silently drop the
+// network range the operator attached. MaxDevices 0 reads as 1, so an upgraded
+// record with no value keeps the old single-address behaviour.
 func applyDeviceBind(c *Client, newIP string, now time.Time) {
 	limit := NormalizeMaxDevices(c.MaxDevices)
-	list := make([]string, 0, len(c.AllowedIPs)+1)
+	keptCIDRs := make([]string, 0, len(c.AllowedIPs))
 	for _, ip := range c.AllowedIPs {
-		if ip != newIP {
-			list = append(list, ip)
+		if ip != newIP && strings.Contains(ip, "/") {
+			keptCIDRs = append(keptCIDRs, ip)
 		}
 	}
-	list = append(list, newIP)
-	if len(list) > limit {
-		list = list[len(list)-limit:]
+	hosts := make([]string, 0, len(c.AllowedIPs)+1)
+	for _, ip := range c.AllowedIPs {
+		if ip != newIP && !strings.Contains(ip, "/") {
+			hosts = append(hosts, ip)
+		}
 	}
-	c.AllowedIPs = list
+	hosts = append(hosts, newIP)
+	if len(hosts) > limit {
+		hosts = hosts[len(hosts)-limit:]
+	}
+	c.AllowedIPs = append(keptCIDRs, hosts...)
 	c.LastSeen = now
 }
 

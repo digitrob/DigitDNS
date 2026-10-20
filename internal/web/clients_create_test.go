@@ -91,3 +91,51 @@ func TestClientsCreateTreatsTheZeroTimestampAsNoExpiry(t *testing.T) {
 		t.Errorf("a lifetime create expired at %v", stored.ExpiresAt)
 	}
 }
+
+// The create form now carries a multi-address list (the "ips" field), the same
+// shape ProvisionClient already accepted from the REST API. A CIDR mixed with a
+// host address must survive to the stored AllowedIPs verbatim after
+// normalisation, so an operator can hand a new subscriber a whole range at
+// creation instead of reopening the account in the editor.
+func TestClientsCreateAcceptsMultipleIPsAndCIDR(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+	h := ws.buildAdminHandler()
+	tok := bearerFor(t, h)
+
+	body := `{"name":"CIDR Plan","ips":["2.189.86.32","203.0.113.0/24"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/clients/add", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("create = %d, want 200 — %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	stored, err := ws.clients.GetClient(resp.ID)
+	if err != nil {
+		t.Fatalf("GetClient: %v", err)
+	}
+	if len(stored.AllowedIPs) != 2 {
+		t.Fatalf("stored allowed IPs are %v, want two entries", stored.AllowedIPs)
+	}
+	// The store keeps the operator's ranges as given (canonicalised), not just the
+	// first element: losing the CIDR here would silently bind the account to one
+	// host and refuse the rest of the range.
+	foundCIDR := false
+	for _, ip := range stored.AllowedIPs {
+		if ip == "203.0.113.0/24" {
+			foundCIDR = true
+		}
+	}
+	if !foundCIDR {
+		t.Errorf("the CIDR was dropped: stored %v", stored.AllowedIPs)
+	}
+}

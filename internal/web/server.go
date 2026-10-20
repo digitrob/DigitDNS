@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -34,20 +33,28 @@ import (
 )
 
 type WebServer struct {
-	db             *database.DB
-	clients        *service.ClientService
-	stats          *service.StatsService
-	cache          *cache.Cache
-	matcher        *matcher.Matcher
-	customGroups   *service.CustomGroupService
-	upstreams      *upstream.UpstreamPool
-	dohHandler     http.Handler
-	updater        *selfupdate.Updater
-	settings       *database.ServerSettings
-	tlsSettings    *database.TLSSettings
-	dnsCfg         *database.DNSSettings
-	subSettings    *database.SubscriptionSettings
-	authSettings   *database.AuthSettings
+	db           *database.DB
+	clients      *service.ClientService
+	stats        *service.StatsService
+	cache        *cache.Cache
+	matcher      *matcher.Matcher
+	customGroups *service.CustomGroupService
+	upstreams    *upstream.UpstreamPool
+	dohHandler   http.Handler
+	updater      *selfupdate.Updater
+	settings     *database.ServerSettings
+	tlsSettings  *database.TLSSettings
+	dnsCfg       *database.DNSSettings
+	subSettings  *database.SubscriptionSettings
+	authSettings *database.AuthSettings
+	// diagSettings holds the operator-owned diagnostic target list (v3.1.0). It
+	// is loaded lazily from the "diagnostics" settings record on first use and
+	// reused after, so a constructor that does not know about it — the lighter
+	// test harnesses — still gets a working (empty) list. diagMu serialises the
+	// load-then-cache step and every read-modify-persist the add/remove handlers
+	// do, so two browser tabs editing at once cannot lose an entry.
+	diagSettings   *database.DiagnosticSettings
+	diagMu         sync.Mutex
 	sessions       *service.SessionManager
 	staticFS       fs.FS
 	httpServer     *http.Server
@@ -273,6 +280,9 @@ type serverSettingsView struct {
 	AdminPasswordWeak bool   `json:"admin_password_weak"`
 	APIKey            string `json:"api_key"`
 	APIBind           string `json:"api_bind"`
+	// APIBindList is the multi-CIDR REST exposure rule (v3.1.0); when non-empty it
+	// outranks APIBind. The settings page edits it and the REST gate reads it.
+	APIBindList []string `json:"api_bind_list"`
 	// SessionIdleMinutes is the live dashboard idle window (Phase D): the
 	// settings card shows what is in force and POSTs a replacement.
 	SessionIdleMinutes int `json:"session_idle_minutes"`
@@ -297,6 +307,7 @@ func (ws *WebServer) settingsView() serverSettingsView {
 		AdminPasswordWeak:  s.AdminPasswordWeak,
 		APIKey:             s.APIKey,
 		APIBind:            s.APIBind,
+		APIBindList:        s.APIBindList,
 		SessionIdleMinutes: s.SessionIdleMinutes,
 		AdminPath:          s.AdminPath,
 	}
@@ -725,6 +736,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 
 	// 6. Internal Dashboard Ajax APIs (all authenticated)
 	mux.HandleFunc("/api/diagnostics/run", ws.requireAuth(ws.handleDiagnosticsRun))
+	mux.HandleFunc("/api/diagnostics/targets", ws.requireAuth(ws.handleDiagnosticsTargets))
 	mux.HandleFunc("/api/stats", ws.requireAuth(ws.handleStats))
 	mux.HandleFunc("/api/clients", ws.requireAuth(ws.handleClients))
 	mux.HandleFunc("/api/clients/add", ws.requireAuth(ws.handleClientsAdd))
@@ -1455,9 +1467,14 @@ func (ws *WebServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 // accessConfig is the persisted "access" record. allow_all is part of it (the
 // same record the access-mode switch writes), so the GET side can report the
 // live mode to the dashboard without a second endpoint.
+//
+// AllowedIPs is the server-wide resolver allowlist (v3.1.0): source ranges served
+// as an anonymous "Public" account while whitelist mode is on. It is stored as
+// canonical CIDR strings and re-parsed by the client service on save.
 type accessConfig struct {
-	AllowAll  bool     `json:"allow_all"`
-	DoHTokens []string `json:"doh_tokens"`
+	AllowAll   bool     `json:"allow_all"`
+	DoHTokens  []string `json:"doh_tokens"`
+	AllowedIPs []string `json:"allowed_ips"`
 }
 
 func (ws *WebServer) loadAccessConfig() accessConfig {
@@ -1466,6 +1483,9 @@ func (ws *WebServer) loadAccessConfig() accessConfig {
 	if acc.DoHTokens == nil {
 		acc.DoHTokens = []string{}
 	}
+	// The client service owns the parsed allowlist; report its canonical form so a
+	// hand-edited or legacy record is shown exactly as the resolver sees it.
+	acc.AllowedIPs = ws.clients.ResolverAllowCIDRs()
 	return acc
 }
 
@@ -1483,14 +1503,28 @@ func (ws *WebServer) handleConfigAccess(w http.ResponseWriter, r *http.Request) 
 		if acc.DoHTokens == nil {
 			acc.DoHTokens = []string{}
 		}
+		if acc.AllowedIPs == nil {
+			acc.AllowedIPs = []string{}
+		}
 		// allow_all is written by the dedicated /api/access/mode route and is
 		// persisted there; keep the value the store already holds so this
 		// handler cannot silently flip the access mode as a side effect of
 		// saving tokens (the record covers both fields).
 		acc.AllowAll = ws.clients.IsAllowAll()
-		// Persist first, and only claim success if the write landed: the previous
-		// code discarded this error and answered {"success":true} even when the
-		// save failed.
+		// The server-wide allowlist is parsed and installed through the client
+		// service so the live resolver index and the stored record stay in step.
+		// It canonicalises the entries and writes the "access" record, preserving
+		// the token list it finds on disk.
+		canon, err := ws.clients.SetResolverAllowCIDRs(acc.AllowedIPs)
+		if err != nil {
+			httpx.WriteJSONErrorFor(w, http.StatusBadRequest, err)
+			return
+		}
+		// Now persist the DoH tokens on top, in their canonical form, so the
+		// record holds both fields the caller sent. Persist first, and only claim
+		// success if the write landed: the previous code discarded this error and
+		// answered {"success":true} even when the save failed.
+		acc.AllowedIPs = canon
 		if err := ws.db.SetSetting("access", acc); err != nil {
 			httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not save access settings")
 			return
@@ -1759,6 +1793,12 @@ func (ws *WebServer) handleClients(w http.ResponseWriter, r *http.Request) {
 			IP          string `json:"ip"`
 			InitialIP   string `json:"initial_ip"`
 
+			// The full allowed-address list the create form may attach in the same
+			// request (v3.1.0): a mix of host addresses and operator CIDRs, each
+			// normalised by ProvisionClient. When present it wins over the single
+			// IP/InitialIP fields, which the legacy front-ends still send.
+			IPs []string `json:"ips"`
+
 			// The absolute expiry the panel's picker answers. A pointer, so an omitted
 			// field means "not chosen" rather than the zero time; RFC 3339, which is
 			// what Date.toISOString() on the other end emits.
@@ -1797,6 +1837,7 @@ func (ws *WebServer) handleClients(w http.ResponseWriter, r *http.Request) {
 			Name: req.Name,
 			Days: days,
 			IP:   ip,
+			IPs:  req.IPs,
 
 			ExpiresAt: expiresAt,
 
@@ -2136,9 +2177,10 @@ func (ws *WebServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 		var req struct {
-			PublicIP           string `json:"public_ip"`
-			APIBind            string `json:"api_bind"`
-			SessionIdleMinutes *int   `json:"session_idle_minutes"`
+			PublicIP           string    `json:"public_ip"`
+			APIBind            string    `json:"api_bind"`
+			APIBindList        *[]string `json:"api_bind_list"`
+			SessionIdleMinutes *int      `json:"session_idle_minutes"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			// Swallowing this used to make a malformed body look like a successful
@@ -2185,9 +2227,26 @@ func (ws *WebServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// api_bind_list is the multi-CIDR rule (v3.1.0). It is validated the same
+		// way the single field is and for the same reason: it is the rule the REST
+		// gate matches the peer against, so a typo silently stored would leave the
+		// gate reading "restricted" while the operator believed the API reachable,
+		// or the reverse. Blank lines are dropped, not rejected, so a textarea entry
+		// with a stray newline still saves.
+		var apiBindList []string
+		apiBindListSet := req.APIBindList != nil
+		if apiBindListSet {
+			apiBindList = netutil.NormalizeAPIBindList(*req.APIBindList)
+			if _, err := netutil.ParseAPIBindList(apiBindList); err != nil {
+				httpx.WriteJSONError(w, http.StatusBadRequest, "api_bind_list must be a list of IP addresses or CIDR blocks (e.g. 100.64.0.0/10, 203.0.113.5)")
+				return
+			}
+		}
+
 		// prevBind is read before the update so the log line below can report an
 		// actual transition rather than "set to X" on every save.
 		_, prevBind := ws.settings.Endpoint()
+		prevList := ws.settings.GetAPIBindList()
 		if err := ws.settings.UpdateAndPersist(
 			func(m *database.MutableSettings) {
 				// An empty field means "leave this one alone", so a bind-only save
@@ -2195,8 +2254,21 @@ func (ws *WebServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 				if publicIP != "" {
 					m.PublicIP = publicIP
 				}
+				// The list wins over the single field when both are set. A save that
+				// carries the list is the multi-CIDR editor: storing a non-empty list
+				// returns the single field to its loopback default so a later reader
+				// cannot apply a stale single rule alongside the list, and storing an
+				// empty list clears the list so the single field becomes authoritative
+				// again — which is how the editor expresses "localhost only".
+				if apiBindListSet {
+					m.APIBindList = apiBindList
+					if len(apiBindList) > 0 {
+						m.APIBind = "127.0.0.1"
+					}
+				}
 				if apiBind != "" {
 					m.APIBind = apiBind
+					m.APIBindList = nil
 				}
 				// The clamped value, not the raw request: the accessor clamps for
 				// a reason, and storing the raw number would hand the next boot an
@@ -2215,7 +2287,13 @@ func (ws *WebServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 			ws.sessions.SetIdleTimeout(time.Duration(idleMinutes) * time.Minute)
 			log.Printf("[Web] Dashboard session idle timeout set to %d minute(s)", idleMinutes)
 		}
-		if apiBind != "" && apiBind != prevBind {
+		if apiBindListSet && !slices.Equal(apiBindList, prevList) {
+			if len(apiBindList) > 0 {
+				log.Printf("[Web] REST API access gate set to list %v", apiBindList)
+			} else {
+				log.Printf("[Web] REST API access gate list cleared (single rule applies)")
+			}
+		} else if apiBind != "" && apiBind != prevBind {
 			log.Printf("[Web] REST API access gate set to %s", apiBind)
 		}
 		_ = json.NewEncoder(w).Encode(ws.settingsView())
@@ -2408,27 +2486,173 @@ func (ws *WebServer) handleBenchmark(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type diagTarget struct {
-	Name   string `json:"name"`
-	Target string `json:"target"`
+// diagnosticSettings returns the operator's diagnostic target record, loading it
+// from the "diagnostics" settings key on first use and caching it after. It is
+// safe on a WebServer built without a database (the lighter harnesses): the record
+// is created in memory and edits persist nowhere, which is what those harnesses
+// want.
+//
+// ws.diagMu must be held by the caller.
+func (ws *WebServer) diagnosticSettings() *database.DiagnosticSettings {
+	if ws.diagSettings == nil {
+		rec := &database.DiagnosticSettings{}
+		if ws.db != nil {
+			_ = ws.db.GetSetting("diagnostics", rec)
+		}
+		ws.diagSettings = rec
+	}
+	return ws.diagSettings
 }
 
-type diagResult struct {
-	Name      string  `json:"name"`
-	Target    string  `json:"target"`
-	Success   bool    `json:"success"`
-	LatencyMs float64 `json:"latency_ms"`
+// handleDiagnosticsTargets is the CRUD surface for the operator-owned diagnostic
+// endpoints (v3.1.0). The built-in game presets were removed: the operator adds
+// the servers they actually want to measure, and a run dials that list.
+//
+//	GET    — the current list
+//	POST   — add or replace a target ({"name","host"}; an id-match replaces)
+//	DELETE — remove a target (?host= or a JSON body {"host"})
+//
+// Every write validates through netutil.NormalizeDiagnosticHost so the stored
+// address is the dial-ready host:port, then persists the whole record. The
+// record is small, so a whole-record write is simpler than a per-entry bucket and
+// cannot leave a half-written list.
+func (ws *WebServer) handleDiagnosticsTargets(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		ws.diagMu.Lock()
+		defer ws.diagMu.Unlock()
+		_ = json.NewEncoder(w).Encode(ws.diagnosticSettings().Snapshot())
+
+	case http.MethodPost:
+		r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+		var req struct {
+			Name string `json:"name"`
+			Host string `json:"host"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+		name := strings.TrimSpace(req.Name)
+		if name == "" {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "name is required")
+			return
+		}
+		host, err := netutil.NormalizeDiagnosticHost(req.Host)
+		if err != nil {
+			httpx.WriteJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		ws.diagMu.Lock()
+		defer ws.diagMu.Unlock()
+		rec := ws.diagnosticSettings()
+		current := rec.GetTargets()
+		// Replace an existing entry that names the same address; otherwise
+		// append. Matching on the dial-ready host keeps a re-add of the same
+		// server an edit rather than a duplicate.
+		targets := make([]database.DiagnosticTarget, 0, len(current)+1)
+		replaced := false
+		for _, t := range current {
+			if t.Host == host {
+				targets = append(targets, database.DiagnosticTarget{Name: name, Host: host})
+				replaced = true
+				continue
+			}
+			targets = append(targets, t)
+		}
+		if !replaced {
+			targets = append(targets, database.DiagnosticTarget{Name: name, Host: host})
+		}
+		if err := ws.persistDiagnosticTargetsLocked(rec, targets); err != nil {
+			log.Printf("[Web] Could not persist diagnostic targets: %v", err)
+			httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not save the diagnostic target")
+			return
+		}
+		_ = json.NewEncoder(w).Encode(rec.Snapshot())
+
+	case http.MethodDelete:
+		host := strings.TrimSpace(r.URL.Query().Get("host"))
+		if host == "" {
+			r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+			var req struct {
+				Host string `json:"host"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+				host = strings.TrimSpace(req.Host)
+			}
+		}
+		if host == "" {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "host is required")
+			return
+		}
+		// Accept either the operator's raw input or the stored dial-ready form:
+		// the panel sends what it displayed, which is the normalised value, but a
+		// hand-written curl often sends the bare host.
+		normalized := host
+		if h, err := netutil.NormalizeDiagnosticHost(host); err == nil {
+			normalized = h
+		}
+
+		ws.diagMu.Lock()
+		defer ws.diagMu.Unlock()
+		rec := ws.diagnosticSettings()
+		current := rec.GetTargets()
+		targets := make([]database.DiagnosticTarget, 0, len(current))
+		removed := false
+		for _, t := range current {
+			if t.Host == normalized || t.Host == host {
+				removed = true
+				continue
+			}
+			targets = append(targets, t)
+		}
+		if !removed {
+			httpx.WriteJSONError(w, http.StatusNotFound, "No diagnostic target matches that host")
+			return
+		}
+		if err := ws.persistDiagnosticTargetsLocked(rec, targets); err != nil {
+			log.Printf("[Web] Could not persist diagnostic targets: %v", err)
+			httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not remove the diagnostic target")
+			return
+		}
+		_ = json.NewEncoder(w).Encode(rec.Snapshot())
+
+	default:
+		httpx.WriteMethodNotAllowed(w, "GET, POST, DELETE")
+	}
 }
 
-// handleDiagnosticsRun measures the server's own reachability to eight game and
-// voice endpoints. POST only, though it changes nothing here: one call opens eight
-// TLS connections to hosts outside this machine, and a verb the specification
-// calls safe is one a browser may prefetch, repeat on a back-button, or fire from
-// an <img src>. It accepted GET as well until now; the session gate made that
-// harmless — the token travels in a header, which an <img> cannot set — but that
-// left the gate as the only thing standing between a page the operator is looking
-// at and eight outbound dials. The dashboard has always sent POST, and so does the
-// documented contract, so nothing depended on the other verb.
+// persistDiagnosticTargetsLocked stores targets in the record and, when a
+// database is attached, persists the whole record. On a persist failure the
+// in-memory list is rolled back to what it was, so a failed save is never
+// followed by a run that dials a list the operator was told was not saved.
+//
+// ws.diagMu must be held.
+func (ws *WebServer) persistDiagnosticTargetsLocked(rec *database.DiagnosticSettings, targets []database.DiagnosticTarget) error {
+	previous := rec.GetTargets()
+	if _, err := rec.SetTargets(targets); err != nil {
+		return err
+	}
+	if ws.db == nil {
+		return nil
+	}
+	if err := ws.db.SetSetting("diagnostics", rec); err != nil {
+		_, _ = rec.SetTargets(previous)
+		return err
+	}
+	return nil
+}
+
+// handleDiagnosticsRun measures the server's own reachability to the operator's
+// configured endpoints. POST only: one call opens a TLS/TCP connection per target
+// to hosts outside this machine, and a verb the specification calls safe is one a
+// browser may prefetch, repeat on a back-button, or fire from an <img src>. The
+// session gate makes that mostly harmless — the token travels in a header an <img>
+// cannot set — but that would leave the gate as the only thing between a page the
+// operator is looking at and a burst of outbound dials.
 func (ws *WebServer) handleDiagnosticsRun(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -2436,89 +2660,18 @@ func (ws *WebServer) handleDiagnosticsRun(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	targets := []diagTarget{
-		{Name: "Riot Games (Valorant / LoL)", Target: "auth.riotgames.com:443"},
-		{Name: "Epic Games (Fortnite / Store)", Target: "launcher-public-service-prod06.ol.epicgames.com:443"},
-		{Name: "Steam Community (CS2 / Dota 2)", Target: "steamcommunity.com:443"},
-		{Name: "Discord Voice & RTC", Target: "gateway.discord.gg:443"},
-		{Name: "EA / Origin Network", Target: "api.ea.com:443"},
-		{Name: "Battle.net Blizzard", Target: "eu.actual.battle.net:443"},
-		{Name: "PUBG Mobile & PC", Target: "prod-live-front.playbattlegrounds.com:443"},
-		{Name: "Spotify CDN & Stream", Target: "apresolve.spotify.com:443"},
-	}
+	ws.diagMu.Lock()
+	configured := ws.diagnosticSettings().GetTargets()
+	ws.diagMu.Unlock()
 
-	var wg sync.WaitGroup
-	results := make([]diagResult, len(targets))
-
-	for i, t := range targets {
-		wg.Add(1)
-		go func(idx int, tgt diagTarget) {
-			defer wg.Done()
-			start := time.Now()
-			conn, err := net.DialTimeout("tcp", tgt.Target, 2500*time.Millisecond)
-			dur := float64(time.Since(start).Microseconds()) / 1000.0
-			if err != nil {
-				results[idx] = diagResult{
-					Name:      tgt.Name,
-					Target:    tgt.Target,
-					Success:   false,
-					LatencyMs: 0,
-				}
-			} else {
-				_ = conn.Close()
-				results[idx] = diagResult{
-					Name:      tgt.Name,
-					Target:    tgt.Target,
-					Success:   true,
-					LatencyMs: dur,
-				}
-			}
-		}(i, t)
-	}
-
-	wg.Wait()
-
-	successCount := 0
-	totalLatency := 0.0
-	for _, r := range results {
-		if r.Success {
-			successCount++
-			totalLatency += r.LatencyMs
-		}
-	}
-
-	// Guard the empty target list, which is the only division by zero here. The
-	// previous guard fired on score == 0 instead, so a run where every single
-	// target was unreachable — the one state an operator most needs to see —
-	// was rewritten to 100 and reported as EXCELLENT.
-	score := 100
-	avgLatency := 0.0
-	if len(targets) > 0 {
-		// math.Round, not a plain int() conversion, which truncates towards zero:
-		// 7 of 8 targets reachable is 87.5%, and truncation reported that as 87
-		// while the panel's own "reachable 7/8" line read 88. Rounding makes the
-		// score agree with the ratio it is derived from.
-		score = int(math.Round((float64(successCount) / float64(len(targets))) * 100))
-	}
-	if successCount > 0 {
-		avgLatency = totalLatency / float64(successCount)
-	}
-
-	quality := "EXCELLENT (A+)"
-	if score < 70 {
-		quality = "MODERATE (B)"
-	}
-	if score < 50 {
-		quality = "POOR (C)"
-	}
-
+	report := service.RunDiagnostics(configured)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"overall_score":   score,
-		"overall_quality": quality,
-		"avg_latency_ms":  math.Round(avgLatency*100) / 100,
-		"reachable":       successCount,
-		"total":           len(targets),
-		"results":         results,
-		"timestamp":       time.Now(),
+		"overall_score":   report.OverallScore,
+		"overall_quality": report.OverallQuality,
+		"avg_latency_ms":  report.AvgLatencyMs,
+		"reachable":       report.Reachable,
+		"total":           report.Total,
+		"results":         report.Results,
+		"timestamp":       report.Timestamp,
 	})
 }

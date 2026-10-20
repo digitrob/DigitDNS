@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func cloneServerSettings(s *database.ServerSettings) *database.ServerSettings {
 		PublicIP: s.PublicIP, BindHost: s.BindHost, WebPort: s.WebPort,
 		AdminUsername: s.AdminUsername, AdminPassword: s.AdminPassword,
 		AdminPasswordWeak: s.AdminPasswordWeak, APIKey: s.APIKey,
-		APIBind: s.APIBind, AdminPath: s.AdminPath,
+		APIBind: s.APIBind, APIBindList: append([]string(nil), s.APIBindList...), AdminPath: s.AdminPath,
 		SessionIdleMinutes: s.SessionIdleMinutes,
 		TrustedProxyCIDRs:  append([]string(nil), s.TrustedProxyCIDRs...),
 	}
@@ -144,7 +145,7 @@ func TestAdminRecoveryPersistenceFailureRollsBackWithoutRevokingOrLeaking(t *tes
 	if strings.Contains(err.Error(), "Fresh-Phrase-92!") || strings.Contains(audit.String(), "Fresh-Phrase-92!") {
 		t.Fatal("persistence failure leaked the replacement credential")
 	}
-	if got := settings.Snapshot(); got != before {
+	if got := settings.Snapshot(); !reflect.DeepEqual(got, before) {
 		t.Fatalf("runtime settings changed: before=%+v after=%+v", before, got)
 	}
 	if _, got, weak := settings.AdminCredentials(); got != beforeVerifier || weak != beforeWeak {
@@ -181,7 +182,7 @@ func TestAdminRecoveryValidatesBeforeMutation(t *testing.T) {
 		if !ok || opErr.Code != "invalid_request" {
 			t.Fatalf("request user=%q error = %T %v, want invalid_request", req.Username, err, err)
 		}
-		if got := settings.Snapshot(); got != before {
+		if got := settings.Snapshot(); !reflect.DeepEqual(got, before) {
 			t.Fatalf("invalid request mutated settings: %+v", got)
 		}
 		if _, got, gotWeak := settings.AdminCredentials(); got != verifier || gotWeak != weak {

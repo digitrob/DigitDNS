@@ -449,6 +449,23 @@ type portalData struct {
 	// the page never carries it, so the portal link stays read-only material.
 	RegisterAPIPath string
 
+	// BoundIPs is the list of addresses currently bound to the subscription, as
+	// the operator stored them — either exact host IPs or CIDR ranges (v3.1.0).
+	// They are display-only: the portal never expands a range into its members,
+	// so what the subscriber sees is exactly what the operator entered.
+	BoundIPs []string
+	// HasBoundIPs selects between the list and the "nothing registered" line.
+	// A nil or empty BoundIPs renders the hint rather than an empty heading.
+	HasBoundIPs bool
+	// MaxDevices is the subscription's ceiling on exact host addresses (CIDR
+	// entries are exempt and do not count toward it). It only decorates the
+	// "N of M addresses used" caption; the binding rules themselves are the
+	// daemon's, and a second copy here would be the one that drifts.
+	MaxDevices int
+	// BoundCountLabel is that caption, formatted in Go because it glues two
+	// numbers to a translated string. Empty when the account has no ceiling.
+	BoundCountLabel string
+
 	TrafficDisplay   string
 	TrafficRemaining string
 	// TrafficPercent is a plain decimal because it lands in a CSS length.
@@ -645,6 +662,27 @@ func (ws *WebServer) renderIPResultPage(w http.ResponseWriter, r *http.Request, 
 	data.UUID = client.UUID
 	data.Token = client.Token
 	data.RegisterAPIPath = "/ip/" + client.Token
+
+	// The registered-address list (v3.1.0). The stored slice is shown verbatim —
+	// exact IPs and operator-entered CIDRs alike — because it is the operator's
+	// own entry, not a derived view. MaxDevices travels with it only to caption
+	// the count; the ceiling is enforced in the service, not here.
+	data.BoundIPs = client.AllowedIPs
+	data.HasBoundIPs = len(client.AllowedIPs) > 0
+	data.MaxDevices = client.MaxDevices
+	if client.MaxDevices > 0 {
+		// Only exact host addresses count toward the ceiling; a CIDR is exempt
+		// (v3.1.0), so it is not counted here either — the caption has to agree
+		// with the rule the service enforces, or it tells a subscriber they are
+		// out of room while a bind still succeeds.
+		used := 0
+		for _, entry := range client.AllowedIPs {
+			if _, _, err := net.ParseCIDR(entry); err != nil {
+				used++
+			}
+		}
+		data.BoundCountLabel = fmt.Sprintf(t.LabelRegisteredCount, used, client.MaxDevices)
+	}
 
 	// The stored counter is only as fresh as the last flush. Quota enforcement uses
 	// the live total, so showing the stored one meant a subscriber whose traffic had
@@ -848,8 +886,21 @@ const portalPageHTML = `<!DOCTYPE html>
       <div class="reg-row">
         <input type="password" id="register-secret" class="reg-input" autocomplete="off"
                placeholder="{{.T.PlaceholderSecret}}" aria-label="{{.T.LabelSecret}}">
-        <button type="button" class="btn btn-primary" id="register-btn" data-reg="{{.RegisterAPIPath}}"><i class="ico ico-refresh" aria-hidden="true"></i>{{.T.BtnRegister}}</button>
+        <button type="button" class="btn btn-primary" id="register-btn" data-reg="{{.RegisterAPIPath}}"><i class="ico ico-refresh" aria-hidden="true"></i>{{.T.BtnUpdateIP}}</button>
       </div>
+
+      <!-- The custom-address row (v3.1.0). With no address the button binds the
+           caller's own address — the 1-click flow. With one, the server binds the
+           address typed here, for a gaming device behind a different NAT than the
+           phone showing the page. It posts to the same /ip/<token> endpoint and
+           carries the same out-of-band secret, so nothing here weakens C-03. -->
+      <div class="label">{{.T.LabelCustomIP}}</div>
+      <div class="reg-row">
+        <input type="text" id="register-ip" class="reg-input reg-input-ip" autocomplete="off"
+               inputmode="numeric" placeholder="{{.T.PlaceholderCustomIP}}" aria-label="{{.T.LabelCustomIP}}">
+        <button type="button" class="btn" id="register-ip-btn" data-reg="{{.RegisterAPIPath}}"><i class="ico ico-refresh" aria-hidden="true"></i>{{.T.BtnRegisterCustomIP}}</button>
+      </div>
+      <div class="hint"><i class="ico ico-info" aria-hidden="true"></i>{{.T.HintCustomIP}}</div>
       <div class="hint"><i class="ico ico-info" aria-hidden="true"></i>{{.T.HintSecret}}</div>
     </div>
 
@@ -883,6 +934,28 @@ const portalPageHTML = `<!DOCTYPE html>
           <div class="label">{{.T.LabelDetectedIP}}</div>
           <div class="value-lg value-ip mono" id="detected-ip">{{.ClientIP}}</div>
         </div>
+
+        <!-- The addresses currently bound to the subscription (v3.1.0). Read-only:
+             a subscriber sees what is registered and the register card is where it
+             changes. The list rendering is deliberately verbatim — an operator's CIDR
+             entry shows as the range, never expanded, so the page cannot imply a
+             member list the server did not enter. -->
+        <div>
+          <div class="label">{{.T.LabelRegisteredIPs}}</div>
+          {{- if .HasBoundIPs}}
+          <ul class="ip-list" id="registered-ips">
+            {{- range .BoundIPs}}
+            <li class="ip-list-item mono">{{.}}</li>
+            {{- end}}
+          </ul>
+          {{- else}}
+          <div class="ip-none" id="registered-ips" data-none-text="{{.T.LabelRegisteredNone}}">{{.T.LabelRegisteredNone}}</div>
+          {{- end}}
+          {{- if gt .MaxDevices 0}}
+          <div class="hint"><i class="ico ico-info" aria-hidden="true"></i>{{.BoundCountLabel}}</div>
+          {{- end}}
+        </div>
+
         <div class="hint"><i class="ico ico-info" aria-hidden="true"></i>{{.T.HintModem}}</div>
       </div>
 

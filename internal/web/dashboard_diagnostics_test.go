@@ -113,16 +113,19 @@ func TestDiagnosticsPanelShowsEveryFieldTheServerSends(t *testing.T) {
 		}
 	}
 
-	// The per-result fields, from the struct rather than the map. r is the loop variable in
-	// renderDiagnosticsReport, and r.name/r.target are also in storedValueExprs, so those two
-	// are pinned twice over — here for presence and there for escaping.
-	rowKeys := values(diagTagRe, goFuncBody(t, server, "type diagResult struct {"))
+	// The per-result fields, from the structured type rather than the map. r is
+	// the loop variable in renderDiagnosticsReport, and r.name/r.target are also in
+	// storedValueExprs, so those two are pinned twice over — here for presence and
+	// there for escaping. The type lives in internal/service (the runner the
+	// dashboard and the v2 route share), so it is read from there.
+	svc := readGoSource(t, "../service/diagnostics.go")
+	rowKeys := values(diagTagRe, goFuncBody(t, svc, "type DiagnosticResult struct {"))
 	if len(rowKeys) < 4 {
-		t.Fatalf("only %d json tags parsed out of diagResult — the scan is broken", len(rowKeys))
+		t.Fatalf("only %d json tags parsed out of DiagnosticResult — the scan is broken", len(rowKeys))
 	}
 	for _, key := range rowKeys {
 		if !strings.Contains(app, "r."+key) {
-			t.Errorf("diagResult carries %q and js/app.js never reads r.%s, so that column of "+
+			t.Errorf("DiagnosticResult carries %q and js/app.js never reads r.%s, so that column of "+
 				"the result is measured and dropped.", key, key)
 		}
 	}

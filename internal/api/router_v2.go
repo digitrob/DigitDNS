@@ -147,12 +147,15 @@ func (a *API) handleV2Status(w http.ResponseWriter, r *http.Request) {
 	}
 	stats := a.stats.GetLiveStats()
 	publicIP, apiBind := a.settings.Endpoint()
+	list, single := a.settings.GetAPIExposure()
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"status":    "healthy",
-		"version":   version.Get(),
-		"telemetry": stats,
-		"public_ip": publicIP,
-		"api_bind":  apiBind,
+		"status":        "healthy",
+		"version":       version.Get(),
+		"telemetry":     stats,
+		"public_ip":     publicIP,
+		"api_bind":      apiBind,
+		"api_bind_list": list,
+		"api_exposure":  apiExposureLabel(list, single),
 	})
 }
 
@@ -230,10 +233,10 @@ func (a *API) handleV2Clients(w http.ResponseWriter, r *http.Request) {
 		client, err := a.clients.ProvisionClient(service.CreateClientRequest{
 			Name: req.DisplayName,
 			Days: req.ValidityDays,
-			// v1 accepted one `ip`; v2 takes the plural list and uses the first,
-			// because the storage model is still 1-IP-bound per account and a
-			// silent multi-IP create would be a lie.
-			IP:                firstNonEmpty(req.AllowedIPs),
+			// v2 takes the plural list and attaches every entry (v3.1.0): host
+			// addresses and operator CIDRs alike. An empty list creates an account
+			// with no address on file, which the portal can bind later.
+			IPs:               req.AllowedIPs,
 			TrafficLimitGB:    req.QuotaLimitGB,
 			TrafficResetCycle: req.QuotaResetCycle,
 			Note:              req.Note,
@@ -320,8 +323,8 @@ func (p v2PatchRequest) toService() service.UpdateClientRequest {
 	if p.DisplayName != nil {
 		req.Name = p.DisplayName
 	}
-	if p.AllowedIPs != nil && len(*p.AllowedIPs) > 0 {
-		req.AllowedIP = &(*p.AllowedIPs)[0:1][0]
+	if p.AllowedIPs != nil {
+		req.AllowedIPs = p.AllowedIPs
 	}
 	if p.QuotaLimitGB != nil {
 		req.TrafficLimitGB = p.QuotaLimitGB
@@ -412,15 +415,6 @@ func v2ViewToDTO(c service.ClientView) v2ClientDTO {
 }
 
 const timeFormatRFC3339 = "2006-01-02T15:04:05Z07:00"
-
-func firstNonEmpty(ss []string) string {
-	for _, s := range ss {
-		if strings.TrimSpace(s) != "" {
-			return s
-		}
-	}
-	return ""
-}
 
 func (a *API) handleV2Upstreams(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -536,19 +530,32 @@ func (a *API) handleV2Settings(w http.ResponseWriter, r *http.Request) {
 		return
 	case http.MethodPatch:
 		var patch struct {
-			APIBind  *string `json:"api_bind"`
-			PublicIP *string `json:"public_ip"`
+			APIBind     *string   `json:"api_bind"`
+			APIBindList *[]string `json:"api_bind_list"`
+			PublicIP    *string   `json:"public_ip"`
 		}
 		if !decodeStrict(w, r, &patch) {
 			return
 		}
 		// apply minimal
+		if patch.APIBindList != nil {
+			list := netutil.NormalizeAPIBindList(*patch.APIBindList)
+			if _, err := netutil.ParseAPIBindList(list); err != nil {
+				writeProblem(w, http.StatusBadRequest, "invalid_request", "api_bind_list invalid: "+err.Error())
+				return
+			}
+			a.settings.APIBindList = list
+		}
 		if patch.APIBind != nil {
 			if _, err := netutil.ParseAPIBind(*patch.APIBind); err != nil {
 				writeProblem(w, http.StatusBadRequest, "invalid_request", "api_bind invalid")
 				return
 			}
 			a.settings.APIBind = *patch.APIBind
+			// Setting the single rule clears the list, so the two cannot disagree:
+			// the operator who types a value into the single field means that value,
+			// not "that value unless a stale list outranks it".
+			a.settings.APIBindList = nil
 		}
 		if patch.PublicIP != nil {
 			a.settings.PublicIP = *patch.PublicIP
@@ -568,14 +575,24 @@ func (a *API) handleV2Access(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
-		_ = json.NewEncoder(w).Encode(map[string]any{"allow_all": a.clients.IsAllowAll()})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"allow_all":     a.clients.IsAllowAll(),
+			"allowed_cidrs": a.clients.ResolverAllowCIDRs(),
+		})
 		return
 	case http.MethodPatch:
 		var req struct {
-			AllowAll *bool `json:"allow_all"`
+			AllowAll     *bool     `json:"allow_all"`
+			AllowedCIDRs *[]string `json:"allowed_cidrs"`
 		}
 		if !decodeStrict(w, r, &req) {
 			return
+		}
+		if req.AllowedCIDRs != nil {
+			if _, err := a.clients.SetResolverAllowCIDRs(*req.AllowedCIDRs); err != nil {
+				writeProblem(w, http.StatusBadRequest, "invalid_request", err.Error())
+				return
+			}
 		}
 		if req.AllowAll != nil {
 			if err := a.clients.SetAllowAll(*req.AllowAll); err != nil {
@@ -583,7 +600,10 @@ func (a *API) handleV2Access(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"allow_all": a.clients.IsAllowAll()})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"allow_all":     a.clients.IsAllowAll(),
+			"allowed_cidrs": a.clients.ResolverAllowCIDRs(),
+		})
 		return
 	default:
 		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or PATCH")
@@ -612,7 +632,24 @@ func (a *API) handleV2Diagnostics(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	// Run against the operator's configured targets (v3.1.0) with the same runner
+	// the dashboard uses, so the two surfaces cannot disagree on what a reachable
+	// target or a score means. An empty list reports nothing measured rather than
+	// inventing presets.
+	var rec database.DiagnosticSettings
+	if a.db != nil {
+		_ = a.db.GetSetting("diagnostics", &rec)
+	}
+	report := service.RunDiagnostics(rec.GetTargets())
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"overall_score":   report.OverallScore,
+		"overall_quality": report.OverallQuality,
+		"avg_latency_ms":  report.AvgLatencyMs,
+		"reachable":       report.Reachable,
+		"total":           report.Total,
+		"results":         report.Results,
+		"timestamp":       report.Timestamp,
+	})
 }
 
 func (a *API) handleV2Stream(w http.ResponseWriter, r *http.Request) {

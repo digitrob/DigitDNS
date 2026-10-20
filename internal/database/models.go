@@ -129,6 +129,15 @@ type ServerSettings struct {
 	APIKey  string `json:"api_key"`
 	APIBind string `json:"api_bind"` // "127.0.0.1" (default) or "0.0.0.0" or "100.64.0.0/10" (CIDR)
 
+	// APIBindList is the multi-CIDR successor to APIBind (v3.1.0): an ordered set
+	// of rules, any one of which may admit a REST peer. When it is non-empty it
+	// takes precedence over the single APIBind field, which is kept beside it so a
+	// record written by an older release still gates correctly and so a rollback to
+	// a pre-v3.1.0 binary keeps working — that binary ignores this field and reads
+	// APIBind, so a downgrade narrows access to the last single rule rather than
+	// dropping the gate entirely. netutil.ParseAPIBindList owns the meaning.
+	APIBindList []string `json:"api_bind_list"`
+
 	// AdminPath is a randomly generated hexadecimal string that obscures the admin
 	// interface to reduce casual discovery. Exactly 16 lowercase hex characters.
 	// Generated once on first run and persisted; regenerable via Settings.
@@ -255,6 +264,31 @@ type TLSSettings struct {
 	// value is the literal port alongside the panel listener, so 80 is the
 	// natural choice on a host where the SNI relay does not own it.
 	RedirectPort int `json:"redirect_port"`
+}
+
+// DiagnosticTarget is one operator-defined endpoint the Gaming Diagnostic Suite
+// dials. Name is the operator's label; Host is the address the probe connects to,
+// either a bare host (which the runner widens to :443) or an explicit host:port.
+// The list is wholly operator-owned — v3.1.0 removed the built-in game presets —
+// so the operator measures the routes they actually care about.
+type DiagnosticTarget struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+}
+
+// DiagnosticSettings holds the operator's diagnostic endpoints (v3.1.0). It is a
+// standalone settings record (key "diagnostics") rather than a ServerSettings
+// field because the target list is read and rewritten on its own from the
+// dashboard, with no coupling to the REST gate or the credential fields.
+//
+// Targets is rewritten while the daemon serves — the dashboard adds and removes
+// endpoints, and a run reads the list to dial it — so it is guarded by mu and
+// reached through the accessors in diagnostics_access.go. Copying the slice on
+// every accessor is deliberate: a caller that ranged over the live slice while a
+// save replaced it would otherwise dial a half-written list.
+type DiagnosticSettings struct {
+	mu      sync.RWMutex
+	Targets []DiagnosticTarget `json:"targets"`
 }
 
 // SubscriptionSettings describes the public subscriber surface (v2.1): the

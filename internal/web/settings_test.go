@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"digitdns/internal/database"
 )
 
 // authedGet issues a GET with a bearer token.
@@ -198,6 +200,77 @@ func TestSettingsPostRejectsBadInput(t *testing.T) {
 		if ws.settings.APIBind != v {
 			t.Errorf("api_bind stored as %q, want %q", ws.settings.APIBind, v)
 		}
+	}
+}
+
+// Multi-CIDR exposure (v3.1.0): a non-empty api_bind_list outranks the single
+// api_bind, an empty list clears it so the single rule applies again, and a
+// save carrying api_bind clears the list. The round-trip is what the dashboard
+// relies on, so it is asserted against both the live record and the persisted
+// one.
+func TestSettingsPostAPIBindListRoundTrip(t *testing.T) {
+	ws, h, tok, cleanup := authedServer(t)
+	defer cleanup()
+
+	w := postJSON(t, h, "/api/settings", `{"api_bind_list":["100.64.0.0/10","203.0.113.5"]}`, tok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("api_bind_list save = %d, want 200 — %s", w.Code, w.Body.String())
+	}
+	if got := ws.settings.GetAPIBindList(); len(got) != 2 || got[0] != "100.64.0.0/10" || got[1] != "203.0.113.5" {
+		t.Fatalf("live api_bind_list = %v, want the stored rules", got)
+	}
+	if ws.settings.APIBind != "127.0.0.1" {
+		t.Fatalf("api_bind = %q after a list save, want the loopback default", ws.settings.APIBind)
+	}
+
+	var persisted database.ServerSettings
+	if err := ws.db.GetSetting("server", &persisted); err != nil {
+		t.Fatalf("reading persisted settings: %v", err)
+	}
+	if len(persisted.APIBindList) != 2 {
+		t.Fatalf("persisted api_bind_list = %v, want the stored rules", persisted.APIBindList)
+	}
+
+	// A single-rule save is the legacy editor and must clear the list, so the
+	// list cannot linger and keep overriding the value just written.
+	w = postJSON(t, h, "/api/settings", `{"api_bind":"0.0.0.0"}`, tok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("api_bind save = %d, want 200 — %s", w.Code, w.Body.String())
+	}
+	if got := ws.settings.GetAPIBindList(); got != nil {
+		t.Fatalf("api_bind_list = %v after a single-rule save, want nil", got)
+	}
+	if ws.settings.APIBind != "0.0.0.0" {
+		t.Fatalf("api_bind = %q, want 0.0.0.0", ws.settings.APIBind)
+	}
+
+	// An empty list is how the editor expresses "cleared": the list goes away
+	// and the single field becomes authoritative again.
+	if w := postJSON(t, h, "/api/settings", `{"api_bind_list":[]}`, tok); w.Code != http.StatusOK {
+		t.Fatalf("clearing api_bind_list = %d, want 200 — %s", w.Code, w.Body.String())
+	}
+	if got := ws.settings.GetAPIBindList(); got != nil {
+		t.Fatalf("api_bind_list = %v after a clear, want nil", got)
+	}
+}
+
+func TestSettingsPostRejectsBadAPIBindList(t *testing.T) {
+	ws, h, tok, cleanup := authedServer(t)
+	defer cleanup()
+
+	before := ws.settings.GetAPIBindList()
+	cases := []string{
+		`{"api_bind_list":["100.64.0.0/10","example.com"]}`,
+		`{"api_bind_list":["10.0.0.0/33"]}`,
+		`{"api_bind_list":["0.0.0.0:8080"]}`,
+	}
+	for _, body := range cases {
+		if w := postJSON(t, h, "/api/settings", body, tok); w.Code != http.StatusBadRequest {
+			t.Errorf("%s = %d, want 400 — %s", body, w.Code, w.Body.String())
+		}
+	}
+	if got := ws.settings.GetAPIBindList(); len(got) != len(before) {
+		t.Fatalf("a rejected list save mutated api_bind_list: %v -> %v", before, got)
 	}
 }
 

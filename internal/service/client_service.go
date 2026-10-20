@@ -35,15 +35,19 @@ var ErrInvalidTrafficCycle = errors.New("invalid traffic reset cycle")
 // normalizeAllowedIP validates an operator-supplied address and returns it in the
 // one form the resolver can actually match.
 //
-// Access control here is a string lookup, not an address comparison: indexLocked
-// keys ipMap by this exact value and IsIPAllowed looks up the address the listener
-// reports, which is always Go's canonical net.IP.String() form. Anything stored in
-// another form silently whitelists nobody — and until now nothing checked, so
-// " 203.0.113.9" with a pasted space, "::FFFF:203.0.113.9" in upper case, or the
-// typo "203.0.113.999" were all accepted and displayed in the panel as the
-// client's allowed IP while that client went on being refused. The operator's only
-// symptom was a subscriber who could not resolve, with the dashboard insisting
-// their address was whitelisted.
+// Access control here is a string lookup for the common case, not an address
+// comparison: indexLocked keys ipMap by this exact value and IsIPAllowed looks up
+// the address the listener reports, which is always Go's canonical net.IP.String()
+// form. Anything stored in another form silently whitelists nobody — and until now
+// nothing checked, so " 203.0.113.9" with a pasted space, "::FFFF:203.0.113.9" in
+// upper case, or the typo "203.0.113.999" were all accepted and displayed in the
+// panel as the client's allowed IP while that client went on being refused. The
+// operator's only symptom was a subscriber who could not resolve, with the
+// dashboard insisting their address was whitelisted.
+//
+// A CIDR block ("203.0.113.0/24") is also accepted (v3.1.0) and stored in the
+// canonical network form net.ParseCIDR returns, so the prefix match IsIPAllowed
+// performs and the string the panel shows always agree.
 //
 // An empty string is valid and means "no address on file": both UpdateClient and
 // SetClientIP use it to clear the list.
@@ -58,6 +62,13 @@ func normalizeAllowedIP(raw string) (string, error) {
 		trimmed = host
 	}
 	trimmed = strings.Trim(trimmed, "[]")
+	if strings.Contains(trimmed, "/") {
+		_, network, err := net.ParseCIDR(trimmed)
+		if err != nil {
+			return "", fmt.Errorf("%w: %q", ErrInvalidIP, raw)
+		}
+		return network.String(), nil
+	}
 	ip := net.ParseIP(trimmed)
 	if ip == nil {
 		return "", fmt.Errorf("%w: %q", ErrInvalidIP, raw)
@@ -68,10 +79,51 @@ func normalizeAllowedIP(raw string) (string, error) {
 	return ip.String(), nil
 }
 
+// isCIDRString reports whether a stored allowed-address entry is a prefix rather
+// than a single host. Every CIDR normalizeAllowedIP writes carries a "/", and no
+// canonical bare address does, so a substring test is exact.
+func isCIDRString(s string) bool { return strings.Contains(s, "/") }
+
+// hostAllowedIPs reports how many entries count toward MaxDevices: the bare host
+// addresses, excluding operator CIDRs (v3.1.0). CIDRs name whole networks an
+// operator attached, not the subscriber's own devices, so they are exempt from
+// the device cap by decision.
+func hostAllowedIPs(ips []string) []string {
+	out := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if ip != "" && !isCIDRString(ip) {
+			out = append(out, ip)
+		}
+	}
+	return out
+}
+
+// trimHostIPs keeps every CIDR entry and at most limit host entries, dropping the
+// oldest host bindings first. The host list is ordered most-recent-last, so the
+// survivors are the most recent `limit`; the operator's CIDRs are always retained.
+func trimHostIPs(ips []string, limit int) []string {
+	hosts := hostAllowedIPs(ips)
+	if len(hosts) > limit {
+		hosts = hosts[len(hosts)-limit:]
+	}
+	keepHost := make(map[string]bool, len(hosts))
+	for _, h := range hosts {
+		keepHost[h] = true
+	}
+	out := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if isCIDRString(ip) || keepHost[ip] {
+			out = append(out, ip)
+		}
+	}
+	return out
+}
+
 type UpdateClientRequest struct {
 	Name           *string    `json:"name"`
 	UUID           *string    `json:"uuid"`
 	AllowedIP      *string    `json:"allowed_ip"`
+	AllowedIPs     *[]string  `json:"allowed_ips"`
 	TrafficLimitGB *float64   `json:"traffic_limit_gb"`
 	ExpiresAt      *time.Time `json:"expires_at"`
 	DaysToAdd      *int       `json:"days_to_add"`
@@ -86,6 +138,16 @@ type UpdateClientRequest struct {
 	TrafficResetCycle *string `json:"traffic_reset_cycle"`
 }
 
+// cidrClientEntry binds one operator-added prefix to the account it belongs to.
+// It is held in an ordered slice rather than a map because a source address has to
+// be tested by containment, not equality, and the list only ever holds operator
+// CIDRs — a handful at most, never the thousands of host entries ipMap is sized
+// for.
+type cidrClientEntry struct {
+	network *net.IPNet
+	client  *database.Client
+}
+
 type ClientService struct {
 	db       *database.DB
 	allowAll bool
@@ -93,6 +155,14 @@ type ClientService struct {
 	ipMap    map[string]*database.Client // in-memory fast IP lookup
 	tokenMap map[string]*database.Client // in-memory fast Token lookup
 	uuidMap  map[string]*database.Client // in-memory fast UUID lookup
+	// cidrClients holds the operator-added CIDR entries, consulted only after the
+	// exact ipMap lookup misses. Overlapping prefixes resolve first-entry-wins.
+	cidrClients []cidrClientEntry
+	// allowCIDRs / allowCIDRStrings are the server-wide resolver allowlist: source
+	// ranges served as an anonymous "Public" account while whitelist mode is on.
+	// Parsed form for matching, canonical strings for read-back.
+	allowCIDRs       []*net.IPNet
+	allowCIDRStrings []string
 	// bindMu serializes RegisterIP per token (v2.1.0 B-23 remediation): two
 	// concurrent binds both read the cached record, both saved, and the
 	// interleaving left the resolver index and the DB pointing at different
@@ -118,6 +188,7 @@ func NewClientService(db *database.DB, allowAll bool) *ClientService {
 		uuidMap:  make(map[string]*database.Client),
 		traffic:  newTrafficLedger(),
 	}
+	s.loadResolverAllowCIDRs()
 	s.reloadCache()
 	// Phase B (Mantis C-03) migration: records written before the registration
 	// secret existed get one now, so every account is enrolable the moment the
@@ -184,6 +255,7 @@ func (s *ClientService) reloadCache() {
 	s.ipMap = make(map[string]*database.Client, len(clients))
 	s.tokenMap = make(map[string]*database.Client, len(clients))
 	s.uuidMap = make(map[string]*database.Client, len(clients))
+	s.cidrClients = s.cidrClients[:0]
 	now := time.Now()
 
 	for i := range clients {
@@ -215,9 +287,16 @@ func (s *ClientService) indexLocked(c *database.Client, now time.Time) {
 		return
 	}
 	for _, ip := range c.AllowedIPs {
-		if ip != "" {
-			s.ipMap[ip] = c
+		if ip == "" {
+			continue
 		}
+		if isCIDRString(ip) {
+			if _, network, err := net.ParseCIDR(ip); err == nil {
+				s.cidrClients = append(s.cidrClients, cidrClientEntry{network: network, client: c})
+			}
+			continue
+		}
+		s.ipMap[ip] = c
 	}
 }
 
@@ -240,6 +319,16 @@ func (s *ClientService) deindexLocked(old *database.Client) {
 		delete(s.uuidMap, old.UUID)
 	}
 	for _, ip := range old.AllowedIPs {
+		if isCIDRString(ip) {
+			for i := 0; i < len(s.cidrClients); {
+				if s.cidrClients[i].client == old {
+					s.cidrClients = append(s.cidrClients[:i], s.cidrClients[i+1:]...)
+					continue
+				}
+				i++
+			}
+			continue
+		}
 		if s.ipMap[ip] == old {
 			delete(s.ipMap, ip)
 		}
@@ -296,12 +385,141 @@ func (s *ClientService) IsIPAllowed(ip string) (*database.Client, bool) {
 	defer s.mu.RUnlock()
 
 	if s.allowAll {
-		client := s.ipMap[ip]
+		client, _ := s.matchLocked(ip)
 		return client, true
 	}
 
-	client, ok := s.ipMap[ip]
+	client, ok := s.matchLocked(ip)
 	return client, ok
+}
+
+// matchLocked resolves a source address to its account. The exact-string ipMap is
+// tried first — it is the whole reason the index exists and stays a single map
+// lookup for the overwhelmingly common case of a host address. Only on a miss does
+// it fall to the operator CIDRs (a linear prefix test over a handful of entries)
+// and then the server-wide allowlist. Callers hold s.mu.
+//
+// An allowlisted source resolves to a nil client and reports true: it is served as
+// the anonymous "Public" account the handler already renders for an unidentified
+// source, unmetered and with no allowance — matching what public mode does.
+func (s *ClientService) matchLocked(ip string) (*database.Client, bool) {
+	if client, ok := s.ipMap[ip]; ok {
+		return client, true
+	}
+	if len(s.cidrClients) == 0 && len(s.allowCIDRs) == 0 {
+		return nil, false
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return nil, false
+	}
+	for _, entry := range s.cidrClients {
+		if entry.network.Contains(parsed) {
+			return entry.client, true
+		}
+	}
+	if s.matchesResolverAllowLocked(parsed) {
+		return nil, true
+	}
+	return nil, false
+}
+
+// matchesResolverAllowLocked reports whether ip falls inside the server-wide
+// allowlist. Callers hold s.mu.
+func (s *ClientService) matchesResolverAllowLocked(ip net.IP) bool {
+	for _, network := range s.allowCIDRs {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// loadResolverAllowCIDRs reads the trusted source ranges from the "access" record.
+// It runs in the constructor, before the first request, and re-runs when the
+// dashboard saves the access card. A malformed entry is dropped rather than
+// failing the load, matching how the installers write these values by hand.
+func (s *ClientService) loadResolverAllowCIDRs() {
+	raw := struct {
+		AllowedIPs []string `json:"allowed_ips"`
+	}{}
+	_ = s.db.GetSetting("access", &raw)
+	var (
+		nets  []*net.IPNet
+		canon []string
+	)
+	for _, entry := range raw.AllowedIPs {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		_, network, err := net.ParseCIDR(entry)
+		if err != nil {
+			continue
+		}
+		nets = append(nets, network)
+		canon = append(canon, network.String())
+	}
+	if canon == nil {
+		canon = []string{}
+	}
+	s.mu.Lock()
+	s.allowCIDRs = nets
+	s.allowCIDRStrings = canon
+	s.mu.Unlock()
+}
+
+// SetResolverAllowCIDRs replaces the server-wide resolver allowlist, persisting it
+// into the "access" record FIRST so a failed write cannot leave the live gate
+// open, then updating the in-memory prefixes. It preserves every other field of
+// the shared "access" record, including the DoH token list the dashboard manages.
+// It returns the canonical form it stored.
+func (s *ClientService) SetResolverAllowCIDRs(cidrs []string) ([]string, error) {
+	var (
+		nets  []*net.IPNet
+		canon []string
+	)
+	for _, entry := range cidrs {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		_, network, err := net.ParseCIDR(entry)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %q", ErrInvalidIP, entry)
+		}
+		nets = append(nets, network)
+		canon = append(canon, network.String())
+	}
+	if canon == nil {
+		canon = []string{}
+	}
+
+	// Read-modify-write of the shared "access" record so the DoH tokens the
+	// dashboard manages are preserved.
+	acc := struct {
+		AllowAll   *bool    `json:"allow_all,omitempty"`
+		DoHTokens  []string `json:"doh_tokens"`
+		AllowedIPs []string `json:"allowed_ips"`
+	}{}
+	_ = s.db.GetSetting("access", &acc)
+	acc.AllowedIPs = canon
+	if err := s.db.SetSetting("access", acc); err != nil {
+		return nil, fmt.Errorf("could not persist the resolver allowlist: %w", err)
+	}
+
+	s.mu.Lock()
+	s.allowCIDRs = nets
+	s.allowCIDRStrings = canon
+	s.mu.Unlock()
+	return canon, nil
+}
+
+// ResolverAllowCIDRs returns the canonical server-wide allowlist.
+func (s *ClientService) ResolverAllowCIDRs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return slices.Clone(s.allowCIDRStrings)
 }
 
 func (s *ClientService) IsAllowAll() bool {
@@ -342,6 +560,12 @@ type CreateClientRequest struct {
 	Name string
 	Days int
 	IP   string
+
+	// IPs is the full allowed-address list an API create may attach (v3.1.0): a
+	// mix of host addresses and operator CIDRs. When set it is used verbatim
+	// (after normalisation) instead of the single IP above, which the legacy
+	// front-ends still pass.
+	IPs []string
 
 	// ExpiresAt is the absolute moment the plan ends. Set, it wins over Days —
 	// the panel's picker answers an exact date, and rounding it into whole days
@@ -413,12 +637,27 @@ func (s *ClientService) ProvisionClient(req CreateClientRequest) (*database.Clie
 	// subscriber created without an IP used to arrive as "allowed_ips": null. Every
 	// clearing path below already writes []string{} for exactly that reason.
 	ips := []string{}
-	normalized, err := normalizeAllowedIP(req.IP)
-	if err != nil {
-		return nil, err
-	}
-	if normalized != "" {
-		ips = []string{normalized}
+	if len(req.IPs) > 0 {
+		seen := map[string]bool{}
+		for _, raw := range req.IPs {
+			normalized, err := normalizeAllowedIP(raw)
+			if err != nil {
+				return nil, err
+			}
+			if normalized == "" || seen[normalized] {
+				continue
+			}
+			seen[normalized] = true
+			ips = append(ips, normalized)
+		}
+	} else {
+		normalized, err := normalizeAllowedIP(req.IP)
+		if err != nil {
+			return nil, err
+		}
+		if normalized != "" {
+			ips = []string{normalized}
+		}
 	}
 
 	// Same reason as ips above: an omitted custom_policies must not come back as null.
@@ -481,7 +720,22 @@ func (s *ClientService) UpdateClient(id string, req UpdateClientRequest) (*datab
 		if req.UUID != nil && *req.UUID != "" {
 			client.UUID = *req.UUID
 		}
-		if req.AllowedIP != nil {
+		if req.AllowedIPs != nil {
+			normalized := make([]string, 0, len(*req.AllowedIPs))
+			seen := map[string]bool{}
+			for _, raw := range *req.AllowedIPs {
+				value, err := normalizeAllowedIP(raw)
+				if err != nil {
+					return err
+				}
+				if value == "" || seen[value] {
+					continue
+				}
+				seen[value] = true
+				normalized = append(normalized, value)
+			}
+			client.AllowedIPs = normalized
+		} else if req.AllowedIP != nil {
 			normalized, err := normalizeAllowedIP(*req.AllowedIP)
 			if err != nil {
 				return err
@@ -536,10 +790,13 @@ func (s *ClientService) UpdateClient(id string, req UpdateClientRequest) (*datab
 			// Clamp on write so a stored record is always in range; the registration
 			// path clamps again on read, so an out-of-range legacy value is harmless.
 			client.MaxDevices = database.NormalizeMaxDevices(*req.MaxDevices)
-			// Shrinking the limit trims the oldest bindings immediately, so the panel
-			// figure and the resolver agree without waiting for the next registration.
-			if len(client.AllowedIPs) > client.MaxDevices {
-				client.AllowedIPs = client.AllowedIPs[len(client.AllowedIPs)-client.MaxDevices:]
+			// Shrinking the limit trims the oldest host bindings immediately, so the
+			// panel figure and the resolver agree without waiting for the next
+			// registration. Operator CIDRs are exempt from the device count (v3.1.0)
+			// and are never trimmed — they name networks, not the subscriber's own
+			// devices, so one /24 cannot eat the whole allowance.
+			if len(hostAllowedIPs(client.AllowedIPs)) > client.MaxDevices {
+				client.AllowedIPs = trimHostIPs(client.AllowedIPs, client.MaxDevices)
 			}
 		}
 
@@ -596,6 +853,38 @@ func (s *ClientService) SetClientIP(id string, ip string) error {
 	}
 	s.reloadCache()
 	return nil
+}
+
+// SetClientAllowedIPs replaces the whole allowed-address list, validating each
+// entry through the same normalizeAllowedIP the single-address path uses. It is
+// what the dashboard's client editor and the v2/v3 create can call to attach a set
+// that mixes host addresses and operator CIDRs. An entry that is neither is
+// refused before anything is written, so a typo cannot half-apply.
+func (s *ClientService) SetClientAllowedIPs(id string, ips []string) (*database.Client, error) {
+	normalized := make([]string, 0, len(ips))
+	seen := map[string]bool{}
+	for _, raw := range ips {
+		value, err := normalizeAllowedIP(raw)
+		if err != nil {
+			return nil, err
+		}
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		normalized = append(normalized, value)
+	}
+
+	var out *database.Client
+	if _, err := s.db.UpdateClient(id, func(client *database.Client) error {
+		client.AllowedIPs = normalized
+		out = client
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	s.reloadCache()
+	return out, nil
 }
 
 // RemoveClientIP drops one address from the client's list.

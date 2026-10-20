@@ -171,8 +171,7 @@ cosign verify ghcr.io/digitrob/digitdns:latest \
 ### Option 3: Binaries
 
 Download from the [latest release](https://github.com/digitrob/DigitDNS/releases/latest) —
-assets include `digitdns-linux-amd64`, `digitdns-linux-arm64`,
-`digitdns-windows-amd64.exe`, `digitdns-darwin-arm64`, `digitdns-darwin-amd64`.
+assets include `digitdns-linux-amd64` and `digitdns-linux-arm64`.
 Checksums are in `checksums.txt` (signed with the project's release key).
 
 ```bash

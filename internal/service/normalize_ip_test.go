@@ -39,6 +39,14 @@ func TestNormalizeAllowedIP(t *testing.T) {
 		// rely on to clear the list. It is not an error.
 		{"empty", "", ""},
 		{"only whitespace", "   ", ""},
+
+		// CIDR blocks (v3.1.0) are accepted and stored in canonical network form,
+		// so the prefix match the resolver performs and the panel display agree.
+		{"v4 CIDR", "203.0.113.0/24", "203.0.113.0/24"},
+		{"v4 CIDR with host bits set is masked to the network", "203.0.113.9/24", "203.0.113.0/24"},
+		{"v6 CIDR", "2001:db8::/32", "2001:db8::/32"},
+		{"v4 CIDR with a pasted space", "  203.0.113.0/24 ", "203.0.113.0/24"},
+		{"a bare IP CIDR is not produced, but /32 is kept", "203.0.113.9/32", "203.0.113.9/32"},
 	}
 
 	for _, tc := range tests {
@@ -65,7 +73,9 @@ func TestNormalizeAllowedIPRejects(t *testing.T) {
 		{"three octets", "203.0.113"},
 		{"five octets", "203.0.113.9.1"},
 		{"a hostname is not an address", "dns.example.com"},
-		{"a CIDR block is not an address", "203.0.113.0/24"},
+		{"a malformed CIDR prefix", "203.0.113.0/33"},
+		{"a CIDR with a non-numeric mask", "203.0.113.0/abc"},
+		{"a hostname CIDR", "example.com/24"},
 		{"leading zeros are ambiguous between octal and decimal", "010.1.1.1"},
 		{"negative octet", "203.0.113.-1"},
 		{"letters in a v4", "203.0.113.9a"},

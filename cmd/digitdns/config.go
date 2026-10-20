@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"digitdns/internal/database"
+	"digitdns/internal/netutil"
 )
 
 // sniProxyFile mirrors the SNI proxy block of config.json.
@@ -68,6 +69,9 @@ type fileConfig struct {
 		AdminPassword *string `json:"admin_password"`
 		APIKey        *string `json:"api_key"`
 		APIBind       *string `json:"api_bind"`
+		// APIBindList is the multi-CIDR REST exposure rule (v3.1.0). When present
+		// and non-empty it outranks api_bind; see ServerSettings.APIBindList.
+		APIBindList *[]string `json:"api_bind_list"`
 	} `json:"server"`
 	DNS *struct {
 		Enabled       *bool     `json:"enabled"`
@@ -135,6 +139,9 @@ func applyConfigFile(path string, server *database.ServerSettings, dns *database
 		}
 		if s.APIBind != nil {
 			server.APIBind = *s.APIBind
+		}
+		if s.APIBindList != nil {
+			server.APIBindList = netutil.NormalizeAPIBindList(*s.APIBindList)
 		}
 	}
 

@@ -277,6 +277,12 @@ func TestPortalMarkupWiringMatchesTheScript(t *testing.T) {
 	for _, id := range []string{
 		"toast", "detected-ip", "traffic-display", "traffic-fill", "traffic-remaining",
 		"quota-pill", "cd-days", "cd-hours", "cd-mins",
+		// The registered-address list and the custom-address field (v3.1.0). The
+		// script rebuilds the first after a bind and reads the second to decide
+		// whether the request carries an explicit address; a rename on either side
+		// would leave the list stale and the custom row silently binding the wrong
+		// address — the caller's own instead of the one typed.
+		"registered-ips", "register-ip",
 	} {
 		if !strings.Contains(page, `id="`+id+`"`) {
 			t.Errorf(`portalPageHTML has no id=%q — js/portal.js writes to it, so that `+

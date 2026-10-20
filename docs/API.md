@@ -151,9 +151,9 @@ curl -s http://127.0.0.1:8080/api/v1/version
 #### Response (`200 OK`)
 ```json
 {
-  "version": "3.0.0",
+  "version": "3.1.0",
   "channel": "stable",
-  "display": "v3.0.0-stable",
+  "display": "v3.1.0-stable",
   "hash": "3585f9bf",
   "go": "go1.26"
 }
@@ -182,15 +182,17 @@ same payload the dashboard polls. Every field below is present on every response
 {
   "status": "healthy",
   "version": {
-    "version": "3.0.0",
+    "version": "3.1.0",
     "channel": "stable",
-    "display": "v3.0.0-stable",
+    "display": "v3.1.0-stable",
     "hash": "3585f9bf",
     "go": "go1.26"
   },
   "timestamp": "2026-09-01T19:30:00Z",
   "public_ip": "95.179.140.241",
   "api_bind": "127.0.0.1",
+  "api_bind_list": ["100.64.0.0/10", "203.0.113.5"],
+  "api_exposure": "100.64.0.0/10, 203.0.113.5",
   "telemetry": {
     "total_queries": 163240,
     "qps": 42.5,
@@ -574,6 +576,8 @@ curl -s http://127.0.0.1:8080/api/v1/api-key \
 
 `api_bind` is the operational half of this response: `127.0.0.1` means the REST API answers **only** the server itself, and a call from anywhere else gets the `403` described above however valid the key is. `0.0.0.0` means **Public API** is on and the key is the only thing standing in front of an admin surface.
 
+Since v3.1.0 the exposure rule may also be a **list** of addresses and CIDR blocks, reported as `api_bind_list`. The list is the multi-CIDR successor to `api_bind` and follows union semantics: a peer is admitted if **any** rule matches, loopback is always admitted, and an empty or absent list means loopback-only. When `api_bind_list` is non-empty it outranks `api_bind` (which the server reports back as `127.0.0.1`); when the list is empty the single `api_bind` rule is authoritative. The dashboard's "Custom addresses / CIDRs" editor writes the list, and its "Custom IP / CIDR" editor writes the single rule and clears the list.
+
 ### `POST /api/v1/api-key` — Regenerate Master API Key
 Generates a new administrative Master API Key.
 
@@ -678,22 +682,102 @@ Every subscriber's next query for every name then goes upstream, so on a busy re
 
 ---
 
+## 🔬 6b. Server Diagnostics (`/diagnostics`) — v3.1.0
+
+The diagnostic suite measures the server's own reachability and latency to endpoints **you** define. The built-in game presets were removed in v3.1.0: the target list is wholly operator-owned, so you measure the routes you actually care about.
+
+### `GET /api/diagnostics/targets` — List configured endpoints
+Admin session required (dashboard).
+
+```bash
+curl -s http://127.0.0.1:8080/api/diagnostics/targets \
+  -H "Authorization: Bearer digitdns_session_your_token"
+```
+
+```json
+{
+  "targets": [
+    { "name": "Home game server", "host": "game.example.com:443" }
+  ]
+}
+```
+
+`host` is always the dial-ready `host:port`: a bare host is stored widened to `:443`, and an explicit port is kept as written.
+
+### `POST /api/diagnostics/targets` — Add or edit an endpoint
+Body: `{"name":"...","host":"..."}`. A non-empty name is required. `host` must be a hostname or IP address, optionally with a port; a scheme (`https://…`) or path is rejected. Adding a host that already exists replaces its label rather than creating a duplicate. The response is the full, updated list.
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/api/diagnostics/targets \
+  -H "Authorization: Bearer digitdns_session_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Voice server","host":"203.0.113.9:27015"}'
+```
+
+A `400` carries the reason (empty name, or an unparseable host); nothing is stored on rejection.
+
+### `DELETE /api/diagnostics/targets?host=…` — Remove an endpoint
+`host` may be the stored `host:port` or the bare host you entered. Removing an unknown host is a `404`.
+
+### `POST /api/diagnostics/run` — Run the probe
+Dials every configured endpoint in parallel and summarises the result. A dial that does not complete within 2.5 s is reported as unreachable with a `0` latency — the row an operator most needs to see.
+
+```json
+{
+  "overall_score": 88,
+  "overall_quality": "EXCELLENT (A+)",
+  "avg_latency_ms": 42.13,
+  "reachable": 7,
+  "total": 8,
+  "results": [
+    { "name": "Home game server", "target": "game.example.com:443", "success": true, "latency_ms": 39.7 }
+  ],
+  "timestamp": "2026-10-20T18:30:00Z"
+}
+```
+
+`overall_score` is the rounded percentage of reachable targets (`0`–`100`); `avg_latency_ms` averages only the endpoints that answered. An empty list runs cleanly and reports `total: 0`, `overall_score: 100` — "nothing to test" is not "everything failed".
+
+### `POST /api/v2/diagnostics` — Run the probe over the REST API
+The bearer-key twin of the dashboard run: it dials the same configured list through the same runner and returns the same report shape. `POST` only. An empty list reports `total: 0`.
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/api/v2/diagnostics \
+  -H "X-API-Key: digitdns_live_your_key_here"
+```
+
+Unlike the dashboard's config endpoints, the v2 route only **runs** the probe; managing the target list is a dashboard (session-authenticated) operation in v3.1.0. Full list CRUD over the REST API arrives with API v3.
+
+---
+
 ## 🔗 7. Subscriber Portal Links (`/sub/`, `/ip/`)
 
-These three routes are **unauthenticated by design** — the token in the path *is* the credential — and they are the only ones a subscriber ever touches. They take `GET` and nothing else (not even `HEAD`), because opening one is a write.
+These routes are **unauthenticated by design** — the token in the path *is* the
+read credential — and they are the only ones a subscriber ever touches. Reads take
+`GET`/`HEAD`; the one write is a `POST` gated by the out-of-band registration secret
+(Mantis C-03).
 
 | Route | What it does |
 | :--- | :--- |
-| `GET /sub/{token}` | Binds the caller's current IP to the subscription and renders the subscriber portal page (quota, expiry countdown, setup guide). `GET /ip/{token}` is the same handler under the older path. |
-| `GET /api/sub/{token}/sync` | The JSON half, called by the portal's *“Update my IP”* button. Registers the caller's IP and returns the account's live figures. |
+| `GET /sub/{token}` | Renders the subscriber portal page (identity, the address this visit was seen from, the registered-address list, quota, expiry countdown, setup guide). **Read-only — it never binds.** `GET /ip/{token}` serves a no-script explainer page under the older path. |
+| `GET /api/sub/{token}` | The JSON half of the overview, keyed by the token. Read-only. |
+| `POST /ip/{token}` | The subscriber's one write. Body `{"secret": "...", "ip": "203.0.113.9" (optional)}`; with no `ip` the caller's own address is bound, with one that explicit address is bound. See §7c below. |
 
-**A subscription link is a write, and that is the point.** A registration *replaces* the account's single allowed IP with the caller's address, which is what makes the link a one-click fix for a subscriber whose home IP just changed. It also means anything that fetches the link on their behalf would take the subscription:
+**A subscription link is read-only.** Binding moved off the GET route in Phase B: a
+registration *adds* the caller's address to the account's allowed set, and the only
+thing that can trigger one is a deliberate `POST` carrying the registration secret —
+which travels out-of-band, separate from the portal link. So anything that merely
+fetches the link on a subscriber's behalf (a chat unfurler, a browser prefetch, a
+search-engine crawler) reads the page and changes nothing.
 
-- **Link previews and prefetches are detected and suppressed.** A fetch that identifies itself as speculative (`Sec-Purpose`, `Purpose`, `X-Purpose`, `X-Moz`) or carries a known crawler / unfurler `User-Agent` (Telegram, WhatsApp, Discord, Slack, search engines, …) resolves the token **read-only**: the real page is rendered, no address is bound, and the page says so and points at the sync button. So a bot may post the link into a chat safely.
-- **`curl` and `wget` are not treated as crawlers.** A router script or cron job on the subscriber's network hitting this URL after a reconnect is asking for exactly that registration.
-- **`/api/sub/{token}/sync` always registers**, whatever the `User-Agent` claims. It is reached only from an already-open page, and it is the recovery path when the detection above guesses wrong — so it is never suppressed.
+- **Link previews and prefetches see the same read-only page as anyone else.** Any `GET`, whatever its purpose headers or `User-Agent`, resolves the token for display only; the page says which address it saw and points at the register card. A bot may post the link into a chat safely.
+- **Binding requires the secret.** `POST /ip/{token}` with the wrong secret answers exactly like an unknown token, and is never reached from a preview — see §7c.
 
-The detection is advisory: a crawler presenting a browser's `User-Agent` cannot be told apart from a subscriber. If you distribute these links at scale and want a guarantee, send the subscriber to the page and let them press the button, or bind the address yourself with `PUT /api/v1/clients/{id}` from your own backend.
+The token is still not a secret the way the registration secret is: anyone holding
+the link can *read* the account's overview. If you distribute links at scale and want
+the binding itself to be automatic on reconnect, either send the subscriber to the
+page to press the button, or bind the address yourself with `PUT /api/v1/clients/{id}`
+from your own backend.
 
 **An unknown, deleted or expired token does not answer an error status on the HTML route.** `GET /sub/{token}` renders a bilingual "the link is invalid" or "your plan has expired" page with `200 OK`, because the recipient is a person and a browser error page would tell them nothing. The JSON route is the one to probe from a script: `GET /api/sub/{token}` answers `404` with `{"success": false, "error": "..."}`. So a monitor that checks a subscriber's link is alive must call the JSON path — the HTML one is `200` either way.
 

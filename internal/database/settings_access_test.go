@@ -45,7 +45,7 @@ func TestNilReceiverAccessorsAreSafe(t *testing.T) {
 	if user, verifier, weak := s.AdminCredentials(); user != "" || verifier != "" || weak {
 		t.Errorf("AdminCredentials on a nil receiver = %q/%q/%v, want empty", user, verifier, weak)
 	}
-	if snap := s.Snapshot(); snap != (ServerSettingsSnapshot{}) {
+	if snap := s.Snapshot(); !reflect.DeepEqual(snap, ServerSettingsSnapshot{}) {
 		t.Errorf("Snapshot on a nil receiver = %+v, want the zero value", snap)
 	}
 
@@ -90,6 +90,7 @@ func fullSettings() *ServerSettings {
 		AdminPasswordWeak:  true,
 		APIKey:             "digitdns_live_0123456789abcdef",
 		APIBind:            "127.0.0.1",
+		APIBindList:        []string{"203.0.113.0/24", "198.51.100.7"},
 		AdminPath:          "a1b2c3d4e5f67890",
 		SessionIdleMinutes: 30,
 		TrustedProxyCIDRs:  []string{"10.0.0.0/8"},
@@ -130,10 +131,11 @@ func TestSnapshotReportsTheCurrentValues(t *testing.T) {
 		AdminPasswordWeak:  true,
 		APIKey:             "digitdns_live_0123456789abcdef",
 		APIBind:            "127.0.0.1",
+		APIBindList:        []string{"203.0.113.0/24", "198.51.100.7"},
 		AdminPath:          "a1b2c3d4e5f67890",
 		SessionIdleMinutes: 30,
 	}
-	if got := s.Snapshot(); got != want {
+	if got := s.Snapshot(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Snapshot() = %+v, want %+v", got, want)
 	}
 }
@@ -198,7 +200,7 @@ func TestUpdateAndPersistRestoresEveryFieldOnFailure(t *testing.T) {
 	// A failed write that leaves the new credential in memory is worse than a
 	// failed write: the operator's integrations work until the next restart and
 	// then fail together.
-	if got := s.Snapshot(); got != want {
+	if got := s.Snapshot(); !reflect.DeepEqual(got, want) {
 		t.Errorf("after a failed persist Snapshot() = %+v, want %+v", got, want)
 	}
 	if _, got, _ := s.AdminCredentials(); got != wantVerifier {
@@ -213,7 +215,7 @@ func TestUpdateAndPersistToleratesNilCallbacks(t *testing.T) {
 	if err := s.UpdateAndPersist(nil, nil); err != nil {
 		t.Fatalf("UpdateAndPersist(nil, nil) = %v, want nil", err)
 	}
-	if got := s.Snapshot(); got != want {
+	if got := s.Snapshot(); !reflect.DeepEqual(got, want) {
 		t.Errorf("settings changed with no mutate callback: %+v", got)
 	}
 

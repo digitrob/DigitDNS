@@ -222,8 +222,8 @@
             <i data-feather="check-circle" class="w-5 h-5"></i>
           </div>
           <div>
-            <h2 id="diagnostics-title" class="text-sm sm:text-base font-bold text-white font-heading">Gaming Diagnostic Suite</h2>
-            <p class="text-[11px] text-slate-400">Verifying VPS route latency & handshake</p>
+            <h2 id="diagnostics-title" class="text-sm sm:text-base font-bold text-white font-heading">Server Diagnostic Suite</h2>
+            <p class="text-[11px] text-slate-400">Measure reachability & latency to your own servers</p>
           </div>
         </div>
         <button id="close-diagnostics-btn" aria-label="Close diagnostics" class="text-slate-400 hover:text-white p-1">
@@ -235,7 +235,7 @@
         <!-- Diagnostic Score Banner -->
         <div class="p-3 sm:p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-2">
           <div>
-            <div class="text-[10px] text-slate-400 font-mono">GAMING SUITABILITY SCORE</div>
+            <div class="text-[10px] text-slate-400 font-mono">SUITABILITY SCORE</div>
             <div id="diag-score" class="text-2xl sm:text-3xl font-extrabold font-heading text-emerald-400 mt-0.5">--%</div>
             <div id="diag-quality" class="text-[11px] font-semibold text-cyan-400 mt-0.5">Ready to test</div>
           </div>
@@ -244,11 +244,30 @@
           </button>
         </div>
 
-        <!-- Diagnostic Items List. The eight names here are the targets handleDiagnosticsRun
-             actually dials; the copy used to list "PUBG, CoD, and EA" and omit Battle.net and
-             Spotify, which is a claim about what was measured rather than a label. -->
+        <!-- Target editor (v3.1.0): the operator owns the endpoint list, so it is
+             added and removed here rather than shipped as hidden presets. -->
+        <div class="p-3 sm:p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+          <div class="text-[10px] text-slate-400 font-mono">MY SERVERS</div>
+          <div id="diag-targets-list" class="space-y-1.5">
+            <div class="text-xs text-slate-500 text-center py-3">No servers yet — add one below to measure its latency.</div>
+          </div>
+          <form id="diag-target-form" class="flex flex-col sm:flex-row gap-2">
+            <input type="text" id="diag-target-name" placeholder="Name (e.g. Game server)" autocomplete="off" aria-label="Diagnostic server name"
+              class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:border-cyan-500/50 outline-none">
+            <input type="text" id="diag-target-host" placeholder="Host or host:port" autocomplete="off" spellcheck="false" aria-label="Diagnostic server host or host and port"
+              class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-slate-200 focus:border-cyan-500/50 outline-none">
+            <button type="submit" id="diag-target-add"
+              class="px-3 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 rounded-lg text-xs font-bold font-heading flex items-center justify-center gap-1.5 transition whitespace-nowrap">
+              <i data-feather="plus" class="w-3.5 h-3.5"></i> Add
+            </button>
+          </form>
+        </div>
+
+        <!-- Diagnostic Items List. The rows here are the configured targets the
+             run actually dials, so the panel never claims to have measured a
+             route the operator did not add. -->
         <div id="diag-items-list" class="space-y-1.5 max-h-72 overflow-y-auto pe-1">
-          <div class="text-xs text-slate-500 text-center py-6">Click "Run Test" to benchmark routes to Riot, Epic, Steam, Discord, EA, Battle.net, PUBG and Spotify.</div>
+          <div class="text-xs text-slate-500 text-center py-6">Add your servers above, then click "Run Test" to measure reachability and latency.</div>
         </div>
       </div>
     </div>
@@ -383,9 +402,10 @@
           </div>
 
           <div>
-            <label for="edit-client-ip" class="block text-[11px] font-semibold text-slate-400 mb-1">Manual IP Address (Optional)</label>
-            <input type="text" id="edit-client-ip" placeholder="e.g. 5.200.10.42"
+            <label for="edit-client-ip" class="block text-[11px] font-semibold text-slate-400 mb-1">Manual IP Addresses (Optional, comma-separated)</label>
+            <input type="text" id="edit-client-ip" placeholder="e.g. 5.200.10.42, 203.0.113.0/24"
               class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
+            <p class="text-[10px] text-slate-500 mt-1">Host addresses and CIDR blocks are both accepted. CIDRs are exempt from the device limit.</p>
           </div>
         </div>
 
@@ -591,10 +611,10 @@
           </div>
 
           <div>
-            <label for="client-initial-ip" class="block text-[11px] font-semibold text-slate-400 mb-1">INITIAL IP ADDRESS (OPTIONAL)</label>
-            <input type="text" id="client-initial-ip" placeholder="e.g. 2.189.86.32 (or leave blank for auto-link)"
+            <label for="client-initial-ip" class="block text-[11px] font-semibold text-slate-400 mb-1">INITIAL IP ADDRESS / CIDR (OPTIONAL)</label>
+            <input type="text" id="client-initial-ip" placeholder="e.g. 2.189.86.32, 203.0.113.0/24"
               class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
-            <p class="text-[10px] text-slate-500 mt-1">If blank, client can self-register using their personal URL.</p>
+            <p class="text-[10px] text-slate-500 mt-1">Comma- or space-separated. Accepts bare IPs and CIDR ranges. Leave blank to let the client self-register via their personal URL.</p>
           </div>
         </div>
 
@@ -1252,7 +1272,7 @@
                   <span id="access-mode-badge" class="badge badge-direct">PUBLIC ACCESS</span>
                 </div>
                 <p class="text-xs text-slate-300 mt-1 leading-relaxed max-w-2xl">
-                  <strong>When Enabled (Shelter / Shecan Style):</strong> Only whitelisted client IP addresses can resolve DNS and access gaming routes. Unregistered IPs are refused access.
+                  <strong>When Enabled (Shelter / Shecan Style):</strong> Only whitelisted client IP addresses can use the service. Unregistered IPs are refused access.
                 </p>
               </div>
             </div>
@@ -1264,6 +1284,20 @@
                 <span class="slider"></span>
               </label>
             </div>
+          </div>
+
+          <!-- Server-wide resolver allowlist (v3.1.0). These CIDR blocks are served
+               as an anonymous Public account while whitelist mode is on, so an
+               operator can trust a whole office or datacenter range without
+               creating an account for every address. -->
+          <div class="mt-4 pt-4 border-t border-slate-700">
+            <label for="access-allow-cidrs" class="block text-[11px] font-semibold text-slate-400 mb-1">Server-wide Resolver Allowlist (CIDR, comma or newline separated)</label>
+            <div class="flex flex-col sm:flex-row gap-2">
+              <input type="text" id="access-allow-cidrs" placeholder="e.g. 203.0.113.0/24, 198.51.100.5"
+                class="flex-1 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
+              <button type="button" id="access-allow-cidrs-save" class="px-4 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-xs font-bold font-heading whitespace-nowrap">Save Allowlist</button>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-1">These ranges are served as anonymous <span class="font-mono">Public</span> (unmetered) while whitelist mode is on. Bare IPs are widened to /32 or /128.</p>
           </div>
         </div>
 
@@ -1444,7 +1478,7 @@
             </div>
             <a href="/api/v1/docs" target="_blank" class="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-onfill font-bold rounded-xl text-xs font-heading flex items-center gap-2 transition shadow-lg shadow-purple-500/20">
               <i data-feather="book-open" class="w-4 h-4"></i>
-              <span>Interactive Swagger Docs</span>
+              <span>API Reference (OpenAPI)</span>
             </a>
           </div>
         </div>
@@ -1467,16 +1501,20 @@
           <div class="flex flex-col gap-3 p-4 rounded-xl bg-slate-950/80 border border-slate-800">
             <div class="text-xs font-bold text-white font-heading">API exposure</div>
             <p class="text-[11px] text-slate-400 leading-relaxed max-w-xl">
-              Choose who may reach the REST API. <strong class="text-amber-300">Public (0.0.0.0)</strong> requires an active custom domain and HTTPS to protect credentials. <strong class="text-amber-300">Custom IP/CIDR</strong> lets you restrict to a specific address or network (e.g. a tailnet <code class="text-cyan-400">100.64.0.0/10</code>) while always allowing local calls.
+              Choose who may reach the REST API. <strong class="text-amber-300">Public (0.0.0.0)</strong> requires an active custom domain and HTTPS to protect credentials. Add one or more <strong class="text-amber-300">addresses or networks</strong> below to admit several at once (e.g. a tailnet <code class="text-cyan-400">100.64.0.0/10</code> plus a home IP) — local calls are always allowed.
             </p>
             <div class="flex flex-wrap gap-2" role="radiogroup" aria-label="API exposure scope">
               <button type="button" class="api-bind-opt px-3 py-1.5 rounded-lg text-xs font-bold font-heading transition" data-bind="127.0.0.1">Localhost only</button>
               <button type="button" class="api-bind-opt px-3 py-1.5 rounded-lg text-xs font-bold font-heading transition" data-bind="0.0.0.0">Public (0.0.0.0)</button>
-              <button type="button" class="api-bind-opt px-3 py-1.5 rounded-lg text-xs font-bold font-heading transition" data-bind="__custom__">Custom IP / CIDR</button>
+              <button type="button" class="api-bind-opt px-3 py-1.5 rounded-lg text-xs font-bold font-heading transition" data-bind="__custom__">Custom addresses / CIDRs</button>
             </div>
-            <div id="api-bind-custom-wrap" class="flex flex-col sm:flex-row gap-2 hidden">
-              <input id="api-bind-custom-input" aria-label="Custom API bind IP or CIDR" class="flex-1 min-w-0 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-slate-300" placeholder="e.g. 100.64.0.0/10 or 203.0.113.5" spellcheck="false" autocomplete="off">
-              <button id="api-bind-custom-save" class="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs font-heading transition whitespace-nowrap">Apply CIDR</button>
+            <div id="api-bind-custom-wrap" class="flex flex-col gap-2 hidden">
+              <textarea id="api-bind-list-input" aria-label="REST API allowed addresses or CIDR blocks" rows="3" class="w-full min-w-0 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-slate-300 resize-y" placeholder="One per line, e.g.&#10;100.64.0.0/10&#10;203.0.113.5" spellcheck="false" autocomplete="off"></textarea>
+              <div class="flex flex-col sm:flex-row gap-2">
+                <input id="api-bind-custom-input" aria-label="Add one API bind address or CIDR" class="flex-1 min-w-0 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-slate-300" placeholder="Add one: e.g. 100.64.0.0/10 or 203.0.113.5" spellcheck="false" autocomplete="off">
+                <button id="api-bind-add" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs font-heading transition whitespace-nowrap">Add</button>
+                <button id="api-bind-custom-save" class="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs font-heading transition whitespace-nowrap">Apply list</button>
+              </div>
             </div>
           </div>
         </div>

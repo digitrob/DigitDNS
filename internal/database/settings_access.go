@@ -62,6 +62,10 @@ type ServerSettingsSnapshot struct {
 	// SessionIdleMinutes is the configured dashboard idle window (Phase D);
 	// GetSessionIdleMinutes applies the clamping rules.
 	SessionIdleMinutes int
+	// APIBindList is the multi-CIDR REST exposure rule (v3.1.0). It is carried in
+	// the snapshot because the settings page displays it and because the REST gate
+	// reads it; see ServerSettings.APIBindList for the precedence rule.
+	APIBindList []string
 }
 
 // MutableSettings is the subset of ServerSettings that changes at runtime, handed
@@ -74,6 +78,7 @@ type ServerSettingsSnapshot struct {
 type MutableSettings struct {
 	PublicIP          string
 	APIBind           string
+	APIBindList       []string
 	APIKey            string
 	AdminUsername     string
 	AdminPassword     string
@@ -128,6 +133,40 @@ func (s *ServerSettings) GetAPIBind() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.APIBind
+}
+
+// GetAPIBindList returns the multi-CIDR REST exposure rule (v3.1.0), or nil when
+// it is not set. A caller that wants the rule actually in force must consult this
+// BEFORE GetAPIBind: a non-empty list wins, and the single APIBind is the
+// fallback for records written before the list existed. GetAPIExposure below
+// encodes that precedence in one place.
+func (s *ServerSettings) GetAPIBindList() []string {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]string(nil), s.APIBindList...)
+}
+
+// GetAPIExposure returns the REST exposure rule in force as an ordered list plus a
+// legacy single value, already resolved for precedence: when the list is
+// non-empty the single value is reported empty, so a caller cannot accidentally
+// apply both. Exactly one of the two results is meaningful; the list wins.
+//
+// It exists so the gate (internal/api) and the display paths read the precedence
+// from one function rather than each re-implementing "list, else single" and
+// drifting on which one is authoritative.
+func (s *ServerSettings) GetAPIExposure() (list []string, single string) {
+	if s == nil {
+		return nil, ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.APIBindList) > 0 {
+		return append([]string(nil), s.APIBindList...), ""
+	}
+	return nil, s.APIBind
 }
 
 // GetAdminPath returns the hidden admin path segment in force, or "" when
@@ -191,6 +230,7 @@ func (s *ServerSettings) Snapshot() ServerSettingsSnapshot {
 		AdminPasswordWeak:  s.AdminPasswordWeak,
 		APIKey:             s.APIKey,
 		APIBind:            s.APIBind,
+		APIBindList:        append([]string(nil), s.APIBindList...),
 		AdminPath:          s.AdminPath,
 		SessionIdleMinutes: s.SessionIdleMinutes,
 	}
@@ -220,6 +260,7 @@ func (s *ServerSettings) UpdateAndPersist(mutate func(*MutableSettings), persist
 	before := MutableSettings{
 		PublicIP:           s.PublicIP,
 		APIBind:            s.APIBind,
+		APIBindList:        append([]string(nil), s.APIBindList...),
 		APIKey:             s.APIKey,
 		AdminUsername:      s.AdminUsername,
 		AdminPassword:      s.AdminPassword,
@@ -248,6 +289,7 @@ func (s *ServerSettings) UpdateAndPersist(mutate func(*MutableSettings), persist
 func (s *ServerSettings) applyLocked(m MutableSettings) {
 	s.PublicIP = m.PublicIP
 	s.APIBind = m.APIBind
+	s.APIBindList = append([]string(nil), m.APIBindList...)
 	s.APIKey = m.APIKey
 	s.AdminUsername = m.AdminUsername
 	s.AdminPassword = m.AdminPassword
@@ -302,6 +344,7 @@ func (s *ServerSettings) PersistWebPort(port int, persist func(*ServerSettings) 
 		AdminPasswordWeak:  s.AdminPasswordWeak,
 		APIKey:             s.APIKey,
 		APIBind:            s.APIBind,
+		APIBindList:        append([]string(nil), s.APIBindList...),
 		AdminPath:          s.AdminPath,
 		SessionIdleMinutes: s.SessionIdleMinutes,
 		TrustedProxyCIDRs:  s.TrustedProxyCIDRs,

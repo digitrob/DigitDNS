@@ -75,6 +75,16 @@ type portalText struct {
 	PillBound       string
 	LabelDetectedIP string
 	HintModem       string
+	// LabelRegisteredIPs heads the list of the addresses currently bound to the
+	// subscription (v3.1.0). LabelRegisteredNone is shown instead when the list
+	// is empty, so the card never renders a heading over nothing.
+	LabelRegisteredIPs  string
+	LabelRegisteredNone string
+	// LabelRegisteredCount is glued to the counts in Go (used / max), the same way
+	// WordRemaining is glued to the remaining figure, so it is a field and not a
+	// literal in the template.
+	LabelRegisteredCount string
+	BtnUpdateIP          string
 
 	// Traffic card. WordRemaining, Unlimited, LifetimeLabel and the three cycle names are
 	// formatted in Go rather than in the template, because each is glued to a number.
@@ -166,11 +176,18 @@ type portalText struct {
 	CardRegister      string
 	LabelSecret       string
 	PlaceholderSecret string
-	BtnRegister       string
 	HintSecret        string
 	MsgRegisterOK     string
 	MsgRegisterFail   string
 	MsgRegisterDenied string
+	// The custom-address row (v3.1.0): the subscriber whose gaming device sits
+	// behind a different NAT than the phone holding the page types that device's
+	// address here. LabelCustomIP and PlaceholderCustomIP name the field; the
+	// button posts it with the same out-of-band secret.
+	LabelCustomIP       string
+	PlaceholderCustomIP string
+	BtnRegisterCustomIP string
+	HintCustomIP        string
 	// One line per machine-readable `reason` the registration API can return.
 	// The portal is bilingual and the API answers in English, so these are what
 	// the subscriber actually reads when a bind is refused: telling someone with
@@ -214,6 +231,10 @@ var portalEn = portalText{
 	LabelDetectedIP: "Detected IP:",
 	HintModem: "Your IP changes every time your modem or connection restarts. " +
 		"When that happens, open this page again and press “Update my IP”.",
+	LabelRegisteredIPs:   "Registered addresses:",
+	LabelRegisteredNone:  "No address is registered yet. Use the box below to register the address this device is seen from.",
+	LabelRegisteredCount: "%d of %d addresses used",
+	BtnUpdateIP:          "Update my IP",
 
 	CardTraffic:    "Traffic usage",
 	LabelRemaining: "Remaining:",
@@ -308,8 +329,11 @@ var portalEn = portalText{
 	CardRegister:         "Register or update your IP",
 	LabelSecret:          "Registration secret:",
 	PlaceholderSecret:    "Paste your registration secret here",
-	BtnRegister:          "Register my IP",
 	HintSecret:           "Your provider handed you the registration secret when you bought the plan. After a modem reset, open this page, paste the secret, and press the button.",
+	LabelCustomIP:        "Register a specific address:",
+	PlaceholderCustomIP:  "e.g. 203.0.113.9",
+	BtnRegisterCustomIP:  "Register this address",
+	HintCustomIP:         "Use this when the device you want to protect (a console, a TV box) reaches the internet from a different address than the device showing this page.",
 	MsgRegisterOK:        "Your new IP address was registered!",
 	MsgRegisterFail:      "Registration failed — check the secret and try again.",
 	MsgRegisterDenied:    "Wrong registration secret, or an invalid link.",

@@ -547,3 +547,46 @@ func TestPortalUnknownTokenAnswers404(t *testing.T) {
 		t.Error("the friendly error body did not render alongside the 404")
 	}
 }
+
+// TestPortalListsRegisteredAddresses pins the v3.1.0 IP-status card: the stored
+// allowed-address list is shown to the subscriber verbatim — an operator's CIDR
+// entry renders as the range, never expanded into its members — and the card
+// carries the custom-address field the register card posts from. Both are display
+// only; the write still runs through the secret-gated POST.
+func TestPortalListsRegisteredAddresses(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	client, err := ws.clients.CreateClient("Multi Address", 30, "203.0.113.10")
+	if err != nil {
+		t.Fatalf("CreateClient: %v", err)
+	}
+	if _, err := ws.clients.SetClientAllowedIPs(client.ID, []string{"203.0.113.10", "198.51.100.0/24"}); err != nil {
+		t.Fatalf("SetClientAllowedIPs: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sub/"+client.Token, nil)
+	req.RemoteAddr = "198.51.100.64:12345"
+	w := httptest.NewRecorder()
+	ws.buildAdminHandler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+
+	if !strings.Contains(body, `id="registered-ips"`) {
+		t.Fatal("the IP-status card has no registered-address list")
+	}
+	if !strings.Contains(body, "203.0.113.10") || !strings.Contains(body, "198.51.100.0/24") {
+		t.Error("the stored allowed addresses did not reach the page")
+	}
+	// A /24 has 256 members; the page must show the range as entered rather than
+	// spelling them out, so the literal member addresses must be absent.
+	if strings.Contains(body, "198.51.100.1<") {
+		t.Error("the page expanded the CIDR into its member addresses")
+	}
+	if !strings.Contains(body, `id="register-ip"`) {
+		t.Error("the register card has no custom-address field")
+	}
+}
