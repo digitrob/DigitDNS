@@ -43,6 +43,21 @@ const (
 // sentence. Status is also in the body per the RFC, so a log reader never has
 // to correlate two sources.
 func writeProblem(w http.ResponseWriter, status int, typ, detail string) {
+	writeProblemInstance(w, "/api/v2", status, typ, detail)
+}
+
+// writeProblemAt is writeProblem with the RFC 9457 instance taken from the
+// request URI instead of the v2 prefix, so a v3 error points at the v3 route it
+// came from rather than claiming to be a v2 problem.
+func writeProblemAt(w http.ResponseWriter, r *http.Request, status int, typ, detail string) {
+	instance := "/api/v2"
+	if r != nil && r.URL != nil && r.URL.Path != "" {
+		instance = r.URL.Path
+	}
+	writeProblemInstance(w, instance, status, typ, detail)
+}
+
+func writeProblemInstance(w http.ResponseWriter, instance string, status int, typ, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -50,7 +65,7 @@ func writeProblem(w http.ResponseWriter, status int, typ, detail string) {
 		"title":    http.StatusText(status),
 		"status":   status,
 		"detail":   detail,
-		"instance": "/api/v2",
+		"instance": instance,
 	})
 }
 

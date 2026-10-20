@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.2.1] — API v3: correct problem `instance`
+
+### 🐛 Fixed
+- **RFC 9457 `instance` now names the route the error came from.** Every API error body carries an `instance` member, but it was a fixed `/api/v2` string for all versions — so a `/api/v3/…` failure reported itself as a v2 problem. v3 problems now point at the actual request path (e.g. `/api/v3/clients`); v2 responses keep their `/api/v2` prefix unchanged.
+
+---
+
 ## 🏷️ [v3.2.0] — API v3: Full Dashboard Parity with Session Login
 
 ### ✨ Added

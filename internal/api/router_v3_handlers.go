@@ -22,11 +22,11 @@ import (
 // route and the panel's own login cannot drift about what a valid credential is.
 func (a *API) handleV3Login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	var req struct {
@@ -51,7 +51,7 @@ func (a *API) handleV3Login(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		writeProblem(w, http.StatusUnauthorized, "unauthorized", err.Error())
+		writeProblemAt(w, r, http.StatusUnauthorized, "unauthorized", err.Error())
 		return
 	}
 	username, weak := a.adminIdentity()
@@ -66,12 +66,12 @@ func (a *API) handleV3Login(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3Logout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	token := bearerToken(r)
 	if !strings.HasPrefix(token, service.SessionTokenPrefix) {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "not a dashboard session: the REST API key has no session to revoke")
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "not a dashboard session: the REST API key has no session to revoke")
 		return
 	}
 	if a.sessions != nil {
@@ -82,7 +82,7 @@ func (a *API) handleV3Logout(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3Me(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
 		return
 	}
 	username, weak := a.adminIdentity()
@@ -99,11 +99,11 @@ func (a *API) handleV3Me(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3Unlock(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	var req struct {
@@ -115,7 +115,7 @@ func (a *API) handleV3Unlock(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := a.v3Backend.Unlock(r, req.IP)
 	if err != nil {
-		writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(resp)
@@ -123,11 +123,11 @@ func (a *API) handleV3Unlock(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV32FAStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(a.v3Backend.AuthSnapshot())
@@ -135,11 +135,11 @@ func (a *API) handleV32FAStatus(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV32FASetup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	var req struct {
@@ -151,7 +151,7 @@ func (a *API) handleV32FASetup(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := a.v3Backend.Setup2FA(r, req.Username, req.CurrentPassword)
 	if err != nil {
-		writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(resp)
@@ -159,11 +159,11 @@ func (a *API) handleV32FASetup(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV32FAEnable(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	var req struct {
@@ -176,7 +176,7 @@ func (a *API) handleV32FAEnable(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := a.v3Backend.Enable2FA(r, req.Username, req.CurrentPassword, req.Code)
 	if err != nil {
-		writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(resp)
@@ -184,11 +184,11 @@ func (a *API) handleV32FAEnable(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV32FADisable(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	var req struct {
@@ -201,7 +201,7 @@ func (a *API) handleV32FADisable(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := a.v3Backend.Disable2FA(r, req.Username, req.CurrentPassword, req.Code)
 	if err != nil {
-		writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(resp)
@@ -209,16 +209,16 @@ func (a *API) handleV32FADisable(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3SSETicket(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	resp, err := a.v3Backend.SSETicket(presentedSessionKey(r))
 	if err != nil {
-		writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -298,12 +298,12 @@ func (a *API) handleV3Clients(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet, http.MethodHead:
 		clients, err := a.clients.ListClientViews()
 		if err != nil {
-			writeProblem(w, http.StatusInternalServerError, "internal", err.Error())
+			writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		limit, start, detail := v3Limit(r)
 		if detail != "" {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", detail)
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", detail)
 			return
 		}
 		if start > len(clients) {
@@ -342,7 +342,7 @@ func (a *API) handleV3Clients(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if strings.TrimSpace(req.DisplayName) == "" {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "name is required")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "name is required")
 			return
 		}
 		client, err := a.clients.ProvisionClient(service.CreateClientRequest{
@@ -364,7 +364,7 @@ func (a *API) handleV3Clients(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(v3ViewToDTO(a.clients.ViewClient(client)))
 
 	default:
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
 	}
 }
 
@@ -374,7 +374,7 @@ func (a *API) handleV3ClientItem(w http.ResponseWriter, r *http.Request) {
 
 	if clientID, action, ok := strings.Cut(rest, "/actions/"); ok {
 		if r.Method != http.MethodPost {
-			writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+			writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 			return
 		}
 		a.v3ClientAction(w, r, clientID, action)
@@ -386,7 +386,7 @@ func (a *API) handleV3ClientItem(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet, http.MethodHead:
 		client, err := a.clients.GetClient(id)
 		if err != nil {
-			writeProblem(w, http.StatusNotFound, "not_found", "no client with that id")
+			writeProblemAt(w, r, http.StatusNotFound, "not_found", "no client with that id")
 			return
 		}
 		_ = json.NewEncoder(w).Encode(v3ViewToDTO(a.clients.ViewClient(client)))
@@ -411,7 +411,7 @@ func (a *API) handleV3ClientItem(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 
 	default:
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, PATCH, PUT or DELETE")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, PATCH, PUT or DELETE")
 	}
 }
 
@@ -465,7 +465,7 @@ func (a *API) v3ClientAction(w http.ResponseWriter, r *http.Request, clientID, a
 		}
 		_ = decodeOptional(w, r, &req)
 		if req.ExtendDays <= 0 {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "extend_days must be greater than 0")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "extend_days must be greater than 0")
 			return
 		}
 		if err := a.clients.RenewClient(clientID, req.ExtendDays); err != nil {
@@ -530,7 +530,7 @@ func (a *API) v3ClientAction(w http.ResponseWriter, r *http.Request, clientID, a
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"register_secret": secret})
 	default:
-		writeProblem(w, http.StatusNotFound, "unknown_action",
+		writeProblemAt(w, r, http.StatusNotFound, "unknown_action",
 			"actions are renew, toggle, add_ip, remove_ip, reset-traffic, regenerate-uuid, regenerate-register-secret")
 	}
 }
@@ -544,7 +544,7 @@ func (a *API) handleV3Policies(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet, http.MethodHead:
 		policies, err := a.db.ListPolicies()
 		if err != nil {
-			writeProblem(w, http.StatusInternalServerError, "internal", err.Error())
+			writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"items": policies, "catalog": []any{}})
@@ -554,17 +554,17 @@ func (a *API) handleV3Policies(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if strings.TrimSpace(p.Key) == "" {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "key is required")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "key is required")
 			return
 		}
 		if err := a.db.SavePolicy(p); err != nil {
-			writeProblem(w, http.StatusInternalServerError, "internal", err.Error())
+			writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(p)
 	default:
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
 	}
 }
 
@@ -574,14 +574,14 @@ func (a *API) handleV3Policies(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3CustomGroups(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 		groups, err := a.v3Backend.CustomGroups()
 		if err != nil {
-			writeProblem(w, http.StatusInternalServerError, "internal", err.Error())
+			writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		if groups == nil {
@@ -591,29 +591,29 @@ func (a *API) handleV3CustomGroups(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		body, ok := v3Body(r)
 		if !ok {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 			return
 		}
 		resp, err := a.v3Backend.CreateCustomGroup(r, body)
 		if err != nil {
-			writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(resp)
 	default:
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
 	}
 }
 
 func (a *API) handleV3CustomGroupItem(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v3/custom-groups/"), "/")
 	if id == "" {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "missing group id")
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "missing group id")
 		return
 	}
 	// Icon sub-path is not exposed over v3 (binary assets are a dashboard
@@ -622,24 +622,24 @@ func (a *API) handleV3CustomGroupItem(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut, http.MethodPatch:
 		body, ok := v3Body(r)
 		if !ok {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 			return
 		}
 		resp, err := a.v3Backend.UpdateCustomGroup(r, id, body)
 		if err != nil {
-			writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 			return
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	case http.MethodDelete:
 		resp, err := a.v3Backend.DeleteCustomGroup(r, id)
 		if err != nil {
-			writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 			return
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	default:
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "PUT, PATCH or DELETE")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "PUT, PATCH or DELETE")
 	}
 }
 
@@ -649,7 +649,7 @@ func (a *API) handleV3CustomGroupItem(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3Rules(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	switch r.Method {
@@ -658,23 +658,23 @@ func (a *API) handleV3Rules(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost, http.MethodPut:
 		body, ok := v3Body(r)
 		if !ok {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 			return
 		}
 		resp, err := a.v3Backend.SaveRules(r, body)
 		if err != nil {
-			writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 			return
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	default:
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
 	}
 }
 
 func (a *API) handleV3Access(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	switch r.Method {
@@ -683,23 +683,23 @@ func (a *API) handleV3Access(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost, http.MethodPut:
 		body, ok := v3Body(r)
 		if !ok {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 			return
 		}
 		resp, err := a.v3Backend.SaveAccess(r, body)
 		if err != nil {
-			writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 			return
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	default:
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
 	}
 }
 
 func (a *API) handleV3AccessMode(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost && r.Method != http.MethodPut {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST or PUT")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST or PUT")
 		return
 	}
 	var req struct {
@@ -709,11 +709,11 @@ func (a *API) handleV3AccessMode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.AllowAll == nil {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "allow_all is required")
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "allow_all is required")
 		return
 	}
 	if err := a.clients.SetAllowAll(*req.AllowAll); err != nil {
-		writeProblem(w, http.StatusInternalServerError, "internal", err.Error())
+		writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"allow_all": a.clients.IsAllowAll()})
@@ -740,22 +740,22 @@ func (a *API) handleV3Upstreams(w http.ResponseWriter, r *http.Request) {
 		}
 		addr := strings.TrimSpace(req.Address)
 		if addr == "" {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "address is required")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "address is required")
 			return
 		}
 		if a.upstreams == nil {
-			writeProblem(w, http.StatusServiceUnavailable, "unavailable", "no upstream pool")
+			writeProblemAt(w, r, http.StatusServiceUnavailable, "unavailable", "no upstream pool")
 			return
 		}
 		canonical, ok := upstream.NormalizeUpstream(addr)
 		if !ok {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "invalid upstream address")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid upstream address")
 			return
 		}
 		list := a.upstreams.GetUpstreams()
 		for _, u := range list {
 			if u == canonical {
-				writeProblem(w, http.StatusConflict, "conflict", "upstream already exists")
+				writeProblemAt(w, r, http.StatusConflict, "conflict", "upstream already exists")
 				return
 			}
 		}
@@ -764,14 +764,14 @@ func (a *API) handleV3Upstreams(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{"items": list})
 	default:
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
 	}
 }
 
 func (a *API) handleV3UpstreamItem(w http.ResponseWriter, r *http.Request) {
 	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v3/upstreams/"), "/")
 	if rest == "" {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "missing upstream or action")
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "missing upstream or action")
 		return
 	}
 	// POST /api/v3/upstreams/benchmark and /reorder are the two actions.
@@ -783,21 +783,21 @@ func (a *API) handleV3UpstreamItem(w http.ResponseWriter, r *http.Request) {
 		a.v3UpstreamReorder(w, r)
 		return
 	}
-	writeProblem(w, http.StatusNotFound, "not_found", "unknown upstream action")
+	writeProblemAt(w, r, http.StatusNotFound, "not_found", "unknown upstream action")
 }
 
 func (a *API) v3UpstreamBenchmark(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	resp, err := a.v3Backend.Benchmark()
 	if err != nil {
-		writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(resp)
@@ -808,11 +808,11 @@ func (a *API) v3UpstreamBenchmark(w http.ResponseWriter, r *http.Request) {
 // after validating every entry is already present exactly once.
 func (a *API) v3UpstreamReorder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost && r.Method != http.MethodPut {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST or PUT")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST or PUT")
 		return
 	}
 	if a.upstreams == nil {
-		writeProblem(w, http.StatusServiceUnavailable, "unavailable", "no upstream pool")
+		writeProblemAt(w, r, http.StatusServiceUnavailable, "unavailable", "no upstream pool")
 		return
 	}
 	var req struct {
@@ -827,7 +827,7 @@ func (a *API) v3UpstreamReorder(w http.ResponseWriter, r *http.Request) {
 		want[u] = true
 	}
 	if len(req.Order) != len(current) {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "order must list every upstream exactly once")
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "order must list every upstream exactly once")
 		return
 	}
 	seen := make(map[string]bool, len(req.Order))
@@ -835,7 +835,7 @@ func (a *API) v3UpstreamReorder(w http.ResponseWriter, r *http.Request) {
 	for _, u := range req.Order {
 		c, ok := upstream.NormalizeUpstream(strings.TrimSpace(u))
 		if !ok || !want[c] || seen[c] {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "order must list every upstream exactly once and contain no unknown entries")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "order must list every upstream exactly once and contain no unknown entries")
 			return
 		}
 		seen[c] = true
@@ -855,37 +855,37 @@ func (a *API) handleV3Benchmark(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3Settings(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 		resp, err := a.v3Backend.Settings()
 		if err != nil {
-			writeProblem(w, http.StatusInternalServerError, "internal", err.Error())
+			writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	case http.MethodPost, http.MethodPut:
 		body, ok := v3Body(r)
 		if !ok {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 			return
 		}
 		resp, err := a.v3Backend.SaveSettings(r, body)
 		if err != nil {
-			writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 			return
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	default:
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
 	}
 }
 
 func (a *API) handleV3Subscription(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	switch r.Method {
@@ -894,27 +894,27 @@ func (a *API) handleV3Subscription(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost, http.MethodPut:
 		body, ok := v3Body(r)
 		if !ok {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 			return
 		}
 		resp, err := a.v3Backend.SaveSubscription(r, body)
 		if err != nil {
-			writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 			return
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	default:
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
 	}
 }
 
 func (a *API) handleV3Config(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(a.v3Backend.Config())
@@ -925,20 +925,20 @@ func (a *API) handleV3Config(w http.ResponseWriter, r *http.Request) {
 // when 2FA is on, a current code.
 func (a *API) handleV3RegenerateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		resp, err := a.v3Backend.Settings()
 		if err != nil {
-			writeProblem(w, http.StatusInternalServerError, "internal", err.Error())
+			writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"api_key": resp["api_key"]})
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
 		return
 	}
 	var req struct {
@@ -950,7 +950,7 @@ func (a *API) handleV3RegenerateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := a.v3Backend.RegenerateAPIKey(r, req.CurrentPassword, req.Code)
 	if err != nil {
-		writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(resp)
@@ -958,11 +958,11 @@ func (a *API) handleV3RegenerateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3RegenerateAdminPath(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	var req struct {
@@ -972,13 +972,13 @@ func (a *API) handleV3RegenerateAdminPath(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !req.Confirm {
-		writeProblem(w, http.StatusBadRequest, "invalid_request",
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request",
 			"regenerating the admin path requires confirm=true — every bookmark, integration and session under the old path stops working immediately")
 		return
 	}
 	resp, err := a.v3Backend.RegenerateAdminPath(r, true)
 	if err != nil {
-		writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(resp)
@@ -986,21 +986,21 @@ func (a *API) handleV3RegenerateAdminPath(w http.ResponseWriter, r *http.Request
 
 func (a *API) handleV3TLSIssue(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	body, ok := v3Body(r)
 	if !ok {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 		return
 	}
 	resp, err := a.v3Backend.IssueTLS(r, body)
 	if err != nil {
-		writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(resp)
@@ -1008,21 +1008,21 @@ func (a *API) handleV3TLSIssue(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3TLSAutoRenew(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	body, ok := v3Body(r)
 	if !ok {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 		return
 	}
 	resp, err := a.v3Backend.TLSAutoRenew(r, body)
 	if err != nil {
-		writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(resp)
@@ -1030,11 +1030,11 @@ func (a *API) handleV3TLSAutoRenew(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3ACMEStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(a.v3Backend.ACMEStatus())
@@ -1046,7 +1046,7 @@ func (a *API) handleV3ACMEStatus(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3Stats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
 		return
 	}
 	_ = json.NewEncoder(w).Encode(a.stats.GetLiveStats())
@@ -1054,7 +1054,7 @@ func (a *API) handleV3Stats(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3Stream(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET only")
 		return
 	}
 	a.stats.ServeSSE(w, r)
@@ -1062,7 +1062,7 @@ func (a *API) handleV3Stream(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3FlushCache(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	a.cache.Flush()
@@ -1071,7 +1071,7 @@ func (a *API) handleV3FlushCache(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3DiagnosticsTargets(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	switch r.Method {
@@ -1080,12 +1080,12 @@ func (a *API) handleV3DiagnosticsTargets(w http.ResponseWriter, r *http.Request)
 	case http.MethodPost:
 		body, ok := v3Body(r)
 		if !ok {
-			writeProblem(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 			return
 		}
 		resp, err := a.v3Backend.AddDiagnosticsTarget(r, body)
 		if err != nil {
-			writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 			return
 		}
 		_ = json.NewEncoder(w).Encode(resp)
@@ -1100,18 +1100,18 @@ func (a *API) handleV3DiagnosticsTargets(w http.ResponseWriter, r *http.Request)
 		}
 		resp, err := a.v3Backend.DeleteDiagnosticsTarget(r, host)
 		if err != nil {
-			writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 			return
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	default:
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or DELETE")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or DELETE")
 	}
 }
 
 func (a *API) handleV3DiagnosticsRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	var rec database.DiagnosticSettings
@@ -1132,16 +1132,16 @@ func (a *API) handleV3DiagnosticsRun(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3UpdateCheck(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	resp, err := a.v3Backend.UpdateCheck(r)
 	if err != nil {
-		writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(resp)
@@ -1149,16 +1149,16 @@ func (a *API) handleV3UpdateCheck(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3UpdateApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	resp, err := a.v3Backend.UpdateApply(r)
 	if err != nil {
-		writeProblem(w, backendProblemStatus(err), "invalid_request", err.Error())
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(resp)
@@ -1166,11 +1166,11 @@ func (a *API) handleV3UpdateApply(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
 		return
 	}
 	if a.v3Backend == nil {
-		v3BackendUnavailable(w)
+		v3BackendUnavailable(w, r)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(a.v3Backend.UpdateStatus())
@@ -1190,7 +1190,7 @@ func decodeOptional(w http.ResponseWriter, r *http.Request, dst any) bool {
 		if err.Error() == "EOF" {
 			return true
 		}
-		writeProblem(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", err.Error())
 		return false
 	}
 	return true

@@ -232,11 +232,11 @@ func (a *API) securityV3(next http.HandlerFunc, allowMasterKey, allowTicket bool
 
 		token := bearerToken(r)
 		if token == "" {
-			writeProblem(w, http.StatusUnauthorized, "unauthorized", "Unauthorized: provide the API key or a dashboard session token")
+			writeProblemAt(w, r, http.StatusUnauthorized, "unauthorized", "Unauthorized: provide the API key or a dashboard session token")
 			return
 		}
 		if !a.v3Authorized(token, allowMasterKey) {
-			writeProblem(w, http.StatusUnauthorized, "unauthorized", "Unauthorized: invalid or expired credential")
+			writeProblemAt(w, r, http.StatusUnauthorized, "unauthorized", "Unauthorized: invalid or expired credential")
 			return
 		}
 		next(w, r)
@@ -278,7 +278,7 @@ func (a *API) handleV3Version(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleV3Status(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
 		return
 	}
 	stats := a.stats.GetLiveStats()
@@ -335,8 +335,8 @@ func v3Body(r *http.Request) (map[string]any, bool) {
 // v3BackendUnavailable answers every backend-dependent route when the web layer
 // did not inject a backend (a bare test harness). A 503 is honest: the feature
 // exists in the contract but is not wired in this build.
-func v3BackendUnavailable(w http.ResponseWriter) bool {
-	writeProblem(w, http.StatusServiceUnavailable, "unavailable", "this operation is unavailable in this build")
+func v3BackendUnavailable(w http.ResponseWriter, r *http.Request) bool {
+	writeProblemAt(w, r, http.StatusServiceUnavailable, "unavailable", "this operation is unavailable in this build")
 	return false
 }
 

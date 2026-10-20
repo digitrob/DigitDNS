@@ -469,6 +469,45 @@ func TestV3_PoliciesAndAccess(t *testing.T) {
 	}
 }
 
+// A v3 problem must name the v3 route it came from: writeProblem used to
+// hardcode instance "/api/v2", so a v3 401 claimed to be a v2 problem.
+func TestV3_ProblemInstancePointsAtTheV3Route(t *testing.T) {
+	apiInst, _, _, cleanup := setupTestAPI(t)
+	defer cleanup()
+	mux := http.NewServeMux()
+	apiInst.RegisterRoutes(mux)
+
+	// Unauthenticated /api/v3/clients => 401 with the request path as instance.
+	w := v3Request(mux, http.MethodGet, "/api/v3/clients", "", nil)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", w.Code)
+	}
+	var prob map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &prob); err != nil {
+		t.Fatalf("problem is not JSON: %v", err)
+	}
+	if prob["instance"] != "/api/v3/clients" {
+		t.Errorf("instance = %v, want /api/v3/clients", prob["instance"])
+	}
+
+	// The v2 route still reports its own prefix.
+	// A v2 writeProblem route still reports its own prefix (the fix left the
+	// shared helper's v2 default in place). A bad limit with a valid key gives a
+	// v2 400 built by writeProblem.
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/clients?limit=0", nil)
+	req.Header.Set("X-API-Key", "digitdns_live_testkey123")
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	var v2prob map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &v2prob); err != nil {
+		t.Fatalf("v2 problem is not JSON (%d): %v", rec.Code, err)
+	}
+	if v2prob["instance"] != "/api/v2" {
+		t.Errorf("v2 instance = %v, want /api/v2", v2prob["instance"])
+	}
+}
+
 func TestV3_OpenAPIServed(t *testing.T) {
 	apiInst, _, _, cleanup := setupTestAPI(t)
 	defer cleanup()
