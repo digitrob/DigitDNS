@@ -38,6 +38,35 @@ type API struct {
 	// as "2FA not in force", which is exactly what the dashboard's gate does
 	// when TOTP is off.
 	totpGate func(*http.Request) bool
+
+	// v3Backend carries the dashboard-coupled operations the v3 router exposes
+	// without re-implementing them. Injected by the web server via SetV3Backend;
+	// nil in bare harnesses, where the backend-dependent routes answer 503.
+	v3Backend V3Backend
+}
+
+// masterKeyMatches compares a token against the master REST key in constant time.
+// It is shared by the v1/v2 middleware and the v3 gate so the two cannot drift
+// on what "the master key" means.
+func (a *API) masterKeyMatches(token string) bool {
+	master := a.settings.GetAPIKey()
+	if token == "" || master == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(master)) == 1
+}
+
+// bearerToken reads the credential from X-API-Key or an Authorization: Bearer
+// header, preferring the explicit key header. The same derivation every gate in
+// this package uses.
+func bearerToken(r *http.Request) string {
+	if k := r.Header.Get("X-API-Key"); k != "" {
+		return k
+	}
+	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+	}
+	return ""
 }
 
 // SetTOTPGate attaches the second-factor predicate for credential-changing
@@ -186,6 +215,11 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	// v2: the successor contract (RFC 9457 errors, cursor pagination,
 	// symmetric DTOs, strict decoding).
 	a.RegisterRoutesV2(mux)
+
+	// v3: full dashboard parity, with login (user/password + TOTP) sessions as
+	// well as the master REST key. The dashboard-coupled routes delegate to the
+	// web backend injected via SetV3Backend.
+	a.RegisterRoutesV3(mux)
 }
 
 // handleVersion is intentionally unauthenticated: build metadata is not sensitive.
@@ -660,8 +694,52 @@ func (a *API) handleDocsV2(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(html))
 }
 
+func (a *API) handleDocsV3(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	admin := adminServerURL(a.settings.GetAdminPath())
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DigitDNS API v3 Docs</title>
+  <link rel="stylesheet" type="text/css" href="%s/swagger/swagger-ui.css">
+  <style>
+    body { margin: 0; background: #0b1020; color: #e6e7eb; font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+    .swagger-ui { filter: invert(88%%) hue-rotate(180deg); }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="%s/swagger/swagger-ui-bundle.js"></script>
+  <script>
+    var viewerLoaded = typeof SwaggerUIBundle === 'function';
+    if (viewerLoaded) SwaggerUIBundle({ dom_id: '#swagger-ui', url: '%s/api/v3/openapi.json', deepLinking: true, presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.presets.operations] });
+  </script>
+</body>
+</html>`, admin+"/swagger/swagger-ui.css", admin+"/swagger/swagger-ui-bundle.js", admin)
+	_, _ = w.Write([]byte(html))
+}
+
 //go:embed openapi/v2.json
 var openAPIV2Spec []byte
+
+//go:embed openapi/v3.json
+var openAPIV3Spec []byte
+
+func (a *API) handleOpenAPIV3(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	_, _ = w.Write(openAPIV3Spec)
+}
 
 func (a *API) handleOpenAPIV2(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {

@@ -1,0 +1,271 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "DigitDNS Core REST API v3",
+    "version": "3.0",
+    "description": "v3 is the full-parity contract: every capability the dashboard exposes, reachable over REST. Auth accepts either a login session (POST /api/v3/auth/login with username/password, plus a TOTP code when two-factor is on) or the master REST API key. Conventions are inherited from v2: RFC 9457 application/problem+json errors, {items,next_cursor} lists, symmetric DTOs, POST /actions/{action} sub-resources, and strict JSON decoding. Endpoints marked dashboard-delegated mirror the corresponding panel operation through the same server-side implementation."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Mounted under the install's hidden admin path; the handler fills the correct base."
+    }
+  ],
+  "security": [
+    {"ApiKeyAuth": []},
+    {"BearerAuth": []}
+  ],
+  "tags": [
+    {"name": "meta"}, {"name": "auth"}, {"name": "clients"}, {"name": "policies"},
+    {"name": "custom-groups"}, {"name": "rules"}, {"name": "access"}, {"name": "upstreams"},
+    {"name": "settings"}, {"name": "tls"}, {"name": "stats"}, {"name": "diagnostics"},
+    {"name": "system"}
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"},
+      "BearerAuth": {"type": "http", "scheme": "bearer", "description": "Master key or a digitdns_session_ token from /auth/login."}
+    },
+    "responses": {
+      "Problem": {"description": "RFC 9457 problem", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+      "Unauthorized": {"description": "Unauthorized", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+      "Forbidden": {"description": "Not exposed to this address", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+      "NotFound": {"description": "Not found", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+      "BadRequest": {"description": "Bad request", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+    },
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "required": ["type", "title", "status", "detail", "instance"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
+        }
+      },
+      "Version": {
+        "type": "object",
+        "properties": {
+          "version": {"type": "string"},
+          "display": {"type": "string"},
+          "hash": {"type": "string"},
+          "commit": {"type": "string"},
+          "api": {"type": "string", "enum": ["v3"]}
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": {"type": "string"},
+          "password": {"type": "string"},
+          "code": {"type": "string", "description": "TOTP code, required only when two-factor is enabled."}
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "token": {"type": "string", "description": "A digitdns_session_ token; send it as Authorization: Bearer."},
+          "username": {"type": "string"},
+          "password_weak": {"type": "boolean"},
+          "is_default_password": {"type": "boolean"},
+          "expires_in": {"type": "integer", "description": "Idle window in seconds."}
+        }
+      },
+      "Client": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "uuid": {"type": "string"},
+          "name": {"type": "string"},
+          "token": {"type": "string"},
+          "allowed_ips": {"type": "array", "items": {"type": "string"}},
+          "traffic_limit_gb": {"type": "number"},
+          "traffic_used_bytes": {"type": "integer"},
+          "traffic_reset_cycle": {"type": "string", "enum": ["", "daily", "weekly", "monthly"]},
+          "quota_exceeded": {"type": "boolean"},
+          "expires_at": {"type": "string", "format": "date-time"},
+          "enabled": {"type": "boolean"},
+          "note": {"type": "string"},
+          "custom_policies": {"type": "array", "items": {"type": "string"}},
+          "max_devices": {"type": "integer"},
+          "register_secret": {"type": "string"}
+        }
+      },
+      "ClientList": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {"type": "array", "items": {"$ref": "#/components/schemas/Client"}},
+          "next_cursor": {"type": "string"},
+          "allow_all": {"type": "boolean"}
+        }
+      },
+      "ClientCreate": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {"type": "string"},
+          "validity_days": {"type": "integer"},
+          "allowed_ips": {"type": "array", "items": {"type": "string"}},
+          "traffic_limit_gb": {"type": "number"},
+          "traffic_reset_cycle": {"type": "string", "enum": ["", "daily", "weekly", "monthly"]},
+          "custom_policies": {"type": "array", "items": {"type": "string"}},
+          "note": {"type": "string"},
+          "max_devices": {"type": "integer"}
+        }
+      },
+      "ClientUpdate": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "allowed_ips": {"type": "array", "items": {"type": "string"}},
+          "traffic_limit_gb": {"type": "number"},
+          "traffic_reset_cycle": {"type": "string"},
+          "note": {"type": "string"},
+          "enabled": {"type": "boolean"},
+          "validity_days_add": {"type": "integer"},
+          "max_devices": {"type": "integer"}
+        }
+      },
+      "GenericObject": {"type": "object", "additionalProperties": true},
+      "Items": {
+        "type": "object",
+        "properties": {"items": {"type": "array", "items": {}}}
+      }
+    }
+  },
+  "paths": {
+    "/api/v3/version": {
+      "get": {"tags": ["meta"], "summary": "Build version (no auth)", "security": [], "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Version"}}}}}}
+    },
+    "/api/v3/status": {
+      "get": {"tags": ["meta"], "summary": "Live status", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}, "403": {"$ref": "#/components/responses/Forbidden"}}}
+    },
+    "/api/v3/auth/login": {
+      "post": {"tags": ["auth"], "summary": "Log in and mint a session", "security": [], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoginRequest"}}}}, "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoginResponse"}}}}, "401": {"description": "Invalid credentials (twofactor_required=true when only the code is missing/failing)", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}}}
+    },
+    "/api/v3/auth/logout": {
+      "post": {"tags": ["auth"], "summary": "Revoke the presented session", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}}}
+    },
+    "/api/v3/auth/me": {
+      "get": {"tags": ["auth"], "summary": "Current identity and 2FA state", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}}
+    },
+    "/api/v3/auth/unlock": {
+      "post": {"tags": ["auth"], "summary": "Clear login lockouts (master key accepted)", "requestBody": {"required": false, "content": {"application/json": {"schema": {"type": "object", "properties": {"ip": {"type": "string"}, "code": {"type": "string"}}}}}}, "responses": {"200": {"description": "OK"}, "401": {"$ref": "#/components/responses/Unauthorized"}}}
+    },
+    "/api/v3/auth/2fa/status": {"get": {"tags": ["auth"], "summary": "2FA state", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}}},
+    "/api/v3/auth/2fa/setup": {"post": {"tags": ["auth"], "summary": "Open a TOTP enrollment", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}}}},
+    "/api/v3/auth/2fa/enable": {"post": {"tags": ["auth"], "summary": "Confirm a TOTP enrollment", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}}}},
+    "/api/v3/auth/2fa/disable": {"post": {"tags": ["auth"], "summary": "Disable TOTP", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}}}},
+    "/api/v3/auth/sse-ticket": {"post": {"tags": ["auth"], "summary": "Mint a one-time SSE ticket", "responses": {"200": {"description": "OK"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "429": {"$ref": "#/components/responses/Problem"}}}},
+    "/api/v3/clients": {
+      "get": {"tags": ["clients"], "summary": "List clients", "parameters": [{"name": "limit", "in": "query", "schema": {"type": "integer", "maximum": 200}}, {"name": "cursor", "in": "query", "schema": {"type": "string"}}], "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ClientList"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}, "403": {"$ref": "#/components/responses/Forbidden"}}},
+      "post": {"tags": ["clients"], "summary": "Create a client", "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ClientCreate"}}}}, "responses": {"201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Client"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}}}
+    },
+    "/api/v3/clients/{id}": {
+      "get": {"tags": ["clients"], "summary": "Get a client", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Client"}}}}, "404": {"$ref": "#/components/responses/NotFound"}}},
+      "patch": {"tags": ["clients"], "summary": "Update a client", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ClientUpdate"}}}}, "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Client"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "404": {"$ref": "#/components/responses/NotFound"}}},
+      "put": {"tags": ["clients"], "summary": "Update a client (PUT alias)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ClientUpdate"}}}}, "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "404": {"$ref": "#/components/responses/NotFound"}}},
+      "delete": {"tags": ["clients"], "summary": "Delete a client", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"204": {"description": "No content"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/v3/clients/{id}/actions/{action}": {
+      "post": {
+        "tags": ["clients"], "summary": "Client action",
+        "description": "action is one of: renew (body extend_days), toggle (body enabled), add_ip (body ip), remove_ip (body ip), reset-traffic, regenerate-uuid, regenerate-register-secret.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "action", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "404": {"$ref": "#/components/responses/NotFound"}}
+      }
+    },
+    "/api/v3/policies": {
+      "get": {"tags": ["policies"], "summary": "List policies", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}},
+      "post": {"tags": ["policies"], "summary": "Store a policy entry", "responses": {"201": {"description": "Created"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/custom-groups": {
+      "get": {"tags": ["custom-groups"], "summary": "List custom groups", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Items"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}},
+      "post": {"tags": ["custom-groups"], "summary": "Create a custom group", "responses": {"201": {"description": "Created"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/custom-groups/{id}": {
+      "put": {"tags": ["custom-groups"], "summary": "Update a custom group", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "404": {"$ref": "#/components/responses/NotFound"}}},
+      "delete": {"tags": ["custom-groups"], "summary": "Delete a custom group", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/v3/rules": {
+      "get": {"tags": ["rules"], "summary": "Read the rule sets", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}},
+      "put": {"tags": ["rules"], "summary": "Save rule sets (partial updates merge)", "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}, "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/access": {
+      "get": {"tags": ["access"], "summary": "Read access settings", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}}},
+      "put": {"tags": ["access"], "summary": "Save access settings", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/access/mode": {
+      "post": {"tags": ["access"], "summary": "Set allow_all", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["allow_all"], "properties": {"allow_all": {"type": "boolean"}}}}}}, "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/upstreams": {
+      "get": {"tags": ["upstreams"], "summary": "List upstreams", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Items"}}}}}},
+      "post": {"tags": ["upstreams"], "summary": "Add an upstream", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["address"], "properties": {"address": {"type": "string"}}}}}}, "responses": {"201": {"description": "Created"}, "400": {"$ref": "#/components/responses/BadRequest"}, "409": {"$ref": "#/components/responses/Problem"}}}
+    },
+    "/api/v3/upstreams/{id}": {
+      "delete": {"tags": ["upstreams"], "summary": "Remove an upstream (id is the address)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/v3/upstreams/benchmark": {
+      "post": {"tags": ["upstreams"], "summary": "Start a benchmark", "responses": {"202": {"description": "Accepted"}, "409": {"$ref": "#/components/responses/Problem"}, "503": {"description": "No pool"}}}
+    },
+    "/api/v3/upstreams/reorder": {
+      "post": {"tags": ["upstreams"], "summary": "Reorder the upstream pool", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["order"], "properties": {"order": {"type": "array", "items": {"type": "string"}}}}}}}, "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/settings": {
+      "get": {"tags": ["settings"], "summary": "Read server settings", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}}},
+      "post": {"tags": ["settings"], "summary": "Update server settings", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/settings/subscription": {
+      "get": {"tags": ["settings"], "summary": "Read subscriber-surface settings", "responses": {"200": {"description": "OK"}}},
+      "post": {"tags": ["settings"], "summary": "Save subscriber-surface settings", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/settings/regenerate-api-key": {
+      "get": {"tags": ["settings"], "summary": "Read the master API key", "responses": {"200": {"description": "OK"}, "401": {"$ref": "#/components/responses/Unauthorized"}}},
+      "post": {"tags": ["settings"], "summary": "Rotate the master API key (current_password + code)", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "403": {"$ref": "#/components/responses/Forbidden"}}}
+    },
+    "/api/v3/settings/regenerate-admin-path": {
+      "post": {"tags": ["settings"], "summary": "Regenerate the hidden admin path (confirm=true)", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/tls/issue": {
+      "post": {"tags": ["tls"], "summary": "Store a domain and start Let's Encrypt issuance", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"domain": {"type": "string"}, "email": {"type": "string"}, "purpose": {"type": "string", "enum": ["panel", "subscription", "dot"]}}}}}}, "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "409": {"$ref": "#/components/responses/Problem"}}}
+    },
+    "/api/v3/tls/auto-renew": {
+      "post": {"tags": ["tls"], "summary": "Set the DoH/DoT auto-renew preference", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/tls/acme/status": {
+      "get": {"tags": ["tls"], "summary": "ACME issuance progress", "responses": {"200": {"description": "OK"}}}
+    },
+    "/api/v3/stats": {
+      "get": {"tags": ["stats"], "summary": "Live telemetry", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}}
+    },
+    "/api/v3/events/stream": {
+      "get": {"tags": ["stats"], "summary": "Server-Sent Events live log (Bearer or ?ticket=)", "responses": {"200": {"description": "text/event-stream"}, "401": {"$ref": "#/components/responses/Unauthorized"}}}
+    },
+    "/api/v3/diagnostics/targets": {
+      "get": {"tags": ["diagnostics"], "summary": "List diagnostic targets", "responses": {"200": {"description": "OK"}}},
+      "post": {"tags": ["diagnostics"], "summary": "Add or replace a diagnostic target", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}},
+      "delete": {"tags": ["diagnostics"], "summary": "Delete a diagnostic target (?host= or body host)", "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/v3/diagnostics/run": {
+      "post": {"tags": ["diagnostics"], "summary": "Run the diagnostic probe", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}}}
+    },
+    "/api/v3/cache/flush": {
+      "post": {"tags": ["system"], "summary": "Flush the DNS cache", "responses": {"200": {"description": "OK"}, "401": {"$ref": "#/components/responses/Unauthorized"}}}
+    },
+    "/api/v3/config": {
+      "get": {"tags": ["system"], "summary": "Full configuration snapshot", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}}}
+    },
+    "/api/v3/benchmark": {
+      "post": {"tags": ["system"], "summary": "Start an upstream benchmark", "responses": {"202": {"description": "Accepted"}, "409": {"$ref": "#/components/responses/Problem"}}}
+    },
+    "/api/v3/update/check": {"get": {"tags": ["system"], "summary": "Check for a self-update", "responses": {"200": {"description": "OK"}, "503": {"description": "Unavailable"}}}},
+    "/api/v3/update/apply": {"post": {"tags": ["system"], "summary": "Apply a self-update", "responses": {"200": {"description": "OK"}, "409": {"$ref": "#/components/responses/Problem"}}}},
+    "/api/v3/update/status": {"get": {"tags": ["system"], "summary": "Self-update progress", "responses": {"200": {"description": "OK"}}}},
+    "/api/v3/docs": {"get": {"tags": ["meta"], "summary": "This documentation (no auth)", "security": [], "responses": {"200": {"description": "HTML"}}}},
+    "/api/v3/openapi.json": {"get": {"tags": ["meta"], "summary": "This spec (no auth)", "security": [], "responses": {"200": {"description": "OK"}}}}
+  }
+}

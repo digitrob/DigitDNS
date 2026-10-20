@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.2.0] — API v3: Full Dashboard Parity with Session Login
+
+### ✨ Added
+- **REST API v3 (`/api/v3`) — full dashboard parity, in one release.** Everything the web panel can do is now reachable without a browser: clients, policies, custom groups, rules, upstreams, settings, subscription, TLS/ACME issuance and renewal, diagnostics targets and runs, the live statistics stream, cache flush, self-update and the raw config. v3 keeps every v2 convention a caller already knows — RFC 9457 `application/problem+json` errors, `{items, next_cursor}` pagination with a bounded `limit`, symmetric DTO field names and `POST /{resource}/{id}/actions/{action}` sub-resource verbs — so a v2 client is a v3 client with more routes.
+- **Session login for the API.** v1 and v2 accept only the master REST key; the dashboard accepts only a dashboard session. v3 accepts **both**, so a companion app (the forthcoming Android client among them) can log in with the operator's username and password — plus a TOTP code when two-factor is on — and hold a real, revocable `digitdns_session_` token, while existing scripts keep using the key unchanged. `POST /api/v3/auth/login` runs the same KDF, lockout tracker and replay guard the panel login uses; `/auth/logout` revokes, `/auth/me` reports state, and `/auth/unlock` (master-key only) is the lockout lifeline.
+- **One-time stream tickets for SSE.** `POST /api/v3/auth/sse-ticket` mints a single-use ticket so an `EventSource`, which cannot send headers, can still reach `/api/v3/events/stream` without putting a long-lived credential in the URL.
+- **2FA enrolment over the API.** `/api/v3/auth/2fa/{status,setup,enable,disable}` mirror the dashboard's own enrolment endpoints.
+- **OpenAPI 3.0.3 spec and docs.** `/api/v3/openapi.json` and `/api/v3/docs` describe the whole surface; the Developer API Gateway banner now leads with **API Reference v3**, with v2 and the v1 (deprecated) docs one click away.
+
+### 🔄 Changed
+- The dashboard's **Developer REST API** banner is retitled **Developer REST API v3** and links to the v3 reference, with compact secondary links to the v2 reference and to v1 flagged *deprecated, sunset Jul 2026*.
+- The dashboard-coupled v3 routes delegate to the web server's own handlers through an injected backend interface, so the REST answer can never drift from the button it mirrors: one implementation per feature.
+
+### ⚠️ Deprecated
+- **REST API v1** now advertises `Deprecation: true` and `Sunset: Wed, 01 Jul 2026`. It continues to work unchanged; new integrations should target v3.
+
+---
+
 ## 🏷️ [v3.1.1] — Diagnostic Suite: stale result on server removal
 
 ### 🐛 Fixed

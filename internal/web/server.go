@@ -198,6 +198,10 @@ func NewWebServer(
 	// not be able to rotate the REST key through /api/v1/api-key when
 	// /api/settings/regenerate-api-key would demand the code.
 	apiInst.SetTOTPGate(ws.totpRequestGate)
+	// The v3 router's dashboard-coupled routes delegate back into this server's
+	// own handlers, so "full parity" means the same implementation the panel
+	// uses — not a re-implementation that could drift.
+	apiInst.SetV3Backend(NewV3Backend(ws))
 	return ws
 }
 

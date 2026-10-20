@@ -1472,14 +1472,21 @@
                 <i data-feather="code" class="w-6 h-6"></i>
               </div>
               <div>
-                <h2 class="text-base sm:text-lg font-bold text-white tracking-wide font-heading">Developer REST API v1</h2>
-                <p class="text-xs text-slate-400">Automate client creation, whitelist sync, and dynamic IP updates</p>
+                <h2 class="text-base sm:text-lg font-bold text-white tracking-wide font-heading">Developer REST API v3</h2>
+                <p class="text-xs text-slate-400">Full dashboard parity &mdash; log in, manage clients, TLS, diagnostics and more</p>
               </div>
             </div>
-            <a href="/api/v1/docs" target="_blank" class="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-onfill font-bold rounded-xl text-xs font-heading flex items-center gap-2 transition shadow-lg shadow-purple-500/20">
-              <i data-feather="book-open" class="w-4 h-4"></i>
-              <span>API Reference (OpenAPI)</span>
-            </a>
+            <div class="flex flex-col items-start sm:items-end gap-2">
+              <a href="/api/v3/docs" target="_blank" class="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-onfill font-bold rounded-xl text-xs font-heading flex items-center gap-2 transition shadow-lg shadow-cyan-500/20">
+                <i data-feather="book-open" class="w-4 h-4"></i>
+                <span>API Reference v3 (OpenAPI)</span>
+              </a>
+              <div class="flex items-center gap-3 text-[10px] font-mono">
+                <a href="/api/v2/docs" target="_blank" class="text-slate-400 hover:text-slate-200 transition">v2 docs</a>
+                <span class="text-slate-600">·</span>
+                <a href="/api/v1/docs" target="_blank" class="text-amber-400/80 hover:text-amber-300 transition">v1 &mdash; deprecated, sunset Jul 2026</a>
+              </div>
+            </div>
           </div>
         </div>
 

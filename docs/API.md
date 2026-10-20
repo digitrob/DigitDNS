@@ -75,11 +75,12 @@ Authorization: Bearer digitdns_session_your_token_here
 
 ## 🌐 Base URL & Interactive Docs
 
-- **Base URL (v2, current):** `http://<SERVER_IP>:<panel-port>/<admin-path>/api/v2` (or `https://<YOUR_DOMAIN>:<panel-port>/<admin-path>/api/v2` when TLS is active)
+- **Base URL (v3, current):** `http://<SERVER_IP>:<panel-port>/<admin-path>/api/v3` (or `https://<YOUR_DOMAIN>:<panel-port>/<admin-path>/api/v3` when TLS is active)
+- **Base URL (v2):** the same with `/api/v2` — still supported, and a strict subset of v3's conventions.
 - **Base URL (v1, deprecated):** the same with `/api/v1`. Every v1 route answers with `Deprecation: true`, a `Sunset` header and a `Link` to its v2 successor. v1 keeps working — with the same security fixes — until its sunset; new integrations should start on v2.
 - **Admin path:** since v2.1 the panel and its API live below a random 16-hex-character path generated once at first install (printed to the log on first run). It is a locator, not a credential — every URL below shows the un-prefixed form, and you must insert your own `<admin-path>` before it.
 - **Panel port:** fresh installs draw a random management port (20000–60000) instead of the old fixed 8080; the installer prints and opens it. Read it from the install banner or the service log.
-- **Interactive Swagger Documentation:** Open `http://<SERVER_IP>:<panel-port>/<admin-path>/api/v1/docs` in your browser. Press **Authorize**, paste the Master API Key from Settings, and every endpoint on the page becomes runnable from the browser — `Try it out` sends the key with each request.
+- **Interactive Swagger Documentation:** Open `http://<SERVER_IP>:<panel-port>/<admin-path>/api/v3/docs` in your browser (v2 at `/api/v2/docs`, v1 at `/api/v1/docs`). Press **Authorize**, paste the Master API Key from Settings — or a session token from `/api/v3/auth/login` — and every endpoint on the page becomes runnable from the browser.
 
 ---
 
@@ -129,6 +130,61 @@ The response is the created client (the `token` builds the register link). Unkno
 Send only what changes: `{"allowed_ips":["203.0.113.9"]}` moves the binding; `{"enabled":false}` suspends; `{"validity_days_add":30}` extends.
 
 ### `DELETE /api/v2/clients/{id}` → `204 No Content`
+
+---
+
+## 🚀 API v3 — full dashboard parity
+
+v3 is the current contract and asks for nothing new from a v2 caller: every v2 convention applies unchanged (symmetric DTOs, strict decoding, `{items, next_cursor}` pagination, RFC 9457 errors, `POST /{resource}/{id}/actions/{action}`). What v3 adds is **reach** and **auth**.
+
+- **Base URL:** `…/<admin-path>/api/v3`
+- **Interactive docs:** open `…/<admin-path>/api/v3/docs` (the OpenAPI 3.0.3 document itself is at `/api/v3/openapi.json`).
+
+### Two credentials, one surface
+
+Unlike v1/v2, which accept only the master REST key, v3 accepts **either** the master key **or** a dashboard session token:
+
+```bash
+# Script / bot — the master key, exactly as in v2.
+curl -s "https://dns.example.com/<admin-path>/api/v3/clients" \
+  -H "X-API-Key: digitdns_live_…"
+
+# Companion app — log in and hold a real, revocable session.
+TOKEN=$(curl -s -X POST "https://dns.example.com/<admin-path>/api/v3/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"…"}' | jq -r .token)
+curl -s "https://dns.example.com/<admin-path>/api/v3/clients" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+`POST /api/v3/auth/login` runs the **same** KDF, lockout tracker and TOTP replay guard the panel login uses. When two-factor is on, send the code as `{"code":"123456"}`; a login that is missing the code answers `401` with `"twofactor_required": true`.
+
+| Route | Purpose |
+| --- | --- |
+| `POST /api/v3/auth/login` | Username/password (+`code`) → `{token, username, …}` |
+| `POST /api/v3/auth/logout` | Revoke the presented session |
+| `GET /api/v3/auth/me` | Current identity + 2FA state |
+| `POST /api/v3/auth/unlock` | Clear login lockouts — **master key only** |
+| `GET /api/v3/auth/2fa/status` · `POST …/2fa/{setup,enable,disable}` | Two-factor enrolment |
+| `POST /api/v3/auth/sse-ticket` | One-time ticket for the SSE stream |
+
+### The full surface
+
+| Group | Routes |
+| --- | --- |
+| Clients | `GET/POST /api/v3/clients`, `GET/PATCH/PUT/DELETE /api/v3/clients/{id}`, `POST …/clients/{id}/actions/{renew,toggle,add_ip,remove_ip,reset-traffic,regenerate-uuid,regenerate-register-secret}` |
+| Policies | `GET/POST /api/v3/policies` |
+| Custom groups | `GET/POST /api/v3/custom-groups`, `PUT/PATCH/DELETE /api/v3/custom-groups/{id}` |
+| Rules & access | `GET/POST /api/v3/rules`, `GET/POST /api/v3/access`, `POST /api/v3/access/mode` |
+| Upstreams | `GET/POST /api/v3/upstreams`, `POST /api/v3/upstreams/{benchmark,reorder}` |
+| Settings | `GET/POST /api/v3/settings`, `…/settings/subscription`, `…/settings/regenerate-api-key`, `…/settings/regenerate-admin-path` |
+| TLS / ACME | `POST /api/v3/tls/issue`, `POST /api/v3/tls/auto-renew`, `GET /api/v3/tls/acme/status` |
+| Stats & stream | `GET /api/v3/stats`, `GET /api/v3/events/stream` (`?ticket=` accepted) |
+| Diagnostics | `GET/POST/DELETE /api/v3/diagnostics/targets`, `POST /api/v3/diagnostics/run` |
+| Ops | `POST /api/v3/cache/flush`, `GET /api/v3/config`, `POST /api/v3/benchmark`, `GET /api/v3/update/check`, `POST /api/v3/update/apply`, `GET /api/v3/update/status` |
+| Meta | `GET /api/v3/version`, `GET /api/v3/status`, `GET /api/v3/docs`, `GET /api/v3/openapi.json` |
+
+Managing the diagnostic target list — a dashboard-only operation in v3.1.0 — is now `GET/POST/DELETE /api/v3/diagnostics/targets`; `POST /api/v3/diagnostics/run` runs the same shared probe v2 does.
 
 ---
 
@@ -746,7 +802,7 @@ curl -s -X POST http://127.0.0.1:8080/api/v2/diagnostics \
   -H "X-API-Key: digitdns_live_your_key_here"
 ```
 
-Unlike the dashboard's config endpoints, the v2 route only **runs** the probe; managing the target list is a dashboard (session-authenticated) operation in v3.1.0. Full list CRUD over the REST API arrives with API v3.
+Unlike the dashboard's config endpoints, this v2 route only **runs** the probe; managing the target list over REST is available in API v3 (`GET/POST/DELETE /api/v3/diagnostics/targets`).
 
 ---
 
