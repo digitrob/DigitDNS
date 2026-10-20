@@ -66,13 +66,17 @@ func TestSPADocumentRewritesAssetReferencesToTheAdminPrefix(t *testing.T) {
 		t.Error("the data: favicon was disturbed by the prefix rewrite")
 	}
 
-	// The docs anchor is rewritten too — it is the one absolute link that is
-	// not an asset, and it must land in the same namespace.
-	if strings.Contains(doc, `href="/api/v1/docs"`) {
-		t.Error("the docs anchor was left at the host root")
-	}
-	if !strings.Contains(doc, `href="`+prefix+`/api/v1/docs"`) {
-		t.Error("the docs anchor was not moved under the admin prefix")
+	// Every docs anchor is rewritten too — they are the absolute links that are
+	// not assets, and each must land in the same namespace. All three versions
+	// are checked: v2 and v3 were added to the banner without a matching
+	// rewrite, and their root-absolute hrefs 404'd.
+	for _, p := range []string{"/api/v1/docs", "/api/v2/docs", "/api/v3/docs"} {
+		if strings.Contains(doc, `href="`+p+`"`) {
+			t.Errorf("the %s anchor was left at the host root", p)
+		}
+		if !strings.Contains(doc, `href="`+prefix+p+`"`) {
+			t.Errorf("the %s anchor was not moved under the admin prefix", p)
+		}
 	}
 }
 

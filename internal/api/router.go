@@ -157,13 +157,12 @@ func (a *API) SecurityMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// BindGate applies the APIBind exposure rule to the routes that carry no
-// key: build metadata and the docs page. When the REST API is bound to
-// localhost, an external caller gets the same 403 every authenticated route
-// gives — the endpoint map and the build version are part of the API surface
-// and do not leak past a localhost bind either. Without this gate the docs
-// page (and only it) answered remote browsers on an install whose operator
-// believed the whole REST surface was loopback-only.
+// BindGate applies the APIBind exposure rule to the routes that carry no key:
+// build metadata (version). When the REST API is bound to localhost, an
+// external caller gets the same 403 every authenticated route gives — the
+// build version is part of the API surface and does not leak past a localhost
+// bind either. The docs pages are gated by BindGateDocs instead, which applies
+// the same rule but answers a browser with an explanatory HTML page.
 func (a *API) BindGate(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if list, single := a.settings.GetAPIExposure(); !apiExposureAllows(list, single, netutil.PeerIP(r)) {
@@ -173,6 +172,79 @@ func (a *API) BindGate(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// BindGateDocs is BindGate for the documentation pages. It applies the same
+// exposure rule — the docs are NOT public — but answers a rejected browser with
+// an HTML page that explains the rule and how to satisfy it, instead of the raw
+// {"error":...} JSON. A human who clicked the dashboard's API Reference button
+// is the caller here, and a wall of JSON tells them nothing actionable; the API
+// data routes keep the JSON 403, because their callers are scripts parsing a
+// body, not people reading a page.
+func (a *API) BindGateDocs(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		list, single := a.settings.GetAPIExposure()
+		if !apiExposureAllows(list, single, netutil.PeerIP(r)) {
+			a.writeDocsForbidden(w, apiExposureLabel(list, single))
+			return
+		}
+		next(w, r)
+	}
+}
+
+// writeDocsForbidden renders the gated-docs page. It is deliberately
+// self-contained (inline CSS, no external assets) and lives in this package
+// because internal/api cannot import internal/web to reuse the landing page.
+func (a *API) writeDocsForbidden(w http.ResponseWriter, exposure string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusForbidden)
+	admin := a.settings.GetAdminPath()
+	docsPath := "/api/v3/docs"
+	if admin != "" {
+		docsPath = "/" + admin + "/api/v3/docs"
+	}
+	_, _ = fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DigitDNS API Docs — Not Exposed</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+           background: #0b1020; color: #e6e7eb;
+           font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+    .card { max-width: 640px; margin: 2rem; padding: 2rem 2.25rem; background: #121a30;
+            border: 1px solid #24304f; border-radius: 16px; }
+    h1 { margin: 0 0 .5rem; font-size: 1.25rem; color: #fff; }
+    p { line-height: 1.55; color: #c3c8d4; }
+    code { background: #0b1020; border: 1px solid #24304f; border-radius: 6px;
+           padding: .1rem .35rem; font-size: .9em; color: #a9d2ff; }
+    .rule { margin: .75rem 0; padding: .6rem .8rem; background: #0b1020; border-left: 3px solid #f59e0b;
+            border-radius: 6px; font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-size: .85rem; color: #fcd34d; }
+    ol { color: #c3c8d4; line-height: 1.7; padding-left: 1.2rem; }
+    a { color: #67e8f9; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Documentation is not exposed to this address</h1>
+    <p>This DigitDNS instance binds its REST API (and these docs) to specific
+      addresses. Your current address is not one of them, so the page is withheld.</p>
+    <div class="rule">%s</div>
+    <p>To reach the docs, either:</p>
+    <ol>
+      <li>Add your current IP or its CIDR in <code>Settings &rarr; API Network Binding</code>, then reload this page.</li>
+      <li>Connect over a network already permitted by the rule above (for example a VPN/tailnet address), then reload.</li>
+      <li>Open an SSH tunnel and browse over loopback, which is always allowed:<br>
+        <code>ssh -L 8080:127.0.0.1:&lt;web-port&gt; root@&lt;server&gt;</code><br>
+        then open <code>http://127.0.0.1:8080%s</code></li>
+    </ol>
+    <p style="color:#8b93a7;font-size:.85rem">The API itself is running normally; only this
+      documentation page is gated. HTTP 403.</p>
+  </div>
+</body>
+</html>`, exposure, docsPath)
 }
 
 // apiExposureAllows applies the resolved exposure rule: a non-empty list is the
@@ -207,9 +279,9 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/policies", a.DeprecateV1(a.SecurityMiddleware(a.handlePolicies)))
 	mux.HandleFunc("/api/v1/cache/flush", a.DeprecateV1(a.SecurityMiddleware(a.handleFlushCache)))
 	mux.HandleFunc("/api/v1/api-key", a.DeprecateV1(a.SecurityMiddleware(a.handleAPIKey)))
-	mux.HandleFunc("/api/v1/docs", a.DeprecateV1(a.BindGate(a.handleDocs)))
-	mux.HandleFunc("/api/v2/docs", a.BindGate(a.handleDocsV2))
-	mux.HandleFunc("/api/v2/openapi.json", a.BindGate(a.handleOpenAPIV2))
+	mux.HandleFunc("/api/v1/docs", a.DeprecateV1(a.BindGateDocs(a.handleDocs)))
+	mux.HandleFunc("/api/v2/docs", a.BindGateDocs(a.handleDocsV2))
+	mux.HandleFunc("/api/v2/openapi.json", a.BindGateDocs(a.handleOpenAPIV2))
 	mux.HandleFunc("/api/server/restart", a.DeprecateV1(a.SecurityMiddleware(a.handleRestart)))
 
 	// v2: the successor contract (RFC 9457 errors, cursor pagination,

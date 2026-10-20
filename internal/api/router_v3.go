@@ -180,8 +180,8 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/update/status", a.SecurityMiddlewareV3(a.handleV3UpdateStatus))
 
 	// Docs.
-	mux.HandleFunc("/api/v3/docs", a.BindGate(a.handleDocsV3))
-	mux.HandleFunc("/api/v3/openapi.json", a.BindGate(a.handleOpenAPIV3))
+	mux.HandleFunc("/api/v3/docs", a.BindGateDocs(a.handleDocsV3))
+	mux.HandleFunc("/api/v3/openapi.json", a.BindGateDocs(a.handleOpenAPIV3))
 }
 
 // SecurityMiddlewareV3 is the v3 auth gate: the same APIBind exposure rule v2

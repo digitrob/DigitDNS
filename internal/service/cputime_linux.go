@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build linux
 
 package service
 
@@ -9,7 +9,8 @@ import (
 )
 
 // processCPUSeconds returns total user+system CPU seconds consumed by the
-// current process (Unix implementation via /proc/self/stat).
+// current process (Linux implementation via /proc/self/stat). Other Unixes
+// have no /proc; see cputime_bsd.go for the getrusage path they use.
 func processCPUSeconds() (float64, error) {
 	data, err := os.ReadFile("/proc/self/stat")
 	if err != nil {

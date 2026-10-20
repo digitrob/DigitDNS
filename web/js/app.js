@@ -217,12 +217,22 @@ document.addEventListener('DOMContentLoaded', () => {
   initModalA11y();
   checkAuthAndBoot();
 
-  // The API docs live under the admin namespace too, and the anchor's href in
-  // index.html is a static "/api/v1/docs" that cannot know the install's path.
-  // Rewritten here from the same value every fetch uses, so the page the button
-  // opens is the one the server actually serves.
-  document.querySelectorAll('a[href="/api/v1/docs"]').forEach((a) => {
-    a.href = api('/api/v1/docs');
+  // The API docs live under the admin namespace too, and the anchors' hrefs in
+  // index.html are static ("/api/v1/docs", "/api/v2/docs", "/api/v3/docs") that
+  // cannot know the install's path. Rewritten here from the same value every
+  // fetch uses, so the page each button opens is the one the server actually
+  // serves. All three versions need this: only v1 used to be rewritten, so the
+  // new v2 and v3 links pointed at the host root and 404'd.
+  // Selected by attribute presence and matched in JS rather than built into the
+  // selector: a querySelector string of the form a[href="/api/…"] looks exactly
+  // like an HTML attribute interpolation to the static escaping sweep in
+  // internal/web/dashboard_escaping_test.go, which would flag a value that never
+  // becomes markup. Comparing getAttribute keeps that sweep honest.
+  const docsPaths = ['/api/v1/docs', '/api/v2/docs', '/api/v3/docs'];
+  document.querySelectorAll('a[href]').forEach((a) => {
+    if (docsPaths.includes(a.getAttribute('href'))) {
+      a.href = api(a.getAttribute('href'));
+    }
   });
 
   // Login form submit

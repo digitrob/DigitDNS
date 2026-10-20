@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.2.2] — Docs links, gated-docs 403 page, leaner container
+
+### 🐛 Fixed
+- **The v2 and v3 API Reference links in the dashboard banner no longer 404.** The banner's root-absolute `/api/v2/docs` and `/api/v3/docs` hrefs were never rewritten to the install's hidden admin namespace — the server rewrote only the v1 anchor, and `app.js` rewrote only v1 at runtime — so both opened the host root, where the API is not mounted. The server-side document rewrite and the runtime rewrite now cover all three versions; each button opens the page the server actually serves.
+- **CPU telemetry now works on macOS and the BSDs.** The Unix CPU sampler was tagged `!windows` but read `/proc/self/stat`, a Linux-only file — so on a macOS or BSD host `processCPUSeconds` errored on every tick and the dashboard's CPU tile never reported a figure. The sampler is now split by platform: Linux keeps `/proc/self/stat`, and Darwin/the BSDs read the same cumulative user+system time through `getrusage`.
+- **A browser refused by the API bind gate on a docs page now gets an explanation instead of raw JSON.** When `api_bind` (or `api_bind_list`) does not admit the caller, `/api/v?/docs` and `/api/v?/openapi.json` answer with a self-contained HTML 403 that names the rule in force and lists the three ways to reach the docs — add the address in **Settings → API Network Binding**, connect over an already-allowed network (for example a tailnet), or open an SSH tunnel and browse over loopback. The API data routes keep their JSON 403, because their callers parse a body rather than read a page.
+
+### 🔄 Changed
+- **The container image builds in fewer layers and re-uses its caches.** The runtime `apk add` and directory creation are one layer, the Go module download and compile use BuildKit cache mounts, and the binary is built with `-buildvcs=false` alongside `-trimpath` for reproducible bytes. The base images are unchanged: `golang:1.26-alpine` to build, `alpine:3.20` to run.
+
+### 📝 Notes
+- API documentation (including the OpenAPI specs) **remains gated** by the API network binding; it is not exposed to callers the rule does not admit. Only the refused response changed.
+
+---
+
 ## 🏷️ [v3.2.1] — API v3: correct problem `instance`
 
 ### 🐛 Fixed

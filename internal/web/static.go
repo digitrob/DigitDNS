@@ -266,10 +266,14 @@ func (s *staticServer) prefixDocument(adminPath string) *staticAsset {
 	for _, p := range assetPathPrefixes {
 		html = strings.ReplaceAll(html, `="`+p, `="`+prefix+p)
 	}
-	// The docs anchor is the one absolute reference that is not an asset, and
-	// app.js also rewrites it at runtime; rewriting it here keeps the link
-	// correct before any script runs.
-	html = strings.ReplaceAll(html, `href="/api/v1/docs"`, `href="`+prefix+`/api/v1/docs"`)
+	// The docs anchors are the absolute references that are not assets, and
+	// app.js also rewrites them at runtime; rewriting them here keeps each link
+	// correct before any script runs. All three versions are listed: only v1
+	// used to be rewritten, so once the banner gained v2 and v3 buttons their
+	// root-absolute hrefs 404'd.
+	for _, p := range []string{"/api/v1/docs", "/api/v2/docs", "/api/v3/docs"} {
+		html = strings.ReplaceAll(html, `href="`+p+`"`, `href="`+prefix+p+`"`)
+	}
 	return newStaticAsset("index.html", []byte(html))
 }
 

@@ -81,6 +81,7 @@ Authorization: Bearer digitdns_session_your_token_here
 - **Admin path:** since v2.1 the panel and its API live below a random 16-hex-character path generated once at first install (printed to the log on first run). It is a locator, not a credential — every URL below shows the un-prefixed form, and you must insert your own `<admin-path>` before it.
 - **Panel port:** fresh installs draw a random management port (20000–60000) instead of the old fixed 8080; the installer prints and opens it. Read it from the install banner or the service log.
 - **Interactive Swagger Documentation:** Open `http://<SERVER_IP>:<panel-port>/<admin-path>/api/v3/docs` in your browser (v2 at `/api/v2/docs`, v1 at `/api/v1/docs`). Press **Authorize**, paste the Master API Key from Settings — or a session token from `/api/v3/auth/login` — and every endpoint on the page becomes runnable from the browser.
+- **Docs are gated too:** the documentation pages and the OpenAPI specs are subject to the same network-binding rule as the API — they are not exposed to callers `api_bind`/`api_bind_list` does not admit. A refused **browser** gets an HTML `403` that names the rule in force and how to satisfy it (add your address in **Settings → API Network Binding**, use an already-allowed network such as a tailnet, or browse over an SSH tunnel to loopback); a refused **API route** keeps the JSON `403` above, because its caller parses a body rather than reads a page.
 
 ---
 
