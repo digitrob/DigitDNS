@@ -10,8 +10,7 @@ import (
 // served "DigitDNS", the Proxied section keeps its renamed title, and the
 // AGPL-3.0 requires the upstream work be credited in the running app and in the
 // repository. These pins are cheap, and they are what stops a future upstream
-// merge (see .github/workflows/upstream-sync.yml) from quietly reverting the
-// rebrand or dropping the attribution.
+// merge from quietly reverting the rebrand or dropping the attribution.
 
 // repoFile reads a file relative to this package's directory (`go test` runs
 // with internal/web as the working directory).
@@ -73,15 +72,6 @@ func TestSelfUpdateRepointedToFork(t *testing.T) {
 	} {
 		if !strings.Contains(src, pin) {
 			t.Errorf("internal/selfupdate/selfupdate.go no longer pins %q — a fork build would follow upstream", pin)
-		}
-	}
-}
-
-func TestUpstreamSyncWorkflowExists(t *testing.T) {
-	wf := repoFile(t, "../../.github/workflows/upstream-sync.yml")
-	for _, marker := range []string{"IzumiRain/HyperDNS", "custom", "schedule"} {
-		if !strings.Contains(wf, marker) {
-			t.Errorf("upstream-sync.yml is missing %q", marker)
 		}
 	}
 }
