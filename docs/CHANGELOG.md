@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.1.1] — Diagnostic Suite: stale result on server removal
+
+### 🐛 Fixed
+- **Deleting a server in the Diagnostic Suite now clears its test result immediately.** Removing a target from **MY SERVERS** updated the editable list and reset the score banner, but the run-results row for that server stayed on screen until the next **Run Test** rebuilt the whole list — so a removed server appeared to still be measured. The results row now carries the host it measured and is dropped the moment its target is deleted, with the empty-state hint restored when no rows remain.
+
+---
+
 ## 🏷️ [v3.1.0] — Multi-CIDR Resolver & API Access, Portal IP Self-Service & a Rebuilt Diagnostic Suite
 
 ### ✨ Added

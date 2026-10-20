@@ -4185,12 +4185,32 @@ async function removeDiagTarget(host) {
     const data = await res.json();
     diagTargets = Array.isArray(data.targets) ? data.targets : [];
     renderDiagTargets();
+    // The deleted server's result row is stale the moment it is gone. Drop it from
+    // the results list now instead of leaving it until the next run rebuilds the
+    // whole list — a result for a target the operator just removed reads as if the
+    // removal did not take.
+    removeDiagResultRow(host);
     const scoreEl = document.getElementById('diag-score');
     const qualEl = document.getElementById('diag-quality');
     if (scoreEl) scoreEl.innerText = '--%';
     if (qualEl) qualEl.innerText = 'Ready to test';
   } catch (e) {
     showToast('Could not reach the server to remove the target.', 'error');
+  }
+}
+
+// removeDiagResultRow drops the results row whose measured target matches host,
+// then restores the empty-state hint when no rows remain. The row carries its
+// target in data-diag-target (renderDiagnosticsReport sets it), so the match is an
+// exact string compare against the same stored host:port the delete used.
+function removeDiagResultRow(host) {
+  const container = document.getElementById('diag-items-list');
+  if (!container) return;
+  container.querySelectorAll('[data-diag-target]').forEach((row) => {
+    if (row.dataset.diagTarget === host) row.remove();
+  });
+  if (!container.querySelector('[data-diag-target]')) {
+    container.innerHTML = '<div class="text-center py-6 text-slate-500 text-xs">No servers configured. Add a name and host above, then run the test again.</div>';
   }
 }
 
@@ -4308,6 +4328,10 @@ function renderDiagnosticsReport(rep) {
   for (const r of results) {
     const row = document.createElement('div');
     row.className = 'flex items-center justify-between py-2 px-3 rounded-lg bg-slate-950/70 border border-slate-800 text-xs';
+    // The stored host:port this row measured, so removeDiagTarget can drop the row
+    // the moment its server is deleted rather than leaving a result on screen for
+    // a target that no longer exists.
+    row.dataset.diagTarget = r.target || '';
 
     // latency_ms is 0 on a failed dial and absent from nothing the server sends — but
     // toFixed on a missing field throws, and that throw used to be reported as a network
