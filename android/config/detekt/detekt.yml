@@ -1,0 +1,42 @@
+# detekt configuration for the DigitDNS Android app.
+#
+# The defaults are kept and only a few rules are relaxed for the shapes this codebase
+# actually uses. It is deliberately not an all-rules run: a style report that buries
+# real findings in hundreds of opinions is one nobody reads.
+
+complexity:
+  LongMethod:
+    # Compose screen functions and the v3 DTO mappers are long by nature.
+    threshold: 80
+  LongParameterList:
+    functionThreshold: 8
+    constructorThreshold: 8
+  TooManyFunctions:
+    thresholdInFiles: 25
+    thresholdInClasses: 20
+    # A Hilt module is one @Provides per injectable; the NetworkModule crosses this the
+    # moment a new API interface is wired. Counting providers as a smell would just
+    # push them into per-API modules for no readability gain.
+    thresholdInObjects: 24
+    thresholdInInterfaces: 16
+
+style:
+  MagicNumber:
+    # Colour hexes and dimension constants appear in the theme and Compose modifiers.
+    ignorePropertyDeclaration: true
+    ignoreCompanionObjectPropertyDeclaration: true
+    ignoreAnnotated: ['Composable']
+    # The number-formatting module is made of numeric constants (1024, 100, unit
+    # boundaries); naming each one would obscure rather than clarify.
+    excludes: ['**/ui/Format.kt']
+  MaxLineLength:
+    maxLineLength: 140
+  UnusedPrivateMember:
+    ignoreAnnotated: ['Preview']
+
+naming:
+  FunctionNaming:
+    # @Composable functions are PascalCase by convention.
+    ignoreAnnotated: ['Composable']
+  TopLevelPropertyNaming:
+    constantPattern: '[A-Z][_A-Za-z0-9]*|[A-Za-z][_A-Za-z0-9]*'

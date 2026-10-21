@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backup is off at the application level (allowBackup="false"): this app holds a
+     server credential and a trust decision for a self-signed certificate, and neither
+     belongs in a cloud backup that could restore onto a different device. This file
+     exists only because the manifest names it and the tooling warns if it is absent. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="file" path="datastore" />
+</full-backup-content>

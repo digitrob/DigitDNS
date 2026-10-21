@@ -1,0 +1,199 @@
+name: Android
+
+# The Android app is a separate product with its own build, its own toolchain and its
+# own release cadence, so it gets its own workflow rather than sharing the Go one —
+# a server patch must not rebuild (or fail to build) the app, and an app release must
+# not be gated on the Go race suite.
+#
+# Path filters keep it that way in both directions: this workflow runs only when
+# something under android/ (or this file) changes, and the Go workflows in ci.yml and
+# release.yml are untouched by an android/ change.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+    tags:
+      - 'android-v*'
+  pull_request:
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first run's answer irrelevant; a tag push
+# is matched by its own ref so it never cancels a branch run.
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, test and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Temurin 17 is the JDK the build targets (sourceCompatibility 17) and the one
+      # the Android Gradle Plugin 8.7 line expects. A newer JDK breaks AGP's own
+      # bytecode expectations, so it is pinned rather than left to the runner default.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # android-36 is the compileSdk; the NDK is not needed (no native code).
+      - name: Install SDK platform
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Unit tests
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
+
+      - name: detekt
+        working-directory: android
+        run: ./gradlew detekt --no-daemon
+
+      - name: Android lint
+        working-directory: android
+        run: ./gradlew :app:lintDebug --no-daemon
+
+      - name: Assemble debug APK
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: digitdns-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  release:
+    name: Sign and publish the release APK
+    # Only a tag builds a release; a branch or PR push stops at the build job above.
+    if: startsWith(github.ref, 'refs/tags/android-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install SDK platform
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      # The keystore arrives as base64 in a secret and is materialised only for the
+      # duration of the job. A release signed with a missing or wrong key is worse than
+      # no release: Android refuses an update whose signature differs, so the operator
+      # could never install a later build. The job refuses to proceed without it.
+      - name: Materialise the signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "${KEYSTORE_BASE64}" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not set — refusing to publish an unsigned APK"
+            exit 1
+          fi
+          echo "${KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/digitdns-release.jks"
+
+      - name: Assemble the signed release APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/digitdns-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      # ABI splits emit `app-<abi>-release.apk` (plus `app-universal-release.apk`).
+      # Each is renamed to a self-describing `digitdns-companion-<tag>-<abi>.apk` and
+      # paired with a `.sha256`, so an operator can tell at a glance which slice to
+      # install on which phone without unpacking anything.
+      #
+      # A release build without a signing config produces *-unsigned.apk files; the
+      # rename would hide that, so the glob below only matches the signed names and
+      # the count check fails the job if nothing signed came out.
+      - name: Name the artefacts with version and architecture
+        id: artefact
+        run: |
+          set -euo pipefail
+          cd android/app/build/outputs/apk/release
+          shopt -s nullglob
+          # The tag is `android-v0.1.0`; both the `android-` series marker and the `v`
+          # are tag syntax, so strip them for a clean `0.1.0` in the filename.
+          version="${GITHUB_REF_NAME#android-}"
+          version="${version#v}"
+          produced=()
+          for apk in app-*-release.apk; do
+            abi="${apk#app-}"          # <abi>-release.apk
+            abi="${abi%-release.apk}"  # <abi>
+            out="digitdns-companion-${version}-${abi}.apk"
+            cp "$apk" "$out"
+            sha256sum "$out" > "${out}.sha256"
+            produced+=("$out" "${out}.sha256")
+          done
+          if [ "${#produced[@]}" -eq 0 ]; then
+            echo "::error::no signed release APKs found — did assembleRelease produce *-unsigned.apk?"
+            exit 1
+          fi
+          ls -l digitdns-companion-*
+
+      # The APK is side-loaded, not distributed through Play, so the release notes are
+      # the only place an operator learns what the tag contains.
+      - name: Compose the release body
+        run: |
+          version="${GITHUB_REF_NAME#android-}"
+          version="${version#v}"
+          {
+            echo "> **DigitDNS Companion — \`${version}\`.**"
+            echo ">"
+            echo "> Side-load onto Android 10 (API 29) or newer. The app carries its own"
+            echo "> version line, independent of the server's."
+            echo ">"
+            echo "> Pick the file that matches your device's CPU architecture:"
+            echo ">"
+            echo "> | APK | Architecture |"
+            echo "> | --- | --- |"
+            echo "> | \`digitdns-companion-${version}-arm64-v8a.apk\` | 64-bit ARM (virtually all phones since ~2016) |"
+            echo "> | \`digitdns-companion-${version}-armeabi-v7a.apk\` | 32-bit ARM (older/low-end devices) |"
+            echo "> | \`digitdns-companion-${version}-x86_64.apk\` | x86-64 (emulators, some tablets) |"
+            echo "> | \`digitdns-companion-${version}-universal.apk\` | all of the above — larger, use if unsure |"
+            echo ">"
+            echo "> Verify the download against the matching \`.sha256\` file before installing."
+          } > "${RUNNER_TEMP}/android-release-body.md"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # The renamed `digitdns-companion-<tag>-<abi>.apk` files and their paired
+          # `.apk.sha256` checksums, one of each per ABI.
+          files: android/app/build/outputs/apk/release/digitdns-companion-*.apk*
+          fail_on_unmatched_files: true
+          # The app's tags never take the "Latest" badge: a companion APK is not the
+          # server release a new user should land on, and "Latest" is what the README's
+          # install one-liner resolves.
+          make_latest: 'false'
+          generate_release_notes: true
+          body_path: ${{ runner.temp }}/android-release-body.md

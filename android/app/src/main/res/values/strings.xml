@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DigitDNS</string>
+
+    <!-- Navigation destinations, mirroring the panel's own tab names. -->
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_clients">Clients</string>
+    <string name="nav_connect">Connect</string>
+    <string name="nav_proxied">Proxied</string>
+    <string name="nav_rules">Rules</string>
+    <string name="nav_stream">Live Stream</string>
+    <string name="nav_api">API</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Notification channels that carry the live-stream events. -->
+    <string name="channel_live_stream_name">Live stream alerts</string>
+    <string name="channel_live_stream_desc">Events from the DigitDNS server: quota, expiry and security notices.</string>
+    <string name="channel_live_status_name">Live connection</string>
+    <string name="channel_live_status_desc">Keeps the live event stream connected.</string>
+
+    <!-- The foreground service's own persistent notification. -->
+    <string name="live_alerts_running">Live alerts on</string>
+    <string name="live_alerts_running_detail">Connected to your DigitDNS install.</string>
+
+    <!-- The System tab's live-alerts toggle. -->
+    <string name="nav_system">System</string>
+    <string name="nav_alerts">Alerts</string>
+    <string name="alerts_title">Live alerts</string>
+    <string name="alerts_description">Get a notification when a query is blocked on your install. Keeps a small persistent connection open.</string>
+    <string name="alerts_permission_needed">Notifications are turned off for DigitDNS. Enable them in system settings to receive alerts.</string>
+</resources>

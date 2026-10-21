@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The panel's dark page colour. Same as the day value: this app defaults to the
+         dark scheme the panel ships as its no-JavaScript fallback, and a light-mode
+         user gets the white page from Compose, not from a second window colour. -->
+    <color name="panel_bg">#FF060913</color>
+</resources>

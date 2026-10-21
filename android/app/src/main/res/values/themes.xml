@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- The Compose theme owns every colour; this style only has to hand the window
+         a background that matches the panel's page colour so there is no white flash
+         between the splash and the first Compose frame. values-night carries the
+         dark value. -->
+    <style name="Theme.DigitDNS" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/panel_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+    </style>
+</resources>

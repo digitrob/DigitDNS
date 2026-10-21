@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The round variant of the launcher icon. Android 8+ resolves
+     @mipmap/ic_launcher_round through this adaptive icon and applies the
+     launcher's own round mask, so it declares the same layers as
+     mipmap-anydpi-v26/ic_launcher.xml. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>

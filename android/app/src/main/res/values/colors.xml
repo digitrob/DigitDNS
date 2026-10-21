@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The panel's dark page colour (bg-main = slate-900 = 6 9 19). Kept as a
+         resource because the window background is set before Compose runs. -->
+    <color name="panel_bg">#FF060913</color>
+</resources>
