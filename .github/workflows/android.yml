@@ -82,7 +82,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Sign and publish the release APK
+    name: Build, sign and attach the release APK
     # Only a tag builds a release; a branch or PR push stops at the build job above.
     if: startsWith(github.ref, 'refs/tags/android-v')
     needs: build
@@ -162,40 +162,41 @@ jobs:
           fi
           ls -l digitdns-*.apk
 
-      # The APK is side-loaded, not distributed through Play, so the release notes are
-      # the only place an operator learns what the tag contains.
-      - name: Compose the release body
+      # The APKs live on the server's release, not on one of their own: one release
+      # carries the binaries, the offline bundle and the companion APKs together, so
+      # an operator downloads everything for a version from one page. The server tag
+      # is the android tag with the series marker stripped (`android-v3.3.0` ->
+      # `v3.3.0`).
+      #
+      # The two tags are usually pushed together, and the server release is created
+      # only after its full quality gate (vet, tests, race suite) — which can take
+      # ten minutes or more. This job waits for it rather than racing it: polling
+      # `gh release view` until the release exists, then uploading onto it. A tag
+      # pushed without its matching server tag is a mistake, so the wait is capped —
+      # capped hard, with a clear error, rather than silently succeeding into the
+      # void. `--clobber` keeps re-pushing the same android tag idempotent: the
+      # same-named APK files are replaced, never duplicated.
+      - name: Wait for the server release, then attach the APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          version="${GITHUB_REF_NAME#android-}"
-          version="${version#v}"
-          {
-            echo "> **DigitDNS Companion — \`${version}\`.**"
-            echo ">"
-            echo "> Side-load onto Android 10 (API 29) or newer. The app carries its own"
-            echo "> version line, independent of the server's."
-            echo ">"
-            echo "> Pick the file that matches your device's CPU architecture:"
-            echo ">"
-            echo "> | APK | Architecture |"
-            echo "> | --- | --- |"
-            echo "> | \`digitdns-arm64-v8a.apk\` | 64-bit ARM (virtually all phones since ~2016) |"
-            echo "> | \`digitdns-armeabi-v7a.apk\` | 32-bit ARM (older/low-end devices) |"
-            echo "> | \`digitdns-x86_64.apk\` | x86-64 (emulators, some tablets) |"
-            echo "> | \`digitdns-universal.apk\` | all of the above — larger, use if unsure |"
-            echo ">"
-            echo "> Verify the download against the matching \`.sha256\` file before installing."
-          } > "${RUNNER_TEMP}/android-release-body.md"
+          set -euo pipefail
+          RELEASE_TAG="${GITHUB_REF_NAME#android-}" # "v3.3.0"
+          RELEASE_TAG="v${RELEASE_TAG#v}"           # normalise regardless of the marker's shape
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          # The renamed `digitdns-<abi>.apk` files and their paired
-          # `.apk.sha256` checksums, one of each per ABI.
-          files: android/app/build/outputs/apk/release/digitdns-*.apk*
-          fail_on_unmatched_files: true
-          # The app's tags never take the "Latest" badge: a companion APK is not the
-          # server release a new user should land on, and "Latest" is what the README's
-          # install one-liner resolves.
-          make_latest: 'false'
-          generate_release_notes: true
-          body_path: ${{ runner.temp }}/android-release-body.md
+          deadline=$(( $(date +%s) + 45*60 ))
+          printf 'waiting for release %s on %s\n' "$RELEASE_TAG" github.com/digitrob/DigitDNS
+          until gh release view "$RELEASE_TAG" --repo digitrob/DigitDNS > /dev/null 2>&1; do
+            now=$(date +%s)
+            if [ "$now" -ge "$deadline" ]; then
+              echo "::error::release $RELEASE_TAG did not appear within 45 minutes — push it before (or with) the $GITHUB_REF_NAME tag"
+              exit 1
+            fi
+            sleep 30
+          done
+          gh release upload "$RELEASE_TAG" --repo digitrob/DigitDNS --clobber \
+            android/app/build/outputs/apk/release/digitdns-*.apk
+          gh release upload "$RELEASE_TAG" --repo digitrob/DigitDNS --clobber \
+            android/app/build/outputs/apk/release/digitdns-*.apk.sha256
+          echo "-- attached to $RELEASE_TAG --"
+          gh release view "$RELEASE_TAG" --repo digitrob/DigitDNS --json assets --jq '.assets[].name'

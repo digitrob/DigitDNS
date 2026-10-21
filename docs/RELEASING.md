@@ -44,10 +44,25 @@ So the update feed moves on exactly one event: **`main`'s `version.json` bumping
 to a final number, followed by that tag.** It does not watch GitHub's *Latest*
 badge, and beta tags do not move it.
 
+## Pushing a release
+
+Every release is two tags on the same commit, pushed together:
+
+1. `vX.Y.Z` — the server product. Triggers the server release (binaries,
+   offline bundle, checksums) and the Docker image. The release is created only
+   after the full server quality gate, which takes about ten minutes.
+2. `android-vX.Y.Z` — the Android companion. Builds and signs the multi-ABI
+   APKs, then **attaches them to the `vX.Y.Z` release**, waiting up to 45
+   minutes for it to appear.
+
+So one release page carries everything for the version: server binaries, the
+offline bundle, and the companion APKs. `android-vX.Y.Z` never owns a release
+of its own, and the *Latest* badge always points at the server release.
+
 ## Where this repository stands
 
-`main` carries `v2.2.0`, the release the project is known for, and it stays the
-pinned stable line. The `2.3`–`2.6` betas that followed were published before
-this policy existed; their prerelease flags have been corrected on GitHub, but
-no number, tag, asset or link was changed. The stable line will be cut on `main`
-when the work is releasable, and the updater feed starts moving that day.
+`main` carries the stable line (currently `v3.3.0`, see `version.json`). The
+`2.3`–`2.6` betas that followed the v2.2.0 era were published before this
+policy existed; their prerelease flags have been corrected on GitHub, but no
+number, tag, asset or link was changed. New stable releases are cut on `main`
+when the work is releasable, and the updater feed moves with the tag.

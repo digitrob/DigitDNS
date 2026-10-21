@@ -377,9 +377,9 @@ than distributed through Play.
 - **Live stream service** — a foreground service keeps the SSE connection
   alive and raises notifications while the app is in the background.
 
-**Requirements:** Android 10 (API 29) or newer. Download the APK that matches
-your device's CPU from the
-[Android release](https://github.com/digitrob/DigitDNS/releases) —
+**Requirements:** Android 10 (API 29) or newer. The companion APKs ship with
+each server release — grab one from the
+[latest release page](https://github.com/digitrob/DigitDNS/releases/latest) —
 `digitdns-arm64-v8a.apk` for virtually all phones since ~2016,
 `digitdns-armeabi-v7a.apk` for older devices, `digitdns-x86_64.apk` for
 emulators, or `digitdns-universal.apk` if you are unsure. Verify against the

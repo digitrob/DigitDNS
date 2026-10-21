@@ -5,8 +5,8 @@
 - **Android companion app.** A native Android client with full panel parity —
   login with session tokens and TOTP, dashboard stats, domain rules, clients,
   upstreams, a live query log with one-tap actions, diagnostics and settings.
-  Ships as signed multi-ABI APKs (`digitdns-<abi>.apk`) on the Android release
-  page, with its own version line and an adaptive launcher icon.
+  The signed APKs are attached to this same release (see below), with their own
+  version line and an adaptive launcher icon.
 - **Client management as popups.** Adding and editing a subscriber now opens
   over the list instead of pushing a new screen; the form is shared so the two
   paths cannot drift.
@@ -25,6 +25,20 @@
   `POST /api/v3/upstreams/delete`, matching the dashboard.
 - **Stable live stream.** The panel now negotiates HTTP/1.1 only, so long-lived
   live-log streams are not reset by HTTP/2 intermediaries.
+
+## Android companion app
+
+Side-load the APK for your device's CPU architecture onto Android 10 (API 29)
+or newer; the app carries its own version line, independent of the server's.
+
+| APK | Architecture |
+| --- | --- |
+| `digitdns-arm64-v8a.apk` | 64-bit ARM (virtually all phones since ~2016) |
+| `digitdns-armeabi-v7a.apk` | 32-bit ARM (older/low-end devices) |
+| `digitdns-x86_64.apk` | x86-64 (emulators, some tablets) |
+| `digitdns-universal.apk` | all of the above — larger, use if unsure |
+
+Verify the download against the matching `.sha256` file before installing.
 
 ## Also in this release
 - Dedicated pull-to-refresh indicators on Servers, TLS, About, Groups, Policies
