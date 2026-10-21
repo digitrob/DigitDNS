@@ -120,7 +120,7 @@ fun ClientDetailScreen(
 
 /** The editable fields. Split out so the screen body stays readable. */
 @Composable
-private fun ClientForm(state: ClientDetailUiState, viewModel: ClientDetailViewModel) {
+internal fun ClientForm(state: ClientDetailUiState, viewModel: ClientDetailViewModel) {
     OutlinedTextField(
         value = state.name,
         onValueChange = viewModel::onNameChange,

@@ -114,6 +114,19 @@ class ClientDetailViewModel @Inject constructor(
 
     fun dismissMessage() = _state.update { it.copy(message = null) }
 
+    /**
+     * Return the form to its create defaults.
+     *
+     * The new-client dialog's view model is scoped to the client list, so it
+     * outlives the dialog itself: without this, reopening the dialog would show
+     * the previous client's values, a stale error and a "saved" flag that was
+     * still set.
+     */
+    fun resetForNewClient() {
+        if (_state.value.mode !is ClientDetailMode.Create) return
+        _state.update { ClientDetailUiState() }
+    }
+
     fun save() {
         val current = _state.value
         if (!current.canSave) return
@@ -220,5 +233,8 @@ class ClientDetailViewModel @Inject constructor(
     companion object {
         const val ARG_CLIENT_ID = "clientId"
         const val NEW_CLIENT_SENTINEL = "new"
+
+        /** The key the new-client dialog's view model is stored under. */
+        const val CREATE_VIEWMODEL_KEY = "client-create"
     }
 }

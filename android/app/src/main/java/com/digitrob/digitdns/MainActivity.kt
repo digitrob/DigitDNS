@@ -200,9 +200,6 @@ private fun DigitDnsNavHost(
             TabShell(navController, Routes.CLIENTS) {
                 ClientsScreen(
                     onOpenClient = { id -> navController.navigate(Routes.clientDetail(id)) },
-                    onCreate = {
-                        navController.navigate(Routes.clientDetail(ClientDetailViewModel.NEW_CLIENT_SENTINEL))
-                    },
                 )
             }
         }

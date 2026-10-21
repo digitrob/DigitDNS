@@ -20,6 +20,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,10 +48,14 @@ import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 @Composable
 fun ClientsScreen(
     onOpenClient: (String) -> Unit,
-    onCreate: () -> Unit,
     viewModel: ClientsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var showCreate by remember { mutableStateOf(false) }
+    // The dialog's view model is scoped to this screen, so it survives the dialog
+    // being closed and reopened; the form is reset each time it opens.
+    val createViewModel: ClientDetailViewModel =
+        hiltViewModel(key = ClientDetailViewModel.CREATE_VIEWMODEL_KEY)
 
     // Refetch whenever the list comes back into view — returning from a client detail
     // screen (where a client may have been created, renamed or deleted) must not leave
@@ -60,7 +67,10 @@ fun ClientsScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         PanelScreenHeader {
-            IconButton(onClick = onCreate) {
+            IconButton(onClick = {
+                createViewModel.resetForNewClient()
+                showCreate = true
+            }) {
                 Icon(Icons.Filled.Add, contentDescription = "New client")
             }
         }
@@ -114,6 +124,18 @@ fun ClientsScreen(
                 }
             }
         }
+    }
+
+    if (showCreate) {
+        NewClientDialog(
+            onDismiss = { showCreate = false },
+            onCreated = {
+                showCreate = false
+                // The list is behind the dialog, so it never saw the new client.
+                viewModel.refresh()
+            },
+            viewModel = createViewModel,
+        )
     }
 }
 
