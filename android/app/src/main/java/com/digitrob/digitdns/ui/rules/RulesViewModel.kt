@@ -55,16 +55,6 @@ data class DomainRow(
 }
 
 /**
- * A reversal recipe for the last destructive edit, so the UI can offer Undo. It holds
- * the whole list snapshot taken immediately before the removal, which the VM replays
- * through the same save path on undo.
- */
-data class UndoSnapshot(
-    val lists: RuleLists,
-    val label: String,
-)
-
-/**
  * The editable state of the Domains screen and the pinned-record map.
  *
  * The screen projects every custom rule that lives on the Domains tab — the proxied set
@@ -83,8 +73,6 @@ data class RulesUiState(
     val isSaving: Boolean = false,
     val error: String? = null,
     val savedMessage: String? = null,
-    /** The reversible snapshot of the last delete, or null when there is nothing to undo. */
-    val undo: UndoSnapshot? = null,
 ) {
     /** Every editable domain, tagged with its status. */
     private val allRows: List<DomainRow>
@@ -170,7 +158,7 @@ class RulesViewModel @Inject constructor(
         it.copy(filter = if (it.filter == value) null else value)
     }
 
-    fun dismissMessage() = _state.update { it.copy(savedMessage = null, undo = null) }
+    fun dismissMessage() = _state.update { it.copy(savedMessage = null) }
 
     /** Add a proxied domain (bulk paste: one or more names, any separators). */
     fun addDomain(raw: String) {
@@ -198,10 +186,7 @@ class RulesViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Remove one domain from whichever custom list it lives in. The pre-removal list is
-     * kept so the UI's Undo action can put it back.
-     */
+    /** Remove one domain from whichever custom list it lives in. The UI confirms first. */
     fun removeDomain(domain: String) {
         viewModelScope.launch {
             val lists = _state.value.lists
@@ -211,19 +196,8 @@ class RulesViewModel @Inject constructor(
                 blocked = lists.blocked - domain,
                 direct = lists.direct - domain,
             )
-            write(next, "Removed $domain.", undo = UndoSnapshot(lists, "Removed $domain."))
+            write(next, "Removed $domain.")
         }
-    }
-
-    /**
-     * Re-apply the snapshot taken before the last delete. A no-op when there is nothing
-     * to undo; the snapshot is cleared whichever way the save lands, so Undo is offered
-     * exactly once per delete.
-     */
-    fun undoLastDelete() {
-        val snapshot = _state.value.undo ?: return
-        _state.update { it.copy(undo = null) }
-        viewModelScope.launch { write(snapshot.lists, "Restored.", undo = null) }
     }
 
     /**
@@ -280,8 +254,8 @@ class RulesViewModel @Inject constructor(
         viewModelScope.launch { write(_state.value.lists.copy(records = next), "Removed $domain.") }
     }
 
-    private suspend fun write(next: RuleLists, message: String? = null, undo: UndoSnapshot? = null) {
-        _state.update { it.copy(lists = next, isSaving = true, error = null, undo = undo) }
+    private suspend fun write(next: RuleLists, message: String? = null) {
+        _state.update { it.copy(lists = next, isSaving = true, error = null) }
         try {
             val ok = repository.save(next)
             _state.update {

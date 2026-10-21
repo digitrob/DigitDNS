@@ -88,7 +88,12 @@ private fun DiagnosticsBody(state: DiagnosticsUiState, viewModel: DiagnosticsVie
                 )
             } else {
                 state.targets.forEach { target ->
-                    SwipeToDeleteRow(onDelete = { viewModel.deleteTarget(target.host) }) {
+                    SwipeToDeleteRow(
+                        onDelete = { viewModel.deleteTarget(target.host) },
+                        confirmTitle = "Remove ${target.name}?",
+                        confirmText = "It is no longer checked for reachability and latency.",
+                        confirmLabel = "Remove",
+                    ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

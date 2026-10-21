@@ -18,12 +18,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -33,17 +29,16 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.domain.model.CredentialMode
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
-import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.SwipeToDeleteRow
 
 /**
  * The Servers section: every saved install, which one is active, and the way to add,
  * switch, or forget one, alongside the sign-out control.
  *
- * A tap on a row switches to that install; a delete icon forgets it. Switching is the
- * common action and removal is the destructive one, so the whole row is the switch
- * target and deletion is a separate, confirmed button — the reverse would make an
- * accidental sign-out one stray tap away.
+ * A tap on a row switches to that install; a swipe forgets it, behind a confirmation.
+ * Switching is the common action and removal is the destructive one, so the whole row is
+ * the switch target and deletion stays a separate, deliberate gesture — the reverse would
+ * make an accidental sign-out one stray tap away.
  */
 @Composable
 fun ServersScreen(
@@ -52,7 +47,6 @@ fun ServersScreen(
     viewModel: ServersViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var pendingRemoval by remember { mutableStateOf<ServerRow?>(null) }
 
     PanelRefreshBox(
         isRefreshing = state.isRefreshing,
@@ -80,7 +74,7 @@ fun ServersScreen(
                     server = server,
                     enabled = !state.isBusy,
                     onSwitch = { viewModel.switchTo(server.id) },
-                    onRemove = { pendingRemoval = server },
+                    onRemove = { viewModel.remove(server.id) },
                 )
             }
         }
@@ -98,16 +92,6 @@ fun ServersScreen(
     }
     }
 
-    pendingRemoval?.let { target ->
-        RemoveServerDialog(
-            server = target,
-            onConfirm = {
-                viewModel.remove(target.id)
-                pendingRemoval = null
-            },
-            onDismiss = { pendingRemoval = null },
-        )
-    }
 }
 
 @Composable
@@ -119,6 +103,10 @@ private fun ServerCard(
 ) {
     SwipeToDeleteRow(
         onDelete = { if (enabled) onRemove() },
+        confirmTitle = "Remove server?",
+        confirmText = "This forgets ${server.label} (${server.authority}) and its saved " +
+            "credentials on this device. The server itself is not changed.",
+        confirmLabel = "Remove",
     ) {
         Card(
             modifier = Modifier
@@ -186,22 +174,3 @@ private fun ServerCard(
     }
 }
 
-@Composable
-private fun RemoveServerDialog(
-    server: ServerRow,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    PanelDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Remove server?") },
-        text = {
-            Text(
-                "This forgets ${server.label} (${server.authority}) and its saved " +
-                    "credentials on this device. The server itself is not changed.",
-            )
-        },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("Remove") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}

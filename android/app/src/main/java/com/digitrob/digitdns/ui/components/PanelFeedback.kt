@@ -47,9 +47,6 @@ import kotlinx.coroutines.launch
 /** How long a transient message lingers. M3's own `Short` is 4 s; the panel uses ~3 s. */
 private const val TOAST_DURATION_MS = 3_000L
 
-/** How long an action-bearing message (Undo) lingers — the M3 `Short` 4 s. */
-private const val ACTION_DURATION_MS = 4_000L
-
 /**
  * A themed replacement for [AlertDialog]. Same parameters as M3's, so a call site only
  * swaps the import; the difference is the glass surface, the panel's corner radius and
@@ -125,49 +122,35 @@ private fun PanelToast(data: SnackbarData) {
                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            data.visuals.actionLabel?.let { label ->
-                Text(
-                    text = label.uppercase(),
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
         }
     }
 }
 
 /**
- * Show a transient message with the app's own lifetime. A plain message lingers 3 s;
- * one that carries an action (Undo) gets 4 s, because an undo the operator cannot
- * reach in time is the same as no undo.
+ * Show a transient message with the app's own lifetime: it lingers 3 s and then goes.
  *
  * M3 has no 3 s duration constant, so the snackbar is shown indefinitely and a sibling
- * timer dismisses it. The real [androidx.compose.material3.SnackbarResult] is returned,
- * so a call site that checks for an action keeps working.
+ * timer dismisses it. The message carries no action: a destructive change asks before
+ * it happens, so there is nothing left to reverse once it has.
  */
 suspend fun SnackbarHostState.showPanelToast(
     message: String,
-    actionLabel: String? = null,
     withDismissAction: Boolean = false,
-): androidx.compose.material3.SnackbarResult {
-    val duration = if (actionLabel != null) ACTION_DURATION_MS else TOAST_DURATION_MS
-    return coroutineScope {
+) {
+    coroutineScope {
         val snackbar = async {
             showSnackbar(
                 message = message,
-                actionLabel = actionLabel,
                 withDismissAction = withDismissAction,
                 duration = SnackbarDuration.Indefinite,
             )
         }
         val timer = launch {
-            delay(duration)
+            delay(TOAST_DURATION_MS)
             currentSnackbarData?.dismiss()
         }
-        val result = snackbar.await()
+        snackbar.await()
         timer.cancel()
-        result
     }
 }
 

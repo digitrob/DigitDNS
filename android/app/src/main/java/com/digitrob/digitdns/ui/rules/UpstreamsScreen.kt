@@ -20,7 +20,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DragHandle
@@ -52,25 +51,18 @@ import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
 
 /**
- * The upstream resolver pool, most-preferred first. Add, reorder and remove; a delete
- * offers a short-window Undo rather than a blocking confirmation.
+ * The upstream resolver pool, most-preferred first. Add, reorder and remove; a removal
+ * is confirmed before it happens, so a stray swipe cannot empty the pool.
  */
 @Composable
 fun UpstreamsScreen(viewModel: UpstreamsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
-    LaunchedEffect(state.message, state.undoAddress) {
+    LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
-        val result = snackbar.showPanelToast(
-            message = message,
-            actionLabel = if (state.undoAddress != null) "Undo" else null,
-        )
-        if (result == SnackbarResult.ActionPerformed) {
-            viewModel.undoLastDelete()
-        } else {
-            viewModel.dismissMessage()
-        }
+        snackbar.showPanelToast(message)
+        viewModel.dismissMessage()
     }
 
     Scaffold(snackbarHost = { PanelSnackbarHost(snackbar) }) { padding ->
@@ -194,7 +186,12 @@ private fun UpstreamRow(
     onRemove: () -> Unit,
     dragHandle: () -> Modifier,
 ) {
-    SwipeToDeleteRow(onDelete = onRemove) {
+    SwipeToDeleteRow(
+        onDelete = onRemove,
+        confirmTitle = "Remove upstream?",
+        confirmText = "$address will be removed from the resolver pool.",
+        confirmLabel = "Remove",
+    ) {
         PanelCard(
             modifier = Modifier
                 .fillMaxWidth()

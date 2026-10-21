@@ -20,8 +20,6 @@ data class UpstreamsUiState(
     val isSaving: Boolean = false,
     val error: String? = null,
     val message: String? = null,
-    /** The address removed by the last delete, offered back through the Undo action. */
-    val undoAddress: String? = null,
 )
 
 /**
@@ -59,7 +57,7 @@ class UpstreamsViewModel @Inject constructor(
     }
 
     fun onNewAddressChange(v: String) = _state.update { it.copy(newAddress = v) }
-    fun dismissMessage() = _state.update { it.copy(message = null, undoAddress = null) }
+    fun dismissMessage() = _state.update { it.copy(message = null) }
 
     fun add() {
         val address = _state.value.newAddress.trim()
@@ -69,7 +67,7 @@ class UpstreamsViewModel @Inject constructor(
             try {
                 val list = repository.add(address)
                 _state.update {
-                    it.copy(upstreams = list, isSaving = false, newAddress = "", message = "Added $address.", undoAddress = null)
+                    it.copy(upstreams = list, isSaving = false, newAddress = "", message = "Added $address.")
                 }
             } catch (e: ApiException) {
                 _state.update { it.copy(isSaving = false, error = e.userMessage) }
@@ -79,32 +77,16 @@ class UpstreamsViewModel @Inject constructor(
         }
     }
 
-    /** Remove one address from the pool, remembering it so Undo can put it back. */
+    /** Remove one address from the pool. The UI confirms before this is ever called. */
     fun remove(address: String) {
         viewModelScope.launch {
             try {
                 val list = repository.remove(address)
-                _state.update { it.copy(upstreams = list, message = "Removed $address.", undoAddress = address) }
+                _state.update { it.copy(upstreams = list, message = "Removed $address.") }
             } catch (e: ApiException) {
                 _state.update { it.copy(error = e.userMessage) }
             } catch (e: IOException) {
                 _state.update { it.copy(error = e.message ?: "Could not remove the upstream.") }
-            }
-        }
-    }
-
-    /** Re-add the address the last delete removed. A no-op when there is nothing to undo. */
-    fun undoLastDelete() {
-        val address = _state.value.undoAddress ?: return
-        _state.update { it.copy(undoAddress = null) }
-        viewModelScope.launch {
-            try {
-                val list = repository.add(address)
-                _state.update { it.copy(upstreams = list, message = "Restored $address.", undoAddress = null) }
-            } catch (e: ApiException) {
-                _state.update { it.copy(error = e.userMessage) }
-            } catch (e: IOException) {
-                _state.update { it.copy(error = e.message ?: "Could not restore the upstream.") }
             }
         }
     }
@@ -118,7 +100,7 @@ class UpstreamsViewModel @Inject constructor(
         val reordered = list.toMutableList().apply { add(to, removeAt(from)) }
         val previous = list
         // Show the new order at once, then persist; a rejected reorder reverts.
-        _state.update { it.copy(upstreams = reordered, undoAddress = null) }
+        _state.update { it.copy(upstreams = reordered) }
         viewModelScope.launch {
             try {
                 val confirmed = repository.reorder(reordered)

@@ -34,7 +34,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -78,19 +77,12 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
-    // The Undo affordance replaces the old blocking "OK" banner: the message floats over
-    // the list, needs no acknowledgement, and offers a one-tap reversal while it lingers.
-    LaunchedEffect(state.savedMessage, state.undo) {
+    // The message floats over the list and needs no acknowledgement: a removal asks
+    // first, and once it is done the toast only reports what happened.
+    LaunchedEffect(state.savedMessage) {
         val message = state.savedMessage ?: return@LaunchedEffect
-        val result = snackbar.showPanelToast(
-            message = message,
-            actionLabel = if (state.undo != null) "Undo" else null,
-        )
-        if (result == SnackbarResult.ActionPerformed) {
-            viewModel.undoLastDelete()
-        } else {
-            viewModel.dismissMessage()
-        }
+        snackbar.showPanelToast(message)
+        viewModel.dismissMessage()
     }
 
     Scaffold(snackbarHost = { PanelSnackbarHost(snackbar) }, contentWindowInsets = WindowInsets(0)) { padding ->
@@ -198,7 +190,12 @@ private fun PinnedRecordsCard(
                 enabled = domain.isNotBlank() && ip.isNotBlank(),
             ) { Text("Pin") }
             records.forEach { (name, address) ->
-                SwipeToDeleteRow(onDelete = { onRemove(name) }) {
+                SwipeToDeleteRow(
+                    onDelete = { onRemove(name) },
+                    confirmTitle = "Remove $name?",
+                    confirmText = "The pinned record is removed from the panel.",
+                    confirmLabel = "Remove",
+                ) {
                     Text(
                         text = "$name → $address",
                         style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
@@ -390,7 +387,12 @@ private fun DomainRowItem(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    SwipeToDeleteRow(onDelete = onRemove) {
+    SwipeToDeleteRow(
+        onDelete = onRemove,
+        confirmTitle = "Remove ${row.domain}?",
+        confirmText = "The domain is removed from the routing lists.",
+        confirmLabel = "Remove",
+    ) {
         PanelCard(modifier = Modifier.fillMaxWidth(), highlighted = menuOpen) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

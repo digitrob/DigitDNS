@@ -37,7 +37,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.ui.components.PanelCard
-import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRowDefaults
 import com.digitrob.digitdns.ui.components.SwipeToDeleteRow
 import com.digitrob.digitdns.ui.formatCount
@@ -48,7 +47,8 @@ import kotlinx.coroutines.launch
 
 /**
  * The Upstream Racers tile: the resolver pool ranked by latency, with the panel's two
- * mutating actions inline — add an upstream, and remove one behind a confirmation.
+ * mutating actions inline — add an upstream, and remove one behind the same
+ * confirmation every other swipe-to-delete row in the app uses.
  *
  * Kept in its own file rather than alongside the other dashboard cards because it is the
  * only tile with write actions: it owns transient form state and a dialog, which the
@@ -66,7 +66,6 @@ internal fun UpstreamRacersCard(
     var newAddress by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var pendingRemoval by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     PanelCard(modifier = Modifier.fillMaxWidth()) {
@@ -109,26 +108,17 @@ internal fun UpstreamRacersCard(
                     UpstreamRow(
                         rank = index + 1,
                         stat = stat,
-                        onRemove = { pendingRemoval = stat.address },
+                        onRemove = {
+                            scope.launch {
+                                busy = true
+                                error = onRemove(stat.address)
+                                busy = false
+                            }
+                        },
                     )
                 }
             }
         }
-    }
-
-    pendingRemoval?.let { address ->
-        RemoveUpstreamDialog(
-            address = address,
-            onConfirm = {
-                pendingRemoval = null
-                scope.launch {
-                    busy = true
-                    error = onRemove(address)
-                    busy = false
-                }
-            },
-            onDismiss = { pendingRemoval = null },
-        )
     }
 }
 
@@ -200,26 +190,15 @@ private fun UpstreamAddRow(
     }
 }
 
-/** The confirmation the panel shows before pulling an upstream out of the pool. */
-@Composable
-private fun RemoveUpstreamDialog(address: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    PanelDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Remove upstream?") },
-        text = { Text("$address will be removed from the resolver pool.") },
-        confirmButton = {
-            TextButton(onClick = onConfirm) { Text("Remove") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        },
-    )
-}
-
 @Composable
 private fun UpstreamRow(rank: Int, stat: UpstreamStat, onRemove: () -> Unit) {
     val colors = DigitDnsTheme.colors
-    SwipeToDeleteRow(onDelete = onRemove) {
+    SwipeToDeleteRow(
+        onDelete = onRemove,
+        confirmTitle = "Remove upstream?",
+        confirmText = "${stat.address} will be removed from the resolver pool.",
+        confirmLabel = "Remove",
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
