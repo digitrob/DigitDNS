@@ -688,7 +688,7 @@
               </button>
             </div>
           </div>
-          <form id="created-secret-form" onsubmit="return false">
+          <form id="created-secret-form">
             <!-- The secret is a password field so the value stays masked; it is read-only
                  and never submitted. Chrome warned it was "not contained in a form", so it
                  lives in a no-op form with a hidden username to satisfy autofill and
@@ -1678,7 +1678,7 @@ async function onBuySubscription(ctx, username) {
 
           <div id="twofa-off-box" class="space-y-3">
             <div class="flex flex-col sm:flex-row gap-2">
-              <form id="twofa-enable-form" onsubmit="return false" class="flex-1 min-w-0">
+              <form id="twofa-enable-form" class="flex-1 min-w-0">
                 <input type="text" name="username" autocomplete="username" hidden aria-hidden="true" tabindex="-1">
                 <input type="password" id="twofa-enable-password" aria-label="Current password, to enable two-factor" placeholder="Current password"
                   class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-sky-400">
@@ -1700,7 +1700,7 @@ async function onBuySubscription(ctx, username) {
               <p id="twofa-secret-display" class="px-3 py-2 rounded bg-slate-950 border border-slate-700 text-xs font-mono text-sky-300 break-all select-all"></p>
               <p id="twofa-uri-display" class="text-[11px] text-slate-500 font-mono break-all"></p>
               <div class="flex flex-col sm:flex-row gap-2">
-                <form id="twofa-confirm-form" onsubmit="return false" class="contents">
+                <form id="twofa-confirm-form" class="contents">
                   <input type="text" name="username" autocomplete="username" hidden aria-hidden="true" tabindex="-1">
                   <input type="password" id="twofa-confirm-password" aria-label="Current password, to confirm enrollment" placeholder="Current password" autocomplete="current-password"
                     class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-sky-400">
@@ -1717,7 +1717,7 @@ async function onBuySubscription(ctx, username) {
 
           <div id="twofa-on-box" class="hidden space-y-3">
             <div class="flex flex-col sm:flex-row gap-2">
-              <form id="twofa-disable-form" onsubmit="return false" class="contents">
+              <form id="twofa-disable-form" class="contents">
                 <input type="text" name="username" autocomplete="username" hidden aria-hidden="true" tabindex="-1">
                 <input type="password" id="twofa-disable-password" aria-label="Current password, to disable two-factor" placeholder="Current password"
                   class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-red-400">

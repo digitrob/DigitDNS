@@ -223,6 +223,14 @@ function isProbablyIP(value) {
 }
 
 // Init when DOM is loaded
+document.addEventListener('submit', (e) => {
+  const id = e && e.target && e.target.id;
+  if (id === 'created-secret-form' || id === 'twofa-enable-form' ||
+      id === 'twofa-confirm-form' || id === 'twofa-disable-form') {
+    e.preventDefault();
+  }
+}, true);
+
 document.addEventListener('DOMContentLoaded', () => {
   safeFeatherReplace();
   try { initChart(); } catch (e) {}
