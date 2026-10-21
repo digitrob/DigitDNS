@@ -76,7 +76,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: digitdns-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          # ABI splits are on, so the build produces app-<abi>-debug.apk (plus a
+          # universal slice), not a single app-debug.apk.
+          path: android/app/build/outputs/apk/debug/app-*-debug.apk
           if-no-files-found: error
 
   release:
