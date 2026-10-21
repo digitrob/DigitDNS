@@ -1,0 +1,10 @@
+# Generator dependencies for android/tools/generate_icons.py
+#
+# The launcher-icon assets are committed to the repository, so this is only
+# needed when the artwork changes and the assets have to be regenerated:
+#
+#     pip install -r android/tools/requirements.txt
+#     python3 android/tools/generate_icons.py /path/to/file.svg
+pymupdf==1.26.5
+pillow==11.3.0
+numpy==2.0.2

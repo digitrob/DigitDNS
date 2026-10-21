@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Adaptive launcher icon. The artwork is the background layer, full-bleed;
-     the foreground layer carries no content of its own. -->
+<!-- Adaptive launcher icon. The background layer is a plain field; the
+     foreground layer carries the emblem, fitted to the 66dp safe circle so
+     that no launcher's mask can clip it. The artwork used to fill the
+     background layer edge to edge, but a launcher shows only the inner 72dp
+     of the 108dp layer — the emblem was cut off, worst of all on Samsung's
+     One UI squircle. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
