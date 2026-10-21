@@ -191,6 +191,12 @@ func (ws *WebServer) handleTLSSettings(w http.ResponseWriter, r *http.Request) {
 		Domain  string `json:"domain"`
 		Email   string `json:"email"`
 		Purpose string `json:"purpose"` // "panel" (default) | "subscription" | "dot"
+		// Force requests a real renewal even when a valid certificate for the
+		// name is already on disk. Without it, a re-issue re-applies the stored
+		// pair and never contacts Let's Encrypt (the quota-preserving fast path);
+		// an operator who needs a fresh certificate — a compromised key, a
+		// mis-issued cert, a CA-side revocation — has no other way to ask.
+		Force bool `json:"force"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil {
 		httpx.WriteJSONError(w, http.StatusBadRequest, "the request body could not be read as JSON")
@@ -262,7 +268,11 @@ func (ws *WebServer) handleTLSSettings(w http.ResponseWriter, r *http.Request) {
 		// duplicate certificates per hostname per week, so repeated saves of an
 		// unchanged domain burned that quota and could block a later real
 		// renewal. A pair that validates for the domain is sufficient.
-		if c, k, resErr := ws.panelCertificatePair(); resErr == nil {
+		//
+		// A forced renewal skips this fast path outright: the operator asked for
+		// a fresh certificate, so re-applying the stored pair would answer a
+		// request it was meant to override.
+		if c, k, resErr := ws.panelCertificatePair(); !req.Force && resErr == nil {
 			if problem := ws.applyIssuedPurpose(domain, acmePurposePanel, c, k); problem != "" {
 				httpx.WriteJSONError(w, http.StatusInternalServerError, problem)
 				return
@@ -289,8 +299,9 @@ func (ws *WebServer) handleTLSSettings(w http.ResponseWriter, r *http.Request) {
 	// typo'd or unissuable name can never leave the daemon serving a cert for
 	// the wrong host — the field-report "Not Secure after changing the
 	// domain" bug. If a valid pair is already on disk for this name, apply it
-	// synchronously without spending Let's Encrypt quota.
-	if ws.acmeManager != nil {
+	// synchronously without spending Let's Encrypt quota. A forced renewal
+	// skips this fast path so the name is re-issued with Let's Encrypt.
+	if ws.acmeManager != nil && !req.Force {
 		certPath := filepath.Join(ws.acmeManager.CertDir, domain+".crt")
 		keyPath := filepath.Join(ws.acmeManager.CertDir, domain+".key")
 		if err := ValidatePanelCertificate(certPath, keyPath, domain); err == nil {

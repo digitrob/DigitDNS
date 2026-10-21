@@ -49,6 +49,20 @@ let qpsChart = null;
 let currentConfig = null;
 let isStreamPaused = false;
 
+// SSE reconnect controller.
+//
+// The live-log stream authenticates with a one-time ticket in its URL (?ticket=),
+// which the server burns on first connect (internal/web/sse_ticket.go). EventSource's
+// native reconnect replays the exact same URL, so every automatic retry presents an
+// already-spent ticket, falls through to the (absent) Authorization header, and is
+// answered 401 — after which the browser gives up for good and the log freezes. We
+// therefore drive reconnects ourselves: close the dead source, mint a fresh ticket,
+// and re-open on a silent exponential backoff.
+let sseBackoffTimer = null;
+let sseBackoffMs = 0;
+const SSE_BACKOFF_START_MS = 1000;
+const SSE_BACKOFF_MAX_MS = 30000;
+
 // The live query table is a rendering of this buffer rather than the record itself.
 //
 // The filter dropdown and the search box used to be read inside the append path — at the
@@ -427,6 +441,7 @@ async function signOut() {
     // Nothing to surface: the operator asked to leave, and the only thing left
     // to do either way is drop the local session.
   } finally {
+    stopLiveStream();
     localStorage.removeItem('hyperdns_token');
     authToken = '';
     showLoginModal();
@@ -1746,7 +1761,11 @@ async function updateStats() {
 
     const setTxt = (id, txt) => {
       const el = document.getElementById(id);
-      if (el) el.innerText = txt;
+      // Only touch the DOM when the text actually changes. A steady value (an
+      // idle QPS, a flat cache ratio) would otherwise rewrite innerText every
+      // poll, and each write invalidates the blurred backdrop of the glass
+      // panel it sits in — which Chromium re-rasterizes on the whole viewport.
+      if (el && el.innerText !== txt) el.innerText = txt;
     };
 
     // Every tile below used to read `data.field.toFixed(1)` straight. The endpoint
@@ -1848,22 +1867,31 @@ function formatBytes(bytes) {
 // shown together: "42 dropped" means nothing without the limit it was measured
 // against, and a limit with no drops is the reassuring case worth displaying.
 function renderRateLimit(qps, dropped) {
-  const el = document.getElementById('stat-ratelimit');
-  if (!el) return;
-
-  if (!qps || qps <= 0) {
-    el.textContent = 'Limit: off';
-    el.className = 'text-slate-500';
-    el.title = 'Per-source rate limiting is disabled (access.rate_limit_qps = 0)';
-    return;
-  }
+  const qpsEl = document.getElementById('stat-ratelimit-qps');
+  const dropEl = document.getElementById('stat-ratelimit-dropped');
+  if (!qpsEl && !dropEl) return;
 
   const n = dropped || 0;
-  el.textContent = `Limit: ${qps}/s · ${n.toLocaleString()} dropped`;
-  el.className = n > 0 ? 'text-amber-400 font-bold' : 'text-slate-400';
-  el.title = n > 0
-    ? `${n.toLocaleString()} queries dropped or refused for exceeding ${qps} qps per source since start`
-    : `Limiting at ${qps} qps per source; nothing dropped so far`;
+
+  if (qpsEl) {
+    if (!qps || qps <= 0) {
+      qpsEl.textContent = 'off';
+      qpsEl.className = 'text-slate-500';
+      qpsEl.title = 'Per-source rate limiting is disabled (access.rate_limit_qps = 0)';
+    } else {
+      qpsEl.textContent = `${qps}/s`;
+      qpsEl.className = 'text-slate-400';
+      qpsEl.title = `Limiting at ${qps} qps per source`;
+    }
+  }
+
+  if (dropEl) {
+    dropEl.textContent = n.toLocaleString();
+    dropEl.className = n > 0 ? 'text-amber-400 font-bold' : 'text-slate-400';
+    dropEl.title = n > 0
+      ? `${n.toLocaleString()} queries dropped or refused for exceeding ${qps} qps per source since start`
+      : 'Nothing dropped for exceeding the per-source rate limit so far';
+  }
 }
 
 // Latency needs percentiles, not an average: at a healthy hit rate the mean is
@@ -1977,27 +2005,26 @@ function renderCacheHealth(data) {
 // So unreadable is shown even at zero-refused, and it is the one that gets the
 // warning colour.
 function renderProxyDrops(data) {
-  const el = document.getElementById('stat-proxy-drops');
-  if (!el) return;
+  const refusedEl = document.getElementById('stat-proxy-refused');
+  const unreadableEl = document.getElementById('stat-proxy-unreadable');
+  if (!refusedEl && !unreadableEl) return;
 
   const refused = data.relays_refused || 0;
   const unreadable = data.relays_unreadable || 0;
 
-  if (!refused && !unreadable) {
-    el.textContent = 'no drops';
-    el.className = 'text-slate-500';
-    el.title = 'Every connection that reached the proxy named a destination and was relayed';
-    return;
+  if (refusedEl) {
+    refusedEl.textContent = refused.toLocaleString();
+    refusedEl.className = refused > 0 ? 'text-slate-300 font-bold' : 'text-slate-400';
+    refusedEl.title = 'Connections dropped for a blocked target, a self-dial, or a full relay table';
   }
 
-  const parts = [];
-  if (refused) parts.push(`${refused.toLocaleString()} refused`);
-  if (unreadable) parts.push(`${unreadable.toLocaleString()} unreadable`);
-  el.textContent = parts.join(' · ');
-  el.className = unreadable > 0 ? 'text-amber-400 font-bold' : 'text-slate-400';
-  el.title = unreadable > 0
-    ? `${unreadable.toLocaleString()} connection(s) arrived without naming a destination — no TLS SNI and no HTTP Host header. A few are port scans. A rising count means a proxied name is sending clients here for traffic this relay cannot carry; check the server log for the sampled "unreadable destination" lines, which name the port and the first bytes.`
-    : `${refused.toLocaleString()} connection(s) dropped for a blocked target, a self-dial, or a full relay table`;
+  if (unreadableEl) {
+    unreadableEl.textContent = unreadable.toLocaleString();
+    unreadableEl.className = unreadable > 0 ? 'text-amber-400 font-bold' : 'text-slate-400';
+    unreadableEl.title = unreadable > 0
+      ? `${unreadable.toLocaleString()} connection(s) arrived without naming a destination — no TLS SNI and no HTTP Host header. A few are port scans. A rising count means a proxied name is sending clients here for traffic this relay cannot carry; check the server log for the sampled "unreadable destination" lines, which name the port and the first bytes.`
+      : 'Every connection that reached the proxy named a destination and was relayed';
+  }
 }
 
 // The trash icon as inline SVG. renderUpstreams runs once per stats poll
@@ -2097,14 +2124,24 @@ function renderUpstreams(upstreams) {
 // LIVE QUERY STREAM (SSE)
 // =======================================================
 async function startLiveStream() {
+  if (sseBackoffTimer) {
+    clearTimeout(sseBackoffTimer);
+    sseBackoffTimer = null;
+  }
   if (sseSource) {
     try { sseSource.close(); } catch(e) {}
+    sseSource = null;
   }
 
   // v2.1.0: the long-lived token no longer rides the query string. The
   // dashboard exchanges it (POST, authenticated) for a one-time, 60-second
   // ticket that the EventSource URL carries; the ticket is consumed on first
   // use, so a leaked URL authorises nothing afterwards.
+  //
+  // A rejected mint is the one signal that the session itself is gone (not a
+  // transient drop): the ticket endpoint is Bearer-gated, so a 401 there means
+  // the token is dead and no amount of reconnecting will help. Stop and hand
+  // off to the normal re-auth path rather than looping.
   let ticketParam = '';
   if (authToken) {
     try {
@@ -2112,16 +2149,38 @@ async function startLiveStream() {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${authToken}` }
       });
+      if (tr.status === 401) {
+        console.warn('SSE: session expired; stopping stream and re-authenticating.');
+        showLoginModal();
+        return;
+      }
       if (tr.ok) {
         const tj = await tr.json();
         ticketParam = `?ticket=${encodeURIComponent(tj.ticket)}`;
       }
-    } catch (e) { /* fall through: stream will answer 401 and the UI retries on next tick */ }
+    } catch (e) { /* network blip: fall through and retry on backoff */ }
   }
-  sseSource = new EventSource(`${api('/api/stream/queries')}${ticketParam}`);
+
+  // The stream URL carries only a fresh ticket; the fallback to the long-lived
+  // token is gone, so a failed mint means the connect will 401. Treat that as a
+  // retryable drop (the mint itself may have hit a network blip) rather than
+  // opening a stream we know is unauthenticated.
+  if (!ticketParam) {
+    scheduleStreamReconnect();
+    return;
+  }
+
+  const source = new EventSource(`${api('/api/stream/queries')}${ticketParam}`);
+  sseSource = source;
+
+  source.onopen = () => {
+    // A live connection is the only proof the ticket was accepted: reset the
+    // backoff so the next drop reconnects promptly.
+    sseBackoffMs = 0;
+  };
 
   // Handle single query event
-  sseSource.addEventListener('query', (event) => {
+  source.addEventListener('query', (event) => {
     if (isStreamPaused) return;
     try {
       pushStreamQuery(JSON.parse(event.data));
@@ -2131,7 +2190,7 @@ async function startLiveStream() {
   });
 
   // Handle initial history batch
-  sseSource.addEventListener('history', (event) => {
+  source.addEventListener('history', (event) => {
     try {
       const list = JSON.parse(event.data);
       if (Array.isArray(list)) seedStreamQueries(list);
@@ -2141,7 +2200,7 @@ async function startLiveStream() {
   });
 
   // Fallback for default messages
-  sseSource.onmessage = (event) => {
+  source.onmessage = (event) => {
     if (isStreamPaused) return;
     try {
       const q = JSON.parse(event.data);
@@ -2153,9 +2212,48 @@ async function startLiveStream() {
     } catch (e) {}
   };
 
-  sseSource.onerror = (err) => {
-    console.warn('SSE stream status update (reconnecting if interrupted)...');
+  // EventSource's own reconnect replays the spent ticket and 401s, so it is
+  // never allowed to run: close the source here and drive the retry ourselves
+  // with a fresh ticket on a silent exponential backoff.
+  source.onerror = () => {
+    if (sseSource !== source) return; // a newer attempt already replaced us
+    try { source.close(); } catch(e) {}
+    sseSource = null;
+    scheduleStreamReconnect();
   };
+}
+
+// scheduleStreamReconnect re-mints a ticket and re-opens the stream after a
+// silent exponential backoff (1s, 2s, 4s … capped at 30s). It is single-flight:
+// a pending timer is never rescheduled, so a burst of error callbacks cannot
+// stack overlapping reconnects. No user-facing message is shown — the log
+// simply resumes when the connection is back.
+function scheduleStreamReconnect() {
+  if (sseBackoffTimer) return;
+  if (!authToken) return; // signed out; nothing to reconnect to
+  if (sseBackoffMs === 0) {
+    sseBackoffMs = SSE_BACKOFF_START_MS;
+  } else {
+    sseBackoffMs = Math.min(sseBackoffMs * 2, SSE_BACKOFF_MAX_MS);
+  }
+  sseBackoffTimer = setTimeout(() => {
+    sseBackoffTimer = null;
+    startLiveStream();
+  }, sseBackoffMs);
+}
+
+// stopLiveStream tears the stream down and cancels any pending reconnect, so a
+// sign-out does not race a backoff timer into re-opening an authenticated route.
+function stopLiveStream() {
+  if (sseBackoffTimer) {
+    clearTimeout(sseBackoffTimer);
+    sseBackoffTimer = null;
+  }
+  sseBackoffMs = 0;
+  if (sseSource) {
+    try { sseSource.close(); } catch(e) {}
+    sseSource = null;
+  }
 }
 
 function escapeHTML(str) {

@@ -1,6 +1,8 @@
 package com.digitrob.digitdns.ui.stream
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -109,7 +112,7 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
 
 @Composable
 private fun LogToolbar(state: LiveQueryLogUiState, viewModel: LiveQueryLogViewModel) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
         Text(
             text = "${state.source.size} queries",
             style = MaterialTheme.typography.labelMedium,
@@ -117,37 +120,56 @@ private fun LogToolbar(state: LiveQueryLogUiState, viewModel: LiveQueryLogViewMo
         )
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(top = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            TextButton(onClick = viewModel::refresh) {
+            TextButton(
+                onClick = viewModel::reload,
+                modifier = Modifier.width(88.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            ) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Reload")
+                Spacer(Modifier.width(4.dp))
+                Text("Reload", maxLines = 1)
             }
-            TextButton(onClick = viewModel::toggleSort) {
+            TextButton(
+                onClick = viewModel::toggleSort,
+                modifier = Modifier.width(88.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            ) {
                 Icon(
                     if (state.sort == LogSort.Newest) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                 )
-                Spacer(Modifier.width(6.dp))
-                Text(if (state.sort == LogSort.Newest) "Newest" else "Oldest")
+                Spacer(Modifier.width(4.dp))
+                Text(if (state.sort == LogSort.Newest) "Newest" else "Oldest", maxLines = 1)
             }
-            TextButton(onClick = { viewModel.setPaused(!state.paused) }) {
+            TextButton(
+                onClick = { viewModel.setPaused(!state.paused) },
+                modifier = Modifier.width(88.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            ) {
                 Icon(
                     if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                 )
-                Spacer(Modifier.width(6.dp))
-                Text(if (state.paused) "Resume" else "Pause")
+                Spacer(Modifier.width(4.dp))
+                Text(if (state.paused) "Resume" else "Pause", maxLines = 1)
             }
-            TextButton(onClick = viewModel::clear) {
+            TextButton(
+                onClick = viewModel::clear,
+                modifier = Modifier.width(76.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            ) {
                 Icon(Icons.Filled.Clear, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Clear")
+                Spacer(Modifier.width(4.dp))
+                Text("Clear", maxLines = 1)
             }
         }
 

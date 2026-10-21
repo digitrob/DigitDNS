@@ -41,9 +41,7 @@ import com.digitrob.digitdns.data.AuthRepository
 import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.core.network.AuthState
 import com.digitrob.digitdns.ui.auth.LoginScreen
-import com.digitrob.digitdns.ui.clients.ClientDetailScreen
 import com.digitrob.digitdns.ui.clients.ClientsScreen
-import com.digitrob.digitdns.ui.clients.ClientDetailViewModel
 import com.digitrob.digitdns.ui.dashboard.DashboardScreen
 import com.digitrob.digitdns.ui.rules.ProxiedDomainsScreen
 import com.digitrob.digitdns.ui.stream.LiveQueryLogScreen
@@ -132,9 +130,6 @@ private object Routes {
     const val PROXIED = "proxied"
     const val STREAM = "stream"
     const val SETTINGS = "settings"
-    const val CLIENT_DETAIL = "clients/{${ClientDetailViewModel.ARG_CLIENT_ID}}"
-
-    fun clientDetail(id: String) = "clients/$id"
 }
 
 /** The top-level tabs the bottom bar carries, labelled as the panel labels them. */
@@ -198,9 +193,7 @@ private fun DigitDnsNavHost(
         }
         composable(Routes.CLIENTS) {
             TabShell(navController, Routes.CLIENTS) {
-                ClientsScreen(
-                    onOpenClient = { id -> navController.navigate(Routes.clientDetail(id)) },
-                )
+                ClientsScreen()
             }
         }
         composable(Routes.STREAM) {
@@ -213,10 +206,6 @@ private fun DigitDnsNavHost(
                     onAddServer = { navController.navigate(Routes.LOGIN_ADD) },
                 )
             }
-        }
-
-        composable(Routes.CLIENT_DETAIL) {
-            ClientDetailScreen(onDone = { navController.popBackStack() })
         }
     }
 }

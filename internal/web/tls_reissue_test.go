@@ -182,3 +182,46 @@ func TestMantisPanelResaveWithPairOnAcmeDirIsFree(t *testing.T) {
 			"ACME directory without issuing, but issuing=true (%q)", resp.Detail)
 	}
 }
+
+// TestPanelForceRenewSkipsFastPath is the force-renew contract: with force set
+// and a valid pair already configured, the handler must NOT re-apply the stored
+// pair — it must fall through to startACMEIssuance so a fresh certificate is
+// obtained. Without the flag the same request is the free fast path above.
+func TestPanelForceRenewSkipsFastPath(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	certDir := t.TempDir()
+	// Unreachable directory URL: the assertion is on the synchronous response,
+	// made before the spawned issuance goroutine touches the CA.
+	ws.acmeManager = acme.NewManager("http://127.0.0.1:1/dir", "test@example.com", certDir, nil)
+
+	certPEM, keyPEM := mantisCASignedPair(t, "panel.example")
+	certPath := filepath.Join(certDir, "panel.example.crt")
+	keyPath := filepath.Join(certDir, "panel.example.key")
+	mantisWritePair(t, certPath, keyPath, certPEM, keyPEM)
+
+	ws.tlsSettings.Domain = "panel.example"
+	ws.tlsSettings.CertPath = certPath
+	ws.tlsSettings.KeyPath = keyPath
+
+	body := `{"domain":"panel.example","email":"test@example.com","purpose":"panel","force":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tls/issue", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	ws.handleTLSSettings(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handler returned %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Issuing bool   `json:"issuing"`
+		Detail  string `json:"detail"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response %q: %v", rec.Body.String(), err)
+	}
+	if !resp.Issuing {
+		t.Errorf("force renew did not bypass the fast path: a valid pair was re-applied "+
+			"instead of contacting Let's Encrypt (detail %q)", resp.Detail)
+	}
+}

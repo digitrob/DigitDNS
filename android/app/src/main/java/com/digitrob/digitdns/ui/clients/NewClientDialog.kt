@@ -2,20 +2,15 @@ package com.digitrob.digitdns.ui.clients
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.digitrob.digitdns.ui.components.PanelDialog
+import com.digitrob.digitdns.ui.components.PanelWideDialog
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 
 /**
@@ -27,8 +22,10 @@ import com.digitrob.digitdns.ui.theme.DigitDnsTheme
  * into a navigation, so the form now opens over the list and closes as soon as
  * the client exists.
  *
- * The form itself is the one the detail screen uses, so the two paths cannot
- * drift apart; only the framing differs.
+ * The dialog is the wide kind: every field and all four reset-cycle options are on
+ * screen at once, so nothing is hidden behind a scroll. The form itself is the one
+ * the detail screen uses, so the two paths cannot drift apart; only the framing
+ * differs.
  */
 @Composable
 fun NewClientDialog(
@@ -44,20 +41,17 @@ fun NewClientDialog(
         if (state.saved) onCreated()
     }
 
-    PanelDialog(
+    PanelWideDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New client") },
+        title = {
+            Text(
+                text = "New client",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        },
         text = {
-            // The form is taller than a dialog slot: a capped, scrollable column
-            // keeps every field reachable on a short screen instead of clipping
-            // the last ones off.
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 400.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 state.error?.let {
                     Text(
                         text = it,

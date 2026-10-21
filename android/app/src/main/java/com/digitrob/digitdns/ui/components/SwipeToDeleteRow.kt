@@ -51,9 +51,9 @@ private const val SWIPE_THRESHOLD = 0.45f
 fun SwipeToDeleteRow(
     onDelete: () -> Unit,
     confirmTitle: String,
+    modifier: Modifier = Modifier,
     confirmText: String? = null,
     confirmLabel: String = "Delete",
-    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val scope = rememberCoroutineScope()

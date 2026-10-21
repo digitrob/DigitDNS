@@ -161,3 +161,19 @@ root@*
 /uiaudit-*.png
 # third-party skill docs that landed in the tree
 docs/superpowers/
+
+# ---- Android app (android/) ----
+# Gradle and Android Studio build state. The wrapper jar is committed deliberately
+# (android/gradle/wrapper/gradle-wrapper.jar) so CI needs no system Gradle; everything
+# under build/, .gradle/ and .idea/ is machine state that must never be.
+android/.gradle/
+android/build/
+android/app/build/
+android/captures/
+android/.kotlin/
+android/local.properties
+android/keystore.properties
+*.jks
+*.keystore
+.cxx/
+.externalNativeBuild/

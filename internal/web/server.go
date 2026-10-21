@@ -1101,6 +1101,17 @@ func (ws *WebServer) Start() error {
 		ws.httpServer.TLSConfig = &tls.Config{
 			GetCertificate: holder.GetCertificate,
 			MinVersion:     tls.VersionTLS12,
+			// Serve the panel over HTTP/1.1 only. The live-log stream
+			// (/api/stream/queries) holds one response open for the whole
+			// dashboard session, and an HTTP/2 connection — or an h2-capable
+			// intermediary in front of the panel — resets such long-lived
+			// streams (RST_STREAM/GOAWAY) far more readily than HTTP/1.1,
+			// surfacing in the browser as ERR_HTTP2_PROTOCOL_ERROR. The panel
+			// is a low-traffic admin UI, so the multiplexing HTTP/2 offers
+			// buys nothing here and the reset class it introduces costs the
+			// live feed. Pinning NextProtos to http/1.1 makes the negotiation
+			// explicit and stable.
+			NextProtos: []string{"http/1.1"},
 		}
 		scheme = "https"
 	}

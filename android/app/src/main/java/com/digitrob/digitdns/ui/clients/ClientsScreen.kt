@@ -47,19 +47,21 @@ import com.digitrob.digitdns.ui.theme.DigitDnsTheme
  */
 @Composable
 fun ClientsScreen(
-    onOpenClient: (String) -> Unit,
     viewModel: ClientsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
-    // The dialog's view model is scoped to this screen, so it survives the dialog
-    // being closed and reopened; the form is reset each time it opens.
+    // The client being edited. The list stays on screen behind the popup, so the
+    // operator closes it and carries on with the row they were reading.
+    var editingClientId by remember { mutableStateOf<String?>(null) }
+    // Both popups' forms are held by view models scoped to this tab, so they outlive
+    // the popups. The create form is reset before it is shown rather than after, so a
+    // previous session's "saved" flag can never close a fresh popup.
     val createViewModel: ClientDetailViewModel =
         hiltViewModel(key = ClientDetailViewModel.CREATE_VIEWMODEL_KEY)
+    val detailViewModel: ClientDetailViewModel = hiltViewModel()
 
-    // Refetch whenever the list comes back into view — returning from a client detail
-    // screen (where a client may have been created, renamed or deleted) must not leave
-    // a stale list on screen.
+    // Refetch whenever the list comes back into view.
     LifecycleResumeEffect(Unit) {
         viewModel.refresh()
         onPauseOrDispose { }
@@ -88,55 +90,25 @@ fun ClientsScreen(
             onRefresh = viewModel::refresh,
             modifier = Modifier.fillMaxSize(),
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // A failed refresh is shown above the rows, not instead of them: the
-                // stale list is still useful and the error explains why it is stale.
-                state.error?.takeIf { state.clients.isNotEmpty() }?.let { message ->
-                    Text(
-                        text = message,
-                        color = DigitDnsTheme.colors.danger,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                    )
-                }
-                when {
-                    state.isLoading && state.clients.isEmpty() -> CenterBox {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    }
-                    state.error != null && state.clients.isEmpty() -> CenterBox {
-                        Text(state.error!!, color = DigitDnsTheme.colors.danger)
-                    }
-                    state.filtered.isEmpty() -> CenterBox {
-                        Text(
-                            text = if (state.query.isBlank()) "No clients yet." else "Nothing matches \"${state.query}\".",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    else -> LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(state.filtered, key = { it.id }) { client ->
-                            ClientRow(client = client, onClick = { onOpenClient(client.id) })
-                        }
-                    }
-                }
-            }
+            ClientList(state, onOpen = { id ->
+                // Reset the form to this client before the popup mounts, so the first
+                // frame is already the loading state for the right client — no flash
+                // of the previous one.
+                detailViewModel.open(id)
+                editingClientId = id
+            })
         }
     }
 
-    if (showCreate) {
-        NewClientDialog(
-            onDismiss = { showCreate = false },
-            onCreated = {
-                showCreate = false
-                // The list is behind the dialog, so it never saw the new client.
-                viewModel.refresh()
-            },
-            viewModel = createViewModel,
-        )
-    }
+    ClientDialogs(
+        showCreate = showCreate,
+        createViewModel = createViewModel,
+        editingClientId = editingClientId,
+        detailViewModel = detailViewModel,
+        onCloseCreate = { showCreate = false },
+        onCloseDetail = { editingClientId = null },
+        onRefreshList = viewModel::refresh,
+    )
 }
 
 @Composable
@@ -213,4 +185,84 @@ private fun CenterBox(content: @Composable () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) { content() }
+}
+
+@Composable
+private fun ClientList(state: ClientsUiState, onOpen: (String) -> Unit) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        state.error?.takeIf { state.clients.isNotEmpty() }?.let { message ->
+            Text(
+                text = message,
+                color = DigitDnsTheme.colors.danger,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            )
+        }
+        when {
+            state.isLoading && state.clients.isEmpty() -> CenterBox {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            }
+            state.error != null && state.clients.isEmpty() -> CenterBox {
+                Text(state.error!!, color = DigitDnsTheme.colors.danger)
+            }
+            state.filtered.isEmpty() -> CenterBox {
+                Text(
+                    text = if (state.query.isBlank()) "No clients yet." else "Nothing matches \"${state.query}\".",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(state.filtered, key = { it.id }) { client ->
+                    ClientRow(client = client, onClick = { onOpen(client.id) })
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Both client popups, kept out of the list body so the screen reads as list first.
+ *
+ * Each view model is scoped to this tab, so it outlives its popup; the create form is
+ * reset at the tap that opens it, and the detail form is reset by
+ * [ClientDetailDialog] when the host names the client.
+ */
+@Composable
+private fun ClientDialogs(
+    showCreate: Boolean,
+    createViewModel: ClientDetailViewModel,
+    editingClientId: String?,
+    detailViewModel: ClientDetailViewModel,
+    onCloseCreate: () -> Unit,
+    onCloseDetail: () -> Unit,
+    onRefreshList: () -> Unit,
+) {
+    if (showCreate) {
+        NewClientDialog(
+            onDismiss = onCloseCreate,
+            onCreated = {
+                onCloseCreate()
+                // The list is behind the popup, so it never saw the new client.
+                onRefreshList()
+            },
+            viewModel = createViewModel,
+        )
+    }
+
+    if (editingClientId != null) {
+        ClientDetailDialog(
+            clientId = editingClientId,
+            onDismiss = onCloseDetail,
+            onChanged = {
+                onCloseDetail()
+                // Saved or deleted behind the popup: the list never saw it.
+                onRefreshList()
+            },
+            viewModel = detailViewModel,
+        )
+    }
 }

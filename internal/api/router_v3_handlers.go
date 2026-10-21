@@ -723,6 +723,22 @@ func (a *API) handleV3AccessMode(w http.ResponseWriter, r *http.Request) {
 // Upstreams
 // -----------------------------------------------------------------------------
 
+// handleV3UpstreamStats: GET the per-upstream latency/health snapshot the panel's
+// resolver-racer card reads. The web dashboard gets this from its own /api/stats
+// map; v3 keeps the same shape so a client does not have to know the panel exists.
+func (a *API) handleV3UpstreamStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		return
+	}
+	// GetUpstreamStats on a nil pool panics, and that panic would land on a poll.
+	stats := []upstream.UpstreamStat{}
+	if a.upstreams != nil {
+		stats = a.upstreams.GetUpstreamStats()
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": stats})
+}
+
 func (a *API) handleV3Upstreams(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
@@ -774,7 +790,7 @@ func (a *API) handleV3UpstreamItem(w http.ResponseWriter, r *http.Request) {
 		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "missing upstream or action")
 		return
 	}
-	// POST /api/v3/upstreams/benchmark and /reorder are the two actions.
+	// benchmark, reorder and delete are the actions.
 	switch rest {
 	case "benchmark":
 		a.v3UpstreamBenchmark(w, r)
@@ -782,8 +798,59 @@ func (a *API) handleV3UpstreamItem(w http.ResponseWriter, r *http.Request) {
 	case "reorder":
 		a.v3UpstreamReorder(w, r)
 		return
+	case "delete":
+		a.v3UpstreamDelete(w, r)
+		return
 	}
 	writeProblemAt(w, r, http.StatusNotFound, "not_found", "unknown upstream action")
+}
+
+// v3UpstreamDelete removes one entry from the pool, mirroring the dashboard's
+// POST /api/upstreams/delete. POST rather than DELETE because the address rides in
+// the body and removing the pool's last working resolver is not a safe verb; the
+// canonical form is matched so a DoT/DoH string added through the dashboard can be
+// removed by the same string.
+func (a *API) v3UpstreamDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	if a.upstreams == nil {
+		writeProblemAt(w, r, http.StatusServiceUnavailable, "unavailable", "no upstream pool")
+		return
+	}
+	var req struct {
+		Address string `json:"address"`
+	}
+	if !decodeStrict(w, r, &req) {
+		return
+	}
+	addr := strings.TrimSpace(req.Address)
+	if addr == "" {
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "address is required")
+		return
+	}
+	canonical, ok := upstream.NormalizeUpstream(addr)
+	if !ok {
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid upstream address")
+		return
+	}
+	current := a.upstreams.GetUpstreams()
+	list := make([]string, 0, len(current))
+	found := false
+	for _, u := range current {
+		if u == canonical {
+			found = true
+			continue
+		}
+		list = append(list, u)
+	}
+	if !found {
+		writeProblemAt(w, r, http.StatusNotFound, "not_found", "upstream not found")
+		return
+	}
+	a.upstreams.SetUpstreams(list)
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": list})
 }
 
 func (a *API) v3UpstreamBenchmark(w http.ResponseWriter, r *http.Request) {

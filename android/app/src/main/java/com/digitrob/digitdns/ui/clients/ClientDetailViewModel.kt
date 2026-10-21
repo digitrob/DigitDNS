@@ -1,6 +1,5 @@
 package com.digitrob.digitdns.ui.clients
 
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
@@ -19,7 +18,7 @@ import java.io.IOException
 import javax.inject.Inject
 
 /**
- * Whether the detail screen is editing an existing client or creating a new one.
+ * Whether the detail form is editing an existing client or creating a new one.
  * A new client has no id and starts from empty defaults; an existing one loads and
  * can run actions/deletion, which a not-yet-created client cannot.
  */
@@ -55,22 +54,30 @@ data class ClientDetailUiState(
 @HiltViewModel
 class ClientDetailViewModel @Inject constructor(
     private val repository: ClientsRepository,
-    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ClientDetailUiState())
     val state: StateFlow<ClientDetailUiState> = _state.asStateFlow()
 
-    init {
-        // The route passes the id as "clientId"; "new" means create. The route
-        // convention is shared with the nav graph so both agree on the sentinel.
-        val id = savedStateHandle.get<String>(ARG_CLIENT_ID).orEmpty()
-        if (id.isBlank() || id == NEW_CLIENT_SENTINEL) {
-            _state.update { it.copy(mode = ClientDetailMode.Create) }
-        } else {
-            _state.update { it.copy(mode = ClientDetailMode.Edit(id)) }
-            load(id)
-        }
+    /**
+     * The client the form is currently pointed at, if it is editing one.
+     *
+     * One view model now serves every client the popup opens, so a response can
+     * arrive after the form has moved on. Comparing the id it was asked for with
+     * this drops that stale response instead of writing it over the new client.
+     */
+    private val editingId: String? get() = (_state.value.mode as? ClientDetailMode.Edit)?.id
+
+    /**
+     * Point the form at a client and load it.
+     *
+     * The form is a dialog over the client list, so the host names the client
+     * instead of a nav route argument. The state is reset first: a client opened
+     * after another must never show the previous one's half-typed fields.
+     */
+    fun open(id: String) {
+        _state.update { ClientDetailUiState(mode = ClientDetailMode.Edit(id), isLoading = true) }
+        load(id)
     }
 
     private fun load(id: String) {
@@ -78,6 +85,7 @@ class ClientDetailViewModel @Inject constructor(
             _state.update { it.copy(isLoading = true, error = null) }
             try {
                 val client = repository.get(id)
+                if (editingId != id) return@launch
                 _state.update {
                     it.copy(
                         client = client,
@@ -91,8 +99,10 @@ class ClientDetailViewModel @Inject constructor(
                     )
                 }
             } catch (e: ApiException) {
+                if (editingId != id) return@launch
                 _state.update { it.copy(isLoading = false, error = e.userMessage) }
             } catch (e: IOException) {
+                if (editingId != id) return@launch
                 _state.update { it.copy(isLoading = false, error = e.message ?: "Could not load client.") }
             }
         }
@@ -123,13 +133,16 @@ class ClientDetailViewModel @Inject constructor(
      * still set.
      */
     fun resetForNewClient() {
-        if (_state.value.mode !is ClientDetailMode.Create) return
-        _state.update { ClientDetailUiState() }
+        // This instance only ever backs the new-client popup, so it must always be
+        // resettable: a leftover Edit state (or a stale saved/deleted flag) would
+        // otherwise flash on the next open.
+        _state.value = ClientDetailUiState()
     }
 
     fun save() {
         val current = _state.value
         if (!current.canSave) return
+        val forId = (current.mode as? ClientDetailMode.Edit)?.id
         _state.update { it.copy(isSaving = true, error = null) }
 
         viewModelScope.launch {
@@ -138,10 +151,13 @@ class ClientDetailViewModel @Inject constructor(
                     is ClientDetailMode.Create -> create(current)
                     is ClientDetailMode.Edit -> update(mode.id, current)
                 }
+                if (editingId != forId) return@launch
                 _state.update { it.copy(isSaving = false, saved = true) }
             } catch (e: ApiException) {
+                if (editingId != forId) return@launch
                 _state.update { it.copy(isSaving = false, error = e.userMessage) }
             } catch (e: IOException) {
+                if (editingId != forId) return@launch
                 _state.update { it.copy(isSaving = false, error = e.message ?: "Could not save.") }
             }
         }
@@ -188,6 +204,7 @@ class ClientDetailViewModel @Inject constructor(
                 // Re-read so the screen reflects the action's effect (a toggle flips
                 // the badge, a renew moves the date) instead of guessing locally.
                 val refreshed = repository.get(id)
+                if (editingId != id) return@launch
                 _state.update {
                     it.copy(
                         client = refreshed,
@@ -195,8 +212,10 @@ class ClientDetailViewModel @Inject constructor(
                     )
                 }
             } catch (e: ApiException) {
+                if (editingId != id) return@launch
                 _state.update { it.copy(error = e.userMessage) }
             } catch (e: IOException) {
+                if (editingId != id) return@launch
                 _state.update { it.copy(error = e.message ?: "Action failed.") }
             }
         }
@@ -207,10 +226,13 @@ class ClientDetailViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.delete(id)
+                if (editingId != id) return@launch
                 _state.update { it.copy(deleted = true) }
             } catch (e: ApiException) {
+                if (editingId != id) return@launch
                 _state.update { it.copy(error = e.userMessage) }
             } catch (e: IOException) {
+                if (editingId != id) return@launch
                 _state.update { it.copy(error = e.message ?: "Could not delete.") }
             }
         }
@@ -231,9 +253,6 @@ class ClientDetailViewModel @Inject constructor(
         value.split(Regex("[\\s,]+")).map { it.trim() }.filter { it.isNotEmpty() }
 
     companion object {
-        const val ARG_CLIENT_ID = "clientId"
-        const val NEW_CLIENT_SENTINEL = "new"
-
         /** The key the new-client dialog's view model is stored under. */
         const val CREATE_VIEWMODEL_KEY = "client-create"
     }

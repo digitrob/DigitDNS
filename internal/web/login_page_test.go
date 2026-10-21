@@ -57,7 +57,7 @@ func TestLoginDocumentIsSelfContained(t *testing.T) {
 	doc := w.Body.String()
 
 	for _, ref := range []string{`src="`, `href="`, `src='`, `href='`} {
-		searchDoc := strings.ReplaceAll(doc, `href="data:image/svg+xml,`, `data-favicon="`)
+		searchDoc := strings.ReplaceAll(doc, `href="data:image/png;base64,`, `data-favicon="`)
 		if i := strings.Index(searchDoc, ref); i >= 0 {
 			// The embedded data favicon has no network request. The only other
 			// acceptable occurrence is inside a comment; scan the rest of the
@@ -78,7 +78,7 @@ func TestLoginDocumentHasAccessibleHeadingAndEmbeddedFavicon(t *testing.T) {
 	if !strings.Contains(doc, `<h1 class="brand-name">DigitDNS</h1>`) {
 		t.Error("standalone login has no page-level h1")
 	}
-	if !strings.Contains(doc, `<link rel="icon" href="data:image/svg+xml,`) {
+	if !strings.Contains(doc, `<link rel="icon" href="data:image/png;base64,`) {
 		t.Error("standalone login has no embedded favicon and causes a failing browser request")
 	}
 }

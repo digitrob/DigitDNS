@@ -444,6 +444,24 @@ func TestV3_UpstreamsAddReorderRemove(t *testing.T) {
 	if w := v3Request(mux, http.MethodPost, "/api/v3/upstreams/reorder", key, map[string]any{"order": []string{"8.8.8.8"}}); w.Code != http.StatusBadRequest {
 		t.Fatalf("bad reorder = %d, want 400", w.Code)
 	}
+	// Remove the added upstream.
+	w = v3Request(mux, http.MethodPost, "/api/v3/upstreams/delete", key, map[string]any{"address": "8.8.8.8"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("delete upstream = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var after struct {
+		Items []string `json:"items"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &after)
+	for _, u := range after.Items {
+		if u == "8.8.8.8:53" || u == "8.8.8.8" {
+			t.Fatalf("deleted upstream still present: %v", after.Items)
+		}
+	}
+	// Removing it again is a 404: it is no longer in the pool.
+	if w := v3Request(mux, http.MethodPost, "/api/v3/upstreams/delete", key, map[string]any{"address": "8.8.8.8"}); w.Code != http.StatusNotFound {
+		t.Fatalf("re-delete = %d, want 404", w.Code)
+	}
 }
 
 func TestV3_PoliciesAndAccess(t *testing.T) {

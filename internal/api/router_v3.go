@@ -150,6 +150,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 
 	// Upstreams.
 	mux.HandleFunc("/api/v3/upstreams", a.SecurityMiddlewareV3(a.handleV3Upstreams))
+	mux.HandleFunc("/api/v3/upstreams/stats", a.SecurityMiddlewareV3(a.handleV3UpstreamStats))
 	mux.HandleFunc("/api/v3/upstreams/", a.SecurityMiddlewareV3(a.handleV3UpstreamItem))
 
 	// Settings.

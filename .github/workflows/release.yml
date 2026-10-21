@@ -144,11 +144,14 @@ jobs:
       - name: Compose the release body
         run: |
           {
+            if [ -f docs/RELEASE_NOTES.md ]; then
+              cat docs/RELEASE_NOTES.md
+              echo
+              echo "---"
+              echo
+            fi
             if [[ "${GITHUB_REF_NAME}" == *beta* ]]; then
               echo "> ⚠️ **UNSTABLE — development pre-release (${GITHUB_REF_NAME}).**"
-              echo "> This build is a work in progress and is **not** recommended for production."
-              echo "> New installs should use the current stable line the README points at"
-              echo "> (\`v3.0.0\`); this tag exists for testing the features in flight."
             else
               echo "> **Stable release (${GITHUB_REF_NAME}).**"
               echo "> Recommended for production. Install with the one-liner in the README,"

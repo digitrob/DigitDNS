@@ -62,7 +62,7 @@ func TestSPADocumentRewritesAssetReferencesToTheAdminPrefix(t *testing.T) {
 
 	// Non-asset references must not have been rewritten. The dashboard's own
 	// favicon is a data: URI — that shape does not match the rewrite.
-	if !strings.Contains(doc, `rel="icon" href="data:image/svg+xml`) {
+	if !strings.Contains(doc, `rel="icon" href="data:image/png;base64,`) {
 		t.Error("the data: favicon was disturbed by the prefix rewrite")
 	}
 

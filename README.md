@@ -85,7 +85,7 @@ source is right here on GitHub.
 As `root` on Ubuntu 20.04+, Debian 11+, or AlmaLinux/Rocky 8+:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.0.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.3.0/scripts/install.sh | sudo bash
 ```
 
 The installer needs a **domain pointed at your server** (A record → server IP).
@@ -157,7 +157,7 @@ docker logs digitdns
 | Tag | What it is |
 | :--- | :--- |
 | `latest` | Latest stable release — use this |
-| `3.0.0` | A specific immutable release |
+| `3.3.0` | A specific immutable release |
 | `edge` | Nightly/dev build from the default branch — not for production |
 
 Verify an image's signature (proves it was built by this repo's CI):
@@ -176,7 +176,7 @@ Checksums are in `checksums.txt` (signed with the project's release key).
 
 ```bash
 # Linux amd64 example:
-curl -fsSL -o digitdns https://github.com/digitrob/DigitDNS/releases/download/v3.0.0/digitdns-linux-amd64
+curl -fsSL -o digitdns https://github.com/digitrob/DigitDNS/releases/download/v3.3.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo ./digitdns -server
 ```
@@ -345,6 +345,49 @@ Subscriber-facing pages (where clients check their own status) can be
 customized with your own domain, title, and CSS to match your branding.
 
 ---
+
+---
+
+## 📱 Android Companion App
+
+DigitDNS also ships a native Android companion app — the same control surface as
+the web panel, in your pocket, talking to your server over the REST API and the
+live event stream. It is a separate product on its own version line
+(`android-v3.3.0` and friends), side-loaded from the GitHub release page rather
+than distributed through Play.
+
+**What it does (feature parity with the web panel):**
+
+- **Login & accounts** — sign in with your admin username and password, with
+  TOTP when two-factor is enabled; holds a real, revocable session token.
+- **Dashboard** — live stats, query rate, cache hits, proxy relay counts, CPU,
+  RAM and live traffic, plus the QPS chart.
+- **Domain rules** — add, edit, proxy, block or route domains direct; bulk
+  import; groups with icons; one-tap actions straight from the live log.
+- **Clients (subscribers)** — create and edit subscribers, set quotas, expiry
+  and device limits, run actions (enable/disable, renew, reset traffic, new
+  UUID/secret), suspend or delete.
+- **Upstreams** — add, remove, reorder and benchmark DNS upstreams on any
+  transport.
+- **Live Query Log** — the same live feed as the panel, with search, filters,
+  sorting, pause/resume and quick actions.
+- **Diagnostics** — run the server diagnostic suite against your own targets.
+- **Settings** — access lists, TLS/ACME certificate issuance and renewal,
+  subscription/portal settings, server connection management.
+- **Live stream service** — a foreground service keeps the SSE connection
+  alive and raises notifications while the app is in the background.
+
+**Requirements:** Android 10 (API 29) or newer. Download the APK that matches
+your device's CPU from the
+[Android release](https://github.com/digitrob/DigitDNS/releases) —
+`digitdns-arm64-v8a.apk` for virtually all phones since ~2016,
+`digitdns-armeabi-v7a.apk` for older devices, `digitdns-x86_64.apk` for
+emulators, or `digitdns-universal.apk` if you are unsure. Verify against the
+matching `.sha256` before installing.
+
+The app carries its own version, so a server update never forces an app update
+and vice versa.
+
 
 ## 📚 Documentation
 

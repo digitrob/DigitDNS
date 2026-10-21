@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import timber.log.Timber
 import javax.inject.Inject
@@ -76,6 +77,7 @@ data class LiveQueryLogUiState(
  * through [RulesRepository]; the log itself is read-only.
  */
 @HiltViewModel
+@Suppress("TooGenericExceptionCaught")
 class LiveQueryLogViewModel @Inject constructor(
     private val liveStream: LiveQueryStream,
     private val rulesRepository: RulesRepository,
@@ -87,13 +89,27 @@ class LiveQueryLogViewModel @Inject constructor(
     init {
         liveStream.start()
         viewModelScope.launch {
-            liveStream.queries.collect { queries ->
-                _state.update { it.copy(buffer = queries) }
+            while (isActive) {
+                try {
+                    liveStream.queries.collect { queries ->
+                        _state.update { it.copy(buffer = queries) }
+                    }
+                } catch (e: Exception) {
+                    Timber.w(e, "live query collect failed; retrying")
+                    delay(COLLECT_RETRY_DELAY_MS)
+                }
             }
         }
         viewModelScope.launch {
-            liveStream.status.collect { status ->
-                _state.update { it.copy(status = status) }
+            while (isActive) {
+                try {
+                    liveStream.status.collect { status ->
+                        _state.update { it.copy(status = status) }
+                    }
+                } catch (e: Exception) {
+                    Timber.w(e, "live status collect failed; retrying")
+                    delay(COLLECT_RETRY_DELAY_MS)
+                }
             }
         }
     }
@@ -121,10 +137,35 @@ class LiveQueryLogViewModel @Inject constructor(
     /**
      * Re-anchor the feed to the live stream: adopt the current buffer and drop any
      * pause/frozen snapshot. The stream keeps running underneath, so a refresh is a
-     * view reset, not a reconnect. The indicator shows briefly so the gesture reads.
+     * view reset, not a reconnect.
+     */
+    fun reload() {
+        liveStream.start()
+        _state.update {
+            it.copy(
+                buffer = liveStream.queries.value,
+                paused = false,
+                pausedBuffer = null,
+            )
+        }
+        liveStream.reconnect()
+    }
+
+    /**
+     * The same re-anchor, but reached by pulling: the indicator shows briefly so the
+     * gesture reads.
      */
     fun refresh() {
-        _state.update { it.copy(isRefreshing = true, paused = false, pausedBuffer = null) }
+        liveStream.start()
+        _state.update {
+            it.copy(
+                isRefreshing = true,
+                buffer = liveStream.queries.value,
+                paused = false,
+                pausedBuffer = null,
+            )
+        }
+        liveStream.reconnect()
         viewModelScope.launch {
             delay(REFRESH_INDICATOR_MILLIS)
             _state.update { it.copy(isRefreshing = false) }
@@ -166,5 +207,8 @@ class LiveQueryLogViewModel @Inject constructor(
     private companion object {
         /** How long the pull-to-refresh spinner lingers, so the gesture reads visibly. */
         const val REFRESH_INDICATOR_MILLIS = 450L
+
+        /** How long to wait before re-subscribing after a failed collect. */
+        const val COLLECT_RETRY_DELAY_MS = 1_000L
     }
 }

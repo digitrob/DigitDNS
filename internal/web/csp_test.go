@@ -186,9 +186,9 @@ func TestInlineScriptBlocksAreAccountedFor(t *testing.T) {
 
 // offOriginRe finds a resource URL that would be fetched from another host: an
 // absolute http(s) URL or a protocol-relative one, inside a src or href attribute.
-// Attribute-scoped on purpose — index.html's favicon is a data: URI containing the
-// SVG namespace http://www.w3.org/2000/svg, which is an XML identifier and never
-// fetched, and a bare search for "http" would report it forever.
+// Attribute-scoped on purpose — index.html's favicon is a data: URI, which names
+// no host and is never fetched from one, and a bare search for "http" would
+// report it forever.
 var offOriginRe = regexp.MustCompile(`(?:src|href)\s*=\s*["'](?:https?:)?//[^"']+`)
 
 // "100% offline, zero external CDN" is a claim the project makes, and it is the

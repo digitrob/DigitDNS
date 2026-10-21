@@ -473,15 +473,37 @@ code, pre, .font-mono {
 }
 
 body {
+  color: var(--text-main);
+  min-height: 100vh;
+}
+
+/* The page base colour and wash (the four radial/linear gradients) live on one
+   fixed layer rather than on body with `background-attachment: fixed`.
+   A fixed background-attachment makes Chromium re-rasterize the whole viewport
+   every time any composited layer above it changes — which, on the 1 Hz stats
+   poll, showed up as a full-page flicker on macOS Chrome (Firefox composes it
+   differently and never flickered). A dedicated position:fixed, z-index:-1 layer
+   paints the identical colour and wash once and sits quietly behind everything.
+   It carries the base colour too, so body itself stays transparent and the paint
+   stays a single, stable, viewport-sized composited layer. */
+body::after {
+  content: " ";
+  position: fixed;
+  top: 0; left: 0; bottom: 0; right: 0;
+  z-index: -1;
+  pointer-events: none;
   background-color: var(--bg-main);
   background-image:
     radial-gradient(circle at 10% 10%, var(--page-glow-cyan) 0px, transparent 35%),
     radial-gradient(circle at 90% 15%, var(--page-glow-purple) 0px, transparent 40%),
     radial-gradient(circle at 50% 90%, var(--page-glow-green) 0px, transparent 45%),
     linear-gradient(to bottom, var(--page-wash-from), var(--page-wash-to));
-  background-attachment: fixed;
-  color: var(--text-main);
-  min-height: 100vh;
+}
+
+/* html carries the base colour so there is never a flash of transparent before
+   the fixed wash layer paints (and it covers the area under a short page). */
+html {
+  background-color: var(--bg-main);
 }
 
 /* Ambient Animated Grid Scanline */
@@ -495,6 +517,13 @@ body::before {
   pointer-events: none;
   /* 0 in the light theme, which also lets the browser skip compositing the layer. */
   opacity: var(--scanline-opacity);
+  /* Promote the overlay to its own composited layer and box its invalidation to
+     itself, so a repaint underneath it (the stats poll, the chart, the stream)
+     cannot force Chromium to re-rasterize the whole fixed layer in step.
+     layout paint, not strict: strict adds size containment, which is wrong for
+     a fixed inset:0 overlay whose size comes from its offsets. */
+  will-change: opacity;
+  contain: layout paint;
 }
 
 /* Glassmorphic Cyber Panels */
@@ -505,7 +534,13 @@ body::before {
   border: 1px solid var(--border-color);
   border-radius: 18px;
   box-shadow: var(--card-shadow);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  /* Only the two properties the hover state actually changes are transitioned.
+     `transition: all` also animated layout (height) whenever a panel's content
+     changed size, which forced a reflow each stats tick; `contain: paint` boxes
+     a child text update so it cannot invalidate the blurred backdrop region
+     beyond this panel. */
+  transition: border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  contain: paint;
   position: relative;
 }
 
@@ -521,6 +556,7 @@ body::before {
   border: 1px solid var(--border-color);
   border-radius: 18px;
   box-shadow: var(--card-shadow);
+  contain: paint;
 }
 
 /* Card Glow Overlays */

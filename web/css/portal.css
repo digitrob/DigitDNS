@@ -213,6 +213,9 @@
   .card {
     -webkit-backdrop-filter: blur(18px);
     backdrop-filter: blur(18px);
+    /* Box the card's paint so a child update cannot invalidate the blurred
+       backdrop region beyond the card (same reason as .glass-panel). */
+    contain: paint;
   }
 }
 

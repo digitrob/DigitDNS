@@ -128,7 +128,7 @@ jobs:
         run: ./gradlew :app:assembleRelease --no-daemon
 
       # ABI splits emit `app-<abi>-release.apk` (plus `app-universal-release.apk`).
-      # Each is renamed to a self-describing `digitdns-companion-<tag>-<abi>.apk` and
+      # Each is renamed to a self-describing `digitdns-<abi>.apk` and
       # paired with a `.sha256`, so an operator can tell at a glance which slice to
       # install on which phone without unpacking anything.
       #
@@ -149,7 +149,7 @@ jobs:
           for apk in app-*-release.apk; do
             abi="${apk#app-}"          # <abi>-release.apk
             abi="${abi%-release.apk}"  # <abi>
-            out="digitdns-companion-${version}-${abi}.apk"
+            out="digitdns-${abi}.apk"
             cp "$apk" "$out"
             sha256sum "$out" > "${out}.sha256"
             produced+=("$out" "${out}.sha256")
@@ -158,7 +158,7 @@ jobs:
             echo "::error::no signed release APKs found — did assembleRelease produce *-unsigned.apk?"
             exit 1
           fi
-          ls -l digitdns-companion-*
+          ls -l digitdns-*.apk
 
       # The APK is side-loaded, not distributed through Play, so the release notes are
       # the only place an operator learns what the tag contains.
@@ -176,10 +176,10 @@ jobs:
             echo ">"
             echo "> | APK | Architecture |"
             echo "> | --- | --- |"
-            echo "> | \`digitdns-companion-${version}-arm64-v8a.apk\` | 64-bit ARM (virtually all phones since ~2016) |"
-            echo "> | \`digitdns-companion-${version}-armeabi-v7a.apk\` | 32-bit ARM (older/low-end devices) |"
-            echo "> | \`digitdns-companion-${version}-x86_64.apk\` | x86-64 (emulators, some tablets) |"
-            echo "> | \`digitdns-companion-${version}-universal.apk\` | all of the above — larger, use if unsure |"
+            echo "> | \`digitdns-arm64-v8a.apk\` | 64-bit ARM (virtually all phones since ~2016) |"
+            echo "> | \`digitdns-armeabi-v7a.apk\` | 32-bit ARM (older/low-end devices) |"
+            echo "> | \`digitdns-x86_64.apk\` | x86-64 (emulators, some tablets) |"
+            echo "> | \`digitdns-universal.apk\` | all of the above — larger, use if unsure |"
             echo ">"
             echo "> Verify the download against the matching \`.sha256\` file before installing."
           } > "${RUNNER_TEMP}/android-release-body.md"
@@ -187,9 +187,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # The renamed `digitdns-companion-<tag>-<abi>.apk` files and their paired
+          # The renamed `digitdns-<abi>.apk` files and their paired
           # `.apk.sha256` checksums, one of each per ABI.
-          files: android/app/build/outputs/apk/release/digitdns-companion-*.apk*
+          files: android/app/build/outputs/apk/release/digitdns-*.apk*
           fail_on_unmatched_files: true
           # The app's tags never take the "Latest" badge: a companion APK is not the
           # server release a new user should land on, and "Latest" is what the README's

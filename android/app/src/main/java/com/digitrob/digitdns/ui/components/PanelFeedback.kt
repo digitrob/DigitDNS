@@ -12,14 +12,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarData
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,6 +31,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -46,6 +51,9 @@ import kotlinx.coroutines.launch
 
 /** How long a transient message lingers. M3's own `Short` is 4 s; the panel uses ~3 s. */
 private const val TOAST_DURATION_MS = 3_000L
+
+/** How much of the screen the wide dialog claims. */
+private const val WIDE_DIALOG_WIDTH = 0.96f
 
 /**
  * A themed replacement for [AlertDialog]. Same parameters as M3's, so a call site only
@@ -84,6 +92,69 @@ fun PanelDialog(
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+/**
+ * A roomy relative of [PanelDialog], for forms that need the whole screen.
+ *
+ * M3's dialog lives in a platform window that pins it to a narrow column and pads its
+ * content by 24dp, so a form with a row of chips either loses the chips off the side
+ * or has to be squeezed into a scrolling box. This one owns its window instead: it
+ * takes 96% of the width, pads by 16dp and grows to whatever height the content
+ * needs. The whole card scrolls as one piece, so the buttons travel with the form
+ * when the keyboard is up and nothing is left behind.
+ */
+@Composable
+fun PanelWideDialog(
+    onDismissRequest: () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    dismissButton: @Composable (() -> Unit)? = null,
+    title: @Composable (() -> Unit)? = null,
+    text: @Composable (() -> Unit)? = null,
+    solid: Boolean = true,
+) {
+    val colors = DigitDnsTheme.colors
+    val container = if (solid) {
+        if (isSystemInDarkTheme()) Color(0xFF0F172A) else Color(0xFFFFFFFF)
+    } else {
+        colors.bgCard
+    }
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = modifier.fillMaxWidth(WIDE_DIALOG_WIDTH),
+            shape = RoundedCornerShape(14.dp),
+            color = container,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                title?.let {
+                    Box(modifier = Modifier.padding(bottom = 12.dp)) { it() }
+                }
+                text?.invoke()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    dismissButton?.let {
+                        it()
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    confirmButton()
+                }
+            }
+        }
+    }
 }
 
 /**

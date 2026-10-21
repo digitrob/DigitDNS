@@ -363,9 +363,11 @@ private fun SortDropdown(selected: DomainSort, onSelect: (DomainSort) -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FilterChips(selected: DomainFilter?, onSelect: (DomainFilter) -> Unit) {
+    // The row spans the full width and the chips sit centred in it, so the filter
+    // reads as one band across the page rather than a ragged strip on the left.
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         DomainFilter.entries.forEach { filter ->

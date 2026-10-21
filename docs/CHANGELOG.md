@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.3.0] — Android companion app, dialog UX, and live-log polish
+
+### ✨ Added
+- **Android companion app.** A native Android client (minSdk 29) with full panel parity: login with session tokens and TOTP, dashboard stats and QPS chart, domain rules, clients, upstreams, live query log, diagnostics and settings. It runs its own foreground stream service with notifications, ships as signed multi-ABI APKs (`digitdns-<abi>.apk`), and carries its own version line.
+- **Client management as popups.** Adding and editing a client now opens over the list instead of pushing a new screen, so the operator keeps their place; the form is shared between the two so they cannot drift.
+- **Adaptive launcher icon.** The Android app now uses a proper adaptive icon that survives every OEM mask (circle, squircle, Samsung rounded square) without clipping the emblem.
+- **Swipe-to-delete with confirmation.** List rows delete on a swipe, but only after an explicit confirmation dialog; a cancelled swipe snaps the row back. The old four-second undo toast is gone in favour of the confirmation.
+- **Dedicated pull-to-refresh indicators.** Servers, TLS, About, Groups, Policies and the Live Log now raise a real spinner for the duration of a refresh instead of reusing a flag that only meant "busy".
+
+### 🔄 Changed
+- **Live Query Log.** Reload (no spinner) and pull-to-refresh (spinner) are now distinct, mirroring the Domains page; the toolbar buttons keep fixed widths so toggling Pause/Resume can no longer shift Clear off the edge; buttons wrap instead of collapsing on narrow phones.
+- **Client detail popup.** Opens without a flash of the previous client or a loading spinner showing through the dialog; the form renders as an offline form.
+- **Dashboard stat cards.** Totals and secondary figures are right-aligned / centred so nothing is truncated at narrow widths.
+- **TLS issuance.** A forced renewal now skips the on-disk fast path and contacts Let's Encrypt, for compromised keys or mis-issued certs.
+- **Upstreams API.** New `GET /api/v3/upstreams/stats` and `POST /api/v3/upstreams/delete`, matching the dashboard.
+- **Panel transport.** The panel now negotiates HTTP/1.1 only, so long-lived live-log streams are not reset by HTTP/2 intermediaries.
+- **Browser forms.** Password fields are wrapped in no-op forms with a hidden username, satisfying Chrome's autofill/accessibility checks without changing masking.
+
+### 🐛 Fixed
+- Swipe deletes no longer happen outright; they always ask first.
+- Client detail popup no longer flashes stale state or closes on a leftover `saved` flag.
+- Live Log now re-anchors on both Reload and pull-to-refresh.
+- Toolbar buttons no longer collapse or clip their labels.
+
+
 ## 🏷️ [v3.2.2] — Docs links, gated-docs 403 page, leaner container
 
 ### 🐛 Fixed

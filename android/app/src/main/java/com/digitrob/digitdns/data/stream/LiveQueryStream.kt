@@ -119,6 +119,18 @@ class LiveQueryStream @Inject constructor(
     }
 
     /**
+     * Reopen the socket so the server re-sends its history snapshot and the buffer
+     * is re-seeded. Used by the Live Query Log's manual refresh: the stream is
+     * already live, but a pull or a Reload button should visibly re-anchor the
+     * feed. Cancelling the current socket drives the reconnect loop's next pass.
+     */
+    fun reconnect() {
+        if (reconnectRequested) return
+        reconnectRequested = true
+        stream?.cancel()
+    }
+
+    /**
      * Observe raw queries as they arrive, for the notification path. The listener is
      * called on the IO thread that reads the socket. Returns a remover to call when the
      * observer is done.
@@ -200,6 +212,9 @@ class LiveQueryStream @Inject constructor(
 
     @Volatile private var opened = false
     @Volatile private var retryAllowed = true
+
+    /** Set when a manual refresh asks the socket to reopen and re-seed history. */
+    @Volatile private var reconnectRequested = false
 
     private suspend fun openOnce(): OpenOutcome {
         _status.value = StreamStatus.CONNECTING
@@ -285,8 +300,12 @@ class LiveQueryStream @Inject constructor(
     private suspend fun waitForClose() {
         // Poll the retry signal: the listener flips retryAllowed when the stream ends,
         // and there is no channel to await it on without extra machinery.
-        while (consumers.get() > 0 && retryAllowed) {
+        while (consumers.get() > 0 && retryAllowed && !reconnectRequested) {
             delay(RECONNECT_PROBE_MS)
+        }
+        if (reconnectRequested) {
+            reconnectRequested = false
+            Timber.i("live stream reconnect requested; reopening")
         }
         if (!retryAllowed) {
             // A refusal (spent ticket, revoked session): do not hammer the server. A
