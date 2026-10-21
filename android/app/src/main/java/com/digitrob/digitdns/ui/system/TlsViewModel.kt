@@ -28,6 +28,14 @@ data class TlsUiState(
     /** The settings snapshot, used for the on-disk certificates and domain prefill. */
     val config: ConfigResponse? = null,
     val working: Boolean = false,
+    /**
+     * The pull-to-refresh indicator's own flag.
+     *
+     * It used to be bound to [working], which belongs to a certificate run and is
+     * never set by a status refresh — so the pull indicator had nothing to animate
+     * on, and a run in progress spun the pull arc instead of the run's own one.
+     */
+    val isRefreshing: Boolean = false,
     val message: String? = null,
     val error: String? = null,
 ) {
@@ -117,11 +125,18 @@ class TlsViewModel @Inject constructor(
 
     fun refreshStatus() {
         viewModelScope.launch {
-            runCatching { repository.acmeStatus() }
-                .onSuccess { run -> _state.update { it.copy(run = run, error = null) } }
-                .onFailure { e ->
-                    if (e is ApiException) _state.update { s -> s.copy(error = e.userMessage) }
-                }
+            _state.update { it.copy(isRefreshing = true) }
+            try {
+                runCatching { repository.acmeStatus() }
+                    .onSuccess { run -> _state.update { it.copy(run = run, error = null) } }
+                    .onFailure { e ->
+                        if (e is ApiException) _state.update { s -> s.copy(error = e.userMessage) }
+                    }
+            } finally {
+                // Cleared whatever happened, so a failed status call cannot leave the
+                // pull indicator spinning.
+                _state.update { it.copy(isRefreshing = false) }
+            }
         }
     }
 
@@ -133,7 +148,6 @@ class TlsViewModel @Inject constructor(
                 val result = repository.issue(s.domain.trim(), s.email.trim(), s.purpose, force = s.selectedCertExpired)
                 _state.update {
                     it.copy(
-                        working = false,
                         message = if (result.issuing) {
                             "Issuance started for ${result.domain}."
                         } else {
@@ -143,9 +157,13 @@ class TlsViewModel @Inject constructor(
                 }
                 if (result.issuing) awaitRun()
             } catch (e: ApiException) {
-                _state.update { it.copy(working = false, error = e.userMessage) }
+                _state.update { it.copy(error = e.userMessage) }
             } catch (e: IOException) {
-                _state.update { it.copy(working = false, error = e.message ?: "Could not start issuance.") }
+                _state.update { it.copy(error = e.message ?: "Could not start issuance.") }
+            } finally {
+                // A run that failed to start must not leave the Issue button
+                // disabled for the rest of the session.
+                _state.update { it.copy(working = false) }
             }
         }
     }

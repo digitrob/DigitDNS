@@ -71,7 +71,7 @@ fun PoliciesScreen(viewModel: PoliciesViewModel = hiltViewModel()) {
         }
 
         PanelRefreshBox(
-            isRefreshing = state.isLoading && state.policies.isNotEmpty(),
+            isRefreshing = state.isRefreshing,
             onRefresh = viewModel::refresh,
             modifier = Modifier.fillMaxSize(),
         ) {

@@ -44,7 +44,7 @@ fun AboutScreen(viewModel: MaintenanceViewModel = hiltViewModel()) {
 
     Scaffold(snackbarHost = { PanelSnackbarHost(snackbar) }, contentWindowInsets = WindowInsets(0)) { padding ->
         PanelRefreshBox(
-            isRefreshing = state.checking,
+            isRefreshing = state.isRefreshing,
             onRefresh = viewModel::loadSummary,
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {

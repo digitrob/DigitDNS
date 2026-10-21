@@ -55,7 +55,7 @@ fun ServersScreen(
     var pendingRemoval by remember { mutableStateOf<ServerRow?>(null) }
 
     PanelRefreshBox(
-        isRefreshing = state.isBusy,
+        isRefreshing = state.isRefreshing,
         onRefresh = viewModel::refresh,
         modifier = Modifier.fillMaxSize(),
     ) {

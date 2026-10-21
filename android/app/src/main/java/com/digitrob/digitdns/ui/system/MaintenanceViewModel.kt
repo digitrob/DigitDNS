@@ -23,6 +23,13 @@ data class MaintenanceUiState(
     val update: UpdateStatus? = null,
     val progress: UpdateProgressView? = null,
     val checking: Boolean = false,
+    /**
+     * The pull-to-refresh indicator's own flag.
+     *
+     * It used to be bound to [checking], which belongs to an update check and is
+     * never set by a summary load — so the pull indicator had nothing to animate on.
+     */
+    val isRefreshing: Boolean = false,
     val applying: Boolean = false,
     val flushing: Boolean = false,
     val error: String? = null,
@@ -50,6 +57,7 @@ class MaintenanceViewModel @Inject constructor(
 
     fun loadSummary() {
         viewModelScope.launch {
+            _state.update { it.copy(isRefreshing = true) }
             try {
                 val summary = repository.summary()
                 _state.update { it.copy(summary = summary, error = null) }
@@ -57,6 +65,10 @@ class MaintenanceViewModel @Inject constructor(
                 _state.update { it.copy(error = e.userMessage) }
             } catch (e: IOException) {
                 _state.update { it.copy(error = e.message ?: "Could not load system status.") }
+            } finally {
+                // Cleared whatever happened, so a failed load cannot leave the pull
+                // indicator spinning.
+                _state.update { it.copy(isRefreshing = false) }
             }
         }
     }

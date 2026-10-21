@@ -61,7 +61,7 @@ fun TlsScreen(viewModel: TlsViewModel = hiltViewModel()) {
 
     Scaffold(snackbarHost = { PanelSnackbarHost(snackbar) }, contentWindowInsets = WindowInsets(0)) { padding ->
     PanelRefreshBox(
-        isRefreshing = state.working,
+        isRefreshing = state.isRefreshing,
         onRefresh = viewModel::refreshStatus,
         modifier = Modifier.fillMaxSize().padding(padding),
     ) {

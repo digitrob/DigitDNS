@@ -79,7 +79,7 @@ fun GroupsScreen(viewModel: GroupsViewModel = hiltViewModel()) {
         }
 
         PanelRefreshBox(
-            isRefreshing = state.isLoading && state.groups.isNotEmpty(),
+            isRefreshing = state.isRefreshing,
             onRefresh = viewModel::refresh,
             modifier = Modifier.fillMaxSize(),
         ) {

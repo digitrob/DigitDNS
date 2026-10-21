@@ -24,6 +24,14 @@ import javax.inject.Inject
 data class GroupsUiState(
     val groups: List<CustomGroup> = emptyList(),
     val isLoading: Boolean = false,
+    /**
+     * The pull-to-refresh indicator's own flag.
+     *
+     * [isLoading] is only raised for a first load with nothing to show, so binding
+     * the pull indicator to it meant the arc never animated on a screen that already
+     * had rows.
+     */
+    val isRefreshing: Boolean = false,
     val error: String? = null,
     val editorOpen: Boolean = false,
     /** The id being edited, or null when the editor is creating a new group. */
@@ -50,6 +58,9 @@ class GroupsViewModel @Inject constructor(
 
     fun refresh() {
         viewModelScope.launch {
+            _state.update { it.copy(isRefreshing = true) }
+            // The full-screen spinner is only for a first load with nothing to show;
+            // a pull over existing rows must not replace them.
             if (_state.value.groups.isEmpty()) _state.update { it.copy(isLoading = true) }
             try {
                 val groups = repository.list()
@@ -58,6 +69,10 @@ class GroupsViewModel @Inject constructor(
                 _state.update { it.copy(isLoading = false, error = e.userMessage) }
             } catch (e: IOException) {
                 _state.update { it.copy(isLoading = false, error = e.message ?: "Could not load groups.") }
+            } finally {
+                // Cleared whatever happened, so a failed load cannot leave the pull
+                // indicator spinning.
+                _state.update { it.copy(isRefreshing = false) }
             }
         }
     }
