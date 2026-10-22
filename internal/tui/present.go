@@ -84,6 +84,8 @@ func Banner(version string) string {
 		" |_____/|_|\\__, |_|\\__|_____/|_| \\_|_____/",
 		"            __/ |",
 		"           |___/      Standalone SmartDNS Controller",
+		"",
+		"  fork of HyperDNS by HyperRAIN · AGPL-3.0 · digitrob/DigitDNS",
 	}, "\n")
 }
 

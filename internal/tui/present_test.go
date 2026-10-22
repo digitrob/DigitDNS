@@ -74,6 +74,18 @@ func TestBannerHasNoInterpolatedBytes(t *testing.T) {
 	}
 }
 
+// TestBannerCarriesForkAttribution: the wordmark now states what the code is —
+// a fork maintained under the AGPL — right beside the art, so attribution
+// survives anywhere the operator reads the banner (journald, docker logs).
+func TestBannerCarriesForkAttribution(t *testing.T) {
+	b := Banner("")
+	for _, want := range []string{"fork of HyperDNS by HyperRAIN", "AGPL-3.0", "digitrob/DigitDNS"} {
+		if !strings.Contains(b, want) {
+			t.Errorf("banner lost the attribution segment %q:\n%s", want, b)
+		}
+	}
+}
+
 // TestUninstallCommandIsInteractiveAndPreConfirmed: the field-report regression.
 // ExecSystemController.Uninstall used to run the uninstaller with nil stdio:
 // its confirmation read EOF through a dead pipe, its output was invisible, and

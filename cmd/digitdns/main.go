@@ -38,17 +38,6 @@ import (
 	webAssets "digitdns/web"
 )
 
-const banner = `
-   _    _                           _____  _   _  _____ 
-  | |  | |                         |  __ \| \ | |/ ____|
-  | |__| |_   _ _ __   ___ _ __    | |  | |  \| | (___  
-  |  __  | | | | '_ \ / _ \ '__|   | |  | | . ' |\___ \ 
-  | |  | | |_| | |_) |  __/ |      | |__| | |\  |____) |
-  |_|  |_|\__, | .__/ \___|_|      |_____/|_| \_|_____/ 
-           __/ | |                                      
-          |___/|_|      Next-Gen Standalone SmartDNS
-`
-
 func main() {
 	dbPath := flag.String("db", "", "Path to database file (e.g. /opt/digitdns/data.db)")
 	keyPath := flag.String("key", "", "Path to master encryption key (e.g. /opt/digitdns/master.key)")
@@ -723,7 +712,8 @@ func main() {
 
 	// Only explicit service modes reach runtime ownership. A bare invocation was
 	// already dispatched to the storage-free control client above.
-	fmt.Print(banner)
+	fmt.Print(tui.Banner(version.Get().Display))
+	log.Printf("[Main] DigitDNS %s engine starting", version.Get().Display)
 	log.Printf("[Main] Starting DigitDNS Engine (Public IP: %s)...", serverSettings.PublicIP)
 
 	// The daemon owns the only control socket. Start it after all shared services
@@ -803,30 +793,91 @@ func main() {
 	if listenHost == "" {
 		listenHost = "0.0.0.0"
 	}
-	dashboardScheme := "http"
-	if tlsSettings.PanelHTTPS {
-		dashboardScheme = "https"
+	for _, line := range summaryLines(serverSettings, dnsSettings, sniSettings, tlsSettings) {
+		log.Println(line)
 	}
-	log.Println("================================================================")
-	// The dashboard URL carries the hidden admin namespace: the panel has not
-	// lived at /dashboard since v2.1, and a banner that printed the retired
-	// route would send the operator to a 404.
-	log.Printf(" DigitDNS Dashboard : %s://%s/%s/dash/", dashboardScheme, net.JoinHostPort(listenHost, strconv.Itoa(serverSettings.WebPort)), serverSettings.AdminPath)
-	log.Printf(" Standard DNS       : %s (UDP/TCP)", net.JoinHostPort(listenHost, strconv.Itoa(dnsSettings.Port)))
-	log.Printf(" DNS-over-TLS (DoT) : %s (TCP/TLS)", net.JoinHostPort(listenHost, strconv.Itoa(dnsSettings.DoTPort)))
-	log.Printf(" DNS-over-HTTPS     : https://%s/dns-query", net.JoinHostPort(listenHost, strconv.Itoa(dnsSettings.DoHPort)))
-	if sniSettings.Enabled {
-		log.Printf(" SNI Proxy Relays   : Ports %d (HTTP) and %d (HTTPS)", sniSettings.HTTPPort, sniSettings.HTTPSPort)
-	} else {
-		log.Printf(" SNI Proxy Relays   : disabled")
-	}
-	log.Println("================================================================")
 
 	// Non-interactive mode: park until the signal goroutine completes the
 	// graceful stop, then return through main so every defer — the traffic
 	// flusher's final flush and db.Close among them — runs in its intended
 	// order. os.Exit here would skip them, which is the original defect.
 	<-shutdownDone
+}
+
+// summaryLines builds the service summary printed right after the listeners
+// come up. Every address it names is the reachable one — the host a browser,
+// a device or a subscriber's config actually opens — not the bind wildcard:
+// a line reading "0.0.0.0:27586/dash" cannot be clicked, and logs are the only
+// place the daemon ever spells out where its services live. The host each
+// line shows is resolved with a fixed preference:
+//
+//	panel domain (tlsSettings.Domain) — the name of the ACME certificate
+//	                                  and what all HTTPS panel links serve
+//	public IP — the blank-domain install reaching the world by address
+//	bind host — last resort (loopback-only / SSH-tunnel deployments)
+//
+// The DoH and DoT lines additionally honour the dedicated DoT domain: when
+// one is set, that name is the only one those listeners' certificate pair is
+// guaranteed to cover, so it outranks the panel host — the same chain the
+// dashboard's subscription origin applies.
+func summaryLines(srv *database.ServerSettings, dns *database.DNSSettings, sni *database.SNIProxySettings, tls *database.TLSSettings) []string {
+	bind := srv.BindHost
+	if bind == "" {
+		bind = "0.0.0.0"
+	}
+	publicIP, _ := srv.Endpoint()
+
+	var panelDomain, doTDomain string
+	if tls != nil {
+		panelDomain = strings.TrimSpace(tls.GetDomain())
+		doTDomain = strings.TrimSpace(tls.GetDoTDomain())
+	}
+
+	// Anything riding the panel's own identity: domain, else public IP, else
+	// the bind host.
+	reachable := panelDomain
+	if reachable == "" {
+		reachable = publicIP
+	}
+	if reachable == "" {
+		reachable = bind
+	}
+	// The DoH/DoT listeners certify the dedicated domain when one is set, so
+	// it outranks the panel host; below it the same chain as `reachable`.
+	doTHost := doTDomain
+	if doTHost == "" {
+		doTHost = reachable
+	}
+
+	scheme := "http"
+	if tls != nil && tls.PanelHTTPS {
+		scheme = "https"
+	}
+
+	lines := []string{
+		"================================================================",
+		// The dashboard URL carries the hidden admin namespace: the panel has
+		// not lived at /dashboard since v2.1, and a banner that printed the
+		// retired route would send the operator to a 404.
+		fmt.Sprintf(" DigitDNS Dashboard : %s://%s/%s/dash/", scheme,
+			net.JoinHostPort(reachable, strconv.Itoa(srv.WebPort)), srv.AdminPath),
+		fmt.Sprintf(" Standard DNS       : %s (UDP/TCP)", net.JoinHostPort(reachable, strconv.Itoa(dns.Port))),
+		fmt.Sprintf(" DNS-over-TLS (DoT) : %s (TCP/TLS)", net.JoinHostPort(doTHost, strconv.Itoa(dns.DoTPort))),
+	}
+	// Port 443 is the scheme default, so carrying it in the URL would be noise
+	// — the same suppression the dashboard's doh_url field applies.
+	doh := "https://" + net.JoinHostPort(doTHost, strconv.Itoa(dns.DoHPort)) + "/dns-query"
+	if dns.DoHPort == 443 {
+		doh = "https://" + doTHost + "/dns-query"
+	}
+	lines = append(lines, fmt.Sprintf(" DNS-over-HTTPS     : %s", doh))
+
+	if sni.Enabled {
+		lines = append(lines, fmt.Sprintf(" SNI Proxy Relays   : Ports %d (HTTP) and %d (HTTPS)", sni.HTTPPort, sni.HTTPSPort))
+	} else {
+		lines = append(lines, " SNI Proxy Relays   : disabled")
+	}
+	return append(lines, "================================================================")
 }
 
 // isLockTimeout reports whether err is bbolt's "database is locked" timeout —
