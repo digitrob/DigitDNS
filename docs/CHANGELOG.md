@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.3.1] — Branded banner and reachable addresses in the startup summary
+
+### ✨ Added
+- **DigitDNS wordmark.** The daemon startup log and the interactive console now print the DigitDNS art the codebase already carried, ending the three-way duplication between the daemon banner, the console header and the installer. The banner carries the fork attribution (`fork of HyperDNS by HyperRAIN · AGPL-3.0 · digitrob/DigitDNS`), so the project's provenance survives anywhere an operator reads the banner — journald, Portainer, docker logs.
+
+### 🔄 Changed
+- **Startup summary shows reachable addresses.** The boot footer used to print its listeners against the bind wildcard (`https://0.0.0.0:27586/...`), which no browser, device or subscriber config can open. Each line now resolves the host with a fixed preference — panel domain, then public IP, then the bind host as a last resort for loopback/SSH-tunnel deployments. A dedicated DoT domain outranks the panel domain on the DoH and DoT lines (the only name their certificate is guaranteed to cover), mirroring the dashboard's subscription-origin logic; a default DoH port (443) is suppressed from the URL the same way.
+
+---
+
 ## 🏷️ [v3.3.0] — Android companion app, dialog UX, and live-log polish
 
 ### ✨ Added

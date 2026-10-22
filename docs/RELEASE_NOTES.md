@@ -1,3 +1,30 @@
+# DigitDNS v3.3.1
+
+## Highlights
+
+- **Branded startup banner.** The daemon log and console now open with the
+  DigitDNS wordmark instead of the inherited HyperDNS art, and carry the fork
+  attribution line, so journald / Portainer / docker logs state what the code
+  is and where it is maintained.
+- **Reachable addresses in the startup summary.** The boot footer no longer
+  prints its listeners against the bind wildcard (`0.0.0.0`). Each line
+  resolves the host: panel domain first, then the configured public IP, then
+  the bind host for the SSH-tunnel case. The DoH and DoT lines honour a
+  dedicated DoT domain when one is set, and the default DoH port is
+  suppressed from the URL — the same rules the dashboard's subscription
+  origin applies.
+- Android companion: unchanged in this release (the app is a pure v3-API
+  client; the banner lives in the Go daemon).
+
+## Upgrading
+
+Docker users pulling `ghcr.io/digitrob/digitdns:latest` (or retagging `v3.3.1`)
+pick the banner and summary up automatically on restart — no settings change,
+no migration. Binary installs: replace the `digitdns` binary and restart the
+service.
+
+---
+
 # DigitDNS v3.3.0
 
 ## Highlights
