@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.3.2] — Banner actually reaches `docker logs`
+
+### 🐛 Fixed
+- **The new wordmark's tail never reached the container log.** The daemon printed its banner with a final line that carried no trailing newline. The console doesn't care, but Docker's log reader emits a piped line only at a newline: `docker logs` and Portainer showed the banner minus its last line (the fork attribution) for as long as the container ran; it only leaked out at exit. The startup write is now newline-terminated, with a regression test pinning the shape.
+
+---
+
 ## 🏷️ [v3.3.1] — Branded banner and reachable addresses in the startup summary
 
 ### ✨ Added

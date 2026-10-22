@@ -1,3 +1,17 @@
+# DigitDNS v3.3.2
+
+## Highlights
+
+- **Fix: the banner's last line now reaches `docker logs` / Portainer.** The
+  v3.3.1 wordmark printed without a terminating newline, so the container log
+  driver held the final line (the fork attribution) in its buffer for the
+  daemon's whole lifetime. The startup write is newline-terminated now — one
+  code line and a regression test. Everything else from v3.3.1 carries over
+  unchanged: DigitDNS wordmark, fork attribution line, and the boot summary
+  showing reachable panel-domain addresses instead of the bind wildcard.
+
+---
+
 # DigitDNS v3.3.1
 
 ## Highlights
