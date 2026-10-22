@@ -99,7 +99,6 @@ func TestSummaryLinesShowsSNIState(t *testing.T) {
 	}
 }
 
-
 // TestDaemonBannerEndsWithNewline: the json-file log reader flushes a stdout
 // line only at its newline, so the daemon's wordmark must terminate its write
 // — otherwise docker logs / Portainer hide the banner's tail (the attribution
