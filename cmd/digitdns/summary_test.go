@@ -99,3 +99,14 @@ func TestSummaryLinesShowsSNIState(t *testing.T) {
 	}
 }
 
+
+// TestDaemonBannerEndsWithNewline: the json-file log reader flushes a stdout
+// line only at its newline, so the daemon's wordmark must terminate its write
+// — otherwise docker logs / Portainer hide the banner's tail (the attribution
+// line) for as long as the container runs.
+func TestDaemonBannerEndsWithNewline(t *testing.T) {
+	b := bannerText()
+	if !strings.HasSuffix(b, "\n") {
+		t.Errorf("daemon banner write is unterminated; the log driver would hide its last lines: %q", b[len(b)-30:])
+	}
+}

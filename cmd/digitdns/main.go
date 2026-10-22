@@ -712,7 +712,7 @@ func main() {
 
 	// Only explicit service modes reach runtime ownership. A bare invocation was
 	// already dispatched to the storage-free control client above.
-	fmt.Print(tui.Banner(version.Get().Display))
+	fmt.Print(bannerText())
 	log.Printf("[Main] DigitDNS %s engine starting", version.Get().Display)
 	log.Printf("[Main] Starting DigitDNS Engine (Public IP: %s)...", serverSettings.PublicIP)
 
@@ -802,6 +802,17 @@ func main() {
 	// flusher's final flush and db.Close among them — runs in its intended
 	// order. os.Exit here would skip them, which is the original defect.
 	<-shutdownDone
+}
+
+// bannerText is the wordmark the daemon prints to stdout at startup. The join
+// in tui.Banner leaves no trailing newline — fine for the console, where the
+// palette prints `… + "\n"` after it — but not for a pipe: Docker's log reader
+// emits an entry only once a line ends, so a unterminated final line sits in
+// the reader's buffer for the daemon's whole lifetime and docker logs shows
+// the banner minus its last lines while the process runs. The newline is part
+// of the write, not an afterthought.
+func bannerText() string {
+	return tui.Banner(version.Get().Display) + "\n"
 }
 
 // summaryLines builds the service summary printed right after the listeners
