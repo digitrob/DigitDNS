@@ -207,6 +207,7 @@ internal fun RegenerateDialog(viewModel: SettingsViewModel) {
 
     PanelDialog(
         onDismissRequest = viewModel::closeRegen,
+        solid = true,
         title = { Text(if (isKey) "Regenerate API key?" else "Regenerate admin path?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

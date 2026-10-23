@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"digitdns/internal/core/upstream"
 	"digitdns/internal/database"
@@ -252,6 +253,11 @@ func presentedSessionKey(r *http.Request) string {
 // v3ClientDTO is the symmetric client shape. It carries the full stored record
 // plus the computed quota view, matching v2's field names so a v2 caller's
 // parser keeps working.
+//
+// API 3.1 adds the three figures the web card has always read off the legacy
+// shape: TotalQueries and LastSeen live on the stored record, NextTrafficReset
+// is computed by the service. They are additive fields, so a v3 caller written
+// before 3.1 still parses the response unchanged.
 type v3ClientDTO struct {
 	ID                string   `json:"id"`
 	UUID              string   `json:"uuid"`
@@ -268,6 +274,9 @@ type v3ClientDTO struct {
 	PolicyIDs         []string `json:"custom_policies"`
 	MaxDevices        int      `json:"max_devices"`
 	RegisterSecret    string   `json:"register_secret,omitempty"`
+	TotalQueries      uint64   `json:"total_queries"`
+	LastSeen          string   `json:"last_seen,omitempty"`
+	NextTrafficReset  string   `json:"next_traffic_reset,omitempty"`
 }
 
 func v3ViewToDTO(c service.ClientView) v3ClientDTO {
@@ -286,9 +295,19 @@ func v3ViewToDTO(c service.ClientView) v3ClientDTO {
 		PolicyIDs:         c.CustomPolicies,
 		MaxDevices:        database.NormalizeMaxDevices(c.MaxDevices),
 		RegisterSecret:    c.RegisterSecret,
+		TotalQueries:      c.TotalQueries,
 	}
 	if !c.ExpiresAt.IsZero() {
 		dto.ExpiresAt = c.ExpiresAt.UTC().Format(timeFormatRFC3339)
+	}
+	// Omitted rather than sent as the zero instant: a caller that forgets to
+	// check would otherwise render "last seen year 1" for an account that has
+	// never registered an address.
+	if !c.LastSeen.IsZero() {
+		dto.LastSeen = c.LastSeen.UTC().Format(timeFormatRFC3339)
+	}
+	if c.NextTrafficReset != nil && !c.NextTrafficReset.IsZero() {
+		dto.NextTrafficReset = c.NextTrafficReset.UTC().Format(timeFormatRFC3339)
 	}
 	return dto
 }
@@ -329,14 +348,15 @@ func (a *API) handleV3Clients(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var req struct {
-			DisplayName     string   `json:"name"`
-			ValidityDays    int      `json:"validity_days"`
-			AllowedIPs      []string `json:"allowed_ips"`
-			QuotaLimitGB    float64  `json:"traffic_limit_gb"`
-			QuotaResetCycle string   `json:"traffic_reset_cycle"`
-			PolicyIDs       []string `json:"custom_policies"`
-			Note            string   `json:"note"`
-			MaxDevices      int      `json:"max_devices"`
+			DisplayName     string     `json:"name"`
+			ValidityDays    int        `json:"validity_days"`
+			ExpiresAt       *time.Time `json:"expires_at"`
+			AllowedIPs      []string   `json:"allowed_ips"`
+			QuotaLimitGB    float64    `json:"traffic_limit_gb"`
+			QuotaResetCycle string     `json:"traffic_reset_cycle"`
+			PolicyIDs       []string   `json:"custom_policies"`
+			Note            string     `json:"note"`
+			MaxDevices      int        `json:"max_devices"`
 		}
 		if !decodeStrict(w, r, &req) {
 			return
@@ -345,9 +365,17 @@ func (a *API) handleV3Clients(w http.ResponseWriter, r *http.Request) {
 			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "name is required")
 			return
 		}
+		// API 3.1: an absolute expiry wins over validity_days, mirroring the
+		// service's own precedence and the panel's date picker. A zero timestamp
+		// is the same "no expiry" sentinel PATCH uses, so it is left unset.
+		var expiresAt time.Time
+		if req.ExpiresAt != nil && !req.ExpiresAt.IsZero() {
+			expiresAt = *req.ExpiresAt
+		}
 		client, err := a.clients.ProvisionClient(service.CreateClientRequest{
 			Name:              req.DisplayName,
 			Days:              req.ValidityDays,
+			ExpiresAt:         expiresAt,
 			IPs:               req.AllowedIPs,
 			TrafficLimitGB:    req.QuotaLimitGB,
 			TrafficResetCycle: req.QuotaResetCycle,
@@ -417,21 +445,32 @@ func (a *API) handleV3ClientItem(w http.ResponseWriter, r *http.Request) {
 
 // v3PatchRequest carries only the fields a PATCH/PUT may change; pointers keep
 // "not sent" distinct from "sent empty".
+//
+// API 3.1 adds UUID and ExpiresAt. ExpiresAt follows the legacy contract the
+// panel uses: the zero timestamp (0001-01-01T00:00:00Z) means "no expiry", and
+// an omitted (or null) field leaves the stored date alone. There is deliberately
+// no way to send an empty string — that would decode as a malformed timestamp
+// and answer 400 rather than silently meaning lifetime.
 type v3PatchRequest struct {
-	DisplayName     *string   `json:"name"`
-	AllowedIPs      *[]string `json:"allowed_ips"`
-	QuotaLimitGB    *float64  `json:"traffic_limit_gb"`
-	QuotaResetCycle *string   `json:"traffic_reset_cycle"`
-	Note            *string   `json:"note"`
-	Enabled         *bool     `json:"enabled"`
-	ValidityDaysAdd *int      `json:"validity_days_add"`
-	MaxDevices      *int      `json:"max_devices"`
+	DisplayName     *string    `json:"name"`
+	UUID            *string    `json:"uuid"`
+	AllowedIPs      *[]string  `json:"allowed_ips"`
+	QuotaLimitGB    *float64   `json:"traffic_limit_gb"`
+	QuotaResetCycle *string    `json:"traffic_reset_cycle"`
+	Note            *string    `json:"note"`
+	Enabled         *bool      `json:"enabled"`
+	ValidityDaysAdd *int       `json:"validity_days_add"`
+	ExpiresAt       *time.Time `json:"expires_at"`
+	MaxDevices      *int       `json:"max_devices"`
 }
 
 func (p v3PatchRequest) toService() service.UpdateClientRequest {
 	req := service.UpdateClientRequest{}
 	if p.DisplayName != nil {
 		req.Name = p.DisplayName
+	}
+	if p.UUID != nil {
+		req.UUID = p.UUID
 	}
 	if p.AllowedIPs != nil {
 		req.AllowedIPs = p.AllowedIPs
@@ -450,6 +489,9 @@ func (p v3PatchRequest) toService() service.UpdateClientRequest {
 	}
 	if p.ValidityDaysAdd != nil {
 		req.DaysToAdd = p.ValidityDaysAdd
+	}
+	if p.ExpiresAt != nil {
+		req.ExpiresAt = p.ExpiresAt
 	}
 	if p.MaxDevices != nil {
 		req.MaxDevices = p.MaxDevices

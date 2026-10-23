@@ -2,6 +2,7 @@ package com.digitrob.digitdns.core.network
 
 import com.digitrob.digitdns.data.ClientsRepository
 import com.digitrob.digitdns.domain.model.ClientAction
+import com.digitrob.digitdns.domain.model.ClientExpiry
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -60,9 +61,10 @@ class ClientsApiTest {
             ),
         )
 
-        val clients = repo.listAll()
+        val snapshot = repo.listAll()
 
-        assertEquals(listOf("a", "b"), clients.map { it.id })
+        assertEquals(listOf("a", "b"), snapshot.clients.map { it.id })
+        assertFalse(snapshot.allowAll)
 
         val first = server.takeRequest()
         assertEquals("GET", first.method)
@@ -78,7 +80,7 @@ class ClientsApiTest {
         repo.create(
             ClientCreateRequest(
                 name = "New",
-                validityDays = 30,
+                expiresAt = "2026-12-01T12:00:00Z",
                 allowedIps = listOf("10.0.0.1"),
                 trafficLimitGb = 50.0,
                 trafficResetCycle = "monthly",
@@ -87,7 +89,7 @@ class ClientsApiTest {
 
         val body = server.takeRequest().body.readUtf8()
         assertTrue(body.contains("\"name\":\"New\""))
-        assertTrue(body.contains("\"validity_days\":30"))
+        assertTrue(body.contains("\"expires_at\":\"2026-12-01T12:00:00Z\""))
         assertTrue(body.contains("\"traffic_reset_cycle\":\"monthly\""))
     }
 
@@ -104,6 +106,18 @@ class ClientsApiTest {
         assertFalse(body.contains("allowed_ips"))
         assertFalse(body.contains("traffic_limit_gb"))
         assertFalse(body.contains("enabled"))
+        assertFalse(body.contains("expires_at"))
+        assertFalse(body.contains("uuid"))
+    }
+
+    @Test
+    fun patchClearsExpiryWithTheZeroTimestamp() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"id":"x"}"""))
+
+        repo.update("x", ClientUpdateRequest(expiresAt = ClientExpiry.NEVER))
+
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue(body.contains("\"expires_at\":\"0001-01-01T00:00:00Z\""))
     }
 
     @Test

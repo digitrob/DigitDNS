@@ -169,6 +169,39 @@ class ConnectionStore @Inject constructor(
     }
 
     /**
+     * Set [id]'s display label, leaving every other field of the profile untouched.
+     *
+     * A targeted edit like [updateAdminPath] rather than a full [saveActive], for the
+     * same reason: the label lives on rows that may not be the active one, and a
+     * full-profile rewrite captured before a concurrent change (an admin-path
+     * rotation, a live re-save) would clobber it. An invalid id is a no-op.
+     */
+    suspend fun updateLabel(id: String, label: String) {
+        context.connectionDataStore.edit { prefs ->
+            val count = prefs[Keys.count] ?: 0
+            val index = (0 until count).firstOrNull { i -> prefs[Keys.id(i)] == id } ?: return@edit
+            prefs[Keys.label(index)] = label.trim()
+        }
+    }
+
+    /**
+     * Replace a saved install's connection details in place.
+     *
+     * The row keeps its position and [id], which is exactly how a friendly rename
+     * and a host/port edit can share one write: nothing else in the app needs more
+     * than "profile with id X exists this way". Any credential slot keyed by the id
+     * remains valid; whether the credential itself still works is an authentication
+     * concern, not a storage one.
+     */
+    suspend fun updateServer(id: String, updated: Connection) {
+        context.connectionDataStore.edit { prefs ->
+            val count = prefs[Keys.count] ?: 0
+            val index = (0 until count).firstOrNull { i -> prefs[Keys.id(i)] == id } ?: return@edit
+            writeAt(prefs, index, updated.copy(id = id))
+        }
+    }
+
+    /**
      * Adopt a pre-multi-server install, if one is present, exactly once.
      *
      * The old store used a different DataStore name, so it cannot be read through the

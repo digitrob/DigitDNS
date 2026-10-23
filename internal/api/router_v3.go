@@ -269,11 +269,12 @@ func (a *API) handleV3Version(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	info := version.Get()
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"version": info.Version,
-		"display": info.Display,
-		"hash":    info.Hash,
-		"commit":  info.Commit,
-		"api":     "v3",
+		"version":     info.Version,
+		"display":     info.Display,
+		"hash":        info.Hash,
+		"commit":      info.Commit,
+		"api":         "v3",
+		"api_version": "3.1",
 	})
 }
 

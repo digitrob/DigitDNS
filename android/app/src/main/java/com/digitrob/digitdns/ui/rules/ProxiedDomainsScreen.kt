@@ -5,6 +5,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -269,8 +272,8 @@ private fun BulkImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) 
 
     PanelDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Bulk import") },
         solid = true,
+        title = { Text("Bulk import") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -337,12 +340,19 @@ private fun SearchSortRow(
 /** The sort selector as a dropdown button, placed to the right of the search field. */
 @Composable
 private fun SortDropdown(selected: DomainSort, onSelect: (DomainSort) -> Unit) {
+    val colors = DigitDnsTheme.colors
     var expanded by remember { mutableStateOf(false) }
     OutlinedButton(onClick = { expanded = true }) {
         Text(selected.label, maxLines = 1)
         Icon(Icons.Filled.ArrowDropDown, contentDescription = "Sort")
     }
-    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = { expanded = false },
+        modifier = Modifier
+            .background(colors.bgCard)
+            .border(1.dp, colors.borderColor, RoundedCornerShape(12.dp)),
+    ) {
         DomainSort.entries.forEach { sort ->
             DropdownMenuItem(
                 text = { Text(sort.label) },

@@ -132,7 +132,7 @@ fun PanelWideDialog(
         ) {
             Column(
                 modifier = Modifier
-                    .padding(16.dp)
+                    .padding(12.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
                 title?.let {

@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "DigitDNS Core REST API v3",
-    "version": "3.0",
-    "description": "v3 is the full-parity contract: every capability the dashboard exposes, reachable over REST. Auth accepts either a login session (POST /api/v3/auth/login with username/password, plus a TOTP code when two-factor is on) or the master REST API key. Conventions are inherited from v2: RFC 9457 application/problem+json errors, {items,next_cursor} lists, symmetric DTOs, POST /actions/{action} sub-resources, and strict JSON decoding. Endpoints marked dashboard-delegated mirror the corresponding panel operation through the same server-side implementation."
+    "version": "3.1",
+    "description": "v3 is the full-parity contract: every capability the dashboard exposes, reachable over REST. Auth accepts either a login session (POST /api/v3/auth/login with username/password, plus a TOTP code when two-factor is on) or the master REST API key. Conventions are inherited from v2: RFC 9457 application/problem+json errors, {items,next_cursor} lists, symmetric DTOs, POST /actions/{action} sub-resources, and strict JSON decoding. Endpoints marked dashboard-delegated mirror the corresponding panel operation through the same server-side implementation. API 3.1 adds editable UUIDs and absolute expiry on clients, plus total_queries, last_seen and next_traffic_reset on the client shape; all additions are backward compatible."
   },
   "servers": [
     {
@@ -91,7 +91,10 @@
           "note": {"type": "string"},
           "custom_policies": {"type": "array", "items": {"type": "string"}},
           "max_devices": {"type": "integer"},
-          "register_secret": {"type": "string"}
+          "register_secret": {"type": "string"},
+          "total_queries": {"type": "integer", "description": "Queries served for this account since it was created."},
+          "last_seen": {"type": "string", "format": "date-time", "description": "Last time a query was served for this account; omitted when it has never been seen."},
+          "next_traffic_reset": {"type": "string", "format": "date-time", "description": "When the traffic allowance next rolls over; omitted when no reset cycle is set."}
         }
       },
       "ClientList": {
@@ -109,6 +112,7 @@
         "properties": {
           "name": {"type": "string"},
           "validity_days": {"type": "integer"},
+          "expires_at": {"type": "string", "format": "date-time", "description": "Absolute expiry; wins over validity_days. The zero timestamp 0001-01-01T00:00:00Z means lifetime."},
           "allowed_ips": {"type": "array", "items": {"type": "string"}},
           "traffic_limit_gb": {"type": "number"},
           "traffic_reset_cycle": {"type": "string", "enum": ["", "daily", "weekly", "monthly"]},
@@ -121,12 +125,14 @@
         "type": "object",
         "properties": {
           "name": {"type": "string"},
+          "uuid": {"type": "string", "description": "Replacement UUID. Omit to leave unchanged."},
           "allowed_ips": {"type": "array", "items": {"type": "string"}},
           "traffic_limit_gb": {"type": "number"},
           "traffic_reset_cycle": {"type": "string"},
           "note": {"type": "string"},
           "enabled": {"type": "boolean"},
           "validity_days_add": {"type": "integer"},
+          "expires_at": {"type": "string", "format": "date-time", "description": "Absolute expiry. Omit to leave unchanged; send 0001-01-01T00:00:00Z to clear it (lifetime)."},
           "max_devices": {"type": "integer"}
         }
       },

@@ -7,6 +7,7 @@ import com.digitrob.digitdns.core.network.LatencySnapshot
 import com.digitrob.digitdns.core.network.LiveStats
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.data.AppPreferences
+import com.digitrob.digitdns.data.ConnectionStore
 import com.digitrob.digitdns.data.DashboardCard
 import com.digitrob.digitdns.data.SettingsRepository
 import com.digitrob.digitdns.data.StatsRepository
@@ -20,10 +21,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 
 /** The live window the dashboard shows, derived from the shared stream. */
@@ -79,6 +83,7 @@ class DashboardViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val liveStream: LiveQueryStream,
     private val appPreferences: AppPreferences,
+    connectionStore: ConnectionStore,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DashboardUiState())
@@ -86,11 +91,35 @@ class DashboardViewModel @Inject constructor(
 
     private var pollJob: Job? = null
 
+    /**
+     * Guards [loadServerIp] against a stale landing. Declared before [init] because
+     * init calls loadServerIp immediately, and Kotlin initialises fields in textual
+     * order — below the init block this would be null on the very first read.
+     */
+    private val ipLoadGeneration = AtomicLong(0)
+
     init {
         observeLayout()
         loadServerIp()
         startPolling()
         observeLiveStream()
+        observeServerSwitch(connectionStore)
+    }
+
+    /**
+     * Refetch the top box when the active install changes. The IP box reads the
+     * server's own config, which the 3 s stats tick does not carry — without this a
+     * fresh switch shows the previous install's address until the operator pulls.
+     * Distinct-until-changed means a mere rename of the active profile does not
+     * trigger a refetch; only an actual change of active id does.
+     */
+    private fun observeServerSwitch(connectionStore: ConnectionStore) {
+        viewModelScope.launch {
+            connectionStore.activeId
+                .distinctUntilChanged()
+                .drop(1) // the initial emit is covered by the init-time loadServerIp
+                .collect { if (it != null) loadServerIp() }
+        }
     }
 
     /** Mirror the operator's card order and toggles from preferences. */
@@ -151,15 +180,23 @@ class DashboardViewModel @Inject constructor(
      * server config, which the 3 s stats tick does not carry, so it is fetched on entry
      * and on a manual refresh only — the address does not change under a poll. A failed
      * read is not worth an error banner; the box simply stays hidden until it succeeds.
+     *
+     * The generation counter is what keeps a switch honest: two loads can be in flight
+     * when the active install changes mid-switch, and the slower read of the *previous*
+     * server must not land after the newer one and repaint the box with a dead IP. Only
+     * the freshest load wins.
      */
     private fun loadServerIp() {
+        val generation = ipLoadGeneration.incrementAndGet()
         viewModelScope.launch {
             val ip = runCatching { settingsRepository.load().server?.publicIp }
                 .getOrElse {
                     Timber.d(it, "server IP load failed; keeping last value")
                     _state.value.serverIp
                 }
-            if (!ip.isNullOrBlank()) _state.update { it.copy(serverIp = ip) }
+            if (ipLoadGeneration.get() == generation && !ip.isNullOrBlank()) {
+                _state.update { it.copy(serverIp = ip) }
+            }
         }
     }
 

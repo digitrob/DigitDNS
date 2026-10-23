@@ -28,6 +28,12 @@ data class Client(
     val customPolicies: List<String>,
     val maxDevices: Int,
     val registerSecret: String,
+    /** Queries served for this account since it was created. */
+    val totalQueries: Long = 0,
+    /** Last time a query was served, or null when the account was never seen. */
+    val lastSeen: Instant? = null,
+    /** When the traffic allowance next rolls over, or null with no reset cycle. */
+    val nextTrafficReset: Instant? = null,
 ) {
     /** Bytes used as a fraction of the limit; 0 when unlimited (limit ≤ 0). */
     val quotaFraction: Float
@@ -89,6 +95,13 @@ data class Client(
             customPolicies = dto.customPolicies,
             maxDevices = dto.maxDevices,
             registerSecret = dto.registerSecret,
+            totalQueries = dto.totalQueries,
+            // API 3.1 omits both when they have no value, so blank is "never" and
+            // "no cycle" rather than the zero instant.
+            lastSeen = dto.lastSeen.takeIf { it.isNotBlank() }
+                ?.let { runCatching { Instant.parse(it) }.getOrNull() },
+            nextTrafficReset = dto.nextTrafficReset.takeIf { it.isNotBlank() }
+                ?.let { runCatching { Instant.parse(it) }.getOrNull() },
         )
     }
 }

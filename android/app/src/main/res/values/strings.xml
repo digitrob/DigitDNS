@@ -21,6 +21,7 @@
     <!-- The foreground service's own persistent notification. -->
     <string name="live_alerts_running">Live alerts on</string>
     <string name="live_alerts_running_detail">Connected to your DigitDNS install.</string>
+    <string name="live_alerts_running_detail_named">Connected to %1$s.</string>
 
     <!-- The System tab's live-alerts toggle. -->
     <string name="nav_system">System</string>

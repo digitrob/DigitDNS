@@ -1,6 +1,7 @@
 package com.digitrob.digitdns.core.notifications
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -50,6 +51,40 @@ class NotificationMapperTest {
 
         assertEquals(first.id, second.id)
         assertEquals(other.id, "tracker.example".hashCode())
+    }
+
+    @Test
+    fun theLabelRidesTheTitleAndEntersTheAlertId() {
+        val alert = mapper.map(
+            QueryEvent(domain = "ads.example", accountName = "Kids", protocol = "DoH", action = "BLOCK"),
+            serverLabel = "Norwich",
+        )!!
+
+        assertEquals("Blocked: ads.example @ Norwich", alert.title)
+        assertEquals("Kids tried ads.example over DoH", alert.text)
+        val sameDomainOtherServer = mapper.map(
+            QueryEvent(domain = "ads.example", action = "BLOCK"),
+            serverLabel = "Backup",
+        )!!
+        val sameServerAgain = mapper.map(
+            QueryEvent(domain = "ads.example", action = "BLOCK"),
+            serverLabel = "Norwich",
+        )!!
+
+        assertEquals(alert.id, sameServerAgain.id)
+        assertTrue(alert.id != sameDomainOtherServer.id)
+    }
+
+    @Test
+    fun aBlankLabelKeepsTheUntaggedTitleAndId() {
+        val untagged = mapper.map(QueryEvent(domain = "ads.example", action = "BLOCK"))!!
+        val blankTagged = mapper.map(
+            QueryEvent(domain = "ads.example", action = "BLOCK"),
+            serverLabel = "",
+        )!!
+
+        assertEquals(untagged.id, blankTagged.id)
+        assertEquals(untagged.title, blankTagged.title)
     }
 
     @Test

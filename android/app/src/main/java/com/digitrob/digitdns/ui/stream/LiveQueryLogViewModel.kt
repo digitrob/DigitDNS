@@ -38,6 +38,8 @@ data class LiveQueryLogUiState(
     val status: StreamStatus = StreamStatus.IDLE,
     /** Drives the pull-to-refresh indicator while a manual refresh re-anchors the feed. */
     val isRefreshing: Boolean = false,
+    /** Increments on reload/refresh so the screen can scroll back to the top. */
+    val refreshTick: Int = 0,
     /** A one-shot message for the last quick action, shown as a snackbar. */
     val message: String? = null,
 ) {
@@ -146,14 +148,16 @@ class LiveQueryLogViewModel @Inject constructor(
                 buffer = liveStream.queries.value,
                 paused = false,
                 pausedBuffer = null,
+                refreshTick = it.refreshTick + 1,
             )
         }
         liveStream.reconnect()
     }
 
     /**
-     * The same re-anchor, but reached by pulling: the indicator shows briefly so the
-     * gesture reads.
+     * The same re-anchor, but reached by pulling. The indicator shows briefly so the
+     * gesture reads, and a reconnect is forced so the feed is refreshed against the
+     * server's own history snapshot while the stream stays live.
      */
     fun refresh() {
         liveStream.start()
@@ -163,6 +167,7 @@ class LiveQueryLogViewModel @Inject constructor(
                 buffer = liveStream.queries.value,
                 paused = false,
                 pausedBuffer = null,
+                refreshTick = it.refreshTick + 1,
             )
         }
         liveStream.reconnect()

@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -124,7 +123,15 @@ class MainActivity : ComponentActivity() {
 
 private object Routes {
     const val LOGIN = "login"
-    const val LOGIN_ADD = "login?fresh=true"
+
+    /**
+     * The add-server entry point. It is a distinct path, not `login?fresh=true`:
+     * Navigation 2.8 matches a deep-link path regex against the whole URI including
+     * the query, and the `login` destination is registered first, so a query-string
+     * route resolved there — the form then prefilled the active install and saved
+     * over it instead of adding a second profile.
+     */
+    const val LOGIN_ADD = "login/add"
     const val DASHBOARD = "dashboard"
     const val CLIENTS = "clients"
     const val PROXIED = "proxied"
@@ -160,8 +167,11 @@ private fun DigitDnsNavHost(
     }
     val goToDashboard: () -> Unit = {
         onReauthenticated()
+        // Clearing the whole graph, not just LOGIN: after a fresh sign-in the login
+        // entry is already gone, and after an add-server flow the stack also holds a
+        // second LOGIN. Leaving it behind made Back walk through dead routes.
         navController.navigate(Routes.DASHBOARD) {
-            popUpTo(Routes.LOGIN) { inclusive = true }
+            popUpTo(navController.graph.id) { inclusive = true }
         }
     }
 
@@ -186,7 +196,14 @@ private fun DigitDnsNavHost(
         }
 
         composable(Routes.DASHBOARD) {
-            TabShell(navController, Routes.DASHBOARD) { DashboardScreen() }
+            TabShell(navController, Routes.DASHBOARD) {
+                DashboardScreen(
+                    onAddServer = {
+                        navController.navigate(Routes.LOGIN_ADD) { launchSingleTop = true }
+                    },
+                    onLoginRequired = goToLogin,
+                )
+            }
         }
         composable(Routes.PROXIED) {
             TabShell(navController, Routes.PROXIED) { ProxiedDomainsScreen() }
@@ -203,7 +220,7 @@ private fun DigitDnsNavHost(
             TabShell(navController, Routes.SETTINGS) {
                 SettingsHubScreen(
                     onLoggedOut = goToLogin,
-                    onAddServer = { navController.navigate(Routes.LOGIN_ADD) },
+                    onAddServer = { navController.navigate(Routes.LOGIN_ADD) { launchSingleTop = true } },
                 )
             }
         }
@@ -230,7 +247,11 @@ private fun TabShell(
                             navController.navigate(tab.route) {
                                 // Standard bottom-nav behaviour: one entry per tab, and
                                 // resuming where you left the tab rather than resetting it.
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                // The anchor is DASHBOARD, not findStartDestination(): when
+                                // the app started logged out the graph's start is LOGIN, which
+                                // goToDashboard has already popped, so the pop target was
+                                // missing and tab taps did nothing.
+                                popUpTo(Routes.DASHBOARD) { saveState = true }
                                 launchSingleTop = true
                                 restoreState = true
                             }

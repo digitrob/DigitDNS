@@ -155,8 +155,8 @@ private fun GroupEditor(viewModel: GroupsViewModel) {
 
     PanelDialog(
         onDismissRequest = viewModel::closeEditor,
-        title = { Text(if (state.editingId == null) "New group" else "Edit group") },
         solid = true,
+        title = { Text(if (state.editingId == null) "New group" else "Edit group") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),

@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [Unreleased] — API 3.1 client contract
+
+### ✨ Added
+- **API 3.1 client fields.** `GET /api/v3/clients` and its item routes now return `total_queries`, `last_seen` and `next_traffic_reset` — the figures the web card has always read off the legacy shape. All three are additive; a v3.0 caller keeps parsing the response unchanged.
+- **Editable UUID and absolute expiry over v3.** `POST /api/v3/clients` accepts `expires_at` (which wins over `validity_days`), and `PATCH/PUT /api/v3/clients/{id}` accepts `uuid` and `expires_at`. The zero timestamp `0001-01-01T00:00:00Z` clears an expiry; omitting the field leaves it untouched.
+- **`api_version` in `GET /api/v3/version`.** Reports the contract generation (`3.1`) next to the existing `api: "v3"`, so a client can discover the additive fields without probing. The URL prefix is unchanged.
+
+---
+
 ## 🏷️ [v3.3.2] — Banner actually reaches `docker logs`
 
 ### 🐛 Fixed

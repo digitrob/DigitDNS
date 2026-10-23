@@ -57,6 +57,17 @@ data class Connection(
     /** `host:port`, for display and for the saved-connection list. */
     val authority: String get() = "$host:$port"
 
+    /**
+     * The origin a subscriber-facing link is built on: `https://host:port`, with no
+     * admin path and no trailing slash. Used only as a fallback when the daemon's
+     * own `subscription_origin` is blank.
+     */
+    val publicOrigin: String
+        get() {
+            val scheme = if (isHttps) "https" else "http"
+            return "$scheme://$authority"
+        }
+
     /** The label to show, never blank. */
     val displayName: String get() = label.ifBlank { authority }
 

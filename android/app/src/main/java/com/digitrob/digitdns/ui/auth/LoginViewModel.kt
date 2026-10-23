@@ -166,16 +166,16 @@ class LoginViewModel @Inject constructor(
             // Stage, not save: the login call needs this connection to rebase onto it,
             // but a wrong host must not survive a failed attempt. It is kept only on
             // success (commit) and undone on a real failure (rollback).
-            authRepository.stageConnection(connection)
+            val staged = authRepository.stageConnection(connection)
 
             when (current.credentialMode) {
-                CredentialMode.SESSION -> submitSession(current)
+                CredentialMode.SESSION -> submitSession(current, staged.id)
                 CredentialMode.API_KEY -> submitApiKey(current)
             }
         }
     }
 
-    private suspend fun submitSession(current: LoginUiState) {
+    private suspend fun submitSession(current: LoginUiState, connectionId: String) {
         when (val result = authRepository.loginWithPassword(
             username = current.username,
             password = current.password,
@@ -186,9 +186,9 @@ class LoginViewModel @Inject constructor(
                 // succeeded — a tick alone must not write a password that has never
                 // been proven to work.
                 if (current.saveCredentials) {
-                    authRepository.saveCredentials(current.username, current.password)
+                    authRepository.saveCredentialsFor(connectionId, current.username, current.password)
                 } else {
-                    authRepository.clearSavedCredentials()
+                    authRepository.clearSavedCredentialsFor(connectionId)
                 }
                 authRepository.commitStagedConnection()
                 _state.update { it.copy(isLoading = false, authenticated = true) }

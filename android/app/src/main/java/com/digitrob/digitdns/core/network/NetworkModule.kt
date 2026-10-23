@@ -2,6 +2,7 @@ package com.digitrob.digitdns.core.network
 
 import com.digitrob.digitdns.BuildConfig
 import com.digitrob.digitdns.core.security.SecretStore
+import com.digitrob.digitdns.core.security.SwitchingTofuTrustManager
 import com.digitrob.digitdns.core.security.TofuTrustManager
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
@@ -86,18 +87,24 @@ object NetworkModule {
             .readTimeout(STREAM_READ_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
             .writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
-        // TOFU only applies to the current install's host; the trust manager is built
-        // lazily so a re-configure (new host) swaps it on the next client build.
-        urlProvider.current()?.let { conn ->
-            val trustManager = TofuTrustManager(
-                host = conn.host,
-                pins = TofuTrustManager.PinSource { host -> secretStore.pinnedFingerprint(host) },
-            )
-            val sslContext = SSLContext.getInstance("TLS").apply {
-                init(null, arrayOf<X509TrustManager>(trustManager), SecureRandom())
+        // TOFU only applies to the active install's host — resolved per handshake,
+        // not per client build. The manager used to be pinned to whatever host the
+        // store held when the singleton client was built, and every switch to another
+        // self-signed install then verified that install against the wrong pin.
+        // [SwitchingTofuTrustManager] asks the provider for the current install at
+        // verification time instead.
+        val trustManager = SwitchingTofuTrustManager {
+            urlProvider.current()?.let { conn ->
+                TofuTrustManager(
+                    host = conn.host,
+                    pins = TofuTrustManager.PinSource { host -> secretStore.pinnedFingerprint(host) },
+                )
             }
-            builder.sslSocketFactory(sslContext.socketFactory, trustManager)
         }
+        val sslContext = SSLContext.getInstance("TLS").apply {
+            init(null, arrayOf<X509TrustManager>(trustManager), SecureRandom())
+        }
+        builder.sslSocketFactory(sslContext.socketFactory, trustManager)
 
         return builder.build()
     }

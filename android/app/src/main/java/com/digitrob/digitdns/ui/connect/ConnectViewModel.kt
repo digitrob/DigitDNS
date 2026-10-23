@@ -68,7 +68,7 @@ class ConnectViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
             try {
-                val clients = clientsRepository.listAll()
+                val clients = clientsRepository.listAll().clients
                 val config = runCatching { configRepository.config() }.getOrNull()
                 _state.update { current ->
                     current.copy(

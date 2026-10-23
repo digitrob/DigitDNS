@@ -71,6 +71,9 @@ data class ClientDto(
     @SerialName("custom_policies") val customPolicies: List<String> = emptyList(),
     @SerialName("max_devices") val maxDevices: Int = 0,
     @SerialName("register_secret") val registerSecret: String = "",
+    @SerialName("total_queries") val totalQueries: Long = 0,
+    @SerialName("last_seen") val lastSeen: String = "",
+    @SerialName("next_traffic_reset") val nextTrafficReset: String = "",
 )
 
 @Serializable
@@ -84,6 +87,8 @@ data class ClientListResponse(
 data class ClientCreateRequest(
     val name: String,
     @SerialName("validity_days") val validityDays: Int = 0,
+    /** Absolute expiry (RFC 3339). Wins over [validityDays] when set. */
+    @SerialName("expires_at") val expiresAt: String? = null,
     @SerialName("allowed_ips") val allowedIps: List<String> = emptyList(),
     @SerialName("traffic_limit_gb") val trafficLimitGb: Double = 0.0,
     @SerialName("traffic_reset_cycle") val trafficResetCycle: String = "",
@@ -101,6 +106,10 @@ data class ClientCreateRequest(
 @Serializable
 data class ClientUpdateRequest(
     val name: String? = null,
+    /** Replacement UUID; null leaves the stored one alone. */
+    val uuid: String? = null,
+    /** RFC 3339 expiry; [ClientExpiry.NEVER] clears it (lifetime). */
+    @SerialName("expires_at") val expiresAt: String? = null,
     @SerialName("allowed_ips") val allowedIps: List<String>? = null,
     @SerialName("traffic_limit_gb") val trafficLimitGb: Double? = null,
     @SerialName("traffic_reset_cycle") val trafficResetCycle: String? = null,

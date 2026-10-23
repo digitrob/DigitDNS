@@ -217,7 +217,13 @@ class LiveQueryStream @Inject constructor(
     @Volatile private var reconnectRequested = false
 
     private suspend fun openOnce(): OpenOutcome {
-        _status.value = StreamStatus.CONNECTING
+        // A manual reconnect re-enters through a stream that was already live. Do not
+        // flash "Connecting" for that; the feed is already anchored, so the badge only
+        // changes when the next real attempt fails.
+        val wasLive = _status.value == StreamStatus.LIVE
+        if (!wasLive) {
+            _status.value = StreamStatus.CONNECTING
+        }
         val connection = connectionStore.connection.firstOrNull()
         val ticket = mintTicket()
         return when {

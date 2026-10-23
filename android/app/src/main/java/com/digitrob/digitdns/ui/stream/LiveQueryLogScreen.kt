@@ -2,6 +2,8 @@ package com.digitrob.digitdns.ui.stream
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -48,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.core.notifications.QueryEvent
@@ -80,6 +84,13 @@ import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(state.refreshTick) {
+        if (state.refreshTick > 0) {
+            listState.animateScrollToItem(0)
+        }
+    }
 
     LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
@@ -99,8 +110,8 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
                 if (state.visible.isEmpty()) {
                     EmptyState(state)
                 } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(state.visible, key = { it.id }) { event ->
+                    LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
+                        items(state.visible, key = { it.id }, contentType = { 0 }) { event ->
                             QueryRow(event = event, onAction = viewModel::applyQuickAction)
                         }
                     }
@@ -193,12 +204,19 @@ private fun LogToolbar(state: LiveQueryLogUiState, viewModel: LiveQueryLogViewMo
 /** The action filter as a dropdown button, placed to the right of the search field. */
 @Composable
 private fun ActionFilterDropdown(selected: ActionFilter, onSelect: (ActionFilter) -> Unit) {
+    val colors = DigitDnsTheme.colors
     var expanded by remember { mutableStateOf(false) }
     OutlinedButton(onClick = { expanded = true }) {
         Text(selected.name, maxLines = 1)
         Icon(Icons.Filled.ArrowDropDown, contentDescription = "Filter")
     }
-    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = { expanded = false },
+        modifier = Modifier
+            .background(colors.bgCard)
+            .border(1.dp, colors.borderColor, RoundedCornerShape(12.dp)),
+    ) {
         ActionFilter.entries.forEach { filter ->
             DropdownMenuItem(
                 text = { Text(filter.name) },

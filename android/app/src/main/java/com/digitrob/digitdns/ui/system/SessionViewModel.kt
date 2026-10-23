@@ -8,6 +8,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -47,15 +48,23 @@ class SessionViewModel @Inject constructor(
     val state: StateFlow<SessionUiState> = _state.asStateFlow()
 
     init {
+        // Follow both the active profile and the credential revision: switching emits
+        // on the connection flow, while saving/clearing a password only changes the
+        // secret store (the connection itself is unchanged). Collecting just
+        // `currentConnection()` once left the card stale after either event.
         viewModelScope.launch {
-            val connection = authRepository.currentConnection()
-            _state.update {
-                it.copy(
-                    authority = connection?.authority ?: "",
-                    adminPath = connection?.adminPath ?: "",
-                    credentialMode = connection?.credentialMode ?: CredentialMode.SESSION,
-                    credentialsSaved = authRepository.savedCredentials() != null,
-                )
+            combine(
+                authRepository.activeConnection,
+                authRepository.credentialRevision,
+            ) { connection, _ -> connection }.collect { connection ->
+                _state.update {
+                    it.copy(
+                        authority = connection?.authority ?: "",
+                        adminPath = connection?.adminPath ?: "",
+                        credentialMode = connection?.credentialMode ?: CredentialMode.SESSION,
+                        credentialsSaved = connection?.let { authRepository.hasSavedCredentials(it.id) } == true,
+                    )
+                }
             }
         }
     }

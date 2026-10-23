@@ -7,11 +7,22 @@ import com.digitrob.digitdns.core.network.LoginRequest
 import com.digitrob.digitdns.core.network.ServerUrlProvider
 import com.digitrob.digitdns.core.network.SessionRefresher
 import com.digitrob.digitdns.core.security.SecretStore
+import com.digitrob.digitdns.core.security.TofuTrustManager
 import com.digitrob.digitdns.core.security.TlsTrustFailure
 import com.digitrob.digitdns.domain.model.Connection
 import com.digitrob.digitdns.domain.model.CredentialMode
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.IOException
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.security.SecureRandom
+import javax.net.ssl.SSLContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import timber.log.Timber
@@ -38,7 +49,11 @@ sealed interface LoginResult {
      */
     data class TrustRequired(val fingerprint: String, val changedFrom: String?) : LoginResult
 
-    data class Failure(val message: String) : LoginResult
+    data class Failure(
+        val message: String,
+        /** True when no HTTP verdict was reached (DNS, TLS, timeout, refused). */
+        val transport: Boolean = false,
+    ) : LoginResult
 }
 
 /**
@@ -52,6 +67,22 @@ sealed interface LoginResult {
  */
 /** A stored login pair, present only when the operator opted into "save credentials". */
 data class SavedCredentials(val username: String, val password: String)
+
+/** The result of an explicit switch from the saved-server picker. */
+sealed interface ServerSwitchResult {
+    /** The target is active and has a usable credential. */
+    data object Ready : ServerSwitchResult
+
+    /**
+     * The target is active but needs the operator: no saved password, 2FA, a rejected
+     * credential, or a certificate that has not been trusted. The caller opens the
+     * prefilled login screen rather than undoing the switch.
+     */
+    data object LoginRequired : ServerSwitchResult
+
+    /** The target could not be reached; the previous server is active again. */
+    data class Failed(val message: String) : ServerSwitchResult
+}
 
 sealed interface CredentialCheck {
     /** The credential was accepted. */
@@ -104,16 +135,18 @@ class AuthRepository @Inject constructor(
      * place; when it is new (blank id, or an id not in the list), it is added and made
      * active. Either way the active install becomes this one.
      */
-    suspend fun saveConnection(connection: Connection) {
+    suspend fun saveConnection(connection: Connection): Connection {
         val known = connectionStore.servers.firstOrNull().orEmpty().any { it.id == connection.id }
-        if (connection.id.isBlank() || !known) {
+        val stored = if (connection.id.isBlank() || !known) {
             connectionStore.add(connection)
         } else {
             connectionStore.setActive(connection.id)
             connectionStore.saveActive(connection)
+            connection
         }
         urlProvider.invalidate()
         loadActiveCredential()
+        return stored
     }
 
     /**
@@ -139,14 +172,18 @@ class AuthRepository @Inject constructor(
      * "usable for this attempt" from "kept", and [commitStagedConnection] is the only
      * path that keeps it.
      */
-    suspend fun stageConnection(connection: Connection) {
+    suspend fun stageConnection(connection: Connection): Connection {
         val known = connectionStore.servers.firstOrNull().orEmpty().any { it.id == connection.id }
+        val previous = connectionStore.connection.firstOrNull()
+        // The store assigns the id to a new profile; credentials must be written under
+        // that id, not under the blank one the form handed us.
+        val stored = saveConnection(connection)
         staged = StagedConnection(
-            previous = connectionStore.connection.firstOrNull(),
-            target = connection,
+            previous = previous,
+            target = stored,
             wasNew = connection.id.isBlank() || !known,
         )
-        saveConnection(connection)
+        return stored
     }
 
     /** Keep the staged connection: it authenticated, so it stays saved. */
@@ -201,11 +238,84 @@ class AuthRepository @Inject constructor(
     /** Every saved install, in add order. */
     suspend fun listServers(): List<Connection> = connectionStore.servers.firstOrNull().orEmpty()
 
+    /** The active install as a flow, so the session card follows switches live. */
+    val activeConnection: Flow<Connection?> get() = connectionStore.connection
+
+    private val _credentialRevision = MutableStateFlow(0)
+
+    /**
+     * Bumped when a saved login pair changes. The connection flow does not emit on a
+     * credential write (the profile itself is unchanged), so the session card combines
+     * the two to stop showing “Saved credentials: no” after a successful save.
+     */
+    val credentialRevision: StateFlow<Int> = _credentialRevision.asStateFlow()
+
     /** Switch to another saved install and adopt its credential. */
     suspend fun setActiveServer(id: String) {
         connectionStore.setActive(id)
         urlProvider.invalidate()
         loadActiveCredential()
+    }
+
+    /**
+     * Switch to [id] and make it immediately usable.
+     *
+     * Fast switching cannot stop at “the token is now in memory”: the new server may
+     * have no token, may have a lapsed session, or may require 2FA. This tries the saved
+     * pair first, then validates an existing credential; only a transport failure
+     * restores the previous server, because there the new address was never proven.
+     */
+    suspend fun switchToServer(id: String): ServerSwitchResult {
+        val previous = currentConnection()
+        setActiveServer(id)
+        val active = currentConnection()
+        // `setActive` ignores an unknown id, so a removed profile would otherwise
+        // leave the previous server active and let the probe below report a bogus
+        // success for it. The active row must actually be the one we asked for.
+        if (active?.id != id) {
+            return ServerSwitchResult.Failed("That server is no longer saved.")
+        }
+        val saved = savedCredentialsFor(id)
+        return when {
+            saved != null -> switchWithSaved(saved, previous)
+            authState.hasCredential -> probeSwitchedServer(previous)
+            else -> ServerSwitchResult.LoginRequired
+        }
+    }
+
+    private suspend fun switchWithSaved(
+        saved: SavedCredentials,
+        previous: Connection?,
+    ): ServerSwitchResult = when (val result = loginWithPassword(saved.username, saved.password)) {
+        is LoginResult.Success -> ServerSwitchResult.Ready
+        LoginResult.TwoFactorRequired -> ServerSwitchResult.LoginRequired
+        is LoginResult.TrustRequired -> ServerSwitchResult.LoginRequired
+        is LoginResult.Failure -> if (result.transport) {
+            restoreActive(previous)
+            ServerSwitchResult.Failed(result.message)
+        } else {
+            ServerSwitchResult.LoginRequired
+        }
+    }
+
+    private suspend fun probeSwitchedServer(previous: Connection?): ServerSwitchResult =
+        when (val check = verifyCredential()) {
+            CredentialCheck.Valid -> ServerSwitchResult.Ready
+            is CredentialCheck.Rejected -> ServerSwitchResult.LoginRequired
+            is CredentialCheck.TrustRequired -> ServerSwitchResult.LoginRequired
+            is CredentialCheck.Unreachable -> {
+                restoreActive(previous)
+                ServerSwitchResult.Failed(check.message)
+            }
+        }
+
+    private suspend fun restoreActive(previous: Connection?) {
+        if (previous != null) {
+            setActiveServer(previous.id)
+        } else {
+            urlProvider.invalidate()
+            loadActiveCredential()
+        }
     }
 
     /**
@@ -217,10 +327,110 @@ class AuthRepository @Inject constructor(
         connectionStore.remove(id)
         urlProvider.invalidate()
         loadActiveCredential()
+        _credentialRevision.value += 1
+    }
+
+    /**
+     * Probe whether [connection] is actually reachable, without changing the active
+     * install. A dedicated TLS trust manager is used per host so an inactive server
+     * is verified against its own pin rather than the active install's.
+     */
+    suspend fun probeServer(connection: Connection): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val client = if (connection.isHttps) {
+                val trustManager = TofuTrustManager(
+                    host = connection.host,
+                    pins = TofuTrustManager.PinSource { host -> secretStore.pinnedFingerprint(host) },
+                )
+                val sslContext = SSLContext.getInstance("TLS").apply {
+                    init(null, arrayOf(trustManager), SecureRandom())
+                }
+                OkHttpClient.Builder()
+                    .sslSocketFactory(sslContext.socketFactory, trustManager)
+                    .connectTimeout(PROBE_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(PROBE_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+            } else {
+                OkHttpClient.Builder()
+                    .connectTimeout(PROBE_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(PROBE_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+            }
+            val request = Request.Builder().url(connection.apiV3BaseUrl + "version").build()
+            client.newCall(request).execute().use { response -> response.isSuccessful }
+        } catch (e: IOException) {
+            Timber.w(e, "server probe failed for %s", connection.host)
+            false
+        } catch (e: java.security.GeneralSecurityException) {
+            Timber.w(e, "server probe failed for %s", connection.host)
+            false
+        }
     }
 
     /** The saved connection, read straight from storage (not the interceptor cache). */
     suspend fun currentConnection(): Connection? = connectionStore.connection.firstOrNull()
+
+    /**
+     * Rename a saved install. The label is display-only — no credential, no URL, no
+     * runtime state changes — so this does not touch the interceptor cache or reload
+     * anything; the flows that read the store simply re-emit.
+     */
+    suspend fun renameServer(id: String, label: String) {
+        connectionStore.updateLabel(id, label)
+    }
+
+    /**
+     * Replace a saved install's address and credential mode, keeping its id.
+     *
+     * Whether [id] is the active install decides how much runtime bookkeeping is
+     * needed: no id has to be restored, but when it *is* the one the app is currently
+     * presenting requests from, the URL cache and the in-memory credential must be
+     * rebuilt, because the profile just said something different.
+     */
+    suspend fun updateServer(id: String, updated: Connection) {
+        connectionStore.updateServer(id, updated)
+        if (authState.activeId == id) {
+            urlProvider.invalidate()
+            loadActiveCredential()
+        }
+    }
+
+    /** True when [id] has the credential its [mode] would present. */
+    fun hasStoredCredential(id: String, mode: CredentialMode): Boolean = when (mode) {
+        CredentialMode.API_KEY -> !secretStore.apiKey(id).isNullOrBlank()
+        CredentialMode.SESSION -> secretStore.hasSavedCredentials(id)
+    }
+
+    /**
+     * Remember an API key as the credential for one install. The write is the same
+     * [SecretStore] write the active install uses, and when the key belongs to the
+     * active profile the in-memory key is refreshed too so the next call immediately
+     * uses the new key instead of the one it still held.
+     */
+    fun saveApiKeyFor(id: String, apiKey: String) {
+        if (id.isBlank()) return
+        secretStore.setApiKey(id, apiKey)
+        if (authState.activeId == id) {
+            authState.updateApiKey(apiKey)
+        }
+        _credentialRevision.value += 1
+    }
+
+    /** Drop an API key (or a saved pair), depending on what [mode] is set to. */
+    fun clearStoredCredential(id: String, mode: CredentialMode) {
+        when (mode) {
+            CredentialMode.API_KEY -> {
+                secretStore.setApiKey(id, null)
+                if (authState.activeId == id) {
+                    authState.clearMemory()
+                }
+            }
+            CredentialMode.SESSION -> {
+                secretStore.setSavedUsername(id, null)
+                secretStore.setSavedPassword(id, null)
+            }
+        }
+    }
 
     /**
      * Log in with a username/password, plus a TOTP [code] when one is supplied.
@@ -255,7 +465,7 @@ class AuthRepository @Inject constructor(
             // as one — it is a decision the operator has to make, so it is its own case.
             TlsTrustFailure.find(e)
                 ?.let { return LoginResult.TrustRequired(it.fingerprint, it.changedFrom) }
-            LoginResult.Failure(connectionFailureMessage(e))
+            LoginResult.Failure(connectionFailureMessage(e), transport = true)
         }
     }
 
@@ -316,20 +526,43 @@ class AuthRepository @Inject constructor(
      */
     fun saveCredentials(username: String, password: String) {
         val id = authState.activeId ?: return
+        saveCredentialsFor(id, username, password)
+    }
+
+    /**
+     * Save a login pair against an explicit profile.
+     *
+     * [saveCredentials] depends on `AuthState.activeId`, which is only set after the
+     * connection is staged; passing the id the store returned removes that timing
+     * dependency (and is what a newly-added server needs).
+     */
+    fun saveCredentialsFor(id: String, username: String, password: String) {
+        if (id.isBlank()) return
         secretStore.setSavedUsername(id, username)
         secretStore.setSavedPassword(id, password)
+        _credentialRevision.value += 1
     }
 
     /** Forget the saved login pair, leaving the connection and any live session alone. */
     fun clearSavedCredentials() {
         val id = authState.activeId ?: return
+        clearSavedCredentialsFor(id)
+    }
+
+    fun clearSavedCredentialsFor(id: String) {
+        if (id.isBlank()) return
         secretStore.setSavedUsername(id, null)
         secretStore.setSavedPassword(id, null)
+        _credentialRevision.value += 1
     }
 
     /** The saved login pair for the active install, or null when the operator did not opt in. */
     fun savedCredentials(): SavedCredentials? {
         val id = authState.activeId ?: return null
+        return savedCredentialsFor(id)
+    }
+
+    fun savedCredentialsFor(id: String): SavedCredentials? {
         val user = secretStore.savedUsername(id)
         val pass = secretStore.savedPassword(id)
         return if (!user.isNullOrBlank() && pass != null) SavedCredentials(user, pass) else null
@@ -381,6 +614,7 @@ class AuthRepository @Inject constructor(
             runCatching { authApi.logout() }.onFailure { Timber.i(it, "logout call failed; clearing locally anyway") }
         }
         authState.clear()
+        _credentialRevision.value += 1
     }
 
     /**
@@ -425,5 +659,8 @@ class AuthRepository @Inject constructor(
     private companion object {
         /** HTTP 404: no route matched, which on this API means a wrong admin path. */
         const val HTTP_NOT_FOUND = 404
+
+        /** Seconds to wait for a server probe. */
+        const val PROBE_TIMEOUT_SECONDS = 5L
     }
 }

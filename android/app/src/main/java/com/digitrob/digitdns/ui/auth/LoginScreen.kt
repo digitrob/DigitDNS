@@ -108,15 +108,23 @@ fun LoginScreen(
 
             CredentialModeToggle(state, viewModel)
 
-            when (state.credentialMode) {
-                CredentialMode.SESSION -> SessionFields(state, viewModel)
-                CredentialMode.API_KEY -> ApiKeyFields(state, viewModel)
-            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(220.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    when (state.credentialMode) {
+                        CredentialMode.SESSION -> SessionFields(state, viewModel)
+                        CredentialMode.API_KEY -> ApiKeyFields(state, viewModel)
+                    }
 
-            // The saved-credentials tick is only offered for a session login: an API key is
-            // itself the stored credential, so "save" would be meaningless there.
-            if (state.credentialMode == CredentialMode.SESSION) {
-                SaveCredentialsToggle(state, viewModel)
+                    // The saved-credentials tick is only offered for a session login: an API key is
+                    // itself the stored credential, so "save" would be meaningless there.
+                    if (state.credentialMode == CredentialMode.SESSION) {
+                        SaveCredentialsToggle(state, viewModel)
+                    }
+                }
             }
 
             state.error?.let { message ->
@@ -165,7 +173,7 @@ private fun LoginHeader() {
         )
     }
     Text(
-        text = "Connect to your install",
+        text = "Connect to your server",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -219,6 +227,7 @@ private fun TrustCertificateDialog(
 ) {
     PanelDialog(
         onDismissRequest = onDismiss,
+        solid = true,
         title = { Text(if (prompt.changedFrom != null) "Certificate changed" else "Trust this install?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

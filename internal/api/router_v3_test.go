@@ -174,6 +174,9 @@ func TestV3_VersionNoAuthLoopbackOnly(t *testing.T) {
 	if body["api"] != "v3" {
 		t.Errorf("api field = %v, want v3", body["api"])
 	}
+	if body["api_version"] != "3.1" {
+		t.Errorf("api_version = %v, want 3.1", body["api_version"])
+	}
 }
 
 func TestV3_LoginMintsSessionAndAcceptsIt(t *testing.T) {
@@ -380,8 +383,99 @@ func TestV3_ClientCRUD(t *testing.T) {
 	}
 }
 
-func TestV3_ClientsListPagination(t *testing.T) {
+// TestV3_ClientsContract31 pins the additive API 3.1 surface: absolute expiry
+// on create and PATCH (including the zero-timestamp "lifetime" sentinel), an
+// editable UUID, and the usage figures the web client card has always shown.
+func TestV3_ClientsContract31(t *testing.T) {
 	apiInst, _, _, cleanup := setupTestAPI(t)
+	defer cleanup()
+	mux := http.NewServeMux()
+	apiInst.RegisterRoutes(mux)
+	key := "digitdns_live_testkey123"
+
+	expiry := time.Date(2031, 3, 4, 5, 6, 7, 0, time.UTC)
+	w := v3Request(mux, http.MethodPost, "/api/v3/clients", key, map[string]any{
+		"name": "api31", "expires_at": expiry.Format(time.RFC3339), "traffic_reset_cycle": "monthly",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create = %d, want 201: %s", w.Code, w.Body.String())
+	}
+	var created v3ClientDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &created)
+	if created.ExpiresAt != expiry.Format(timeFormatRFC3339) {
+		t.Errorf("expires_at = %q, want %q", created.ExpiresAt, expiry.Format(timeFormatRFC3339))
+	}
+	if created.NextTrafficReset == "" {
+		t.Error("next_traffic_reset empty for a monthly cycle")
+	}
+
+	// An absolute expiry wins over validity_days, exactly as the service documents.
+	w = v3Request(mux, http.MethodPost, "/api/v3/clients", key, map[string]any{
+		"name": "both", "validity_days": 1, "expires_at": expiry.Format(time.RFC3339),
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create with both = %d: %s", w.Code, w.Body.String())
+	}
+	var both v3ClientDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &both)
+	if both.ExpiresAt != expiry.Format(timeFormatRFC3339) {
+		t.Errorf("absolute expiry lost to validity_days: %q", both.ExpiresAt)
+	}
+
+	// UUID edit.
+	w = v3Request(mux, http.MethodPatch, "/api/v3/clients/"+created.ID, key, map[string]any{
+		"uuid": "11111111-2222-3333-4444-555555555555",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("patch uuid = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var patched v3ClientDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &patched)
+	if patched.UUID != "11111111-2222-3333-4444-555555555555" {
+		t.Errorf("uuid = %q, want the patched value", patched.UUID)
+	}
+
+	// Zero timestamp clears the expiry (lifetime).
+	w = v3Request(mux, http.MethodPatch, "/api/v3/clients/"+created.ID, key, map[string]any{
+		"expires_at": "0001-01-01T00:00:00Z",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("clear expiry = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var cleared v3ClientDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &cleared)
+	if cleared.ExpiresAt != "" {
+		t.Errorf("expires_at = %q after clear, want empty", cleared.ExpiresAt)
+	}
+
+	// A malformed timestamp is a 400, not a silent lifetime account.
+	w = v3Request(mux, http.MethodPatch, "/api/v3/clients/"+created.ID, key, map[string]any{
+		"expires_at": "not-a-date",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("bad expires_at = %d, want 400", w.Code)
+	}
+
+	// The list carries the new usage fields; a fresh account has no page views.
+	w = v3Request(mux, http.MethodGet, "/api/v3/clients", key, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list = %d", w.Code)
+	}
+	var page struct {
+		Items []v3ClientDTO `json:"items"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &page)
+	if len(page.Items) == 0 {
+		t.Fatal("list is empty")
+	}
+	for _, item := range page.Items {
+		if item.ID == created.ID && item.TotalQueries != 0 {
+			t.Errorf("total_queries = %d for a fresh account, want 0", item.TotalQueries)
+		}
+	}
+}
+
+func TestV3_ClientsListPagination(t *testing.T) {	apiInst, _, _, cleanup := setupTestAPI(t)
 	defer cleanup()
 	mux := http.NewServeMux()
 	apiInst.RegisterRoutes(mux)

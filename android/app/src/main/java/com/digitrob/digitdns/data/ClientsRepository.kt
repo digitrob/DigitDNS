@@ -27,16 +27,25 @@ import javax.inject.Singleton
 class ClientsRepository @Inject constructor(
     private val api: ClientsApi,
 ) {
-    /** Every client, following `next_cursor` to exhaustion. */
-    suspend fun listAll(): List<Client> {
+    /**
+     * Every client, following `next_cursor` to exhaustion.
+     *
+     * The response's server-wide `allow_all` flag rides along with the list: it is
+     * the only place the clients surface exposes it, and dropping it here would
+     * force a second call just to know whether per-client address lists still
+     * matter.
+     */
+    suspend fun listAll(): ClientSnapshot {
         val all = mutableListOf<ClientDto>()
+        var allowAll = false
         var cursor: String? = null
         do {
             val page = api.list(limit = PAGE_SIZE, cursor = cursor)
             all += page.items
+            allowAll = page.allowAll
             cursor = page.nextCursor.takeIf { it.isNotBlank() }
         } while (cursor != null)
-        return all.map(Client::from)
+        return ClientSnapshot(clients = all.map(Client::from), allowAll = allowAll)
     }
 
     suspend fun get(id: String): Client = Client.from(api.get(id))
@@ -79,6 +88,12 @@ class ClientsRepository @Inject constructor(
         const val PAGE_SIZE = 200
     }
 }
+
+/** The client list plus the server-wide access mode returned with it. */
+data class ClientSnapshot(
+    val clients: List<Client>,
+    val allowAll: Boolean,
+)
 
 /** The union of what any client action can report back. */
 data class ActionResult(

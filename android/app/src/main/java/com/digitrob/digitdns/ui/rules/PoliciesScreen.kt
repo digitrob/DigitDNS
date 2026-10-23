@@ -152,8 +152,8 @@ private fun PolicyEditor(viewModel: PoliciesViewModel) {
 
     PanelDialog(
         onDismissRequest = viewModel::closeEditor,
-        title = { Text(if (state.editingExisting) "Edit policy" else "New policy") },
         solid = true,
+        title = { Text(if (state.editingExisting) "Edit policy" else "New policy") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),

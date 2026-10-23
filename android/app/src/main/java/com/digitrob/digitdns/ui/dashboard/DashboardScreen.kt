@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,6 +65,7 @@ import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.PanelScreenHeader
 import com.digitrob.digitdns.ui.components.icon
+import com.digitrob.digitdns.ui.system.ServerSwitcherDialog
 import com.digitrob.digitdns.ui.formatBytes
 import com.digitrob.digitdns.ui.formatCount
 import com.digitrob.digitdns.ui.formatRate
@@ -82,15 +84,37 @@ import java.util.Locale
  * phone can hide the metrics it never watches and put the ones it does at the top.
  */
 @Composable
-fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
+fun DashboardScreen(
+    onAddServer: () -> Unit,
+    onLoginRequired: () -> Unit,
+    viewModel: DashboardViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var showServerSwitcher by remember { mutableStateOf(false) }
 
     when {
         state.isLoading && state.stats == null -> LoadingState()
         state.error != null && state.stats == null -> ErrorState(state.error!!)
         else -> Column(modifier = Modifier.fillMaxSize()) {
             PanelScreenHeader()
-            ServerIpBox(state.serverIp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ServerIpBox(state.serverIp, modifier = Modifier.weight(1f))
+                IconButton(
+                    onClick = { showServerSwitcher = true },
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SwapHoriz,
+                        contentDescription = "Switch server",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
             PanelRefreshBox(
                 isRefreshing = state.isRefreshing,
                 onRefresh = { viewModel.refresh() },
@@ -105,6 +129,24 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
             }
         }
     }
+
+    if (showServerSwitcher) {
+        ServerSwitcherDialog(
+            onDismiss = { showServerSwitcher = false },
+            onAddServer = {
+                showServerSwitcher = false
+                onAddServer()
+            },
+            onLoginRequired = {
+                showServerSwitcher = false
+                onLoginRequired()
+            },
+            onSwitched = {
+                showServerSwitcher = false
+                viewModel.refresh()
+            },
+        )
+    }
 }
 
 /**
@@ -114,13 +156,12 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
  * Hidden until the address is known, so an empty box never reads as "no address".
  */
 @Composable
-private fun ServerIpBox(serverIp: String) {
+private fun ServerIpBox(serverIp: String, modifier: Modifier = Modifier) {
     if (serverIp.isBlank()) return
     val colors = DigitDnsTheme.colors
     val clipboard = LocalClipboardManager.current
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(colors.bgCard)

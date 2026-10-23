@@ -134,9 +134,9 @@ Send only what changes: `{"allowed_ips":["203.0.113.9"]}` moves the binding; `{"
 
 ---
 
-## 🚀 API v3 — full dashboard parity
+## 🚀 API v3 — full dashboard parity (contract 3.1)
 
-v3 is the current contract and asks for nothing new from a v2 caller: every v2 convention applies unchanged (symmetric DTOs, strict decoding, `{items, next_cursor}` pagination, RFC 9457 errors, `POST /{resource}/{id}/actions/{action}`). What v3 adds is **reach** and **auth**.
+v3 is the current contract and asks for nothing new from a v2 caller: every v2 convention applies unchanged (symmetric DTOs, strict decoding, `{items, next_cursor}` pagination, RFC 9457 errors, `POST /{resource}/{id}/actions/{action}`). What v3 adds is **reach** and **auth**. The URL prefix stays `/api/v3`; the contract generation is reported as `api_version` by `GET /api/v3/version` (currently `3.1`).
 
 - **Base URL:** `…/<admin-path>/api/v3`
 - **Interactive docs:** open `…/<admin-path>/api/v3/docs` (the OpenAPI 3.0.3 document itself is at `/api/v3/openapi.json`).
@@ -186,6 +186,27 @@ curl -s "https://dns.example.com/<admin-path>/api/v3/clients" \
 | Meta | `GET /api/v3/version`, `GET /api/v3/status`, `GET /api/v3/docs`, `GET /api/v3/openapi.json` |
 
 Managing the diagnostic target list — a dashboard-only operation in v3.1.0 — is now `GET/POST/DELETE /api/v3/diagnostics/targets`; `POST /api/v3/diagnostics/run` runs the same shared probe v2 does.
+
+### Contract 3.1 — clients
+
+Everything below is additive, so a caller written against v3.0 keeps working.
+
+- **Client shape.** `total_queries`, `last_seen` and `next_traffic_reset` are now part of the client object (the last two are omitted when they have no value).
+- **Absolute expiry.** `POST /api/v3/clients` accepts `expires_at` alongside `validity_days`; when both are sent, `expires_at` wins. `PATCH/PUT /api/v3/clients/{id}` accepts `expires_at` too.
+- **Editable UUID.** `PATCH/PUT /api/v3/clients/{id}` accepts `uuid`.
+- **Lifetime is the zero timestamp.** Send `0001-01-01T00:00:00Z` to clear an expiry; omit the field to leave it unchanged. An empty string is a malformed timestamp and answers `400`.
+
+```bash
+# Set an exact expiry and a new UUID.
+curl -s -X PATCH "https://dns.example.com/<admin-path>/api/v3/clients/<id>" \
+  -H "X-API-Key: digitdns_live_…" -H "Content-Type: application/json" \
+  -d '{"uuid":"11111111-2222-3333-4444-555555555555","expires_at":"2031-03-04T05:06:07Z"}'
+
+# Back to lifetime.
+curl -s -X PATCH "https://dns.example.com/<admin-path>/api/v3/clients/<id>" \
+  -H "X-API-Key: digitdns_live_…" -H "Content-Type: application/json" \
+  -d '{"expires_at":"0001-01-01T00:00:00Z"}'
+```
 
 ---
 

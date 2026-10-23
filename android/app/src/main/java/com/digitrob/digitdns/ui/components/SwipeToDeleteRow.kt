@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -74,7 +75,7 @@ fun SwipeToDeleteRow(
         state = state,
         modifier = modifier.fillMaxWidth(),
         enableDismissFromStartToEnd = false,
-        backgroundContent = { DeleteBackground() },
+        backgroundContent = { DeleteBackground(state = state) },
     ) {
         content()
     }
@@ -108,20 +109,28 @@ fun SwipeToDeleteRow(
 
 /** The red reveal behind a swiped row: a plain tray with the delete label, no glyph. */
 @Composable
-private fun DeleteBackground() {
+private fun DeleteBackground(state: androidx.compose.material3.SwipeToDismissBoxState) {
     val danger = DigitDnsTheme.colors.danger
+    val density = LocalDensity.current
+    val offset = runCatching { state.requireOffset() }.getOrDefault(0f)
+    val swiping = !offset.isNaN() && offset != 0f
+    val amount = if (swiping) {
+        (kotlin.math.abs(offset) / with(density) { 60.dp.toPx() }).coerceIn(0f, 1f)
+    } else 0f
     Box(
         modifier = Modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(8.dp))
-            .background(danger.copy(alpha = 0.15f))
+            .background(danger.copy(alpha = if (swiping) 0.15f else 0f))
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.CenterEnd,
     ) {
-        Text(
-            text = "Delete",
-            style = MaterialTheme.typography.labelLarge,
-            color = danger,
-        )
+        if (swiping) {
+            Text(
+                text = "Delete",
+                style = MaterialTheme.typography.labelLarge,
+                color = danger.copy(alpha = (0.4f + 0.6f * amount).coerceIn(0f, 1f)),
+            )
+        }
     }
 }
