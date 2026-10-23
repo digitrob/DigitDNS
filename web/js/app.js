@@ -4867,7 +4867,7 @@ function renderClientsView(data) {
              grows outward into the gutter rather than pushing the layout around. -->
         <div class="space-y-1.5 mb-3">
           <div class="flex items-center justify-between text-[11px]">
-            <span class="text-slate-400 font-semibold">Registered IP (Max 1):</span>
+            <span class="text-slate-400 font-semibold">Registered IPs & CIDRs:</span>
             <button class="add-ip-prompt-btn text-cyan-400 hover:text-cyan-300 text-[10px] font-mono flex items-center justify-center gap-0.5 min-h-[24px] px-1.5 -me-1.5 rounded hover:bg-cyan-500/10 transition" data-id="${escapeHTML(c.id)}" data-ip="${escapeHTML(currentIP)}">
               + Set IP Manually
             </button>

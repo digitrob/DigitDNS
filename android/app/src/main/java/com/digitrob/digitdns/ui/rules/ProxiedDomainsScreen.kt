@@ -20,6 +20,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -50,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.ui.components.PanelCard
@@ -405,41 +409,47 @@ private fun DomainRowItem(
         confirmText = "The domain is removed from the routing lists.",
         confirmLabel = "Remove",
     ) {
-        PanelCard(modifier = Modifier.fillMaxWidth(), highlighted = menuOpen) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = row.domain,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(16.dp))
-                Box {
-                    DomainStatusPill(
-                        status = row.status,
-                        onClick = { menuOpen = true },
+        var rowSize by remember { mutableStateOf(IntSize.Zero) }
+        var rowY by remember { mutableStateOf(0f) }
+        Box(modifier = Modifier.onGloballyPositioned { coords -> rowSize = coords.size; rowY = coords.positionInRoot().y }) {
+            PanelCard(modifier = Modifier.fillMaxWidth(), highlighted = menuOpen) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = row.domain,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f),
                     )
-                    RouteActionMenu(
-                        domain = row.domain,
-                        expanded = menuOpen,
-                        onDismiss = { menuOpen = false },
-                        onAction = onAction,
-                    )
-                }
-                Spacer(Modifier.width(16.dp))
-                // Only a proxied row (active or paused) has a switch to flip. Blocked and
-                // direct rows reserve the same slot as an invisible spacer, so every
-                // status pill lines up in one column down the list.
-                if (row.status == DomainStatus.PROXY || row.status == DomainStatus.PAUSED) {
-                    Switch(checked = row.enabled, onCheckedChange = { onToggle() })
-                } else {
-                    Spacer(Modifier.width(SWITCH_SLOT_WIDTH))
+                    Spacer(Modifier.width(16.dp))
+                    Box {
+                        DomainStatusPill(
+                            status = row.status,
+                            onClick = { menuOpen = true },
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    // Only a proxied row (active or paused) has a switch to flip. Blocked and
+                    // direct rows reserve the same slot as an invisible spacer, so every
+                    // status pill lines up in one column down the list.
+                    if (row.status == DomainStatus.PROXY || row.status == DomainStatus.PAUSED) {
+                        Switch(checked = row.enabled, onCheckedChange = { onToggle() })
+                    } else {
+                        Spacer(Modifier.width(SWITCH_SLOT_WIDTH))
+                    }
                 }
             }
+            RouteActionMenu(
+                domain = row.domain,
+                expanded = menuOpen,
+                onDismiss = { menuOpen = false },
+                onAction = onAction,
+                anchorSize = rowSize,
+                anchorY = rowY,
+            )
         }
     }
 }

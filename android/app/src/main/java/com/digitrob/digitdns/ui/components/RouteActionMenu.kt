@@ -27,13 +27,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpOffset
 import com.digitrob.digitdns.ui.rules.MatchScope
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 
@@ -46,20 +52,47 @@ import com.digitrob.digitdns.ui.theme.DigitDnsTheme
  * is decided here and the caller only has to route the result.
  */
 @Composable
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 fun RouteActionMenu(
     domain: String,
     expanded: Boolean,
     onDismiss: () -> Unit,
     onAction: (RouteAction, String) -> Unit,
+    anchorSize: IntSize = IntSize.Zero,
+    anchorY: Float = 0f,
 ) {
     var scope by remember(domain) { mutableStateOf(MatchScope.Exact) }
-
     val colors = DigitDnsTheme.colors
+    val density = LocalDensity.current
+    val config = LocalConfiguration.current
+    val screenHeightPx = with(density) { config.screenHeightDp.dp.toPx() }
+    val menuWidthPx = with(density) { 280.dp.toPx() }
+    val offsetX = if (anchorSize.width > 0) {
+        ((anchorSize.width - menuWidthPx) / 2f).toInt()
+    } else 0
+    var menuHeightPx by remember { mutableStateOf(with(density) { 200.dp.toPx() }) }
+    val anchorCenterY = anchorY + anchorSize.height / 2f
+    val overlapPx = with(density) { 12.dp.toPx() }.toInt()
+    val offsetY = if (anchorSize.height > 0) {
+        if (anchorCenterY < screenHeightPx / 2f) {
+            // upper half: menu overlaps the bottom ~12dp of the box, extends down
+            -overlapPx
+        } else {
+            // lower half: menu overlaps the top ~12dp of the box, extends up
+            -anchorSize.height - menuHeightPx.toInt() + overlapPx
+        }
+    } else {
+        with(density) { 4.dp.toPx() }.toInt()
+    }
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
-        offset = DpOffset(0.dp, 4.dp),
-        modifier = Modifier.background(colors.bgCard).border(1.dp, colors.borderColor, RoundedCornerShape(12.dp)).width(280.dp),
+        offset = DpOffset(with(density) { offsetX.toDp() }, with(density) { offsetY.toDp() }),
+        modifier = Modifier
+            .background(colors.bgCard)
+            .border(1.dp, colors.borderColor, RoundedCornerShape(12.dp))
+            .width(280.dp)
+            .onSizeChanged { menuHeightPx = it.height.toFloat() },
     ) {
         Text(
             text = domain,

@@ -155,22 +155,13 @@ class LiveQueryLogViewModel @Inject constructor(
     }
 
     /**
-     * The same re-anchor, but reached by pulling. The indicator shows briefly so the
-     * gesture reads, and a reconnect is forced so the feed is refreshed against the
-     * server's own history snapshot while the stream stays live.
+     * The same re-anchor as [reload], but reached by pulling: the indicator shows
+     * briefly so the gesture reads. Delegating to [reload] guarantees pull-to-refresh
+     * does exactly what the Reload button does (re-anchor + buffer + scroll tick).
      */
     fun refresh() {
-        liveStream.start()
-        _state.update {
-            it.copy(
-                isRefreshing = true,
-                buffer = liveStream.queries.value,
-                paused = false,
-                pausedBuffer = null,
-                refreshTick = it.refreshTick + 1,
-            )
-        }
-        liveStream.reconnect()
+        _state.update { it.copy(isRefreshing = true) }
+        reload()
         viewModelScope.launch {
             delay(REFRESH_INDICATOR_MILLIS)
             _state.update { it.copy(isRefreshing = false) }

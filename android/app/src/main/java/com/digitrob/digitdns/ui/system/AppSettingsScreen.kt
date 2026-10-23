@@ -21,9 +21,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -103,6 +105,8 @@ private fun DashboardLayoutCard(
     var rowHeightPx by remember { mutableFloatStateOf(0f) }
     var draggingIndex by remember { mutableIntStateOf(NO_DRAG) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
+    val currentOrder by rememberUpdatedState(order)
+    val currentOnMoveTo by rememberUpdatedState(onMoveTo)
 
     PanelCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -115,6 +119,7 @@ private fun DashboardLayoutCard(
             )
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 order.forEachIndexed { index, card ->
+                    key(card) {
                     val isDragging = index == draggingIndex
                     DashboardCardRow(
                         card = card,
@@ -124,10 +129,10 @@ private fun DashboardLayoutCard(
                         onToggle = { onToggle(card, it) },
                         onMeasured = { if (rowHeightPx == 0f) rowHeightPx = it.toFloat() },
                         dragHandle = {
-                            Modifier.pointerInput(order, index, rowHeightPx) {
+                            Modifier.pointerInput(card) {
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = {
-                                        draggingIndex = index
+                                        draggingIndex = currentOrder.indexOf(card)
                                         dragOffset = 0f
                                     },
                                     onDragEnd = {
@@ -144,10 +149,10 @@ private fun DashboardLayoutCard(
                                         dragOffset += delta.y
                                         val steps = (dragOffset / rowHeightPx).roundToInt()
                                         if (steps != 0) {
-                                            val current = order.indexOf(card)
-                                            val target = (current + steps).coerceIn(order.indices)
+                                            val current = currentOrder.indexOf(card)
+                                            val target = (current + steps).coerceIn(currentOrder.indices)
                                             if (target != current) {
-                                                onMoveTo(current, target)
+                                                currentOnMoveTo(current, target)
                                                 dragOffset -= (target - current) * rowHeightPx
                                                 draggingIndex = target
                                             }
@@ -158,6 +163,7 @@ private fun DashboardLayoutCard(
                         },
                     )
                 }
+                    }
             }
         }
     }

@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## 🏷️ [Unreleased] — API 3.1 client contract
+## 🏷️ [v3.4.0] — Android & web parity
 
 ### ✨ Added
 - **API 3.1 client fields.** `GET /api/v3/clients` and its item routes now return `total_queries`, `last_seen` and `next_traffic_reset` — the figures the web card has always read off the legacy shape. All three are additive; a v3.0 caller keeps parsing the response unchanged.

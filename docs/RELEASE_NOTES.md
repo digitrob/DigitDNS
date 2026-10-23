@@ -1,3 +1,61 @@
+# DigitDNS v3.4.0
+
+## Highlights
+
+- **Android and web, finally in step.** This release is the biggest step yet
+  toward full parity between the Android companion app and the web panel. The
+  Clients screen, client details, server management, live query log, domain
+  rules and the dashboard now behave the same way on a phone as they do in the
+  browser — same actions, same confirmations, same look and feel. If you have
+  been switching between the two, the differences you noticed are gone.
+- **A complete Android companion app ships with this release.** The signed APKs
+  for every architecture are attached to this same release page, alongside the
+  server binaries and the offline bundle, so there is one place to download
+  everything for a version. The app keeps its own version line, so a server
+  update never forces an app update and vice versa.
+- **Client management overhaul.** Adding and editing a subscriber now opens as a
+  popup over the list instead of pushing a new screen; fields spread to use the
+  available space without scrolling; quick actions (renew, lifetime, copy link,
+  bot card) are aligned and fit on one row; swipe-to-delete with a confirmation
+  dialog replaces the old per-row delete button.
+- **Multi-server switching.** Save several servers on one phone, switch between
+  them with one tap, and the app signs in automatically when it has saved
+  credentials. A full server editor (name, host, port, admin path, HTTPS, and
+  credentials) is built in.
+- **Live Query Log polish.** Reload and pull-to-refresh are distinct again,
+  pull-to-refresh re-anchors the feed and jumps to the top when new entries
+  arrive, and the feed stays pinned to the latest queries while you read.
+- **Web panel refresh.** The Clients page is now "Client Management"; the
+  client details card reads "Registered IPs & CIDRs"; popup menus are glass-styled
+  and anchored to their row; domain menus are centered on their domain.
+- **API 3.1.** `expires_at` is now a first-class field on clients — set an
+  absolute expiry or clear it with the zero timestamp. `api_version` in the
+  version endpoint reports the contract generation.
+
+## Android companion app
+
+Side-load the APK for your device's CPU architecture onto Android 10 (API 29)
+or newer. Verify the download against the matching `.sha256` before installing.
+
+| APK | Architecture |
+| --- | --- |
+| `digitdns-arm64-v8a.apk` | 64-bit ARM (virtually all phones since ~2016) |
+| `digitdns-armeabi-v7a.apk` | 32-bit ARM (older/low-end devices) |
+| `digitdns-x86_64.apk` | x86-64 (emulators, some tablets) |
+| `digitdns-universal.apk` | all of the above — larger, use if unsure |
+
+## Upgrading
+
+Docker users pulling `ghcr.io/digitrob/digitdns:latest` pick everything up on
+restart — no settings change, no migration. Binary installs: replace the
+`digitdns` binary and restart the service. The Android app is a separate
+download and a separate version line; install it only if you want the new
+client-management and server-switching features.
+
+Full changelog: docs/CHANGELOG.md
+
+---
+
 # DigitDNS v3.3.2
 
 ## Highlights

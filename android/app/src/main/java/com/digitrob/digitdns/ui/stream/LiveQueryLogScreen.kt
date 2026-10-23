@@ -47,10 +47,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -92,6 +96,14 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
         }
     }
 
+    // Live feed: keep the list pinned to the top as new entries arrive, but only
+    // when the user is already at the top so reading older rows is not hijacked.
+    LaunchedEffect(state.buffer.size) {
+        if (listState.firstVisibleItemIndex == 0 && state.buffer.isNotEmpty()) {
+            listState.animateScrollToItem(0)
+        }
+    }
+
     LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
         snackbar.showPanelToast(message)
@@ -105,6 +117,7 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
             PanelRefreshBox(
                 isRefreshing = state.isRefreshing,
                 onRefresh = viewModel::refresh,
+
                 modifier = Modifier.fillMaxSize(),
             ) {
                 if (state.visible.isEmpty()) {
@@ -252,12 +265,15 @@ private fun EmptyState(state: LiveQueryLogUiState) {
 @Composable
 private fun QueryRow(event: QueryEvent, onAction: (RouteAction, String) -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
-    PanelCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), highlighted = menuOpen) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+    var rowSize by remember { mutableStateOf(IntSize.Zero) }
+    var rowY by remember { mutableStateOf(0f) }
+    Box(modifier = Modifier.onGloballyPositioned { coords -> rowSize = coords.size; rowY = coords.positionInRoot().y }) {
+        PanelCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), highlighted = menuOpen) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = event.domain.ifBlank { "—" },
@@ -298,11 +314,14 @@ private fun QueryRow(event: QueryEvent, onAction: (RouteAction, String) -> Unit)
             )
         }
 
+        }
         RouteActionMenu(
             domain = event.domain,
             expanded = menuOpen,
             onDismiss = { menuOpen = false },
             onAction = onAction,
+            anchorSize = rowSize,
+            anchorY = rowY,
         )
     }
 }
