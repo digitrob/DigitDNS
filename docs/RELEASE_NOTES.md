@@ -1,3 +1,36 @@
+# DigitDNS v3.4.5
+
+## Highlights
+
+- **A calmer, more predictable dashboard.** Upstream Racers now leads the
+  Android dashboard, the six metric tiles are all the same size, and the order
+  has a one-tap reset in Settings. Scrolling the dashboard can no longer pop an
+  accidental "remove upstream" prompt.
+- **Server management that fits the screen.** The Manage Servers dialog keeps
+  three saved servers visible, scrolls only the list when there are more, and
+  keeps Add server, the signed-in details, Sign out, Cancel and Done reachable.
+  The Add-server form has a Cancel that returns to the app.
+- **The Domains tab no longer crashes** on installs whose proxied list carried a
+  duplicated domain: duplicates are ignored on load and on save.
+- **Client editing, finished.** The edit-client card has a roomier IP Addresses
+  box and a compact Expiry; Save always persists every field, closes the card,
+  and warns when the device limit trimmed host addresses. Cards with long IP
+  lists stay a normal size.
+- **Cleaner proxied list.** The web table uses the available width (domain left,
+  actions and status compact on the right) with no Date Added column, and the
+  Android rows are a single aligned line.
+
+## Upgrading
+
+Docker users pulling `ghcr.io/digitrob/digitdns:latest` pick everything up on
+restart — no settings change, no migration. Binary installs: replace the
+`digitdns` binary and restart the service. The Android app is a separate
+download and version line; install it only if you want these fixes.
+
+Full changelog: docs/CHANGELOG.md
+
+---
+
 # DigitDNS v3.4.0
 
 ## Highlights

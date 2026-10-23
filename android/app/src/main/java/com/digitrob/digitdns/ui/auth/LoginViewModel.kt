@@ -148,6 +148,11 @@ class LoginViewModel @Inject constructor(
         it.copy(credentialMode = mode, error = null, needsTwoFactor = false)
     }
 
+    /** Leave the add-server detour: drop anything staged, keep the app's session. */
+    fun cancelAddServer() {
+        viewModelScope.launch { authRepository.rollbackStagedConnection() }
+    }
+
     fun submit() {
         val current = _state.value
         if (!current.canSubmit) return

@@ -5,10 +5,12 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -102,8 +104,6 @@ fun ServersScreen(
     }
 
     if (embedded) {
-        // The manager dialog already scrolls its whole card; a second vertical scroll
-        // inside it would crash, and a pull indicator has nowhere useful to sit.
         ServersBody(
             state = state,
             onAddServer = onAddServer,
@@ -112,6 +112,7 @@ fun ServersScreen(
             onRemove = viewModel::remove,
             onEdit = { editing = it },
             modifier = Modifier.fillMaxWidth(),
+            embedded = true,
         )
     } else {
         PanelRefreshBox(
@@ -136,6 +137,7 @@ fun ServersScreen(
 }
 
 @Composable
+@Suppress("LongParameterList")
 private fun ServersBody(
     state: ServersUiState,
     onAddServer: () -> Unit,
@@ -144,6 +146,7 @@ private fun ServersBody(
     onRemove: (String) -> Unit,
     onEdit: (ServerRow) -> Unit,
     modifier: Modifier,
+    embedded: Boolean = false,
 ) {
     Column(
         modifier = modifier,
@@ -159,23 +162,26 @@ private fun ServersBody(
             )
         }
 
-        if (state.servers.isEmpty()) {
-            Text(
-                text = "No servers saved yet.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            state.servers.forEach { server ->
-                ServerCard(
-                    server = server,
-                    enabled = !state.isBusy,
-                    busy = state.busyId == server.id,
-                    onSwitch = { onSwitch(server.id) },
-                    onRemove = { onRemove(server.id) },
-                    onEdit = { onEdit(server) },
-                )
+        if (embedded) {
+            // The saved list takes the dialog's leftover height and is the only region
+            // that scrolls: three uniform cards rest inside it, a fourth turns the list
+            // into its own gentle scroll. The tail below (add-server, session box,
+            // sign-out) then sits on the card's bottom edge, right above the Cancel/Done
+            // footer, and the fixed-height card never scrolls as a whole. This scroll
+            // never competes with the dialog's card scroll because that mode passes
+            // scrollable = false (nested vertical scrolls are the runtime crash the
+            // panel already met).
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SavedServersList(state, onSwitch, onRemove, onEdit)
             }
+        } else {
+            SavedServersList(state, onSwitch, onRemove, onEdit)
         }
 
         OutlinedButton(
@@ -188,6 +194,34 @@ private fun ServersBody(
         }
 
         SessionScreen(onLoggedOut = onLoggedOut)
+    }
+}
+
+/** The server cards (or the empty hint) as they appear in the list. */
+@Composable
+private fun SavedServersList(
+    state: ServersUiState,
+    onSwitch: (String) -> Unit,
+    onRemove: (String) -> Unit,
+    onEdit: (ServerRow) -> Unit,
+) {
+    if (state.servers.isEmpty()) {
+        Text(
+            text = "No servers saved yet.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else {
+        state.servers.forEach { server ->
+            ServerCard(
+                server = server,
+                enabled = !state.isBusy,
+                busy = state.busyId == server.id,
+                onSwitch = { onSwitch(server.id) },
+                onRemove = { onRemove(server.id) },
+                onEdit = { onEdit(server) },
+            )
+        }
     }
 }
 
@@ -263,17 +297,27 @@ private fun ServerCardLeading(server: ServerRow, busy: Boolean) {
     }
 }
 
+/** The server card's text block. Every line is capped at one line (ellipsis) so each
+ * card holds a predictable height: the manager's fixed saved-list slot then always
+ * rests three cards and only scrolls when a fourth arrives. */
 @Composable
 private fun ServerCardDetails(server: ServerRow, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(server.label, style = MaterialTheme.typography.titleSmall)
+        Text(
+            text = server.label,
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         Text(
             text = server.authority,
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         if (server.adminPath.isNotBlank()) {
             Text(
@@ -281,6 +325,8 @@ private fun ServerCardDetails(server: ServerRow, modifier: Modifier = Modifier) 
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Text(
@@ -295,6 +341,8 @@ private fun ServerCardDetails(server: ServerRow, modifier: Modifier = Modifier) 
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

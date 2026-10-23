@@ -24,6 +24,7 @@ private val Context.appPrefsDataStore: DataStore<Preferences> by preferencesData
  * names are effectively part of the on-disk contract.
  */
 enum class DashboardCard {
+    UPSTREAM_RACERS,
     QUERY_RATE,
     RAM_CACHE,
     SNI_PROXY,
@@ -31,7 +32,6 @@ enum class DashboardCard {
     RAM_USAGE,
     LIVE_TRAFFIC,
     TELEMETRY_CHART,
-    UPSTREAM_RACERS,
     RESOLVER_LATENCY,
     ;
 
@@ -129,6 +129,14 @@ class AppPreferences @Inject constructor(
             val current = DashboardCard.parseDisabled(prefs[Keys.dashboardDisabled]).toMutableSet()
             if (enabled) current.remove(card) else current.add(card)
             prefs[Keys.dashboardDisabled] = current.joinToString(",") { it.name }
+        }
+    }
+
+    /** Clear the saved dashboard order and visibility so the built-in defaults take over. */
+    suspend fun resetDashboardLayout() {
+        context.appPrefsDataStore.edit { prefs ->
+            prefs.remove(Keys.dashboardOrder)
+            prefs.remove(Keys.dashboardDisabled)
         }
     }
 

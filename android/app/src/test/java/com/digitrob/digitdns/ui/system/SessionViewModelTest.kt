@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.ui.system
 
+import com.digitrob.digitdns.core.network.AuthState
 import com.digitrob.digitdns.data.AuthRepository
 import com.digitrob.digitdns.domain.model.Connection
 import com.digitrob.digitdns.domain.model.CredentialMode
@@ -25,7 +26,9 @@ class SessionViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private val activeConnection = MutableStateFlow<Connection?>(null)
     private val credentialRevision = MutableStateFlow(0)
+    private val authCredentialRevision = MutableStateFlow(0)
     private lateinit var authRepository: AuthRepository
+    private lateinit var authState: AuthState
 
     @Before
     fun setUp() {
@@ -33,6 +36,10 @@ class SessionViewModelTest {
         authRepository = mockk(relaxed = true)
         every { authRepository.activeConnection } returns activeConnection
         every { authRepository.credentialRevision } returns credentialRevision
+        authState = mockk(relaxed = true)
+        every { authState.credentialRevision } returns authCredentialRevision
+        every { authState.activeId } returns "id-1"
+        every { authState.hasCredential } returns false
     }
 
     @After
@@ -54,7 +61,7 @@ class SessionViewModelTest {
         every { authRepository.hasSavedCredentials("id-1") } returns false
         activeConnection.value = connection()
 
-        val viewModel = SessionViewModel(authRepository)
+        val viewModel = SessionViewModel(authRepository, authState)
         advanceUntilIdle()
         assertFalse(viewModel.state.value.credentialsSaved)
 
@@ -71,7 +78,7 @@ class SessionViewModelTest {
         every { authRepository.hasSavedCredentials("id-2") } returns false
         activeConnection.value = connection()
 
-        val viewModel = SessionViewModel(authRepository)
+        val viewModel = SessionViewModel(authRepository, authState)
         advanceUntilIdle()
         assertTrue(viewModel.state.value.credentialsSaved)
 
@@ -80,5 +87,22 @@ class SessionViewModelTest {
 
         assertFalse(viewModel.state.value.credentialsSaved)
         assertTrue(viewModel.state.value.authority.startsWith("other.example.com"))
+    }
+
+    @Test
+    fun aServerThatWasNeverAuthenticatedIsNotPresentedAsASession() = runTest(dispatcher) {
+        every { authRepository.hasSavedCredentials("id-1") } returns false
+        activeConnection.value = connection()
+        every { authState.hasCredential } returns false
+
+        val viewModel = SessionViewModel(authRepository, authState)
+        advanceUntilIdle()
+        assertFalse("no live credential means no session to show", viewModel.state.value.isAuthenticated)
+
+        // Signing in flips it: the credential revision fires and the state re-reads.
+        every { authState.hasCredential } returns true
+        authCredentialRevision.value += 1
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.isAuthenticated)
     }
 }

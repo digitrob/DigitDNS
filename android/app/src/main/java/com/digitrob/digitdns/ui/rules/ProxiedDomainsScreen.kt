@@ -424,22 +424,15 @@ private fun DomainRowItem(
                         maxLines = 1,
                         modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.width(16.dp))
+                    Spacer(Modifier.width(12.dp))
                     Box {
                         DomainStatusPill(
                             status = row.status,
                             onClick = { menuOpen = true },
                         )
                     }
-                    Spacer(Modifier.width(16.dp))
-                    // Only a proxied row (active or paused) has a switch to flip. Blocked and
-                    // direct rows reserve the same slot as an invisible spacer, so every
-                    // status pill lines up in one column down the list.
-                    if (row.status == DomainStatus.PROXY || row.status == DomainStatus.PAUSED) {
-                        Switch(checked = row.enabled, onCheckedChange = { onToggle() })
-                    } else {
-                        Spacer(Modifier.width(SWITCH_SLOT_WIDTH))
-                    }
+                    Spacer(Modifier.width(12.dp))
+                    Switch(checked = row.enabled, onCheckedChange = { onToggle() })
                 }
             }
             RouteActionMenu(
@@ -453,9 +446,6 @@ private fun DomainRowItem(
         }
     }
 }
-
-/** The M3 switch's footprint, reserved on rows that do not carry one so pills align. */
-private val SWITCH_SLOT_WIDTH = 52.dp
 
 /** The row status as an oval pill; tapping it opens the routing action menu. */
 @Composable

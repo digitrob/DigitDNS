@@ -336,8 +336,12 @@ The web panel manages everything:
 - **Live stats** — queries per second, cache hits, traffic, latency, who's
   using it right now
 - **Domain rules** — add/edit/proxy/block/direct, bulk import, live query log
-  with one-click actions (see a domain in the log? Click to block or proxy it)
-- **Clients** — add subscribers, set quotas and expiry, suspend, see usage
+  with one-click actions (see a domain in the log? Click to block or proxy it).
+  The proxied table keeps the domain on the left and the switch/status compact on
+  the right, so long lists stay readable
+- **Clients** — add subscribers, set quotas and expiry, suspend, see usage.
+  Editing a client gives you a full-width IP list, and a client with many
+  addresses keeps a normal-sized card (the address chips scroll)
 - **Upstreams** — add and benchmark DNS upstreams on any transport
 - **Settings** — 2FA, hidden path, certificates, portal branding, API keys
 
@@ -353,7 +357,7 @@ customized with your own domain, title, and CSS to match your branding.
 DigitDNS also ships a native Android companion app — the same control surface as
 the web panel, in your pocket, talking to your server over the REST API and the
 live event stream. It is a separate product on its own version line
-(`android-v3.4.0` and friends), side-loaded from the GitHub release page rather
+(`android-v3.4.5` and friends), side-loaded from the GitHub release page rather
 than distributed through Play.
 
 **What it does (feature parity with the web panel):**
@@ -361,7 +365,9 @@ than distributed through Play.
 - **Login & accounts** — sign in with your admin username and password, with
   TOTP when two-factor is enabled; holds a real, revocable session token.
 - **Dashboard** — live stats, query rate, cache hits, proxy relay counts, CPU,
-  RAM and live traffic, plus the QPS chart.
+  RAM and live traffic, plus the QPS chart. Upstream Racers leads by default,
+  the metric tiles share one size, and Settings → Dashboard cards can reorder
+  them or reset the layout.
 - **Domain rules** — add, edit, proxy, block or route domains direct; bulk
   import; groups with icons; one-tap actions straight from the live log.
 - **Clients (subscribers)** — create and edit subscribers, set quotas, expiry
@@ -373,7 +379,10 @@ than distributed through Play.
   sorting, pause/resume and quick actions.
 - **Diagnostics** — run the server diagnostic suite against your own targets.
 - **Settings** — access lists, TLS/ACME certificate issuance and renewal,
-  subscription/portal settings, server connection management.
+  subscription/portal settings, server connection management. Manage servers
+  keeps three saved servers on screen (the list scrolls for more), the tail with
+  Add server, signed-in details and Sign out sits above Cancel/Done, and the
+  Add-server form has a Cancel that returns to the app.
 - **Live stream service** — a foreground service keeps the SSE connection
   alive and raises notifications while the app is in the background.
 

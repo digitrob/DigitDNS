@@ -19,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -86,6 +87,7 @@ fun AppSettingsScreen(viewModel: AppSettingsViewModel = hiltViewModel()) {
             disabled = state.dashboardDisabled,
             onToggle = viewModel::setCardEnabled,
             onMoveTo = viewModel::moveCardTo,
+            onReset = viewModel::resetDashboardLayout,
         )
     }
 }
@@ -101,6 +103,7 @@ private fun DashboardLayoutCard(
     disabled: Set<DashboardCard>,
     onToggle: (DashboardCard, Boolean) -> Unit,
     onMoveTo: (Int, Int) -> Unit,
+    onReset: () -> Unit,
 ) {
     var rowHeightPx by remember { mutableFloatStateOf(0f) }
     var draggingIndex by remember { mutableIntStateOf(NO_DRAG) }
@@ -111,12 +114,16 @@ private fun DashboardLayoutCard(
     PanelCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Dashboard cards", style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = "Choose which cards the dashboard shows, and their order. " +
-                    "Long-press a handle to drag a card.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Choose which cards the dashboard shows, and their order. " +
+                        "Long-press a handle to drag a card.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onReset) { Text("Reset layout") }
+            }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 order.forEachIndexed { index, card ->
                     key(card) {

@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.4.5] — Dashboard, server management, and client editor polish
+
+### ✨ Added
+- **Manage servers, rebuilt for a phone.** The server manager now fits on one fixed screen: up to three saved servers are visible at once, and only that list scrolls when you have more. Add server, the signed-in details and Sign out sit at the bottom, next to Cancel/Done, so nothing is pushed off-screen.
+- **Cancel on the Add-server screen.** Opening "Add server" is no longer a one-way trip — Cancel takes you straight back to the app and throws away a half-entered host or credential.
+- **Reset layout for dashboard cards.** App → Settings → Dashboard cards now has a Reset layout action that brings back the built-in order and visibility.
+- **Duplicate domains are ignored.** Rule lists are de-duplicated when loaded and when saved, so a repeated entry can no longer clutter a list — or crash the app.
+- **Version line in the startup banner**, so the running build is visible in `journalctl` / `docker logs` without a separate request.
+
+### 🔄 Changed
+- **Dashboard default order.** Upstream Racers comes first, followed by the six metric tiles in two columns (Query Rate, RAM Cache, SNI Proxy, CPU Usage, RAM Usage, Live Traffic), then the full-width Live QPS & Telemetry chart, then Resolver Latency. The six metric tiles now share one fixed size, so the grid no longer looks ragged.
+- **Domains rows (Android).** Each row is one clean line again: the domain on the left, the status pill and power switch on the right. Nothing shifts, and the row height stays constant.
+- **Proxied Domains table (web).** Domain names take the available width and stay left-aligned; the per-row switch/actions and status become compact columns on the right. Space is used rather than spread evenly.
+- **Client editor (web).** The expiry field is simply "Expiry" and takes less room; "IP Addresses" is a large multi-line box with the space that frees up. Saving writes every field, closes the card, and tells you when the device limit kept fewer addresses than you entered.
+- **Client cards (web).** A subscriber with many registered addresses now shows them in a scrollable window, so the card keeps the same size as one with a couple of IPs.
+
+### 🐛 Fixed
+- **Domains tab crash.** Opening Domains against a server whose proxied list contained the same domain twice crashed the Android app. Duplicates are now ignored on both ends; the tab opens normally.
+- **Accidental upstream deletion.** Scrolling the dashboard could arm the Upstream Racers swipe and pop "Remove upstream?". Scrolling now disables the gesture, and reaching the confirmation needs a near-full-width swipe.
+- **Failed sign-in shown as a session.** A saved server you tapped but never authenticated to no longer appears in "Signed in to"; it stays in the saved list, where it belongs.
+- **Saving a client did nothing (web).** The save path is now bound to both the form and the button, survives a partial page initialisation, reports the server's error instead of failing silently, and parses expiry dates correctly on Safari.
+- **Date Added stamps removed** from the web and Android proxied-domain lists. The server still records the times internally for future use; nothing is displayed.
+
+---
+
 ## 🏷️ [v3.4.0] — Android & web parity
 
 ### ✨ Added

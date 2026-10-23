@@ -48,6 +48,18 @@ class AuthState @Inject constructor(
 
     private val _sessionExpired = MutableStateFlow(false)
 
+    // Every mutation of the credential above bumps this, so a screen that wants to
+    // know "is the active install actually signed in" can observe it. The token
+    // itself is a @Volatile field read from OkHttp threads, not a flow.
+    private val _credentialRevision = MutableStateFlow(0)
+
+    /** Increments whenever [hasCredential] may have changed. */
+    val credentialRevision: StateFlow<Int> = _credentialRevision.asStateFlow()
+
+    private fun bumpCredentialRevision() {
+        _credentialRevision.value += 1
+    }
+
     /**
      * Set true when a request was refused with a 401 that could not be silently
      * recovered, so the UI can route to the login screen and explain why. Cleared on
@@ -80,21 +92,25 @@ class AuthState @Inject constructor(
         sessionToken = secretStore.sessionToken(id)
         apiKey = secretStore.apiKey(id)
         clearSessionExpired()
+        bumpCredentialRevision()
     }
 
     fun updateMode(mode: CredentialMode) {
         this.mode = mode
+        bumpCredentialRevision()
     }
 
     fun updateSessionToken(token: String?) {
         sessionToken = token
         activeId?.let { secretStore.setSessionToken(it, token) }
         if (!token.isNullOrBlank()) clearSessionExpired()
+        bumpCredentialRevision()
     }
 
     fun updateApiKey(key: String?) {
         apiKey = key
         activeId?.let { secretStore.setApiKey(it, key) }
+        bumpCredentialRevision()
     }
 
     /** Drop the in-memory credential for the active install, leaving other installs'. */
@@ -103,6 +119,7 @@ class AuthState @Inject constructor(
         apiKey = null
         activeId?.let { secretStore.clearCredentials(it) }
         clearSessionExpired()
+        bumpCredentialRevision()
     }
 
     /**
@@ -113,5 +130,6 @@ class AuthState @Inject constructor(
     fun clearMemory() {
         sessionToken = null
         apiKey = null
+        bumpCredentialRevision()
     }
 }

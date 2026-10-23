@@ -1239,6 +1239,7 @@ function updateProxiedBulkBar() {
 // bulk actions, the domain, its status, and the per-row switch and remove button. The
 // ordered list can be long, so only its first proxiedVisible rows are drawn;
 // proxiedHasMore records whether there is a next batch for the sentinel to fetch.
+
 function renderProxiedList() {
   const container = document.getElementById('custom-proxied-rows');
   if (!container) return;
@@ -1280,23 +1281,30 @@ function renderProxiedList() {
       ? '<span class="badge badge-proxy">PROXIED</span>'
       : '<span class="badge badge-unknown">PAUSED</span>';
     row.innerHTML = `
-      <td class="py-2.5 px-3">
+      <td class="py-2.5 px-3 text-center">
         <input type="checkbox" class="proxied-select-check proxied-check" data-val="${escapeHTML(domain)}" ${proxiedSelected.has(domain) ? 'checked' : ''} aria-label="Select ${escapeHTML(domain)}">
       </td>
-      <td class="py-2.5 px-3 truncate" title="${escapeHTML(domain)}"><span class="font-mono ${domainClass}">${escapeHTML(domain)}</span></td>
-      <td class="py-2.5 px-3">${statusBadge}</td>
-      <td class="py-2.5 px-3">
-        <div class="flex items-center justify-end gap-2">
+      <td class="py-2.5 px-3 text-start truncate" title="${escapeHTML(domain)}"><span class="font-mono ${domainClass}">${escapeHTML(domain)}</span></td>
+      <td class="py-2.5 px-3 text-center">
+        <div class="flex items-center justify-center gap-2">
+          <span class="text-[10px] text-slate-500 font-semibold">Pause</span>
           <label class="switch shrink-0">
             <input type="checkbox" class="toggle-proxied" data-val="${escapeHTML(domain)}" ${on ? 'checked' : ''} aria-label="Toggle proxying for ${escapeHTML(domain)}">
             <span class="slider"></span>
           </label>
-          <button class="remove-proxied inline-flex items-center justify-center w-6 h-6 shrink-0 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition" data-val="${escapeHTML(domain)}" aria-label="Remove ${escapeHTML(domain)}">
-            <i data-feather="x" class="w-3.5 h-3.5"></i>
-          </button>
+          <span class="text-[10px] text-emerald-400 font-semibold">On</span>
+          <button class="remove-proxied inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-red-500/10 text-red-400 border border-red-500/30 text-[11px] font-semibold transition" data-val="${escapeHTML(domain)}" aria-label="Remove ${escapeHTML(domain)}">Remove</button>
         </div>
       </td>
+      <td class="py-2.5 px-3 text-center">${statusBadge}</td>
     `;
+    row.addEventListener('click', (e) => {
+      const target = e.target;
+      if (target && (target.closest('input, button, label, .switch'))) return;
+      const cb = row.querySelector('.proxied-select-check');
+      if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    row.style.cursor = 'pointer';
     container.appendChild(row);
   });
   safeFeatherReplace();
@@ -4022,6 +4030,24 @@ function initEventListeners() {
         saveRules();
         renderConfig(currentConfig);
       }
+    } else if (btn.classList.contains('proxied-pause-btn')) {
+      const val = btn.dataset.val;
+      if (currentConfig) {
+        currentConfig.rules.custom_proxied = currentConfig.rules.custom_proxied.filter(x => x !== val);
+        if (!currentConfig.rules.custom_proxied_disabled) currentConfig.rules.custom_proxied_disabled = [];
+        if (!currentConfig.rules.custom_proxied_disabled.includes(val)) currentConfig.rules.custom_proxied_disabled.push(val);
+        saveRules();
+        renderConfig(currentConfig);
+      }
+    } else if (btn.classList.contains('proxied-resume-btn')) {
+      const val = btn.dataset.val;
+      if (currentConfig) {
+        if (!currentConfig.rules.custom_proxied_disabled) currentConfig.rules.custom_proxied_disabled = [];
+        currentConfig.rules.custom_proxied_disabled = currentConfig.rules.custom_proxied_disabled.filter(x => x !== val);
+        if (!currentConfig.rules.custom_proxied.includes(val)) currentConfig.rules.custom_proxied.push(val);
+        saveRules();
+        renderConfig(currentConfig);
+      }
     } else if (btn.classList.contains('remove-blocked')) {
       const val = btn.dataset.val;
       if (currentConfig) {
@@ -4872,7 +4898,7 @@ function renderClientsView(data) {
               + Set IP Manually
             </button>
           </div>
-          <div class="flex flex-wrap gap-1.5">
+          <div class="client-ip-chips flex flex-wrap gap-1.5">
             ${ipsHtml}
           </div>
         </div>
@@ -6138,49 +6164,66 @@ function showToast(msg, type = 'info') {
     });
   }
 
-  // Submit Edit Client Form
+  // Edit Client Save.
+  //
+  // Bound twice on purpose: the form's submit (Enter in a field) and the Save
+  // button's own click. A single submit binding on the form used to be the only
+  // way in, so if anything upstream left the handler unattached the button fell
+  // back to the browser's native submit — a full page reload with the edit
+  // silently dropped — and an exception while reading a field produced no
+  // toast at all. The shared, guarded handler below means either path saves
+  // once, every outcome is visible, and success always closes the card.
   if (editClientForm) {
-    editClientForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const clientId = document.getElementById('edit-client-id').value;
-      if (!clientId) return;
+    let editSaveInFlight = false;
 
-      const name = document.getElementById('edit-client-name').value.trim();
-      const uuid = document.getElementById('edit-client-uuid').value.trim();
-      const ip = document.getElementById('edit-client-ip').value.trim();
-      const trafficGB = parseFloat(document.getElementById('edit-client-traffic').value) || 0;
-      const cycle = document.getElementById('edit-client-traffic-cycle')?.value || '';
-      const maxDevices = parseInt(document.getElementById('edit-client-max-devices')?.value, 10) || 0;
-      const expiryVal = document.getElementById('edit-client-expiry').value;
-      const note = document.getElementById('edit-client-note').value.trim();
-      const isEnabled = enabledCheckbox ? enabledCheckbox.checked : true;
-
-      let expiresAtISO = '0001-01-01T00:00:00Z';
-      if (expiryVal) {
-        const parsed = new Date(expiryVal);
-        if (!isNaN(parsed.getTime())) {
-          expiresAtISO = parsed.toISOString();
-        }
-      }
-
-      const payload = {
-        name: name,
-        uuid: uuid,
-        // Split the comma/newline-separated field into the list the server now
-        // stores, so an operator can attach a host address and a CIDR together.
-        allowed_ips: ip.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
-        traffic_limit_gb: trafficGB,
-        max_devices: maxDevices,
-        // Sent on every save, including as "" — the field is a pointer on the server,
-        // so omitting it means "leave the cycle alone" and there would then be no way
-        // to turn a cycle back off from this form.
-        traffic_reset_cycle: cycle,
-        expires_at: expiresAtISO,
-        enabled: isEnabled,
-        note: note
-      };
+    const saveEditClient = async (e) => {
+      if (e && typeof e.preventDefault === 'function') e.preventDefault();
+      if (editSaveInFlight) return;
+      editSaveInFlight = true;
 
       try {
+        const clientId = document.getElementById('edit-client-id')?.value?.trim() || '';
+        if (!clientId) return;
+
+        const val = (id) => document.getElementById(id)?.value ?? '';
+        const name = val('edit-client-name').trim();
+        const uuid = val('edit-client-uuid').trim();
+        const ip = val('edit-client-ip').trim();
+        const trafficGB = parseFloat(val('edit-client-traffic')) || 0;
+        const cycle = val('edit-client-traffic-cycle');
+        const maxDevices = parseInt(val('edit-client-max-devices'), 10) || 0;
+        const expiryVal = val('edit-client-expiry');
+        const note = val('edit-client-note').trim();
+        const isEnabled = enabledCheckbox ? enabledCheckbox.checked : true;
+
+        let expiresAtISO = '0001-01-01T00:00:00Z';
+        if (expiryVal) {
+          // The picker writes "YYYY-MM-DD HH:mm:ss"; Safari does not parse that
+          // space-separated shape, so the T form is tried first and the plain
+          // form is kept as the fallback for everything else.
+          const parsed = new Date(expiryVal.replace(' ', 'T'));
+          if (!isNaN(parsed.getTime())) {
+            expiresAtISO = parsed.toISOString();
+          }
+        }
+
+        const payload = {
+          name: name,
+          uuid: uuid,
+          // Split the comma/newline-separated field into the list the server
+          // stores, so an operator can attach a host address and a CIDR together.
+          allowed_ips: ip.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
+          traffic_limit_gb: trafficGB,
+          max_devices: maxDevices,
+          // Sent on every save, including as "" — the field is a pointer on the
+          // server, so omitting it means "leave the cycle alone" and there would
+          // then be no way to turn a cycle back off from this form.
+          traffic_reset_cycle: cycle,
+          expires_at: expiresAtISO,
+          enabled: isEnabled,
+          note: note
+        };
+
         const res = await fetch(api(`/api/clients/${clientId}`), {
           method: 'PUT',
           headers: {
@@ -6191,19 +6234,43 @@ function showToast(msg, type = 'info') {
         });
 
         if (res.ok) {
-          showToast('Client configuration updated successfully!', 'success');
+          // The server answers with the stored record. Compare its IP list to the
+          // one submitted: host addresses above Max Devices are trimmed on write
+          // (CIDRs are exempt), and a silent trim reads as "my address was not
+          // saved". Say which addresses actually landed instead.
+          const saved = await res.json().catch(() => null);
+          const sentIPs = payload.allowed_ips;
+          const savedIPs = (saved && Array.isArray(saved.allowed_ips)) ? saved.allowed_ips : null;
+          const trimmed = savedIPs && (savedIPs.length !== sentIPs.length ||
+            savedIPs.some(ip => !sentIPs.includes(ip)));
+          if (trimmed) {
+            showToast(
+              'Saved, but the device limit keeps ' + savedIPs.length +
+              ' host address(es): ' + (savedIPs.join(', ') || 'none') + '.',
+              'warning'
+            );
+          } else {
+            showToast('Client configuration updated successfully!', 'success');
+          }
           if (editClientModal) editClientModal.classList.add('hidden');
-          loadClients();
+          await loadClients();
         } else {
-          // "Invalid traffic reset cycle", "IP already assigned to another client",
-          // "UUID already in use" — each of those is 400 with a different fix, and the
-          // generic message here used to send the operator back to guess which.
+          // "Invalid traffic reset cycle", "IP already assigned to another
+          // client", "UUID already in use" — each is a 400 with a different fix,
+          // and the generic message used to send the operator back to guess.
           showToast(await errorMessage(res, 'Failed to update client details'), 'error');
         }
       } catch (err) {
-        showToast('Network error updating client', 'error');
+        console.error('Saving the client failed', err);
+        showToast('Could not save the client: ' + (err && err.message ? err.message : 'unexpected error'), 'error');
+      } finally {
+        editSaveInFlight = false;
       }
-    });
+    };
+
+    editClientForm.addEventListener('submit', saveEditClient);
+    document.getElementById('edit-client-save-btn')?.addEventListener('click', saveEditClient);
+
   }
 
 // =======================================================

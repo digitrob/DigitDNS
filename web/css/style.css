@@ -1036,6 +1036,13 @@ input:checked + .slider:before {
 .proxied-table {
   table-layout: fixed;
 }
+/* Row cells share one horizontal line: the domain name, the status badge and the
+ * pause/resume switch are all middle-aligned per row instead of sitting on the
+ * cell's text baseline. */
+.proxied-table th,
+.proxied-table td {
+  vertical-align: middle;
+}
 .proxied-bulk-bar {
   min-height: 1.75rem;
 }
@@ -1043,9 +1050,13 @@ input:checked + .slider:before {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.proxied-col-check { width: 2.75rem; }
-.proxied-col-status { width: 7rem; }
-.proxied-col-actions { width: 7.5rem; }
+.proxied-col-check { width: 2.5rem; }
+/* Fixed compact widths on the right-side columns; the DOMAIN column carries no
+ * width, so it absorbs all remaining space and the other columns stay pushed
+ * against its right edge however wide the panel gets. */
+.proxied-col-domain { width: auto; }
+.proxied-col-actions { width: 16rem; }
+.proxied-col-status { width: 5.5rem; }
 
 /* The sentinel the IntersectionObserver watches. It has to be in the layout — a
  * display:none element never intersects — but not visible, so it is a
@@ -1275,4 +1286,25 @@ input:checked + .slider:before {
    hatch as .upstream-col above. */
 .accent-cyan-500 {
   accent-color: rgb(var(--c-cyan-500) / 1);
+}
+
+/* Edit-client row 2: the expiry claim and the IP list are one decision — the plan
+ * ends when everything on it expires — but the IP list is the field operators
+ * actually type into, so it takes the wider share (3fr) while the read-only
+ * expiry picker keeps a compact 2fr. Plain CSS rather than an arbitrary
+ * grid-template utility: the purged Tailwind sheet cannot be regenerated here. */
+@media (min-width: 640px) {
+  .client-expiry-ip-row {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  }
+}
+
+/* Registered-IP chips on a client card. A subscriber can accumulate a long list of
+ * addresses and CIDRs, and an unbounded flex-wrap row grew the whole card with it —
+ * one client with twenty IPs pushed every other card off the page. The chip area now
+ * scrolls inside a fixed two-row window, so the card keeps the size of a client with
+ * a handful of addresses while every address stays reachable. */
+.client-ip-chips {
+  max-height: 4.5rem;
+  overflow-y: auto;
 }

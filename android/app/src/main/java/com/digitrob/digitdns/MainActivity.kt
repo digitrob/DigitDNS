@@ -192,7 +192,11 @@ private fun DigitDnsNavHost(
         // The "Add server" entry point: the same form with an empty prefill, so the
         // operator does not have to clear the active install's fields by hand.
         composable(Routes.LOGIN_ADD) {
-            LoginScreen(onAuthenticated = goToDashboard, addNewServer = true)
+            LoginScreen(
+                onAuthenticated = goToDashboard,
+                addNewServer = true,
+                onCancel = { navController.popBackStack() },
+            )
         }
 
         composable(Routes.DASHBOARD) {

@@ -66,4 +66,12 @@ class AppSettingsViewModel @Inject constructor(
         val reordered = current.toMutableList().apply { add(to, removeAt(from)) }
         viewModelScope.launch { preferences.setDashboardOrder(reordered) }
     }
-}
+
+    /** Restore the built-in dashboard card order and visibility. */
+    fun resetDashboardLayout() {
+        viewModelScope.launch { preferences.resetDashboardLayout() }
+        _state.update { it.copy(
+            dashboardOrder = DashboardCard.defaultOrder,
+            dashboardDisabled = DashboardCard.defaultDisabled,
+        ) }
+    }}

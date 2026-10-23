@@ -1396,6 +1396,28 @@ func redirectHost(host string) string {
 	return host
 }
 
+// dedupeDomains drops repeated and empty entries, preserving order. A live
+// install can carry the same domain twice (a bulk paste that repeats a line, or
+// a move between lists that added instead of replaced). Duplicates rendered twice
+// in the panel, and — worse — gave the Android Domains list two LazyColumn rows
+// with the same key, which crashes that tab on open. One entry per domain is
+// what the operator means.
+func dedupeDomains(in []string) []string {
+	if len(in) < 2 {
+		return in
+	}
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, d := range in {
+		if d == "" || seen[d] {
+			continue
+		}
+		seen[d] = true
+		out = append(out, d)
+	}
+	return out
+}
+
 // loadRulesConfig builds the effective rules state: the four custom lists, then
 // any persisted values from the policies bucket.
 func (ws *WebServer) loadRulesConfig() map[string]any {
@@ -1408,6 +1430,7 @@ func (ws *WebServer) loadRulesConfig() map[string]any {
 	rules["custom_blocked"] = []string{}
 	rules["custom_direct"] = []string{}
 	rules["custom_records"] = map[string]string{}
+	rules["custom_domain_added"] = map[string]string{}
 
 	policies, err := ws.db.ListPolicies()
 	if err != nil {
@@ -1417,7 +1440,7 @@ func (ws *WebServer) loadRulesConfig() map[string]any {
 		switch p.Key {
 		case "custom_proxied", "custom_proxied_disabled", "custom_blocked", "custom_direct":
 			if p.CustomDomains != nil {
-				rules[p.Key] = p.CustomDomains
+				rules[p.Key] = dedupeDomains(p.CustomDomains)
 			}
 		case "custom_records":
 			recs := map[string]string{}
@@ -1427,6 +1450,51 @@ func (ws *WebServer) loadRulesConfig() map[string]any {
 				}
 			}
 			rules["custom_records"] = recs
+		case "custom_domain_added":
+			added := map[string]string{}
+			for _, entry := range p.CustomDomains {
+				if k, v, ok := strings.Cut(entry, "="); ok {
+					added[strings.TrimSpace(k)] = strings.TrimSpace(v)
+				}
+			}
+			rules["custom_domain_added"] = added
+		}
+	}
+	// Seed timestamps for domains that predate the added-at policy: every custom
+	// domain still listed without a stored stamp gets one now and the map is
+	// persisted, so the UI never renders a blank date column. Pre-existing rows
+	// cannot report their true first-seen time, so their seed is the stamp's
+	// activation moment — the same value a rules save would have written.
+	added, _ := rules["custom_domain_added"].(map[string]string)
+	now := time.Now().UTC().Format(time.RFC3339)
+	missing := false
+	for _, key := range []string{"custom_proxied", "custom_proxied_disabled", "custom_blocked", "custom_direct"} {
+		domains, _ := rules[key].([]string)
+		for _, d := range domains {
+			if d == "" {
+				continue
+			}
+			if _, ok := added[d]; !ok {
+				added[d] = now
+				missing = true
+			}
+		}
+	}
+	if missing {
+		entries := make([]string, 0, len(added))
+		for d, ts := range added {
+			entries = append(entries, d+"="+ts)
+		}
+		if err := ws.db.SavePolicy(database.Policy{
+			Key:           "custom_domain_added",
+			Name:          "Custom Domain Added Times",
+			Category:      "custom",
+			Enabled:       true,
+			CustomDomains: entries,
+		}); err != nil {
+			// Non-fatal: the map stays seeded for this request even if the
+			// write fails; the next rules load retries.
+			return rules
 		}
 	}
 	return rules
@@ -1619,6 +1687,10 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	if m, ok := persisted["custom_records"].(map[string]string); ok {
 		customRecords = m
 	}
+	customAdded := map[string]string{}
+	if m, ok := persisted["custom_domain_added"].(map[string]string); ok {
+		customAdded = m
+	}
 
 	for key, val := range req {
 		switch key {
@@ -1630,6 +1702,8 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 			customBlocked = toStringSlice(val)
 		case "custom_direct":
 			customDirect = toStringSlice(val)
+		case "custom_domain_added":
+			// Server-managed; client values are ignored.
 		case "custom_records":
 			// Replace rather than merge. Merging into the persisted map meant a
 			// record could be added but never removed: the UI sends the full
@@ -1655,6 +1729,45 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	// checked and the first failure answers 500 BEFORE the live matcher is
 	// touched (audit fix, v2.8): applying a rule that did not persist, while
 	// telling the operator it saved, hides the failure until a restart reverts it.
+	// Store one entry per domain per list. The panel tolerates duplicates but the
+	// Android Domains list keys its rows by status+domain, so a duplicate crashes
+	// that screen when it opens.
+	customProxied = dedupeDomains(customProxied)
+	customProxiedDisabled = dedupeDomains(customProxiedDisabled)
+	customBlocked = dedupeDomains(customBlocked)
+	customDirect = dedupeDomains(customDirect)
+
+	// Recompute the added-at map: every domain still present keeps its timestamp
+	// (or gets one now if it is new); domains no longer in any list are dropped.
+	allDomains := map[string]bool{}
+	for _, d := range customProxied {
+		allDomains[d] = true
+	}
+	for _, d := range customProxiedDisabled {
+		allDomains[d] = true
+	}
+	for _, d := range customBlocked {
+		allDomains[d] = true
+	}
+	for _, d := range customDirect {
+		allDomains[d] = true
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for d := range allDomains {
+		if _, ok := customAdded[d]; !ok {
+			customAdded[d] = now
+		}
+	}
+	for d := range customAdded {
+		if !allDomains[d] {
+			delete(customAdded, d)
+		}
+	}
+	addedEntries := make([]string, 0, len(customAdded))
+	for d, ts := range customAdded {
+		addedEntries = append(addedEntries, d+"="+ts)
+	}
+
 	customSaves := []database.Policy{
 		{Key: "custom_proxied", Name: "Custom Proxied Domains", Category: "custom", Enabled: true, CustomDomains: customProxied},
 		// Disabled proxied domains are persisted alongside the active list but not
@@ -1669,6 +1782,7 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 		recordEntries = append(recordEntries, d+"="+ip)
 	}
 	customSaves = append(customSaves, database.Policy{Key: "custom_records", Name: "Custom A Records", Category: "custom", Enabled: true, CustomDomains: recordEntries})
+	customSaves = append(customSaves, database.Policy{Key: "custom_domain_added", Name: "Custom Domain Added Times", Category: "custom", Enabled: true, CustomDomains: addedEntries})
 	for _, p := range customSaves {
 		if err := ws.db.SavePolicy(p); err != nil {
 			httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not save the policy settings")

@@ -58,6 +58,7 @@ fun LoginScreen(
     onAuthenticated: () -> Unit,
     addNewServer: Boolean = false,
     sessionExpired: Boolean = false,
+    onCancel: (() -> Unit)? = null,
     viewModel: LoginViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -87,6 +88,8 @@ fun LoginScreen(
                 .padding(horizontal = 24.dp, vertical = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            onCancel?.let { cancel -> CancelAddServerRow(onLeave = viewModel::cancelAddServer, onCancel = cancel) }
+
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 LoginHeader()
             }
@@ -157,6 +160,14 @@ fun LoginScreen(
 }
 
 /** The branded header: shield mark, wordmark and the one-line purpose line. */
+/** The way out of the Add-server detour: drop anything staged, then leave. */
+@Composable
+private fun CancelAddServerRow(onLeave: () -> Unit, onCancel: () -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+        TextButton(onClick = { onLeave(); onCancel() }) { Text("Cancel") }
+    }
+}
+
 @Composable
 private fun LoginHeader() {
     Row(verticalAlignment = Alignment.CenterVertically) {

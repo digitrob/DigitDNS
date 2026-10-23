@@ -102,9 +102,13 @@ fun PanelDialog(
  * or has to be squeezed into a scrolling box. This one owns its window instead: it
  * takes 96% of the width, pads by 16dp and grows to whatever height the content
  * needs. The whole card scrolls as one piece, so the buttons travel with the form
- * when the keyboard is up and nothing is left behind.
+ * when the keyboard is up and nothing is left behind — pass [scrollable] = false for
+ * a host that arranges its own fixed-height body with its own scrolling region, so
+ * the card scroll and the body scroll cannot compete (nested vertical scrolls are a
+ * runtime constraint the panel learned the hard way).
  */
 @Composable
+@Suppress("LongParameterList")
 fun PanelWideDialog(
     onDismissRequest: () -> Unit,
     confirmButton: @Composable () -> Unit,
@@ -113,6 +117,7 @@ fun PanelWideDialog(
     title: @Composable (() -> Unit)? = null,
     text: @Composable (() -> Unit)? = null,
     solid: Boolean = true,
+    scrollable: Boolean = true,
 ) {
     val colors = DigitDnsTheme.colors
     val container = if (solid) {
@@ -133,12 +138,19 @@ fun PanelWideDialog(
             Column(
                 modifier = Modifier
                     .padding(12.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier),
             ) {
                 title?.let {
                     Box(modifier = Modifier.padding(bottom = 12.dp)) { it() }
                 }
-                text?.invoke()
+                if (scrollable) {
+                    text?.invoke()
+                } else {
+                    // A fixed-height host owns its scroll region inside `text`, so the
+                    // body takes whatever height the card has left over and the footer
+                    // stays on the visible bottom edge instead of flowing off it.
+                    Box(modifier = Modifier.weight(1f)) { text?.invoke() }
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

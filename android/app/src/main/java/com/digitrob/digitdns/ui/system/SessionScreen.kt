@@ -42,16 +42,28 @@ fun SessionScreen(
     // No scroll/fill of its own: this is embedded under Servers' scrolling column, and
     // a second vertical scroll container inside one is a runtime constraint crash.
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SessionIdentityCard(state)
-        SignOutButton(
-            isSigningOut = state.isSigningOut,
-            onClick = { confirming = true },
-        )
-        Text(
-            text = CONSEQUENCE,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (state.isAuthenticated) {
+            SessionIdentityCard(state)
+            SignOutButton(
+                isSigningOut = state.isSigningOut,
+                onClick = { confirming = true },
+            )
+            Text(
+                text = CONSEQUENCE,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            // A server selected in the saved list but never authenticated is not a
+            // session — showing its host in the identity box (and offering sign-out
+            // for a session that does not exist) claimed otherwise. It stays visible
+            // in the Saved servers list, which is where it belongs.
+            Text(
+                text = "Not signed in to a server.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 
     if (confirming) {

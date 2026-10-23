@@ -99,7 +99,7 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
     // Live feed: keep the list pinned to the top as new entries arrive, but only
     // when the user is already at the top so reading older rows is not hijacked.
     LaunchedEffect(state.buffer.size) {
-        if (listState.firstVisibleItemIndex == 0 && state.buffer.isNotEmpty()) {
+        if (!state.paused && !listState.isScrollInProgress && state.buffer.isNotEmpty()) {
             listState.animateScrollToItem(0)
         }
     }
@@ -286,7 +286,10 @@ private fun QueryRow(event: QueryEvent, onAction: (RouteAction, String) -> Unit)
                         append(event.accountName.ifBlank { event.clientIp.ifBlank { "unknown" } })
                         if (event.protocol.isNotBlank()) append(" · ${event.protocol}")
                         if (event.latencyMs > 0) append(" · ${formatLatency(event.latencyMs)}")
-                        if (event.cached) append(" · cached")
+                        if (event.timestamp.isNotBlank()) {
+                            val t = event.timestamp.substringAfter('T').substringBefore('.').trimEnd('Z')
+                            append(" · $t")
+                        }
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

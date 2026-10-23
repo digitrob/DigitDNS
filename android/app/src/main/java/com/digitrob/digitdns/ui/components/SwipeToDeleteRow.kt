@@ -49,19 +49,32 @@ private const val SWIPE_THRESHOLD = 0.45f
  * the confirmation is what makes the gesture safe, so it is not optional.
  */
 @Composable
+@Suppress("LongParameterList")
 fun SwipeToDeleteRow(
     onDelete: () -> Unit,
     confirmTitle: String,
     modifier: Modifier = Modifier,
     confirmText: String? = null,
     confirmLabel: String = "Delete",
+    /**
+     * How much of the row a swipe must cross before it counts as a delete. The panel
+     * default is a deliberate half-row drag; a row living inside a vertical scroller
+     * can pass a higher threshold so a diagonal scroll never settles as a swipe.
+     */
+    threshold: Float = SWIPE_THRESHOLD,
+    /**
+     * False switches the swipe off entirely without removing the row or its dialog.
+     * A host that is itself scrolling (the dashboard grid) sets this while a scroll is
+     * in flight, so reading the page cannot arm a delete.
+     */
+    enabled: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var confirming by remember { mutableStateOf(false) }
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { it == SwipeToDismissBoxValue.EndToStart },
-        positionalThreshold = { totalDistance -> totalDistance * SWIPE_THRESHOLD },
+        positionalThreshold = { totalDistance -> totalDistance * threshold },
     )
     val dismissed = state.currentValue == SwipeToDismissBoxValue.EndToStart
 
@@ -75,6 +88,7 @@ fun SwipeToDeleteRow(
         state = state,
         modifier = modifier.fillMaxWidth(),
         enableDismissFromStartToEnd = false,
+        gesturesEnabled = enabled,
         backgroundContent = { DeleteBackground(state = state) },
     ) {
         content()

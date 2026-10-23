@@ -2,6 +2,7 @@ package com.digitrob.digitdns.ui.system
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.digitrob.digitdns.core.network.AuthState
 import com.digitrob.digitdns.data.AuthRepository
 import com.digitrob.digitdns.domain.model.CredentialMode
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -21,6 +22,12 @@ data class SessionUiState(
     val credentialMode: CredentialMode = CredentialMode.SESSION,
     /** True when a username/password pair is stored for silent re-login. */
     val credentialsSaved: Boolean = false,
+    /**
+     * True only when the app holds a live credential for the active install. A saved
+     * server the operator merely tapped — and never authenticated to — is active for
+     * the login form's sake, but it is not a session and must not be presented as one.
+     */
+    val isAuthenticated: Boolean = false,
     val isSigningOut: Boolean = false,
 ) {
     val credentialLabel: String
@@ -42,6 +49,7 @@ data class SessionUiState(
 @HiltViewModel
 class SessionViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val authState: AuthState,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SessionUiState())
@@ -56,13 +64,17 @@ class SessionViewModel @Inject constructor(
             combine(
                 authRepository.activeConnection,
                 authRepository.credentialRevision,
-            ) { connection, _ -> connection }.collect { connection ->
+                authState.credentialRevision,
+            ) { connection, _, _ -> connection }.collect { connection ->
                 _state.update {
                     it.copy(
                         authority = connection?.authority ?: "",
                         adminPath = connection?.adminPath ?: "",
                         credentialMode = connection?.credentialMode ?: CredentialMode.SESSION,
                         credentialsSaved = connection?.let { authRepository.hasSavedCredentials(it.id) } == true,
+                        isAuthenticated = connection != null &&
+                            authState.activeId == connection.id &&
+                            authState.hasCredential,
                     )
                 }
             }

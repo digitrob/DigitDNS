@@ -61,6 +61,8 @@ internal fun UpstreamRacersCard(
     onBenchmark: () -> Unit,
     onAdd: suspend (String) -> String?,
     onRemove: suspend (String) -> String?,
+    /** False while the dashboard grid is scrolling: reading the page must not arm a delete. */
+    swipeEnabled: Boolean = true,
 ) {
     val colors = DigitDnsTheme.colors
     var newAddress by remember { mutableStateOf("") }
@@ -108,6 +110,7 @@ internal fun UpstreamRacersCard(
                     UpstreamRow(
                         rank = index + 1,
                         stat = stat,
+                        swipeEnabled = swipeEnabled,
                         onRemove = {
                             scope.launch {
                                 busy = true
@@ -191,13 +194,23 @@ private fun UpstreamAddRow(
 }
 
 @Composable
-private fun UpstreamRow(rank: Int, stat: UpstreamStat, onRemove: () -> Unit) {
+private fun UpstreamRow(
+    rank: Int,
+    stat: UpstreamStat,
+    swipeEnabled: Boolean,
+    onRemove: () -> Unit,
+) {
     val colors = DigitDnsTheme.colors
     SwipeToDeleteRow(
         onDelete = onRemove,
         confirmTitle = "Remove upstream?",
         confirmText = "${stat.address} will be removed from the resolver pool.",
         confirmLabel = "Remove",
+        // 0.85 of the row, not the panel's 0.45: the card sits inside the scrolling
+        // dashboard grid, and a diagonal scroll used to settle as a swipe and ask to
+        // delete an upstream nobody meant to touch.
+        threshold = 0.85f,
+        enabled = swipeEnabled,
     ) {
         Row(
             modifier = Modifier

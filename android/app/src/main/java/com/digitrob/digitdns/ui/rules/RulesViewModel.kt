@@ -77,10 +77,14 @@ data class RulesUiState(
     /** Every editable domain, tagged with its status. */
     private val allRows: List<DomainRow>
         get() = buildList {
-            lists.proxied.forEach { add(DomainRow(it, DomainStatus.PROXY)) }
-            lists.proxiedDisabled.forEach { add(DomainRow(it, DomainStatus.PAUSED)) }
-            lists.blocked.forEach { add(DomainRow(it, DomainStatus.BLOCKED)) }
-            lists.direct.forEach { add(DomainRow(it, DomainStatus.DIRECT)) }
+            // distinct(): the saved list on a live install can carry the same domain
+            // twice (the panel accepts a paste that repeats an entry), and two rows
+            // with the same LazyColumn key crash the Domains tab on open. One row per
+            // domain is also what the operator means.
+            lists.proxied.distinct().forEach { add(DomainRow(it, DomainStatus.PROXY)) }
+            lists.proxiedDisabled.distinct().forEach { add(DomainRow(it, DomainStatus.PAUSED)) }
+            lists.blocked.distinct().forEach { add(DomainRow(it, DomainStatus.BLOCKED)) }
+            lists.direct.distinct().forEach { add(DomainRow(it, DomainStatus.DIRECT)) }
         }
 
     /** The domains after the active chip, search and sort, ready to render. */

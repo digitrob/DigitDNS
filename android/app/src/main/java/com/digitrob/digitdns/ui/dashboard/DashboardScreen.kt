@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -207,8 +208,14 @@ private fun DashboardGrid(
     onAddUpstream: suspend (String) -> String?,
     onRemoveUpstream: suspend (String) -> String?,
 ) {
+    // The grid state is hoisted for one reason: the racer card's swipe-to-delete has
+    // to know a scroll is in flight, or a diagonal scroll can settle as a swipe and pop
+    // the remove-upstream confirmation.
+    val gridState = rememberLazyGridState()
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
+        state = gridState,
         modifier = Modifier.fillMaxSize().padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -231,6 +238,7 @@ private fun DashboardGrid(
                         onBenchmark = onBenchmark,
                         onAdd = onAddUpstream,
                         onRemove = onRemoveUpstream,
+                        swipeEnabled = !gridState.isScrollInProgress,
                     )
                 }
                 DashboardCard.RESOLVER_LATENCY -> item(span = { GridItemSpan(maxLineSpan) }) {
@@ -627,7 +635,7 @@ private const val CPU_WARNING_PERCENT = 70.0
  * unequal cards leave a visible gap beside the shorter one. Pinning a common floor makes
  * the grid read as a grid.
  */
-private val METRIC_CARD_MIN_HEIGHT = 128.dp
+private val METRIC_CARD_MIN_HEIGHT = 166.dp
 
 /** Resolver-latency p50 at/above this reads red — the panel's own threshold. */
 private const val RESOLVER_LATENCY_DANGER_MS = 60.0

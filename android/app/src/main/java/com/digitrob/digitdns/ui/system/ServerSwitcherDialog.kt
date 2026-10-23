@@ -265,7 +265,7 @@ private fun ManageServersDialog(
     PanelWideDialog(
         modifier = Modifier.fillMaxHeight(0.92f),
         onDismissRequest = onDismiss,
-        title = { Text("Manage servers") },
+        scrollable = false,
         text = {
             ServersScreen(
                 onLoggedOut = onLoginRequired,
@@ -277,5 +277,6 @@ private fun ManageServersDialog(
             )
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
