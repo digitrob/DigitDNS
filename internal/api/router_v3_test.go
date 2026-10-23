@@ -475,7 +475,8 @@ func TestV3_ClientsContract31(t *testing.T) {
 	}
 }
 
-func TestV3_ClientsListPagination(t *testing.T) {	apiInst, _, _, cleanup := setupTestAPI(t)
+func TestV3_ClientsListPagination(t *testing.T) {
+	apiInst, _, _, cleanup := setupTestAPI(t)
 	defer cleanup()
 	mux := http.NewServeMux()
 	apiInst.RegisterRoutes(mux)
