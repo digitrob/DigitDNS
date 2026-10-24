@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.4.6] — Certificate controls in one place, and a faster proxied list
+
+### ✨ Added
+- **Certificate renewal is now on the SSL/TLS page.** "Certificate Auto-renew" sits between "Issue a certificate" and "DoT/DoH Auto-renew", with the line *Renew Let's Encrypt SSL certificate.* It is the same switch that used to live on the Subscription page — it is only the home that moved, so nothing about how the certificate renews has changed.
+- **Instant search on the Proxied Domains page (web).** The sort menu, the domain count, a new search box and the Pause/Resume/Remove buttons now share one row. Typing narrows the list on every keystroke, exactly like the Live Query Log, and the count tells you how many matches there are.
+- **Autocomplete when adding a domain (web).** The Add field suggests names that are already listed, and the table narrows as you type, so a duplicate is visible before you press Add. Pressing Add on one anyway now says "… is already listed" instead of quietly doing nothing.
+
+### 🔄 Changed
+- **Both renewal switches now tell the truth.** The DoT/DoH switch used to start "on" without asking the server; it now reads the stored setting. The new certificate switch does the same.
+- **"DoT/DoH Auto-renew"** is capitalised to match the other card titles.
+- **The server switch on the dashboard** sits in the server-IP row, lined up under the ONLINE badge instead of floating below it.
+- **Select-all on Proxied Domains** now selects only the rows the filter is showing. A selection survives filtering and clearing the box, so you can search in batches and act on all of them.
+- **The SSL/TLS page** uses slightly tighter spacing so the extra card still keeps the whole form on one screen.
+- **The Subscription page** keeps a single "Subscription portal" switch.
+
+### 🐛 Fixed
+- **Overlapping text on the Subscription page.** The two switches were being drawn on top of each other in the same card, which produced the garbled "Auto-renew certificate / Subscription portal" text. Moving the certificate switch to SSL/TLS leaves one clean row, and the second switch is reachable again.
+- **A stray suggestion dropdown on the proxied search box.** It now behaves exactly like the live-log search: type and the list narrows, with no browser popup in the way.
+
+---
+
 ## 🏷️ [v3.4.5] — Dashboard, server management, and client editor polish
 
 ### ✨ Added

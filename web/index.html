@@ -1217,8 +1217,14 @@
                it keeps its content width. `flex-1 min-w-0` on the input lets it give
                way rather than evicting the two shrink-0 buttons. -->
           <div class="flex gap-2">
-            <input type="text" id="new-proxied-input" aria-label="New proxied domain" placeholder="e.g. *.newgame.com or api.target.com"
+            <input type="text" id="new-proxied-input" list="proxied-add-suggestions"
+              autocomplete="off" aria-label="New proxied domain" placeholder="e.g. *.newgame.com or api.target.com"
               class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
+            <!-- Filled with the configured domains by renderProxiedSuggestions. Picking
+                 one from the list also filters the table (the box feeds the same filter
+                 as the search field), which is what makes an existing domain obvious
+                 before Add is pressed. -->
+            <datalist id="proxied-add-suggestions"></datalist>
             <button id="add-proxied-btn" class="shrink-0 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Add</button>
             <button type="button" id="bulk-proxied-btn"
               class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">
@@ -1226,12 +1232,21 @@
             </button>
           </div>
 
-          <!-- Sort for the routing list. A proxy list can run to thousands of
-               entries, so the panel renders a fixed batch at a time: changing
-               the sort re-slices, and the sentinel below appends the next batch
-               as it scrolls into view. -->
-          <div class="flex flex-wrap items-center gap-2">
-            <label class="flex items-center gap-1.5 text-[11px] text-slate-400">
+          <!-- Sort, the live filter, and the bulk actions share one row. They used to
+               be three stacked rows — add, then sort, then bulk — above a table that
+               already scrolls in its own viewport, so the controls cost more height
+               than the list on a laptop panel. Keeping one row lifts the whole page by
+               the height of the two rows it replaces. The row still wraps: below about
+               900px the filter gives way first, then the bulk group drops to a line of
+               its own, kept at the end edge by .proxied-bulk-bar's auto start margin.
+               Changing the sort re-slices from the top, like it always has; the
+               sentinel below appends the next batch as the list scrolls.
+
+               `.proxied-controls` / `.proxied-search-box` are plain CSS in style.css
+               because the purged utility sheet cannot express a shrinking flex basis
+               with a floor without a regeneration. -->
+          <div class="proxied-controls">
+            <label class="flex shrink-0 items-center gap-1.5 text-[11px] text-slate-400">
               Sort
               <select id="proxied-sort" aria-label="Sort proxied domains"
                 class="bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
@@ -1242,21 +1257,37 @@
                 <option value="status">Status (on first)</option>
               </select>
             </label>
-            <span id="proxied-count" class="text-[11px] text-slate-500"></span>
-          </div>
+            <span id="proxied-count" class="shrink-0 text-[11px] text-slate-500"></span>
 
-          <!-- Bulk actions over the selected rows. The buttons carry .proxied-bulk-btn
-               so their disabled state is styled in style.css rather than with utility
-               classes the purged sheet would have to be regenerated to contain. They
-               are enabled by updateProxiedBulkBar as the selection changes. -->
-          <div class="proxied-bulk-bar flex flex-wrap items-center justify-end gap-2">
-            <span id="proxied-selected-count" class="text-[11px] text-slate-500">No domains selected</span>
-            <button type="button" id="proxied-bulk-pause"
-              class="proxied-bulk-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">Pause Selected</button>
-            <button type="button" id="proxied-bulk-resume"
-              class="proxied-bulk-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition">Resume Selected</button>
-            <button type="button" id="proxied-bulk-remove"
-              class="proxied-bulk-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-red-500/10 text-red-400 border border-red-500/30 text-[11px] font-semibold transition">Remove Selected</button>
+            <!-- Filters the table as it is typed, the same interaction and logic as the
+                 live log's search: a case-insensitive substring of the domain, applied
+                 on every keystroke. Deliberately no suggestion dropdown here — the live
+                 log has none, and a native datalist popup over the table read as a
+                 different control rather than the same one. autocomplete/autocapitalize
+                 are off as well, so the browser's own recent-input popup cannot reappear
+                 at the end of the field. -->
+            <div class="proxied-search-box">
+              <input type="text" id="proxied-search"
+                autocomplete="off" autocapitalize="off" spellcheck="false"
+                aria-label="Search proxied domains"
+                placeholder="Search domains..."
+                class="w-full ps-8 pe-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono">
+              <i data-feather="search" class="w-3.5 h-3.5 text-slate-500 absolute start-2.5 top-2.5"></i>
+            </div>
+
+            <!-- Bulk actions over the selected rows. The buttons carry .proxied-bulk-btn
+                 so their disabled state is styled in style.css rather than with utility
+                 classes the purged sheet would have to be regenerated to contain. They
+                 are enabled by updateProxiedBulkBar as the selection changes. -->
+            <div class="proxied-bulk-bar flex flex-wrap items-center justify-end gap-2">
+              <span id="proxied-selected-count" class="text-[11px] text-slate-500">No domains selected</span>
+              <button type="button" id="proxied-bulk-pause"
+                class="proxied-bulk-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">Pause Selected</button>
+              <button type="button" id="proxied-bulk-resume"
+                class="proxied-bulk-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition">Resume Selected</button>
+              <button type="button" id="proxied-bulk-remove"
+                class="proxied-bulk-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-red-500/10 text-red-400 border border-red-500/30 text-[11px] font-semibold transition">Remove Selected</button>
+            </div>
           </div>
 
           <!-- The scroll region and its sentinel. renderProxiedList rewrites

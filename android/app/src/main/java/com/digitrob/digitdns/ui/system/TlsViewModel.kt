@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
 import com.digitrob.digitdns.core.network.CertView
 import com.digitrob.digitdns.core.network.ConfigResponse
+import com.digitrob.digitdns.core.network.SubscriptionSaveRequest
 import com.digitrob.digitdns.data.ConfigRepository
+import com.digitrob.digitdns.data.SubscriptionRepository
 import com.digitrob.digitdns.data.TlsRepository
 import com.digitrob.digitdns.domain.model.AcmeRun
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,6 +27,13 @@ data class TlsUiState(
     val purpose: String = "panel",
     val run: AcmeRun? = null,
     val autoRenew: Boolean = true,
+    /**
+     * The subscriber portal certificate's renewal switch. It saves through
+     * `POST settings/subscription` (the same endpoint the Subscription page used),
+     * because that is the flag the daemon's subscription renewal loop reads.
+     */
+    val subscriptionAutoRenew: Boolean = true,
+    val certAutoRenewBusy: Boolean = false,
     /** The settings snapshot, used for the on-disk certificates and domain prefill. */
     val config: ConfigResponse? = null,
     val working: Boolean = false,
@@ -77,6 +86,7 @@ data class TlsUiState(
 class TlsViewModel @Inject constructor(
     private val repository: TlsRepository,
     private val configRepository: ConfigRepository,
+    private val subscriptionRepository: SubscriptionRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(TlsUiState())
@@ -118,6 +128,10 @@ class TlsViewModel @Inject constructor(
                 current.copy(
                     config = config,
                     domain = current.domain.ifBlank { current.domainsByPurpose[current.purpose].orEmpty() },
+                    // Both renewal switches tell the truth from the same snapshot: the
+                    // DoT flag used to default to "on" without ever being read back.
+                    autoRenew = config.tls?.dotAutoRenew ?: current.autoRenew,
+                    subscriptionAutoRenew = config.subscription?.autoRenewAcme ?: current.subscriptionAutoRenew,
                 )
             }
         }
@@ -182,6 +196,63 @@ class TlsViewModel @Inject constructor(
                 _state.update { it.copy(error = e.userMessage) }
             } catch (e: IOException) {
                 _state.update { it.copy(error = e.message ?: "Could not change auto-renew.") }
+            }
+        }
+    }
+
+    /**
+     * The subscriber certificate's renewal switch. Its state lives in the subscription
+     * settings, not the TLS record, so the flip re-saves that snapshot (the endpoint
+     * replaces every field) with only this flag changed. The settings screen no longer
+     * sends the flag at all, so the two pages can never disagree: this is the only
+     * writer.
+     */
+    fun setSubscriptionAutoRenew(enabled: Boolean) {
+        val sub = _state.value.config?.subscription ?: return
+        val previous = _state.value.subscriptionAutoRenew
+        viewModelScope.launch {
+            // Flip immediately: the save is a round trip, and a switch that waits for
+            // the server reads as "the tap did nothing" and invites a second tap.
+            _state.update {
+                it.copy(subscriptionAutoRenew = enabled, certAutoRenewBusy = true, error = null, message = null)
+            }
+            try {
+                val result = subscriptionRepository.save(
+                    SubscriptionSaveRequest(
+                        enabled = sub.enabled,
+                        domain = sub.domain.trim(),
+                        port = sub.port,
+                        uriPath = sub.uriPath.ifBlank { "/sub" },
+                        title = sub.title.trim(),
+                        themeCss = if (sub.themeCssSource == "inline") sub.themeCss else "",
+                        themeCssSource = sub.themeCssSource,
+                        themeCssPath = if (sub.themeCssSource == "local") sub.themeCssPath.trim() else "",
+                        themeCssUrl = if (sub.themeCssSource == "url") sub.themeCssUrl.trim() else "",
+                        autoRenewAcme = enabled,
+                    ),
+                )
+                // Trust the value the server reports over the one we asked for; a
+                // normaliser or an older daemon can answer differently.
+                val applied = result.settings?.autoRenewAcme ?: enabled
+                _state.update {
+                    it.copy(
+                        subscriptionAutoRenew = applied,
+                        certAutoRenewBusy = false,
+                        message = if (applied) "Certificate auto-renew is on." else "Certificate auto-renew is off.",
+                    )
+                }
+            } catch (e: ApiException) {
+                _state.update {
+                    it.copy(subscriptionAutoRenew = previous, certAutoRenewBusy = false, error = e.userMessage)
+                }
+            } catch (e: IOException) {
+                _state.update {
+                    it.copy(
+                        subscriptionAutoRenew = previous,
+                        certAutoRenewBusy = false,
+                        error = e.message ?: "Could not change certificate auto-renew.",
+                    )
+                }
             }
         }
     }

@@ -98,6 +98,10 @@ fun DashboardScreen(
         state.error != null && state.stats == null -> ErrorState(state.error!!)
         else -> Column(modifier = Modifier.fillMaxSize()) {
             PanelScreenHeader()
+            // The switcher shares the IP row and is inset by the same 12dp the header's
+            // padding gives the connection pill, so its glyph sits directly under the
+            // ONLINE badge. It used to be flush with the screen edge, which put it
+            // visibly to the right of the pill above it.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -106,7 +110,7 @@ fun DashboardScreen(
                 IconButton(
                     onClick = { showServerSwitcher = true },
                     modifier = Modifier
-                        .padding(start = 8.dp)
+                        .padding(start = 8.dp, end = 12.dp)
                         .size(48.dp),
                 ) {
                     Icon(

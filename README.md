@@ -233,6 +233,9 @@ built-in "recommended" list is forced on you. Manage it all from the dashboard:
   unit, with optional icons.
 - **Bulk import** — paste or upload a whole list at once. Wildcards (`*.foo.com`)
   and comments (`#`) are supported.
+- **Search and autocomplete** — the proxied list narrows as you type, exactly
+  like the live query log, and the Add field suggests names that are already
+  listed so duplicate entries are obvious before you save one.
 
 A handful of high-bandwidth services (Discord voice, Steam's connection
 manager, Google update CDNs) are always resolved directly so game downloads
@@ -343,7 +346,9 @@ The web panel manages everything:
   Editing a client gives you a full-width IP list, and a client with many
   addresses keeps a normal-sized card (the address chips scroll)
 - **Upstreams** — add and benchmark DNS upstreams on any transport
-- **Settings** — 2FA, hidden path, certificates, portal branding, API keys
+- **Settings** — 2FA, hidden path, certificates, portal branding, API keys.
+  Certificate renewal switches (Let's Encrypt and DoT/DoH) live together on the
+  SSL/TLS page, next to issuance
 
 Subscriber-facing pages (where clients check their own status) can be
 customized with your own domain, title, and CSS to match your branding.
@@ -357,7 +362,7 @@ customized with your own domain, title, and CSS to match your branding.
 DigitDNS also ships a native Android companion app — the same control surface as
 the web panel, in your pocket, talking to your server over the REST API and the
 live event stream. It is a separate product on its own version line
-(`android-v3.4.5` and friends), side-loaded from the GitHub release page rather
+(`android-v3.4.6` and friends), side-loaded from the GitHub release page rather
 than distributed through Play.
 
 **What it does (feature parity with the web panel):**
@@ -378,7 +383,8 @@ than distributed through Play.
 - **Live Query Log** — the same live feed as the panel, with search, filters,
   sorting, pause/resume and quick actions.
 - **Diagnostics** — run the server diagnostic suite against your own targets.
-- **Settings** — access lists, TLS/ACME certificate issuance and renewal,
+- **Settings** — access lists, TLS/ACME certificate issuance and renewal (the
+  "Certificate Auto-renew" and "DoT/DoH Auto-renew" switches sit together there),
   subscription/portal settings, server connection management. Manage servers
   keeps three saved servers on screen (the list scrolls for more), the tail with
   Add server, signed-in details and Sign out sits above Cancel/Done, and the

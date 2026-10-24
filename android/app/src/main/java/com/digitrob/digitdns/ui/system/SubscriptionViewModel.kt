@@ -25,7 +25,6 @@ data class SubscriptionUiState(
     val themeCssUrl: String = "",
     val themeCss: String = "",
     val usePanelCertificate: Boolean = true,
-    val autoRenewAcme: Boolean = true,
     val origin: String = "",
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
@@ -66,7 +65,6 @@ class SubscriptionViewModel @Inject constructor(
                         themeCssUrl = s.themeCssUrl,
                         themeCss = s.themeCss,
                         usePanelCertificate = s.usePanelCertificate,
-                        autoRenewAcme = s.autoRenewAcme,
                         isLoading = false,
                     )
                 }
@@ -86,7 +84,6 @@ class SubscriptionViewModel @Inject constructor(
     fun onThemePathChange(v: String) = _state.update { it.copy(themeCssPath = v) }
     fun onThemeUrlChange(v: String) = _state.update { it.copy(themeCssUrl = v) }
     fun onThemeCssChange(v: String) = _state.update { it.copy(themeCss = v) }
-    fun onAutoRenewChange(v: Boolean) = _state.update { it.copy(autoRenewAcme = v) }
     fun dismissMessage() = _state.update { it.copy(savedMessage = null) }
 
     fun save() {
@@ -105,7 +102,6 @@ class SubscriptionViewModel @Inject constructor(
                         themeCssSource = s.themeCssSource,
                         themeCssPath = if (s.themeCssSource == "local") s.themeCssPath.trim() else "",
                         themeCssUrl = if (s.themeCssSource == "url") s.themeCssUrl.trim() else "",
-                        autoRenewAcme = s.autoRenewAcme,
                     ),
                 )
                 _state.update {

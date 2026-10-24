@@ -69,8 +69,8 @@ fun TlsScreen(viewModel: TlsViewModel = hiltViewModel()) {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             state.error?.let {
                 Text(it, color = DigitDnsTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
@@ -78,6 +78,12 @@ fun TlsScreen(viewModel: TlsViewModel = hiltViewModel()) {
 
             IssueCard(state, viewModel)
             state.run?.takeIf { it.running }?.let { RunCard(it) }
+            SubscriptionAutoRenewCard(
+                enabled = state.subscriptionAutoRenew,
+                busy = state.certAutoRenewBusy,
+                ready = state.config?.subscription != null,
+                onToggle = viewModel::setSubscriptionAutoRenew,
+            )
             AutoRenewCard(state.autoRenew, viewModel::setAutoRenew)
         }
     }
@@ -171,12 +177,47 @@ private fun IssueCard(state: TlsUiState, viewModel: TlsViewModel) {
     }
 }
 
+/**
+ * The subscriber portal certificate's renewal switch. It sits next to the DoT/DoH
+ * switch because both are certificate-renewal policy, even though this one persists in
+ * the subscription settings rather than the TLS record.
+ *
+ * [ready] is false until the settings snapshot lands: the save has to send the whole
+ * subscription record, so a flip before then has nothing to write back. The switch is
+ * disabled rather than silently ignoring the tap.
+ */
+@Composable
+private fun SubscriptionAutoRenewCard(
+    enabled: Boolean,
+    busy: Boolean,
+    ready: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    PanelCard(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("Certificate Auto-renew", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "Renew Let's Encrypt SSL certificate.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onToggle,
+                enabled = ready && !busy,
+            )
+        }
+    }
+}
+
 @Composable
 private fun AutoRenewCard(autoRenew: Boolean, onToggle: (Boolean) -> Unit) {
     PanelCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("DoT/DoH auto-renew", style = MaterialTheme.typography.titleMedium)
+                Text("DoT/DoH Auto-renew", style = MaterialTheme.typography.titleMedium)
                 Text(
                     text = "Renew the DNS-over-TLS/HTTPS certificate automatically.",
                     style = MaterialTheme.typography.bodySmall,

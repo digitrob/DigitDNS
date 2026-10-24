@@ -1033,6 +1033,7 @@ function renderConfig(cfg) {
   updateCodeSnippets(pubIP, cfg.server?.api_key || 'digitdns_live_your_key_here');
 
   // Render Custom Rules Lists (with safe optional chaining)
+  renderProxiedSuggestions();
   renderProxiedList();
   proxiedFillViewport();
   renderList('custom-blocked-list', cfg.rules?.custom_blocked || [], 'remove-blocked');
@@ -1194,9 +1195,54 @@ function proxiedOrderedRows() {
   }
 }
 
+// proxiedFilterNeedle is what the table is currently narrowed to, or '' for the
+// whole list. Two inputs feed it: the search box in the control row, and the Add
+// box above it — typing a name into Add is how an operator discovers that the
+// domain already exists before creating a duplicate, so it narrows the same list.
+// The search box wins when both carry text, because it is the control the operator
+// reached for deliberately; Add is cleared by the add itself.
+function proxiedFilterNeedle() {
+  const search = (document.getElementById('proxied-search')?.value || '').trim().toLowerCase();
+  if (search) return search;
+  return (document.getElementById('new-proxied-input')?.value || '').trim().toLowerCase();
+}
+
+// proxiedFilteredRows is proxiedOrderedRows in the operator's order, narrowed to
+// the rows matching proxiedFilterNeedle. Everything that draws or selects rows
+// reads this, so the count, the empty state, the select-all box and the bulk
+// selection all agree on what "the list" means while a filter is active.
+function proxiedFilteredRows() {
+  const ordered = proxiedOrderedRows();
+  const needle = proxiedFilterNeedle();
+  if (!needle) return ordered;
+  return ordered.filter((r) => r.domain.toLowerCase().includes(needle));
+}
+
+// proxiedSuggestions fills the datalist behind the Add box with the domains that are
+// already configured. Called once per config render, never per keystroke: rewriting a
+// datalist while its own suggestion popup is open dismisses the popup under the
+// operator's finger. The cap keeps the list quick to open — the browser matches on
+// prefix, so the useful tail of a very large list would never be read.
+//
+// The search box has no datalist at all: it narrows the table as it is typed, exactly
+// like the live log's search, with no suggestion popup in front of the list.
+const PROXIED_SUGGESTION_CAP = 500;
+
+function renderProxiedSuggestions() {
+  const domains = proxiedOrderedRows()
+    .map((r) => r.domain)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    .slice(0, PROXIED_SUGGESTION_CAP);
+  const options = domains.map((d) => `<option value="${escapeHTML(d)}"></option>`).join('');
+  const list = document.getElementById('proxied-add-suggestions');
+  if (list) list.innerHTML = options;
+}
+
 // proxiedSelected holds the domains ticked for a bulk action. It is a set of domain
-// strings rather than row indexes: a re-render (a sort, the next batch, a save) would
-// otherwise move the selection onto whichever row happened to land on the same index.
+// strings rather than row indexes: a re-render (a sort, a filter, the next batch, a
+// save) would otherwise move the selection onto whichever row happened to land on the
+// same index. A filter never clears it: a selection survives narrowing the list, which
+// is what lets an operator search a batch of names and act on all of them at once.
 let proxiedSelected = new Set();
 
 // proxiedPruneSelection drops domains no longer in the list, so a bulk action can never
@@ -1209,11 +1255,12 @@ function proxiedPruneSelection() {
 }
 
 // updateProxiedBulkBar reflects the selection in the count line, the bulk buttons'
-// disabled state, and the header checkbox — checked when every domain is ticked,
-// indeterminate when only some are.
+// disabled state, and the header checkbox — checked when every row currently shown is
+// ticked, indeterminate when only some are. It counts the filtered rows, not the whole
+// list: with a search active, "select all" means the matches the operator can see.
 function updateProxiedBulkBar() {
   const n = proxiedSelected.size;
-  const total = proxiedOrderedRows().length;
+  const shown = proxiedFilteredRows();
   const countEl = document.getElementById('proxied-selected-count');
   if (countEl) countEl.textContent = n === 0 ? 'No domains selected' : `${n} selected`;
   ['proxied-bulk-pause', 'proxied-bulk-resume', 'proxied-bulk-remove'].forEach((id) => {
@@ -1222,8 +1269,9 @@ function updateProxiedBulkBar() {
   });
   const all = document.getElementById('proxied-select-all');
   if (all) {
-    all.checked = total > 0 && n >= total;
-    all.indeterminate = n > 0 && n < total;
+    const selectedShown = shown.filter((r) => proxiedSelected.has(r.domain)).length;
+    all.checked = shown.length > 0 && selectedShown === shown.length;
+    all.indeterminate = selectedShown > 0 && selectedShown < shown.length;
   }
 }
 
@@ -1239,21 +1287,32 @@ function updateProxiedBulkBar() {
 // bulk actions, the domain, its status, and the per-row switch and remove button. The
 // ordered list can be long, so only its first proxiedVisible rows are drawn;
 // proxiedHasMore records whether there is a next batch for the sentinel to fetch.
+//
+// A filter narrows the list before it is sliced: `ordered` is the whole list in sort
+// order and `rows` is what the search (or the Add box) leaves of it. Filtering re-runs
+// the slice from the top, so a match beyond the first batch is drawn rather than
+// hidden behind "Load more".
 
 function renderProxiedList() {
   const container = document.getElementById('custom-proxied-rows');
   if (!container) return;
   proxiedPruneSelection();
-  const ordered = proxiedOrderedRows();
+  const needle = proxiedFilterNeedle();
+  const ordered = proxiedFilteredRows();
   const total = ordered.length;
   const countEl = document.getElementById('proxied-count');
   const moreBtn = document.getElementById('proxied-load-more');
 
   container.innerHTML = '';
   if (total === 0) {
-    container.innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-500 text-xs">No custom entries yet</td></tr>';
+    // Two empty states, because they mean different things: an empty rules list is
+    // "nothing is proxied", while a filter with no hits is "nothing matches what you
+    // typed" and must not read as the list having been emptied.
+    container.innerHTML = needle
+      ? `<tr><td colspan="4" class="py-8 text-center text-slate-500 text-xs">No domains match “${escapeHTML(needle)}”</td></tr>`
+      : '<tr><td colspan="4" class="py-8 text-center text-slate-500 text-xs">No custom entries yet</td></tr>';
     proxiedHasMore = false;
-    if (countEl) countEl.textContent = '';
+    if (countEl) countEl.textContent = needle ? '0 matches' : '';
     if (moreBtn) moreBtn.classList.add('hidden');
     updateProxiedBulkBar();
     return;
@@ -1262,9 +1321,18 @@ function renderProxiedList() {
   const rows = ordered.slice(0, proxiedVisible);
   proxiedHasMore = rows.length < total;
   if (countEl) {
-    countEl.textContent = proxiedHasMore
-      ? `Showing ${rows.length} of ${total}`
-      : `${total} domain${total === 1 ? '' : 's'}`;
+    if (needle) {
+      // The matches are the number that matters while filtering; the total is in the
+      // box the operator typed into. Say how many of them are drawn when the batch
+      // window is the limiting factor.
+      countEl.textContent = proxiedHasMore
+        ? `Showing ${rows.length} of ${total} matches`
+        : `${total} match${total === 1 ? '' : 'es'}`;
+    } else {
+      countEl.textContent = proxiedHasMore
+        ? `Showing ${rows.length} of ${total}`
+        : `${total} domain${total === 1 ? '' : 's'}`;
+    }
   }
   if (moreBtn) moreBtn.classList.toggle('hidden', !proxiedHasMore);
   rows.forEach(({ domain, on }) => {
@@ -1358,6 +1426,16 @@ function setupProxiedObserver() {
 // proxiedResetSlice re-slices from the top after the sort order changes, then
 // refills the viewport so the control's effect is visible without a scroll.
 function proxiedResetSlice() {
+  proxiedVisible = PROXIED_BATCH;
+  renderProxiedList();
+  proxiedFillViewport();
+}
+
+// proxiedFilterChanged re-slices from the top as the filter is typed. Without
+// resetting proxiedVisible, a match that sorts past the first batch would stay hidden
+// even though the count says it exists; refilling the viewport keeps the scroll region
+// full instead of leaving a short list above a large blank.
+function proxiedFilterChanged() {
   proxiedVisible = PROXIED_BATCH;
   renderProxiedList();
   proxiedFillViewport();
@@ -3811,11 +3889,18 @@ function initEventListeners() {
   document.getElementById('proxied-load-more')?.addEventListener('click', proxiedShowMore);
   setupProxiedObserver();
 
+  // Both boxes above the table feed the same filter: the search box is the obvious
+  // one, and the Add box narrows the list too so a name that is already listed shows
+  // up (and its autocomplete entry is visible) before Add is pressed.
+  ['proxied-search', 'new-proxied-input'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', proxiedFilterChanged);
+  });
+
   // Multi-select for the bulk actions. The row checkboxes are delegated on the table
   // body because renderProxiedList replaces its innerHTML on every save; the header
-  // checkbox is static, so it is bound directly. The select-all set covers the whole
-  // ordered list, not only the rows currently drawn, which is what makes it useful on
-  // a list that loads a batch at a time.
+  // checkbox is static, so it is bound directly. The select-all set covers the rows the
+  // filter currently shows, not the whole ordered list: with a search typed, ticking the
+  // header must not silently capture thousands of rows the operator cannot see.
   document.getElementById('custom-proxied-rows')?.addEventListener('change', (e) => {
     const box = e.target.closest('.proxied-select-check');
     if (!box) return;
@@ -3826,7 +3911,7 @@ function initEventListeners() {
   document.getElementById('proxied-select-all')?.addEventListener('change', (e) => {
     const on = e.target.checked;
     proxiedSelected = on
-      ? new Set(proxiedOrderedRows().map((r) => r.domain))
+      ? new Set(proxiedFilteredRows().map((r) => r.domain))
       : new Set();
     document.querySelectorAll('.proxied-select-check').forEach((b) => { b.checked = on; });
     updateProxiedBulkBar();
@@ -3939,7 +4024,13 @@ function initEventListeners() {
       if (input) input.value = '';
       saveRules();
       renderConfig(currentConfig);
+      return;
     }
+    // Nothing changed: the domain is already listed and already on. Say so instead of
+    // swallowing the click — the autocomplete narrows the list to it but a list of one
+    // row is not an explanation on its own. The box keeps its text so the filtered row
+    // stays on screen.
+    showToast(`${val} is already listed`, 'info');
   });
 
   // Add Custom Blocked

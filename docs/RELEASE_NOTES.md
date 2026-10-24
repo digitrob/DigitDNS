@@ -1,4 +1,37 @@
-# DigitDNS v3.4.5
+# DigitDNS v3.4.6
+
+## Highlights
+
+- **Certificate renewals now live together on SSL/TLS.** "Certificate Auto-renew"
+  sits between "Issue a certificate" and "DoT/DoH Auto-renew", with the line
+  *Renew Let's Encrypt SSL certificate.* Nothing about renewal changed — the
+  switch simply moved off the Subscription page, which makes the certificate
+  controls one place instead of two.
+- **The Subscription page is readable again.** Its two switches used to be drawn
+  on top of each other, producing the garbled "Auto-renew certificate /
+  Subscription portal" text you may have seen. With one switch left there, the
+  card is a clean single row.
+- **A faster Proxied Domains page on the web.** Sort, the domain count, a search
+  box and the bulk Pause/Resume/Remove buttons share one row, and the list
+  narrows as you type — the same behaviour as the Live Query Log. Select-all
+  follows the filter, so a search can be acted on as a group.
+- **Autocomplete on Add.** The Add field suggests names that are already listed
+  and the table narrows while you type, which makes duplicates obvious before
+  they are saved. Adding one anyway now tells you it is already there.
+- **Small dashboard polish on Android.** The server-switch icon now lines up with
+  the ONLINE badge, and both certificate-renewal switches read their real state
+  from the server instead of assuming "on".
+
+## Upgrading
+
+Docker users pulling `ghcr.io/digitrob/digitdns:latest` pick everything up on
+restart — no settings change, no migration. Binary installs: replace the
+`digitdns` binary and restart the service. The Android app is a separate download
+and version line; this release's APKs are on this page as usual.
+
+Full changelog: docs/CHANGELOG.md
+
+---
 
 ## Highlights
 

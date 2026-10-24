@@ -1043,8 +1043,30 @@ input:checked + .slider:before {
 .proxied-table td {
   vertical-align: middle;
 }
+/* One control row above the list: sort + count, the live filter, then the bulk
+ * actions. The filter is a flex item with a basis and a floor rather than
+ * `flex-1 min-w-0`: it should shrink first, but not to nothing, and once it can
+ * no longer hold its floor the bulk group wraps to its own line. The auto start
+ * margin on .proxied-bulk-bar keeps that wrapped group at the end edge instead
+ * of letting it drift back to the start. */
+.proxied-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.proxied-search-box {
+  position: relative;
+  /* A zero basis, not 12rem: with flex-wrap the browser breaks lines using each
+   * item's *base* size, so a 12rem basis moved the bulk buttons onto their own
+   * line even where the three groups would have fitted after shrinking. The
+   * min-width is the floor that actually decides when the row must wrap. */
+  flex: 1 1 0;
+  min-width: 8rem;
+}
 .proxied-bulk-bar {
   min-height: 1.75rem;
+  margin-inline-start: auto;
 }
 .proxied-bulk-btn:disabled {
   opacity: 0.4;

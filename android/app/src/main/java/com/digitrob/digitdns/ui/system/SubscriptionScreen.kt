@@ -97,25 +97,17 @@ private fun OriginCard(origin: String) {
     }
 }
 
-/** Both on/off switches in one card, each a single compact row, to save vertical space. */
+/** The portal on/off switch. The certificate auto-renew switch lives on SSL/TLS. */
 @Composable
 private fun ToggleCard(state: SubscriptionUiState, viewModel: SubscriptionViewModel) {
     PanelCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "Enable subscription portal",
+                text = "Subscription portal",
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
             )
             Switch(checked = state.enabled, onCheckedChange = viewModel::onEnabledChange)
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "Auto-renew certificate",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
-            )
-            Switch(checked = state.autoRenewAcme, onCheckedChange = viewModel::onAutoRenewChange)
         }
     }
 }
