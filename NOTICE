@@ -89,5 +89,12 @@ Third-party components
   * quic-go (`github.com/quic-go/quic-go`) — MIT License.
   * dnscrypt/v2 (`github.com/ameshkov/dnscrypt/v2`) — MIT License.
   * dnsstamps (`github.com/ameshkov/dnsstamps`) — MIT License.
+  * MaxMind DB reader (`github.com/oschwald/maxminddb-golang`) — ISC License.
+  * Flag icons under `web/flags/` and the Android app's `assets/flags/` are from
+    lipis/flag-icons (https://github.com/lipis/flag-icons) — MIT License.
+  * Country data: this product includes GeoLite2 data created by MaxMind,
+    available from https://www.maxmind.com. The database ships separately from
+    this source tree, is downloaded at runtime from a public mirror, and is
+    licensed under CC BY-SA 4.0.
 
 All third-party components retain their original copyright notices and licences.

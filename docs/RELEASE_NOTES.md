@@ -1,4 +1,36 @@
-# DigitDNS v3.4.6
+# DigitDNS v3.4.7
+
+## Highlights
+
+- **Your server now wears its country.** A flat flag sits beside the server's
+  public IP in the web panel and on the Android dashboard. It comes from a
+  GeoLite2 database the daemon keeps on disk and refreshes daily, so the flag
+  is correct without any per-lookup calls leaving your server.
+- **Refresh that database whenever you like.** The Server Location card (web:
+  Settings & SSL, Android: About) shows the country, the database date and an
+  **Update database** button. No account or key is needed — it uses a free
+  public GeoLite2 mirror.
+- **Update the server from the panel.** The web's Settings & SSL page now has a
+  **Server Update** card beside Server Location: check for a release and, when
+  one exists, run the same verified update the sidebar badge does — download,
+  SHA-256 check, backup, restart and progress. On Android the About page's
+  update card got the same shape, with a refresh icon on **Check for updates**
+  and buttons that line up with the Server Location action.
+- **Small polish.** The flag is centred against the whole IP block and clear of
+  the copy icon, dates read DD.MM.YYYY, and the Android About page keeps its
+  cards on one screen.
+
+## Upgrading
+
+Docker users pulling `ghcr.io/digitrob/digitdns:latest` pick everything up on
+restart — no setting changes, no migration. Binary installs: replace the
+`digitdns` binary and restart. The GeoIP database downloads shortly after
+startup; until then the flag is simply absent. The Android app is a separate
+download and version line — this release's APKs are on this page as usual.
+
+Full changelog: docs/CHANGELOG.md
+
+---
 
 ## Highlights
 

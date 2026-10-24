@@ -50,7 +50,10 @@ class DashboardViewModelTest {
 
     @Test
     fun `construction succeeds and the install's public ip is fetched`() = runTest {
-        val server = mockk<ServerConfig> { every { publicIp } returns "203.0.113.9" }
+        val server = mockk<ServerConfig> {
+            every { publicIp } returns "203.0.113.9"
+            every { country } returns "NL"
+        }
         val settingsRepository = mockk<SettingsRepository> {
             coEvery { load() } returns SettingsBundle(server = server, tls = null)
         }
@@ -88,6 +91,7 @@ class DashboardViewModelTest {
         dispatcher.scheduler.runCurrent()
 
         assertEquals("203.0.113.9", viewModel.state.value.serverIp)
+        assertEquals("NL", viewModel.state.value.serverCountry)
 
         // The poll loop never ends on its own; cancel it so runTest's final
         // advance-until-idle does not chase delay() forever.

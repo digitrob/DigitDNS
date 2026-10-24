@@ -62,6 +62,7 @@ import com.digitrob.digitdns.core.network.LatencySnapshot
 import com.digitrob.digitdns.core.network.LiveStats
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.data.DashboardCard
+import com.digitrob.digitdns.ui.components.CountryFlag
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.PanelScreenHeader
@@ -106,7 +107,7 @@ fun DashboardScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ServerIpBox(state.serverIp, modifier = Modifier.weight(1f))
+                ServerIpBox(state.serverIp, state.serverCountry, modifier = Modifier.weight(1f))
                 IconButton(
                     onClick = { showServerSwitcher = true },
                     modifier = Modifier
@@ -161,7 +162,7 @@ fun DashboardScreen(
  * Hidden until the address is known, so an empty box never reads as "no address".
  */
 @Composable
-private fun ServerIpBox(serverIp: String, modifier: Modifier = Modifier) {
+private fun ServerIpBox(serverIp: String, country: String, modifier: Modifier = Modifier) {
     if (serverIp.isBlank()) return
     val colors = DigitDnsTheme.colors
     val clipboard = LocalClipboardManager.current
@@ -195,6 +196,14 @@ private fun ServerIpBox(serverIp: String, modifier: Modifier = Modifier) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        // The flag is a sibling of the two-line address block, not part of the
+        // address line: the row centres it against the heading and the date, and
+        // it sits just clear of the text before the copy icon.
+        if (country.isNotBlank()) {
+            Spacer(Modifier.width(10.dp))
+            CountryFlag(country, width = 24.dp, height = 18.dp)
+            Spacer(Modifier.width(10.dp))
         }
         Icon(
             imageVector = Icons.Filled.ContentCopy,

@@ -346,6 +346,10 @@ The web panel manages everything:
   Editing a client gives you a full-width IP list, and a client with many
   addresses keeps a normal-sized card (the address chips scroll)
 - **Upstreams** — add and benchmark DNS upstreams on any transport
+- **Server location** — the panel shows the server's country flag beside its
+  public IP, resolved from a self-updating GeoIP database. Settings & SSL can
+  refresh that database on demand, and the **Server Update** card next to it
+  checks for and installs a new release without leaving the panel
 - **Settings** — 2FA, hidden path, certificates, portal branding, API keys.
   Certificate renewal switches (Let's Encrypt and DoT/DoH) live together on the
   SSL/TLS page, next to issuance
@@ -362,7 +366,7 @@ customized with your own domain, title, and CSS to match your branding.
 DigitDNS also ships a native Android companion app — the same control surface as
 the web panel, in your pocket, talking to your server over the REST API and the
 live event stream. It is a separate product on its own version line
-(`android-v3.4.6` and friends), side-loaded from the GitHub release page rather
+(`android-v3.4.7` and friends), side-loaded from the GitHub release page rather
 than distributed through Play.
 
 **What it does (feature parity with the web panel):**
@@ -372,7 +376,8 @@ than distributed through Play.
 - **Dashboard** — live stats, query rate, cache hits, proxy relay counts, CPU,
   RAM and live traffic, plus the QPS chart. Upstream Racers leads by default,
   the metric tiles share one size, and Settings → Dashboard cards can reorder
-  them or reset the layout.
+  them or reset the layout. The server IP box carries the country flag, with a
+  flat 4:3 icon from a GeoIP database the server refreshes daily.
 - **Domain rules** — add, edit, proxy, block or route domains direct; bulk
   import; groups with icons; one-tap actions straight from the live log.
 - **Clients (subscribers)** — create and edit subscribers, set quotas, expiry
@@ -385,7 +390,9 @@ than distributed through Play.
 - **Diagnostics** — run the server diagnostic suite against your own targets.
 - **Settings** — access lists, TLS/ACME certificate issuance and renewal (the
   "Certificate Auto-renew" and "DoT/DoH Auto-renew" switches sit together there),
-  subscription/portal settings, server connection management. Manage servers
+  subscription/portal settings, server connection management. The About page
+  shows the server location (with the GeoIP database date and a refresh button)
+  and a Server Update card that can check for and apply a release. Manage servers
   keeps three saved servers on screen (the list scrolls for more), the tail with
   Add server, signed-in details and Sign out sits above Cancel/Done, and the
   Add-server form has a Cancel that returns to the app.

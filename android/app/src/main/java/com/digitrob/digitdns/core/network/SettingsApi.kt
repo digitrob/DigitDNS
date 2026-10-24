@@ -47,6 +47,8 @@ data class SettingsResponse(
 @Serializable
 data class ServerSettings(
     @SerialName("public_ip") val publicIp: String = "",
+    /** ISO 3166-1 alpha-2 country the server's public address resolves to. */
+    val country: String = "",
     @SerialName("bind_host") val bindHost: String = "",
     @SerialName("web_port") val webPort: Int = 0,
     @SerialName("admin_username") val adminUsername: String = "",

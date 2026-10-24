@@ -72,6 +72,13 @@ func (f *fakeV3Backend) Subscription() map[string]any { return map[string]any{"e
 func (f *fakeV3Backend) SaveSubscription(r *http.Request, b map[string]any) (map[string]any, error) {
 	return map[string]any{"success": true}, nil
 }
+func (f *fakeV3Backend) GeoIPStatus() (map[string]any, error) {
+	return map[string]any{"available": true, "country": "NL", "database_date": "2026-10-22"}, nil
+}
+func (f *fakeV3Backend) GeoIPUpdate(r *http.Request) (map[string]any, error) {
+	return map[string]any{"available": true, "country": "NL"}, nil
+}
+
 func (f *fakeV3Backend) IssueTLS(r *http.Request, b map[string]any) (map[string]any, error) {
 	return map[string]any{"success": true, "issuing": false}, nil
 }

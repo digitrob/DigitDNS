@@ -13,8 +13,8 @@ plugins {
 // The app carries its own version, independent of the server's v3.2.x line: a
 // panel release and an app release are different products on different cadences,
 // and tying them would make every server patch look like an app release.
-val appVersionName: String = "3.4.6"
-val appVersionCode: Int = 346
+val appVersionName: String = "3.4.7"
+val appVersionCode: Int = 347
 
 android {
     namespace = "com.digitrob.digitdns"
@@ -175,6 +175,7 @@ dependencies {
     implementation(libs.accompanist.permissions)
     implementation(libs.zxing.core)
     implementation(libs.coil.compose)
+    implementation(libs.coil.svg)
 
     implementation(libs.timber)
 

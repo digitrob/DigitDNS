@@ -184,4 +184,8 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideSystemApi(retrofit: Retrofit): SystemApi = retrofit.create(SystemApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideGeoipApi(retrofit: Retrofit): GeoipApi = retrofit.create(GeoipApi::class.java)
 }

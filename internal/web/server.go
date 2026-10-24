@@ -24,6 +24,7 @@ import (
 	"digitdns/internal/core/matcher"
 	"digitdns/internal/core/upstream"
 	"digitdns/internal/database"
+	"digitdns/internal/geoip"
 	"digitdns/internal/httpx"
 	"digitdns/internal/netutil"
 	"digitdns/internal/selfupdate"
@@ -47,6 +48,9 @@ type WebServer struct {
 	dnsCfg       *database.DNSSettings
 	subSettings  *database.SubscriptionSettings
 	authSettings *database.AuthSettings
+	// geoIP resolves the server's public address to a country. Nil in the
+	// lighter test harnesses, where the settings card simply shows no flag.
+	geoIP *geoip.Service
 	// diagSettings holds the operator-owned diagnostic target list (v3.1.0). It
 	// is loaded lazily from the "diagnostics" settings record on first use and
 	// reused after, so a constructor that does not know about it — the lighter
@@ -278,6 +282,7 @@ func (ws *WebServer) SetCustomGroupService(s *service.CustomGroupService) {
 // there is no other route that hands it back.
 type serverSettingsView struct {
 	PublicIP          string `json:"public_ip"`
+	Country           string `json:"country"`
 	BindHost          string `json:"bind_host"`
 	WebPort           int    `json:"web_port"`
 	AdminUsername     string `json:"admin_username"`
@@ -305,6 +310,7 @@ func (ws *WebServer) settingsView() serverSettingsView {
 	s := ws.settings.Snapshot()
 	return serverSettingsView{
 		PublicIP:           s.PublicIP,
+		Country:            ws.countryOfServer(),
 		BindHost:           s.BindHost,
 		WebPort:            s.WebPort,
 		AdminUsername:      s.AdminUsername,
@@ -759,6 +765,8 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/settings/regenerate-api-key", ws.requireAuth(ws.handleRegenerateAPIKey))
 	mux.HandleFunc("/api/settings/regenerate-admin-path", ws.requireAuth(ws.handleRegenerateAdminPath))
 	mux.HandleFunc("/api/settings/subscription", ws.requireAuth(ws.handleSubscriptionSettings))
+	mux.HandleFunc("/api/settings/geoip", ws.requireAuth(ws.handleGeoIPStatus))
+	mux.HandleFunc("/api/settings/geoip/update", ws.requireAuth(ws.handleGeoIPUpdate))
 	mux.HandleFunc("/api/auth/2fa/status", ws.requireAuth(ws.handleAuth2FAStatus))
 	mux.HandleFunc("/api/auth/2fa/setup", ws.requireAuth(ws.handleAuth2FASetup))
 	mux.HandleFunc("/api/auth/2fa/enable", ws.requireAuth(ws.handleAuth2FAEnable))

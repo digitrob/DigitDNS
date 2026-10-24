@@ -1115,6 +1115,40 @@ func (a *API) handleV3TLSIssue(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (a *API) handleV3GeoIPStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	resp, err := a.v3Backend.GeoIPStatus()
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "internal", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (a *API) handleV3GeoIPUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	resp, err := a.v3Backend.GeoIPUpdate(r)
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (a *API) handleV3TLSAutoRenew(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")

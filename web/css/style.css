@@ -1080,6 +1080,50 @@ input:checked + .slider:before {
 .proxied-col-actions { width: 16rem; }
 .proxied-col-status { width: 5.5rem; }
 
+/* The country flag beside the server address. Served from the panel's own
+ * /flags/<iso>.svg assets, drawn as a flat 4:3 rectangle at a fixed size so
+ * every country looks like the same kind of badge. */
+.server-flag {
+  width: 22px;
+  height: 16px;
+  border-radius: 2px;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.25);
+  flex-shrink: 0;
+}
+
+/* The sidebar IP box carries two lines of text, so its flag is a size up and
+ * sits a few pixels clear of them. */
+.server-flag-box {
+  width: 24px;
+  height: 18px;
+  margin-inline-start: 4px;
+}
+
+/* Server Location and Server Update sit side by side once the panel is wide
+ * enough for two readable columns; below that they stack. */
+.settings-pair {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+@media (min-width: 1024px) {
+  .settings-pair {
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    align-items: stretch;
+  }
+}
+
+/* The Server Update card stacks its two actions against the end edge. Plain CSS
+ * because `items-end` is not in the purged utility sheet. */
+.server-update-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
 /* The sentinel the IntersectionObserver watches. It has to be in the layout — a
  * display:none element never intersects — but not visible, so it is a
  * full-width hairline at the end of the list. */

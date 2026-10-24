@@ -84,6 +84,10 @@ type V3Backend interface {
 	RegenerateAdminPath(r *http.Request, confirm bool) (map[string]any, error)
 	Subscription() map[string]any
 	SaveSubscription(r *http.Request, body map[string]any) (map[string]any, error)
+	// GeoIP database status and a manual refresh (the same download the daily
+	// loop performs). Both are admin-only.
+	GeoIPStatus() (map[string]any, error)
+	GeoIPUpdate(r *http.Request) (map[string]any, error)
 
 	// TLS / ACME.
 	IssueTLS(r *http.Request, body map[string]any) (map[string]any, error)
@@ -158,6 +162,8 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/settings/subscription", a.SecurityMiddlewareV3(a.handleV3Subscription))
 	mux.HandleFunc("/api/v3/settings/regenerate-api-key", a.SecurityMiddlewareV3(a.handleV3RegenerateAPIKey))
 	mux.HandleFunc("/api/v3/settings/regenerate-admin-path", a.SecurityMiddlewareV3(a.handleV3RegenerateAdminPath))
+	mux.HandleFunc("/api/v3/settings/geoip", a.SecurityMiddlewareV3(a.handleV3GeoIPStatus))
+	mux.HandleFunc("/api/v3/settings/geoip/update", a.SecurityMiddlewareV3(a.handleV3GeoIPUpdate))
 
 	// TLS / ACME.
 	mux.HandleFunc("/api/v3/tls/issue", a.SecurityMiddlewareV3(a.handleV3TLSIssue))

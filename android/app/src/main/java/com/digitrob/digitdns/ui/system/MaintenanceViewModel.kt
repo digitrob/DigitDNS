@@ -3,6 +3,8 @@ package com.digitrob.digitdns.ui.system
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
+import com.digitrob.digitdns.core.network.GeoipStatusDto
+import com.digitrob.digitdns.data.GeoipRepository
 import com.digitrob.digitdns.data.SystemRepository
 import com.digitrob.digitdns.data.SystemSummary
 import com.digitrob.digitdns.domain.model.UpdateProgressView
@@ -32,6 +34,10 @@ data class MaintenanceUiState(
     val isRefreshing: Boolean = false,
     val applying: Boolean = false,
     val flushing: Boolean = false,
+    /** The server-location database, or null while the status is being read. */
+    val geoip: GeoipStatusDto? = null,
+    val geoipUpdating: Boolean = false,
+    val geoipError: String? = null,
     val error: String? = null,
     val message: String? = null,
 )
@@ -44,6 +50,7 @@ data class MaintenanceUiState(
 @HiltViewModel
 class MaintenanceViewModel @Inject constructor(
     private val repository: SystemRepository,
+    private val geoipRepository: GeoipRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MaintenanceUiState())
@@ -61,6 +68,7 @@ class MaintenanceViewModel @Inject constructor(
             try {
                 val summary = repository.summary()
                 _state.update { it.copy(summary = summary, error = null) }
+                loadGeoip()
             } catch (e: ApiException) {
                 _state.update { it.copy(error = e.userMessage) }
             } catch (e: IOException) {
@@ -74,6 +82,55 @@ class MaintenanceViewModel @Inject constructor(
     }
 
     fun consumeMessage() = _state.update { it.copy(message = null) }
+
+    /**
+     * Reads the GeoIP database's date and the country it resolves for this
+     * install. The About card shows it next to the update button; a failure
+     * leaves the card in its "checking" state rather than showing an error over
+     * the whole page.
+     */
+    private fun loadGeoip() {
+        viewModelScope.launch {
+            runCatching { geoipRepository.status() }
+                .onSuccess { status -> _state.update { it.copy(geoip = status) } }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(geoipError = error.message?.takeIf { m -> m.isNotBlank() })
+                    }
+                }
+        }
+    }
+
+    /**
+     * Downloads a fresh database. The button is disabled while this runs; on
+     * success the card redraws with the new file's date, and on failure the
+     * server's message is shown in place so the operator knows why.
+     */
+    fun updateGeoip() {
+        if (_state.value.geoipUpdating) return
+        viewModelScope.launch {
+            _state.update { it.copy(geoipUpdating = true, geoipError = null) }
+            try {
+                val status = geoipRepository.update()
+                _state.update {
+                    it.copy(
+                        geoip = status,
+                        geoipUpdating = false,
+                        message = "GeoIP database updated.",
+                    )
+                }
+            } catch (e: ApiException) {
+                _state.update { it.copy(geoipUpdating = false, geoipError = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update {
+                    it.copy(
+                        geoipUpdating = false,
+                        geoipError = e.message ?: "Could not update the GeoIP database.",
+                    )
+                }
+            }
+        }
+    }
 
     fun checkForUpdate() {
         viewModelScope.launch {

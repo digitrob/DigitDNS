@@ -170,6 +170,128 @@ async function errorMessage(res, fallback) {
   return res.status === 429 ? 'Too many attempts. Try again later.' : fallback;
 }
 
+// ---- Server location (GeoIP) -------------------------------------------------
+//
+// The country arrives with every config render (`server.country`), so the flag
+// beside the address is free. The database's date and the manual refresh come
+// from /api/settings/geoip, fetched once per page load and after an update rather
+// than on every stats tick.
+//
+// Flags are the bundled 4:3 SVGs under the panel's own /flags/ directory. A
+// missing file hides the picture and leaves the address alone; nothing external
+// is loaded, and the CSP's img-src 'self' is enough.
+
+const regionNames = (() => {
+  // English on purpose: the panel ships one language, and a browser-localised
+  // country name next to English labels reads as a bug.
+  try { return new Intl.DisplayNames(['en'], { type: 'region' }); } catch (e) { return null; }
+})();
+
+function countryName(code) {
+  const upper = String(code || '').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(upper)) return '';
+  try {
+    const name = regionNames && regionNames.of(upper);
+    return name && name !== upper ? name : upper;
+  } catch (e) { return upper; }
+}
+
+function flagURL(code) {
+  const lower = String(code || '').toLowerCase();
+  return /^[a-z]{2}$/.test(lower) ? ADMIN_BASE + '/flags/' + lower + '.svg' : '';
+}
+
+function paintCountryFlag(img, code) {
+  if (!img) return;
+  const url = flagURL(code);
+  if (!url) {
+    img.classList.add('hidden');
+    img.removeAttribute('src');
+    return;
+  }
+  img.onerror = () => { img.classList.add('hidden'); };
+  img.src = url;
+  img.alt = countryName(code);
+  img.title = countryName(code);
+  img.classList.remove('hidden');
+}
+
+function renderServerLocation(code) {
+  paintCountryFlag(document.getElementById('header-country-flag'), code);
+}
+
+let geoipStatusLoaded = false;
+let geoipUpdating = false;
+
+function renderGeoipCard(status) {
+  const country = status && status.country ? status.country : '';
+  paintCountryFlag(document.getElementById('geoip-flag'), country);
+  const nameEl = document.getElementById('geoip-country');
+  if (nameEl) nameEl.textContent = country ? countryName(country) : 'Unknown';
+  const dbEl = document.getElementById('geoip-db');
+  if (dbEl) {
+    if (!status || !status.available) {
+      dbEl.textContent = 'GeoIP database: not downloaded yet — press Update database';
+    } else {
+      const date = status.database_date || 'date unknown';
+      dbEl.textContent = `GeoIP database: ${date} · updates daily`;
+    }
+  }
+  const errEl = document.getElementById('geoip-error');
+  if (errEl) {
+    const message = status && status.error ? status.error : '';
+    errEl.textContent = message;
+    errEl.classList.toggle('hidden', !message);
+  }
+  // A manual update can be the first thing that ever downloads the file, so the
+  // sidebar may still be showing no flag even though the card now knows one.
+  renderServerLocation(country);
+}
+
+async function loadGeoipStatus() {
+  try {
+    const res = await fetch(api('/api/settings/geoip'), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not read the GeoIP status'));
+    renderGeoipCard(await res.json());
+  } catch (e) {
+    const errEl = document.getElementById('geoip-error');
+    if (errEl) {
+      errEl.textContent = e.message || 'Could not read the GeoIP status';
+      errEl.classList.remove('hidden');
+    }
+  }
+}
+
+async function updateGeoipDatabase() {
+  if (geoipUpdating) return;
+  const btn = document.getElementById('geoip-update-btn');
+  const label = btn ? btn.querySelector('span') : null;
+  const original = label ? label.textContent : '';
+  geoipUpdating = true;
+  if (btn) btn.disabled = true;
+  if (label) label.textContent = 'Updating…';
+  try {
+    const res = await fetch(api('/api/settings/geoip/update'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'The GeoIP database could not be updated'));
+    renderGeoipCard(await res.json());
+    showToast('GeoIP database updated', 'success');
+  } catch (e) {
+    const message = e.message || 'The GeoIP database could not be updated';
+    showToast(message, 'error');
+    const errEl = document.getElementById('geoip-error');
+    if (errEl) { errEl.textContent = message; errEl.classList.remove('hidden'); }
+  } finally {
+    geoipUpdating = false;
+    if (btn) btn.disabled = false;
+    if (label) label.textContent = original;
+  }
+}
+
 // clientAction posts one subscriber mutation and reports what actually happened.
 //
 // Each of the five callers used to be its own try/catch that either ignored res.ok
@@ -925,6 +1047,12 @@ function renderConfig(cfg) {
   const pubIP = cfg.server.public_ip || '127.0.0.1';
   const headerIPEl = document.getElementById('header-public-ip');
   if (headerIPEl) headerIPEl.innerText = pubIP;
+  // The country rides the same response, so the sidebar flag costs no request.
+  renderServerLocation(cfg.server.country);
+  if (!geoipStatusLoaded) {
+    geoipStatusLoaded = true;
+    loadGeoipStatus();
+  }
 
   // Administrator Credentials card. The password verifier is deliberately not in
   // this payload any more, so the username is all there is to show.
@@ -3874,6 +4002,10 @@ function initEventListeners() {
     if (ta) ta.focus();
   }
 
+  document.getElementById('geoip-update-btn')?.addEventListener('click', updateGeoipDatabase);
+  document.getElementById('server-update-check-btn')?.addEventListener('click', checkServerUpdate);
+  document.getElementById('server-update-apply-btn')?.addEventListener('click', applyServerUpdate);
+
   document.getElementById('bulk-proxied-btn')?.addEventListener('click', () => openBulkImport('proxied'));
   document.getElementById('bulk-blocked-btn')?.addEventListener('click', () => openBulkImport('blocked'));
   document.getElementById('bulk-records-btn')?.addEventListener('click', () => openBulkImport('records'));
@@ -6373,8 +6505,80 @@ async function checkForUpdate() {
     const res = await fetch(api('/api/update/check'), { headers: { 'Authorization': 'Bearer ' + authToken } });
     if (!res.ok) return;
     const st = await res.json();
+    renderServerUpdate(st);
     if (st && st.update_available && st.supported) showUpdateAvailable(st);
   } catch (e) { /* an offline check is non-fatal — no badge, no error */ }
+}
+
+// ---- Server Update card (Settings & SSL) -------------------------------------
+//
+// A second entry point to the self-updater the sidebar badge already uses. The
+// card only checks; "Update now" hands the run to openUpdateModal(), so the
+// verification, backup, restart and progress reporting stay in that one place.
+
+let serverUpdateState = null;
+
+function serverUpdateStatusText(st) {
+  if (!st) return 'Not checked yet.';
+  if (st.error) return 'Update check failed.';
+  if (st.update_available) return `Update available: v${st.current} → v${st.latest}`;
+  return `Up to date (v${st.current}).`;
+}
+
+function serverUpdateMetaText(st) {
+  if (!st) return 'Updates come from the GitHub release channel.';
+  if (st.update_available && !st.supported) return 'This install cannot apply it from the app.';
+  if (st.update_available) return 'Applying an update restarts the service.';
+  return 'Checked just now · data is preserved and backed up.';
+}
+
+function renderServerUpdate(st) {
+  serverUpdateState = st;
+  const statusEl = document.getElementById('server-update-status');
+  if (statusEl) {
+    statusEl.textContent = serverUpdateStatusText(st);
+    const tone = st && st.error ? 'text-amber-300'
+      : st && st.update_available ? 'text-cyan-300'
+      : 'text-slate-300';
+    statusEl.className = 'text-xs mt-1 ' + tone;
+  }
+  const metaEl = document.getElementById('server-update-meta');
+  if (metaEl) metaEl.textContent = serverUpdateMetaText(st);
+  const applyBtn = document.getElementById('server-update-apply-btn');
+  if (applyBtn) applyBtn.classList.toggle('hidden', !(st && st.update_available && st.supported));
+  const errEl = document.getElementById('server-update-error');
+  if (errEl) {
+    const message = st && st.error ? String(st.error) : '';
+    errEl.textContent = message;
+    errEl.classList.toggle('hidden', !message);
+  }
+}
+
+async function checkServerUpdate() {
+  const btn = document.getElementById('server-update-check-btn');
+  const label = btn ? btn.querySelector('span') : null;
+  if (btn) btn.disabled = true;
+  if (label) label.textContent = 'Checking…';
+  try {
+    const res = await fetch(api('/api/update/check'), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'The update check failed.'));
+    const st = await res.json();
+    renderServerUpdate(st);
+    if (st && st.update_available && st.supported) showUpdateAvailable(st);
+  } catch (e) {
+    renderServerUpdate({ current: '', latest: '', update_available: false, supported: false, error: e.message || 'The update check failed.' });
+  } finally {
+    if (btn) btn.disabled = false;
+    if (label) label.textContent = 'Check for updates';
+  }
+}
+
+function applyServerUpdate() {
+  if (!serverUpdateState) return;
+  openUpdateModal(serverUpdateState);
 }
 
 let hdnsUpdateBtn = null;

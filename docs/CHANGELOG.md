@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.4.7] — See where your server is, and update it from the app
+
+### ✨ Added
+- **A country flag beside the server IP.** The web panel's IP box and the Android dashboard box now show the flat 4:3 flag of the country the server's public address resolves to. Flags are bundled with each client, so they look the same everywhere and no external image host is contacted.
+- **A GeoIP database that keeps itself current.** The daemon keeps a GeoLite2-format database in its data directory and refreshes it once a day in the background. Lookups are local — client addresses never leave the box. If a download fails, the last good database keeps working.
+- **“Update database” on demand.** The Server Location card on the web (Settings & SSL) and on Android (About) shows the country, the database date, and a button that fetches a fresh copy immediately.
+- **Server Update on the web.** Settings & SSL now carries an update card beside Server Location: it checks for a new release and, when one is available, runs the same verified updater the sidebar badge uses — download, checksum verification, backup, restart and progress. The two cards share the row, half width each.
+- **Server Update on Android.** The About page's update card now mirrors the Server Location card — a refresh icon on “Check for updates”, aligned buttons, and a clear “not checked / up to date / update available” line.
+
+### 🔄 Changed
+- **Country flag placement.** The flag is centred against the whole server-IP block (heading, address and copy icon), not pinned to the address line, and sits a few pixels clear of the copy icon.
+- **GeoIP dates read DD.MM.YYYY** everywhere, instead of an ISO date.
+- **The Update box is called “Server Update”** on both clients.
+- **Android About is tighter** — 8 dp card spacing and the restructured update card keep the page to one screen on a normal phone.
+- Server and client expose the country through the existing settings/config API plus two small admin endpoints, so future features (client countries, per-country stats) can reuse the same lookup.
+
+### 🐛 Fixed
+- The small “Updates come from the GitHub release channel” line is limited to two lines, so the new icon cannot push it into the button.
+
+---
+
 ## 🏷️ [v3.4.6] — Certificate controls in one place, and a faster proxied list
 
 ### ✨ Added

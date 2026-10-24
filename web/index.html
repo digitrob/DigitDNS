@@ -823,6 +823,10 @@
             <div class="text-[9px] font-mono uppercase text-slate-500">Server Public IP</div>
             <div id="header-public-ip" class="text-xs font-mono font-bold text-slate-200 group-hover:text-cyan-300">127.0.0.1</div>
           </div>
+          <!-- Beside the two-line block, not inside the address line: the row's
+               items-center then centres it between the heading and the address,
+               and the start margin leaves it just clear of the text. -->
+          <img id="header-country-flag" alt="" class="server-flag server-flag-box hidden">
         </div>
         <i data-feather="copy" class="w-3.5 h-3.5 text-slate-500 group-hover:text-cyan-400"></i>
       </div>
@@ -1689,6 +1693,69 @@ async function onBuySubscription(ctx, username) {
       <!-- TAB 4: CUSTOM RULES, SSL & ACCESS CONTROL -->
       <!-- ============================================== -->
       <section id="tab-rules" class="tab-content space-y-6 hidden">
+
+        <!-- Server location and Server Update share one row on a wide panel: the
+             first is read-only metadata plus a database refresh, the second is the
+             same self-updater the sidebar badge reaches. Both are half-width so
+             neither dwarfs the other. Plain CSS for the grid, because the purged
+             utility sheet cannot grow a new breakpoint class here. -->
+        <div class="settings-pair">
+          <!-- Server location: the country the GeoIP database resolves for this
+               install's public address, plus the age of that database and a manual
+               refresh. The flag is served from this panel's own /flags/ path
+               (img-src 'self'), never from an external image host. -->
+          <div class="glass-panel p-5 sm:p-6 border border-slate-800 space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
+                <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
+                  <i data-feather="map-pin" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h3 class="text-xs sm:text-sm font-bold text-white font-heading">Server Location</h3>
+                  <div class="flex items-center gap-2 mt-1">
+                    <img id="geoip-flag" alt="" class="server-flag hidden">
+                    <span id="geoip-country" class="text-xs text-slate-300">looking up…</span>
+                  </div>
+                  <p id="geoip-db" class="text-[11px] text-slate-500 font-mono mt-0.5">GeoIP database: checking…</p>
+                </div>
+              </div>
+              <button type="button" id="geoip-update-btn"
+                class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed">
+                <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i> <span>Update database</span>
+              </button>
+            </div>
+            <p id="geoip-error" class="text-[11px] text-red-400 hidden"></p>
+          </div>
+
+          <!-- Server Update: the same check/apply the sidebar's update badge does.
+               "Update now" opens the shared update modal, which owns the verified
+               download, backup, restart and progress reporting. -->
+          <div class="glass-panel p-5 sm:p-6 border border-slate-800 space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
+                <div class="p-2 rounded-xl bg-amber-500/20 text-amber-300">
+                  <i data-feather="download-cloud" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h3 class="text-xs sm:text-sm font-bold text-white font-heading">Server Update</h3>
+                  <p id="server-update-status" class="text-xs text-slate-300 mt-1">Not checked yet.</p>
+                  <p id="server-update-meta" class="text-[11px] text-slate-500 font-mono mt-0.5">Updates come from the GitHub release channel.</p>
+                </div>
+              </div>
+              <div class="server-update-actions shrink-0">
+                <button type="button" id="server-update-check-btn"
+                  class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i> <span>Check for updates</span>
+                </button>
+                <button type="button" id="server-update-apply-btn"
+                  class="hidden inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[11px] transition">
+                  <i data-feather="download-cloud" class="w-3.5 h-3.5"></i> <span>Update now</span>
+                </button>
+              </div>
+            </div>
+            <p id="server-update-error" class="text-[11px] text-red-400 hidden"></p>
+          </div>
+        </div>
 
         <!-- v2.1 Phase 6: two-factor authentication. The secret is shown exactly
              once, at enrollment; after that the server never returns it and the

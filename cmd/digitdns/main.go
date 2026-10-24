@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -28,6 +29,7 @@ import (
 	"digitdns/internal/core/upstream"
 	"digitdns/internal/crypto"
 	"digitdns/internal/database"
+	"digitdns/internal/geoip"
 	"digitdns/internal/netutil"
 	"digitdns/internal/selfupdate"
 	"digitdns/internal/service"
@@ -558,6 +560,16 @@ func main() {
 		webAssets.StaticFS,
 	)
 	webServer.SetSubscriptionSettings(subscriptionSettings)
+
+	// Server-location flag support: a GeoLite2-format database kept in the data
+	// directory, refreshed in the background. A missing or unreadable file costs
+	// nothing but the flag, and the download is scheduled off the startup path.
+	geoIP := geoip.New(filepath.Dir(dPath), geoip.DefaultSource)
+	if err := geoIP.Load(); err != nil {
+		log.Printf("[GeoIP] %v — continuing without a database until the next update", err)
+	}
+	geoIP.StartUpdater(context.Background())
+	webServer.SetGeoIP(geoIP)
 	webServer.SetAuthSettings(authSettings)
 	webServer.SetCustomGroupService(customGroupService)
 	// v2.8: a runtime domain change re-applies the resolver's self-name set, so a

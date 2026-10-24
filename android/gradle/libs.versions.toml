@@ -64,6 +64,7 @@ androidx-datastore-preferences = { module = "androidx.datastore:datastore-prefer
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
+coil-svg = { module = "io.coil-kt:coil-svg", version.ref = "coil" }
 
 vico-compose-m3 = { module = "com.patrykandpatrick.vico:compose-m3", version.ref = "vico" }
 accompanist-permissions = { module = "com.google.accompanist:accompanist-permissions", version.ref = "accompanistPermissions" }

@@ -3,8 +3,14 @@ package com.digitrob.digitdns.ui.system
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -12,6 +18,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.digitrob.digitdns.data.SystemSummary
 import com.digitrob.digitdns.domain.model.UpdateProgressView
@@ -47,23 +55,81 @@ internal fun SystemCard(summary: SystemSummary) {
 
 @Composable
 internal fun UpdateCard(state: MaintenanceUiState, viewModel: MaintenanceViewModel) {
+    val update = state.update
     PanelCard(modifier = Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Update", style = MaterialTheme.typography.titleMedium)
-            state.update?.let { UpdateInfo(it) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = viewModel::checkForUpdate, enabled = !state.checking) {
-                    Text(if (state.checking) "Checking…" else "Check for updates")
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Mirrors the Server Location card above it: three lines on the left,
+            // the action on the right, so the two buttons sit one under the other
+            // and the cards are the same height.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    Text("Server Update", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = updateSummary(update),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = updateStatusColor(update),
+                    )
+                    Text(
+                        text = updateMeta(update),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
-                if (state.update?.canApply == true) {
-                    Button(onClick = viewModel::applyUpdate, enabled = !state.applying) {
-                        Text(if (state.applying) "Starting…" else "Apply update")
+                Spacer(Modifier.width(8.dp))
+                // A column rather than a row: when an update is available the two
+                // buttons stack at the end edge instead of squeezing the text.
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    OutlinedButton(onClick = viewModel::checkForUpdate, enabled = !state.checking) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (state.checking) "Checking…" else "Check for updates")
+                    }
+                    if (update?.canApply == true) {
+                        Button(onClick = viewModel::applyUpdate, enabled = !state.applying) {
+                            Text(if (state.applying) "Starting…" else "Apply update")
+                        }
                     }
                 }
             }
             state.progress?.let { UpdateProgress(it) }
         }
     }
+}
+
+/** One line, the way the location card shows the country. */
+private fun updateSummary(update: UpdateStatus?): String = when {
+    update == null -> "Not checked yet."
+    update.error.isNotBlank() -> "Could not check: ${update.error}"
+    update.updateAvailable -> "Update available: ${update.current} → ${update.latest}"
+    else -> "Up to date (${update.current})."
+}
+
+/** The third line, matching the location card's database line. */
+private fun updateMeta(update: UpdateStatus?): String = when {
+    update == null -> "Updates come from the GitHub release channel."
+    update.note.isNotBlank() -> update.note
+    update.updateAvailable && !update.supported -> "This install cannot apply it from the app."
+    else -> "Applying an update restarts the service."
+}
+
+@Composable
+private fun updateStatusColor(update: UpdateStatus?): Color = when {
+    update == null -> MaterialTheme.colorScheme.onSurface
+    update.error.isNotBlank() -> DigitDnsTheme.colors.warning
+    update.updateAvailable -> MaterialTheme.colorScheme.primary
+    else -> DigitDnsTheme.colors.success
 }
 
 /** The cache-flush card, relocated onto the REST API Gateway page. */
@@ -97,38 +163,6 @@ internal fun InfoLine(label: String, value: String) {
     }
 }
 
-@Composable
-private fun UpdateInfo(update: UpdateStatus) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        when {
-            update.error.isNotBlank() -> Text(
-                text = "Could not check: ${update.error}",
-                style = MaterialTheme.typography.bodySmall,
-                color = DigitDnsTheme.colors.warning,
-            )
-            update.updateAvailable -> Text(
-                text = "Update available: ${update.current} → ${update.latest}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            else -> Text(
-                text = "Up to date (${update.current}).",
-                style = MaterialTheme.typography.bodySmall,
-                color = DigitDnsTheme.colors.success,
-            )
-        }
-        if (update.note.isNotBlank()) {
-            Text(update.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (update.updateAvailable && !update.supported) {
-            Text(
-                text = "This update cannot be applied by the app on this install.",
-                style = MaterialTheme.typography.bodySmall,
-                color = DigitDnsTheme.colors.warning,
-            )
-        }
-    }
-}
 
 /**
  * The badge colour for the server's health word. The v3 endpoint answers "healthy";

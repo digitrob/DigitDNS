@@ -262,6 +262,18 @@ func (b *v3Backend) SaveSubscription(r *http.Request, body map[string]any) (map[
 }
 
 // -----------------------------------------------------------------------------
+// GeoIP database (server location). Status is a plain read; the refresh reuses
+// the dashboard handler so the button and the daily loop cannot diverge.
+
+func (b *v3Backend) GeoIPStatus() (map[string]any, error) {
+	_, parsed, _, err := call(b.ws.handleGeoIPStatus, httptest.NewRequest(http.MethodGet, "/api/settings/geoip", nil))
+	return parsed, err
+}
+
+func (b *v3Backend) GeoIPUpdate(r *http.Request) (map[string]any, error) {
+	return b.delegateBody(r, nil, b.ws.handleGeoIPUpdate)
+}
+
 // TLS / ACME
 // -----------------------------------------------------------------------------
 

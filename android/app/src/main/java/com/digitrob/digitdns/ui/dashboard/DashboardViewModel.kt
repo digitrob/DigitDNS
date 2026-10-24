@@ -57,6 +57,8 @@ data class DashboardUiState(
     val layout: DashboardLayout = DashboardLayout(),
     /** The install's public address, shown in the dashboard's top box. */
     val serverIp: String = "",
+    /** ISO country code for [serverIp], resolved by the server's GeoIP database. */
+    val serverCountry: String = "",
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val isBenchmarking: Boolean = false,
@@ -189,13 +191,13 @@ class DashboardViewModel @Inject constructor(
     private fun loadServerIp() {
         val generation = ipLoadGeneration.incrementAndGet()
         viewModelScope.launch {
-            val ip = runCatching { settingsRepository.load().server?.publicIp }
+            val server = runCatching { settingsRepository.load().server }
                 .getOrElse {
                     Timber.d(it, "server IP load failed; keeping last value")
-                    _state.value.serverIp
+                    null
                 }
-            if (ipLoadGeneration.get() == generation && !ip.isNullOrBlank()) {
-                _state.update { it.copy(serverIp = ip) }
+            if (server != null && ipLoadGeneration.get() == generation && server.publicIp.isNotBlank()) {
+                _state.update { it.copy(serverIp = server.publicIp, serverCountry = server.country) }
             }
         }
     }

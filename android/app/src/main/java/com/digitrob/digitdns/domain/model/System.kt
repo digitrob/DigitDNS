@@ -57,6 +57,8 @@ data class ServerConfig(
     val apiBindList: List<String>,
     val sessionIdleMinutes: Int,
     val adminPath: String,
+    /** ISO 3166-1 alpha-2 country for [publicIp], from the server's GeoIP database. */
+    val country: String = "",
 ) {
     companion object {
         fun from(dto: ServerSettings) = ServerConfig(
@@ -70,6 +72,7 @@ data class ServerConfig(
             apiBindList = dto.apiBindList,
             sessionIdleMinutes = dto.sessionIdleMinutes,
             adminPath = dto.adminPath,
+            country = dto.country,
         )
     }
 }
