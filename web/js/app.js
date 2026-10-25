@@ -1465,9 +1465,10 @@ function renderProxiedList() {
   if (moreBtn) moreBtn.classList.toggle('hidden', !proxiedHasMore);
   rows.forEach(({ domain, on }) => {
     const row = document.createElement('tr');
-    // opacity-50 on the paused rows reads as "listed, but not in effect"; the switch
-    // state is still the authoritative signal, the dimming just scans faster.
-    row.className = 'hover:bg-slate-800/40 transition' + (on ? '' : ' opacity-50');
+    // is-paused paints the row amber: listed, but not in the proxy set. The old
+    // opacity-50 dimmed the switch and the badge along with the domain, which is
+    // exactly the content needed to switch it back on.
+    row.className = 'hover:bg-slate-800/40 transition' + (on ? '' : ' is-paused');
     // The colour class is chosen here rather than written into the template: the
     // escaping sweep reads attribute interpolations, and a literal ternary sitting
     // in a class attribute is a shape it cannot vouch for. domainClass carries no

@@ -1043,6 +1043,26 @@ input:checked + .slider:before {
 .proxied-table td {
   vertical-align: middle;
 }
+/* Zebra rows. A long routing list is otherwise one undifferentiated block of
+ * monospace, and the eye loses the line it was on between the domain and its
+ * status badge. The tint is the theme's own slate token, so the light theme gets
+ * an equivalently weighted wash rather than a grey band. */
+.proxied-table tbody tr:nth-child(even) {
+  background-color: rgb(var(--c-slate-400) / 0.055);
+}
+.proxied-table tbody tr:hover {
+  background-color: rgb(var(--c-slate-400) / 0.12);
+}
+/* A paused domain is listed but out of effect, so it gets an amber wash on top
+ * of the zebra instead of the opacity-50 dimming it used to carry: dimming also
+ * faded the switch and the status badge the operator needs to read in order to
+ * turn it back on. */
+.proxied-table tbody tr.is-paused {
+  background-color: rgb(var(--c-amber-400) / 0.075);
+}
+.proxied-table tbody tr.is-paused:hover {
+  background-color: rgb(var(--c-amber-400) / 0.13);
+}
 /* One control row above the list: sort + count, the live filter, then the bulk
  * actions. The filter is a flex item with a basis and a floor rather than
  * `flex-1 min-w-0`: it should shrink first, but not to nothing, and once it can
@@ -1189,6 +1209,21 @@ input:checked + .slider:before {
 .stream-col-rule { width: 11rem; }
 .stream-col-action { width: 9rem; }
 .stream-col-latency { width: 7rem; }
+
+/* Zebra rows for the live log, so a dense block of queries can be tracked across
+ * the seven columns without losing the line. Same theme token and weight as the
+ * proxied list. The placeholder rows are excluded: they are a single centred
+ * message, not a data row, and a tint behind them reads as a stray empty row. */
+.stream-table tbody tr:nth-child(even) {
+  background-color: rgb(var(--c-slate-400) / 0.055);
+}
+.stream-table tbody tr:hover {
+  background-color: rgb(var(--c-slate-400) / 0.12);
+}
+.stream-table tbody tr.stream-placeholder,
+.stream-table tbody tr.stream-placeholder:hover {
+  background-color: transparent;
+}
 
 /* ── Live-log quick actions: the ACTION badge and its popover ───────────────────
  * The badge becomes a button so a query can be routed without leaving the log.

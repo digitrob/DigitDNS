@@ -6,8 +6,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,6 +28,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
@@ -50,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,6 +75,8 @@ import com.digitrob.digitdns.core.network.LiveStats
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.data.DashboardCard
 import com.digitrob.digitdns.ui.components.CountryFlag
+import com.digitrob.digitdns.ui.components.MetricCard
+import com.digitrob.digitdns.ui.components.MetricValue
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.PanelScreenHeader
@@ -84,6 +87,8 @@ import com.digitrob.digitdns.ui.formatCount
 import com.digitrob.digitdns.ui.formatRate
 import com.digitrob.digitdns.ui.formatUptime
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
+import com.digitrob.digitdns.ui.theme.MetricMeta
+import com.digitrob.digitdns.ui.theme.MetricNumber
 import com.digitrob.digitdns.ui.theme.PanelMono
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -217,9 +222,9 @@ private fun ServerIpBox(
     if (serverIp.isBlank()) return
     val colors = DigitDnsTheme.colors
     val clipboard = LocalClipboardManager.current
-    val swipeThreshold = with(LocalDensity.current) { 32.dp.toPx() }
-    var hidden by remember { mutableStateOf(false) }
-    var showDomain by remember { mutableStateOf(false) }
+    val swipeThreshold = with(LocalDensity.current) { 24.dp.toPx() }
+    var hidden by rememberSaveable { mutableStateOf(false) }
+    var showDomain by rememberSaveable { mutableStateOf(false) }
     val hasDomain = domain.isNotBlank()
     val displayed = if (showDomain && hasDomain) domain else serverIp
     // Compose can only blur from Android 12. On 10/11 the privacy swipe masks the
@@ -234,10 +239,6 @@ private fun ServerIpBox(
             .background(colors.bgCard)
             .border(1.dp, colors.borderColor, RoundedCornerShape(12.dp))
             .clickable { clipboard.setText(AnnotatedString(displayed)) }
-            // Down swaps the address for the configured domain, up swaps back. Only
-            // armed when a domain exists, so a box with none does not swallow the
-            // dashboard's own scroll gestures.
-            .domainSwipe(enabled = hasDomain, threshold = swipeThreshold) { showDomain = it }
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -248,23 +249,29 @@ private fun ServerIpBox(
             modifier = Modifier.size(16.dp),
         )
         Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            // The swipes live on the text column, never on the row: a gesture that
+            // starts on the flag or the copy glyph leaves both exactly as they are.
+            modifier = Modifier
+                .weight(1f)
+                .then(
+                    if (hasDomain) {
+                        Modifier.addressSwipe(
+                            threshold = swipeThreshold,
+                            onTogglePrivacy = { hidden = !hidden },
+                            onToggleView = { showDomain = !showDomain },
+                        )
+                    } else {
+                        Modifier.privacySwipe(swipeThreshold) { hidden = !hidden }
+                    },
+                ),
+        ) {
             Text(
                 text = "Server Public IP/Domain",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
-                text = shownText,
-                style = MaterialTheme.typography.titleMedium.copy(fontFamily = PanelMono),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .then(if (hidden && canBlur) Modifier.blur(6.dp) else Modifier)
-                    // A horizontal swipe across the value hides it (IP or domain).
-                    .privacySwipe(swipeThreshold) { hidden = !hidden },
-            )
+            AddressValue(text = shownText, hidden = hidden, canBlur = canBlur)
         }
         if (country.isNotBlank()) {
             Spacer(Modifier.width(10.dp))
@@ -280,41 +287,83 @@ private fun ServerIpBox(
     }
 }
 
+/** The address itself — the one thing the privacy swipe is allowed to cover. */
+@Composable
+private fun AddressValue(text: String, hidden: Boolean, canBlur: Boolean) {
+    val radius by animateDpAsState(
+        targetValue = if (hidden && canBlur) 8.dp else 0.dp,
+        label = "addressBlur",
+    )
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium.copy(fontFamily = PanelMono),
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = if (canBlur) Modifier.blur(radius) else Modifier,
+    )
+}
+
 /** Keeps an address' shape while replacing every character that carries information. */
 private fun maskAddress(value: String): String =
     value.map { c -> if (c.isLetterOrDigit()) '•' else c }.joinToString("")
 
 /**
- * Down shows [show] and up hides it, but only when the box actually has something to
- * swap to. When [enabled] is false the modifier is absent, so the gesture falls through
- * to the dashboard's own scrolling instead of being swallowed by the box.
+ * One drag detector for the address block. The first axis to cross [threshold] wins and
+ * the action fires while the finger is still down, so a short flick is enough — waiting
+ * for the lift, and mapping each direction to one fixed outcome, is what made the old
+ * pair of gestures feel dead. Only one action is taken per gesture, so a continued drag
+ * cannot toggle back.
  */
-private fun Modifier.domainSwipe(
-    enabled: Boolean,
+private fun Modifier.addressSwipe(
     threshold: Float,
-    show: (Boolean) -> Unit,
-): Modifier {
-    if (!enabled) return this
-    return pointerInput(enabled) {
-        var drag = 0f
-        detectVerticalDragGestures(
-            onDragStart = { drag = 0f },
-            onVerticalDrag = { _, amount -> drag += amount },
-            onDragEnd = {
-                if (drag > threshold) show(true) else if (drag < -threshold) show(false)
-            },
-        )
-    }
+    onTogglePrivacy: () -> Unit,
+    onToggleView: () -> Unit,
+): Modifier = pointerInput(threshold) {
+    var horizontal = 0f
+    var vertical = 0f
+    var fired = false
+    detectDragGestures(
+        onDragStart = {
+            horizontal = 0f
+            vertical = 0f
+            fired = false
+        },
+        onDrag = { change, amount ->
+            change.consume()
+            if (fired) return@detectDragGestures
+            horizontal += amount.x
+            vertical += amount.y
+            if (abs(horizontal) >= threshold && abs(horizontal) > abs(vertical)) {
+                fired = true
+                onTogglePrivacy()
+            } else if (abs(vertical) >= threshold) {
+                fired = true
+                onToggleView()
+            }
+        },
+    )
 }
 
-/** A horizontal swipe across the value toggles the privacy blur. */
+/** A horizontal swipe across the value toggles the privacy blur (no domain to swap). */
 private fun Modifier.privacySwipe(threshold: Float, onToggle: () -> Unit): Modifier =
-    pointerInput(Unit) {
+    pointerInput(threshold) {
         var drag = 0f
+        var fired = false
         detectHorizontalDragGestures(
-            onDragStart = { drag = 0f },
-            onHorizontalDrag = { _, amount -> drag += amount },
-            onDragEnd = { if (abs(drag) > threshold) onToggle() },
+            onDragStart = {
+                drag = 0f
+                fired = false
+            },
+            onHorizontalDrag = { change, amount ->
+                change.consume()
+                if (fired) return@detectHorizontalDragGestures
+                drag += amount
+                if (abs(drag) >= threshold) {
+                    fired = true
+                    onToggle()
+                }
+            },
         )
     }
 
@@ -375,20 +424,18 @@ private fun DashboardGrid(
 @Composable
 private fun QueryRateCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
-    PanelCard(modifier = Modifier.fillMaxWidth().heightIn(min = METRIC_CARD_MIN_HEIGHT)) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    MetricCard {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             CardLabel(DashboardCard.QUERY_RATE, "Query Rate")
-            Text(
+            MetricValue(
                 text = stats?.let { String.format(Locale.US, "%.1f", it.qps) } ?: "—",
-                style = MaterialTheme.typography.headlineLarge.copy(fontFamily = PanelMono),
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
                 text = "QPS",
-                style = MaterialTheme.typography.bodySmall,
+                style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(4.dp))
             val total = stats?.totalQueries ?: 0
             val limit = stats?.rateLimitQps ?: 0
             val dropped = stats?.rateLimited ?: 0
@@ -398,12 +445,12 @@ private fun QueryRateCard(stats: LiveStats?) {
             }
             Text(
                 text = first,
-                style = MaterialTheme.typography.bodySmall,
+                style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 text = "Dropped: ${formatCount(dropped)}",
-                style = MaterialTheme.typography.bodySmall,
+                style = MetricMeta,
                 color = if (dropped > 0) colors.warning else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -413,34 +460,32 @@ private fun QueryRateCard(stats: LiveStats?) {
 @Composable
 private fun RamCacheCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
-    PanelCard(modifier = Modifier.fillMaxWidth().heightIn(min = METRIC_CARD_MIN_HEIGHT)) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    MetricCard {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             CardLabel(DashboardCard.RAM_CACHE, "RAM Cache")
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(
+                MetricValue(
                     text = stats?.let { String.format(Locale.US, "%.1f", it.cacheHitRate) } ?: "—",
-                    style = MaterialTheme.typography.headlineLarge.copy(fontFamily = PanelMono),
                     color = colors.success,
                 )
                 Text(
                     text = "% Hits",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MetricMeta,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+                    modifier = Modifier.padding(start = 4.dp, bottom = 3.dp),
                 )
             }
-            Spacer(Modifier.height(4.dp))
             val items = formatCount(stats?.cacheItems ?: 0)
             val hits = formatCount(stats?.cacheHits ?: 0)
             val misses = formatCount(stats?.cacheMisses ?: 0)
             Text(
                 text = "Items: $items · $hits hits",
-                style = MaterialTheme.typography.bodySmall,
+                style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 text = "Missed: $misses",
-                style = MaterialTheme.typography.bodySmall,
+                style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -450,24 +495,22 @@ private fun RamCacheCard(stats: LiveStats?) {
 @Composable
 private fun SniProxyCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
-    PanelCard(modifier = Modifier.fillMaxWidth().heightIn(min = METRIC_CARD_MIN_HEIGHT)) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    MetricCard {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             CardLabel(DashboardCard.SNI_PROXY, "SNI Proxy")
-            Text(
+            MetricValue(
                 text = formatCount(stats?.activeRelays ?: 0),
-                style = MaterialTheme.typography.headlineLarge.copy(fontFamily = PanelMono),
                 color = colors.purple,
             )
             Text(
                 text = "Relays",
-                style = MaterialTheme.typography.bodySmall,
+                style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(4.dp))
             val drops = (stats?.relaysRefused ?: 0) + (stats?.relaysUnreadable ?: 0)
             Text(
                 text = "Total: ${formatCount(stats?.totalRelays ?: 0)} · ${if (drops > 0) "${formatCount(drops)} drops" else "no drops"}",
-                style = MaterialTheme.typography.bodySmall,
+                style = MetricMeta,
                 color = if (drops > 0) colors.warning else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -478,17 +521,16 @@ private fun SniProxyCard(stats: LiveStats?) {
 private fun CpuUsageCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
     val pct = stats?.cpuUsagePercent ?: 0.0
-    PanelCard(modifier = Modifier.fillMaxWidth().heightIn(min = METRIC_CARD_MIN_HEIGHT)) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    MetricCard {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             CardLabel(DashboardCard.CPU_USAGE, "CPU Usage")
-            Text(
+            MetricValue(
                 text = stats?.let { String.format(Locale.US, "%.1f%%", it.cpuUsagePercent) } ?: "—",
-                style = MaterialTheme.typography.headlineLarge.copy(fontFamily = PanelMono),
                 color = colorForPercent(pct, colors.danger, colors.warning, colors.success),
             )
             Text(
                 text = "${stats?.numCpu ?: 0} cores",
-                style = MaterialTheme.typography.bodySmall,
+                style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -498,19 +540,17 @@ private fun CpuUsageCard(stats: LiveStats?) {
 @Composable
 private fun RamUsageCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
-    PanelCard(modifier = Modifier.fillMaxWidth().heightIn(min = METRIC_CARD_MIN_HEIGHT)) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    MetricCard {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             CardLabel(DashboardCard.RAM_USAGE, "RAM Usage")
-            Text(
+            MetricValue(
                 text = stats?.let { formatBytes((it.ramUsageMb * 1024 * 1024).toLong()) } ?: "—",
-                style = MaterialTheme.typography.headlineLarge.copy(fontFamily = PanelMono),
                 color = colors.info,
             )
-            Spacer(Modifier.height(4.dp))
             val sysPct = stats?.systemMemPercent ?: 0.0
             Text(
                 text = "System: ${String.format(Locale.US, "%.0f%%", sysPct)}",
-                style = MaterialTheme.typography.bodySmall,
+                style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -519,23 +559,21 @@ private fun RamUsageCard(stats: LiveStats?) {
 
 @Composable
 private fun LiveTrafficCard(stats: LiveStats?) {
-    PanelCard(modifier = Modifier.fillMaxWidth().heightIn(min = METRIC_CARD_MIN_HEIGHT)) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    MetricCard {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             CardLabel(DashboardCard.LIVE_TRAFFIC, "Live Traffic")
-            Text(
+            MetricValue(
                 text = stats?.let { formatBytes(it.totalBytesTransferred) } ?: "—",
-                style = MaterialTheme.typography.headlineLarge.copy(fontFamily = PanelMono),
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = "Total",
-                style = MaterialTheme.typography.bodySmall,
+                style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(4.dp))
             Text(
                 text = "↓ ${stats?.let { formatRate(it.speedInKbps) } ?: "—"} · ↑ ${stats?.let { formatRate(it.speedOutKbps) } ?: "—"}",
-                style = MaterialTheme.typography.bodySmall,
+                style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -705,7 +743,7 @@ private fun CardLabel(card: DashboardCard, title: String, modifier: Modifier = M
             imageVector = card.icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(16.dp),
+            modifier = Modifier.size(CARD_ICON_SIZE),
         )
         Spacer(Modifier.width(6.dp))
         Label(title)
@@ -752,7 +790,8 @@ private const val CPU_WARNING_PERCENT = 70.0
  * unequal cards leave a visible gap beside the shorter one. Pinning a common floor makes
  * the grid read as a grid.
  */
-private val METRIC_CARD_MIN_HEIGHT = 166.dp
+/** The card-icon size every dashboard tile header uses. */
+private val CARD_ICON_SIZE = 14.dp
 
 /** Resolver-latency p50 at/above this reads red — the panel's own threshold. */
 private const val RESOLVER_LATENCY_DANGER_MS = 60.0

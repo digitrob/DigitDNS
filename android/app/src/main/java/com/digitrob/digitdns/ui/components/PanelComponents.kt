@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
+import com.digitrob.digitdns.ui.theme.MetricNumber
 import com.digitrob.digitdns.ui.theme.PanelMono
 
 /**
@@ -72,6 +74,36 @@ fun PanelCard(
  */
 object PanelRowDefaults {
     val height = 56.dp
+}
+
+/**
+ * The height every dashboard metric tile settles at. All six share it, so a grid row
+ * never shows one card taller than its neighbour; 132 dp fits the tallest content
+ * (Query Rate: label, value, unit and two supporting lines) at the default text scale.
+ */
+private val MetricCardHeight = 132.dp
+
+/** The shared shell of a dashboard metric tile: compact padding, one height. */
+@Composable
+fun MetricCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    PanelCard(
+        modifier = modifier.fillMaxWidth().heightIn(min = MetricCardHeight),
+        contentPadding = 12.dp,
+        content = content,
+    )
+}
+
+/** A metric's headline number. Never wraps: the unit lives on its own line. */
+@Composable
+fun MetricValue(text: String, color: Color) {
+    Text(
+        text = text,
+        style = MetricNumber,
+        color = color,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 /** A labelled metric, the unit of the dashboard grid. */

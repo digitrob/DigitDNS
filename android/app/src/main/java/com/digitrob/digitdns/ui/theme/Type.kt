@@ -84,3 +84,28 @@ internal val DigitDnsTypography = Typography(
         lineHeight = 15.sp,
     ),
 )
+
+/**
+ * The one size every dashboard metric number uses. The grid's tiles are two columns
+ * wide on a phone, so a 32sp number left almost no room for the card's supporting
+ * lines — the value is the card's headline, not a wall display, and 24sp keeps the
+ * four-line tiles inside a compact, equal-height card.
+ */
+internal val MetricNumber = TextStyle(
+    fontFamily = PanelMono,
+    fontWeight = FontWeight.SemiBold,
+    fontSize = 24.sp,
+    lineHeight = 27.sp,
+)
+
+/**
+ * The one size every metric's supporting line uses. BodySmall sits at 13sp for prose,
+ * which is too wide for two stats sharing a 138dp card; the labels here are short and
+ * dense, so they get their own tighter step rather than a per-card override.
+ */
+internal val MetricMeta = TextStyle(
+    fontFamily = FontFamily.Default,
+    fontWeight = FontWeight.Normal,
+    fontSize = 11.sp,
+    lineHeight = 13.sp,
+)
