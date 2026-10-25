@@ -468,18 +468,17 @@ private fun RamCacheCard(stats: LiveStats?) {
     MetricCard {
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
             CardLabel(DashboardCard.RAM_CACHE, "RAM Cache", compact = true)
-            Row(verticalAlignment = Alignment.Bottom) {
-                MetricValue(
-                    text = stats?.let { String.format(Locale.US, "%.1f", it.cacheHitRate) } ?: "—",
-                    color = colors.success,
-                )
-                Text(
-                    text = "% Hits",
-                    style = MetricMeta,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 3.dp),
-                )
-            }
+            MetricValue(
+                text = stats?.let { String.format(Locale.US, "%.1f", it.cacheHitRate) } ?: "—",
+                color = colors.success,
+            )
+            // The unit sits on its own line now: it is the same four-line shape as
+            // Query Rate, so the two cards sharing a row stay level.
+            Text(
+                text = "% hits",
+                style = MetricMeta,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             val items = formatCount(stats?.cacheItems ?: 0)
             val hits = formatCount(stats?.cacheHits ?: 0)
             val misses = formatCount(stats?.cacheMisses ?: 0)
@@ -513,10 +512,12 @@ private fun SniProxyCard(stats: LiveStats?) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             val drops = (stats?.relaysRefused ?: 0) + (stats?.relaysUnreadable ?: 0)
+            // Same colour as every other card's secondary line. The amber warning tint
+            // made this one tile's footer read differently for the same kind of text.
             Text(
                 text = "Total ${formatCount(stats?.totalRelays ?: 0)} · ${if (drops > 0) "${formatCount(drops)} drops" else "no drops"}",
                 style = MetricMeta,
-                color = if (drops > 0) colors.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
