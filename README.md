@@ -340,8 +340,9 @@ The web panel manages everything:
   using it right now
 - **Domain rules** — add/edit/proxy/block/direct, bulk import, live query log
   with one-click actions (see a domain in the log? Click to block or proxy it).
-  The proxied table keeps the domain on the left and the switch/status compact on
-  the right, so long lists stay readable
+  The log keeps the last hundred queries, pauses without losing arrivals, and
+  its Clear button empties the server's buffer too — a reconnect cannot bring
+  the cleared rows back. Both lists use zebra rows so long entries stay readable
 - **Clients** — add subscribers, set quotas and expiry, suspend, see usage.
   Editing a client gives you a full-width IP list, and a client with many
   addresses keeps a normal-sized card (the address chips scroll)
@@ -366,7 +367,7 @@ customized with your own domain, title, and CSS to match your branding.
 DigitDNS also ships a native Android companion app — the same control surface as
 the web panel, in your pocket, talking to your server over the REST API and the
 live event stream. It is a separate product on its own version line
-(`android-v3.4.7` and friends), side-loaded from the GitHub release page rather
+(`android-v3.4.8` and friends), side-loaded from the GitHub release page rather
 than distributed through Play.
 
 **What it does (feature parity with the web panel):**
@@ -375,9 +376,11 @@ than distributed through Play.
   TOTP when two-factor is enabled; holds a real, revocable session token.
 - **Dashboard** — live stats, query rate, cache hits, proxy relay counts, CPU,
   RAM and live traffic, plus the QPS chart. Upstream Racers leads by default,
-  the metric tiles share one size, and Settings → Dashboard cards can reorder
-  them or reset the layout. The server IP box carries the country flag, with a
-  flat 4:3 icon from a GeoIP database the server refreshes daily.
+  the six metric tiles share one compact size, and Settings → Dashboard cards
+  can reorder them or reset the layout. The server IP box carries the country
+  flag and answers to swipes: sideways blurs the address for privacy, up or
+  down swaps it for the domain the server answers on. The flags come from a
+  GeoIP database the server refreshes daily.
 - **Domain rules** — add, edit, proxy, block or route domains direct; bulk
   import; groups with icons; one-tap actions straight from the live log.
 - **Clients (subscribers)** — create and edit subscribers, set quotas, expiry
@@ -386,7 +389,8 @@ than distributed through Play.
 - **Upstreams** — add, remove, reorder and benchmark DNS upstreams on any
   transport.
 - **Live Query Log** — the same live feed as the panel, with search, filters,
-  sorting, pause/resume and quick actions.
+  sorting, pause/resume (paused arrivals are kept, not dropped), clear that also
+  empties the server's buffer, and quick actions.
 - **Diagnostics** — run the server diagnostic suite against your own targets.
 - **Settings** — access lists, TLS/ACME certificate issuance and renewal (the
   "Certificate Auto-renew" and "DoT/DoH Auto-renew" switches sit together there),

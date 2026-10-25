@@ -1,3 +1,50 @@
+# DigitDNS v3.4.8
+
+## Highlights
+
+- **Clear finally means clear.** The live log's Clear button now empties the
+  server's own recent-query buffer, not just the page you are looking at. Every
+  other open dashboard is told to drop its rows too, and a reconnect no longer
+  brings the cleared queries back. If the server cannot be reached, the panel
+  says so instead of pretending it worked.
+- **Pause pauses, and nothing else.** While the log is paused, arriving queries
+  are kept in the background instead of being thrown away, so Resume shows what
+  happened in the gap. A reconnect can no longer repaint the table while you
+  have it frozen.
+- **The log stays a hundred queries.** The browser keeps exactly as many rows as
+  the server does, so a long-running tab cannot grow without bound and a refresh
+  never shows more than the server would replay.
+- **Rows are easier to track.** The Proxied Domains table and the live log now
+  alternate a faint row tint. Paused domains are washed amber instead of being
+  faded out, which used to dim the switch and the status badge you need to turn
+  them back on.
+- **A smaller Android dashboard.** All six metric tiles are roughly half the
+  height they used to be: smaller numbers, a tighter text step that matches the
+  rest of the app, less padding, and Live Traffic's `Total` on the same line as
+  the up/down rates. Every card in a row still lines up, and nothing wraps or
+  gets clipped.
+- **The Android server box does more.** Swipe the address sideways to blur it
+  for privacy, or up/down to swap between the public IP and the domain the
+  server answers on. The flag and copy icon stay exactly where they were.
+
+## Under the hood
+
+- New `POST /api/stream/clear`; the Clear button uses it, and a `cleared` event
+  keeps other panels in step.
+- The dev container's health check now asks over HTTPS when the panel runs
+  TLS, instead of reporting a healthy container as sick.
+
+## Upgrading
+
+Docker users pulling `ghcr.io/digitrob/digitdns:latest` pick everything up on
+restart with no migration. Binary installs: replace the `digitdns` binary and
+restart. The Android app is a separate download on this page — version 3.4.8
+(versionCode 348) — and updates independently of the server.
+
+Full changelog: docs/CHANGELOG.md
+
+---
+
 # DigitDNS v3.4.7
 
 ## Highlights

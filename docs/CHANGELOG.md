@@ -6,14 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## 🩹 [Unreleased]
+## 🏷️ [v3.4.8] — A live log that really clears, and tighter tiles
 
 ### ✨ Added
-- **Clear now clears the server, not just the tab.** The live log's Clear button empties the daemon's in-memory ring through a new `POST /api/stream/clear` and every open dashboard drops its rows on the resulting `cleared` event. Before, only the browser buffer was emptied, so the next reconnect replayed the history the operator had just dismissed.
-- **Zebra rows in both dashboard lists.** The Proxied Domains table and the live query log now alternate a faint row tint, so a dense wall of monospace no longer forces the eye to re-find the line it was reading. Paused proxied domains get an amber wash instead of the old `opacity-50`, which used to fade the switch and the status badge along with the domain.
+- **Clear now clears the server, not just the tab.** The live log's Clear button empties the daemon's in-memory ring through a new `POST /api/stream/clear`, and every open dashboard drops its rows on the resulting `cleared` event. Before, only the browser buffer was emptied, so the next reconnect replayed the history the operator had just dismissed.
+- **The Android server box reads your server, not just its address.** Swipe the value sideways to blur the IP or domain for privacy; swipe it up or down to swap between the public IP and the domain the install answers on. The gesture fires as soon as it crosses the threshold, works in either direction, and lives on the text only — the flag and copy icon are never touched.
+- **Zebra rows in both dashboard lists.** The Proxied Domains table and the live query log alternate a faint row tint, so a dense wall of monospace no longer forces the eye to re-find the line it was reading. Paused proxied domains get an amber wash instead of the old `opacity-50`, which used to fade the switch and the status badge along with the domain.
 
 ### 🔄 Changed
-- **The Android dashboard tiles are compact.** All six metric cards (Query Rate, RAM Cache, SNI Proxy, CPU, RAM Usage, Live Traffic) share a 22 sp number (was 32 sp), an 11 sp supporting line, 8 dp inner padding and a 94 dp minimum height (was 166 dp) — nearly half the height it shipped with — while every label stays on one line, so a row of two stays level and more of the grid fits on screen. Live Traffic's `Total` caption now sits on the same line as the ↓/↑ rates. Every card icon is 14 dp, one size across the dashboard.
+- **The Android dashboard tiles are compact.** All six metric cards (Query Rate, RAM Cache, SNI Proxy, CPU, RAM Usage, Live Traffic) share a 22 sp number (was 32 sp), an 11 sp supporting line, 8 dp inner padding and a 94 dp minimum height (was 166 dp) — nearly half the height it shipped with — while every label stays on one line, so a row of two stays level and more of the grid fits on screen. Live Traffic's `Total` caption now sits on the same line as the ↓/↑ rates, RAM Cache's `% hits` sits under its number, the SNI footer uses the same secondary colour as every other card, and every card icon is 14 dp.
+- **The server-switch button matches the address box.** It is a rounded square the height of the row, shortened to sit flush with the box's border, sits the same 12 dp away as the grid's own card gap, and its icon is centred.
+- **Upstream Racers has no rank numbers.** The 1 2 3 4 5 column is gone; each row starts with its status dot, address and hit/error count.
 - **The live log holds a hundred queries, on both sides.** The browser buffer now matches the daemon's ring instead of keeping twice as many rows, and a second tab or a reconnect never shows more than the server would replay.
 
 ### 🐛 Fixed
