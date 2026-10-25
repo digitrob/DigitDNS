@@ -67,10 +67,9 @@ func TestSPADocumentRewritesAssetReferencesToTheAdminPrefix(t *testing.T) {
 	}
 
 	// Every docs anchor is rewritten too — they are the absolute links that are
-	// not assets, and each must land in the same namespace. All three versions
-	// are checked: v2 and v3 were added to the banner without a matching
-	// rewrite, and their root-absolute hrefs 404'd.
-	for _, p := range []string{"/api/v1/docs", "/api/v2/docs", "/api/v3/docs"} {
+	// not assets, and each must land in the same namespace. v1 was removed at
+	// its sunset, so the remaining two versions are checked.
+	for _, p := range []string{"/api/v2/docs", "/api/v3/docs"} {
 		if strings.Contains(doc, `href="`+p+`"`) {
 			t.Errorf("the %s anchor was left at the host root", p)
 		}

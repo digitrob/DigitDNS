@@ -235,7 +235,10 @@ func main() {
 	// migration writes allow_all=false only when its marker is absent, so the
 	// re-read below picks up either that fresh false or the operator's own
 	// record — the DB wins over the file seed for this and every later boot.
-	bootstrap.MigrateDefaultAllowAll(db)
+	// A first boot with an explicit config.json value has no legacy record to
+	// converge; the migration must not overwrite what the operator wrote.
+	fileSeededAccess := !serverWasPersisted && fileAccess != nil && fileAccess.PresentAllowAll
+	bootstrap.MigrateDefaultAllowAll(db, fileSeededAccess)
 	if dbRecorded, err := db.SettingExists("allow_all"); err != nil {
 		log.Fatalf("[Main] Could not inspect the persisted access mode: %v", err)
 	} else if dbRecorded {
@@ -319,7 +322,7 @@ func main() {
 	// longer recognises. Rewrite the marker so the credential the operator
 	// already has keeps working — see migrateAPIKeyPrefix.
 	if migrateAPIKeyPrefix(serverSettings) {
-		log.Printf("[Main] Master API key prefix migrated to %q; the secret itself is unchanged. Read the current key from Settings, the console's option 7, or GET /api/v1/api-key.", crypto.APIKeyPrefix)
+		log.Printf("[Main] Master API key prefix migrated to %q; the secret itself is unchanged. Read the current key from Settings, the console's option 7, or Settings → REST API Gateway.", crypto.APIKeyPrefix)
 		settingsDirty = true
 	}
 
@@ -1028,7 +1031,7 @@ func ensureAPIKey(s *database.ServerSettings) bool {
 		return false
 	}
 	s.APIKey = crypto.GenerateAPIKey()
-	log.Printf("[Main] No master API key was configured; generated one. Read it from Settings, the console's option 7, or GET /api/v1/api-key.")
+	log.Printf("[Main] No master API key was configured; generated one. Read it from Settings, the console's option 7, or Settings → REST API Gateway.")
 	return true
 }
 

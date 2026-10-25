@@ -1,4 +1,4 @@
-# 🔌 DigitDNS Developer REST API v1 — Official Specification & Guide
+# 🔌 DigitDNS Developer REST API — v2 & v3
 
 DigitDNS provides a high-performance, developer-first **REST API v1** designed for bot developers, subscription managers, automated billing systems, Discord/Telegram bots, and enterprise monitoring platforms.
 
@@ -31,12 +31,12 @@ DigitDNS provides a high-performance, developer-first **REST API v1** designed f
 
 ## 🔐 Authentication & Security
 
-All requests to `/api/v1/*` (except `/api/v1/version` and `/api/v1/docs`) require authentication via either a Master **API Key** or a **Bearer Admin Session Token**.
+All requests to `/api/v2/*` and `/api/v3/*` (except the version endpoints) require authentication via either a Master **API Key** or a **Bearer Admin Session Token**.
 
 ### Method 1: Master API Key (Recommended for Bots & Scripts)
 Pass the API Key in the `X-API-Key` HTTP header:
 ```http
-GET /api/v1/status HTTP/1.1
+GET /api/v2/status HTTP/1.1
 Host: YOUR_SERVER_IP:8080
 X-API-Key: digitdns_live_your_secret_api_key_here
 ```
@@ -44,7 +44,7 @@ X-API-Key: digitdns_live_your_secret_api_key_here
 ### Method 2: Bearer Token (For Web Panels)
 Pass the admin session token in the `Authorization` header:
 ```http
-GET /api/v1/status HTTP/1.1
+GET /api/v2/status HTTP/1.1
 Host: YOUR_SERVER_IP:8080
 Authorization: Bearer digitdns_session_your_token_here
 ```
@@ -77,10 +77,10 @@ Authorization: Bearer digitdns_session_your_token_here
 
 - **Base URL (v3, current):** `http://<SERVER_IP>:<panel-port>/<admin-path>/api/v3` (or `https://<YOUR_DOMAIN>:<panel-port>/<admin-path>/api/v3` when TLS is active)
 - **Base URL (v2):** the same with `/api/v2` — still supported, and a strict subset of v3's conventions.
-- **Base URL (v1, deprecated):** the same with `/api/v1`. Every v1 route answers with `Deprecation: true`, a `Sunset` header and a `Link` to its v2 successor. v1 keeps working — with the same security fixes — until its sunset; new integrations should start on v2.
+- **Base URL (current):** the same with `/api/v2`, and `/api/v3` for dashboard parity. **v1 was removed in v3.4.9**, after its published sunset of 1 July 2026; `/api/v1/*` now answers 404. The v1 material further down is kept as history only.
 - **Admin path:** since v2.1 the panel and its API live below a random 16-hex-character path generated once at first install (printed to the log on first run). It is a locator, not a credential — every URL below shows the un-prefixed form, and you must insert your own `<admin-path>` before it.
 - **Panel port:** fresh installs draw a random management port (20000–60000) instead of the old fixed 8080; the installer prints and opens it. Read it from the install banner or the service log.
-- **Interactive Swagger Documentation:** Open `http://<SERVER_IP>:<panel-port>/<admin-path>/api/v3/docs` in your browser (v2 at `/api/v2/docs`, v1 at `/api/v1/docs`). Press **Authorize**, paste the Master API Key from Settings — or a session token from `/api/v3/auth/login` — and every endpoint on the page becomes runnable from the browser.
+- **Interactive Swagger Documentation:** Open `http://<SERVER_IP>:<panel-port>/<admin-path>/api/v3/docs` in your browser (v2 at `/api/v2/docs`). Press **Authorize**, paste the Master API Key from Settings — or a session token from `/api/v3/auth/login` — and every endpoint on the page becomes runnable from the browser.
 - **Docs are gated too:** the documentation pages and the OpenAPI specs are subject to the same network-binding rule as the API — they are not exposed to callers `api_bind`/`api_bind_list` does not admit. A refused **browser** gets an HTML `403` that names the rule in force and how to satisfy it (add your address in **Settings → API Network Binding**, use an already-allowed network such as a tailnet, or browse over an SSH tunnel to loopback); a refused **API route** keeps the JSON `403` above, because its caller parses a body rather than reads a page.
 
 ---
@@ -95,7 +95,7 @@ v2 exists because v1's field names grew asymmetric (`ip` on create, `allowed_ip`
 - **RFC 9457 errors.** Errors are `application/problem+json` with `type`, `title`, `status`, `detail`.
 - **Actions are explicit.** `POST /api/v2/clients/{id}/actions/reset-traffic` and `.../actions/regenerate-uuid`.
 - **PATCH for partial updates.** Only the fields you send change; absent and empty stay distinguishable.
-- **The master key is a REST credential.** It authorizes `/api/v2` (and `/api/v1`) — it no longer opens dashboard admin routes (settings, credentials, 2FA). Those take a dashboard session.
+- **The master key is a REST credential.** It authorizes `/api/v2` and `/api/v3` — it does not open dashboard admin routes (settings, credentials, 2FA). Those take a dashboard session.
 
 ### `GET /api/v2/clients?limit=50&cursor=0`
 ```json
@@ -210,6 +210,11 @@ curl -s -X PATCH "https://dns.example.com/<admin-path>/api/v3/clients/<id>" \
 
 ---
 
+
+> **Historical v1 reference.** The sections below document the retired `/api/v1`
+> contract exactly as it shipped. Those routes were removed in v3.4.9. Use the v2
+> and v3 sections above, or the live OpenAPI pages, for current request and
+> response shapes.
 
 ## 📦 1. Build Version & Metadata (`/version`)
 

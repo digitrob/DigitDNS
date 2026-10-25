@@ -73,11 +73,11 @@ VOLUME ["/app/data", "/app/certs"]
 # panel is perfectly fine. The certificate is the operator's own, so verification
 # is skipped — this is a loopback liveness probe, not a trust check. The HTTP
 # fallback keeps installs without panel_https healthy.
-# /api/v1/version needs no key and is GET/HEAD only, and the request arrives from
+# /api/v2/version needs no key and is GET/HEAD only, and the request arrives from
 # 127.0.0.1, which passes the api_bind peer-address gate.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget --no-check-certificate -q -O /dev/null "https://127.0.0.1:${DIGITDNS_HEALTH_PORT:-8080}/api/v1/version" \
-     || wget -q -O /dev/null "http://127.0.0.1:${DIGITDNS_HEALTH_PORT:-8080}/api/v1/version" \
+    CMD wget --no-check-certificate -q -O /dev/null "https://127.0.0.1:${DIGITDNS_HEALTH_PORT:-8080}/api/v2/version" \
+     || wget -q -O /dev/null "http://127.0.0.1:${DIGITDNS_HEALTH_PORT:-8080}/api/v2/version" \
      || exit 1
 
 # -daemon is not optional here, for the same reason scripts/digitdns.service passes

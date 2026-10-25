@@ -50,7 +50,7 @@ func TestUpdatePreservesDataAcrossReopen(t *testing.T) {
 		t.Fatalf("reopen after update: %v", err)
 	}
 	defer db2.Close()
-	MigrateDefaultAllowAll(db2)
+	MigrateDefaultAllowAll(db2, false)
 
 	// The subscriber survived intact.
 	c, err := db2.GetClient("sub1")

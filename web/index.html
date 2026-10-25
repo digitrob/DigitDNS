@@ -31,7 +31,15 @@
   <script>
     (function () {
       try {
-        var t = localStorage.getItem('hyperdns_theme');
+        // The key predates the rename; read the old name once so an existing
+        // operator keeps their theme, then store it under the current name.
+        var t = localStorage.getItem('digitdns_theme') || localStorage.getItem('hyperdns_theme');
+        if (t) {
+          try {
+            localStorage.setItem('digitdns_theme', t);
+            localStorage.removeItem('hyperdns_theme');
+          } catch (e) {}
+        }
         if (t !== 'light' && t !== 'dark') {
           t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
         }
@@ -903,7 +911,7 @@
              (the hash goes to its title), which is what keeps it inside the wordmark's width. -->
         <div class="flex flex-col leading-none">
           <span class="font-extrabold text-sm text-white font-heading">DigitDNS</span>
-          <span class="text-[9px] text-cyan-300/90 font-mono font-bold mt-1 whitespace-nowrap" id="app-version-badge-mobile">v2.1.0</span>
+          <span class="text-[9px] text-cyan-300/90 font-mono font-bold mt-1 whitespace-nowrap" id="app-version-badge-mobile">—</span>
         </div>
       </div>
 
@@ -976,7 +984,7 @@
             </div>
             <div class="flex items-baseline gap-1">
               <span id="stat-cache-ratio" class="text-xl sm:text-2xl font-extrabold font-mono text-emerald-400">0.0%</span>
-              <span class="text-[9px] sm:text-[10px] text-slate-400">hit</span>
+              <span class="text-[9px] sm:text-[10px] text-slate-400">hits</span>
             </div>
             <div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 sm:mt-1 font-mono truncate">Items: <span id="stat-cache-entries" class="text-slate-300 font-bold">0</span></div>
           </div>
@@ -1558,7 +1566,6 @@
               <div class="flex items-center gap-3 text-[10px] font-mono">
                 <a href="/api/v2/docs" target="_blank" class="text-slate-400 hover:text-slate-200 transition">v2 docs</a>
                 <span class="text-slate-600">·</span>
-                <a href="/api/v1/docs" target="_blank" class="text-amber-400/80 hover:text-amber-300 transition">v1 &mdash; deprecated, sunset Jul 2026</a>
               </div>
             </div>
           </div>
@@ -1647,42 +1654,42 @@
           </div>
 
           <pre id="snippet-curl" class="api-snippet-content p-4 rounded-xl bg-slate-950 font-mono text-xs text-slate-300 overflow-x-auto border border-slate-800/80"># 1. Check Engine Health
-curl -X GET "http://127.0.0.1:8080/api/v1/status" \
+curl -s "http://127.0.0.1:8080/api/v2/status" \
   -H "X-API-Key: digitdns_live_your_key_here"
 
-# 2. Create User Account (30 Days)
-curl -X POST "http://127.0.0.1:8080/api/v1/clients" \
+# 2. Create User Account (30 Days). v2 answers 201 with the client object;
+#    unknown fields are refused (a typo errors instead of being dropped).
+curl -s -X POST "http://127.0.0.1:8080/api/v2/clients" \
   -H "X-API-Key: digitdns_live_your_key_here" \
   -H "Content-Type: application/json" \
-  -d '{"name":"Gamer-VIP","expires_days":30}'</pre>
+  -d '{"display_name":"Gamer-VIP","validity_days":30}'</pre>
 
           <pre id="snippet-python" class="api-snippet-content p-4 rounded-xl bg-slate-950 font-mono text-xs text-slate-300 overflow-x-auto border border-slate-800/80 hidden">import requests
 
-API_URL = "http://127.0.0.1:8080/api/v1"
+API_URL = "http://127.0.0.1:8080/api/v2"
 HEADERS = {"X-API-Key": "digitdns_live_your_key_here"}
 
 # Create subscriber account on plan purchase
 def create_smartdns_user(username, days=30):
     res = requests.post(f"{API_URL}/clients", headers=HEADERS, json={
-        "name": username,
-        "expires_days": days
-    }).json()
-    if res.get("success"):
-        return res["data"]["register_url"]
-    return None</pre>
+        "display_name": username,
+        "validity_days": days
+    })
+    res.raise_for_status()          # 201 with the client object
+    return res.json()["token"]</pre>
 
           <pre id="snippet-nodejs" class="api-snippet-content p-4 rounded-xl bg-slate-950 font-mono text-xs text-slate-300 overflow-x-auto border border-slate-800/80 hidden">const axios = require('axios');
 
 const client = axios.create({
-  baseURL: 'http://127.0.0.1:8080/api/v1',
+  baseURL: 'http://127.0.0.1:8080/api/v2',
   headers: { 'X-API-Key': 'digitdns_live_your_key_here' }
 });
 
 // Example Telegram Bot Handler
 async function onBuySubscription(ctx, username) {
-  const { data } = await client.post('/clients', { name: username, expires_days: 30 });
-  if (data.success) {
-    ctx.reply(`🎉 SmartDNS Created!\n🔗 Register IP: ${data.data.register_url}`);
+  const { data, status } = await client.post('/clients', { display_name: username, validity_days: 30 });
+  if (status === 201) {
+    ctx.reply(`🎉 SmartDNS Created!\n🔗 Registration token: ${data.token}`);
   }
 }</pre>
         </div>
@@ -2217,7 +2224,7 @@ async function onBuySubscription(ctx, username) {
             <i data-feather="info" class="w-4 h-4 text-cyan-400"></i> About &amp; Legal
           </h3>
           <p class="text-[11px] text-slate-400 leading-relaxed">
-            <strong class="text-slate-200">DigitDNS</strong> Smart Controller · <span id="about-version" class="font-mono">v2.1.0</span>
+            <strong class="text-slate-200">DigitDNS</strong> Smart Controller · <span id="about-version" class="font-mono">—</span>
           </p>
           <p class="text-[11px] text-slate-400 leading-relaxed">
             Copyright © 2026 Digitrob. Free software under the

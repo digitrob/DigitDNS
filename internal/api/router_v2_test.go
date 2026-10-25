@@ -203,30 +203,6 @@ func TestV2StrictDecodeRefusesTrailingData(t *testing.T) {
 	}
 }
 
-func TestV1CarriesDeprecationHeaders(t *testing.T) {
-	a, _, _, cleanup := setupTestAPI(t)
-	mux := v2Mux(a)
-	_ = a
-	defer cleanup()
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
-	req.RemoteAddr = "127.0.0.1:4444"
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("v1 version = %d", w.Code)
-	}
-	if got := w.Header().Get("Deprecation"); got != "true" {
-		t.Errorf("Deprecation header = %q, want true", got)
-	}
-	if got := w.Header().Get("Sunset"); got == "" {
-		t.Error("no Sunset header on a deprecated v1 route")
-	}
-	if got := w.Header().Get("Link"); !strings.Contains(got, "successor-version") {
-		t.Errorf("Link header = %q, want successor-version relation", got)
-	}
-}
-
 func TestV2LimitIsBounded(t *testing.T) {
 	a, _, _, cleanup := setupTestAPI(t)
 	mux := v2Mux(a)

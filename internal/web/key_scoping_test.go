@@ -51,7 +51,7 @@ func TestMasterKeyStillAuthorizesREST(t *testing.T) {
 	defer cleanup()
 	key := ws.settings.GetAPIKey()
 
-	for _, path := range []string{"/api/v1/status", "/api/v2/status"} {
+	for _, path := range []string{"/api/v2/status", "/api/v2/status"} {
 		// Loopback peer: the harness binds the REST API to 127.0.0.1, and the
 		// bind gate (correctly) refuses anything else before auth is consulted.
 		req := httptest.NewRequest(http.MethodGet, path, nil)

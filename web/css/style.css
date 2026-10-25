@@ -939,22 +939,6 @@ input:checked + .slider:before {
  * plain white takes the brand's own. That is the whole rule, and it is why several
  * cards below carry no brand class at all — their titles are cyan-400, which is what
  * .policy-card already defaults to. */
-.card-valorant    { --accent: 255 70 85; }
-.card-discord     { --accent: 88 101 242; }
-.card-epic        { --accent: 168 85 247; }
-.card-steam       { --accent: 56 189 248; }
-.card-rockstar    { --accent: 245 158 11; }
-.card-xbox        { --accent: 16 185 129; }
-.card-playstation { --accent: 59 130 246; }
-.card-spotify     { --accent: 29 185 84; }
-.card-pubg        { --accent: 251 191 36; }
-.card-codm        { --accent: 52 211 153; }
-.card-ea          { --accent: 244 63 94; }
-.card-battlenet   { --accent: 96 165 250; }
-.card-ubisoft     { --accent: 148 163 184; }
-.card-roblox      { --accent: 239 68 68; }
-.card-twitch      { --accent: 145 70 255; }
-.card-kick        { --accent: 83 252 24; }
 
 /* Quick Action Profile Buttons */
 .quick-mode-btn {
@@ -1202,13 +1186,20 @@ input:checked + .slider:before {
 .stream-table {
   table-layout: fixed;
 }
-.stream-col-time { width: 6.5rem; }
-.stream-col-client { width: 12rem; }
-.stream-col-proto { width: 5rem; }
+/* The fixed columns add up, and the domain column is the one that takes what is
+ * left. The first set of widths summed to 50.5rem, so a panel whose content box
+ * was under ~68rem (a 1280-wide laptop with the 256px sidebar, let alone a
+ * narrower window) gave the domain column a few pixels: every query rendered as
+ * "n..." and the QUERY DOMAIN heading overlapped RULE MATCHED. These widths keep
+ * the same information — the cells wrap or ellipsis at their own sizes — while
+ * leaving the domain a usable share down to roughly 1050px of table width. */
+.stream-col-time { width: 5.5rem; }
+.stream-col-client { width: 10rem; }
+.stream-col-proto { width: 4rem; }
 .stream-col-domain { width: auto; }
-.stream-col-rule { width: 11rem; }
-.stream-col-action { width: 9rem; }
-.stream-col-latency { width: 7rem; }
+.stream-col-rule { width: 8.5rem; }
+.stream-col-action { width: 8rem; }
+.stream-col-latency { width: 6.5rem; }
 
 /* Zebra rows for the live log, so a dense block of queries can be tracked across
  * the seven columns without losing the line. Same theme token and weight as the

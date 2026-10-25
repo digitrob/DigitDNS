@@ -271,7 +271,7 @@ func (s *staticServer) prefixDocument(adminPath string) *staticAsset {
 	// correct before any script runs. All three versions are listed: only v1
 	// used to be rewritten, so once the banner gained v2 and v3 buttons their
 	// root-absolute hrefs 404'd.
-	for _, p := range []string{"/api/v1/docs", "/api/v2/docs", "/api/v3/docs"} {
+	for _, p := range []string{"/api/v2/docs", "/api/v3/docs"} {
 		html = strings.ReplaceAll(html, `href="`+p+`"`, `href="`+prefix+p+`"`)
 	}
 	return newStaticAsset("index.html", []byte(html))

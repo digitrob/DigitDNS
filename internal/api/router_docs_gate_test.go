@@ -12,7 +12,6 @@ import (
 // the OpenAPI specs are on this list deliberately — a remote caller who is not
 // allowed to reach the API must not read its spec either.
 var gatedDocsPaths = []string{
-	"/api/v1/docs",
 	"/api/v2/docs",
 	"/api/v2/openapi.json",
 	"/api/v3/docs",
@@ -69,7 +68,7 @@ func TestDataRoutesStillAnswerJSONWhenRefused(t *testing.T) {
 	mux := http.NewServeMux()
 	apiInst.RegisterRoutes(mux)
 
-	for _, path := range []string{"/api/v1/version", "/api/v1/status"} {
+	for _, path := range []string{"/api/v2/version", "/api/v2/status"} {
 		w := httptest.NewRecorder()
 		req := authedRequest(http.MethodGet, path, nil)
 		req.RemoteAddr = "198.51.100.7:40000"

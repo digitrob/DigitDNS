@@ -387,7 +387,7 @@ This build ships **no built-in catalogue** — there are no game presets to togg
 
 Add names one at a time, or use **Bulk Import** (see [section 12](#12-advanced-rules-custom-proxied--blocked--direct--static-records)) to paste or upload a whole list. The **Custom Static Records** card has its own **Bulk import** button for loading a `hostname address` table at once.
 
-Changes apply to the live engine immediately; after a big change, hit **Flush Cache** (sidebar) or `POST /api/v1/cache/flush` so cached answers do not keep their old routing for the rest of their TTL.
+Changes apply to the live engine immediately; after a big change, hit **Flush Cache** (sidebar) or `POST /api/v2/cache/flush` so cached answers do not keep their old routing for the rest of their TTL.
 
 ---
 
@@ -428,7 +428,7 @@ From **Clients**, each row offers:
 
 - **Edit** — change name, quota, cycle, expiry, allowed IPs.
 - **Reset Traffic** — consumed bytes back to zero (also
-  `POST /api/v1/clients/{id}/reset-traffic`).
+  `POST /api/v2/clients/{id}/reset-traffic`).
 - **Regenerate UUID** — invalidates the old UUID **immediately**. Use this the
   moment you think a link leaked: the old link dies at once, you get a fresh
   link and secret to hand out.
@@ -442,7 +442,7 @@ Two behaviours worth knowing:
   30 seconds in one transaction, because every BoltDB transaction is an `fsync`.
 - **Expiry is a hard stop.** An expired account's IP is refused like an unknown
   one. Renew by editing the expiry, or for API-driven renewals,
-  `PUT /api/v1/clients/{id}` with `days_to_add`.
+  `PUT /api/v2/clients/{id}` with `days_to_add`.
 
 ---
 
@@ -479,7 +479,7 @@ controls where `/api/*` listens (default `127.0.0.1` only — leave it that way
 unless you know why you're opening it), and **Master API Authentication Key**
 generates the key.
 
-Interactive docs: **`/<admin-path>/api/v1/docs`** — Swagger UI, embedded in the
+Interactive docs: **`/<admin-path>/api/v2/docs`** — Swagger UI, embedded in the
 binary and served from the server itself, so it works in networks with no CDN
 access. Click **Authorize**, paste the Master API key, and run any endpoint from
 the browser.

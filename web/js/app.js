@@ -8,7 +8,15 @@
 // 'hdns_session_admin' here and wrote it to localStorage, which the server has
 // never accepted — it only produced a guaranteed 401 on first load and made a
 // logged-out browser look logged in.
-let authToken = localStorage.getItem('hyperdns_token') || '';
+let authToken = localStorage.getItem('digitdns_token') || localStorage.getItem('hyperdns_token') || '';
+// Carry a pre-rename session forward once, then keep only the current key. The
+// token itself is unchanged; this is a storage-key migration, not a new session.
+if (authToken && !localStorage.getItem('digitdns_token')) {
+  try {
+    localStorage.setItem('digitdns_token', authToken);
+    localStorage.removeItem('hyperdns_token');
+  } catch (e) {}
+}
 
 // The admin namespace. Since v2.1 the panel is not at the root of the host: the
 // SPA lives at /<admin-path>/dash/... and every dashboard API at
@@ -370,7 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
   checkAuthAndBoot();
 
   // The API docs live under the admin namespace too, and the anchors' hrefs in
-  // index.html are static ("/api/v1/docs", "/api/v2/docs", "/api/v3/docs") that
+  // index.html are static ("/api/v2/docs", "/api/v3/docs") that
   // cannot know the install's path. Rewritten here from the same value every
   // fetch uses, so the page each button opens is the one the server actually
   // serves. All three versions need this: only v1 used to be rewritten, so the
@@ -380,7 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // like an HTML attribute interpolation to the static escaping sweep in
   // internal/web/dashboard_escaping_test.go, which would flag a value that never
   // becomes markup. Comparing getAttribute keeps that sweep honest.
-  const docsPaths = ['/api/v1/docs', '/api/v2/docs', '/api/v3/docs'];
+  const docsPaths = ['/api/v2/docs', '/api/v3/docs'];
   document.querySelectorAll('a[href]').forEach((a) => {
     if (docsPaths.includes(a.getAttribute('href'))) {
       a.href = api(a.getAttribute('href'));
@@ -443,7 +451,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const data = await res.json();
         authToken = data.token;
-        localStorage.setItem('hyperdns_token', authToken);
+        localStorage.setItem('digitdns_token', authToken);
+        try { localStorage.removeItem('hyperdns_token'); } catch (e) {}
         hideLoginModal();
         bootDashboard();
 
@@ -521,7 +530,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // token — overwriting the stored one with undefined would log us out.
         if (data.token) {
           authToken = data.token;
-          localStorage.setItem('hyperdns_token', authToken);
+          localStorage.setItem('digitdns_token', authToken);
+        try { localStorage.removeItem('hyperdns_token'); } catch (e) {}
         }
         // Keep the local copy in step so the Settings card and the next open of
         // this modal show the name that is now in force.
@@ -580,7 +590,8 @@ async function signOut() {
     // to do either way is drop the local session.
   } finally {
     stopLiveStream();
-    localStorage.removeItem('hyperdns_token');
+    localStorage.removeItem('digitdns_token');
+    try { localStorage.removeItem('hyperdns_token'); } catch (e) {}
     authToken = '';
     showLoginModal();
   }
@@ -3102,7 +3113,14 @@ function initChart() {
           y: {
             beginAtZero: true,
             grid: { color: pal.grid },
-            ticks: { color: pal.tick, font: { size: 10, family: 'JetBrains Mono' } }
+            ticks: {
+              color: pal.tick,
+              font: { size: 10, family: 'JetBrains Mono' },
+              // Chart.js defaults to toLocaleString(), which renders decimal
+              // commas on most non-English systems while every other number in
+              // the panel uses a dot. Format explicitly instead.
+              callback: (value) => (Number.isInteger(value) ? String(value) : Number(value).toFixed(1)),
+            }
           }
         }
       }
@@ -3263,9 +3281,9 @@ function updateCodeSnippets(pubIP, apiKey) {
   const host = (tls.domain && String(tls.domain).trim()) || pubIP;
   const isDefaultPort = (scheme === 'https' && Number(port) === 443) || (scheme === 'http' && Number(port) === 80);
   const origin = `${scheme}://${host}${isDefaultPort ? '' : ':' + port}`;
-  // v2 is the contract new integrations are documented against; v1 keeps
-  // working behind a Deprecation header but the copy-paste examples a
-  // reseller starts from should not begin life deprecated.
+  // v2 is the contract new integrations are documented against; the v1
+  // surface was removed at its published sunset (1 July 2026), so the
+  // copy-paste examples a reseller starts from use the current contract.
   const apiBase = `${origin}${ADMIN_BASE}/api/v2`;
 
   const curlEl = document.getElementById('snippet-curl');
@@ -3643,7 +3661,8 @@ function initAdminPathControls() {
         const newPath = (data && data.admin_path) || '';
         // The old token died with the session wipe; carry nothing into the new
         // namespace but the browser itself.
-        localStorage.removeItem('hyperdns_token');
+        localStorage.removeItem('digitdns_token');
+        try { localStorage.removeItem('hyperdns_token'); } catch (e) {}
         authToken = '';
         if (newPath) {
           showToast('Admin path regenerated. Sign in at the new address.', 'success');

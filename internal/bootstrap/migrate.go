@@ -32,7 +32,14 @@ const migrationMarkerKey = "migration"
 //
 // An operator who wants public mode back flips the dashboard toggle, which
 // writes its own row; from then on the DB record wins over every default.
-func MigrateDefaultAllowAll(store SettingsWriter) {
+//
+// fileAllowAll is true when this is a first boot (no persisted server record)
+// and config.json explicitly set access.allow_all. There is no legacy database
+// to converge in that case, and forcing false would silently discard the
+// operator's written configuration — the file is the only source of truth at
+// that moment. The marker is still written, so a later boot cannot flip it
+// either.
+func MigrateDefaultAllowAll(store SettingsWriter, fileAllowAll bool) {
 	if store == nil {
 		return
 	}
@@ -51,6 +58,14 @@ func MigrateDefaultAllowAll(store SettingsWriter) {
 		return
 	}
 	if migrations["whitelist_v2_2"] {
+		return
+	}
+	if fileAllowAll {
+		migrations["whitelist_v2_2"] = true
+		if err := store.SetSetting(migrationMarkerKey, migrations); err != nil {
+			log.Printf("[Bootstrap] kept config.json's allow_all value but could not write the migration marker: %v", err)
+		}
+		log.Printf("[Bootstrap] config.json sets access.allow_all; keeping it (no legacy database to converge)")
 		return
 	}
 	if err := store.SetSetting("allow_all", false); err != nil {

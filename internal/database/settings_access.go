@@ -9,7 +9,7 @@ import "errors"
 // daemon is serving, by HTTP handlers living in two different packages:
 //
 //	APIKey              /api/settings/regenerate-api-key  (internal/web)
-//	APIKey              /api/v1/api-key                   (internal/api)
+//	APIKey              /api/settings/regenerate-api-key    (internal/web)
 //	PublicIP, APIBind   /api/settings                     (internal/web)
 //	admin credentials   /api/config/server                (internal/web)
 //

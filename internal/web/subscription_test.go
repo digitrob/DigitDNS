@@ -500,7 +500,7 @@ func TestSwaggerDocsAreVendoredSameOrigin(t *testing.T) {
 	ap := ws.AdminPath()
 
 	// The docs page loads under the admin namespace.
-	req := httptest.NewRequest(http.MethodGet, "/"+ap+"/api/v1/docs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/"+ap+"/api/v2/docs", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

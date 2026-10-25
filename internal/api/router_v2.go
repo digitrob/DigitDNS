@@ -49,6 +49,26 @@ func writeProblem(w http.ResponseWriter, status int, typ, detail string) {
 // writeProblemAt is writeProblem with the RFC 9457 instance taken from the
 // request URI instead of the v2 prefix, so a v3 error points at the v3 route it
 // came from rather than claiming to be a v2 problem.
+// allowFromMethodDetail turns "GET, HEAD or POST only" into "GET, HEAD, POST".
+// Anything that is not a known method token makes the whole header empty rather
+// than advertising a partial or invented list.
+func allowFromMethodDetail(detail string) string {
+	d := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(detail), " only"))
+	parts := strings.Split(strings.ReplaceAll(d, " or ", ", "), ",")
+	verbs := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		switch p {
+		case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+			http.MethodPatch, http.MethodDelete, http.MethodOptions:
+			verbs = append(verbs, p)
+		default:
+			return ""
+		}
+	}
+	return strings.Join(verbs, ", ")
+}
+
 func writeProblemAt(w http.ResponseWriter, r *http.Request, status int, typ, detail string) {
 	instance := "/api/v2"
 	if r != nil && r.URL != nil && r.URL.Path != "" {
@@ -59,6 +79,15 @@ func writeProblemAt(w http.ResponseWriter, r *http.Request, status int, typ, det
 
 func writeProblemInstance(w http.ResponseWriter, instance string, status int, typ, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
+	// RFC 9110 §15.5.6: a 405 must name the verbs it accepts. Every call site
+	// already spells them in the detail sentence ("GET, HEAD or POST"), so the
+	// header is derived from that one string rather than duplicated by hand at
+	// fifty-six sites — and cannot drift from the body.
+	if status == http.StatusMethodNotAllowed {
+		if allow := allowFromMethodDetail(detail); allow != "" {
+			w.Header().Set("Allow", allow)
+		}
+	}
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"type":     "https://digitdns.dev/problems/" + typ,
@@ -127,20 +156,6 @@ func (a *API) RegisterRoutesV2(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v2/rules", a.SecurityMiddleware(a.handleV2Rules))
 	mux.HandleFunc("/api/v2/diagnostics", a.SecurityMiddleware(a.handleV2Diagnostics))
 	mux.HandleFunc("/api/v2/events/stream", a.SecurityMiddleware(a.handleV2Stream))
-}
-
-// DeprecateV1 wraps a v1 route handler with the deprecation markers. The
-// Sunset date is the earliest v1 could be removed — one minor version of
-// overlap, per the transition the user chose. Both the RFC 8594 Sunset header
-// and the classic Deprecation header are set (the latter predates the I-D
-// and is what most clients actually look at).
-func (a *API) DeprecateV1(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Deprecation", "true")
-		w.Header().Set("Sunset", "Wed, 01 Jul 2026 00:00:00 GMT")
-		w.Header().Set("Link", `</api/v2/version>; rel="successor-version"`)
-		next(w, r)
-	}
 }
 
 func (a *API) handleV2Version(w http.ResponseWriter, r *http.Request) {

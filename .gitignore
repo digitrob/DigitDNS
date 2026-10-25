@@ -177,3 +177,6 @@ android/keystore.properties
 *.keystore
 .cxx/
 .externalNativeBuild/
+
+# Local agent workspace (sessions, tool logs) — never part of the product.
+.opencode/

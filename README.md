@@ -421,7 +421,7 @@ and vice versa.
 | :--- | :--- |
 | **[Tutorial](docs/TUTORIAL.md)** | Step-by-step: first boot, custom domain, adding clients, registration tokens — **start here** |
 | **[Security](docs/SECURITY.md)** | Threat model, encryption details, hardening, RFC compliance |
-| **[API Reference](docs/API.md)** | REST API v1 & v2, with Python / Node.js / cURL examples |
+| **[API Reference](docs/API.md)** | REST API v2 & v3, with Python / Node.js / cURL examples |
 | **[Changelog](docs/CHANGELOG.md)** | What changed in each release |
 | **[Releasing](docs/RELEASING.md)** | Version policy and update channels |
 

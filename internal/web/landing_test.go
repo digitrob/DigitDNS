@@ -189,12 +189,12 @@ func TestAdminNamespaceServesDashboardUnderGeneratedPath(t *testing.T) {
 	// The versioned external API is mounted below the prefix as well. The
 	// keyless routes are bind-gated, so the probe comes from loopback (the
 	// test harness's APIBind is the localhost default).
-	req = httptest.NewRequest(http.MethodGet, "/"+ap+"/api/v1/version", nil)
+	req = httptest.NewRequest(http.MethodGet, "/"+ap+"/api/v2/version", nil)
 	req.RemoteAddr = "127.0.0.1:5555"
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Errorf("GET /%s/api/v1/version = %d, want 200", ap, w.Code)
+		t.Errorf("GET /%s/api/v2/version = %d, want 200", ap, w.Code)
 	}
 }
 

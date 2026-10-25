@@ -41,7 +41,7 @@ func mustCipher(t *testing.T, keyPath string) *crypto.Cipher {
 func TestMigrateDefaultAllowAllConvergesOnce(t *testing.T) {
 	db := openTestStore(t)
 
-	MigrateDefaultAllowAll(db)
+	MigrateDefaultAllowAll(db, false)
 
 	var allowAll bool = true
 	if err := db.GetSetting("allow_all", &allowAll); err != nil {
@@ -62,7 +62,7 @@ func TestMigrateDefaultAllowAllConvergesOnce(t *testing.T) {
 	if err := db.SetSetting("allow_all", true); err != nil {
 		t.Fatalf("operator toggle: %v", err)
 	}
-	MigrateDefaultAllowAll(db) // second boot
+	MigrateDefaultAllowAll(db, false) // second boot
 	if err := db.GetSetting("allow_all", &allowAll); err != nil {
 		t.Fatalf("re-read allow_all: %v", err)
 	}
@@ -77,13 +77,13 @@ func TestMigrateDefaultAllowAllConvergesOnce(t *testing.T) {
 func TestMigrateDefaultAllowAllRerunIsIdempotent(t *testing.T) {
 	db := openTestStore(t)
 
-	MigrateDefaultAllowAll(db)
+	MigrateDefaultAllowAll(db, false)
 	// Simulate the crash window: the marker is gone but allow_all already
 	// landed. Re-running must rewrite the same false and restore the marker.
 	if err := db.SetSetting(migrationMarkerKey, map[string]bool{}); err != nil {
 		t.Fatalf("wipe markers: %v", err)
 	}
-	MigrateDefaultAllowAll(db)
+	MigrateDefaultAllowAll(db, false)
 
 	var allowAll bool = true
 	if err := db.GetSetting("allow_all", &allowAll); err != nil {
@@ -97,7 +97,7 @@ func TestMigrateDefaultAllowAllRerunIsIdempotent(t *testing.T) {
 // TestMigrateDefaultAllowAllNilWriterIsSilent: the guard contract — a nil store
 // (impossible in main, defensive here) must not panic.
 func TestMigrateDefaultAllowAllNilWriterIsSilent(t *testing.T) {
-	MigrateDefaultAllowAll(nil)
+	MigrateDefaultAllowAll(nil, false)
 }
 
 // TestMigrationDoesNotTouchOtherSettings: the migration writes exactly two
@@ -108,7 +108,7 @@ func TestMigrationDoesNotTouchOtherSettings(t *testing.T) {
 		t.Fatalf("seed server setting: %v", err)
 	}
 
-	MigrateDefaultAllowAll(db)
+	MigrateDefaultAllowAll(db, false)
 
 	var server map[string]any
 	if err := db.GetSetting("server", &server); err != nil {
@@ -116,5 +116,42 @@ func TestMigrationDoesNotTouchOtherSettings(t *testing.T) {
 	}
 	if port, _ := server["web_port"].(float64); port != 18080 {
 		t.Errorf("migration clobbered an unrelated setting: %v", server)
+	}
+}
+
+// A first boot whose config.json explicitly sets access.allow_all has no legacy
+// record to converge. Forcing the whitelist default there used to discard the
+// operator's written configuration: a brand-new install with allow_all=true came
+// up refusing every source, and the only hint was a startup log line.
+func TestMigrateDefaultAllowAllKeepsExplicitFileValue(t *testing.T) {
+	db := openTestStore(t)
+	if err := db.SetSetting("allow_all", true); err != nil {
+		t.Fatalf("seed file value: %v", err)
+	}
+
+	MigrateDefaultAllowAll(db, true)
+
+	var allowAll bool
+	if err := db.GetSetting("allow_all", &allowAll); err != nil {
+		t.Fatalf("read allow_all: %v", err)
+	}
+	if !allowAll {
+		t.Error("the migration overrode the config.json seed on a first boot")
+	}
+	var markers map[string]bool
+	if err := db.GetSetting(migrationMarkerKey, &markers); err != nil {
+		t.Fatalf("read markers: %v", err)
+	}
+	if !markers["whitelist_v2_2"] {
+		t.Error("marker was not written, so a later boot would override the value")
+	}
+
+	// The next boot re-runs the migration; the marker must keep it away.
+	MigrateDefaultAllowAll(db, false)
+	if err := db.GetSetting("allow_all", &allowAll); err != nil {
+		t.Fatalf("re-read allow_all: %v", err)
+	}
+	if !allowAll {
+		t.Error("a later boot flipped the kept public mode")
 	}
 }

@@ -34,7 +34,7 @@ func TestWrongTypedMigrationMarkerFailsClosed(t *testing.T) {
 		if err := db.SetSetting("migration", mustDecodeAny(bad)); err != nil {
 			t.Fatalf("marker %s: %v", bad, err)
 		}
-		MigrateDefaultAllowAll(db)
+		MigrateDefaultAllowAll(db, false)
 		var allowAll bool
 		if err := db.GetSetting("allow_all", &allowAll); err != nil {
 			t.Fatalf("read allow_all: %v", err)
@@ -72,7 +72,7 @@ func TestValidMigrationMarkerBehaviourUnchanged(t *testing.T) {
 	if err := db.SetSetting("allow_all", true); err != nil {
 		t.Fatalf("allow_all: %v", err)
 	}
-	MigrateDefaultAllowAll(db)
+	MigrateDefaultAllowAll(db, false)
 	var allowAll bool
 	_ = db.GetSetting("allow_all", &allowAll)
 	if allowAll {

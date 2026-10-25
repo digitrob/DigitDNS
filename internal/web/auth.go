@@ -146,7 +146,7 @@ func (ws *WebServer) authGate(next http.HandlerFunc, allowQueryToken bool) http.
 // routes. One credential passing both surfaces meant a leaked REST key (the
 // one credential that rides HTTP headers in integrations and CI logs) was a
 // full panel takeover — settings, credentials, everything. The
-// REST key keeps its full power on /api/v1|/api/v2 (the API router's own
+// REST key keeps its full power on /api/v2 (the API router's own
 // SecurityMiddleware); here, only a real dashboard session counts.
 func (ws *WebServer) tokenAuthorized(token string) bool {
 	return ws.sessionValid(token)

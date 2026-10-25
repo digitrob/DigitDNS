@@ -43,10 +43,6 @@ const (
 	RuleUnproxyableDirect = "Unproxyable Port"
 )
 
-func isForcedDirect(rule string) bool {
-	return rule == RuleRealtimeDirect || rule == RuleUnproxyableDirect
-}
-
 // ruleSet indexes rule domains for one action. exact holds names that match
 // themselves; wildcard holds parent domains that match any strict subdomain. A
 // plain rule ("riotgames.com") is indexed in both, a wildcard rule

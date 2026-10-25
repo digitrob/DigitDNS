@@ -360,12 +360,3 @@ var (
 	themeCSSEscapedURLRe = regexp.MustCompile(`(?i)url\(\s*["']?[^)]*\\[^)]*\)`)
 	themeCSSExpressionRe = regexp.MustCompile(`(?i)expression\s*\([^)]*\)`)
 )
-
-// themeCSSHasExternalReference reports whether the CSS pulls content from
-// outside the panel — an @import rule or a url() that names an absolute or
-// protocol-relative target. Such a value is stripped by SanitizeThemeCSS, and
-// a settings handler may use this to tell the operator *why* their CSS came
-// back different rather than silently changing it.
-func themeCSSHasExternalReference(css string) bool {
-	return themeCSSImportRe.MatchString(css) || themeCSSExternalURLRe.MatchString(css)
-}

@@ -2,7 +2,6 @@ package database
 
 import (
 	"errors"
-	"strings"
 )
 
 // Runtime access to the operator-owned diagnostic target list.
@@ -67,15 +66,4 @@ func (d *DiagnosticSettings) Snapshot() DiagnosticsTargetsSnapshot {
 		targets = []DiagnosticTarget{}
 	}
 	return DiagnosticsTargetsSnapshot{Targets: targets}
-}
-
-// NormalizeDiagnosticTarget trims the name and host. It does not validate; the
-// handler validates the trimmed values through netutil first, so what is stored
-// has no surrounding whitespace that would make two visually identical rows
-// compare unequal.
-func NormalizeDiagnosticTarget(t DiagnosticTarget) DiagnosticTarget {
-	return DiagnosticTarget{
-		Name: strings.TrimSpace(t.Name),
-		Host: strings.TrimSpace(t.Host),
-	}
 }

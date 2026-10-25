@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🩹 [Unreleased]
+
+### 🔴 Removed
+- **The v1 REST API is gone.** Its published sunset was 1 July 2026, and it outlived it by three months. `/api/v1/*` now answers 404: version, status, clients, policies, cache flush, API-key rotation and the v1 docs page. Every operation is served by `/api/v2` (or `/api/v3` for dashboard parity), and the panel's copy-paste examples, the docs and the bundled Swagger viewer all point there. `/api/server/restart` is unversioned and stays. Container health checks moved to `/api/v2/version`.
+- **Dead code.** The pre-`DigitDNS` interactive console (`internal/tui/manager.go`, `webport.go`, `unlock.go` and their tests — `tui.Run` is the live entry point), the unused link-preview detector, three unreferenced helpers, the retired quick-action CSS (sixteen brand accent rules and the button styles), and the stale `v2.1.0` version fallback in the panel HTML.
+
+### ✨ Added
+- **A test that stops the offline bundle's version drifting.** `offline-bundle/version.json` had been left at 3.0.0 while the daemon shipped 3.4.7; the only signal was a startup warning. The build now fails if the two files disagree.
+
+### 🔄 Changed
+- **The live log's domain column keeps a readable width.** The six fixed columns added up to 50.5rem, so on a 1280-wide laptop the domain column received ~30px and every query read as `n...` with the headers overlapping. Narrower fixed columns give the domain a usable share; the table still scrolls horizontally on phones.
+- **Secondary labels and numbers use one convention.** RAM Cache says `% hits` everywhere, and the chart's tick labels use a dot as the decimal separator instead of the browser locale's comma.
+- **Browser storage uses the current name.** `hyperdns_token` and `hyperdns_theme` are read once for continuity and then replaced by `digitdns_*`.
+- **`405 Method Not Allowed` from v2/v3 now carries an `Allow` header** derived from the handler's own verb list, as RFC 9110 requires.
+- `.opencode/` is ignored by git.
+
+### 🐛 Fixed
+- **A fresh install with `access.allow_all: true` in config.json now keeps it.** The v2.2.0 whitelist migration treated a brand-new database like an upgrade and forced `allow_all=false`, silently overriding the file and refusing every query until an operator flipped the switch. A first boot with an explicit file value now writes the migration marker without touching the value.
+
 ## 🏷️ [v3.4.8] — A live log that really clears, and tighter tiles
 
 ### ✨ Added

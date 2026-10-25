@@ -199,7 +199,7 @@ func NewWebServer(
 	})
 	// The v1 router's credential-changing POSTs face the same second factor
 	// the dashboard's equivalents run: with 2FA on, a hijacked session must
-	// not be able to rotate the REST key through /api/v1/api-key when
+	// not be able to rotate the REST key through the settings route when
 	// /api/settings/regenerate-api-key would demand the code.
 	apiInst.SetTOTPGate(ws.totpRequestGate)
 	// The v3 router's dashboard-coupled routes delegate back into this server's
@@ -441,8 +441,8 @@ func (ws *WebServer) BuildHandler() http.Handler {
 		//    without publishing anything the new page does not already show.
 		//    /<p>/dash/ and below strip only the /dash segment and hit the SPA
 		//    route table; every other admin URL strips the whole prefix and
-		//    reaches the API and asset handlers. /<p>/api/v1/... lands on the
-		//    versioned external API exactly as /api/v1/... used to sit at the
+		//    reaches the API and asset handlers. /<p>/api/v2/... lands on the
+		//    versioned external API exactly as /api/v2/... used to sit at the
 		//    root.
 		ap := "/" + ws.adminPath()
 		if p == ap || p == ap+"/dash" {
@@ -2286,7 +2286,7 @@ func (ws *WebServer) handlePolicies(w http.ResponseWriter, r *http.Request) {
 //
 // It had no guard, so a GET flushed the cache — and a GET is what a browser
 // prefetch, a link-preview fetcher, an operator pasting the URL into the address
-// bar, or a stray retry sends. The v1 REST equivalent, POST /api/v1/cache/flush,
+// bar, or a stray retry sends. The REST equivalent, POST /api/v2/cache/flush,
 // has always been POST-only, so the two surfaces disagreed about the same action.
 func (ws *WebServer) handleFlushCache(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
