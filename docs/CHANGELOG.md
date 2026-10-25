@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🩹 [Unreleased]
+
+### 🐛 Fixed
+- **The container no longer reports itself unhealthy when the panel runs over HTTPS.** The image's health probe asked `http://127.0.0.1:<web_port>/api/v1/version`, but a `panel_https` install serves TLS on that port only, so every probe was answered with a handshake error and Docker marked a perfectly working container as sick. The probe now tries HTTPS first (skipping verification, because it is a loopback liveness check against the operator's own certificate) and still falls back to HTTP for installs without `panel_https`.
+
+---
+
 ## 🏷️ [v3.4.7] — See where your server is, and update it from the app
 
 ### ✨ Added

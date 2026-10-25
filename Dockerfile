@@ -67,10 +67,18 @@ VOLUME ["/app/data", "/app/certs"]
 # Reports the daemon as unhealthy while the dashboard mux is not answering. The
 # port is a variable because web_port is an operator setting: a health check that
 # hardcodes 8080 reports a container as sick for the sole reason that its owner
-# moved the dashboard. /api/v1/version needs no key and is GET/HEAD only, and the
-# request arrives from 127.0.0.1, which passes the api_bind peer-address gate.
+# moved the dashboard. When panel_https is enabled the dashboard listener serves
+# TLS only, so the probe has to ask over HTTPS: a plain-HTTP probe is answered
+# with a TLS handshake error and the container is reported unhealthy while the
+# panel is perfectly fine. The certificate is the operator's own, so verification
+# is skipped — this is a loopback liveness probe, not a trust check. The HTTP
+# fallback keeps installs without panel_https healthy.
+# /api/v1/version needs no key and is GET/HEAD only, and the request arrives from
+# 127.0.0.1, which passes the api_bind peer-address gate.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -q -O /dev/null "http://127.0.0.1:${DIGITDNS_HEALTH_PORT:-8080}/api/v1/version" || exit 1
+    CMD wget --no-check-certificate -q -O /dev/null "https://127.0.0.1:${DIGITDNS_HEALTH_PORT:-8080}/api/v1/version" \
+     || wget -q -O /dev/null "http://127.0.0.1:${DIGITDNS_HEALTH_PORT:-8080}/api/v1/version" \
+     || exit 1
 
 # -daemon is not optional here, for the same reason scripts/digitdns.service passes
 # it: a container must never be left guessing whether it is a server. `docker run -d`
