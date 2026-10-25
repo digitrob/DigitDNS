@@ -64,6 +64,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,6 +88,7 @@ import com.digitrob.digitdns.ui.formatCount
 import com.digitrob.digitdns.ui.formatRate
 import com.digitrob.digitdns.ui.formatUptime
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
+import com.digitrob.digitdns.ui.theme.MetricLabel
 import com.digitrob.digitdns.ui.theme.MetricMeta
 import com.digitrob.digitdns.ui.theme.MetricNumber
 import com.digitrob.digitdns.ui.theme.PanelMono
@@ -425,8 +427,8 @@ private fun DashboardGrid(
 private fun QueryRateCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
     MetricCard {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            CardLabel(DashboardCard.QUERY_RATE, "Query Rate")
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            CardLabel(DashboardCard.QUERY_RATE, "Query Rate", compact = true)
             MetricValue(
                 text = stats?.let { String.format(Locale.US, "%.1f", it.qps) } ?: "—",
                 color = MaterialTheme.colorScheme.primary,
@@ -439,9 +441,12 @@ private fun QueryRateCard(stats: LiveStats?) {
             val total = stats?.totalQueries ?: 0
             val limit = stats?.rateLimitQps ?: 0
             val dropped = stats?.rateLimited ?: 0
+            // No colons: at 10sp this line has to stay on one line inside a 122dp
+            // inner width on a 320dp phone, and the two separators are the only
+            // characters that can give way without losing information.
             val first = buildString {
-                append("Total: ").append(formatCount(total))
-                if (limit > 0) append(" · Limit:").append(formatCount(limit)).append("/s")
+                append("Total ").append(formatCount(total))
+                if (limit > 0) append(" · Limit ").append(formatCount(limit)).append("/s")
             }
             Text(
                 text = first,
@@ -449,7 +454,7 @@ private fun QueryRateCard(stats: LiveStats?) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "Dropped: ${formatCount(dropped)}",
+                text = "Dropped ${formatCount(dropped)}",
                 style = MetricMeta,
                 color = if (dropped > 0) colors.warning else MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -461,8 +466,8 @@ private fun QueryRateCard(stats: LiveStats?) {
 private fun RamCacheCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
     MetricCard {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            CardLabel(DashboardCard.RAM_CACHE, "RAM Cache")
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            CardLabel(DashboardCard.RAM_CACHE, "RAM Cache", compact = true)
             Row(verticalAlignment = Alignment.Bottom) {
                 MetricValue(
                     text = stats?.let { String.format(Locale.US, "%.1f", it.cacheHitRate) } ?: "—",
@@ -479,12 +484,12 @@ private fun RamCacheCard(stats: LiveStats?) {
             val hits = formatCount(stats?.cacheHits ?: 0)
             val misses = formatCount(stats?.cacheMisses ?: 0)
             Text(
-                text = "Items: $items · $hits hits",
+                text = "Items $items · $hits hits",
                 style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "Missed: $misses",
+                text = "Missed $misses",
                 style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -496,8 +501,8 @@ private fun RamCacheCard(stats: LiveStats?) {
 private fun SniProxyCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
     MetricCard {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            CardLabel(DashboardCard.SNI_PROXY, "SNI Proxy")
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            CardLabel(DashboardCard.SNI_PROXY, "SNI Proxy", compact = true)
             MetricValue(
                 text = formatCount(stats?.activeRelays ?: 0),
                 color = colors.purple,
@@ -509,7 +514,7 @@ private fun SniProxyCard(stats: LiveStats?) {
             )
             val drops = (stats?.relaysRefused ?: 0) + (stats?.relaysUnreadable ?: 0)
             Text(
-                text = "Total: ${formatCount(stats?.totalRelays ?: 0)} · ${if (drops > 0) "${formatCount(drops)} drops" else "no drops"}",
+                text = "Total ${formatCount(stats?.totalRelays ?: 0)} · ${if (drops > 0) "${formatCount(drops)} drops" else "no drops"}",
                 style = MetricMeta,
                 color = if (drops > 0) colors.warning else MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -522,8 +527,8 @@ private fun CpuUsageCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
     val pct = stats?.cpuUsagePercent ?: 0.0
     MetricCard {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            CardLabel(DashboardCard.CPU_USAGE, "CPU Usage")
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            CardLabel(DashboardCard.CPU_USAGE, "CPU Usage", compact = true)
             MetricValue(
                 text = stats?.let { String.format(Locale.US, "%.1f%%", it.cpuUsagePercent) } ?: "—",
                 color = colorForPercent(pct, colors.danger, colors.warning, colors.success),
@@ -541,15 +546,15 @@ private fun CpuUsageCard(stats: LiveStats?) {
 private fun RamUsageCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
     MetricCard {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            CardLabel(DashboardCard.RAM_USAGE, "RAM Usage")
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            CardLabel(DashboardCard.RAM_USAGE, "RAM Usage", compact = true)
             MetricValue(
                 text = stats?.let { formatBytes((it.ramUsageMb * 1024 * 1024).toLong()) } ?: "—",
                 color = colors.info,
             )
             val sysPct = stats?.systemMemPercent ?: 0.0
             Text(
-                text = "System: ${String.format(Locale.US, "%.0f%%", sysPct)}",
+                text = "System ${String.format(Locale.US, "%.0f%%", sysPct)}",
                 style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -560,8 +565,8 @@ private fun RamUsageCard(stats: LiveStats?) {
 @Composable
 private fun LiveTrafficCard(stats: LiveStats?) {
     MetricCard {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            CardLabel(DashboardCard.LIVE_TRAFFIC, "Live Traffic")
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            CardLabel(DashboardCard.LIVE_TRAFFIC, "Live Traffic", compact = true)
             MetricValue(
                 text = stats?.let { formatBytes(it.totalBytesTransferred) } ?: "—",
                 color = MaterialTheme.colorScheme.onSurface,
@@ -726,10 +731,14 @@ private fun UptimeFooter(stats: LiveStats?) {
 }
 
 @Composable
-internal fun Label(text: String, modifier: Modifier = Modifier) {
+internal fun Label(
+    text: String,
+    modifier: Modifier = Modifier,
+    style: TextStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+) {
     Text(
         text = text.uppercase(Locale.US),
-        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+        style = style,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier,
     )
@@ -737,7 +746,12 @@ internal fun Label(text: String, modifier: Modifier = Modifier) {
 
 /** A card header: the panel's per-card icon beside the uppercase label. */
 @Composable
-private fun CardLabel(card: DashboardCard, title: String, modifier: Modifier = Modifier) {
+private fun CardLabel(
+    card: DashboardCard,
+    title: String,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
         Icon(
             imageVector = card.icon,
@@ -746,7 +760,7 @@ private fun CardLabel(card: DashboardCard, title: String, modifier: Modifier = M
             modifier = Modifier.size(CARD_ICON_SIZE),
         )
         Spacer(Modifier.width(6.dp))
-        Label(title)
+        Label(title, style = if (compact) MetricLabel else MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium))
     }
 }
 
