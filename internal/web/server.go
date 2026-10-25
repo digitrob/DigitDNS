@@ -709,6 +709,10 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	// routes that accept ?token=, because EventSource cannot set headers.
 	mux.HandleFunc("/events/stream", ws.requireAuthStream(ws.stats.ServeSSE))
 	mux.HandleFunc("/api/stream/queries", ws.requireAuthStream(ws.stats.ServeSSE))
+	// The Clear button empties the daemon's ring too. A client-only clear was
+	// undone by the next reconnect, which replayed the history the operator had
+	// just dismissed; this is the write half of that button.
+	mux.HandleFunc("/api/stream/clear", ws.requireAuth(ws.handleStreamClear))
 
 	// 4. Shecan/Shelter style 1-Click IP auto-registration & Subscriber Portal (public by design)
 	// Phase B: /sub/<token> is the read-only portal page; /ip/<token> is the

@@ -9,12 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## 🩹 [Unreleased]
 
 ### ✨ Added
+- **Clear now clears the server, not just the tab.** The live log's Clear button empties the daemon's in-memory ring through a new `POST /api/stream/clear` and every open dashboard drops its rows on the resulting `cleared` event. Before, only the browser buffer was emptied, so the next reconnect replayed the history the operator had just dismissed.
 - **Zebra rows in both dashboard lists.** The Proxied Domains table and the live query log now alternate a faint row tint, so a dense wall of monospace no longer forces the eye to re-find the line it was reading. Paused proxied domains get an amber wash instead of the old `opacity-50`, which used to fade the switch and the status badge along with the domain.
 
 ### 🔄 Changed
-- **The Android dashboard tiles are compact.** All six metric cards (Query Rate, RAM Cache, SNI Proxy, CPU, RAM Usage, Live Traffic) share a 22 sp number (was 32 sp), a 10 sp supporting line, 10 dp inner padding and a 104 dp minimum height (was 166 dp) — roughly a fifth shorter than the previous build — while every label stays on one line, so a row of two stays level and more of the grid fits on screen. Every card icon is 14 dp, one size across the dashboard.
+- **The Android dashboard tiles are compact.** All six metric cards (Query Rate, RAM Cache, SNI Proxy, CPU, RAM Usage, Live Traffic) share a 22 sp number (was 32 sp), an 11 sp supporting line, 8 dp inner padding and a 94 dp minimum height (was 166 dp) — nearly half the height it shipped with — while every label stays on one line, so a row of two stays level and more of the grid fits on screen. Live Traffic's `Total` caption now sits on the same line as the ↓/↑ rates. Every card icon is 14 dp, one size across the dashboard.
+- **The live log holds a hundred queries, on both sides.** The browser buffer now matches the daemon's ring instead of keeping twice as many rows, and a second tab or a reconnect never shows more than the server would replay.
 
 ### 🐛 Fixed
+- **The live log no longer refills after Clear, repaints while paused, or loses arrivals during a pause.** The `history` listener ignored the pause switch and repainted on every reconnect (which is what made Clear look broken); a coalesced render frame could re-insert arrivals queued before a Clear; and pausing dropped arriving queries instead of buffering them, so Resume showed a gap. All three are fixed, and the panel says so when the server-side clear fails.
 - **The container no longer reports itself unhealthy when the panel runs over HTTPS.** The image's health probe asked `http://127.0.0.1:<web_port>/api/v1/version`, but a `panel_https` install serves TLS on that port only, so every probe was answered with a handshake error and Docker marked a perfectly working container as sick. The probe now tries HTTPS first (skipping verification, because it is a loopback liveness check against the operator's own certificate) and still falls back to HTTP for installs without `panel_https`.
 
 ---

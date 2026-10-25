@@ -80,15 +80,16 @@ object PanelRowDefaults {
  * The height every dashboard metric tile settles at. All six share it, so a grid row
  * never shows one card taller than its neighbour; 132 dp fits the tallest content
  * (Query Rate: label, value, unit and two supporting lines) at the default text scale.
+ * The 8dp inset leaves the widest support line on one row even at 320dp.
  */
-private val MetricCardHeight = 104.dp
+private val MetricCardHeight = 94.dp
 
 /** The shared shell of a dashboard metric tile: compact padding, one height. */
 @Composable
 fun MetricCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     PanelCard(
         modifier = modifier.fillMaxWidth().heightIn(min = MetricCardHeight),
-        contentPadding = 10.dp,
+        contentPadding = 8.dp,
         content = content,
     )
 }

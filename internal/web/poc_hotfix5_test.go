@@ -86,6 +86,7 @@ func TestPoC02SubscriberPortDoesNotServeAuthEndpoints(t *testing.T) {
 	for _, p := range []string{
 		"/api/auth/login", "/api/auth/me", "/api/auth/2fa/status",
 		"/api/auth/unlock", "/api/stats", "/api/stream/queries",
+		"/api/stream/clear",
 	} {
 		rec := pocProbe(t, h, http.MethodPost, p)
 		if rec.Body.String() != pocNotFoundBody {

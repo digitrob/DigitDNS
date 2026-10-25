@@ -100,13 +100,15 @@ internal val MetricNumber = TextStyle(
 
 /**
  * The one size every metric's supporting line uses. BodySmall sits at 13sp for prose,
- * which is too wide for two stats sharing a 142dp card; the labels here are short
+ * which is too wide for two stats sharing a 146dp card; the labels here are short
  * and dense, so they get their own tighter step rather than a per-card override.
+ * The 12sp line box is deliberate: it is what lets a four-line tile fit a 94dp
+ * card without the text touching either edge.
  */
 internal val MetricMeta = TextStyle(
     fontFamily = FontFamily.Default,
     fontWeight = FontWeight.Normal,
-    fontSize = 10.sp,
+    fontSize = 11.sp,
     lineHeight = 12.sp,
 )
 

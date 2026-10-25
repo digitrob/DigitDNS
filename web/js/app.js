@@ -77,8 +77,16 @@ const SSE_BACKOFF_MAX_MS = 30000;
 // exact, and it makes "the last STREAM_BUFFER_MAX queries received" true regardless of what
 // the view is currently showing — the old 80-row cap applied to whatever survived the
 // filter, so a narrow filter silently discarded history it had already been handed.
-const STREAM_BUFFER_MAX = 200;
+//
+// 100 matches the daemon's own ring (recentLogsCap): it is the most the server will ever
+// replay on connect, so a larger client buffer could only hold rows no refresh would show.
+const STREAM_BUFFER_MAX = 100;
 let streamBuffer = [];
+
+// streamEpoch invalidates work queued before a Clear. A frame coalesced from arrivals
+// that have since been cleared must not repaint them, and bumping this counter is how
+// the click handler tells any in-flight rAF callback that its batch is stale.
+let streamEpoch = 0;
 
 // streamRendered mirrors the rows actually in the table, in DOM order, holding the same
 // query objects as streamBuffer. The two differ while a batch is being inserted: the
@@ -2404,7 +2412,8 @@ async function startLiveStream() {
 
   // Handle single query event
   source.addEventListener('query', (event) => {
-    if (isStreamPaused) return;
+    // No pause gate here: pushStreamQuery keeps buffering and only skips the DOM
+    // insert. Dropping arrivals at this point made Resume show a hole.
     try {
       pushStreamQuery(JSON.parse(event.data));
     } catch (e) {
@@ -2416,20 +2425,38 @@ async function startLiveStream() {
   source.addEventListener('history', (event) => {
     try {
       const list = JSON.parse(event.data);
-      if (Array.isArray(list)) seedStreamQueries(list);
+      if (!Array.isArray(list)) return;
+      // While paused the view must not change — a reconnect used to repaint the
+      // history straight through the pause, which looked like Clear had failed.
+      // Buffer the snapshot instead: Resume redraws from it.
+      if (isStreamPaused) {
+        streamBuffer = list.slice(0, STREAM_BUFFER_MAX);
+        return;
+      }
+      seedStreamQueries(list);
     } catch (e) {
       console.error('Error parsing query history:', e);
     }
   });
 
+  // Another dashboard (or this one, after a reconnect) cleared the log. Drop the
+  // rows without posting again, or two tabs would clear each other in a loop.
+  source.addEventListener('cleared', () => {
+    resetStreamView();
+  });
+
   // Fallback for default messages
   source.onmessage = (event) => {
-    if (isStreamPaused) return;
     try {
       const q = JSON.parse(event.data);
       if (Array.isArray(q)) {
-        seedStreamQueries(q);
+        if (isStreamPaused) {
+          streamBuffer = q.slice(0, STREAM_BUFFER_MAX);
+        } else {
+          seedStreamQueries(q);
+        }
       } else {
+        // Same reasoning as the named query listener: buffer while paused.
         pushStreamQuery(q);
       }
     } catch (e) {}
@@ -2884,7 +2911,11 @@ function pushStreamQuery(q) {
   streamPendingQueries.push(q);
   if (streamPendingRender) return;
   streamPendingRender = true;
+  const epoch = streamEpoch;
   requestAnimationFrame(() => {
+    // A Clear since this frame was queued owns the flags and the buffer now;
+    // inserting the captured batch would repaint rows the operator dismissed.
+    if (epoch !== streamEpoch) return;
     streamPendingRender = false;
     const batch = streamPendingQueries;
     streamPendingQueries = [];
@@ -2916,6 +2947,40 @@ function pushStreamQuery(q) {
 function seedStreamQueries(list) {
   streamBuffer = list.slice(0, STREAM_BUFFER_MAX);
   renderQueryStream();
+}
+
+// resetStreamView drops everything the live log is holding locally and repaints the
+// placeholder. Every piece of pending state is cleared, not just the buffer: a batch
+// coalesced for the next animation frame carries query objects that are no longer in
+// the buffer, and inserting them after a Clear is exactly how "Clear" used to leave a
+// handful of rows behind.
+function resetStreamView() {
+  streamEpoch++;
+  streamBuffer = [];
+  streamRendered = [];
+  streamPendingQueries = [];
+  streamPendingDropped = [];
+  streamPendingRender = false;
+  renderQueryStream();
+}
+
+// clearQueryStream clears the server's ring first, then the view. The POST matters:
+// a client-only clear was undone by the next reconnect, when the server replayed the
+// history it still held. A failed request still clears the view (the operator asked
+// for it) but says so, because the entries will come back on the next connect.
+async function clearQueryStream() {
+  resetStreamView();
+  try {
+    const res = await fetch(api('/api/stream/clear'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (!res.ok) {
+      showToast(await errorMessage(res, 'Could not clear the server log'), 'error');
+    }
+  } catch (e) {
+    showToast('Could not clear the server log', 'error');
+  }
 }
 
 // =======================================================
@@ -4389,13 +4454,11 @@ function initEventListeners() {
 
   const clearBtn = document.getElementById('stream-clear-btn');
   if (clearBtn) {
+    // Clear empties the daemon's ring as well as this view; resetStreamView keeps the
+    // placeholder contract (empty the data, never wipe the tbody) and invalidates any
+    // insert frame already queued.
     clearBtn.onclick = () => {
-      // Empty the buffer and re-render rather than wiping the tbody. Clearing the markup left
-      // a blank table with no placeholder and no way back to one — the old placeholder check
-      // required exactly one row containing 'Listening', so it never returned, and a cleared
-      // stream was indistinguishable from a dead one until the next query arrived.
-      streamBuffer = [];
-      renderQueryStream();
+      clearQueryStream();
     };
   }
 }

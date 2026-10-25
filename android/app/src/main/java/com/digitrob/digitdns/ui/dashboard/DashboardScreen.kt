@@ -571,15 +571,13 @@ private fun LiveTrafficCard(stats: LiveStats?) {
                 text = stats?.let { formatBytes(it.totalBytesTransferred) } ?: "—",
                 color = MaterialTheme.colorScheme.onSurface,
             )
+            val inRate = stats?.let { formatRate(it.speedInKbps) } ?: "—"
+            val outRate = stats?.let { formatRate(it.speedOutKbps) } ?: "—"
             Text(
-                text = "Total",
+                text = "Total · ↓ $inRate · ↑ $outRate",
                 style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = "↓ ${stats?.let { formatRate(it.speedInKbps) } ?: "—"} · ↑ ${stats?.let { formatRate(it.speedOutKbps) } ?: "—"}",
-                style = MetricMeta,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
             )
         }
     }

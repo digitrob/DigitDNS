@@ -1,8 +1,13 @@
 package web
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"digitdns/internal/database"
 )
 
 // The live query console had three variants of one bug: a control that reads its own value at
@@ -56,22 +61,52 @@ func TestStreamFilterControlsRerenderExistingRows(t *testing.T) {
 	}
 }
 
-// Clear has to empty the buffer, not the markup. Emptying the markup removes the placeholder
-// as well, and the render path is the only thing that puts one back.
-func TestStreamClearEmptiesTheBuffer(t *testing.T) {
-	body := functionBody(t, readAsset(t, "js/app.js"), "initEventListeners")
+// Clear has to empty the data, not the markup — and it has to empty the daemon's ring as
+// well. A client-only clear was undone by the next SSE reconnect, which replayed the
+// history the operator had just dismissed; and a coalesced insert frame still holding
+// evicted arrivals could repaint a handful of rows after the buffer was reset.
+func TestStreamClearEmptiesBufferPendingWorkAndTheServerRing(t *testing.T) {
+	app := readAsset(t, "js/app.js")
+	body := functionBody(t, app, "initEventListeners")
 
 	if !strings.Contains(body, "'stream-clear-btn'") {
 		t.Fatal("initEventListeners no longer binds #stream-clear-btn — the button does nothing")
 	}
-	if !strings.Contains(body, "streamBuffer = []") {
-		t.Error("the #stream-clear-btn handler does not empty streamBuffer. Clearing the table's " +
-			"markup instead leaves a blank panel that no longer matches the buffer, and the " +
-			"placeholder only returns from renderQueryStream.")
+	if !strings.Contains(body, "clearQueryStream()") {
+		t.Error("the #stream-clear-btn handler does not call clearQueryStream(), so Clear does " +
+			"not reset the view or the server ring.")
 	}
-	if !strings.Contains(body, "renderQueryStream()") {
-		t.Error("initEventListeners never calls renderQueryStream(), so nothing redraws the " +
-			"table after the buffer is emptied — Clear would leave the old rows on screen.")
+
+	reset := functionBody(t, app, "resetStreamView")
+	for _, want := range []string{
+		"streamBuffer = []",
+		"streamRendered = []",
+		"streamPendingQueries = []",
+		"streamPendingDropped = []",
+		"streamPendingRender = false",
+		"streamEpoch++",
+		"renderQueryStream()",
+	} {
+		if !strings.Contains(reset, want) {
+			t.Errorf("resetStreamView does not %q; a Clear would leave state that repaints rows", want)
+		}
+	}
+
+	clearFn := functionBody(t, app, "clearQueryStream")
+	if !strings.Contains(clearFn, "'/api/stream/clear'") || !strings.Contains(clearFn, "method: 'POST'") {
+		t.Error("clearQueryStream does not POST /api/stream/clear, so the daemon's ring keeps " +
+			"the entries and the next reconnect brings them back.")
+	}
+
+	// Another tab's Clear must be honoured without echoing a POST back, or two open
+	// dashboards would clear each other in a loop.
+	if !strings.Contains(app, "addEventListener('cleared'") {
+		t.Error("app.js never listens for the SSE 'cleared' event; a second open dashboard " +
+			"would keep showing rows the server has dropped.")
+	}
+	if !strings.Contains(app, "if (epoch !== streamEpoch) return;") {
+		t.Error("the coalesced insert frame does not check streamEpoch, so an arrival queued " +
+			"before Clear can be inserted after it.")
 	}
 }
 
@@ -127,5 +162,91 @@ func TestLiveStreamHandlersFeedTheBuffer(t *testing.T) {
 	if strings.Contains(body, "getElementById('stream-tbody')") {
 		t.Error("startLiveStream looks up the table body. Nothing in the SSE path needs it — " +
 			"the render path owns the table, and reaching past it is what lets the two diverge.")
+	}
+}
+
+// The Clear button's write half. It is the one destructive telemetry route on the
+// panel, so it is pinned end to end: unauthenticated callers get nothing, the wrong
+// method gets 405, and a successful POST actually empties the ring the history
+// snapshot is built from.
+func TestStreamClearEndpointRequiresAuthAndEmptiesTheRing(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+	h := ws.buildAdminHandler()
+
+	login := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(
+		`{"username":"admin","password":"`+testAdminPassword+`"}`))
+	login.Header.Set("Content-Type", "application/json")
+	loginRec := httptest.NewRecorder()
+	h.ServeHTTP(loginRec, login)
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("login = %d — %s", loginRec.Code, loginRec.Body.String())
+	}
+	var session struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(loginRec.Body.Bytes(), &session); err != nil || session.Token == "" {
+		t.Fatalf("login carried no session token (err=%v, body=%s)", err, loginRec.Body.String())
+	}
+
+	ws.stats.PushQueryLog(database.QueryLogItem{Domain: "clear-me.example", Action: "PROXY"})
+	if got := len(ws.stats.GetRecentLogs()); got != 1 {
+		t.Fatalf("ring holds %d entries after one push, want 1", got)
+	}
+
+	// No token: the route must not be a free way to wipe another operator's log.
+	anon := httptest.NewRequest(http.MethodPost, "/api/stream/clear", nil)
+	anonRec := httptest.NewRecorder()
+	h.ServeHTTP(anonRec, anon)
+	if anonRec.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated POST /api/stream/clear = %d, want 401", anonRec.Code)
+	}
+	if got := len(ws.stats.GetRecentLogs()); got != 1 {
+		t.Errorf("an unauthenticated clear emptied the ring (%d entries left)", got)
+	}
+
+	// Authenticated GET: method is part of the contract, like the other write routes.
+	get := httptest.NewRequest(http.MethodGet, "/api/stream/clear", nil)
+	get.Header.Set("Authorization", "Bearer "+session.Token)
+	getRec := httptest.NewRecorder()
+	h.ServeHTTP(getRec, get)
+	if getRec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET /api/stream/clear = %d, want 405", getRec.Code)
+	}
+
+	post := httptest.NewRequest(http.MethodPost, "/api/stream/clear", nil)
+	post.Header.Set("Authorization", "Bearer "+session.Token)
+	postRec := httptest.NewRecorder()
+	h.ServeHTTP(postRec, post)
+	if postRec.Code != http.StatusOK {
+		t.Fatalf("POST /api/stream/clear = %d — %s", postRec.Code, postRec.Body.String())
+	}
+	if got := ws.stats.GetRecentLogs(); len(got) != 0 {
+		t.Errorf("ring holds %d entries after Clear, want 0", len(got))
+	}
+}
+
+// A reconnect used to repaint the history snapshot straight through a pause: the
+// 'history' listener had no pause gate, unlike the 'query' listener, so rows appeared
+// while the operator had deliberately frozen the view — and immediately after a Clear
+// it looked as though the clear had failed. History must seed the buffer only.
+func TestStreamHistoryDoesNotRepaintWhilePaused(t *testing.T) {
+	body := functionBody(t, readAsset(t, "js/app.js"), "startLiveStream")
+
+	start := strings.Index(body, "addEventListener('history'")
+	if start == -1 {
+		t.Fatal("startLiveStream no longer registers a 'history' listener")
+	}
+	end := strings.Index(body[start:], "});")
+	if end == -1 {
+		t.Fatal("the 'history' listener is not closed the way the test expects")
+	}
+	listener := body[start : start+end]
+
+	if !strings.Contains(listener, "isStreamPaused") {
+		t.Error("the 'history' listener has no pause gate; a reconnect repaints the log while paused")
+	}
+	if !strings.Contains(listener, "streamBuffer = list.slice(") {
+		t.Error("a paused reconnect does not seed the buffer, so Resume would show a hole")
 	}
 }

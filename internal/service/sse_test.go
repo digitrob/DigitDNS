@@ -301,3 +301,31 @@ func TestSSERefusesAWriterItCannotFlush(t *testing.T) {
 	// with subscribers that were never served.
 	awaitSubscribers(t, s, 0)
 }
+
+// ClearRecentLogs is the write half of the panel's Clear button. It has to do two
+// things at once: empty the ring the history snapshot is built from, and tell every
+// connected dashboard to drop its rows. Without the broadcast, a second tab (or the
+// same tab after a reconnect) keeps showing entries the server no longer holds.
+func TestClearRecentLogsEmptiesRingAndNotifiesSubscribers(t *testing.T) {
+	s := NewStatsService(nil, nil, nil)
+	defer s.Close()
+
+	s.PushQueryLog(database.QueryLogItem{Domain: "first.example", Action: "PROXY"})
+	s.PushQueryLog(database.QueryLogItem{Domain: "second.example", Action: "DIRECT"})
+	if got := len(s.GetRecentLogs()); got != 2 {
+		t.Fatalf("ring holds %d entries, want 2", got)
+	}
+
+	rec, _ := subscribe(t, s)
+	rec.awaitFlush(t) // the history snapshot
+
+	s.ClearRecentLogs()
+	rec.awaitFlush(t) // the cleared frame
+
+	if got := len(s.GetRecentLogs()); got != 0 {
+		t.Errorf("ring holds %d entries after Clear, want 0", got)
+	}
+	if body := rec.text(); !strings.Contains(body, "event: cleared") {
+		t.Errorf("subscriber never received a cleared frame; stream so far: %q", body)
+	}
+}

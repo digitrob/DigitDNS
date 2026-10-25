@@ -82,6 +82,19 @@ type StatsService struct {
 // exhaust the daemon by opening connections and never reading them.
 const maxSSEClients = 64
 
+// recentLogsCap is how many recent queries the daemon keeps in memory for the
+// live log. It is the ceiling for the history snapshot every new subscriber
+// receives, so it is also, in effect, the panel's log length: browsers are told
+// to keep the same number and cannot show more than this on connect. The ring
+// lives only in memory — nothing here is written to the database — so a busy
+// resolver costs one fixed slice rather than unbounded growth.
+const recentLogsCap = 100
+
+// recentLogsClearFrame is the frame broadcast when an operator clears the log, so
+// every other open dashboard drops its rows instead of keeping entries the server
+// no longer holds.
+const recentLogsClearFrame = "event: cleared\ndata: {}\n\n"
+
 func NewStatsService(
 	db *database.DB,
 	proxyStats func() (int64, uint64, uint64, uint64),
@@ -90,7 +103,7 @@ func NewStatsService(
 	s := &StatsService{
 		db:            db,
 		startedAt:     time.Now(),
-		recentLogs:    make([]database.QueryLogItem, 0, 100),
+		recentLogs:    make([]database.QueryLogItem, 0, recentLogsCap),
 		sseClients:    make(map[chan string]struct{}),
 		getProxyStats: proxyStats,
 		getCacheStats: cacheStats,
@@ -147,7 +160,7 @@ func (s *StatsService) PushQueryLog(item database.QueryLogItem) {
 	}
 
 	s.logMu.Lock()
-	if len(s.recentLogs) >= 100 {
+	if len(s.recentLogs) >= recentLogsCap {
 		s.recentLogs = s.recentLogs[1:]
 	}
 	s.recentLogs = append(s.recentLogs, item)
@@ -170,6 +183,25 @@ func (s *StatsService) PushQueryLog(item database.QueryLogItem) {
 	for ch := range s.sseClients {
 		select {
 		case ch <- frame:
+		default:
+		}
+	}
+	s.sseMu.RUnlock()
+}
+
+// ClearRecentLogs empties the in-memory ring and tells every connected dashboard
+// to drop its rows. Clearing only the browser used to look like a broken button:
+// the ring still held the entries, so the next SSE reconnect replayed them and the
+// table refilled with the "cleared" queries.
+func (s *StatsService) ClearRecentLogs() {
+	s.logMu.Lock()
+	s.recentLogs = s.recentLogs[:0]
+	s.logMu.Unlock()
+
+	s.sseMu.RLock()
+	for ch := range s.sseClients {
+		select {
+		case ch <- recentLogsClearFrame:
 		default:
 		}
 	}
