@@ -106,9 +106,8 @@ internal fun UpstreamRacersCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                upstreams.forEachIndexed { index, stat ->
+                upstreams.forEach { stat ->
                     UpstreamRow(
-                        rank = index + 1,
                         stat = stat,
                         swipeEnabled = swipeEnabled,
                         onRemove = {
@@ -195,7 +194,6 @@ private fun UpstreamAddRow(
 
 @Composable
 private fun UpstreamRow(
-    rank: Int,
     stat: UpstreamStat,
     swipeEnabled: Boolean,
     onRemove: () -> Unit,
@@ -206,11 +204,13 @@ private fun UpstreamRow(
         confirmTitle = "Remove upstream?",
         confirmText = "${stat.address} will be removed from the resolver pool.",
         confirmLabel = "Remove",
-        // 0.85 of the row, not the panel's 0.45: the card sits inside the scrolling
-        // dashboard grid, and a diagonal scroll used to settle as a swipe and ask to
-        // delete an upstream nobody meant to touch.
-        threshold = 0.85f,
+        // Strict mode, and almost the full row: the card sits inside the scrolling
+        // dashboard grid, where Material's velocity-based settling could turn a
+        // diagonal brush during a scroll into a delete prompt. Only a deliberate,
+        // nearly edge-to-edge drag opens the confirmation.
+        threshold = 0.92f,
         enabled = swipeEnabled,
+        strict = true,
     ) {
         Row(
             modifier = Modifier
@@ -220,12 +220,6 @@ private fun UpstreamRow(
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "$rank",
-                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.width(20.dp),
-            )
             // The status dot mirrors the panel: green when measured and fast, amber above
             // 40 ms, red above 80 ms, grey when nothing has timed it yet.
             Box(

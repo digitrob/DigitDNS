@@ -1,14 +1,21 @@
 package com.digitrob.digitdns.ui.dashboard
 
+import android.os.Build
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,7 +39,8 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -45,12 +53,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -76,6 +87,7 @@ import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
 import kotlinx.coroutines.launch
 import java.util.Locale
+import kotlin.math.abs
 
 /**
  * The dashboard: the same cards the panel leads with, sized for a phone. It is a
@@ -104,20 +116,54 @@ fun DashboardScreen(
             // ONLINE badge. It used to be flush with the screen edge, which put it
             // visibly to the right of the pill above it.
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                // The switcher is a square the height of the IP row, so its top and
+                // bottom edges line up with the address box instead of floating short
+                // of them. Intrinsic sizing lets the box decide the row height and the
+                // button follow it, whatever the font scale.
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ServerIpBox(state.serverIp, state.serverCountry, modifier = Modifier.weight(1f))
-                IconButton(
+                ServerIpBox(
+                    serverIp = state.serverIp,
+                    country = state.serverCountry,
+                    domain = state.serverDomain,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedIconButton(
                     onClick = { showServerSwitcher = true },
                     modifier = Modifier
-                        .padding(start = 8.dp, end = 12.dp)
-                        .size(48.dp),
+                        // No start padding: the address box already carries a 12 dp
+                        // transparent inset on its right, so the visible gap between
+                        // the two is exactly that 12 dp — the same gap the dashboard
+                        // grid puts between cards. The end inset keeps the column
+                        // aligned with the grid's content padding.
+                        .padding(end = 12.dp)
+                        .fillMaxHeight()
+                        // Width stays the square side (the row height); the inner
+                        // vertical padding trims the button itself to the visible
+                        // address box, which is the row minus its 4 dp outer padding.
+                        .aspectRatio(1f)
+                        // 48 dp tall: the width still comes from the row height, so
+                        // the result is a short rounded rectangle. The button stays
+                        // centred in the row's height, and the glyph is centred in
+                        // the button by IconButton itself.
+                        .padding(vertical = 8.dp),
+                    // A rounded square, not a circle: it matches the dashboard's
+                    // 12 dp card corners and lines up in width with the ONLINE pill
+                    // above it (11 sp label + 10 dp padding either side ≈ 56 dp).
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                    ),
+                    colors = IconButtonDefaults.outlinedIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                        contentColor = MaterialTheme.colorScheme.primary,
+                    ),
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.SwapHoriz,
                         contentDescription = "Switch server",
-                        tint = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
@@ -162,17 +208,36 @@ fun DashboardScreen(
  * Hidden until the address is known, so an empty box never reads as "no address".
  */
 @Composable
-private fun ServerIpBox(serverIp: String, country: String, modifier: Modifier = Modifier) {
+private fun ServerIpBox(
+    serverIp: String,
+    country: String,
+    domain: String,
+    modifier: Modifier = Modifier,
+) {
     if (serverIp.isBlank()) return
     val colors = DigitDnsTheme.colors
     val clipboard = LocalClipboardManager.current
+    val swipeThreshold = with(LocalDensity.current) { 32.dp.toPx() }
+    var hidden by remember { mutableStateOf(false) }
+    var showDomain by remember { mutableStateOf(false) }
+    val hasDomain = domain.isNotBlank()
+    val displayed = if (showDomain && hasDomain) domain else serverIp
+    // Compose can only blur from Android 12. On 10/11 the privacy swipe masks the
+    // value instead of leaving it readable behind a no-op blur.
+    val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val shownText = if (hidden && !canBlur) maskAddress(displayed) else displayed
+
     Row(
         modifier = modifier
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(colors.bgCard)
             .border(1.dp, colors.borderColor, RoundedCornerShape(12.dp))
-            .clickable { clipboard.setText(AnnotatedString(serverIp)) }
+            .clickable { clipboard.setText(AnnotatedString(displayed)) }
+            // Down swaps the address for the configured domain, up swaps back. Only
+            // armed when a domain exists, so a box with none does not swallow the
+            // dashboard's own scroll gestures.
+            .domainSwipe(enabled = hasDomain, threshold = swipeThreshold) { showDomain = it }
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -185,21 +250,22 @@ private fun ServerIpBox(serverIp: String, country: String, modifier: Modifier = 
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Server Public IP",
+                text = "Server Public IP/Domain",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = serverIp,
+                text = shownText,
                 style = MaterialTheme.typography.titleMedium.copy(fontFamily = PanelMono),
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .then(if (hidden && canBlur) Modifier.blur(6.dp) else Modifier)
+                    // A horizontal swipe across the value hides it (IP or domain).
+                    .privacySwipe(swipeThreshold) { hidden = !hidden },
             )
         }
-        // The flag is a sibling of the two-line address block, not part of the
-        // address line: the row centres it against the heading and the date, and
-        // it sits just clear of the text before the copy icon.
         if (country.isNotBlank()) {
             Spacer(Modifier.width(10.dp))
             CountryFlag(country, width = 24.dp, height = 18.dp)
@@ -207,12 +273,50 @@ private fun ServerIpBox(serverIp: String, country: String, modifier: Modifier = 
         }
         Icon(
             imageVector = Icons.Filled.ContentCopy,
-            contentDescription = "Copy server IP",
+            contentDescription = "Copy server address",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(16.dp),
         )
     }
 }
+
+/** Keeps an address' shape while replacing every character that carries information. */
+private fun maskAddress(value: String): String =
+    value.map { c -> if (c.isLetterOrDigit()) '•' else c }.joinToString("")
+
+/**
+ * Down shows [show] and up hides it, but only when the box actually has something to
+ * swap to. When [enabled] is false the modifier is absent, so the gesture falls through
+ * to the dashboard's own scrolling instead of being swallowed by the box.
+ */
+private fun Modifier.domainSwipe(
+    enabled: Boolean,
+    threshold: Float,
+    show: (Boolean) -> Unit,
+): Modifier {
+    if (!enabled) return this
+    return pointerInput(enabled) {
+        var drag = 0f
+        detectVerticalDragGestures(
+            onDragStart = { drag = 0f },
+            onVerticalDrag = { _, amount -> drag += amount },
+            onDragEnd = {
+                if (drag > threshold) show(true) else if (drag < -threshold) show(false)
+            },
+        )
+    }
+}
+
+/** A horizontal swipe across the value toggles the privacy blur. */
+private fun Modifier.privacySwipe(threshold: Float, onToggle: () -> Unit): Modifier =
+    pointerInput(Unit) {
+        var drag = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { drag = 0f },
+            onHorizontalDrag = { _, amount -> drag += amount },
+            onDragEnd = { if (abs(drag) > threshold) onToggle() },
+        )
+    }
 
 @Composable
 private fun DashboardGrid(
