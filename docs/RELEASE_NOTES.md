@@ -1,3 +1,61 @@
+# DigitDNS v3.4.9
+
+This is a maintenance release: the focus is bug fixes and small improvements, not
+new features. Two of the fixes were things operators could see and one was not.
+
+## Highlights
+
+- **A fresh install now keeps the access mode you configured.** If
+  `config.json` said `access.allow_all: true`, the daemon used to overwrite it
+  with the safe whitelist default on first boot and refuse every query until
+  someone flipped the switch in the panel. The file value now wins on a first
+  boot, and the migration marker is written so no later boot changes it either.
+- **The live query log is readable on a laptop again.** The six fixed columns
+  added up to more width than a 1280-wide window has, which squeezed the domain
+  column to about thirty pixels: every query showed as `n...` and the headers
+  overlapped. The fixed columns are narrower, the domain keeps a usable share,
+  and the table still scrolls sideways on a phone.
+- **Clear keeps meaning clear.** This release finishes the work started in 3.4.8:
+  the server-side clear, the `cleared` broadcast, pause that keeps arrivals, and
+  the hundred-entry cap are unchanged, but the storage keys that remembered your
+  session and theme were renamed (`hyperdns_*` → `digitdns_*`) and are migrated
+  in place, so nobody is signed out by the change.
+- **Small consistency fixes.** RAM Cache says `% hits` everywhere; the QPS chart
+  uses a dot as the decimal separator instead of the browser locale's comma; the
+  pre-hydration version text no longer says `v2.1.0`; and the panel HTML, docs
+  and copy-paste snippets all point at v2/v3.
+
+## One breaking change
+
+**The v1 REST API is gone.** It was deprecated with a published sunset of
+1 July 2026 and outlived it by three months, so this release removes it rather
+than re-dating it: `/api/v1/*` now answers 404. Everything is served by
+`/api/v2` (and `/api/v3` for dashboard parity), and `/api/server/restart` is
+unversioned and unchanged. Container health checks now ask `/api/v2/version`.
+If you have a bot or billing hook on `/api/v1`, move the base URL to `/api/v2`
+and check the payload shapes — the v2 section of `docs/API.md` and the live
+Swagger page (`/<admin-path>/api/v3/docs`) have the current contracts.
+
+## Under the hood
+
+- v2/v3 `405` responses now carry the `Allow` header RFC 9110 requires, derived
+  from each handler's verb list.
+- The pre-DigitDNS interactive console, an unused link-preview detector and the
+  retired quick-action CSS are removed (about 3,500 lines including tests).
+- A new test fails the build if `offline-bundle/version.json` drifts from
+  `version.json` — that mismatch had been shipping silently.
+
+## Upgrading
+
+Docker users on `ghcr.io/digitrob/digitdns:latest` get it on restart, with no
+migration. Binary installs: replace `digitdns` and restart. The Android app is a
+separate download on this page — version 3.4.9 (versionCode 349) — and updates
+independently of the server.
+
+Full changelog: docs/CHANGELOG.md
+
+---
+
 # DigitDNS v3.4.8
 
 ## Highlights

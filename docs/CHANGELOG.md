@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## 🩹 [Unreleased]
+## 🏷️ [v3.4.9] — Bug fixes and small improvements
 
 ### 🔴 Removed
 - **The v1 REST API is gone.** Its published sunset was 1 July 2026, and it outlived it by three months. `/api/v1/*` now answers 404: version, status, clients, policies, cache flush, API-key rotation and the v1 docs page. Every operation is served by `/api/v2` (or `/api/v3` for dashboard parity), and the panel's copy-paste examples, the docs and the bundled Swagger viewer all point there. `/api/server/restart` is unversioned and stays. Container health checks moved to `/api/v2/version`.
