@@ -48,9 +48,11 @@ Swagger page (`/<admin-path>/api/v3/docs`) have the current contracts.
 ## Upgrading
 
 Docker users on `ghcr.io/digitrob/digitdns:latest` get it on restart, with no
-migration. Binary installs: replace `digitdns` and restart. The Android app is a
-separate download on this page — version 3.4.9 (versionCode 349) — and updates
-independently of the server.
+migration. **If your compose file overrides the container health check, point it
+at `/api/v2/version`** — the v1 path it probably uses now answers 404, so the
+container would report itself unhealthy while serving normally. Binary installs:
+replace `digitdns` and restart. The Android app is a separate download on this
+page — version 3.4.9 (versionCode 349) — and updates independently of the server.
 
 Full changelog: docs/CHANGELOG.md
 
