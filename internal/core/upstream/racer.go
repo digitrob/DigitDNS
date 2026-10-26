@@ -185,6 +185,14 @@ func normalizeHTTPResolverURL(scheme, rest string) (string, bool) {
 	if path == "" || path == "/" {
 		path = dohDefaultPath
 	}
+	// A port typed after the path ("…/dns-query:443") is not a port to the URL
+	// parser: it becomes part of the path, every request 404s, and the entry
+	// looks healthy in the list while never answering. Refuse it instead of
+	// storing a resolver that cannot work. See the accepted spelling one line up
+	// in the tests: "host:port/path".
+	if pathHasPortSuffix(path) {
+		return "", false
+	}
 
 	authority := host
 	if strings.Contains(host, ":") {
@@ -199,6 +207,21 @@ func normalizeHTTPResolverURL(scheme, rest string) (string, bool) {
 		out += "?" + u.RawQuery
 	}
 	return out, true
+}
+
+// pathHasPortSuffix reports whether a URL path ends in ":" followed by digits —
+// the shape left behind when someone writes the port after the path.
+func pathHasPortSuffix(path string) bool {
+	i := strings.LastIndexByte(path, ':')
+	if i < 0 || i == len(path)-1 {
+		return false
+	}
+	for _, c := range path[i+1:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // NormalizeUpstream canonicalises a single operator-supplied upstream string,

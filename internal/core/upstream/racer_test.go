@@ -277,6 +277,12 @@ func TestNormalizeUpstreams(t *testing.T) {
 		{"doh bare slash gains default path", []string{"https://dns.google/"}, []string{"https://dns.google/dns-query"}},
 		{"doh default port dropped", []string{"https://dns.google:443/dns-query"}, []string{"https://dns.google/dns-query"}},
 		{"doh non-default port kept", []string{"https://dns.example:8443/dns-query"}, []string{"https://dns.example:8443/dns-query"}},
+		// The port belongs to the authority. Written after the path it becomes part
+		// of the path and the endpoint 404s forever; this is the shape that shipped
+		// on one live box and only surfaced as intermittent "returned HTTP 404"
+		// lines in the journal.
+		{"doh port in the path rejected", []string{"https://dns.adguard-dns.com/dns-query:443"}, []string{}},
+		{"h3 port in the path rejected", []string{"h3://dns.adguard.com/dns-query:443"}, []string{}},
 		{"doh query string kept", []string{"https://dns.example/dns-query?ct=application/dns-message"}, []string{"https://dns.example/dns-query?ct=application/dns-message"}},
 		{"doh and its default path deduplicate", []string{"https://dns.google", "https://dns.google/dns-query"}, []string{"https://dns.google/dns-query"}},
 		{"doh without host dropped", []string{"https:///dns-query"}, []string{}},

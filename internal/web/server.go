@@ -2549,7 +2549,7 @@ func (ws *WebServer) handleUpstreamsAdd(w http.ResponseWriter, r *http.Request) 
 	// dashboard and can be removed by the same string.
 	canonical, ok := upstream.NormalizeUpstream(addr)
 	if !ok {
-		httpx.WriteJSONError(w, http.StatusBadRequest, "Invalid upstream address (use host, host:port, tls://host, or https://host/dns-query)")
+		httpx.WriteJSONError(w, http.StatusBadRequest, "Invalid upstream address (use host, host:port, tls://host, or https://host/dns-query — a port belongs after the host, not at the end of the path)")
 		return
 	}
 	addr = canonical

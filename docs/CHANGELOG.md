@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🩹 [Unreleased]
+
+### 🐛 Fixed
+- **A DoH upstream with the port written after the path is rejected instead of stored.** `https://dns.adguard-dns.com/dns-query:443` looked like a valid entry, but the port became part of the path, so every request went to `/dns-query:443` and got a 404 — visible only as intermittent `[DNS] Upstream query error … returned HTTP 404` lines. The add handler now refuses that shape and the error says where the port belongs (`host:443/dns-query`).
+
 ## 🏷️ [v3.4.9] — Bug fixes and small improvements
 
 ### 🔴 Removed
