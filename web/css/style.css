@@ -1330,6 +1330,48 @@ input:checked + .slider:before {
    grows to fill the column and only scrolls once it is full. Plain CSS rather than
    Tailwind utilities because the committed purged stylesheet cannot be regenerated
    without Node, so a utility that is not already in it would silently do nothing. */
+/* The address in an Upstream Racers row scrolls inside its own field instead of
+ * being clipped with an ellipsis: a DoH URL is routinely wider than the column,
+ * and the operator needs the whole host to know which resolver a latency belongs
+ * to. Drag it, swipe it, or focus it and use the arrow keys. The fade marks the
+ * edge the text can still travel towards, so the truncation does not look like
+ * the end of the string. The latency badge and delete button sit outside this
+ * element and never move. */
+.upstream-addr {
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  border-radius: 4px;
+}
+.upstream-addr::-webkit-scrollbar {
+  display: none;
+}
+/* No grab-hand: the address is text the operator drags to read, not a pane
+ * they are expected to "pick up". The pointer stays the ordinary arrow while
+ * the field is panned; nothing changes shape under the cursor. */
+.upstream-addr.is-overflowing,
+.upstream-addr.is-dragging {
+  cursor: default;
+}
+.upstream-addr.is-overflowing.can-right {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+}
+.upstream-addr.is-overflowing.can-left {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 18px);
+  mask-image: linear-gradient(to right, transparent, #000 18px);
+}
+.upstream-addr.is-overflowing.can-left.can-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+}
+.upstream-addr:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+}
+
 .upstream-list {
   flex: 1 1 0%;
   min-height: 0;

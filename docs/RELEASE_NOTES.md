@@ -1,3 +1,37 @@
+# DigitDNS v3.4.10
+
+A small follow-up to 3.4.9: two fixes around upstream configuration and one
+dashboard readability improvement. No migrations, no config changes.
+
+## Highlights
+
+- **Long upstream names are readable now.** The address in the Upstream Racers
+  card used to end in an ellipsis, which hides exactly the part that identifies a
+  DoH endpoint. It is a scrollable field now: drag it with the mouse, swipe it on
+  a trackpad, or focus it and use the arrow keys. A soft fade shows which edge
+  still has text, and the latency badge and delete button stay where they were.
+  The pointer remains the ordinary arrow.
+- **A DoH URL with the port in the wrong place is refused.** Writing
+  `https://host/dns-query:443` puts the port inside the path, so the resolver
+  stores an endpoint that can only answer 404. It happened on a live server and
+  showed up only as occasional `returned HTTP 404` lines in the journal. The add
+  handler now rejects the shape and tells you to write `host:443/dns-query`.
+- **No more `v2.1.0` flash on the login screen.** The footer's fallback version
+  was the last stale string in the panel; it is a dash until the real version is
+  known.
+
+## Upgrading
+
+Docker users on `ghcr.io/digitrob/digitdns:latest` get it on restart. Binary
+installs: replace `digitdns` and restart. Android is a separate download on this
+page — version 3.4.10 (versionCode 350). If your compose file overrides the
+container health check, it should already point at `/api/v2/version` (that was
+3.4.9's change).
+
+Full changelog: docs/CHANGELOG.md
+
+---
+
 # DigitDNS v3.4.9
 
 This is a maintenance release: the focus is bug fixes and small improvements, not

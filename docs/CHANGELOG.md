@@ -6,10 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## 🩹 [Unreleased]
+## 🏷️ [v3.4.10] — Small fixes for upstreams and the dashboard
+
+### ✨ Added
+- **Long upstream addresses are readable in the dashboard.** The name in the Upstream Racers list is now a scrollable field rather than an ellipsis: drag it, swipe it, or focus it and use the arrow keys to read the whole DoH URL. A soft fade marks the edge the text can still travel towards, and the latency badge and delete button never move. The cursor stays the ordinary arrow.
 
 ### 🐛 Fixed
 - **A DoH upstream with the port written after the path is rejected instead of stored.** `https://dns.adguard-dns.com/dns-query:443` looked like a valid entry, but the port became part of the path, so every request went to `/dns-query:443` and got a 404 — visible only as intermittent `[DNS] Upstream query error … returned HTTP 404` lines. The add handler now refuses that shape and the error says where the port belongs (`host:443/dns-query`).
+- **The login screen no longer flashes `v2.1.0`.** The footer's pre-hydration fallback was the last stale version string in the panel; it now shows a dash until the real version arrives.
 
 ## 🏷️ [v3.4.9] — Bug fixes and small improvements
 

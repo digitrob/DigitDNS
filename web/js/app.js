@@ -2286,6 +2286,51 @@ const FEATHER_TRASH_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="24" he
 // interpolation scan for exactly the value it exists to protect.
 let lastUpstreamsSig = '';
 
+// updateUpstreamAddrHint toggles the fade on the edges the address can still be
+// scrolled towards. It runs after a render and on every scroll of the span.
+function updateUpstreamAddrHint(el) {
+  if (!el || !el.classList) return;
+  const overflow = el.scrollWidth > el.clientWidth + 1;
+  el.classList.toggle('is-overflowing', overflow);
+  el.classList.toggle('can-left', overflow && el.scrollLeft > 1);
+  el.classList.toggle('can-right', overflow && el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+}
+
+// initUpstreamAddressScroll wires the address fields once. Delegation keeps it
+// working across the list's wholesale re-render on every stats change, and the
+// handlers only act when a row really overflows, so taps and text selection on a
+// short name behave exactly as before.
+function initUpstreamAddressScroll() {
+  const container = document.getElementById('upstreams-list');
+  if (!container || container.dataset.addrScroll === '1') return;
+  container.dataset.addrScroll = '1';
+  let drag = null;
+  container.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest('.upstream-addr');
+    if (!el || el.scrollWidth <= el.clientWidth + 1 || e.button !== 0) return;
+    drag = { el, x: e.clientX, left: el.scrollLeft, id: e.pointerId };
+    el.classList.add('is-dragging');
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  container.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    drag.el.scrollLeft = drag.left - (e.clientX - drag.x);
+  });
+  const finish = (e) => {
+    if (!drag) return;
+    drag.el.classList.remove('is-dragging');
+    try { drag.el.releasePointerCapture(e.pointerId); } catch (err) {}
+    drag = null;
+  };
+  container.addEventListener('pointerup', finish);
+  container.addEventListener('pointercancel', finish);
+  container.addEventListener('scroll', (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains('upstream-addr')) {
+      updateUpstreamAddrHint(e.target);
+    }
+  }, true);
+}
+
 function renderUpstreams(upstreams) {
   const container = document.getElementById('upstreams-list');
   if (!container) return;
@@ -2343,7 +2388,12 @@ function renderUpstreams(upstreams) {
     row.innerHTML = `
       <div class="flex items-center gap-2 min-w-0">
         <span class="${dotClass} shrink-0" aria-hidden="true"></span>
-        <span class="font-mono text-slate-200 truncate">${escapeHTML(u.address)}</span>
+        <!-- The address is its own horizontal scroll area, not a clipped ellipsis:
+             a DoH URL is routinely wider than this column and the operator needs
+             to read the whole host to know which resolver a latency belongs to.
+             Drag it, scroll it, or focus and use the arrow keys; the title is the
+             hover fallback. The dot and the latency/delete controls never move. -->
+        <span class="upstream-addr min-w-0 font-mono text-slate-200" tabindex="0" title="${escapeHTML(u.address)}">${escapeHTML(u.address)}</span>
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <span class="shrink-0 px-2 py-0.5 rounded border ${badgeClass} text-[10px] font-bold font-mono whitespace-nowrap" title="${latTitle}">${latText}</span>
@@ -2359,6 +2409,11 @@ function renderUpstreams(upstreams) {
       </div>
     `;
     container.appendChild(row);
+  });
+  // A row is only scrollable when its address actually overflows; mark it so the
+  // edge fade and the grab cursor do not appear on short names.
+  requestAnimationFrame(() => {
+    container.querySelectorAll('.upstream-addr').forEach(updateUpstreamAddrHint);
   });
 }
 
@@ -3682,6 +3737,7 @@ function initAdminPathControls() {
 }
 
 function initEventListeners() {
+  initUpstreamAddressScroll();
   // Tabs Navigation (Sidebar & Mobile Bottom Bar)
   document.querySelectorAll('.sidebar-nav-item, .nav-tab, .mobile-nav-item').forEach(tab => {
     tab.onclick = (e) => {
