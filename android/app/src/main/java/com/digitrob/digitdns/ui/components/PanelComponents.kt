@@ -46,12 +46,19 @@ import com.digitrob.digitdns.ui.theme.PanelMono
  * is exposed for the rare card whose content is itself a row of equal-width tiles (the
  * resolver-latency block): the default 16 dp edge leaves too little width for four
  * cells once their own padding is subtracted, so those callers pass a tighter inset.
+ *
+ * [verticalPadding] defaults to [contentPadding], so no existing card changes. Lists of
+ * single-line rows pass a smaller value to tighten the top and bottom without moving the
+ * left/right inset, and [contentAlignment] lets the row sit centred in the height those
+ * rows share.
  */
 @Composable
 fun PanelCard(
     modifier: Modifier = Modifier,
     contentPadding: Dp = 16.dp,
+    verticalPadding: Dp = contentPadding,
     highlighted: Boolean = false,
+    contentAlignment: Alignment = Alignment.TopStart,
     content: @Composable () -> Unit,
 ) {
     val colors = DigitDnsTheme.colors
@@ -61,7 +68,8 @@ fun PanelCard(
             .clip(RoundedCornerShape(12.dp))
             .background(colors.bgCard)
             .border(1.dp, border, RoundedCornerShape(12.dp))
-            .padding(contentPadding),
+            .padding(horizontal = contentPadding, vertical = verticalPadding),
+        contentAlignment = contentAlignment,
     ) {
         content()
     }

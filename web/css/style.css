@@ -1185,6 +1185,15 @@ input:checked + .slider:before {
  * sm:table-cell), so their widths only apply where they are shown. */
 .stream-table {
   table-layout: fixed;
+  /* The seven fixed columns leave the domain column whatever is left, and at a
+   * narrow panel that was zero pixels: the domain vanished while every other
+   * cell kept its width. A floor on the table keeps at least a readable share
+   * for the domain; the viewport scrolls horizontally instead. Phones drop the
+   * proto and rule columns, so their floor is lower. */
+  min-width: 40rem;
+}
+@media (min-width: 640px) {
+  .stream-table { min-width: 52rem; }
 }
 /* The fixed columns add up, and the domain column is the one that takes what is
  * left. The first set of widths summed to 50.5rem, so a panel whose content box
@@ -1198,7 +1207,14 @@ input:checked + .slider:before {
 .stream-col-proto { width: 4rem; }
 .stream-col-domain { width: auto; }
 .stream-col-rule { width: 8.5rem; }
-.stream-col-action { width: 8rem; }
+/* The action column has to hold "PROXY · IPv6 SINK" on one line, and the domain
+ * column is the auto one, so the two widths trade against each other: +1.5rem
+ * here narrows the domain by the same 24px and stops the status chip wrapping. */
+.stream-col-action { width: 9.5rem; }
+/* A badge chip is a label, not prose: it should never break across lines when a
+ * column is tight. Scoped to the live log so the other tables keep their own
+ * sizing. */
+.stream-col-action .badge { white-space: nowrap; }
 .stream-col-latency { width: 6.5rem; }
 
 /* Zebra rows for the live log, so a dense block of queries can be tracked across

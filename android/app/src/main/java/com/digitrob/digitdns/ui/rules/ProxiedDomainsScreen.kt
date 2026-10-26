@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -57,6 +58,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.PanelRowDefaults
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.PanelScreenHeader
@@ -109,7 +111,9 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
             ) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    // 8 dp keeps the rows related without the 12 dp band that used to
+                    // separate cards this short.
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     state.error?.let { message ->
                         item {
@@ -412,7 +416,15 @@ private fun DomainRowItem(
         var rowSize by remember { mutableStateOf(IntSize.Zero) }
         var rowY by remember { mutableStateOf(0f) }
         Box(modifier = Modifier.onGloballyPositioned { coords -> rowSize = coords.size; rowY = coords.positionInRoot().y }) {
-            PanelCard(modifier = Modifier.fillMaxWidth(), highlighted = menuOpen) {
+            PanelCard(
+                // Every routing row is the same height as a live-log row, so the two
+                // lists read at the same density. The switch is the tallest content
+                // here (32 dp); the shared floor plus centred content absorbs the rest.
+                modifier = Modifier.fillMaxWidth().heightIn(min = PanelRowDefaults.height),
+                verticalPadding = 8.dp,
+                contentAlignment = Alignment.CenterStart,
+                highlighted = menuOpen,
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,

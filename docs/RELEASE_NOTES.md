@@ -1,3 +1,33 @@
+# DigitDNS v3.4.11
+
+Two list-density fixes — one on the web, one on Android. No migrations, no
+configuration changes.
+
+## Highlights
+
+- **The web live log fits its action labels again.** `PROXY · IPv6 SINK` was
+  wrapping onto two lines because the ACTION column was too narrow for the chip.
+  It is wider now (the domain column, which is flexible, gave up the same width),
+  chips never break mid-label, and the table keeps a minimum width so the domain
+  column cannot collapse to nothing on a narrow window.
+- **Android's Domains and Live log rows are tighter and the same height.** Both
+  lists now use a 56 dp row with 8 dp top/bottom padding instead of 16, and the
+  Domains list keeps 8 dp between cards. The two pages read at the same density.
+- **The Android live log lost its third line.** The rule label (`Self-service`,
+  `Direct`, `Cached stale`, …) was the tallest part of each row and rarely told
+  you anything the action badge did not; the domain and the client/transport/
+  latency/time line remain.
+
+## Upgrading
+
+Docker users on `ghcr.io/digitrob/digitdns:latest` get it on restart. Binary
+installs: replace `digitdns` and restart. Android is a separate download on this
+page — version 3.4.11 (versionCode 351).
+
+Full changelog: docs/CHANGELOG.md
+
+---
+
 # DigitDNS v3.4.10
 
 A small follow-up to 3.4.9: two fixes around upstream configuration and one

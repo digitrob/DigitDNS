@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.4.11] — Tighter lists and a log that fits
+
+### 🔄 Changed
+- **The live log's ACTION column fits `PROXY · IPv6 SINK` on one line.** It grew from 8rem to 9.5rem; the domain column is the flexible one, so it gives up exactly the same 24 px. Action chips no longer break across lines, and the table now has a minimum width, so a narrow panel scrolls sideways instead of collapsing the domain column to zero.
+- **Android's Domains and Live log rows are compact and the same height.** Both lists use a shared 56 dp row: 8 dp top/bottom padding instead of 16, and the Domains list keeps 8 dp between boxes. They read at the same density and line up page to page.
+- **The Android live log no longer shows a third line.** The rule-matched text (`Self-service`, `Direct`, `Cached stale`, …) is gone; domain and client/protocol/latency/time remain, with the action badge.
+
 ## 🏷️ [v3.4.10] — Small fixes for upstreams and the dashboard
 
 ### ✨ Added

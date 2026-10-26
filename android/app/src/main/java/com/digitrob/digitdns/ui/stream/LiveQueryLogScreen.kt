@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -61,6 +62,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.core.notifications.QueryEvent
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
+import com.digitrob.digitdns.ui.components.PanelRowDefaults
 import com.digitrob.digitdns.ui.components.PanelScreenHeader
 import com.digitrob.digitdns.ui.components.PanelSnackbarHost
 import com.digitrob.digitdns.ui.components.RouteAction
@@ -268,7 +270,15 @@ private fun QueryRow(event: QueryEvent, onAction: (RouteAction, String) -> Unit)
     var rowSize by remember { mutableStateOf(IntSize.Zero) }
     var rowY by remember { mutableStateOf(0f) }
     Box(modifier = Modifier.onGloballyPositioned { coords -> rowSize = coords.size; rowY = coords.positionInRoot().y }) {
-        PanelCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), highlighted = menuOpen) {
+        PanelCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .heightIn(min = PanelRowDefaults.height),
+            verticalPadding = 8.dp,
+            contentAlignment = Alignment.CenterStart,
+            highlighted = menuOpen,
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -296,16 +306,6 @@ private fun QueryRow(event: QueryEvent, onAction: (RouteAction, String) -> Unit)
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (event.ruleMatched.isNotBlank()) {
-                    Text(
-                        text = event.ruleMatched,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
             }
 
             // The status badge itself is the menu trigger, matching the panel where the
