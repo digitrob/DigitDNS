@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
@@ -46,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.core.network.UpstreamStat
+import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRowDefaults
 import com.digitrob.digitdns.ui.components.SwipeToDeleteRow
@@ -111,6 +111,7 @@ internal fun UpstreamRacersCard(
             }
 
             val policy = poolPolicy(resolutionControls.settings, upstreams)
+            val ordered = orderedResolvers(upstreams, policy)
 
             if (upstreams.isEmpty()) {
                 Text(
@@ -130,7 +131,7 @@ internal fun UpstreamRacersCard(
                         modifier = Modifier.verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        upstreams.forEach { stat ->
+                        ordered.forEach { stat ->
                             UpstreamRow(
                                 stat = stat,
                                 swipeEnabled = swipeEnabled,
@@ -183,6 +184,18 @@ private fun poolPolicy(
         pinActive = pinned.isNotEmpty() &&
             !resolverExcludedByTransport(pinned, transport, encrypted),
     )
+}
+
+/** A selected transport puts the resolvers it allows first, preserving latency order. */
+private fun orderedResolvers(
+    upstreams: List<UpstreamStat>,
+    policy: PoolPolicy,
+): List<UpstreamStat> {
+    if (policy.transport != "encrypted" && policy.transport != "regular") return upstreams
+    val (active, excluded) = upstreams.partition {
+        !resolverExcludedByTransport(it.address, policy.transport, policy.encrypted)
+    }
+    return active + excluded
 }
 
 /** The pair the resolver card needs to render and save the global resolution defaults. */
@@ -299,20 +312,22 @@ private fun ResolutionPicker(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
         )
-        OutlinedButton(onClick = { expanded = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-            Text(selected, style = MaterialTheme.typography.labelMedium, maxLines = 1)
-            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            choices.forEach { (key, text) ->
-                DropdownMenuItem(
-                    text = { Text(text, style = MaterialTheme.typography.bodySmall) },
-                    enabled = key !in unavailable,
-                    trailingIcon = {
-                        if (key == value) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                    },
-                    onClick = { expanded = false; onSelect(key) },
-                )
+        Box {
+            OutlinedButton(onClick = { expanded = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                Text(selected, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+            }
+            DigitDnsDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                choices.forEach { (key, text) ->
+                    DropdownMenuItem(
+                        text = { Text(text, style = MaterialTheme.typography.bodySmall) },
+                        enabled = key !in unavailable,
+                        trailingIcon = {
+                            if (key == value) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        },
+                        onClick = { expanded = false; onSelect(key) },
+                    )
+                }
             }
         }
     }

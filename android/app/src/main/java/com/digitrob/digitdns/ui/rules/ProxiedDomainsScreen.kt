@@ -5,9 +5,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -34,7 +31,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -66,6 +62,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.core.network.ResolutionProfileDto
 import com.digitrob.digitdns.core.network.ResolutionSettings
+import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.dashboard.resolverExcludedByTransport
 import com.digitrob.digitdns.ui.dashboard.resolverLooksEncrypted
@@ -416,23 +413,25 @@ private fun DialogPicker(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
         )
-        OutlinedButton(
-            onClick = { expanded = true },
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-        ) {
-            Text(selected, style = MaterialTheme.typography.labelMedium, maxLines = 1)
-            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            choices.forEach { (key, text) ->
-                DropdownMenuItem(
-                    text = { Text(text, style = MaterialTheme.typography.bodySmall) },
-                    enabled = key !in unavailable,
-                    trailingIcon = {
-                        if (key == value) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                    },
-                    onClick = { expanded = false; onSelect(key) },
-                )
+        Box {
+            OutlinedButton(
+                onClick = { expanded = true },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+            ) {
+                Text(selected, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+            }
+            DigitDnsDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                choices.forEach { (key, text) ->
+                    DropdownMenuItem(
+                        text = { Text(text, style = MaterialTheme.typography.bodySmall) },
+                        enabled = key !in unavailable,
+                        trailingIcon = {
+                            if (key == value) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        },
+                        onClick = { expanded = false; onSelect(key) },
+                    )
+                }
             }
         }
     }
@@ -627,32 +626,27 @@ private fun SearchSortRow(
 /** The sort selector as a dropdown button, placed to the right of the search field. */
 @Composable
 private fun SortDropdown(selected: DomainSort, onSelect: (DomainSort) -> Unit) {
-    val colors = DigitDnsTheme.colors
     var expanded by remember { mutableStateOf(false) }
-    OutlinedButton(onClick = { expanded = true }) {
-        Text(selected.label, maxLines = 1)
-        Icon(Icons.Filled.ArrowDropDown, contentDescription = "Sort")
-    }
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = { expanded = false },
-        modifier = Modifier
-            .background(colors.bgCard)
-            .border(1.dp, colors.borderColor, RoundedCornerShape(12.dp)),
-    ) {
-        DomainSort.entries.forEach { sort ->
-            DropdownMenuItem(
-                text = { Text(sort.label) },
-                trailingIcon = {
-                    if (sort == selected) {
-                        Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    }
-                },
-                onClick = {
-                    expanded = false
-                    onSelect(sort)
-                },
-            )
+    Box {
+        OutlinedButton(onClick = { expanded = true }) {
+            Text(selected.label, maxLines = 1)
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Sort")
+        }
+        DigitDnsDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DomainSort.entries.forEach { sort ->
+                DropdownMenuItem(
+                    text = { Text(sort.label) },
+                    trailingIcon = {
+                        if (sort == selected) {
+                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelect(sort)
+                    },
+                )
+            }
         }
     }
 }

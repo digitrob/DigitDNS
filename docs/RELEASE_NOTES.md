@@ -1,3 +1,32 @@
+# DigitDNS v3.5.1
+
+A UI follow-up to 3.5.0. No migrations and no configuration changes.
+
+## Highlights
+
+- **Android menus match the panel.** The Transports / Default upstream /
+  Strategy pickers on the Upstream Resolvers card, the Override Resolving
+  pickers and the Domains sort menu use the app's own card surface — 12 dp
+  corners, glass fill and the cyan hairline — instead of Material's default menu
+  background.
+- **Menus open under their button.** The Domains sort options no longer appear
+  beside the search row; every affected menu is anchored to the control that
+  opened it.
+- **The active transport leads the resolver list.** Encrypted Only moves
+  encrypted resolvers to the top; Regular DNS moves plain resolvers to the top;
+  latency order is preserved inside each group. Any Transport leaves the list
+  exactly as the server sorted it.
+
+## Upgrading
+
+Docker users on `ghcr.io/digitrob/digitdns:latest` get it on restart, or pull
+`3.5.1` explicitly. Binary installs: replace `digitdns` and restart. Android is
+a separate download on this page — version 3.5.1 (versionCode 353).
+
+Full changelog: docs/CHANGELOG.md
+
+---
+
 # DigitDNS v3.5.0
 
 Resolution policy you can see and shape. No migrations and no configuration

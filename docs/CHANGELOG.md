@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.5.1] — Menus that belong, and resolvers that lead with the transport
+
+A small UI follow-up to 3.5.0.
+
+### 🔄 Changed
+- **Android's dropdown menus look like the app.** The Transports, Default upstream and Strategy pickers on the Upstream Resolvers card, the four pickers in **Override Resolving**, and the Domains sort menu now use the same 12 dp card surface, cyan hairline and glass fill as the panels instead of Material's default menu background.
+- **Menus open under the button that opened them.** The Domains sort options used to appear beside the search row; the menu is now anchored to its selector. The resolution pickers get the same anchoring.
+- **A selected transport leads the resolver list.** With **Encrypted Only**, encrypted resolvers move to the top; with **Regular DNS**, plain ones do. The server's latency order is kept inside each group. **Any Transport** leaves the order untouched.
+
 ## 🏷️ [v3.5.0] — Resolution you can see and shape
 
 The upstream pool became a policy you can reason about: one global default, a

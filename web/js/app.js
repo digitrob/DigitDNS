@@ -2711,9 +2711,17 @@ function renderUpstreams(upstreams) {
   if (sig === lastUpstreamsSig) return;
   lastUpstreamsSig = sig;
 
+  // A selected transport promotes the resolvers it allows to the top, keeping the
+  // server's latency order inside each group. Any Transport leaves the list alone.
+  const renderTransport = resolutionSettings.transport || 'any';
+  const ordered = (renderTransport === 'encrypted' || renderTransport === 'regular')
+    ? upstreams.filter(u => !transportExcludes(u.address, renderTransport))
+        .concat(upstreams.filter(u => transportExcludes(u.address, renderTransport)))
+    : upstreams;
+
   container.innerHTML = '';
 
-  upstreams.forEach(u => {
+  ordered.forEach(u => {
     // u.latency is nanoseconds, and it is absent until the racer has actually measured
     // this upstream — a freshly added one, or one that has never answered. The old code
     // did `(u.latency / 1000000).toFixed(1)` unconditionally and then compared the
