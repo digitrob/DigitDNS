@@ -94,6 +94,15 @@ type QueryLogItem struct {
 	// winning address otherwise. Omitted from JSON when empty so existing
 	// consumers see no change.
 	Upstream string `json:"upstream,omitempty"`
+	// UpstreamProtocol is how that resolver was queried (UDP/TCP/DoT/DoH/DoQ/
+	// DoH3/DNSCrypt), derived from the winning address. Empty when no upstream
+	// answered (cache, blocked, proxied or local), in which case a client should
+	// fall back to Protocol — the client-facing transport.
+	UpstreamProtocol string `json:"upstream_protocol,omitempty"`
+	// MatchedPattern is the rule pattern that decided the action: the exact host,
+	// or "*.base" when a wildcard matched. Empty for the built-in direct fallback
+	// and the early refusal paths.
+	MatchedPattern string `json:"matched_pattern,omitempty"`
 }
 
 // ServerSettings holds core daemon & network binding settings.

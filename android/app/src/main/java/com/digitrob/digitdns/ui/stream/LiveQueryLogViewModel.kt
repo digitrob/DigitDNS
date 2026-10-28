@@ -57,12 +57,8 @@ data class LiveQueryLogUiState(
             return if (sort == LogSort.Newest) filtered else filtered.asReversed()
         }
 
-    private fun matchesAction(event: QueryEvent): Boolean = when (actionFilter) {
-        ActionFilter.All -> true
-        ActionFilter.Proxy -> event.action.equals("PROXY", ignoreCase = true)
-        ActionFilter.Direct -> event.action.equals("DIRECT", ignoreCase = true)
-        ActionFilter.Block -> event.action.equals("BLOCK", ignoreCase = true)
-    }
+    private fun matchesAction(event: QueryEvent): Boolean =
+        actionMatchesFilter(event.action, actionFilter)
 }
 
 /**

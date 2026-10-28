@@ -51,6 +51,7 @@ var safeAttrInterp = map[string]string{
 	"icon":        "a Feather icon name, a literal at each of clientsPanelMessage's call sites",
 	"titleClass":  "a CSS class name, a literal at each of clientsPanelMessage's call sites",
 	"domainClass": "a CSS class name computed from a proxied domain's on/off state, in renderProxiedList",
+	"statusClass": "a CSS class name computed from a proxied domain's on/off state, in renderProxiedList",
 	"!c.enabled":  "a boolean",
 	"i":           "a loop index in the hour/minute pickers",
 	"d":           "a day number in the datepicker grid",

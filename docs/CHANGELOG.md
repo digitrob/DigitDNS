@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.5.2] — Strategies you steer, and one Domains list
+
+The resolution policy gained two strategies that trade queries for latency, the
+web Domains page learned that a managed domain is not always a proxied one, and
+the live log began naming the transport that resolved the query.
+
+### ✨ Added
+- **Hedged and Best Known resolution strategies.** Both are selectable globally and per domain. **Hedged** starts the fastest measured resolver and adds the next one every 50 ms, cancelling the losers as soon as a usable answer arrives — a fast first resolver still sends exactly one query. **Best Known** uses the fastest measured resolver only and falls through the rest in latency order on failure. Both rank from the live racer stats rather than the configured order.
+- **One Domains list on the web dashboard.** Proxied, paused, blocked and direct names share one table. **Proxy / Blocked / Paused / Direct** chips filter it with no separate All chip (tapping the active chip clears the filter), a status change keeps the row in place, and the status badge opens the routing action menu.
+- **The query log carries the resolution transport.** `upstream_protocol` (UDP, TCP, DoT, DoH, DoQ, DoH3, DNSCrypt) joins the payload alongside `matched_pattern`; the web PROTO column and the Android row show how the *resolver* was queried, and the web tooltip keeps the client's own protocol.
+- **Android's action badges speak English.** `Proxy IPv6 Sink`, `Rate Limited`, `Proxy Failed`, `Stale` and friends replace `Proxy_ipv6_sink`-style labels through one shared table, and an action this build has never seen is word-split instead of printed raw.
+
+### 🔄 Changed
+- **Every rule falls back to the pool now.** The Failure (SERVFAIL) choice is retired; stored `fail` profiles are read as pool fallback and rewritten on the next save.
+- **Blocked and direct rows keep their controls, disabled.** The resolution gear and pause switch stay visible but dimmed on both clients, while paused rows keep both usable. Changing a status never reflows the row.
+- **Wildcard scopes say what they will write.** The domain action menus label the choices `exact`, `*.host` and `*.parent`, disable the impossible ones before a click, and `*.host` means subdomains of the host only — not the host itself.
+- **Row geometry is stable.** Android measures the status pill once from its longest label, so PROXY / PAUSED / BLOCKED / DIRECT never shift the gear, with 6 dp on either side of the pill. The web resolution card puts each label 8 px from its dropdown and lets the dropdown fill the row instead of a fixed 208 px; Android's resolution pickers use a fixed 200 dp button and a 240 dp menu.
+
+### 🔴 Removed
+- **The wildcard-match chip in the live log** (`*.PARENT` / `*.HOST` / `WILD`) on web and Android. `matched_pattern` stays in the API for tooling.
+
+### 🐛 Fixed
+- **Android's live-log action filters missed outcomes.** Proxy now matches `PROXY`, `PROXY_IPV6_SINK` and `PROXY_FAILED`; Direct matches `DIRECT`, `CACHED` and `STALE`; Block matches `BLOCK`, `RATELIMIT` and `QUOTA`.
+- **A mixed selection could try to pause blocked rows.** Bulk pause/resume now applies only to proxied and paused rows; Remove still handles the rest.
+- **The live log can no longer disagree with the resolver that answered.** PROTO comes from the winning upstream's address, and only cache, local, blocked and proxied answers fall back to the client transport.
+
 ## 🏷️ [v3.5.1] — Menus that belong, and resolvers that lead with the transport
 
 A small UI follow-up to 3.5.0.

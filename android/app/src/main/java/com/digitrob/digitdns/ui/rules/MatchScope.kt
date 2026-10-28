@@ -12,8 +12,8 @@ import java.util.Locale
  */
 enum class MatchScope(val label: String, val hint: String) {
     Exact("Exact", "only this host"),
-    Host("*.host", "this host and subdomains"),
-    Parent("*.parent", "the whole parent domain"),
+    Host("*.host", "subdomains only"),
+    Parent("*.parent", "subdomains of the parent"),
     ;
 
     /**
@@ -25,11 +25,19 @@ enum class MatchScope(val label: String, val hint: String) {
     fun resolve(domain: String): String? {
         val host = domain.trim().trimStart('.').lowercase(Locale.US)
         if (host.isEmpty()) return null
-        val labels = host.split('.').filter { it.isNotEmpty() }
+        // A row that is already a wildcard has no meaningful *.host (*.*.base)
+        // and no parent below a TLD; only Exact applies to it.
+        val wildcard = host.startsWith("*.")
+        val base = if (wildcard) host.removePrefix("*.") else host
+        val labels = base.split('.').filter { it.isNotEmpty() }
         return when (this) {
             Exact -> host
-            Host -> if (labels.size >= HOST_MIN_LABELS) "*.$host" else null
-            Parent -> if (labels.size >= PARENT_MIN_LABELS) "*." + labels.drop(1).joinToString(".") else null
+            Host -> if (!wildcard && labels.size >= HOST_MIN_LABELS) "*.$host" else null
+            Parent -> if (!wildcard && labels.size >= PARENT_MIN_LABELS) {
+                "*." + labels.drop(1).joinToString(".")
+            } else {
+                null
+            }
         }
     }
 

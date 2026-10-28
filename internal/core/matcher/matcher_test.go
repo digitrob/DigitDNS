@@ -409,3 +409,33 @@ func TestConcurrentMatchDuringReload(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestMatchDetailReturnsTheMatchedPattern(t *testing.T) {
+	m := NewMatcher()
+	m.SetCustomRules(
+		[]string{"api.example.com", "*.parent.test"},
+		[]string{"*.ads.test"},
+		nil,
+		nil,
+	)
+
+	cases := []struct {
+		domain  string
+		action  Action
+		rule    string
+		pattern string
+	}{
+		{"api.example.com", ActionProxy, RuleCustomProxy, "api.example.com"},
+		{"cdn.parent.test", ActionProxy, RuleCustomProxy, "*.parent.test"},
+		{"deep.cdn.parent.test", ActionProxy, RuleCustomProxy, "*.parent.test"},
+		{"x.ads.test", ActionBlock, RuleCustomBlock, "*.ads.test"},
+		{"unmatched.test", ActionDirect, "Direct", ""},
+	}
+	for _, c := range cases {
+		action, rule, pattern := m.MatchDetail(c.domain)
+		if action != c.action || rule != c.rule || pattern != c.pattern {
+			t.Errorf("MatchDetail(%q) = (%v, %q, %q), want (%v, %q, %q)",
+				c.domain, action, rule, pattern, c.action, c.rule, c.pattern)
+		}
+	}
+}

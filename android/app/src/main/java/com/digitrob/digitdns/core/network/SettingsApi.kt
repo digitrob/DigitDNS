@@ -52,7 +52,6 @@ data class ResolutionProfileDto(
     val upstream: String = "",
     val strategy: String = "",
     val transport: String = "",
-    val fallback: String = "",
 )
 
 /**

@@ -294,7 +294,10 @@ private fun QueryRow(event: QueryEvent, onAction: (RouteAction, String) -> Unit)
                 Text(
                     text = buildString {
                         append(event.accountName.ifBlank { event.clientIp.ifBlank { "unknown" } })
-                        if (event.protocol.isNotBlank()) append(" · ${event.protocol}")
+                        // The transport that resolved the name; the client transport is
+                        // only shown when nothing upstream was involved.
+                        val resolvedBy = event.upstreamProtocol.ifBlank { event.protocol }
+                        if (resolvedBy.isNotBlank()) append(" · $resolvedBy")
                         if (event.latencyMs > 0) append(" · ${formatLatency(event.latencyMs)}")
                         if (event.upstream.isNotBlank()) append(" · via ${event.upstream}")
                         if (event.timestamp.isNotBlank()) {
@@ -333,14 +336,16 @@ private fun QueryRow(event: QueryEvent, onAction: (RouteAction, String) -> Unit)
 @Composable
 private fun ActionBadge(action: String, onClick: () -> Unit, enabled: Boolean) {
     val colors = DigitDnsTheme.colors
-    val color: Color = when (action.uppercase()) {
-        "BLOCK" -> colors.danger
-        "PROXY" -> colors.info
-        "DIRECT" -> colors.success
-        else -> colors.textMuted
+    val style = queryActionStyle(action)
+    val color: Color = when (style.tone) {
+        QueryActionTone.Info -> colors.info
+        QueryActionTone.Danger -> colors.danger
+        QueryActionTone.Success -> colors.success
+        QueryActionTone.Warning -> colors.warning
+        QueryActionTone.Purple -> colors.purple
+        QueryActionTone.Muted -> colors.textMuted
     }
-    val label = action.lowercase().replaceFirstChar { it.uppercase() }
     Box(modifier = if (enabled) Modifier.clickable(onClick = onClick) else Modifier) {
-        StatusBadge(text = label.ifBlank { "—" }, color = color)
+        StatusBadge(text = style.label, color = color)
     }
 }

@@ -1,3 +1,44 @@
+# DigitDNS v3.5.2
+
+Two more resolution strategies, one Domains list on the web dashboard, and a
+query log that names the transport that actually resolved the name. No migrations
+and no configuration changes; the retired SERVFAIL fallback is read as pool
+fallback.
+
+## Highlights
+
+- **Hedged and Best Known.** **Hedged** starts the fastest measured resolver and
+  adds the next every 50 ms, cancelling the rest when a usable answer lands — a
+  fast first resolver still sends one query. **Best Known** uses the fastest
+  measured resolver only and falls through the rest in latency order on failure.
+  Both are available globally and per domain, and both rank from live latency.
+- **One Domains list on the web dashboard.** Proxied, paused, blocked and direct
+  names share one table with Proxy / Blocked / Paused / Direct chips. Changing a
+  row's status keeps it in the list, and tapping the active chip shows all.
+- **Every rule falls back to the pool.** The Failure (SERVFAIL) option is gone;
+  saved `fail` profiles are migrated on read.
+- **Rows do not reflow when a status changes.** Blocked and direct rows keep the
+  resolution gear and pause switch visible but disabled; paused rows keep both
+  usable. Android's status pill is measured once from its longest label, with
+  6 dp on both sides, so the gear never moves.
+- **Wildcard scopes are honest.** `exact`, `*.host` and `*.parent` are the only
+  labels, impossible choices are disabled, and `*.host` means subdomains of the
+  host, not the apex.
+- **The live log shows the resolution transport.** PROTO now reports UDP, TCP,
+  DoT, DoH, DoQ, DoH3 or DNSCrypt for the resolver that answered, with the
+  client's protocol kept in the web tooltip and the API payload. Android's action
+  badges also read as words (`Proxy IPv6 Sink`, `Rate Limited`, `Stale`).
+
+## Upgrading
+
+Docker users on `ghcr.io/digitrob/digitdns:latest` get it on restart, or pull
+`3.5.2` explicitly. Binary installs: replace `digitdns` and restart. Android is
+a separate download on this page — version 3.5.2 (versionCode 354).
+
+Full changelog: docs/CHANGELOG.md
+
+---
+
 # DigitDNS v3.5.1
 
 A UI follow-up to 3.5.0. No migrations and no configuration changes.

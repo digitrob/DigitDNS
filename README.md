@@ -85,7 +85,7 @@ source is right here on GitHub.
 As `root` on Ubuntu 20.04+, Debian 11+, or AlmaLinux/Rocky 8+:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.5.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.5.2/scripts/install.sh | sudo bash
 ```
 
 The installer needs a **domain pointed at your server** (A record → server IP).
@@ -157,7 +157,7 @@ docker logs digitdns
 | Tag | What it is |
 | :--- | :--- |
 | `latest` | Latest stable release — use this |
-| `3.5.1` | A specific immutable release |
+| `3.5.2` | A specific immutable release |
 | `edge` | Nightly/dev build from the default branch — not for production |
 
 Verify an image's signature (proves it was built by this repo's CI):
@@ -176,7 +176,7 @@ Checksums are in `checksums.txt` (signed with the project's release key).
 
 ```bash
 # Linux amd64 example:
-curl -fsSL -o digitdns https://github.com/digitrob/DigitDNS/releases/download/v3.5.1/digitdns-linux-amd64
+curl -fsSL -o digitdns https://github.com/digitrob/DigitDNS/releases/download/v3.5.2/digitdns-linux-amd64
 chmod +x digitdns
 sudo ./digitdns -server
 ```
@@ -293,15 +293,19 @@ each one so you can see which is fastest from your server.
   means encrypted: a pinned plain resolver is ignored while it is active. The
   encrypted choice is offered only when an encrypted resolver is configured.
 - **A global default, or per-domain overrides.** Pick a **Default upstream**
-  (`Pool Default`, or one resolver) and a strategy — **Fastest Wins** or **In
-  Order**. On the Proxied Domains list, the gear on a proxied or paused row opens
-  **Override Resolving**, where that domain can pin its own resolver, strategy,
-  transport and failure behaviour. The two fields keep each other honest: choosing
-  a resolver selects its transport, and choosing a transport selects a matching
-  resolver.
-- **Failure is explicit.** When a rule cannot resolve, it can **Fall Back to the
-  Pool** or answer **Failure** (SERVFAIL) instead of quietly leaking to another
-  transport.
+  (`Pool Default`, or one resolver) and a strategy — **Fastest Wins**, **In
+  Order**, **Hedged** or **Best Known**. Fastest Wins races the whole pool and
+  takes the first answer; In Order walks the list as configured; **Hedged** starts
+  the fastest measured resolver and adds the next one every 50 ms, cancelling the
+  rest when an answer lands; **Best Known** sends to the fastest measured resolver
+  only and falls through the others in latency order on failure. On the Domains
+  list, the gear on a proxied or paused row opens **Override Resolving**, where
+  that domain can pin its own resolver, strategy and transport. The two fields
+  keep each other honest: choosing a resolver selects its transport, and choosing
+  a transport selects a matching resolver.
+- **Failure falls back to the pool.** When a rule cannot resolve, the query
+  continues through the pool rather than switching transport or answering
+  SERVFAIL. The rule dialog states this instead of offering a choice.
 - **The list shows the policy.** The chosen default resolver dims the others;
   Encrypted Only dims plain resolvers; Regular DNS dims encrypted ones. Only the
   resolver list scrolls past five rows — the card and its controls stay put.
@@ -359,11 +363,14 @@ The web panel manages everything:
 
 - **Live stats** — queries per second, cache hits, traffic, latency, who's
   using it right now
-- **Domain rules** — add/edit/proxy/block/direct, bulk import, live query log
-  with one-click actions (see a domain in the log? Click to block or proxy it).
-  The log keeps the last hundred queries, pauses without losing arrivals, and
-  its Clear button empties the server's buffer too — a reconnect cannot bring
-  the cleared rows back. Both lists use zebra rows so long entries stay readable
+- **Domain rules** — add/edit/proxy/block/direct, bulk import, and one list of
+  every managed domain: proxied, paused, blocked and direct names together, with
+  Proxy / Blocked / Paused / Direct chips to filter it (tap the active chip to
+  show all). A status change keeps the row where it is. The live query log keeps
+  the last hundred queries, pauses without losing arrivals, and its Clear button
+  empties the server's buffer too — a reconnect cannot bring the cleared rows
+  back; PROTO names the transport the resolver was queried over. Both lists use
+  zebra rows so long entries stay readable
 - **Clients** — add subscribers, set quotas and expiry, suspend, see usage.
   Editing a client gives you a full-width IP list, and a client with many
   addresses keeps a normal-sized card (the address chips scroll)
@@ -390,7 +397,7 @@ customized with your own domain, title, and CSS to match your branding.
 DigitDNS also ships a native Android companion app — the same control surface as
 the web panel, in your pocket, talking to your server over the REST API and the
 live event stream. It is a separate product on its own version line
-(`android-v3.5.1` and friends), side-loaded from the GitHub release page rather
+(`android-v3.5.2` and friends), side-loaded from the GitHub release page rather
 than distributed through Play.
 
 **What it does (feature parity with the web panel):**
@@ -410,10 +417,11 @@ than distributed through Play.
   and device limits, run actions (enable/disable, renew, reset traffic, new
   UUID/secret), suspend or delete.
 - **Upstream Resolvers** — add, remove, reorder and benchmark DNS upstreams on
-  any transport; set the default resolver, strategy and transport policy, and
-  open **Override Resolving** from a proxied domain's gear to pin that domain's
-  resolver, strategy, transport and failure behaviour. The resolver list scrolls
-  after five rows, and rows dim to show what the active policy excludes.
+  any transport; set the default resolver, strategy (Fastest Wins, In Order,
+  Hedged, Best Known) and transport policy, and open **Override Resolving** from
+  a proxied domain's gear to pin that domain's resolver, strategy and transport.
+  The resolver list scrolls after five rows, and rows dim to show what the active
+  policy excludes.
 - **Live Query Log** — the same live feed as the panel, with search, filters,
   sorting, pause/resume (paused arrivals are kept, not dropped), clear that also
   empties the server's buffer, and quick actions.

@@ -91,6 +91,29 @@ func TestNormalizedRewritesTheLegacySwitch(t *testing.T) {
 	}
 }
 
+func TestNormalizedRetiresTheFailureFallback(t *testing.T) {
+	p := Profile{Upstream: "tls://dns.google:853", Fallback: FallbackFail}.Normalized()
+	if p.Fallback != "" {
+		t.Fatalf("retired fallback survived normalization: %+v", p)
+	}
+	if p.Upstream != "tls://dns.google:853" {
+		t.Fatalf("normalization dropped the upstream: %+v", p)
+	}
+}
+
+func TestValidStrategy(t *testing.T) {
+	for _, v := range []string{"", StrategyFastest, StrategySequential, StrategyHedged, StrategyBestKnown} {
+		if !ValidStrategy(v) {
+			t.Errorf("%q should be a valid strategy", v)
+		}
+	}
+	for _, v := range []string{"race", "random", "Fastest"} {
+		if ValidStrategy(v) {
+			t.Errorf("%q should be rejected", v)
+		}
+	}
+}
+
 func TestValidTransport(t *testing.T) {
 	for _, v := range []string{"", "any", "encrypted", "regular", " ENCRYPTED "} {
 		if !ValidTransport(v) {

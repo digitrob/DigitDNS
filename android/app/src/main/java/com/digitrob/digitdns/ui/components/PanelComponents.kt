@@ -205,6 +205,7 @@ fun StatusBadge(
             .border(1.dp, color.copy(alpha = 0.4f), RoundedCornerShape(999.dp))
             .padding(horizontal = 10.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
     ) {
         Text(
             text = text,

@@ -413,7 +413,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		// the amplification this check exists to remove. Sampling keeps the
 		// offending source visible at bounded cost.
 		if n%rateLimitLogSample == 1 {
-			h.logQuery(start, clientIP, "Public", proto, questionName(r), "Rate limit", "RATELIMIT", false, "")
+			h.logQuery(start, clientIP, "Public", proto, questionName(r), "Rate limit", "RATELIMIT", false, "", "")
 		}
 		if proto == "UDP" {
 			return nil
@@ -461,7 +461,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		}
 		// The other address family (or a missing public address) is a deliberate
 		// empty NOERROR: the name exists here, that family just has no address.
-		h.logQuery(start, clientIP, "Self", proto, domain, "Self-service", "SELF", false, "")
+		h.logQuery(start, clientIP, "Self", proto, domain, "Self-service", "SELF", false, "", "")
 		return m
 	}
 
@@ -495,7 +495,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	if activeClient != nil && h.quota != nil && h.quota.QuotaExceeded(activeClient) {
 		m := new(dns.Msg)
 		m.SetRcode(r, dns.RcodeRefused)
-		h.logQuery(start, clientIP, accountName, proto, questionName(r), "Traffic quota exceeded", "QUOTA", false, "")
+		h.logQuery(start, clientIP, accountName, proto, questionName(r), "Traffic quota exceeded", "QUOTA", false, "", "")
 		return m
 	}
 
@@ -504,7 +504,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	if q.Qtype == dns.TypeANY {
 		m := new(dns.Msg)
 		m.SetRcode(r, dns.RcodeRefused)
-		h.logQuery(start, clientIP, accountName, proto, domain, "ANY refused", "BLOCK", false, "")
+		h.logQuery(start, clientIP, accountName, proto, domain, "ANY refused", "BLOCK", false, "", "")
 		return m
 	}
 
@@ -526,7 +526,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				}
 			}
 			// The other family deliberately gets an empty NOERROR.
-			h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "")
+			h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "")
 			return m
 		}
 	}
@@ -534,7 +534,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	// 4. Rule matcher. Every client is matched against the same admin-wide
 	// rules: the per-client policy lists a stored account may still carry are
 	// inert in this build.
-	action, ruleName := h.matcher.Match(domain)
+	action, ruleName, matchedPattern := h.matcher.MatchDetail(domain)
 
 	switch action {
 	case matcher.ActionBlock:
@@ -546,7 +546,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				m.Answer = append(m.Answer, rr)
 			}
 		}
-		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "BLOCK", false, "")
+		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "BLOCK", false, "", matchedPattern)
 		return m
 
 	case matcher.ActionProxy:
@@ -559,12 +559,12 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				// here means a future regression can never masquerade as a
 				// successful proxy answer again (v2.1.0 B-13 remediation).
 				log.Printf("[DNS] Could not build proxied A record for %s from public IP %q: %v", q.Name, h.publicIP, err)
-				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "")
+				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern)
 				m.SetRcode(r, dns.RcodeServerFailure)
 				return m
 			}
 			m.Answer = append(m.Answer, rr)
-			h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "")
+			h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern)
 			return m
 		}
 		if q.Qtype == dns.TypeAAAA {
@@ -578,11 +578,11 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			if h.publicIPv6 != "" {
 				if rr, err := dns.NewRR(fmt.Sprintf("%s 60 IN AAAA %s", q.Name, h.publicIPv6)); err == nil {
 					m.Answer = append(m.Answer, rr)
-					h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "")
+					h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern)
 					return m
 				}
 			}
-			h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "")
+			h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern)
 			return m
 		}
 	}
@@ -608,7 +608,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				// upstream that has stopped answering, not at a healthy cache.
 				rule, act = "Cached (stale, refreshing)", "STALE"
 			}
-			h.logQuery(start, clientIP, accountName, proto, domain, rule, act, true, "cache")
+			h.logQuery(start, clientIP, accountName, proto, domain, rule, act, true, "cache", "")
 			return cachedResp
 		}
 	}
@@ -649,24 +649,26 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		return m
 	}
 
-	h.logQuery(start, clientIP, accountName, proto, domain, ruleName, action.String(), false, upstream)
+	h.logQuery(start, clientIP, accountName, proto, domain, ruleName, action.String(), false, upstream, matchedPattern)
 	return resp
 }
 
-func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstream string) {
+func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern string) {
 	if h.telemetry == nil {
 		return
 	}
 	h.telemetry.PushQueryLog(database.QueryLogItem{
-		Timestamp:   start,
-		ClientIP:    ip,
-		AccountName: account,
-		Protocol:    proto,
-		Domain:      domain,
-		RuleMatched: rule,
-		Action:      action,
-		LatencyMs:   float64(time.Since(start).Microseconds()) / 1000.0,
-		Cached:      cached,
-		Upstream:    upstream,
+		Timestamp:        start,
+		ClientIP:         ip,
+		AccountName:      account,
+		Protocol:         proto,
+		Domain:           domain,
+		RuleMatched:      rule,
+		Action:           action,
+		LatencyMs:        float64(time.Since(start).Microseconds()) / 1000.0,
+		Cached:           cached,
+		Upstream:         upstreamAddr,
+		UpstreamProtocol: upstream.ProtocolOf(upstreamAddr),
+		MatchedPattern:   matchedPattern,
 	})
 }

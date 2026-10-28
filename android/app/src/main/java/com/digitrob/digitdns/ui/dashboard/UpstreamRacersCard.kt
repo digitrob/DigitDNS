@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.core.network.UpstreamStat
@@ -257,8 +258,15 @@ private fun ResolutionDefaults(
                 "" to "Pool default",
                 "fastest" to "Fastest Wins",
                 "sequential" to "In Order",
+                "hedged" to "Hedged",
+                "best" to "Best Known",
             ),
             onSelect = { onChange(base.copy(defaultStrategy = it)) },
+        )
+        Text(
+            text = "Fallback: Pool Default",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -310,14 +318,30 @@ private fun ResolutionPicker(
             text = label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(end = 4.dp),
         )
         Box {
-            OutlinedButton(onClick = { expanded = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-                Text(selected, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            OutlinedButton(
+                onClick = { expanded = true },
+                modifier = Modifier.width(200.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = selected,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
             }
-            DigitDnsDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DigitDnsDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.width(240.dp),
+            ) {
                 choices.forEach { (key, text) ->
                     DropdownMenuItem(
                         text = { Text(text, style = MaterialTheme.typography.bodySmall) },

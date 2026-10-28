@@ -25,6 +25,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
@@ -34,7 +35,6 @@ import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -51,11 +51,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -221,13 +227,10 @@ private class ResolutionDraft(profile: ResolutionProfileDto?) {
             profile?.transport ?: "inherit"
         }
     )
-    var fallback by mutableStateOf(profile?.fallback ?: "pool")
-
     fun toProfile() = ResolutionProfileDto(
         upstream = upstream,
         strategy = strategy,
         transport = if (transport == "inherit") "" else transport,
-        fallback = if (fallback == "fail") "fail" else "",
     )
 }
 
@@ -366,6 +369,8 @@ private fun ResolutionFields(
             "" to "Inherit Global",
             "fastest" to "Fastest Wins",
             "sequential" to "In Order",
+            "hedged" to "Hedged",
+            "best" to "Best Known",
         ),
         onSelect = { draft.strategy = it },
     )
@@ -385,14 +390,10 @@ private fun ResolutionFields(
             draft.upstream = upstreamForTransport(choice, choices, draft.upstream)
         },
     )
-    DialogPicker(
-        label = "If That Fails",
-        value = draft.fallback,
-        choices = listOf(
-            "pool" to "Fall Back to the Pool",
-            "fail" to "Failure",
-        ),
-        onSelect = { draft.fallback = it },
+    Text(
+        text = "Fallback: Pool Default",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
@@ -711,25 +712,21 @@ private fun DomainRowItem(
                         maxLines = 1,
                         modifier = Modifier.weight(1f),
                     )
-                    // Only a proxied row can own a resolution override: those are the
-                    // names the server accepts a rule for. Blocked/direct rows have
-                    // their own action menu and no override.
-                    if (row.status == DomainStatus.PROXY || row.status == DomainStatus.PAUSED) {
-                        Spacer(Modifier.width(2.dp))
-                        // 40 dp keeps the whole glyph tappable without changing the
-                        // 56 dp row; the larger icon and the extra gap to the status
-                        // pill stop it reading as part of the switch group.
-                        IconButton(onClick = onResolution, modifier = Modifier.size(40.dp)) {
-                            Icon(
-                                imageVector = Icons.Filled.Settings,
-                                contentDescription = "Override Resolving",
-                                tint = if (hasResolution) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                        Spacer(Modifier.width(10.dp))
+                    if (row.domain.startsWith("*.")) {
+                        Spacer(Modifier.width(4.dp))
+                        StatusBadge(text = "WILD", color = DigitDnsTheme.colors.purple)
                     }
+                    // The action set is identical on every status. Blocked/direct rows
+                    // keep the gear and pause switch visible but disabled, so the row
+                    // does not reflow and the unavailable actions stay legible.
+                    val canAdjust = row.status == DomainStatus.PROXY || row.status == DomainStatus.PAUSED
+                    Spacer(Modifier.width(2.dp))
+                    DomainGearButton(
+                        enabled = canAdjust,
+                        highlighted = hasResolution,
+                        onClick = onResolution,
+                    )
+                    Spacer(Modifier.width(6.dp))
                     Box {
                         DomainStatusPill(
                             status = row.status,
@@ -737,7 +734,12 @@ private fun DomainRowItem(
                         )
                     }
                     Spacer(Modifier.width(6.dp))
-                    Switch(checked = row.enabled, onCheckedChange = { onToggle() })
+                    Switch(
+                        checked = row.enabled,
+                        onCheckedChange = { onToggle() },
+                        enabled = canAdjust,
+                        modifier = Modifier.alpha(if (canAdjust) 1f else 0.4f),
+                    )
                 }
             }
             RouteActionMenu(
@@ -752,6 +754,37 @@ private fun DomainRowItem(
     }
 }
 
+/**
+ * The 40 dp Override Resolving gear. The glyph hugs the right edge of the hit area
+ * so the visible gap to the status pill is the row's 6 dp; a centred 20 dp icon in
+ * a 40 dp button added ~10 dp of invisible padding and read as a wider gap than
+ * the switch side. The hit area itself stays 40 x 40 dp and is dimmed when the
+ * status does not accept the action.
+ */
+@Composable
+private fun DomainGearButton(
+    enabled: Boolean,
+    highlighted: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .alpha(if (enabled) 1f else 0.4f)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Settings,
+            contentDescription = "Override Resolving",
+            tint = if (highlighted && enabled) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
 /** The row status as an oval pill; tapping it opens the routing action menu. */
 @Composable
 private fun DomainStatusPill(status: DomainStatus, onClick: () -> Unit) {
@@ -762,9 +795,19 @@ private fun DomainStatusPill(status: DomainStatus, onClick: () -> Unit) {
         DomainStatus.PAUSED -> colors.textMuted
         DomainStatus.DIRECT -> colors.success
     }
+    // One width for every status: the widest label at the current font scale.
+    // Measuring it means the pill is as short as it can be without clipping, and
+    // changing PROXY/PAUSED/BLOCKED/DIRECT never resizes it or moves the gear.
+    val style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium)
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val pillWidth = remember(style, density) {
+        val widest = DomainStatus.entries.maxOf { measurer.measure(it.label, style).size.width }
+        with(density) { widest.toDp() } + 22.dp
+    }
     StatusBadge(
         text = status.label,
         color = color,
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.width(pillWidth).clickable(onClick = onClick),
     )
 }

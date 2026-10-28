@@ -795,7 +795,7 @@
         </button>
         <button class="sidebar-nav-item" data-tab="proxied" data-route="/proxied">
           <i data-feather="shield" class="w-4 h-4"></i>
-          <span>Proxied Domains</span>
+          <span>Domains</span>
         </button>
         <button class="sidebar-nav-item" data-tab="clients" data-route="/clients">
           <i data-feather="users" class="w-4 h-4"></i>
@@ -1145,31 +1145,35 @@
             </div>
 
             <div class="mt-3 pt-2 border-t border-slate-800 space-y-1.5 shrink-0">
-              <label class="flex items-center justify-between gap-2">
-                <span class="text-[11px] text-slate-400">Transports</span>
+              <label class="resolution-setting-row">
+                <span class="resolution-setting-label text-[11px] text-slate-400">Transports</span>
                 <select id="resolution-transport" aria-label="Global transport policy"
-                  class="min-w-0 max-w-[12rem] bg-slate-950 border border-slate-700 text-[11px] text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 font-mono">
+                  class="resolution-setting-select bg-slate-950 border border-slate-700 text-[11px] text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 font-mono">
                   <option value="any">Any Transport</option>
                   <option value="encrypted">Encrypted Only (DoT · DoH · DoQ)</option>
                   <option value="regular">Regular DNS (UDP · TCP)</option>
                 </select>
               </label>
-              <label class="flex items-center justify-between gap-2">
-                <span class="text-[11px] text-slate-400">Default upstream</span>
+              <label class="resolution-setting-row">
+                <span class="resolution-setting-label text-[11px] text-slate-400">Default upstream</span>
                 <select id="resolution-default-upstream" aria-label="Default upstream"
-                  class="min-w-0 max-w-[12rem] bg-slate-950 border border-slate-700 text-[11px] text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 font-mono"></select>
+                  class="resolution-setting-select bg-slate-950 border border-slate-700 text-[11px] text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 font-mono"></select>
               </label>
               <p id="resolution-pin-note" class="hidden text-[10px] text-amber-400"></p>
-              <label class="flex items-center justify-between gap-2">
-                <span class="text-[11px] text-slate-400">Strategy</span>
+              <label class="resolution-setting-row">
+                <span class="resolution-setting-label text-[11px] text-slate-400">Strategy</span>
                 <select id="resolution-default-strategy" aria-label="Default resolution strategy"
-                  class="bg-slate-950 border border-slate-700 text-[11px] text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 font-mono">
+                  title="Hedged starts the next resolver after 50 ms; Best Known uses the fastest measured resolver"
+                  class="resolution-setting-select bg-slate-950 border border-slate-700 text-[11px] text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 font-mono">
                   <option value="">Pool default</option>
                   <option value="fastest">Fastest wins</option>
                   <option value="sequential">In order</option>
+                  <option value="hedged">Hedged</option>
+                  <option value="best">Best Known</option>
                 </select>
               </label>
-              <p class="text-[10px] text-slate-500">Per-domain overrides live in the Proxied Domains list.</p>
+              <p class="text-[10px] text-slate-500">Fallback: Pool Default</p>
+              <p class="text-[10px] text-slate-500">Per-domain overrides live in the Domains list.</p>
             </div>
             <div class="mt-3 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between shrink-0">
               <span>Racing Policy: <strong class="text-cyan-400">Fastest Wins</strong></span>
@@ -1239,9 +1243,9 @@
         <div class="glass-panel p-5 sm:p-6 space-y-4">
           <div>
             <h3 class="text-xs sm:text-sm font-bold uppercase text-white flex items-center gap-2 font-heading">
-              <i data-feather="shield" class="w-4 h-4 text-cyan-400"></i> Proxied Domains
+              <i data-feather="shield" class="w-4 h-4 text-cyan-400"></i> Domains
             </h3>
-            <p class="text-[11px] text-slate-400 mt-0.5">Domains that will be spoofed to this server's SNI Proxy. Switch a domain off to keep it listed but stop proxying it — it then resolves normally.</p>
+            <p class="text-[11px] text-slate-400 mt-0.5">All managed domains — proxied, paused, blocked and direct. Filter with the chips, and open a row's status badge to change its routing.</p>
           </div>
 
           <!-- Each of these rows is `flex-1 min-w-0` input + `shrink-0` button. Both
@@ -1329,6 +1333,15 @@
             </div>
           </div>
 
+          <!-- Status filter. The four chips mirror the Android Domains page: no
+               separate All chip; tapping the active chip clears the filter. -->
+          <div id="domain-filters" class="flex flex-wrap items-center gap-2" role="group" aria-label="Filter domains by status">
+            <button type="button" class="domain-filter-chip" data-status="proxy" aria-pressed="false">Proxy</button>
+            <button type="button" class="domain-filter-chip" data-status="blocked" aria-pressed="false">Blocked</button>
+            <button type="button" class="domain-filter-chip" data-status="paused" aria-pressed="false">Paused</button>
+            <button type="button" class="domain-filter-chip" data-status="direct" aria-pressed="false">Direct</button>
+          </div>
+
           <!-- The scroll region and its sentinel. renderProxiedList rewrites
                #custom-proxied-rows wholesale, so the "Loading rules…" line
                survives exactly until the settings fetch lands — and an empty
@@ -1340,11 +1353,11 @@
                each row's checkbox, domain, status and actions line up. -->
           <div id="custom-proxied-list" class="proxied-scroll">
             <table class="proxied-table w-full text-start border-collapse text-xs font-mono">
-              <caption class="sr-only">Proxied domains</caption>
+              <caption class="sr-only">Managed domains</caption>
               <thead class="bg-slate-950/80 sticky top-0 text-slate-400 border-b border-slate-800 z-10">
                 <tr>
                   <th class="proxied-col-check py-2.5 px-3 text-center">
-                    <input type="checkbox" id="proxied-select-all" aria-label="Select all proxied domains" class="proxied-check">
+                    <input type="checkbox" id="proxied-select-all" aria-label="Select all managed domains" class="proxied-check">
                   </th>
                   <th class="proxied-col-domain py-2.5 px-3 text-start">DOMAIN</th>
                   <th class="proxied-col-actions py-2.5 px-3 text-center">ACTIONS</th>
@@ -2393,7 +2406,7 @@ async function onBuySubscription(ctx, username) {
       </button>
       <button class="mobile-nav-item flex flex-col items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-white transition" data-tab="proxied" data-route="/proxied">
         <i data-feather="shield" class="w-4 h-4"></i>
-        <span>Proxied</span>
+        <span>Domains</span>
       </button>
       <button class="mobile-nav-item flex flex-col items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-white transition" data-tab="clients" data-route="/clients">
         <i data-feather="users" class="w-4 h-4"></i>

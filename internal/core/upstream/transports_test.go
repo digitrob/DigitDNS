@@ -364,3 +364,23 @@ func TestPinCandidateNeverBypassesTheTransport(t *testing.T) {
 		t.Fatalf("an encrypted pin escaped Regular DNS: %v", got)
 	}
 }
+
+func TestProtocolOfMapsTheResolutionTransport(t *testing.T) {
+	cases := map[string]string{
+		"1.1.1.1:53":                   "UDP",
+		"tcp://1.1.1.1:53":             "TCP",
+		"tls://dns.google:853":         "DoT",
+		"https://dns.google/dns-query": "DoH",
+		"quic://dns.adguard.com:853":   "DoQ",
+		"doq://dns.adguard.com:853":    "DoQ",
+		"h3://dns.google/dns-query":    "DoH3",
+		"sdns://abc":                   "DNSCrypt",
+		"cache":                        "",
+		"":                             "",
+	}
+	for address, want := range cases {
+		if got := ProtocolOf(address); got != want {
+			t.Errorf("ProtocolOf(%q) = %q, want %q", address, got, want)
+		}
+	}
+}

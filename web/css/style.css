@@ -714,6 +714,13 @@ body::before {
 }
 
 /* Animated Cyber Switches */
+/* A pause control that cannot apply to the row's status: keep the switch and
+   label in place so the action set does not reflow, but dim it and make it inert. */
+.pause-unavailable {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 .switch {
   position: relative;
   display: inline-block;
@@ -1259,7 +1266,7 @@ input:checked + .slider:before {
 .stream-action-menu {
   position: fixed;
   z-index: 60;
-  min-width: 12rem;
+  min-width: 15rem;
   padding: 0.35rem;
   border-radius: 0.75rem;
   background: rgb(var(--c-slate-950) / 0.98);
@@ -1299,6 +1306,8 @@ input:checked + .slider:before {
   cursor: pointer;
 }
 .stream-action-scope:hover { color: rgb(var(--c-slate-200)); }
+.stream-action-scope:disabled { opacity: 0.38; cursor: not-allowed; }
+.stream-action-scope:disabled:hover { color: rgb(var(--c-slate-400)); }
 .stream-action-scope.is-active {
   color: rgb(var(--c-cyan-400));
   background: rgb(var(--c-cyan-400) / 0.14);
@@ -1415,6 +1424,55 @@ input:checked + .slider:before {
     height: 100%;
     min-height: 0;
   }
+}
+
+/* Resolution settings rows: the label and its select are one pair instead of
+   being pushed to opposite ends of the card, which left a wide dead gap in the
+   middle of every row. The select takes the row remainder instead of a fixed
+   208 px, so the longest transport option no longer clips, and the label stays
+   content-sized: at the card's ~310 px a shared column wide enough for
+   "Default upstream" would have left the selects narrower than before.
+   Plain CSS: the served purged Tailwind sheet has no w-64 / w-28 for this. */
+.resolution-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.resolution-setting-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.resolution-setting-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Domains status filters. Plain CSS because the active state is a class the
+   JS toggles, and the purged utility sheet cannot carry a state rule. */
+.domain-filter-chip {
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--c-slate-700));
+  background: rgb(var(--c-slate-950) / 0.6);
+  color: rgb(var(--c-slate-400));
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+
+.domain-filter-chip:hover {
+  color: rgb(var(--c-slate-200));
+  border-color: rgb(var(--c-slate-600));
+}
+
+.domain-filter-chip.is-active {
+  color: rgb(var(--c-cyan-400));
+  background: rgb(var(--c-cyan-400) / 0.12);
+  border-color: rgb(var(--c-cyan-400) / 0.5);
 }
 
 /* API exposure selector (api_bind): three discrete choices plus a custom

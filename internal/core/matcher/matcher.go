@@ -104,14 +104,22 @@ func (rs *ruleSet) unindex(domain string) {
 // lookup returns the rule matching d, walking from the most specific candidate to
 // the least.
 func (rs *ruleSet) lookup(d string) (string, bool) {
+	name, _, ok := rs.lookupPattern(d)
+	return name, ok
+}
+
+// lookupPattern is lookup plus the pattern that matched: the exact host, or
+// "*.base" for a wildcard. The query log needs the pattern to show whether a
+// host or a parent wildcard applied; the rule label alone cannot say.
+func (rs *ruleSet) lookupPattern(d string) (name, pattern string, ok bool) {
 	if name, ok := rs.exact[d]; ok {
-		return name, true
+		return name, d, true
 	}
 	// An empty set is the normal state for the operator's custom lists, and the
 	// label walk is the expensive half of a lookup — skip it rather than probe an
 	// empty map once per label of every queried name.
 	if len(rs.wildcard) == 0 {
-		return "", false
+		return "", "", false
 	}
 	// Probe each parent domain in turn: for "a.b.riotgames.com" that is
 	// "b.riotgames.com", then "riotgames.com", then "com". The substrings share
@@ -126,10 +134,10 @@ func (rs *ruleSet) lookup(d string) (string, bool) {
 			break
 		}
 		if name, ok := rs.wildcard[d[i:]]; ok {
-			return name, true
+			return name, "*." + d[i:], true
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // size is the number of distinct rule domains indexed. Every indexed domain writes
@@ -254,6 +262,13 @@ func (m *Matcher) Match(domain string) (Action, string) {
 	return m.match(domain, nil)
 }
 
+// MatchDetail returns the action, rule label and the pattern that matched (the
+// exact host or "*.base"). It is the query log's entry point; Match keeps the
+// two-value form every other caller uses.
+func (m *Matcher) MatchDetail(domain string) (Action, string, string) {
+	return m.matchDetail(domain, nil)
+}
+
 // MatchForClient resolves a domain on behalf of a client. The per-client policy
 // selection is accepted for API compatibility but no longer narrows the result:
 // the only rules this build indexes are the operator's own admin-wide lists and
@@ -264,10 +279,15 @@ func (m *Matcher) MatchForClient(domain string, clientPolicies []string) (Action
 
 // match is the single implementation behind both entry points, so the global and
 // per-client paths cannot drift apart in precedence or in rule handling.
-func (m *Matcher) match(domain string, _ []string) (Action, string) {
+func (m *Matcher) match(domain string, policies []string) (Action, string) {
+	action, rule, _ := m.matchDetail(domain, policies)
+	return action, rule
+}
+
+func (m *Matcher) matchDetail(domain string, _ []string) (Action, string, string) {
 	d := normalizeDomain(domain)
 	if d == "" {
-		return ActionDirect, "Direct"
+		return ActionDirect, "Direct", ""
 	}
 
 	m.mu.RLock()
@@ -279,19 +299,19 @@ func (m *Matcher) match(domain string, _ []string) (Action, string) {
 	// Blocks outrank the real-time set on purpose. An operator who typed a name
 	// into Custom Block asked for it to stop resolving, which is a stronger
 	// statement than "do not proxy this".
-	if name, ok := m.direct.lookup(d); ok {
-		return ActionDirect, name
+	if name, pattern, ok := m.direct.lookupPattern(d); ok {
+		return ActionDirect, name, pattern
 	}
-	if name, ok := m.blocked.lookup(d); ok {
-		return ActionBlock, name
+	if name, pattern, ok := m.blocked.lookupPattern(d); ok {
+		return ActionBlock, name, pattern
 	}
-	if name, ok := m.realtime.lookup(d); ok {
-		return ActionDirect, name
+	if name, pattern, ok := m.realtime.lookupPattern(d); ok {
+		return ActionDirect, name, pattern
 	}
-	if name, ok := m.proxied.lookup(d); ok {
-		return ActionProxy, name
+	if name, pattern, ok := m.proxied.lookupPattern(d); ok {
+		return ActionProxy, name, pattern
 	}
-	return ActionDirect, "Direct"
+	return ActionDirect, "Direct", ""
 }
 
 // GetCustomRecord returns the custom DNS answer configured for a domain, if any.

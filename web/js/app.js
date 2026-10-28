@@ -1317,6 +1317,8 @@ function renderList(containerId, items, removeClass) {
 // "is there another batch", read by both the observer and the fallback button.
 const PROXIED_BATCH = 50;
 let proxiedSort = 'added-desc';
+// null means all statuses; the chips toggle one of these on and off.
+let proxiedStatusFilter = null;
 let proxiedVisible = PROXIED_BATCH;
 let proxiedHasMore = false;
 // Created once and left watching the sentinel. It is not rebuilt on render,
@@ -1328,18 +1330,59 @@ let proxiedObserver = null;
 // order is array order: a new domain is pushed onto the end, so "Added (newest)"
 // is the reverse. Disabled entries keep their own order after the enabled ones,
 // which is the grouping the status sort exposes.
+// One unified view of every managed list. A domain can appear in more than one
+// stored list after a hand-edited save; the effective status follows the matcher
+// precedence Direct > Blocked > Proxy > Paused, so the row shows what the engine
+// will actually do.
+const DOMAIN_STATUS_PRECEDENCE = { paused: 0, proxy: 1, blocked: 2, direct: 3 };
+// Matches Android's DomainStatus enum order for the STATUS sort.
+const DOMAIN_STATUS_RANK = { proxy: 0, blocked: 1, paused: 2, direct: 3 };
+const DOMAIN_STATUS_META = {
+  proxy: { label: 'PROXIED', badge: 'badge-proxy', domainClass: 'text-cyan-300' },
+  paused: { label: 'PAUSED', badge: 'badge-unknown', domainClass: 'text-slate-400' },
+  blocked: { label: 'BLOCKED', badge: 'badge-block', domainClass: 'text-red-300' },
+  direct: { label: 'DIRECT', badge: 'badge-direct', domainClass: 'text-emerald-300' },
+};
+
 function proxiedOrderedRows() {
-  const enabled = Array.isArray(currentConfig?.rules?.custom_proxied) ? currentConfig.rules.custom_proxied : [];
-  const disabled = Array.isArray(currentConfig?.rules?.custom_proxied_disabled) ? currentConfig.rules.custom_proxied_disabled : [];
-  const rows = enabled.map((d) => ({ domain: d, on: true })).concat(disabled.map((d) => ({ domain: d, on: false })));
+  const rules = currentConfig?.rules || {};
+  const byDomain = new Map();
+  const add = (list, status) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((domain) => {
+      if (!domain) return;
+      const prev = byDomain.get(domain);
+      if (!prev || DOMAIN_STATUS_PRECEDENCE[status] > DOMAIN_STATUS_PRECEDENCE[prev]) {
+        byDomain.set(domain, status);
+      }
+    });
+  };
+  // Low precedence first so a higher one can overwrite without losing the key's
+  // insertion position for the common one-list case.
+  add(rules.custom_proxied, 'proxy');
+  add(rules.custom_proxied_disabled, 'paused');
+  add(rules.custom_blocked, 'blocked');
+  add(rules.custom_direct, 'direct');
+
+  let rows = Array.from(byDomain, ([domain, status]) => ({ domain, status }));
   const byName = (a, b) => a.domain.localeCompare(b.domain, undefined, { sensitivity: 'base' });
+  const added = rules.custom_domain_added || {};
+  const stamp = (domain) => {
+    const t = Date.parse(added[domain] || '');
+    return Number.isFinite(t) ? t : 0;
+  };
+  const anyStamp = rows.some((r) => stamp(r.domain) > 0);
+
   switch (proxiedSort) {
-    case 'added-asc': return rows;
+    case 'added-asc':
+      return anyStamp ? rows.slice().sort((a, b) => stamp(a.domain) - stamp(b.domain)) : rows;
     case 'az': return rows.slice().sort(byName);
     case 'za': return rows.slice().sort((a, b) => byName(b, a));
-    case 'status': return rows.slice().sort((a, b) => (a.on === b.on ? 0 : a.on ? -1 : 1));
+    case 'status':
+      return rows.slice().sort((a, b) => DOMAIN_STATUS_RANK[a.status] - DOMAIN_STATUS_RANK[b.status]);
     case 'added-desc':
-    default: return rows.slice().reverse();
+    default:
+      return anyStamp ? rows.slice().sort((a, b) => stamp(b.domain) - stamp(a.domain)) : rows.slice().reverse();
   }
 }
 
@@ -1360,10 +1403,21 @@ function proxiedFilterNeedle() {
 // reads this, so the count, the empty state, the select-all box and the bulk
 // selection all agree on what "the list" means while a filter is active.
 function proxiedFilteredRows() {
-  const ordered = proxiedOrderedRows();
+  let ordered = proxiedOrderedRows();
+  if (proxiedStatusFilter) {
+    ordered = ordered.filter((r) => r.status === proxiedStatusFilter);
+  }
   const needle = proxiedFilterNeedle();
   if (!needle) return ordered;
   return ordered.filter((r) => r.domain.toLowerCase().includes(needle));
+}
+
+function updateDomainFilterChips() {
+  document.querySelectorAll('.domain-filter-chip').forEach((chip) => {
+    const active = chip.dataset.status === proxiedStatusFilter;
+    chip.classList.toggle('is-active', active);
+    chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
 }
 
 // proxiedSuggestions fills the datalist behind the Add box with the domains that are
@@ -1409,12 +1463,17 @@ function proxiedPruneSelection() {
 function updateProxiedBulkBar() {
   const n = proxiedSelected.size;
   const shown = proxiedFilteredRows();
+  const selectedRows = proxiedOrderedRows().filter((r) => proxiedSelected.has(r.domain));
+  const pausable = selectedRows.length > 0 &&
+    selectedRows.every((r) => r.status === 'proxy' || r.status === 'paused');
   const countEl = document.getElementById('proxied-selected-count');
   if (countEl) countEl.textContent = n === 0 ? 'No domains selected' : `${n} selected`;
-  ['proxied-bulk-pause', 'proxied-bulk-resume', 'proxied-bulk-remove'].forEach((id) => {
-    const btn = document.getElementById(id);
-    if (btn) btn.disabled = n === 0;
-  });
+  const pause = document.getElementById('proxied-bulk-pause');
+  const resume = document.getElementById('proxied-bulk-resume');
+  const remove = document.getElementById('proxied-bulk-remove');
+  if (pause) pause.disabled = !pausable;
+  if (resume) resume.disabled = !pausable;
+  if (remove) remove.disabled = n === 0;
   const all = document.getElementById('proxied-select-all');
   if (all) {
     const selectedShown = shown.filter((r) => proxiedSelected.has(r.domain)).length;
@@ -1677,23 +1736,19 @@ function openResolutionDialog(domain) {
         <p id="resolution-dialog-pin-note" class="hidden text-[10px] text-amber-400">The selected upstream is excluded by this transport and will be ignored.</p>
         <label class="block">
           <span class="block text-[11px] font-semibold text-slate-400 mb-1">Strategy</span>
-          <select id="resolution-strategy" class="w-full bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
+          <select id="resolution-strategy" title="Hedged starts the next resolver after 50 ms; Best Known uses the fastest measured resolver" class="w-full bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
             <option value="" ${saved.strategy ? '' : 'selected'}>Inherit Global</option>
             <option value="fastest" ${saved.strategy === 'fastest' ? 'selected' : ''}>Fastest Wins</option>
             <option value="sequential" ${saved.strategy === 'sequential' ? 'selected' : ''}>In Order</option>
+            <option value="hedged" ${saved.strategy === 'hedged' ? 'selected' : ''}>Hedged</option>
+            <option value="best" ${saved.strategy === 'best' ? 'selected' : ''}>Best Known</option>
           </select>
         </label>
         <label class="block">
           <span class="block text-[11px] font-semibold text-slate-400 mb-1">Transports</span>
           <select id="resolution-dialog-transport" class="w-full bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">${transportOptions}</select>
         </label>
-        <label class="block">
-          <span class="block text-[11px] font-semibold text-slate-400 mb-1">If That Fails</span>
-          <select id="resolution-fallback" class="w-full bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
-            <option value="pool" ${saved.fallback === 'fail' ? '' : 'selected'}>Fall Back to the Pool</option>
-            <option value="fail" ${saved.fallback === 'fail' ? 'selected' : ''}>Failure</option>
-          </select>
-        </label>
+        <p class="text-[10px] text-slate-500">Fallback: Pool Default</p>
       </div>
       <div class="flex gap-2 mt-5">
         <button id="resolution-cancel" class="flex-1 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-sm font-semibold hover:bg-slate-700 transition">Cancel</button>
@@ -1756,12 +1811,10 @@ function openResolutionDialog(domain) {
     const upstream = backdrop.querySelector('#resolution-upstream').value;
     const strategy = backdrop.querySelector('#resolution-strategy').value;
     const transport = backdrop.querySelector('#resolution-dialog-transport').value;
-    const fallback = backdrop.querySelector('#resolution-fallback').value || 'pool';
     const profile = {};
     if (upstream) profile.upstream = upstream;
     if (strategy) profile.strategy = strategy;
     if (transport && transport !== 'inherit') profile.transport = transport;
-    if (fallback === 'fail') profile.fallback = 'fail';
     const profiles = Object.assign({}, resolutionSettings.profiles);
     if (Object.keys(profile).length === 0) delete profiles[domain]; else profiles[domain] = profile;
     const ok = await saveResolutionSettings({ profiles }, 'Resolution rule saved');
@@ -1773,22 +1826,28 @@ function renderProxiedList() {
   const container = document.getElementById('custom-proxied-rows');
   if (!container) return;
   proxiedPruneSelection();
+  updateDomainFilterChips();
   const needle = proxiedFilterNeedle();
   const ordered = proxiedFilteredRows();
   const total = ordered.length;
   const countEl = document.getElementById('proxied-count');
   const moreBtn = document.getElementById('proxied-load-more');
+  const statusLabel = proxiedStatusFilter
+    ? { proxy: 'proxied', blocked: 'blocked', paused: 'paused', direct: 'direct' }[proxiedStatusFilter]
+    : '';
 
   container.innerHTML = '';
   if (total === 0) {
-    // Two empty states, because they mean different things: an empty rules list is
-    // "nothing is proxied", while a filter with no hits is "nothing matches what you
-    // typed" and must not read as the list having been emptied.
-    container.innerHTML = needle
-      ? `<tr><td colspan="4" class="py-8 text-center text-slate-500 text-xs">No domains match “${escapeHTML(needle)}”</td></tr>`
-      : '<tr><td colspan="4" class="py-8 text-center text-slate-500 text-xs">No custom entries yet</td></tr>';
+    // Three empty states: no rules at all, no matches for the search, or none in
+    // the selected status chip. They mean different things to the operator.
+    const empty = needle
+      ? `No domains match “${escapeHTML(needle)}”`
+      : proxiedStatusFilter
+        ? `No ${statusLabel} domains yet.`
+        : 'No domains yet.';
+    container.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-slate-500 text-xs">${empty}</td></tr>`;
     proxiedHasMore = false;
-    if (countEl) countEl.textContent = needle ? '0 matches' : '';
+    if (countEl) countEl.textContent = needle ? '0 matches' : (proxiedStatusFilter ? `0 ${statusLabel} domains` : '');
     if (moreBtn) moreBtn.classList.add('hidden');
     updateProxiedBulkBar();
     return;
@@ -1798,12 +1857,13 @@ function renderProxiedList() {
   proxiedHasMore = rows.length < total;
   if (countEl) {
     if (needle) {
-      // The matches are the number that matters while filtering; the total is in the
-      // box the operator typed into. Say how many of them are drawn when the batch
-      // window is the limiting factor.
       countEl.textContent = proxiedHasMore
         ? `Showing ${rows.length} of ${total} matches`
         : `${total} match${total === 1 ? '' : 'es'}`;
+    } else if (proxiedStatusFilter) {
+      countEl.textContent = proxiedHasMore
+        ? `Showing ${rows.length} of ${total} ${statusLabel} domains`
+        : `${total} ${statusLabel} domain${total === 1 ? '' : 's'}`;
     } else {
       countEl.textContent = proxiedHasMore
         ? `Showing ${rows.length} of ${total}`
@@ -1811,34 +1871,57 @@ function renderProxiedList() {
     }
   }
   if (moreBtn) moreBtn.classList.toggle('hidden', !proxiedHasMore);
-  rows.forEach(({ domain, on }) => {
+
+  rows.forEach(({ domain, status }) => {
+    const meta = DOMAIN_STATUS_META[status] || DOMAIN_STATUS_META.direct;
     const row = document.createElement('tr');
-    // is-paused paints the row amber: listed, but not in the proxy set. The old
-    // opacity-50 dimmed the switch and the badge along with the domain, which is
-    // exactly the content needed to switch it back on.
-    row.className = 'hover:bg-slate-800/40 transition' + (on ? '' : ' is-paused');
-    // The colour class is chosen here rather than written into the template: the
-    // escaping sweep reads attribute interpolations, and a literal ternary sitting
-    // in a class attribute is a shape it cannot vouch for. domainClass carries no
-    // operator data, which is why it is safe to interpolate unescaped.
-    const domainClass = on ? 'text-cyan-300' : 'text-slate-400';
-    const statusBadge = on
-      ? '<span class="badge badge-proxy">PROXIED</span>'
-      : '<span class="badge badge-unknown">PAUSED</span>';
+    row.className = 'hover:bg-slate-800/40 transition' + (status === 'paused' ? ' is-paused' : '');
+    // The colour classes come from a fixed status table, never from operator data;
+    // they are the two entries the escaping sweep allows by name.
+    const domainClass = meta.domainClass;
+    const statusClass = meta.badge;
+    const wildcard = domain.startsWith('*.');
+    const wildcardBadge = wildcard
+      ? `<span class="badge badge-custom ms-1 shrink-0" title="Subdomains of ${escapeHTML(domain.slice(2))}">WILD</span>`
+      : '';
+    const statusBadge = `<button type="button" class="proxied-route-btn badge ${statusClass} inline-flex items-center gap-1" data-domain="${escapeHTML(domain)}" title="Proxy, block or direct ${escapeHTML(domain)}" aria-haspopup="menu" aria-expanded="false">${meta.label}</button>`;
+
+    // Keep the same actions on every status. Paused is still a proxy state (the
+    // switch resumes it and the resolution rule is valid); blocked and direct
+    // keep the controls visible but disabled instead of removing them.
+    const canAdjust = status === 'proxy' || status === 'paused';
+    const resolutionTitle = canAdjust
+      ? 'Override Resolving'
+      : 'Resolution overrides are available for proxied or paused domains';
+    const resolutionButton = `<button class="resolution-proxied inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-lg text-slate-400 bg-slate-900 border border-slate-700 hover:text-cyan-300 hover:border-cyan-500/40 transition disabled:opacity-50 disabled:cursor-not-allowed" data-val="${escapeHTML(domain)}" ${canAdjust ? '' : 'disabled'} title="${escapeHTML(resolutionTitle)}" aria-label="${escapeHTML(resolutionTitle)}"><i data-feather="settings" class="w-4 h-4"></i></button>`;
+    const pauseTitle = canAdjust ? 'Pause proxying' : 'Pause is only available for proxied domains';
+    const stateLabel = status === 'proxy'
+      ? '<span class="text-[10px] text-emerald-400 font-semibold">On</span>'
+      : '<span class="text-[10px] text-slate-400 font-semibold">Off</span>';
+    const pauseInner = `<span class="text-[10px] text-slate-500 font-semibold">Pause</span>
+          <label class="switch shrink-0">
+            <input type="checkbox" class="toggle-proxied" data-val="${escapeHTML(domain)}" ${status === 'proxy' ? 'checked' : ''} ${canAdjust ? '' : 'disabled'} aria-label="Toggle proxying for ${escapeHTML(domain)}">
+            <span class="slider"></span>
+          </label>
+          ${stateLabel}`;
+    const pauseControl = canAdjust
+      ? `<div class="inline-flex items-center gap-2" title="${escapeHTML(pauseTitle)}">${pauseInner}</div>`
+      : `<div class="pause-unavailable inline-flex items-center gap-2" title="${escapeHTML(pauseTitle)}">${pauseInner}</div>`;
+
     row.innerHTML = `
       <td class="py-2.5 px-3 text-center">
         <input type="checkbox" class="proxied-select-check proxied-check" data-val="${escapeHTML(domain)}" ${proxiedSelected.has(domain) ? 'checked' : ''} aria-label="Select ${escapeHTML(domain)}">
       </td>
-      <td class="py-2.5 px-3 text-start truncate" title="${escapeHTML(domain)}"><span class="font-mono ${domainClass}">${escapeHTML(domain)}</span></td>
+      <td class="py-2.5 px-3 text-start" title="${escapeHTML(domain)}">
+        <div class="flex items-center gap-1 min-w-0">
+          <span class="font-mono ${domainClass} truncate">${escapeHTML(domain)}</span>
+          ${wildcardBadge}
+        </div>
+      </td>
       <td class="py-2.5 px-3 text-center">
         <div class="flex items-center justify-center gap-2">
-          <button class="resolution-proxied inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-lg text-slate-400 bg-slate-900 border border-slate-700 hover:text-cyan-300 hover:border-cyan-500/40 transition" data-val="${escapeHTML(domain)}" title="Override Resolving for ${escapeHTML(domain)}" aria-label="Override Resolving for ${escapeHTML(domain)}"><i data-feather="settings" class="w-4 h-4"></i></button>
-          <span class="text-[10px] text-slate-500 font-semibold">Pause</span>
-          <label class="switch shrink-0">
-            <input type="checkbox" class="toggle-proxied" data-val="${escapeHTML(domain)}" ${on ? 'checked' : ''} aria-label="Toggle proxying for ${escapeHTML(domain)}">
-            <span class="slider"></span>
-          </label>
-          <span class="text-[10px] text-emerald-400 font-semibold">On</span>
+          ${resolutionButton}
+          ${pauseControl}
           <button class="remove-proxied inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-red-500/10 text-red-400 border border-red-500/30 text-[11px] font-semibold transition" data-val="${escapeHTML(domain)}" aria-label="Remove ${escapeHTML(domain)}">Remove</button>
         </div>
       </td>
@@ -1926,6 +2009,10 @@ function proxiedFilterChanged() {
 // move and not a duplicate.
 function proxiedBulkSetEnabled(enable) {
   if (!currentConfig || !currentConfig.rules || proxiedSelected.size === 0) return;
+  const selectedRows = proxiedOrderedRows().filter((r) => proxiedSelected.has(r.domain));
+  // Pause/resume is a proxied-state action; a selection that includes blocked or
+  // direct rows is left to the Remove button and the per-row status menu.
+  if (selectedRows.some((r) => r.status !== 'proxy' && r.status !== 'paused')) return;
   const rules = currentConfig.rules;
   const enabled = Array.isArray(rules.custom_proxied) ? rules.custom_proxied : [];
   const disabled = Array.isArray(rules.custom_proxied_disabled) ? rules.custom_proxied_disabled : [];
@@ -1957,13 +2044,15 @@ async function proxiedBulkRemove() {
     destructive: true,
     title: `Remove ${n} domain${n === 1 ? '' : 's'}?`,
     hint: 'THIS CANNOT BE UNDONE',
-    message: `${n} selected domain${n === 1 ? '' : 's'} will be deleted from the proxied list. They stop being spoofed to the SNI proxy immediately and resolve normally.`,
+    message: `${n} selected domain${n === 1 ? '' : 's'} will be deleted from the managed lists. A proxied domain stops being spoofed to the SNI proxy immediately and resolves normally.`,
     confirmText: 'REMOVE',
   });
   if (!ok) return;
   const rules = currentConfig.rules;
   rules.custom_proxied = (rules.custom_proxied || []).filter((d) => !proxiedSelected.has(d));
   rules.custom_proxied_disabled = (rules.custom_proxied_disabled || []).filter((d) => !proxiedSelected.has(d));
+  rules.custom_blocked = (rules.custom_blocked || []).filter((d) => !proxiedSelected.has(d));
+  rules.custom_direct = (rules.custom_direct || []).filter((d) => !proxiedSelected.has(d));
   proxiedSelected = new Set();
   renderConfig(currentConfig);
   saveRules();
@@ -3034,7 +3123,16 @@ function queryRowHTML(q) {
   const latVal = (typeof q.latency_ms === 'number') ? q.latency_ms : ((typeof q.latency === 'number') ? q.latency / 1000000 : 0.0);
   const latStr = latVal.toFixed(1) + ' ms';
   const ruleStr = q.rule_name || q.rule_matched || q.rule || 'Default Direct';
-  const protoStr = q.protocol || 'UDP';
+  // The PROTO column describes the resolution leg: the resolver's transport
+  // when one answered, and the client's transport only when nothing upstream
+  // was involved (cache, local, blocked, proxied). The client protocol stays in
+  // the tooltip and in the API payload.
+  const clientProto = q.protocol || 'UDP';
+  const resolutionProto = (q.upstream_protocol || '').trim();
+  const protoStr = resolutionProto || clientProto;
+  const protoTitle = resolutionProto
+    ? `Resolution: ${resolutionProto} · Client: ${clientProto}`
+    : `Client: ${clientProto}`;
 
   // clientIP is escaped like the domain beside it. It is normally a parsed address,
   // but on DoH it can originate from a forwarding header, and the row is written with
@@ -3056,7 +3154,7 @@ function queryRowHTML(q) {
   return `
     <td class="stream-col-time py-2.5 px-2 sm:px-3 text-slate-400 whitespace-nowrap">${timeStr}</td>
     <td class="stream-col-client py-2.5 px-2 sm:px-3">${clientDisplay}</td>
-    <td class="stream-col-proto py-2.5 px-2 sm:px-3 text-purple-400 font-bold hidden sm:table-cell">${escapeHTML(protoStr)}</td>
+    <td class="stream-col-proto py-2.5 px-2 sm:px-3 text-purple-400 font-bold hidden sm:table-cell" title="${escapeHTML(protoTitle)}">${escapeHTML(protoStr)}</td>
     <td class="stream-col-domain py-2.5 px-2 sm:px-3">
       <div class="text-cyan-300 font-semibold truncate" title="${escapeHTML(domain)}">${escapeHTML(domain)}</div>
       ${upstreamLine}
@@ -3207,9 +3305,15 @@ let streamActionScope = 'exact';
 // (its parent is "com", and *.com is not a rule anybody wants), so it returns the
 // empty string and the caller refuses rather than writing it.
 function streamActionTarget(domain, scope) {
-  const host = String(domain || '').trim().toLowerCase().replace(/^\.+/, '');
-  if (!host) return '';
+  const raw = String(domain || '').trim().toLowerCase().replace(/^\.+/, '');
+  if (!raw) return '';
+  const wildcard = raw.startsWith('*.');
+  const host = wildcard ? raw.slice(2) : raw;
   const labels = host.split('.').filter(Boolean);
+  if (scope === 'exact') return wildcard ? '*.' + host : host;
+  // A row that is already a wildcard has no meaningful *.host (that would be
+  // *.*.base) and no parent wildcard below a TLD. Only Exact applies.
+  if (wildcard) return '';
   if (scope === 'host') {
     return labels.length >= 2 ? '*.' + host : '';
   }
@@ -3217,6 +3321,22 @@ function streamActionTarget(domain, scope) {
     return labels.length >= 3 ? '*.' + labels.slice(1).join('.') : '';
   }
   return host;
+}
+
+// updateStreamActionScopes labels each scope with the pattern it would write and
+// disables the ones that would produce nothing. That is both the "which wildcard
+// am I applying" hint and the fix for selecting *.parent on a bare host, which
+// used to fail only after the action was chosen.
+function updateStreamActionScopes(domain) {
+  streamActionScopeButtons().forEach((b) => {
+    const target = streamActionTarget(domain, b.dataset.scope || 'exact');
+    b.disabled = !target;
+    b.title = target ? 'Apply to this scope' : 'Not available for this domain';
+    if (!target) {
+      b.classList.remove('is-active');
+      b.setAttribute('aria-checked', 'false');
+    }
+  });
 }
 
 function streamActionScopeButtons() {
@@ -3231,12 +3351,13 @@ function openStreamActionMenu(trigger) {
   streamActionScope = 'exact';
   const domainEl = document.getElementById('stream-action-domain');
   if (domainEl) domainEl.textContent = streamActionDomain;
+  updateStreamActionScopes(streamActionDomain);
   streamActionScopeButtons().forEach((b) => {
-    const active = b.dataset.scope === 'exact';
+    const active = b.dataset.scope === 'exact' && !b.disabled;
     b.classList.toggle('is-active', active);
     b.setAttribute('aria-checked', active ? 'true' : 'false');
   });
-  document.querySelectorAll('.stream-action-btn[aria-expanded="true"]')
+  document.querySelectorAll('.stream-action-btn[aria-expanded="true"], .proxied-route-btn[aria-expanded="true"]')
     .forEach((b) => b.setAttribute('aria-expanded', 'false'));
   trigger.setAttribute('aria-expanded', 'true');
   menu.classList.remove('hidden');
@@ -3260,7 +3381,7 @@ function positionStreamActionMenu(trigger, menu) {
 function closeStreamActionMenu() {
   const menu = document.getElementById('stream-action-menu');
   if (menu) menu.classList.add('hidden');
-  document.querySelectorAll('.stream-action-btn[aria-expanded="true"]')
+  document.querySelectorAll('.stream-action-btn[aria-expanded="true"], .proxied-route-btn[aria-expanded="true"]')
     .forEach((b) => b.setAttribute('aria-expanded', 'false'));
 }
 
@@ -4755,6 +4876,10 @@ function initEventListeners() {
     const btn = e.target.closest('button');
     if (!btn) return;
 
+    if (btn.classList.contains('proxied-route-btn')) {
+      openStreamActionMenu(btn);
+      return;
+    }
     if (btn.classList.contains('resolution-proxied')) {
       openResolutionDialog(btn.dataset.val);
       return;
@@ -4871,6 +4996,14 @@ function initEventListeners() {
   // path, so they applied to arriving queries and never to the rows already on screen. These
   // two lines are the whole of the fix on the control side — renderQueryStream redraws from
   // the buffer, so a change now takes effect on the last STREAM_BUFFER_MAX queries at once.
+  document.getElementById('domain-filters')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.domain-filter-chip');
+    if (!chip) return;
+    const status = chip.dataset.status;
+    proxiedStatusFilter = proxiedStatusFilter === status ? null : status;
+    proxiedVisible = PROXIED_BATCH;
+    renderProxiedList();
+  });
   document.getElementById('stream-filter')?.addEventListener('change', renderQueryStream);
   document.getElementById('stream-search')?.addEventListener('input', renderQueryStream);
   // The sort select reorders the queries already received. pushStreamQuery consults the
@@ -4905,7 +5038,7 @@ function initEventListeners() {
   // call the same close.
   document.getElementById('stream-action-menu')?.addEventListener('click', onStreamActionMenuClick);
   document.addEventListener('click', (e) => {
-    if (e.target.closest('.stream-action-btn') || e.target.closest('#stream-action-menu')) return;
+    if (e.target.closest('.stream-action-btn') || e.target.closest('.proxied-route-btn') || e.target.closest('#stream-action-menu')) return;
     closeStreamActionMenu();
   });
   document.addEventListener('keydown', (e) => {

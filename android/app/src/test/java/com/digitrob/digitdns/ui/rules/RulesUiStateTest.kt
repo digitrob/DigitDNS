@@ -139,4 +139,11 @@ class RulesUiStateTest {
     fun `parent scope refuses when the parent is a TLD`() {
         assertNull(MatchScope.Parent.resolve("target.com"))
     }
+
+    @Test
+    fun wildcardRowOnlyOffersTheExactScope() {
+        assertEquals("*.example.com", MatchScope.Exact.resolve("*.example.com"))
+        assertNull(MatchScope.Host.resolve("*.example.com"))
+        assertNull(MatchScope.Parent.resolve("*.example.com"))
+    }
 }

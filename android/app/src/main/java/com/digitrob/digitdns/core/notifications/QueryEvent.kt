@@ -27,4 +27,6 @@ data class QueryEvent(
     val cached: Boolean = false,
     /** The resolver that answered: "cache" for a RAM hit, empty for local answers. */
     val upstream: String = "",
+    /** How that resolver was queried (UDP/TCP/DoT/DoH/DoQ/DoH3/DNSCrypt); empty for cache/local. */
+    @SerialName("upstream_protocol") val upstreamProtocol: String = "",
 )

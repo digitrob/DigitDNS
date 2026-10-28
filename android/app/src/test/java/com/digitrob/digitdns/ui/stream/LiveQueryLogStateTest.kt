@@ -82,4 +82,49 @@ class LiveQueryLogStateTest {
         assertEquals(listOf(4L), resumed.visible.map { it.id })
         assertNull(resumed.pausedBuffer)
     }
+
+    @Test
+    fun ipv6SinkHasAFriendlyLabelAndProxyTone() {
+        val style = queryActionStyle("PROXY_IPV6_SINK")
+        assertEquals("Proxy IPv6 Sink", style.label)
+        assertEquals(QueryActionTone.Info, style.tone)
+    }
+
+    @Test
+    fun unknownActionDropsUnderscores() {
+        assertEquals("Future Action", queryActionStyle("FUTURE_ACTION").label)
+        assertEquals(QueryActionTone.Muted, queryActionStyle("FUTURE_ACTION").tone)
+    }
+
+    @Test
+    fun proxyFilterIncludesEveryProxyOutcome() {
+        val events = listOf(
+            event(1, "a", "PROXY"),
+            event(2, "b", "PROXY_IPV6_SINK"),
+            event(3, "c", "PROXY_FAILED"),
+            event(4, "d", "DIRECT"),
+        )
+        val state = LiveQueryLogUiState(buffer = events, actionFilter = ActionFilter.Proxy)
+        assertEquals(listOf(1L, 2L, 3L), state.visible.map { it.id })
+    }
+
+    @Test
+    fun blockAndDirectFiltersIncludeTheirVariants() {
+        val events = listOf(
+            event(1, "a", "BLOCK"),
+            event(2, "b", "RATELIMIT"),
+            event(3, "c", "QUOTA"),
+            event(4, "d", "DIRECT"),
+            event(5, "e", "CACHED"),
+            event(6, "f", "STALE"),
+        )
+        assertEquals(
+            listOf(1L, 2L, 3L),
+            LiveQueryLogUiState(buffer = events, actionFilter = ActionFilter.Block).visible.map { it.id },
+        )
+        assertEquals(
+            listOf(4L, 5L, 6L),
+            LiveQueryLogUiState(buffer = events, actionFilter = ActionFilter.Direct).visible.map { it.id },
+        )
+    }
 }

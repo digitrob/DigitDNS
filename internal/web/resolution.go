@@ -115,9 +115,7 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 	} else if body.EncryptedOnly != nil && *body.EncryptedOnly {
 		transport = resolution.TransportEncrypted
 	}
-	switch body.DefaultStrategy {
-	case "", resolution.StrategyFastest, resolution.StrategySequential:
-	default:
+	if !resolution.ValidStrategy(body.DefaultStrategy) {
 		httpx.WriteJSONError(w, http.StatusBadRequest, "Unknown default strategy")
 		return
 	}
@@ -156,9 +154,7 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 			}
 			p.Upstream = canonical
 		}
-		switch p.Strategy {
-		case "", resolution.StrategyFastest, resolution.StrategySequential:
-		default:
+		if !resolution.ValidStrategy(p.Strategy) {
 			httpx.WriteJSONError(w, http.StatusBadRequest, "Unknown strategy in the rule for "+key)
 			return
 		}

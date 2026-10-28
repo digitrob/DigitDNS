@@ -506,10 +506,10 @@ func (p *UpstreamPool) Exchange(req *dns.Msg) (*dns.Msg, time.Duration, string, 
 //     policy; it never overrides the transport, so a pin the transport excludes
 //     is ignored.
 //
-// A profile that produces no candidates, or whose candidates all fail, either
-// falls back to the ordinary pool or fails closed, according to its fallback
-// choice. "Fall back" never bypasses a global transport setting: the fallback
-// pool is the globally eligible pool, not the raw list.
+// A profile that produces no candidates, or whose candidates all fail, falls
+// back to the ordinary pool. The fallback never bypasses a global transport
+// setting: it is the globally eligible pool, not the raw list. The retired
+// per-profile "fail" choice is read as pool by Normalized.
 func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.Duration, string, error) {
 	if req == nil {
 		return nil, 0, "", errors.New("nil dns request")
@@ -547,11 +547,11 @@ func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.
 	fallbackCandidates := eligibleUpstreams(upstreams, policy.Transport)
 
 	candidates := eligibleUpstreams(upstreams, effectiveTransport)
-	strategy := racing
-	if policy.DefaultStrategy == resolution.StrategyFastest {
-		strategy = true
-	} else if policy.DefaultStrategy == resolution.StrategySequential {
-		strategy = false
+	strategy := poolStrategy(racing)
+	switch policy.DefaultStrategy {
+	case resolution.StrategyFastest, resolution.StrategySequential,
+		resolution.StrategyHedged, resolution.StrategyBestKnown:
+		strategy = policy.DefaultStrategy
 	}
 
 	// A profile pin outranks the global default; the global default outranks the
@@ -568,50 +568,238 @@ func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.
 	candidates = pinCandidate(candidates, pinned)
 	if hasProfile {
 		switch profile.Strategy {
-		case resolution.StrategyFastest:
-			strategy = true
-		case resolution.StrategySequential:
-			strategy = false
+		case resolution.StrategyFastest, resolution.StrategySequential,
+			resolution.StrategyHedged, resolution.StrategyBestKnown:
+			strategy = profile.Strategy
 		}
 	}
 
-	var lastErr error
+	var (
+		lastResp     *dns.Msg
+		lastDur      time.Duration
+		lastUpstream string
+		lastErr      error
+	)
 	if len(candidates) > 0 {
 		resp, dur, upstream, err := p.exchangeWith(queryMsg, candidates, strategy, timeout)
-		if err == nil {
+		if err == nil && usableRcode(resp) {
 			return resp, dur, upstream, nil
 		}
-		lastErr = err
+		// A REFUSED, SERVFAIL or truncated reply is not a resolution: it is
+		// exactly the case the fallback exists for. Keep the upstream's verdict
+		// so it can still be returned when there is no distinct pool to try.
+		lastResp, lastDur, lastUpstream = resp, dur, upstream
+		if err != nil {
+			lastErr = err
+		} else if resp != nil {
+			lastErr = errors.New("upstream returned " + dns.RcodeToString[resp.Rcode])
+		} else {
+			lastErr = errors.New("upstream returned no response")
+		}
 	}
 
-	// A profile that never had candidates is a configuration error worth
-	// reporting, not something to paper over with a retry against the same list.
-	if !hasProfile || profile.ResolveFallback() == resolution.FallbackFail {
+	// Every resolution path now falls back to the pool: a global default pin, a
+	// per-domain profile, or a profile transport that produced nothing. The old
+	// per-domain "fail instead of fall back" choice is retired, so trying the
+	// default route is the only fallback behaviour.
+	distinctFallback := len(fallbackCandidates) > 0 && !sameUpstreams(candidates, fallbackCandidates)
+	if !distinctFallback {
+		if lastResp != nil {
+			// The pool itself answered (or refused) as a unit; hand its verdict
+			// back rather than inventing a SERVFAIL.
+			return lastResp, lastDur, lastUpstream, nil
+		}
 		if len(candidates) == 0 {
 			return nil, 0, "", errors.New("no upstream matches the resolution profile for " + domain)
 		}
 		return nil, 0, "", lastErr
 	}
 
-	// Fall back to the globally eligible pool.
-	if len(fallbackCandidates) == 0 {
-		return nil, 0, "", errors.New("no upstream matches the global transport policy")
+	resp, dur, upstream, err := p.exchangeWith(queryMsg, fallbackCandidates, poolStrategy(racing), timeout)
+	if err == nil {
+		return resp, dur, upstream, nil
 	}
-	if sameUpstreams(candidates, fallbackCandidates) {
-		return nil, 0, "", lastErr
+	return nil, 0, "", err
+}
+
+// poolStrategy is the strategy represented by the legacy racing flag.
+func poolStrategy(racing bool) string {
+	if racing {
+		return resolution.StrategyFastest
 	}
-	return p.exchangeWith(queryMsg, fallbackCandidates, racing, timeout)
+	return resolution.StrategySequential
 }
 
 // exchangeWith runs one attempt list under the requested strategy.
-func (p *UpstreamPool) exchangeWith(req *dns.Msg, upstreams []string, racing bool, timeout time.Duration) (*dns.Msg, time.Duration, string, error) {
+func (p *UpstreamPool) exchangeWith(req *dns.Msg, upstreams []string, strategy string, timeout time.Duration) (*dns.Msg, time.Duration, string, error) {
 	if len(upstreams) == 0 {
 		return nil, 0, "", errors.New("no upstream resolvers configured")
 	}
-	if racing && len(upstreams) > 1 {
-		return p.exchangeRacing(req, upstreams, timeout)
+	switch strategy {
+	case resolution.StrategySequential:
+		return p.exchangeSequential(req, upstreams, timeout)
+	case resolution.StrategyHedged:
+		if len(upstreams) > 1 {
+			return p.exchangeHedged(req, upstreams, timeout)
+		}
+		return p.exchangeSequential(req, upstreams, timeout)
+	case resolution.StrategyBestKnown:
+		return p.exchangeBestKnown(req, upstreams, timeout)
+	default:
+		if len(upstreams) > 1 {
+			return p.exchangeRacing(req, upstreams, timeout)
+		}
+		return p.exchangeSequential(req, upstreams, timeout)
 	}
-	return p.exchangeSequential(req, upstreams, timeout)
+}
+
+// hedgeStartDelay is how long the fastest measured resolver gets before Hedged
+// starts the next one. It is intentionally a constant: the strategy is a
+// per-query trade-off, not another setting to tune on every install.
+const hedgeStartDelay = 50 * time.Millisecond
+
+// orderedByLatency returns a copy of upstreams with the fastest measured
+// resolver first. Untimed resolvers keep their configured order after the known
+// ones. The live stats are the same numbers the resolver card shows.
+func (p *UpstreamPool) orderedByLatency(upstreams []string) []string {
+	stats := p.GetUpstreamStats()
+	latency := make(map[string]time.Duration, len(stats))
+	for _, s := range stats {
+		latency[s.Address] = time.Duration(s.LatencyNs)
+	}
+	out := slices.Clone(upstreams)
+	slices.SortStableFunc(out, func(a, b string) int {
+		la, lb := latency[a], latency[b]
+		switch {
+		case la == 0 && lb == 0:
+			return 0
+		case la == 0:
+			return 1
+		case lb == 0:
+			return -1
+		default:
+			return cmp.Compare(la, lb)
+		}
+	})
+	return out
+}
+
+// exchangeBestKnown sends to the fastest measured resolver only, falling through
+// the rest in latency order when it fails. It costs one query at a time and
+// accepts a full timeout on the first resolver, which is the deliberate trade
+// against Hedged's early second query.
+func (p *UpstreamPool) exchangeBestKnown(req *dns.Msg, upstreams []string, timeout time.Duration) (*dns.Msg, time.Duration, string, error) {
+	return p.exchangeSequential(req, p.orderedByLatency(upstreams), timeout)
+}
+
+// exchangeHedged starts the fastest measured resolver, then starts the next one
+// every hedgeStartDelay until a usable answer arrives. A hard failure moves on
+// immediately. This gets most of the latency benefit of racing while sending
+// exactly one query when the first resolver is fast.
+func (p *UpstreamPool) exchangeHedged(req *dns.Msg, upstreams []string, timeout time.Duration) (*dns.Msg, time.Duration, string, error) {
+	if len(upstreams) <= 1 {
+		return p.exchangeSequential(req, upstreams, timeout)
+	}
+
+	order := p.orderedByLatency(upstreams)
+	type result struct {
+		resp     *dns.Msg
+		duration time.Duration
+		upstream string
+		err      error
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	resChan := make(chan result, len(order))
+
+	start := func(addr string) {
+		go func() {
+			startedAt := time.Now()
+			resp, rtt, err := p.queryOne(ctx, req, addr)
+			dur := time.Since(startedAt)
+			// A canceled loser is not a resolver failure; a real error is.
+			if err == nil || !errors.Is(err, context.Canceled) {
+				p.recordStat(addr, dur, err == nil && usableRcode(resp))
+			}
+			select {
+			case resChan <- result{resp: resp, duration: rtt, upstream: addr, err: err}:
+			case <-ctx.Done():
+			}
+		}()
+	}
+
+	started, inFlight := 0, 0
+	launch := func() {
+		if started >= len(order) {
+			return
+		}
+		start(order[started])
+		started++
+		inFlight++
+	}
+
+	launch()
+	timer := time.NewTimer(hedgeStartDelay)
+	defer timer.Stop()
+	resetTimer := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(hedgeStartDelay)
+	}
+
+	var (
+		lastErr  error
+		fallback *result
+	)
+collect:
+	for {
+		if inFlight == 0 && started == len(order) {
+			break
+		}
+		select {
+		case res := <-resChan:
+			inFlight--
+			if res.err == nil && usableRcode(res.resp) {
+				cancel()
+				return res.resp, res.duration, res.upstream, nil
+			}
+			if res.err != nil {
+				lastErr = res.err
+			} else if fallback == nil && res.resp != nil {
+				held := res
+				fallback = &held
+			}
+			// A failed resolver should not make the client wait for the hedge
+			// timer before the next one starts.
+			if started < len(order) {
+				launch()
+				resetTimer()
+			}
+		case <-timer.C:
+			if started < len(order) {
+				launch()
+				timer.Reset(hedgeStartDelay)
+			}
+		case <-ctx.Done():
+			break collect
+		}
+	}
+
+	if fallback != nil {
+		return fallback.resp, fallback.duration, fallback.upstream, nil
+	}
+	if lastErr != nil {
+		return nil, 0, "", lastErr
+	}
+	if ctx.Err() != nil {
+		return nil, 0, "", errors.New("upstream query timed out")
+	}
+	return nil, 0, "", errors.New("all upstream servers failed to respond")
 }
 
 // pinCandidate narrows the eligible list to the pinned resolver. A pin the
@@ -626,6 +814,32 @@ func pinCandidate(eligible []string, pinned string) []string {
 		return eligible
 	}
 	return []string{canonical}
+}
+
+// ProtocolOf returns the transport a canonical resolver address uses. A bare
+// host:port is plain UDP (the historical default), tcp:// is TCP, and the
+// encrypted schemes map to the names the live log shows. "cache" and empty
+// answers have no resolution transport and return "".
+func ProtocolOf(address string) string {
+	a := strings.ToLower(strings.TrimSpace(address))
+	switch {
+	case a == "" || a == "cache":
+		return ""
+	case strings.HasPrefix(a, "tcp://"):
+		return "TCP"
+	case strings.HasPrefix(a, "tls://"):
+		return "DoT"
+	case strings.HasPrefix(a, "https://"):
+		return "DoH"
+	case strings.HasPrefix(a, "quic://"), strings.HasPrefix(a, "doq://"):
+		return "DoQ"
+	case strings.HasPrefix(a, "h3://"):
+		return "DoH3"
+	case strings.HasPrefix(a, "sdns://"):
+		return "DNSCrypt"
+	default:
+		return "UDP"
+	}
 }
 
 // eligibleUpstreams applies a transport filter to a candidate list.

@@ -17,6 +17,12 @@ import (
 const (
 	StrategyFastest    = "fastest"
 	StrategySequential = "sequential"
+	// StrategyHedged starts with the fastest measured resolver and launches the
+	// next after a short delay; the first usable answer wins.
+	StrategyHedged = "hedged"
+	// StrategyBestKnown uses the fastest measured resolver, then falls through
+	// the remaining resolvers in latency order on failure.
+	StrategyBestKnown = "best"
 )
 
 // Fallback values accepted in a profile. Empty means FallbackPool.
@@ -97,6 +103,16 @@ func (p Profile) TransportFor(global string) string {
 	return NormalizeTransport(global)
 }
 
+// ValidStrategy reports whether value is an accepted racing strategy (or empty,
+// meaning the pool's configured default).
+func ValidStrategy(value string) bool {
+	switch value {
+	case "", StrategyFastest, StrategySequential, StrategyHedged, StrategyBestKnown:
+		return true
+	}
+	return false
+}
+
 // Normalized rewrites the legacy encrypted_only flag as the equivalent
 // transport so responses and stored settings carry one representation.
 func (p Profile) Normalized() Profile {
@@ -108,15 +124,11 @@ func (p Profile) Normalized() Profile {
 		}
 	}
 	p.EncryptedOnly = nil
+	// Every profile now falls back to the pool. The old per-profile "fail"
+	// choice is retired; clearing the field also migrates records saved by
+	// earlier releases.
+	p.Fallback = ""
 	return p
-}
-
-// ResolveFallback normalises the stored fallback choice.
-func (p Profile) ResolveFallback() string {
-	if p.Fallback == FallbackFail {
-		return FallbackFail
-	}
-	return FallbackPool
 }
 
 // Encrypted reports whether an upstream is carried over an encrypted transport:

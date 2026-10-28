@@ -25,6 +25,8 @@ import (
 	"testing"
 	"time"
 
+	"digitdns/internal/core/resolution"
+
 	"github.com/miekg/dns"
 )
 
@@ -1086,5 +1088,169 @@ func TestQuestionSummaryNamesWhatThereIsToName(t *testing.T) {
 				t.Errorf("questionSummary = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// A global default pin that cannot answer must fall back to the ordinary pool.
+// Before the fallback policy was fixed, a global pin failure was final.
+func TestGlobalDefaultFallsBackToPool(t *testing.T) {
+	failing := newTestResolver(t, always(answer{rcode: dns.RcodeRefused}), nil)
+	answering := newTestResolver(t, forName(probeName, answer{
+		rcode: dns.RcodeSuccess,
+		ip:    "203.0.113.9",
+	}), nil)
+
+	p := newTestPool(t, []string{failing.addr, answering.addr}, 2*time.Second, false, "")
+	p.SetPolicy(Policy{DefaultUpstream: failing.addr})
+
+	resp, _, addr, err := p.ExchangeFor(query(probeName), "")
+	if err != nil {
+		t.Fatalf("ExchangeFor: %v", err)
+	}
+	if got := firstA(resp); got != "203.0.113.9" {
+		t.Fatalf("answer = %q, want the pool resolver's 203.0.113.9", got)
+	}
+	if addr != answering.addr {
+		t.Fatalf("winning upstream = %s, want %s", addr, answering.addr)
+	}
+}
+
+// A per-domain profile with a failing pin falls back to the pool. The old
+// "fail" value is retired and must behave as pool, not SERVFAIL.
+func TestProfileFallsBackToPoolEvenWithRetiredFailChoice(t *testing.T) {
+	failing := newTestResolver(t, always(answer{rcode: dns.RcodeRefused}), nil)
+	answering := newTestResolver(t, forName(probeName, answer{
+		rcode: dns.RcodeSuccess,
+		ip:    "198.51.100.7",
+	}), nil)
+
+	p := newTestPool(t, []string{failing.addr, answering.addr}, 2*time.Second, false, "")
+	p.SetPolicy(Policy{Profiles: map[string]resolution.Profile{
+		"probe.digitdns.test": {
+			Upstream: failing.addr,
+			Fallback: resolution.FallbackFail,
+		},
+	}})
+
+	resp, _, addr, err := p.ExchangeFor(query(probeName), "probe.digitdns.test")
+	if err != nil {
+		t.Fatalf("ExchangeFor: %v", err)
+	}
+	if got := firstA(resp); got != "198.51.100.7" {
+		t.Fatalf("answer = %q, want the pool resolver's 198.51.100.7", got)
+	}
+	if addr != answering.addr {
+		t.Fatalf("winning upstream = %s, want %s", addr, answering.addr)
+	}
+}
+
+// setMeasuredLatency seeds the live racer stat used by Best Known and Hedged.
+func setMeasuredLatency(t *testing.T, p *UpstreamPool, addr string, d time.Duration) {
+	t.Helper()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	st, ok := p.stats[addr]
+	if !ok {
+		t.Fatalf("no stat entry for %s", addr)
+	}
+	st.mu.Lock()
+	st.avgLatency = d
+	st.mu.Unlock()
+}
+
+func TestBestKnownStartsWithFastestMeasured(t *testing.T) {
+	slow := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.21", delay: 40 * time.Millisecond}), nil)
+	fast := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.22"}), nil)
+
+	p := newTestPool(t, []string{slow.addr, fast.addr}, 2*time.Second, false, "")
+	setMeasuredLatency(t, p, slow.addr, 100*time.Millisecond)
+	setMeasuredLatency(t, p, fast.addr, 10*time.Millisecond)
+	p.SetPolicy(Policy{DefaultStrategy: resolution.StrategyBestKnown})
+
+	resp, _, addr, err := p.ExchangeFor(query(probeName), "")
+	if err != nil {
+		t.Fatalf("ExchangeFor: %v", err)
+	}
+	if got := firstA(resp); got != "203.0.113.22" {
+		t.Fatalf("answer = %q, want the fastest measured resolver", got)
+	}
+	if addr != fast.addr {
+		t.Fatalf("winning upstream = %s, want %s", addr, fast.addr)
+	}
+	if slow.udpHits.Load() != 0 {
+		t.Fatalf("slow resolver was queried %d time(s), want 0", slow.udpHits.Load())
+	}
+}
+
+func TestBestKnownFallsThroughOnFailure(t *testing.T) {
+	refuser := newTestResolver(t, always(answer{rcode: dns.RcodeRefused}), nil)
+	answerer := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.23"}), nil)
+
+	p := newTestPool(t, []string{refuser.addr, answerer.addr}, 2*time.Second, false, "")
+	setMeasuredLatency(t, p, refuser.addr, 5*time.Millisecond)
+	setMeasuredLatency(t, p, answerer.addr, 80*time.Millisecond)
+	p.SetPolicy(Policy{DefaultStrategy: resolution.StrategyBestKnown})
+
+	resp, _, addr, err := p.ExchangeFor(query(probeName), "")
+	if err != nil {
+		t.Fatalf("ExchangeFor: %v", err)
+	}
+	if got := firstA(resp); got != "203.0.113.23" {
+		t.Fatalf("answer = %q, want the fall-through resolver", got)
+	}
+	if addr != answerer.addr {
+		t.Fatalf("winning upstream = %s, want %s", addr, answerer.addr)
+	}
+}
+
+func TestHedgedStartsTheNextAfterDelay(t *testing.T) {
+	slowFirst := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.31", delay: 250 * time.Millisecond}), nil)
+	fastSecond := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.32", delay: 5 * time.Millisecond}), nil)
+
+	p := newTestPool(t, []string{slowFirst.addr, fastSecond.addr}, 2*time.Second, false, "")
+	// Equal measured latency keeps the configured order, so the slow resolver is
+	// the one Hedged starts first.
+	setMeasuredLatency(t, p, slowFirst.addr, 20*time.Millisecond)
+	setMeasuredLatency(t, p, fastSecond.addr, 20*time.Millisecond)
+	p.SetPolicy(Policy{DefaultStrategy: resolution.StrategyHedged})
+
+	start := time.Now()
+	resp, _, addr, err := p.ExchangeFor(query(probeName), "")
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("ExchangeFor: %v", err)
+	}
+	if got := firstA(resp); got != "203.0.113.32" {
+		t.Fatalf("answer = %q, want the hedged second resolver", got)
+	}
+	if addr != fastSecond.addr {
+		t.Fatalf("winning upstream = %s, want %s", addr, fastSecond.addr)
+	}
+	if elapsed >= 150*time.Millisecond {
+		t.Fatalf("hedged result took %v; it waited for the slow first resolver", elapsed)
+	}
+}
+
+func TestHedgedFastFirstSendsOneQuery(t *testing.T) {
+	first := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.41"}), nil)
+	second := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.42"}), nil)
+
+	p := newTestPool(t, []string{first.addr, second.addr}, 2*time.Second, false, "")
+	setMeasuredLatency(t, p, first.addr, 10*time.Millisecond)
+	setMeasuredLatency(t, p, second.addr, 20*time.Millisecond)
+	p.SetPolicy(Policy{DefaultStrategy: resolution.StrategyHedged})
+
+	resp, _, addr, err := p.ExchangeFor(query(probeName), "")
+	if err != nil {
+		t.Fatalf("ExchangeFor: %v", err)
+	}
+	if got := firstA(resp); got != "203.0.113.41" {
+		t.Fatalf("answer = %q, want the fast first resolver", got)
+	}
+	if addr != first.addr {
+		t.Fatalf("winning upstream = %s, want %s", addr, first.addr)
+	}
+	if second.udpHits.Load() != 0 {
+		t.Fatalf("second resolver was queried %d time(s), want 0", second.udpHits.Load())
 	}
 }
