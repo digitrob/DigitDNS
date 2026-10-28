@@ -85,7 +85,7 @@ source is right here on GitHub.
 As `root` on Ubuntu 20.04+, Debian 11+, or AlmaLinux/Rocky 8+:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.3.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.5.0/scripts/install.sh | sudo bash
 ```
 
 The installer needs a **domain pointed at your server** (A record → server IP).
@@ -157,7 +157,7 @@ docker logs digitdns
 | Tag | What it is |
 | :--- | :--- |
 | `latest` | Latest stable release — use this |
-| `3.3.0` | A specific immutable release |
+| `3.5.0` | A specific immutable release |
 | `edge` | Nightly/dev build from the default branch — not for production |
 
 Verify an image's signature (proves it was built by this repo's CI):
@@ -176,7 +176,7 @@ Checksums are in `checksums.txt` (signed with the project's release key).
 
 ```bash
 # Linux amd64 example:
-curl -fsSL -o digitdns https://github.com/digitrob/DigitDNS/releases/download/v3.3.0/digitdns-linux-amd64
+curl -fsSL -o digitdns https://github.com/digitrob/DigitDNS/releases/download/v3.5.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo ./digitdns -server
 ```
@@ -281,12 +281,33 @@ Clients can use encrypted connections instead of plain DNS:
 Connections are kept alive between queries so phones don't re-handshake every
 time they look something up — less latency, less battery use.
 
-### Upstream Servers
+### Upstream Resolvers and Resolution Policy
 
 Forward queries to whatever upstream you like — Cloudflare, Google, your own
-recursive server, or a chain of them. Encrypted upstreams (DoT, DoH, DoQ,
-DNSCrypt) are supported too, and the dashboard benchmarks each one so you can
-see which is fastest from your server.
+recursive server, or a chain of them. Plain UDP/TCP and encrypted upstreams
+(DoT, DoH, DoQ, DNSCrypt) are all supported, and the resolver card benchmarks
+each one so you can see which is fastest from your server.
+
+- **Transports are a policy, not a label.** Choose **Any Transport**, **Encrypted
+  Only** (DoT · DoH · DoQ) or **Regular DNS** (UDP · TCP). Encrypted Only really
+  means encrypted: a pinned plain resolver is ignored while it is active. The
+  encrypted choice is offered only when an encrypted resolver is configured.
+- **A global default, or per-domain overrides.** Pick a **Default upstream**
+  (`Pool Default`, or one resolver) and a strategy — **Fastest Wins** or **In
+  Order**. On the Proxied Domains list, the gear on a proxied or paused row opens
+  **Override Resolving**, where that domain can pin its own resolver, strategy,
+  transport and failure behaviour. The two fields keep each other honest: choosing
+  a resolver selects its transport, and choosing a transport selects a matching
+  resolver.
+- **Failure is explicit.** When a rule cannot resolve, it can **Fall Back to the
+  Pool** or answer **Failure** (SERVFAIL) instead of quietly leaking to another
+  transport.
+- **The list shows the policy.** The chosen default resolver dims the others;
+  Encrypted Only dims plain resolvers; Regular DNS dims encrypted ones. Only the
+  resolver list scrolls past five rows — the card and its controls stay put.
+- **Proxied names are still answered from your server.** A per-domain rule
+  applies when the domain is paused or for query types other than A/AAAA; the
+  dialog says so, so the setting is not mistaken for a proxy override.
 
 ### Certificates Without Certbot
 
@@ -346,7 +367,9 @@ The web panel manages everything:
 - **Clients** — add subscribers, set quotas and expiry, suspend, see usage.
   Editing a client gives you a full-width IP list, and a client with many
   addresses keeps a normal-sized card (the address chips scroll)
-- **Upstreams** — add and benchmark DNS upstreams on any transport
+- **Upstream Resolvers** — add and benchmark DNS upstreams on any transport;
+  set the default resolver, strategy and transport policy, and attach
+  per-domain overrides from the Proxied Domains list
 - **Server location** — the panel shows the server's country flag beside its
   public IP, resolved from a self-updating GeoIP database. Settings & SSL can
   refresh that database on demand, and the **Server Update** card next to it
@@ -367,7 +390,7 @@ customized with your own domain, title, and CSS to match your branding.
 DigitDNS also ships a native Android companion app — the same control surface as
 the web panel, in your pocket, talking to your server over the REST API and the
 live event stream. It is a separate product on its own version line
-(`android-v3.4.11` and friends), side-loaded from the GitHub release page rather
+(`android-v3.5.0` and friends), side-loaded from the GitHub release page rather
 than distributed through Play.
 
 **What it does (feature parity with the web panel):**
@@ -375,7 +398,7 @@ than distributed through Play.
 - **Login & accounts** — sign in with your admin username and password, with
   TOTP when two-factor is enabled; holds a real, revocable session token.
 - **Dashboard** — live stats, query rate, cache hits, proxy relay counts, CPU,
-  RAM and live traffic, plus the QPS chart. Upstream Racers leads by default,
+  RAM and live traffic, plus the QPS chart. Upstream Resolvers leads by default,
   the six metric tiles share one compact size, and Settings → Dashboard cards
   can reorder them or reset the layout. The server IP box carries the country
   flag and answers to swipes: sideways blurs the address for privacy, up or
@@ -386,8 +409,11 @@ than distributed through Play.
 - **Clients (subscribers)** — create and edit subscribers, set quotas, expiry
   and device limits, run actions (enable/disable, renew, reset traffic, new
   UUID/secret), suspend or delete.
-- **Upstreams** — add, remove, reorder and benchmark DNS upstreams on any
-  transport.
+- **Upstream Resolvers** — add, remove, reorder and benchmark DNS upstreams on
+  any transport; set the default resolver, strategy and transport policy, and
+  open **Override Resolving** from a proxied domain's gear to pin that domain's
+  resolver, strategy, transport and failure behaviour. The resolver list scrolls
+  after five rows, and rows dim to show what the active policy excludes.
 - **Live Query Log** — the same live feed as the panel, with search, filters,
   sorting, pause/resume (paused arrivals are kept, not dropped), clear that also
   empties the server's buffer, and quick actions.

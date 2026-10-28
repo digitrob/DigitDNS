@@ -35,7 +35,50 @@ interface SettingsApi {
 
     @POST("settings/regenerate-admin-path")
     suspend fun regenerateAdminPath(@Body body: RegenerateAdminPathRequest): RegenerateAdminPathResponse
+
+    @GET("settings/resolution")
+    suspend fun getResolution(): ResolutionSettings
+
+    @POST("settings/resolution")
+    suspend fun saveResolution(@Body body: ResolutionSaveRequest): ResolutionSettings
 }
+
+/**
+ * One per-domain resolution override. Absent fields inherit the global default:
+ * `transport` is "any", "encrypted" or "regular", and empty means Inherit Global.
+ */
+@Serializable
+data class ResolutionProfileDto(
+    val upstream: String = "",
+    val strategy: String = "",
+    val transport: String = "",
+    val fallback: String = "",
+)
+
+/**
+ * The global resolution defaults plus the saved overrides. `upstreams` is read-only:
+ * the save body must not carry it (the server decodes with DisallowUnknownFields).
+ */
+@Serializable
+data class ResolutionSettings(
+    val transport: String = "any",
+    /** False when the resolver list holds no DoT/DoH/DoQ upstream: the picker disables it. */
+    @SerialName("encrypted_available") val encryptedAvailable: Boolean = false,
+    /** The subset carried over DoT/DoH/DoQ/DNSCrypt, for disabling and dimming. */
+    @SerialName("encrypted_upstreams") val encryptedUpstreams: List<String> = emptyList(),
+    @SerialName("default_upstream") val defaultUpstream: String = "",
+    @SerialName("default_strategy") val defaultStrategy: String = "",
+    val profiles: Map<String, ResolutionProfileDto> = emptyMap(),
+    val upstreams: List<String> = emptyList(),
+)
+
+@Serializable
+data class ResolutionSaveRequest(
+    val transport: String = "any",
+    @SerialName("default_upstream") val defaultUpstream: String = "",
+    @SerialName("default_strategy") val defaultStrategy: String = "",
+    val profiles: Map<String, ResolutionProfileDto> = emptyMap(),
+)
 
 @Serializable
 data class SettingsResponse(

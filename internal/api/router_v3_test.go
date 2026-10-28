@@ -14,11 +14,14 @@ import (
 // fakeV3Backend is a stand-in for the web-layer backend so the router's
 // delegation contract can be tested without constructing a whole web server.
 type fakeV3Backend struct {
-	loginToken string
-	loginTwoFA bool
-	loginErr   error
-	loggedOut  string
-	ticket     string
+	loginToken      string
+	loginTwoFA      bool
+	loginErr        error
+	loggedOut       string
+	ticket          string
+	persisted       [][]string
+	resolution      map[string]any
+	savedResolution map[string]any
 }
 
 func (f *fakeV3Backend) Login(r *http.Request, username, password, code string) (string, bool, error) {
@@ -27,7 +30,23 @@ func (f *fakeV3Backend) Login(r *http.Request, username, password, code string) 
 	}
 	return f.loginToken, false, nil
 }
-func (f *fakeV3Backend) Logout(token string)          { f.loggedOut = token }
+func (f *fakeV3Backend) Logout(token string) { f.loggedOut = token }
+func (f *fakeV3Backend) PersistUpstreams(list []string) error {
+	f.persisted = append(f.persisted, append([]string(nil), list...))
+	return nil
+}
+
+func (f *fakeV3Backend) ResolutionSettings() (map[string]any, error) {
+	if f.resolution == nil {
+		return map[string]any{"transport": "any"}, nil
+	}
+	return f.resolution, nil
+}
+
+func (f *fakeV3Backend) SaveResolution(r *http.Request, body map[string]any) (map[string]any, error) {
+	f.savedResolution = body
+	return f.resolution, nil
+}
 func (f *fakeV3Backend) AuthSnapshot() map[string]any { return map[string]any{"totp_enabled": false} }
 func (f *fakeV3Backend) Setup2FA(r *http.Request, u, p string) (map[string]any, error) {
 	return map[string]any{"secret": "ABC", "otpauth_uri": "otpauth://x"}, nil
@@ -521,6 +540,8 @@ func TestV3_ClientsListPagination(t *testing.T) {
 func TestV3_UpstreamsAddReorderRemove(t *testing.T) {
 	apiInst, _, _, cleanup := setupTestAPI(t)
 	defer cleanup()
+	recorder := &fakeV3Backend{}
+	apiInst.SetV3Backend(recorder)
 	mux := http.NewServeMux()
 	apiInst.RegisterRoutes(mux)
 	key := "digitdns_live_testkey123"
@@ -563,6 +584,57 @@ func TestV3_UpstreamsAddReorderRemove(t *testing.T) {
 	// Removing it again is a 404: it is no longer in the pool.
 	if w := v3Request(mux, http.MethodPost, "/api/v3/upstreams/delete", key, map[string]any{"address": "8.8.8.8"}); w.Code != http.StatusNotFound {
 		t.Fatalf("re-delete = %d, want 404", w.Code)
+	}
+
+	// Every mutation must reach the settings record, or the resolution card's
+	// upstream list and encrypted gate never see a resolver added from Android.
+	if len(recorder.persisted) < 3 {
+		t.Fatalf("upstream mutations were not persisted: %v", recorder.persisted)
+	}
+	found := false
+	for _, u := range recorder.persisted[0] {
+		if u == "8.8.8.8:53" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("added resolver missing from the persisted list: %v", recorder.persisted[0])
+	}
+}
+
+// A companion app may authenticate with the master API key. The resolution card
+// used to live on the panel mux, whose session-only gate answered 401, leaving
+// the card's dropdowns stuck on their defaults. The v3 route must accept the key.
+func TestV3_ResolutionSettingsAcceptsAPIKey(t *testing.T) {
+	apiInst, _, _, cleanup := setupTestAPI(t)
+	defer cleanup()
+	backend := &fakeV3Backend{resolution: map[string]any{
+		"transport":           "encrypted",
+		"encrypted_available": true,
+		"upstreams":           []string{"tls://dns.google:853"},
+	}}
+	apiInst.SetV3Backend(backend)
+	mux := http.NewServeMux()
+	apiInst.RegisterRoutes(mux)
+	key := "digitdns_live_testkey123"
+
+	w := v3Request(mux, http.MethodGet, "/api/v3/settings/resolution", key, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET resolution = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var got map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &got)
+	if got["transport"] != "encrypted" {
+		t.Fatalf("GET resolution transport = %v, want encrypted", got["transport"])
+	}
+
+	w = v3Request(mux, http.MethodPost, "/api/v3/settings/resolution", key,
+		map[string]any{"transport": "regular", "profiles": map[string]any{}})
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST resolution = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if backend.savedResolution["transport"] != "regular" {
+		t.Fatalf("save body transport = %v, want regular", backend.savedResolution["transport"])
 	}
 }
 

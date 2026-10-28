@@ -238,6 +238,24 @@ func (b *v3Backend) SaveSettings(r *http.Request, body map[string]any) (map[stri
 	return b.delegateBody(r, body, b.ws.handleSettings)
 }
 
+// ResolutionSettings is the dashboard's resolution view. The v3 router mounts
+// this because the web mux's session-only gate rejects the master API key, which
+// is a supported Android credential mode.
+func (b *v3Backend) ResolutionSettings() (map[string]any, error) {
+	rec := httptest.NewRecorder()
+	b.ws.handleResolutionSettings(rec, httptest.NewRequest(http.MethodGet, "/api/settings/resolution", nil))
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	return out, nil
+}
+
+func (b *v3Backend) SaveResolution(r *http.Request, body map[string]any) (map[string]any, error) {
+	// The panel handler answers GET/POST; a v3 PUT is normalised to POST.
+	post := r.Clone(r.Context())
+	post.Method = http.MethodPost
+	return b.delegateBody(post, body, b.ws.handleResolutionSettings)
+}
+
 func (b *v3Backend) RegenerateAPIKey(r *http.Request, currentPassword, code string) (map[string]any, error) {
 	return b.delegateBody(r, map[string]any{"current_password": currentPassword, "code": code}, b.ws.handleRegenerateAPIKey)
 }
@@ -422,4 +440,10 @@ func (b *v3Backend) Benchmark() (map[string]any, error) {
 // handleAuthLogin uses.
 func peerFor(ws *WebServer, r *http.Request) string {
 	return netutil.ClientIP(r)
+}
+
+// PersistUpstreams mirrors the dashboard's upstream persistence for the v3
+// add/delete/reorder handlers, which mutate the pool directly.
+func (b *v3Backend) PersistUpstreams(list []string) error {
+	return b.ws.PersistUpstreams(list)
 }

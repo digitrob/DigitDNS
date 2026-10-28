@@ -25,4 +25,6 @@ data class QueryEvent(
     val action: String = "",
     @SerialName("latency_ms") val latencyMs: Double = 0.0,
     val cached: Boolean = false,
+    /** The resolver that answered: "cache" for a RAM hit, empty for local answers. */
+    val upstream: String = "",
 )

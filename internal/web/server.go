@@ -778,6 +778,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/auth/sse-ticket", ws.requireAuth(ws.handleSSETicket))
 	mux.HandleFunc("/api/benchmark", ws.requireAuth(ws.handleBenchmark))
 	mux.HandleFunc("/api/upstreams/add", ws.requireAuth(ws.handleUpstreamsAdd))
+	mux.HandleFunc("/api/settings/resolution", ws.requireAuth(ws.handleResolutionSettings))
 	mux.HandleFunc("/api/upstreams/delete", ws.requireAuth(ws.handleUpstreamsDelete))
 	mux.HandleFunc("/api/tls/issue", ws.requireAuth(ws.handleTLSSettings))
 	mux.HandleFunc("/api/tls/auto-renew", ws.requireAuth(ws.handleTLSAutoRenew))
@@ -1806,6 +1807,17 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	if ws.matcher != nil {
 		ws.matcher.SetCustomRules(customProxied, customBlocked, customDirect, customRecords)
 	}
+	// A rule can only belong to a proxied domain: dropping that domain (or
+	// removing it from the list) takes its resolution rule with it.
+	allowed := map[string]bool{}
+	for _, d := range append(append([]string{}, customProxied...), customProxiedDisabled...) {
+		if n, ok := normalizeProfileKey(d); ok {
+			allowed[n] = true
+		}
+	}
+	if ws.pruneResolutionProfiles(allowed) {
+		ws.applyResolutionPolicy()
+	}
 	if ws.cache != nil {
 		ws.cache.Flush()
 	}
@@ -2458,6 +2470,18 @@ func (ws *WebServer) mutableDNSLocked() *database.DNSSettings {
 		ws.dnsCfg = cfg
 	}
 	return ws.dnsCfg
+}
+
+// PersistUpstreams writes the pool's current list into the DNS settings. The v3
+// router mutates the pool directly, and the resolution view reads this record —
+// without the write, a resolver added from Android never enables the encrypted
+// transport or appears in the pickers until the daemon restarts.
+func (ws *WebServer) PersistUpstreams(list []string) error {
+	ws.dnsMu.Lock()
+	defer ws.dnsMu.Unlock()
+	cfg := ws.mutableDNSLocked()
+	cfg.Upstreams = slices.Clone(list)
+	return ws.db.SetSetting("dns", cfg)
 }
 
 // addUpstream appends addr to the persisted upstream list and returns the new

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"digitdns/internal/core/resolution"
 	"sync"
 	"time"
 )
@@ -88,6 +89,11 @@ type QueryLogItem struct {
 	Action      string    `json:"action"`       // "PROXY", "DIRECT", "BLOCK"
 	LatencyMs   float64   `json:"latency_ms"`
 	Cached      bool      `json:"cached"`
+	// Upstream is the resolver that produced the answer: empty for a blocked,
+	// proxied or locally-answered name, "cache" for a RAM hit, and the racer's
+	// winning address otherwise. Omitted from JSON when empty so existing
+	// consumers see no change.
+	Upstream string `json:"upstream,omitempty"`
 }
 
 // ServerSettings holds core daemon & network binding settings.
@@ -195,6 +201,36 @@ type DNSSettings struct {
 	// and the built-in default survives — nothing needs converting on disk, and a
 	// stored 0 means an operator turned the feature off rather than "never set".
 	ServeStaleSeconds uint32 `json:"serve_stale_seconds"`
+
+	// Transport is the global transport choice: "any", "encrypted"
+	// (DoT/DoH/DoQ/DoH3/DNSCrypt) or "regular" (plain UDP/TCP). A per-domain
+	// profile can override it. Empty means "any".
+	Transport string `json:"transport,omitempty"`
+	// EncryptedOnly is the pre-transport switch. It is read for records written
+	// by 3.4.11 and earlier and rewritten as Transport on the next save.
+	EncryptedOnly bool `json:"encrypted_only,omitempty"`
+	// DefaultUpstream pins resolution to one resolver for every name without a
+	// profile. Empty means "use the configured pool".
+	DefaultUpstream string `json:"resolution_default_upstream,omitempty"`
+	// DefaultStrategy overrides the pool's constructed racing setting
+	// ("fastest" or "sequential"). Empty keeps FastestRacing.
+	DefaultStrategy string `json:"resolution_default_strategy,omitempty"`
+	// Profiles carries the per-domain resolution overrides, limited to names in
+	// the proxied lists. A missing map means every name follows the defaults.
+	Profiles map[string]resolution.Profile `json:"resolution_profiles,omitempty"`
+}
+
+// EffectiveTransport collapses the legacy encrypted_only switch into the
+// transport choice. An empty Transport plus EncryptedOnly=false reads as "any",
+// which is exactly the pre-3.4.12 behaviour.
+func (s DNSSettings) EffectiveTransport() string {
+	if s.Transport != "" {
+		return resolution.NormalizeTransport(s.Transport)
+	}
+	if s.EncryptedOnly {
+		return resolution.TransportEncrypted
+	}
+	return resolution.TransportAny
 }
 
 // SNIProxySettings holds reverse proxy and fragmentation parameters

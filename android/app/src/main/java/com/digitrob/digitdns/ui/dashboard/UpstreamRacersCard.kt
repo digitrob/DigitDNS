@@ -1,9 +1,12 @@
 package com.digitrob.digitdns.ui.dashboard
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,9 +18,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -32,9 +40,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRowDefaults
@@ -63,6 +73,7 @@ internal fun UpstreamRacersCard(
     onRemove: suspend (String) -> String?,
     /** False while the dashboard grid is scrolling: reading the page must not arm a delete. */
     swipeEnabled: Boolean = true,
+    resolutionControls: ResolutionControls = ResolutionControls(),
 ) {
     val colors = DigitDnsTheme.colors
     var newAddress by remember { mutableStateOf("") }
@@ -99,6 +110,8 @@ internal fun UpstreamRacersCard(
                 )
             }
 
+            val policy = poolPolicy(resolutionControls.settings, upstreams)
+
             if (upstreams.isEmpty()) {
                 Text(
                     text = "No upstreams reported yet.",
@@ -106,19 +119,200 @@ internal fun UpstreamRacersCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                upstreams.forEach { stat ->
-                    UpstreamRow(
-                        stat = stat,
-                        swipeEnabled = swipeEnabled,
-                        onRemove = {
-                            scope.launch {
-                                busy = true
-                                error = onRemove(stat.address)
-                                busy = false
-                            }
-                        },
-                    )
+                // Five rows is the whole viewport. Past that only this box scrolls:
+                // the add row, the defaults and the card itself stay put.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = PanelRowDefaults.height * 5 + 8.dp * 4),
+                ) {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        upstreams.forEach { stat ->
+                            UpstreamRow(
+                                stat = stat,
+                                swipeEnabled = swipeEnabled,
+                                dimmed = resolverExcludedByTransport(stat.address, policy.transport, policy.encrypted) ||
+                                    (policy.pinActive && stat.address != policy.pinned),
+                                onRemove = {
+                                    scope.launch {
+                                        busy = true
+                                        error = onRemove(stat.address)
+                                        busy = false
+                                    }
+                                },
+                            )
+                        }
+                    }
                 }
+            }
+
+            // Global resolution defaults. Per-domain overrides live in Domains.
+            ResolutionDefaults(
+                resolution = resolutionControls.settings,
+                configured = upstreams.map { it.address },
+                onChange = resolutionControls.onChange,
+            )
+        }
+    }
+}
+
+/** The effective pool policy used for dimming one resolver list. */
+private data class PoolPolicy(
+    val transport: String,
+    val encrypted: Set<String>,
+    val pinned: String,
+    val pinActive: Boolean,
+)
+
+private fun poolPolicy(
+    resolution: ResolutionSettings?,
+    upstreams: List<UpstreamStat>,
+): PoolPolicy {
+    val addresses = upstreams.map { it.address }
+    val encrypted = resolution?.encryptedUpstreams.orEmpty().toSet()
+        .ifEmpty { addresses.filter { resolverLooksEncrypted(it) }.toSet() }
+    val pinned = resolution?.defaultUpstream.orEmpty()
+    val transport = resolution?.transport ?: "any"
+    return PoolPolicy(
+        transport = transport,
+        encrypted = encrypted,
+        pinned = pinned,
+        pinActive = pinned.isNotEmpty() &&
+            !resolverExcludedByTransport(pinned, transport, encrypted),
+    )
+}
+
+/** The pair the resolver card needs to render and save the global resolution defaults. */
+data class ResolutionControls(
+    val settings: ResolutionSettings? = null,
+    val onChange: (ResolutionSettings) -> Unit = {},
+)
+
+/**
+ * Global resolution defaults: the transport choice, the default upstream and the
+ * racing strategy. The encrypted choice is disabled when the resolver list holds
+ * no DoT/DoH/DoQ upstream, because selecting it would leave the pool empty.
+ */
+@Composable
+private fun ResolutionDefaults(
+    resolution: ResolutionSettings?,
+    configured: List<String>,
+    onChange: (ResolutionSettings) -> Unit,
+) {
+    val base = resolution ?: ResolutionSettings()
+    val encrypted = base.encryptedUpstreams.toSet()
+        .ifEmpty { configured.filter { resolverLooksEncrypted(it) }.toSet() }
+    val hasEncrypted = base.encryptedAvailable || encrypted.isNotEmpty()
+    val hasRegular = configured.any { !resolverLooksEncrypted(it) }
+    val excluded = configured.filter {
+        resolverExcludedByTransport(it, base.transport, encrypted)
+    }.toSet()
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        ResolutionPicker(
+            label = "Transports",
+            value = base.transport.ifEmpty { "any" },
+            choices = transportChoices(),
+            unavailable = buildSet {
+                if (!hasEncrypted) add("encrypted")
+                if (configured.isNotEmpty() && !hasRegular) add("regular")
+            },
+            onSelect = { onChange(base.copy(transport = it)) },
+        )
+        ResolutionPicker(
+            label = "Default upstream",
+            value = base.defaultUpstream,
+            // A pin is a preference, not a policy override: the pool ignores one
+            // the transport excludes, so the UI must still let it be chosen.
+            choices = listOf("" to "Pool Default") + configured.map { it to it },
+            onSelect = { onChange(base.copy(defaultUpstream = it)) },
+        )
+        if (base.defaultUpstream.isNotEmpty() && base.defaultUpstream in excluded) {
+            Text(
+                text = "Default upstream ${base.defaultUpstream} is excluded by the active " +
+                    "transport and is ignored.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
+        ResolutionPicker(
+            label = "Strategy",
+            value = base.defaultStrategy,
+            choices = listOf(
+                "" to "Pool default",
+                "fastest" to "Fastest Wins",
+                "sequential" to "In Order",
+            ),
+            onSelect = { onChange(base.copy(defaultStrategy = it)) },
+        )
+    }
+}
+
+/**
+ * Whether the active transport excludes this resolver. The pool applies the same
+ * rule to a pinned upstream, so this drives both the picker and the list dimming.
+ */
+internal fun resolverExcludedByTransport(
+    address: String,
+    transport: String,
+    encrypted: Set<String>,
+): Boolean = when (transport.ifEmpty { "any" }) {
+    "encrypted" -> address !in encrypted
+    "regular" -> address in encrypted
+    else -> false
+}
+
+/** The three transport choices. Availability is expressed by disabling, not by text. */
+internal fun transportChoices(): List<Pair<String, String>> = listOf(
+    "any" to "Any Transport",
+    "encrypted" to "Encrypted Only (DoT · DoH · DoQ)",
+    "regular" to "Regular DNS (UDP · TCP)",
+)
+
+/**
+ * Scheme-level fallback classifier. The server's encrypted set is authoritative
+ * when present; this exists so a stale snapshot cannot hide a live DoT/DoH/DoQ
+ * resolver from the transport picker.
+ */
+internal fun resolverLooksEncrypted(address: String): Boolean {
+    val a = address.trim().lowercase()
+    return a.startsWith("tls://") || a.startsWith("https://") || a.startsWith("quic://") ||
+        a.startsWith("h3://") || a.startsWith("sdns://")
+}
+
+@Composable
+private fun ResolutionPicker(
+    label: String,
+    value: String,
+    choices: List<Pair<String, String>>,
+    onSelect: (String) -> Unit,
+    unavailable: Set<String> = emptySet(),
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = choices.firstOrNull { it.first == value }?.second ?: choices.first().second
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        OutlinedButton(onClick = { expanded = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+            Text(selected, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            choices.forEach { (key, text) ->
+                DropdownMenuItem(
+                    text = { Text(text, style = MaterialTheme.typography.bodySmall) },
+                    enabled = key !in unavailable,
+                    trailingIcon = {
+                        if (key == value) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                    },
+                    onClick = { expanded = false; onSelect(key) },
+                )
             }
         }
     }
@@ -136,7 +330,7 @@ private fun RacerHeader(isBenchmarking: Boolean, onBenchmark: () -> Unit) {
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(6.dp))
-        Label("Upstream Servers", modifier = Modifier.weight(1f))
+        Label("Upstream Resolvers", modifier = Modifier.weight(1f))
         // Fixed-height slot so swapping the Benchmark button for its spinner does not
         // change the header row height and make the card jump while a run is in flight.
         Box(
@@ -196,6 +390,7 @@ private fun UpstreamAddRow(
 private fun UpstreamRow(
     stat: UpstreamStat,
     swipeEnabled: Boolean,
+    dimmed: Boolean,
     onRemove: () -> Unit,
 ) {
     val colors = DigitDnsTheme.colors
@@ -217,6 +412,7 @@ private fun UpstreamRow(
                 .fillMaxWidth()
                 .heightIn(min = PanelRowDefaults.height)
                 .background(MaterialTheme.colorScheme.surface)
+                .alpha(if (dimmed) 0.45f else 1f)
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

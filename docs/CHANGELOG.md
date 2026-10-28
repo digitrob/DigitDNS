@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.5.0] — Resolution you can see and shape
+
+The upstream pool became a policy you can reason about: one global default, a
+transport that is actually enforced, and a per-domain override where the domain
+lives. The resolver card also shows what that policy is doing.
+
+### ✨ Added
+- **Per-domain resolution overrides on the Proxied Domains list.** The gear on a proxied or paused row opens **Override Resolving**: choose a resolver, a racing strategy, the transport and what happens when it fails. Rules belong only to names in the proxied lists, and removing a domain removes its rule.
+- **Transports are a real choice.** **Any Transport**, **Encrypted Only** (DoT · DoH · DoQ) and **Regular DNS** (UDP · TCP), globally and per domain. Encrypted Only is enforced: a pinned plain resolver is ignored while it is active, and the dialog warns instead of pretending the pin works. The encrypted option is offered only when an encrypted resolver is configured.
+- **Global defaults in the Upstream Resolvers card.** **Default upstream** (`Pool Default` or a specific resolver), **Strategy** (Fastest Wins / In Order) and **Transports**, applied to every name without an override.
+- **Failure is explicit.** A rule can **Fall Back to the Pool** or answer **Failure** (SERVFAIL) rather than silently changing transport.
+- **The live query log names the upstream that answered.** Both the web panel and the Android app show `via …` under the domain, so a resolution rule can be checked against what actually happened.
+- **`/api/v3/settings/resolution`** accepts a dashboard session *or* the master API key, and the v3 upstream add/remove/reorder calls now persist the resolver list into settings.
+
+### 🔄 Changed
+- **Upstream Racers is now Upstream Resolvers**, on both clients.
+- **The resolver list shows five rows and scrolls by itself.** The add row, resolution defaults and footer stay fixed; the card no longer grows with the resolver count.
+- **Rows dim to show the policy.** A chosen default resolver fades the others; Encrypted Only fades plain resolvers; Regular DNS fades encrypted ones. The list remains fully interactive.
+- **Override dialogs are compact and opaque.** The page stays visible behind them (no blackout, no window dim on Android), the title is **Override Resolving**, and the failure choice reads **Failure**.
+- **Upstream and transport stay in sync in the override dialog.** Picking a resolver selects its transport; picking Encrypted Only or Regular DNS selects a resolver of that type.
+- **Smaller UI moves.** The Android Domains gear is larger and sits clear of the status pill; the web gear is a real gear, placed before the Pause switch; the default-upstream placeholder reads **Pool Default**.
+
+### 🐛 Fixed
+- **API-key clients could not load or save resolution settings.** The route lived on the session-only panel surface, so an app signed in with the master key got `401` while every other v3 call worked. It now lives on the v3 router and accepts both credential types.
+- **Resolvers added through the API disappeared from the settings view.** The v3 add/delete/reorder handlers only changed the running pool; the resolver card and the encrypted-transport gate kept the old list. They now persist before the pool changes.
+- **Encrypted Only and Default upstream looked unavailable or stale.** Both are derived from the live pool as well as the saved settings, and the card refreshes after a resolver changes, so a newly added DoT/DoH/DoQ resolver enables the choice immediately.
+- **The override dialog could open with only “Inherit Global” in the upstream picker.** It now reloads on open, falls back to the live pool if the settings request fails, and shows a retry instead of a silently shorter list.
+- **Legacy settings migrate cleanly.** An old `encrypted_only` boolean is read as the equivalent transport and rewritten on the next save.
+
 ## 🏷️ [v3.4.11] — Tighter lists and a log that fits
 
 ### 🔄 Changed

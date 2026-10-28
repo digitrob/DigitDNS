@@ -324,3 +324,43 @@ func TestNormalizeStampTranslatesToNativeScheme(t *testing.T) {
 		t.Fatalf("normalizeUpstream(DoH stamp) = %q, %v; want https://cloudflare-dns.com/dns-query, true", got, ok)
 	}
 }
+
+func TestEligibleUpstreamsFiltersByTransport(t *testing.T) {
+	list := []string{"1.1.1.1:53", "tcp://9.9.9.9:53", "tls://dns.google:853", "https://dns.google/dns-query"}
+
+	if got := eligibleUpstreams(list, ""); len(got) != 4 {
+		t.Fatalf("empty transport should keep the whole list, got %v", got)
+	}
+	if got := eligibleUpstreams(list, "any"); len(got) != 4 {
+		t.Fatalf("any should keep the whole list, got %v", got)
+	}
+	enc := eligibleUpstreams(list, "encrypted")
+	if len(enc) != 2 || enc[0] != "tls://dns.google:853" || enc[1] != "https://dns.google/dns-query" {
+		t.Fatalf("encrypted filter = %v", enc)
+	}
+	reg := eligibleUpstreams(list, "regular")
+	if len(reg) != 2 || reg[0] != "1.1.1.1:53" || reg[1] != "tcp://9.9.9.9:53" {
+		t.Fatalf("regular filter = %v", reg)
+	}
+}
+
+func TestPinCandidateNeverBypassesTheTransport(t *testing.T) {
+	plain := "1.1.1.1:53"
+	dot := "tls://dns.google:853"
+	all := []string{plain, dot}
+
+	if got := pinCandidate(all, plain); len(got) != 1 || got[0] != plain {
+		t.Fatalf("an allowed pin should narrow the list, got %v", got)
+	}
+	// Encrypted Only: the pool was filtered to the DoT resolver, so a plain pin
+	// must not be used.
+	encrypted := eligibleUpstreams(all, "encrypted")
+	if got := pinCandidate(encrypted, plain); len(got) != 1 || got[0] != dot {
+		t.Fatalf("a plain pin escaped Encrypted Only: %v", got)
+	}
+	// Regular DNS: the mirror image.
+	regular := eligibleUpstreams(all, "regular")
+	if got := pinCandidate(regular, dot); len(got) != 1 || got[0] != plain {
+		t.Fatalf("an encrypted pin escaped Regular DNS: %v", got)
+	}
+}

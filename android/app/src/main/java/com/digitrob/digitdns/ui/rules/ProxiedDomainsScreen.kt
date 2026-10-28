@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -31,11 +32,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -53,11 +56,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.core.network.ResolutionProfileDto
+import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.dashboard.resolverExcludedByTransport
+import com.digitrob.digitdns.ui.dashboard.resolverLooksEncrypted
+import com.digitrob.digitdns.ui.dashboard.transportChoices
 import com.digitrob.digitdns.ui.components.PanelRowDefaults
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
@@ -93,6 +105,8 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
         snackbar.showPanelToast(message)
         viewModel.dismissMessage()
     }
+
+    var resolutionDomain by remember { mutableStateOf<String?>(null) }
 
     Scaffold(snackbarHost = { PanelSnackbarHost(snackbar) }, contentWindowInsets = WindowInsets(0)) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
@@ -147,6 +161,8 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
                             onToggle = { viewModel.toggleDomain(row.domain, row.enabled) },
                             onRemove = { viewModel.removeDomain(row.domain) },
                             onAction = viewModel::routeAction,
+                            hasResolution = state.resolution?.profiles?.containsKey(row.domain) == true,
+                            onResolution = { viewModel.loadResolution(); resolutionDomain = row.domain },
                         )
                     }
 
@@ -154,6 +170,269 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
 
                     item { Spacer(Modifier.height(16.dp)) }
                 }
+            }
+        }
+    }
+
+    ResolutionDialogHost(
+        domain = resolutionDomain,
+        state = state,
+        onRetry = viewModel::loadResolution,
+        onDismiss = { resolutionDomain = null },
+        onSave = { domain, profile ->
+            viewModel.saveResolution(domain, profile)
+            resolutionDomain = null
+        },
+    )
+}
+
+/** Opens the override dialog for the tapped row, if any. */
+@Composable
+private fun ResolutionDialogHost(
+    domain: String?,
+    state: RulesUiState,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    onSave: (String, ResolutionProfileDto?) -> Unit,
+) {
+    if (domain == null) return
+    ResolutionDialog(
+        domain = domain,
+        settings = state.resolution,
+        upstreams = state.resolution?.upstreams?.takeIf { it.isNotEmpty() }
+            ?: state.resolutionUpstreams,
+        error = state.resolutionError,
+        onRetry = onRetry,
+        onDismiss = onDismiss,
+        onSave = { profile -> onSave(domain, profile) },
+    )
+}
+
+/** The editable fields of a resolution override, held as Compose state. */
+private class ResolutionDraft(profile: ResolutionProfileDto?) {
+    private val pinned = profile?.upstream.orEmpty()
+    var upstream by mutableStateOf(pinned)
+    var strategy by mutableStateOf(profile?.strategy ?: "")
+
+    // The transport follows the resolver: a stored rule that pins one resolver
+    // and carries a conflicting transport is normalised to the resolver's type on
+    // open rather than presenting a pair the pool cannot honour.
+    var transport by mutableStateOf(
+        if (pinned.isNotEmpty()) {
+            if (resolverLooksEncrypted(pinned)) "encrypted" else "regular"
+        } else {
+            profile?.transport ?: "inherit"
+        }
+    )
+    var fallback by mutableStateOf(profile?.fallback ?: "pool")
+
+    fun toProfile() = ResolutionProfileDto(
+        upstream = upstream,
+        strategy = strategy,
+        transport = if (transport == "inherit") "" else transport,
+        fallback = if (fallback == "fail") "fail" else "",
+    )
+}
+
+@Composable
+private fun ResolutionDialog(
+    domain: String,
+    settings: ResolutionSettings?,
+    upstreams: List<String>,
+    error: String?,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    onSave: (ResolutionProfileDto?) -> Unit,
+) {
+    val base = settings ?: ResolutionSettings()
+    // Rebuild the draft when the snapshot arrives: reopening the dialog after a
+    // failed load must edit the saved rule, not an empty defaults object.
+    val draft = remember(domain, settings) { ResolutionDraft(base.profiles[domain]) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        // The page behind the dialog stays visible: this dialog is a panel, not a
+        // modal blackout, so the operator can keep reading the list it edits.
+        val dialogView = LocalView.current
+        LaunchedEffect(dialogView) {
+            (dialogView.parent as? DialogWindowProvider)?.window?.setDimAmount(0f)
+        }
+        PanelCard(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = 12.dp,
+            verticalPadding = 12.dp,
+            solid = true,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "Override Resolving",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = domain,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "Overrides the global defaults for this proxied domain. It applies " +
+                        "when the name is not being spoofed (paused) or for query types other " +
+                        "than A/AAAA.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ResolutionFields(base, draft, upstreams)
+                if (settings == null) {
+                    // The picker can still show the live pool, but a save built from
+                    // an empty snapshot would overwrite the operator's profiles.
+                    Text(
+                        text = error ?: "Resolution settings are still loading",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    if (settings == null) {
+                        TextButton(onClick = onRetry) { Text("Retry") }
+                    }
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(
+                        enabled = settings != null,
+                        onClick = {
+                            val profile = draft.toProfile()
+                            onSave(if (profile == ResolutionProfileDto()) null else profile)
+                        },
+                    ) { Text("Save") }
+                }
+            }
+        }
+    }
+}
+
+/** The upstream that matches a chosen transport, keeping the current one if it fits. */
+private fun upstreamForTransport(
+    choice: String,
+    upstreams: List<String>,
+    current: String,
+): String = when (choice) {
+    "encrypted" -> current.takeIf { resolverLooksEncrypted(it) }
+        ?: upstreams.firstOrNull { resolverLooksEncrypted(it) }.orEmpty()
+    "regular" -> current.takeIf { it.isNotEmpty() && !resolverLooksEncrypted(it) }
+        ?: upstreams.firstOrNull { !resolverLooksEncrypted(it) }.orEmpty()
+    else -> current
+}
+
+/** The four override rows, with wording that matches the web dialog. */
+@Composable
+private fun ResolutionFields(
+    base: ResolutionSettings,
+    draft: ResolutionDraft,
+    upstreams: List<String>,
+) {
+    val encrypted = base.encryptedUpstreams.toSet()
+        .ifEmpty { upstreams.filter { resolverLooksEncrypted(it) }.toSet() }
+    val hasEncrypted = base.encryptedAvailable || encrypted.isNotEmpty()
+    val hasRegular = upstreams.any { !resolverLooksEncrypted(it) }
+    // Keep a saved pin visible even if it was removed from the pool; the pool
+    // will ignore it until it is added back.
+    val choices = (upstreams + base.upstreams).distinct().let {
+        if (draft.upstream.isNotEmpty() && draft.upstream !in it) it + draft.upstream else it
+    }
+    DialogPicker(
+        label = "Upstream",
+        value = draft.upstream,
+        choices = listOf("" to "Inherit Global") + choices.map { it to it },
+        onSelect = { picked ->
+            draft.upstream = picked
+            if (picked.isNotEmpty()) {
+                draft.transport = if (resolverLooksEncrypted(picked)) "encrypted" else "regular"
+            }
+        },
+    )
+    val effectiveTransport = if (draft.transport == "inherit") base.transport else draft.transport
+    if (draft.upstream.isNotEmpty() &&
+        resolverExcludedByTransport(draft.upstream, effectiveTransport, encrypted)
+    ) {
+        Text(
+            text = "The selected upstream is excluded by this transport and is ignored.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.tertiary,
+        )
+    }
+    DialogPicker(
+        label = "Strategy",
+        value = draft.strategy,
+        choices = listOf(
+            "" to "Inherit Global",
+            "fastest" to "Fastest Wins",
+            "sequential" to "In Order",
+        ),
+        onSelect = { draft.strategy = it },
+    )
+    DialogPicker(
+        label = "Transports",
+        value = draft.transport,
+        choices = listOf("inherit" to "Inherit Global") + transportChoices(),
+        unavailable = buildSet {
+            if (!hasEncrypted) add("encrypted")
+            if (choices.isNotEmpty() && !hasRegular) add("regular")
+        },
+        onSelect = { choice ->
+            draft.transport = choice
+            // Choosing a transport selects a resolver that can actually use it;
+            // choosing a resolver above selects its transport. The two fields can
+            // no longer be saved in a contradictory state.
+            draft.upstream = upstreamForTransport(choice, choices, draft.upstream)
+        },
+    )
+    DialogPicker(
+        label = "If That Fails",
+        value = draft.fallback,
+        choices = listOf(
+            "pool" to "Fall Back to the Pool",
+            "fail" to "Failure",
+        ),
+        onSelect = { draft.fallback = it },
+    )
+}
+
+@Composable
+private fun DialogPicker(
+    label: String,
+    value: String,
+    choices: List<Pair<String, String>>,
+    onSelect: (String) -> Unit,
+    unavailable: Set<String> = emptySet(),
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = choices.firstOrNull { it.first == value }?.second ?: choices.first().second
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        OutlinedButton(
+            onClick = { expanded = true },
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+        ) {
+            Text(selected, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            choices.forEach { (key, text) ->
+                DropdownMenuItem(
+                    text = { Text(text, style = MaterialTheme.typography.bodySmall) },
+                    enabled = key !in unavailable,
+                    trailingIcon = {
+                        if (key == value) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                    },
+                    onClick = { expanded = false; onSelect(key) },
+                )
             }
         }
     }
@@ -404,6 +683,8 @@ private fun DomainRowItem(
     onToggle: () -> Unit,
     onRemove: () -> Unit,
     onAction: (RouteAction, String) -> Unit,
+    hasResolution: Boolean,
+    onResolution: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -436,14 +717,32 @@ private fun DomainRowItem(
                         maxLines = 1,
                         modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.width(12.dp))
+                    // Only a proxied row can own a resolution override: those are the
+                    // names the server accepts a rule for. Blocked/direct rows have
+                    // their own action menu and no override.
+                    if (row.status == DomainStatus.PROXY || row.status == DomainStatus.PAUSED) {
+                        Spacer(Modifier.width(2.dp))
+                        // 40 dp keeps the whole glyph tappable without changing the
+                        // 56 dp row; the larger icon and the extra gap to the status
+                        // pill stop it reading as part of the switch group.
+                        IconButton(onClick = onResolution, modifier = Modifier.size(40.dp)) {
+                            Icon(
+                                imageVector = Icons.Filled.Settings,
+                                contentDescription = "Override Resolving",
+                                tint = if (hasResolution) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                    }
                     Box {
                         DomainStatusPill(
                             status = row.status,
                             onClick = { menuOpen = true },
                         )
                     }
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(6.dp))
                     Switch(checked = row.enabled, onCheckedChange = { onToggle() })
                 }
             }

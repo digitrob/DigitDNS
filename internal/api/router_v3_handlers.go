@@ -818,7 +818,9 @@ func (a *API) handleV3Upstreams(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		list = append(list, canonical)
-		a.upstreams.SetUpstreams(list)
+		if !a.commitUpstreams(w, r, list) {
+			return
+		}
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{"items": list})
 	default:
@@ -891,7 +893,9 @@ func (a *API) v3UpstreamDelete(w http.ResponseWriter, r *http.Request) {
 		writeProblemAt(w, r, http.StatusNotFound, "not_found", "upstream not found")
 		return
 	}
-	a.upstreams.SetUpstreams(list)
+	if !a.commitUpstreams(w, r, list) {
+		return
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"items": list})
 }
 
@@ -950,12 +954,30 @@ func (a *API) v3UpstreamReorder(w http.ResponseWriter, r *http.Request) {
 		seen[c] = true
 		canon = append(canon, c)
 	}
-	a.upstreams.SetUpstreams(canon)
+	if !a.commitUpstreams(w, r, canon) {
+		return
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"items": canon})
 }
 
 func (a *API) handleV3Benchmark(w http.ResponseWriter, r *http.Request) {
 	a.v3UpstreamBenchmark(w, r)
+}
+
+// commitUpstreams persists the new list before installing it on the pool, so a
+// failed write can never leave the running pool ahead of what survives a
+// restart. The settings record is what the resolution card reads for its
+// upstream list and encrypted-transport gate.
+func (a *API) commitUpstreams(w http.ResponseWriter, r *http.Request, list []string) bool {
+	if a.v3Backend != nil {
+		if err := a.v3Backend.PersistUpstreams(list); err != nil {
+			writeProblemAt(w, r, http.StatusInternalServerError, "internal_error",
+				"could not persist the upstream list")
+			return false
+		}
+	}
+	a.upstreams.SetUpstreams(list)
+	return true
 }
 
 // -----------------------------------------------------------------------------
@@ -982,6 +1004,40 @@ func (a *API) handleV3Settings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		resp, err := a.v3Backend.SaveSettings(r, body)
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
+	}
+}
+
+// handleV3Resolution mirrors the dashboard's resolution defaults and per-domain
+// overrides. It is mounted on the v3 router rather than the panel mux because a
+// companion app may authenticate with the master API key, and the panel's gate
+// accepts sessions only.
+func (a *API) handleV3Resolution(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		resp, err := a.v3Backend.ResolutionSettings()
+		if err != nil {
+			writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	case http.MethodPost, http.MethodPut:
+		body, ok := v3Body(r)
+		if !ok {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			return
+		}
+		resp, err := a.v3Backend.SaveResolution(r, body)
 		if err != nil {
 			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
 			return

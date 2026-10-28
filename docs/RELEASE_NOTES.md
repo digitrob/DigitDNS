@@ -1,3 +1,43 @@
+# DigitDNS v3.5.0
+
+Resolution policy you can see and shape. No migrations and no configuration
+changes are required; existing rules keep working.
+
+## Highlights
+
+- **Upstream Resolvers, with a real transport policy.** The card now has three
+  global defaults: **Default upstream** (`Pool Default` or a specific resolver),
+  **Strategy** (Fastest Wins / In Order) and **Transports** — **Any
+  Transport**, **Encrypted Only** (DoT · DoH · DoQ) or **Regular DNS** (UDP ·
+  TCP). Encrypted Only is enforced, not advisory: a pinned plain resolver is
+  ignored while it is active. The encrypted choice is only offered when an
+  encrypted resolver exists.
+- **Per-domain overrides where the domain lives.** On the Proxied Domains list,
+  the gear opens **Override Resolving**: resolver, strategy, transport and
+  failure behaviour for that name. Pick a resolver and its transport follows;
+  pick a transport and a matching resolver is selected. Choose **Fall Back to
+  the Pool** or **Failure** (SERVFAIL) when it cannot resolve. Rules exist only
+  for proxied or paused domains, and are removed with the domain.
+- **The card shows the policy.** A chosen default resolver dims the others,
+  Encrypted Only dims plain resolvers, Regular DNS dims encrypted ones. Only the
+  resolver list scrolls past five rows; the card and its controls stay fixed.
+- **The live log says which upstream answered** (`via …`) on web and Android, so
+  a rule can be checked against the resolver that actually served the query.
+- **API-key clients work.** `/api/v3/settings/resolution` now lives on the v3
+  router and accepts a dashboard session or the master API key. Previously an
+  app signed in with the key got `401`, leaving the card's dropdowns stuck on
+  their defaults.
+
+## Upgrading
+
+Docker users on `ghcr.io/digitrob/digitdns:latest` get it on restart, or pull
+`3.5.0` explicitly. Binary installs: replace `digitdns` and restart. Android is
+a separate download on this page — version 3.5.0 (versionCode 352).
+
+Full changelog: docs/CHANGELOG.md
+
+---
+
 # DigitDNS v3.4.11
 
 Two list-density fixes — one on the web, one on Android. No migrations, no

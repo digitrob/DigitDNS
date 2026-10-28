@@ -3,7 +3,12 @@ package com.digitrob.digitdns.ui.rules
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
+import com.digitrob.digitdns.core.network.ResolutionProfileDto
+import com.digitrob.digitdns.core.network.ResolutionSaveRequest
+import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.data.RulesRepository
+import com.digitrob.digitdns.data.SettingsRepository
+import com.digitrob.digitdns.data.UpstreamsRepository
 import com.digitrob.digitdns.domain.model.RuleLists
 import com.digitrob.digitdns.ui.components.RouteAction
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -15,6 +20,7 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 import java.util.Locale
 import javax.inject.Inject
+import timber.log.Timber
 
 /** How the domains list is ordered. Mirrors the panel's own sort select. */
 enum class DomainSort(val label: String) {
@@ -73,6 +79,12 @@ data class RulesUiState(
     val isSaving: Boolean = false,
     val error: String? = null,
     val savedMessage: String? = null,
+    /** Global resolution defaults plus the per-domain overrides. */
+    val resolution: ResolutionSettings? = null,
+    /** Live pool addresses, used when the settings snapshot's list is empty. */
+    val resolutionUpstreams: List<String> = emptyList(),
+    /** Non-null when the settings snapshot could not be loaded; saving is disabled. */
+    val resolutionError: String? = null,
 ) {
     /** Every editable domain, tagged with its status. */
     private val allRows: List<DomainRow>
@@ -123,6 +135,8 @@ data class RulesUiState(
 @HiltViewModel
 class RulesViewModel @Inject constructor(
     private val repository: RulesRepository,
+    private val settingsRepository: SettingsRepository,
+    private val upstreamsRepository: UpstreamsRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(RulesUiState())
@@ -130,6 +144,85 @@ class RulesViewModel @Inject constructor(
 
     init {
         load()
+        loadResolution()
+    }
+
+    private var resolutionLoading = false
+
+    /**
+     * Fetch the resolution defaults and per-domain rules. Called at init, when the
+     * gear dialog opens and on every list reload, because a single failed request
+     * used to leave the upstream picker with only "Inherit Global" until the app
+     * was restarted. A live-pool fallback keeps the picker usable even then, and
+     * the error flag disables saving so a partial snapshot cannot wipe the rules.
+     */
+    fun loadResolution() {
+        if (resolutionLoading) return
+        resolutionLoading = true
+        viewModelScope.launch {
+            try {
+                val result = runCatching { settingsRepository.loadResolution() }
+                val loaded = result.getOrNull()
+                val failure = result.exceptionOrNull()
+                if (failure != null) {
+                    // The dialog used to show only "Inherit Global" with no clue
+                    // why; the log carries the HTTP status/message for diagnosis.
+                    Timber.w(failure, "resolution settings load failed")
+                }
+                // Merge the snapshot with the live pool: a settings list can
+                // predate a resolver the pool already has, and the dialog must
+                // offer both.
+                val pool = runCatching { upstreamsRepository.list() }.getOrNull().orEmpty()
+                val upstreams = (loaded?.upstreams.orEmpty() + pool).distinct()
+                val error = when {
+                    loaded == null -> (failure as? ApiException)?.userMessage
+                        ?: failure?.message
+                        ?: "Could not load resolution settings"
+                    upstreams.isEmpty() -> "No resolvers reported by the server"
+                    else -> null
+                }
+                _state.update {
+                    it.copy(
+                        resolution = loaded ?: it.resolution,
+                        resolutionUpstreams = upstreams.ifEmpty { it.resolutionUpstreams },
+                        resolutionError = error,
+                    )
+                }
+            } finally {
+                resolutionLoading = false
+            }
+        }
+    }
+
+    /**
+     * Save one domain's override (null removes it) and keep the global defaults as they
+     * are. The server refuses rules for domains that are not in the proxied list, so
+     * this is only offered on those rows.
+     */
+    fun saveResolution(domain: String, profile: ResolutionProfileDto?) {
+        val current = _state.value.resolution ?: run {
+            _state.update { it.copy(error = "Resolution settings are still loading") }
+            loadResolution()
+            return
+        }
+        val profiles = current.profiles.toMutableMap()
+        if (profile == null) profiles.remove(domain) else profiles[domain] = profile
+        viewModelScope.launch {
+            runCatching {
+                settingsRepository.saveResolution(
+                    ResolutionSaveRequest(
+                        transport = current.transport,
+                        defaultUpstream = current.defaultUpstream,
+                        defaultStrategy = current.defaultStrategy,
+                        profiles = profiles,
+                    ),
+                )
+            }.onSuccess { saved ->
+                _state.update { it.copy(resolution = saved, savedMessage = "Resolution rule saved") }
+            }.onFailure { error ->
+                _state.update { it.copy(error = error.message ?: "Could not save the resolution rule") }
+            }
+        }
     }
 
     /** The header Reload button's path: refreshes without engaging the pull indicator. */
@@ -144,6 +237,9 @@ class RulesViewModel @Inject constructor(
             try {
                 val lists = repository.load()
                 _state.update { it.copy(lists = lists, isLoading = false, isRefreshing = false) }
+                // The override dialog's upstream picker is only as fresh as this
+                // snapshot; a resolver added on the dashboard enables new choices.
+                loadResolution()
             } catch (e: ApiException) {
                 _state.update { it.copy(isLoading = false, isRefreshing = false, error = e.userMessage) }
             } catch (e: IOException) {

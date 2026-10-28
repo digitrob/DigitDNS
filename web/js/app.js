@@ -946,6 +946,7 @@ async function loadConfig() {
     }
     currentConfig = await cfgRes.json();
     renderConfig(currentConfig);
+    loadResolutionSettings();
     // Raised after the config lands so the modal can prefill the real username
     // rather than the markup's placeholder.
     if (weak) showChangePwdModal();
@@ -1440,6 +1441,334 @@ function updateProxiedBulkBar() {
 // the slice from the top, so a match beyond the first batch is drawn rather than
 // hidden behind "Load more".
 
+// The global resolution defaults and the per-domain overrides, mirrored from
+// /api/settings/resolution. Defaults live in the Upstream Resolvers card; a
+// per-domain rule is attached to a row in the Proxied Domains list and can only
+// exist for a name that is in that list.
+let resolutionSettings = {
+  transport: 'any',
+  loaded: false,
+  encrypted_available: false,
+  encrypted_upstreams: [],
+  encrypted_only: false,
+  default_upstream: '',
+  default_strategy: '',
+  profiles: {},
+  upstreams: []
+};
+
+let resolutionLoading = false;
+
+async function loadResolutionSettings() {
+  if (resolutionLoading) return;
+  resolutionLoading = true;
+  try {
+    const res = await fetch(api('/api/settings/resolution'), {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (!res.ok) return;
+    resolutionSettings = normalizeResolutionSettings(await res.json());
+    syncResolutionControls();
+    renderProxiedList();
+  } catch (e) { /* keep the defaults; the dialog still works */ }
+  finally { resolutionLoading = false; }
+}
+
+// normalizeResolutionSettings fills the fields an older server may omit, so the
+// controls never bind to undefined.
+function normalizeResolutionSettings(settings) {
+  const out = settings || {};
+  out.loaded = true;
+  out.transport = out.transport || (out.encrypted_only ? 'encrypted' : 'any');
+  out.encrypted_available = !!out.encrypted_available;
+  out.encrypted_upstreams = out.encrypted_upstreams || [];
+  out.profiles = out.profiles || {};
+  out.upstreams = out.upstreams || [];
+  out.default_upstream = out.default_upstream || '';
+  out.default_strategy = out.default_strategy || '';
+  return out;
+}
+
+// The server's encrypted set is authoritative, but a stale settings snapshot
+// must not hide a live DoT/DoH/DoQ resolver. The scheme fallback keeps the
+// transport picker and the dimming honest when the list lags.
+function looksEncrypted(address) {
+  const a = String(address || '').trim().toLowerCase();
+  return ['tls://', 'https://', 'quic://', 'h3://', 'sdns://'].some(p => a.startsWith(p));
+}
+
+function upstreamIsEncrypted(address) {
+  return (resolutionSettings.encrypted_upstreams || []).includes(address) || looksEncrypted(address);
+}
+
+// availableUpstreams prefers the settings list and falls back to the last
+// stats payload, so the pickers work even if the settings call failed.
+function availableUpstreams() {
+  // Merge rather than choose: a settings snapshot can predate a resolver that
+  // the stats poll already sees, and both the pickers and the dimming must know
+  // about every live resolver.
+  const merged = [...(resolutionSettings.upstreams || [])];
+  for (const u of (lastUpstreamsPayload || []).map(x => x.address)) {
+    if (!merged.includes(u)) merged.push(u);
+  }
+  return merged;
+}
+
+function hasEncryptedUpstream() {
+  return availableUpstreams().some(upstreamIsEncrypted);
+}
+
+function hasRegularUpstream() {
+  return availableUpstreams().some(u => !upstreamIsEncrypted(u));
+}
+
+function transportExcludes(address, transport) {
+  const mode = transport || 'any';
+  if (mode === 'encrypted') return !upstreamIsEncrypted(address);
+  if (mode === 'regular') return upstreamIsEncrypted(address);
+  return false;
+}
+
+function transportLabel(mode) {
+  if (mode === 'encrypted') return 'Encrypted Only';
+  if (mode === 'regular') return 'Regular DNS';
+  return 'Any Transport';
+}
+
+// activePin is the Default upstream only when the transport allows it. The pool
+// ignores an ineligible pin too, so it must not dim the rest of the list.
+function activePin(transport) {
+  const pinned = resolutionSettings.default_upstream || '';
+  if (!pinned || transportExcludes(pinned, transport)) return '';
+  return pinned;
+}
+
+function upstreamDimmed(address, transport) {
+  if (transportExcludes(address, transport)) return true;
+  const pin = activePin(transport);
+  return !!pin && pin !== address;
+}
+
+// syncResolutionControls fills the three global controls in the resolver card.
+// The encrypted choice is disabled when the resolver list holds no DoT/DoH/DoQ
+// upstream, because selecting it would leave the pool with no candidates.
+function syncResolutionControls() {
+  const encAvailable = hasEncryptedUpstream();
+  const regAvailable = hasRegularUpstream();
+  const transport = document.getElementById('resolution-transport');
+  if (transport) {
+    const encrypted = transport.querySelector('option[value="encrypted"]');
+    const regular = transport.querySelector('option[value="regular"]');
+    if (encrypted) encrypted.disabled = !encAvailable;
+    if (regular) regular.disabled = !regAvailable;
+    transport.value = resolutionSettings.transport || 'any';
+  }
+
+  const strategy = document.getElementById('resolution-default-strategy');
+  if (strategy) strategy.value = resolutionSettings.default_strategy || '';
+
+  const currentTransport = resolutionSettings.transport || 'any';
+  const upstreamSel = document.getElementById('resolution-default-upstream');
+  if (upstreamSel) {
+    // A pin is a preference, not a policy override: the pool ignores one the
+    // transport excludes, so the operator must still be able to choose it.
+    const options = ['<option value="">Pool Default</option>'].concat(
+      availableUpstreams().map(u => `<option value="${escapeHTML(u)}">${escapeHTML(u)}</option>`)
+    );
+    upstreamSel.innerHTML = options.join('');
+    upstreamSel.value = resolutionSettings.default_upstream || '';
+  }
+
+  // A pin the active transport excludes is ignored by the pool; say so instead
+  // of letting the disabled entry look like a working selection.
+  const pinNote = document.getElementById('resolution-pin-note');
+  if (pinNote) {
+    const pinned = resolutionSettings.default_upstream || '';
+    const ignored = !!pinned && transportExcludes(pinned, currentTransport);
+    pinNote.classList.toggle('hidden', !ignored);
+    if (ignored) {
+      const kind = upstreamIsEncrypted(pinned) ? 'encrypted' : 'regular DNS';
+      pinNote.textContent = `Default upstream ${pinned} is ${kind} and is ignored while ${transportLabel(currentTransport)} is active.`;
+    }
+  }
+
+  // Repaint the resolver list at once: selecting a transport or a pin changes
+  // which resolvers are dimmed, without waiting for the next stats tick.
+  if (lastUpstreamsPayload) {
+    lastUpstreamsSig = '';
+    renderUpstreams(lastUpstreamsPayload);
+  }
+}
+
+// saveResolutionSettings posts the current state with the given overrides and
+// mirrors the server's answer back into the controls.
+async function saveResolutionSettings(overrides, message) {
+  // Saving from an unloaded snapshot would post an empty profile map and wipe
+  // the operator's per-domain rules.
+  if (!resolutionSettings.loaded) {
+    showToast('Could not load the resolution settings — reload the page', 'error');
+    return false;
+  }
+  const payload = Object.assign({
+    transport: resolutionSettings.transport || 'any',
+    default_upstream: resolutionSettings.default_upstream || '',
+    default_strategy: resolutionSettings.default_strategy || '',
+    profiles: resolutionSettings.profiles || {}
+  }, overrides || {});
+  try {
+    const res = await fetch(api('/api/settings/resolution'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      showToast(await errorMessage(res, 'Could not save the resolution settings'), 'error');
+      return false;
+    }
+    resolutionSettings = normalizeResolutionSettings(await res.json());
+    syncResolutionControls();
+    renderProxiedList();
+    if (message) showToast(message, 'success');
+    return true;
+  } catch (e) {
+    showToast('Could not save the resolution settings', 'error');
+    return false;
+  }
+}
+
+// The transport option markup shared by the dialog. Availability is expressed
+// by disabling, never by an "unavailable" label.
+function transportOptionsMarkup(selected) {
+  const sel = (v) => (selected === v ? 'selected' : '');
+  const enc = hasEncryptedUpstream();
+  const reg = hasRegularUpstream();
+  return `<option value="any" ${sel('any')}>Any Transport</option>`
+    + `<option value="encrypted" ${sel('encrypted')} ${enc ? '' : 'disabled'}>Encrypted Only (DoT · DoH · DoQ)</option>`
+    + `<option value="regular" ${sel('regular')} ${reg ? '' : 'disabled'}>Regular DNS (UDP · TCP)</option>`;
+}
+
+// openResolutionDialog edits the rule for one proxied domain. The domain is
+// fixed: the list that opened it owns the rule.
+function openResolutionDialog(domain) {
+  const saved = resolutionSettings.profiles[domain] || {};
+  // The resolver decides the transport. An old rule with a conflicting pair is
+  // shown in the consistent form the pool can actually honour.
+  const savedTransport = saved.upstream
+    ? (upstreamIsEncrypted(saved.upstream) ? 'encrypted' : 'regular')
+    : (saved.transport || (saved.encrypted_only === true ? 'encrypted'
+      : saved.encrypted_only === false ? 'any' : 'inherit'));
+  const transportOptions = ['<option value="inherit" ' + (savedTransport === 'inherit' ? 'selected' : '') + '>Inherit Global</option>']
+    .concat(transportOptionsMarkup(savedTransport))
+    .join('');
+
+  const backdrop = document.createElement('div');
+  // A light scrim, not a blackout: the page stays readable behind the dialog.
+  backdrop.className = 'fixed inset-0 z-50 flex items-center justify-center bg-slate-950/25 px-4';
+  backdrop.innerHTML = `
+    <div class="rounded-2xl bg-slate-900 p-5 w-full max-w-md border border-cyan-500/40 shadow-2xl shadow-cyan-500/10" role="dialog" aria-modal="true">
+      <h2 class="text-base font-bold text-white tracking-wide font-heading">Override Resolving</h2>
+      <p class="text-[11px] text-slate-400 mt-0.5 mb-3 font-mono break-all">${escapeHTML(domain)}</p>
+      <p class="text-[11px] text-slate-500 mb-3">Overrides the global defaults for this proxied domain. It applies when the name is not being spoofed (paused) or for query types other than A/AAAA.</p>
+      <div class="space-y-2.5 text-xs">
+        <label class="block">
+          <span class="block text-[11px] font-semibold text-slate-400 mb-1">Upstream</span>
+          <select id="resolution-upstream" class="w-full bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-400 font-mono"></select>
+        </label>
+        <p id="resolution-dialog-pin-note" class="hidden text-[10px] text-amber-400">The selected upstream is excluded by this transport and will be ignored.</p>
+        <label class="block">
+          <span class="block text-[11px] font-semibold text-slate-400 mb-1">Strategy</span>
+          <select id="resolution-strategy" class="w-full bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
+            <option value="" ${saved.strategy ? '' : 'selected'}>Inherit Global</option>
+            <option value="fastest" ${saved.strategy === 'fastest' ? 'selected' : ''}>Fastest Wins</option>
+            <option value="sequential" ${saved.strategy === 'sequential' ? 'selected' : ''}>In Order</option>
+          </select>
+        </label>
+        <label class="block">
+          <span class="block text-[11px] font-semibold text-slate-400 mb-1">Transports</span>
+          <select id="resolution-dialog-transport" class="w-full bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">${transportOptions}</select>
+        </label>
+        <label class="block">
+          <span class="block text-[11px] font-semibold text-slate-400 mb-1">If That Fails</span>
+          <select id="resolution-fallback" class="w-full bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
+            <option value="pool" ${saved.fallback === 'fail' ? '' : 'selected'}>Fall Back to the Pool</option>
+            <option value="fail" ${saved.fallback === 'fail' ? 'selected' : ''}>Failure</option>
+          </select>
+        </label>
+      </div>
+      <div class="flex gap-2 mt-5">
+        <button id="resolution-cancel" class="flex-1 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-sm font-semibold hover:bg-slate-700 transition">Cancel</button>
+        <button id="resolution-save" class="flex-1 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-sm font-bold font-heading transition">Save</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const transportSelect = backdrop.querySelector('#resolution-dialog-transport');
+  const upstreamSelect = backdrop.querySelector('#resolution-upstream');
+  let chosenUpstream = saved.upstream || '';
+  const dialogUpstreams = () => {
+    const list = availableUpstreams();
+    // Keep a saved pin visible even if it has been removed from the pool.
+    return chosenUpstream && !list.includes(chosenUpstream) ? list.concat(chosenUpstream) : list;
+  };
+  const effectiveTransport = () => transportSelect.value === 'inherit'
+    ? (resolutionSettings.transport || 'any')
+    : transportSelect.value;
+  const updateDialogPinNote = () => {
+    const ignored = !!chosenUpstream && transportExcludes(chosenUpstream, effectiveTransport());
+    backdrop.querySelector('#resolution-dialog-pin-note')?.classList.toggle('hidden', !ignored);
+  };
+  const renderDialogUpstreams = () => {
+    const options = ['<option value="">Inherit Global</option>']
+      .concat(dialogUpstreams().map(u =>
+        `<option value="${escapeHTML(u)}" ${chosenUpstream === u ? 'selected' : ''}>${escapeHTML(u)}</option>`));
+    upstreamSelect.innerHTML = options.join('');
+    upstreamSelect.value = chosenUpstream;
+    updateDialogPinNote();
+  };
+  // The two fields stay consistent in both directions: a chosen resolver sets
+  // its transport, and a chosen transport selects a resolver of that type. A
+  // contradictory pair can no longer be saved.
+  upstreamSelect.addEventListener('change', () => {
+    chosenUpstream = upstreamSelect.value;
+    if (chosenUpstream) {
+      transportSelect.value = upstreamIsEncrypted(chosenUpstream) ? 'encrypted' : 'regular';
+    }
+    updateDialogPinNote();
+  });
+  transportSelect.addEventListener('change', () => {
+    const choice = transportSelect.value;
+    if (choice === 'encrypted' || choice === 'regular') {
+      const wantEncrypted = choice === 'encrypted';
+      if (!chosenUpstream || upstreamIsEncrypted(chosenUpstream) !== wantEncrypted) {
+        chosenUpstream = availableUpstreams().find(u => upstreamIsEncrypted(u) === wantEncrypted) || '';
+        renderDialogUpstreams();
+      }
+    }
+    updateDialogPinNote();
+  });
+  renderDialogUpstreams();
+
+  const close = () => backdrop.remove();
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  const onKey = (e) => { if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); close(); } };
+  document.addEventListener('keydown', onKey);
+  backdrop.querySelector('#resolution-cancel').onclick = () => { document.removeEventListener('keydown', onKey); close(); };
+  backdrop.querySelector('#resolution-save').onclick = async () => {
+    const upstream = backdrop.querySelector('#resolution-upstream').value;
+    const strategy = backdrop.querySelector('#resolution-strategy').value;
+    const transport = backdrop.querySelector('#resolution-dialog-transport').value;
+    const fallback = backdrop.querySelector('#resolution-fallback').value || 'pool';
+    const profile = {};
+    if (upstream) profile.upstream = upstream;
+    if (strategy) profile.strategy = strategy;
+    if (transport && transport !== 'inherit') profile.transport = transport;
+    if (fallback === 'fail') profile.fallback = 'fail';
+    const profiles = Object.assign({}, resolutionSettings.profiles);
+    if (Object.keys(profile).length === 0) delete profiles[domain]; else profiles[domain] = profile;
+    const ok = await saveResolutionSettings({ profiles }, 'Resolution rule saved');
+    if (ok) { document.removeEventListener('keydown', onKey); close(); }
+  };
+}
+
 function renderProxiedList() {
   const container = document.getElementById('custom-proxied-rows');
   if (!container) return;
@@ -1503,6 +1832,7 @@ function renderProxiedList() {
       <td class="py-2.5 px-3 text-start truncate" title="${escapeHTML(domain)}"><span class="font-mono ${domainClass}">${escapeHTML(domain)}</span></td>
       <td class="py-2.5 px-3 text-center">
         <div class="flex items-center justify-center gap-2">
+          <button class="resolution-proxied inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-lg text-slate-400 bg-slate-900 border border-slate-700 hover:text-cyan-300 hover:border-cyan-500/40 transition" data-val="${escapeHTML(domain)}" title="Override Resolving for ${escapeHTML(domain)}" aria-label="Override Resolving for ${escapeHTML(domain)}"><i data-feather="settings" class="w-4 h-4"></i></button>
           <span class="text-[10px] text-slate-500 font-semibold">Pause</span>
           <label class="switch shrink-0">
             <input type="checkbox" class="toggle-proxied" data-val="${escapeHTML(domain)}" ${on ? 'checked' : ''} aria-label="Toggle proxying for ${escapeHTML(domain)}">
@@ -2285,6 +2615,15 @@ const FEATHER_TRASH_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="24" he
 // address into innerHTML; a bare template here would trip the raw-
 // interpolation scan for exactly the value it exists to protect.
 let lastUpstreamsSig = '';
+// The last stats payload, kept so a policy change can repaint the list without
+// waiting for the next 1 Hz poll.
+let lastUpstreamsPayload = null;
+// The last address set rendered, so the settings fallback is rebuilt once per
+// pool change rather than on every 1 Hz repaint.
+let lastUpstreamsAddresses = '';
+// Throttles the settings re-fetch when a stats poll and the settings list agree
+// only after a moment (adding an upstream writes both, but not atomically).
+let lastResolutionSyncAt = 0;
 
 // updateUpstreamAddrHint toggles the fade on the edges the address can still be
 // scrolled towards. It runs after a render and on every scroll of the span.
@@ -2334,6 +2673,25 @@ function initUpstreamAddressScroll() {
 function renderUpstreams(upstreams) {
   const container = document.getElementById('upstreams-list');
   if (!container) return;
+  lastUpstreamsPayload = upstreams || [];
+
+  // If the settings snapshot is unavailable, the pickers are built from this
+  // live list. Rebuild them once when the pool changes.
+  const addressSet = (upstreams || []).map(u => u.address).sort().join('|');
+  if (addressSet !== lastUpstreamsAddresses) {
+    lastUpstreamsAddresses = addressSet;
+    if (!(resolutionSettings.upstreams || []).length) setTimeout(syncResolutionControls, 0);
+  }
+
+  // Keep the resolver card's settings in step with the pool. Adding the first
+  // DoT/DoH upstream is what enables the encrypted choice, and the picker must
+  // not keep showing the old list until a page reload.
+  const polledSet = (upstreams || []).map(u => u.address).sort().join('|');
+  const knownSet = (resolutionSettings.upstreams || []).slice().sort().join('|');
+  if (polledSet && polledSet !== knownSet && !resolutionLoading && Date.now() - lastResolutionSyncAt > 5000) {
+    lastResolutionSyncAt = Date.now();
+    loadResolutionSettings();
+  }
 
   if (!upstreams || upstreams.length === 0) {
     if (lastUpstreamsSig !== 'empty') {
@@ -2342,7 +2700,14 @@ function renderUpstreams(upstreams) {
     }
     return;
   }
-  const sig = upstreams.map(u => u.address + ':' + (u.latency || 0)).join('|');
+  // The policy is part of the signature: a changed transport or pin dims a
+  // different set of rows even when the upstreams themselves did not move.
+  const policySig = [
+    resolutionSettings.transport || 'any',
+    resolutionSettings.default_upstream || '',
+    (resolutionSettings.encrypted_upstreams || []).join(','),
+  ].join('~');
+  const sig = upstreams.map(u => u.address + ':' + (u.latency || 0)).join('|') + '|' + policySig;
   if (sig === lastUpstreamsSig) return;
   lastUpstreamsSig = sig;
 
@@ -2379,7 +2744,11 @@ function renderUpstreams(upstreams) {
     const latTitle = measured ? 'Last measured round-trip' : 'Not measured yet — no answer has been timed from this upstream';
 
     const row = document.createElement('div');
-    row.className = 'flex items-center justify-between py-1.5 px-3 rounded-lg bg-slate-950/70 border border-slate-800 text-xs';
+    // A resolver the active transport excludes, or one a valid pin bypasses, is
+    // dimmed but stays removable: the list is also the place removals happen.
+    const dimmed = upstreamDimmed(u.address, resolutionSettings.transport || 'any');
+    row.className = 'upstream-row flex items-center justify-between py-1.5 px-3 rounded-lg bg-slate-950/70 border border-slate-800 text-xs'
+      + (dimmed ? ' is-dimmed' : '');
     // The left half is `min-w-0 truncate`: a flex item's default min-width:auto
     // resolves to its content width, so a long DoH URL (https://dns.google/dns-query)
     // would refuse to shrink and crush the latency badge on the right into a
@@ -2668,11 +3037,22 @@ function queryRowHTML(q) {
     clientDisplay = `<div class="flex flex-col"><span class="text-slate-300 font-mono text-xs leading-tight">${escapeHTML(clientIP)}</span><span class="text-[10px] text-slate-500 font-mono">Public / Direct</span></div>`;
   }
 
+  // Which resolver produced this answer. Empty for blocked/proxied/local and
+  // "cache" for a RAM hit; shown under the domain so it is visible at every
+  // width, including phones where the RULE column is hidden.
+  const upstream = (q.upstream || '').trim();
+  const upstreamLine = upstream
+    ? `<div class="text-[10px] text-slate-500 truncate" title="${escapeHTML(upstream)}">via ${escapeHTML(upstream)}</div>`
+    : '';
+
   return `
     <td class="stream-col-time py-2.5 px-2 sm:px-3 text-slate-400 whitespace-nowrap">${timeStr}</td>
     <td class="stream-col-client py-2.5 px-2 sm:px-3">${clientDisplay}</td>
     <td class="stream-col-proto py-2.5 px-2 sm:px-3 text-purple-400 font-bold hidden sm:table-cell">${escapeHTML(protoStr)}</td>
-    <td class="stream-col-domain py-2.5 px-2 sm:px-3 text-cyan-300 font-semibold truncate" title="${escapeHTML(domain)}">${escapeHTML(domain)}</td>
+    <td class="stream-col-domain py-2.5 px-2 sm:px-3">
+      <div class="text-cyan-300 font-semibold truncate" title="${escapeHTML(domain)}">${escapeHTML(domain)}</div>
+      ${upstreamLine}
+    </td>
     <td class="stream-col-rule py-2.5 px-2 sm:px-3 text-slate-400 hidden sm:table-cell">${escapeHTML(ruleStr)}</td>
     <td class="stream-col-action py-2.5 px-2 sm:px-3">${actBadge}${cacheBadge}</td>
     <td class="stream-col-latency py-2.5 px-2 sm:px-3 text-end text-emerald-400 font-mono">${latStr}</td>
@@ -3845,6 +4225,7 @@ function initEventListeners() {
         if (res.ok) {
           if (input) input.value = '';
           showToast('Upstream resolver added & tested!', 'success');
+          loadResolutionSettings();
           updateStats();
         } else {
           // The handler rejects a value it cannot canonicalise and says why
@@ -4144,6 +4525,15 @@ function initEventListeners() {
   }
 
   document.getElementById('geoip-update-btn')?.addEventListener('click', updateGeoipDatabase);
+  document.getElementById('resolution-transport')?.addEventListener('change', (e) => {
+    saveResolutionSettings({ transport: e.target.value }, 'Resolution defaults saved');
+  });
+  document.getElementById('resolution-default-strategy')?.addEventListener('change', (e) => {
+    saveResolutionSettings({ default_strategy: e.target.value }, 'Resolution defaults saved');
+  });
+  document.getElementById('resolution-default-upstream')?.addEventListener('change', (e) => {
+    saveResolutionSettings({ default_upstream: e.target.value }, 'Resolution defaults saved');
+  });
   document.getElementById('server-update-check-btn')?.addEventListener('click', checkServerUpdate);
   document.getElementById('server-update-apply-btn')?.addEventListener('click', applyServerUpdate);
 
@@ -4357,6 +4747,10 @@ function initEventListeners() {
     const btn = e.target.closest('button');
     if (!btn) return;
 
+    if (btn.classList.contains('resolution-proxied')) {
+      openResolutionDialog(btn.dataset.val);
+      return;
+    }
     if (btn.classList.contains('remove-upstream')) {
       const addr = btn.dataset.addr;
       // Every other destructive control on this panel asks first; this one deleted a
@@ -4380,6 +4774,7 @@ function initEventListeners() {
           body: JSON.stringify({ address: addr })
         });
         showToast('Upstream removed', 'info');
+        loadResolutionSettings();
         updateStats();
       } catch (err) {}
     } else if (btn.classList.contains('remove-proxied')) {

@@ -161,10 +161,15 @@ func classDefinedIn(css, tok string) bool {
 	return strings.Contains(css, "."+escaped)
 }
 
+// cssEscaper is built once: escapeClassForCSS runs for every class token in
+// four assets, and constructing a fresh Replacer each time made the test
+// pathologically slow under -race (it was the sole cause of the 10-minute
+// release gate timeout).
+var cssEscaper = strings.NewReplacer(":", `\:`, "/", `\/`, ".", `\.`, "[", `\[`, "]", `\]`, "%", `\%`, "(", `\(`, ")", `\)`, "#", `\#`, ",", `\,`, "'", `\'`)
+
 // escapeClassForCSS applies the escapes Tailwind uses in selectors.
 func escapeClassForCSS(tok string) string {
-	r := strings.NewReplacer(":", `\:`, "/", `\/`, ".", `\.`, "[", `\[`, "]", `\]`, "%", `\%`, "(", `\(`, ")", `\)`, "#", `\#`, ",", `\,`, "'", `\'`)
-	return r.Replace(tok)
+	return cssEscaper.Replace(tok)
 }
 
 // TestPurgedStylesheetIsNotTheWholeFramework guards the reason the purge

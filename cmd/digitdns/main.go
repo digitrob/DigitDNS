@@ -428,6 +428,12 @@ func main() {
 	}
 	m := matcher.NewMatcher()
 	u := upstream.NewUpstreamPool(dnsSettings.Upstreams, dnsSettings.QueryTimeout, dnsSettings.FastestRacing, dnsSettings.ECSClientIP)
+	u.SetPolicy(upstream.Policy{
+		Transport:       dnsSettings.EffectiveTransport(),
+		DefaultUpstream: dnsSettings.DefaultUpstream,
+		DefaultStrategy: dnsSettings.DefaultStrategy,
+		Profiles:        dnsSettings.Profiles,
+	})
 	// Measure the pool once at startup. The constructor only seeds an estimate; this
 	// is the one place that has to pay for the real numbers, and it runs detached so
 	// a slow or blackholed upstream cannot delay the listeners coming up.

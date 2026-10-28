@@ -73,6 +73,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.core.network.LatencySnapshot
 import com.digitrob.digitdns.core.network.LiveStats
+import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.data.DashboardCard
 import com.digitrob.digitdns.ui.components.CountryFlag
@@ -184,6 +185,7 @@ fun DashboardScreen(
                     onBenchmark = viewModel::benchmarkUpstreams,
                     onAddUpstream = viewModel::addUpstream,
                     onRemoveUpstream = viewModel::removeUpstream,
+                    onResolutionChange = viewModel::saveResolution,
                 )
             }
         }
@@ -375,6 +377,7 @@ private fun DashboardGrid(
     onBenchmark: () -> Unit,
     onAddUpstream: suspend (String) -> String?,
     onRemoveUpstream: suspend (String) -> String?,
+    onResolutionChange: (ResolutionSettings) -> Unit,
 ) {
     // The grid state is hoisted for one reason: the racer card's swipe-to-delete has
     // to know a scroll is in flight, or a diagonal scroll can settle as a swipe and pop
@@ -407,6 +410,10 @@ private fun DashboardGrid(
                         onAdd = onAddUpstream,
                         onRemove = onRemoveUpstream,
                         swipeEnabled = !gridState.isScrollInProgress,
+                        resolutionControls = ResolutionControls(
+                            settings = state.resolution,
+                            onChange = onResolutionChange,
+                        ),
                     )
                 }
                 DashboardCard.RESOLVER_LATENCY -> item(span = { GridItemSpan(maxLineSpan) }) {

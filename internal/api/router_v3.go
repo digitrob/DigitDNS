@@ -112,6 +112,19 @@ type V3Backend interface {
 
 	// Benchmark kick-off.
 	Benchmark() (map[string]any, error)
+
+	// PersistUpstreams writes the pool's current list into the DNS settings.
+	// The v3 router mutates the pool directly; without this the settings view
+	// (and the resolution card's encrypted gate) would keep the old list until a
+	// restart. Returning an error must leave the pool untouched.
+	PersistUpstreams(list []string) error
+
+	// ResolutionSettings and SaveResolution mirror the dashboard's resolution
+	// defaults and per-domain overrides. They live on the v3 router so a client
+	// using the master API key can reach them: the panel's session-only gate
+	// answers 401 to that credential.
+	ResolutionSettings() (map[string]any, error)
+	SaveResolution(r *http.Request, body map[string]any) (map[string]any, error)
 }
 
 // SetV3Backend attaches the dashboard-coupled backend for the v3 routes. Called
@@ -159,6 +172,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 
 	// Settings.
 	mux.HandleFunc("/api/v3/settings", a.SecurityMiddlewareV3(a.handleV3Settings))
+	mux.HandleFunc("/api/v3/settings/resolution", a.SecurityMiddlewareV3(a.handleV3Resolution))
 	mux.HandleFunc("/api/v3/settings/subscription", a.SecurityMiddlewareV3(a.handleV3Subscription))
 	mux.HandleFunc("/api/v3/settings/regenerate-api-key", a.SecurityMiddlewareV3(a.handleV3RegenerateAPIKey))
 	mux.HandleFunc("/api/v3/settings/regenerate-admin-path", a.SecurityMiddlewareV3(a.handleV3RegenerateAdminPath))

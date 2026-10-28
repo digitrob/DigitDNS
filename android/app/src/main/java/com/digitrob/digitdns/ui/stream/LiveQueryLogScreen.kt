@@ -296,6 +296,7 @@ private fun QueryRow(event: QueryEvent, onAction: (RouteAction, String) -> Unit)
                         append(event.accountName.ifBlank { event.clientIp.ifBlank { "unknown" } })
                         if (event.protocol.isNotBlank()) append(" · ${event.protocol}")
                         if (event.latencyMs > 0) append(" · ${formatLatency(event.latencyMs)}")
+                        if (event.upstream.isNotBlank()) append(" · via ${event.upstream}")
                         if (event.timestamp.isNotBlank()) {
                             val t = event.timestamp.substringAfter('T').substringBefore('.').trimEnd('Z')
                             append(" · $t")

@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/tls"
+	"digitdns/internal/core/resolution"
 	"errors"
 	"fmt"
 	"io"
@@ -36,6 +37,25 @@ type UpstreamPool struct {
 	racing      bool
 	ecsClientIP net.IP
 	stats       map[string]*upstreamStatInternal
+	// Policy: the global defaults and the per-domain overrides. Guarded by mu
+	// like the list itself, so a settings save takes effect on the next query
+	// without a restart.
+	policy Policy
+}
+
+// Policy is the resolution policy installed by the settings layer.
+type Policy struct {
+	// Transport filters the pool: "any", "encrypted" (DoT/DoH/DoQ/DNSCrypt) or
+	// "regular" (plain UDP/TCP). Empty means "any".
+	Transport string
+	// DefaultUpstream pins every name to one resolver unless a profile overrides
+	// it. Empty means "use the pool".
+	DefaultUpstream string
+	// DefaultStrategy is "fastest" or "sequential"; empty keeps the pool's
+	// constructed racing setting.
+	DefaultStrategy string
+	// Profiles are the per-domain overrides, keyed by domain or "*.domain".
+	Profiles map[string]resolution.Profile
 }
 
 // Upstream schemes. A plain "host:port" (or bare host) is UDP, kept exactly as it
@@ -472,6 +492,25 @@ func (p *UpstreamPool) BenchmarkAll() {
 }
 
 func (p *UpstreamPool) Exchange(req *dns.Msg) (*dns.Msg, time.Duration, string, error) {
+	return p.ExchangeFor(req, "")
+}
+
+// ExchangeFor resolves req under the profile configured for domain (empty means
+// no domain — the global policy only). It is the only entry point the DNS handler
+// uses; Exchange stays as the profile-less form for benchmark and test callers.
+//
+// Selection order:
+//  1. The configured pool, filtered to the transport the profile chose, or the
+//     global one when the profile inherits it.
+//  2. A pinned upstream, when it is in that eligible set. A pin narrows the
+//     policy; it never overrides the transport, so a pin the transport excludes
+//     is ignored.
+//
+// A profile that produces no candidates, or whose candidates all fail, either
+// falls back to the ordinary pool or fails closed, according to its fallback
+// choice. "Fall back" never bypasses a global transport setting: the fallback
+// pool is the globally eligible pool, not the raw list.
+func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.Duration, string, error) {
 	if req == nil {
 		return nil, 0, "", errors.New("nil dns request")
 	}
@@ -482,6 +521,7 @@ func (p *UpstreamPool) Exchange(req *dns.Msg) (*dns.Msg, time.Duration, string, 
 	racing := p.racing
 	timeout := p.timeout
 	ecs := p.ecsClientIP
+	policy := p.policy
 	p.mu.RUnlock()
 
 	if len(upstreams) == 0 {
@@ -494,11 +534,134 @@ func (p *UpstreamPool) Exchange(req *dns.Msg) (*dns.Msg, time.Duration, string, 
 		p.attachECS(queryMsg, ecs)
 	}
 
-	if racing && len(upstreams) > 1 {
-		return p.exchangeRacing(queryMsg, upstreams, timeout)
+	profile, hasProfile := resolution.Match(policy.Profiles, domain)
+	effectiveTransport := policy.Transport
+	if hasProfile {
+		effectiveTransport = profile.TransportFor(policy.Transport)
 	}
 
-	return p.exchangeSequential(queryMsg, upstreams, timeout)
+	// The fallback pool is the globally eligible one, never the raw list and
+	// never the pinned default — "fall back" means the ordinary pool. It never
+	// bypasses the global transport either: an encrypted-only install stays
+	// encrypted-only even when a profile's own candidates fail.
+	fallbackCandidates := eligibleUpstreams(upstreams, policy.Transport)
+
+	candidates := eligibleUpstreams(upstreams, effectiveTransport)
+	strategy := racing
+	if policy.DefaultStrategy == resolution.StrategyFastest {
+		strategy = true
+	} else if policy.DefaultStrategy == resolution.StrategySequential {
+		strategy = false
+	}
+
+	// A profile pin outranks the global default; the global default outranks the
+	// pool. The transport is the policy and a pin only narrows it: a pin the
+	// transport excludes is ignored rather than used, so "encrypted only" can
+	// never be bypassed by a stale or hand-written pin. The UI disables such a
+	// choice, and the card warns when an existing pin is being ignored.
+	pinned := ""
+	if hasProfile && profile.Upstream != "" {
+		pinned = profile.Upstream
+	} else if policy.DefaultUpstream != "" {
+		pinned = policy.DefaultUpstream
+	}
+	candidates = pinCandidate(candidates, pinned)
+	if hasProfile {
+		switch profile.Strategy {
+		case resolution.StrategyFastest:
+			strategy = true
+		case resolution.StrategySequential:
+			strategy = false
+		}
+	}
+
+	var lastErr error
+	if len(candidates) > 0 {
+		resp, dur, upstream, err := p.exchangeWith(queryMsg, candidates, strategy, timeout)
+		if err == nil {
+			return resp, dur, upstream, nil
+		}
+		lastErr = err
+	}
+
+	// A profile that never had candidates is a configuration error worth
+	// reporting, not something to paper over with a retry against the same list.
+	if !hasProfile || profile.ResolveFallback() == resolution.FallbackFail {
+		if len(candidates) == 0 {
+			return nil, 0, "", errors.New("no upstream matches the resolution profile for " + domain)
+		}
+		return nil, 0, "", lastErr
+	}
+
+	// Fall back to the globally eligible pool.
+	if len(fallbackCandidates) == 0 {
+		return nil, 0, "", errors.New("no upstream matches the global transport policy")
+	}
+	if sameUpstreams(candidates, fallbackCandidates) {
+		return nil, 0, "", lastErr
+	}
+	return p.exchangeWith(queryMsg, fallbackCandidates, racing, timeout)
+}
+
+// exchangeWith runs one attempt list under the requested strategy.
+func (p *UpstreamPool) exchangeWith(req *dns.Msg, upstreams []string, racing bool, timeout time.Duration) (*dns.Msg, time.Duration, string, error) {
+	if len(upstreams) == 0 {
+		return nil, 0, "", errors.New("no upstream resolvers configured")
+	}
+	if racing && len(upstreams) > 1 {
+		return p.exchangeRacing(req, upstreams, timeout)
+	}
+	return p.exchangeSequential(req, upstreams, timeout)
+}
+
+// pinCandidate narrows the eligible list to the pinned resolver. A pin the
+// transport excluded — or one that does not normalise — leaves the eligible pool
+// untouched, because the transport is the policy and the pin only narrows it.
+func pinCandidate(eligible []string, pinned string) []string {
+	if pinned == "" {
+		return eligible
+	}
+	canonical, ok := normalizeUpstream(pinned)
+	if !ok || !slices.Contains(eligible, canonical) {
+		return eligible
+	}
+	return []string{canonical}
+}
+
+// eligibleUpstreams applies a transport filter to a candidate list.
+func eligibleUpstreams(list []string, transport string) []string {
+	switch resolution.NormalizeTransport(transport) {
+	case resolution.TransportEncrypted:
+		out := make([]string, 0, len(list))
+		for _, u := range list {
+			if resolution.Encrypted(u) {
+				out = append(out, u)
+			}
+		}
+		return out
+	case resolution.TransportRegular:
+		out := make([]string, 0, len(list))
+		for _, u := range list {
+			if !resolution.Encrypted(u) {
+				out = append(out, u)
+			}
+		}
+		return out
+	default:
+		return list
+	}
+}
+
+func sameUpstreams(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // usableRcode reports whether an answer is one the client can be given as final.
@@ -881,6 +1044,19 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 		return strings.Compare(a.Address, b.Address)
 	})
 	return out
+}
+
+// SetPolicy installs the global defaults and the per-domain profiles. It copies
+// the map, so callers may keep and mutate their own after the call.
+func (p *UpstreamPool) SetPolicy(policy Policy) {
+	copied := make(map[string]resolution.Profile, len(policy.Profiles))
+	for k, v := range policy.Profiles {
+		copied[k] = v
+	}
+	policy.Profiles = copied
+	p.mu.Lock()
+	p.policy = policy
+	p.mu.Unlock()
 }
 
 // SetUpstreams atomically replaces the upstream server list (thread-safe, live reload).

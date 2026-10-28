@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
 import com.digitrob.digitdns.core.network.LatencySnapshot
 import com.digitrob.digitdns.core.network.LiveStats
+import com.digitrob.digitdns.core.network.ResolutionSaveRequest
+import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.ConnectionStore
@@ -61,6 +63,8 @@ data class DashboardUiState(
     val serverCountry: String = "",
     /** The domain this install answers on, when one is configured; empty otherwise. */
     val serverDomain: String = "",
+    /** Global resolution defaults and per-domain overrides, when loaded. */
+    val resolution: ResolutionSettings? = null,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val isBenchmarking: Boolean = false,
@@ -105,6 +109,7 @@ class DashboardViewModel @Inject constructor(
     init {
         observeLayout()
         loadServerIp()
+        loadResolution()
         startPolling()
         observeLiveStream()
         observeServerSwitch(connectionStore)
@@ -175,6 +180,7 @@ class DashboardViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             loadServerIp()
+            loadResolution()
             refreshOnce(background = false)
         }
     }
@@ -190,6 +196,71 @@ class DashboardViewModel @Inject constructor(
      * server must not land after the newer one and repaint the box with a dead IP. Only
      * the freshest load wins.
      */
+    private var resolutionLoading = false
+    private var lastResolutionAttemptAt = 0L
+
+    private fun loadResolution() {
+        if (resolutionLoading) return
+        resolutionLoading = true
+        lastResolutionAttemptAt = System.currentTimeMillis()
+        viewModelScope.launch {
+            try {
+                runCatching { settingsRepository.loadResolution() }
+                    .onSuccess { loaded -> _state.update { it.copy(resolution = loaded) } }
+                    .onFailure { Timber.d(it, "resolution settings load failed; keeping defaults") }
+            } finally {
+                resolutionLoading = false
+            }
+        }
+    }
+
+    /**
+     * The resolution settings carry the upstream list and its encrypted subset. A
+     * resolver added on another client (or before this page loaded) must enable the
+     * encrypted choice and appear in the pickers without a manual refresh, so reload
+     * when the polled pool no longer matches what the settings know.
+     */
+    private fun syncResolutionWithPool(upstreams: List<UpstreamStat>) {
+        val current = _state.value.resolution
+        if (current == null) {
+            // A load that failed at startup used to leave the card permanently on
+            // defaults. Retry on the 3 s cadence, throttled to one attempt per 10 s
+            // so an unreachable settings endpoint is not hammered.
+            if (System.currentTimeMillis() - lastResolutionAttemptAt > RESOLUTION_RETRY_MS) loadResolution()
+            return
+        }
+        val polled = upstreams.map { it.address }.sorted()
+        if (polled.isEmpty()) return
+        if (polled != current.upstreams.sorted()) loadResolution()
+    }
+
+    /** Persist the global defaults (and the untouched profile map) and mirror the answer. */
+    fun saveResolution(next: ResolutionSettings) {
+        // A save built from the default state would post an empty profile map and
+        // wipe every per-domain rule. Wait for the real snapshot.
+        if (_state.value.resolution == null) {
+            _state.update { it.copy(error = "Resolution settings are still loading") }
+            loadResolution()
+            return
+        }
+        viewModelScope.launch {
+            runCatching {
+                settingsRepository.saveResolution(
+                    ResolutionSaveRequest(
+                        transport = next.transport,
+                        defaultUpstream = next.defaultUpstream,
+                        defaultStrategy = next.defaultStrategy,
+                        profiles = next.profiles,
+                    ),
+                )
+            }.onSuccess { saved ->
+                _state.update { it.copy(resolution = saved) }
+            }.onFailure { error ->
+                _state.update { it.copy(error = error.message ?: "Could not save the resolution policy") }
+            }
+        }
+    }
+
     private fun loadServerIp() {
         val generation = ipLoadGeneration.incrementAndGet()
         viewModelScope.launch {
@@ -242,6 +313,7 @@ class DashboardViewModel @Inject constructor(
                     error = null,
                 )
             }
+            syncResolutionWithPool(upstreams)
         } catch (e: ApiException) {
             _state.update { it.copy(isLoading = false, isRefreshing = false, error = e.userMessage) }
         } catch (e: java.io.IOException) {
@@ -293,6 +365,8 @@ class DashboardViewModel @Inject constructor(
                 _state.value.upstreams
             }
         _state.update { it.copy(upstreams = upstreams) }
+        loadResolution()
+        syncResolutionWithPool(upstreams)
         null
     } catch (e: ApiException) {
         e.userMessage
@@ -310,6 +384,8 @@ class DashboardViewModel @Inject constructor(
                 _state.value.upstreams.filterNot { it.address == address }
             }
         _state.update { it.copy(upstreams = upstreams) }
+        loadResolution()
+        syncResolutionWithPool(upstreams)
         null
     } catch (e: ApiException) {
         e.userMessage
@@ -327,6 +403,8 @@ class DashboardViewModel @Inject constructor(
     private companion object {
         /** Three seconds: the panel's own dashboard poll cadence. */
         const val POLL_INTERVAL_MS = 3_000L
+        /** Do not hammer a failing settings endpoint; one retry per ten seconds. */
+        const val RESOLUTION_RETRY_MS = 10_000L
         const val QPS_HISTORY_POINTS = 60
         const val BENCHMARK_FOLLOW_UPS = 8
         const val BENCHMARK_STEP_MS = 800L

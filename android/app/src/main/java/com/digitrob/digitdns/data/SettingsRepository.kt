@@ -4,6 +4,8 @@ import com.digitrob.digitdns.core.network.SettingsApi
 import com.digitrob.digitdns.core.network.SettingsSaveRequest
 import com.digitrob.digitdns.core.network.RegenerateApiKeyRequest
 import com.digitrob.digitdns.core.network.RegenerateAdminPathRequest
+import com.digitrob.digitdns.core.network.ResolutionSaveRequest
+import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.domain.model.ServerConfig
 import com.digitrob.digitdns.domain.model.TlsSettings
 import javax.inject.Inject
@@ -65,4 +67,11 @@ class SettingsRepository @Inject constructor(
      */
     suspend fun regenerateAdminPath(confirm: Boolean): String =
         api.regenerateAdminPath(RegenerateAdminPathRequest(confirm)).adminPath
+
+    /** The global resolution defaults and the per-domain overrides. */
+    suspend fun loadResolution(): ResolutionSettings = api.getResolution()
+
+    /** Save the resolution settings and hand back the server's canonical answer. */
+    suspend fun saveResolution(request: ResolutionSaveRequest): ResolutionSettings =
+        api.saveResolution(request)
 }

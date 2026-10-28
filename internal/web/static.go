@@ -39,6 +39,19 @@ var compressibleExts = map[string]bool{
 	".xml": true, ".webmanifest": true,
 }
 
+// staticGzipCache reuses the compressed form of an asset across staticServer
+// constructions. The daemon builds one server at startup, but tests and an
+// admin-path rebuild build many; re-running BestCompression over the whole
+// dashboard on each build was the dominant cost of the web suite under -race.
+// The key includes the content hash, so a changed asset can never be served
+// from a stale entry.
+var staticGzipCache sync.Map // map[string]cachedGzip
+
+type cachedGzip struct {
+	body []byte
+	ok   bool
+}
+
 // staticAsset is one embedded file, prepared for serving.
 type staticAsset struct {
 	contentType string
@@ -117,7 +130,7 @@ func newStaticAsset(name string, body []byte) *staticAsset {
 		gzipETag:    `"` + tag + `+gz"`,
 	}
 
-	if gz, ok := gzipIfSmaller(name, body); ok {
+	if gz, ok := cachedGzipBody(name, tag, body); ok {
 		a.gzipped = gz
 	}
 	return a
@@ -178,6 +191,19 @@ func contentTypeFor(name string) string {
 // BestCompression is the right level here precisely because this runs once: the
 // CPU is spent at startup, and every request afterwards is a write of a finished
 // buffer. A per-request compressor would have to trade the other way.
+// cachedGzipBody returns the compressed form of one asset, computing it once per
+// (name, content hash) for the lifetime of the process.
+func cachedGzipBody(name, tag string, body []byte) ([]byte, bool) {
+	key := name + "\x00" + tag
+	if v, hit := staticGzipCache.Load(key); hit {
+		entry := v.(cachedGzip)
+		return entry.body, entry.ok
+	}
+	gz, ok := gzipIfSmaller(name, body)
+	staticGzipCache.Store(key, cachedGzip{body: gz, ok: ok})
+	return gz, ok
+}
+
 func gzipIfSmaller(name string, body []byte) ([]byte, bool) {
 	if !compressibleExts[strings.ToLower(path.Ext(name))] || len(body) < 1024 {
 		return nil, false

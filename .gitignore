@@ -70,6 +70,8 @@ logs/
 tmp/
 temp/
 build/
+# Compiled Go test binaries left by `go test -cpuprofile` / `-o`.
+*.test
 bin/
 dist/
 

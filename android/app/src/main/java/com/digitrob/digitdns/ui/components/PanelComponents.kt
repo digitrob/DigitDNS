@@ -51,6 +51,10 @@ import com.digitrob.digitdns.ui.theme.PanelMono
  * single-line rows pass a smaller value to tighten the top and bottom without moving the
  * left/right inset, and [contentAlignment] lets the row sit centred in the height those
  * rows share.
+ *
+ * [solid] swaps the translucent card colour for the opaque surface. A dialog uses it so
+ * the page behind the panel is not visible through the text; ordinary dashboard cards
+ * keep the glass treatment.
  */
 @Composable
 fun PanelCard(
@@ -59,6 +63,7 @@ fun PanelCard(
     verticalPadding: Dp = contentPadding,
     highlighted: Boolean = false,
     contentAlignment: Alignment = Alignment.TopStart,
+    solid: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colors = DigitDnsTheme.colors
@@ -66,7 +71,7 @@ fun PanelCard(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(colors.bgCard)
+            .background(if (solid) MaterialTheme.colorScheme.surface else colors.bgCard)
             .border(1.dp, border, RoundedCornerShape(12.dp))
             .padding(horizontal = contentPadding, vertical = verticalPadding),
         contentAlignment = contentAlignment,

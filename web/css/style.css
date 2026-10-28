@@ -1391,8 +1391,22 @@ input:checked + .slider:before {
 .upstream-list {
   flex: 1 1 0%;
   min-height: 0;
-  max-height: 30rem; /* mobile: keep a long list from towering over the page */
+  /* Five rows (each ~32px plus the 6px gap) is the whole list viewport. Past
+     that only this box scrolls: the header, add row, resolution defaults and
+     footer stay put, and the card stops growing with the resolver count. */
+  max-height: 11.5rem;
   overflow-y: auto;
+}
+
+/* The resolver list is also a policy view: a pin dims the resolvers it
+   bypasses, and Encrypted/Regular transport dims the ones it excludes. The row
+   stays interactive — removal and inspection still work. */
+.upstream-row.is-dimmed {
+  opacity: 0.45;
+}
+
+.upstream-row.is-dimmed:hover {
+  opacity: 0.75;
 }
 
 @media (min-width: 1024px) {
@@ -1400,9 +1414,6 @@ input:checked + .slider:before {
     grid-row: span 2 / span 2;
     height: 100%;
     min-height: 0;
-  }
-  .upstream-list {
-    max-height: none;
   }
 }
 
