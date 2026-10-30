@@ -1365,10 +1365,24 @@ function proxiedOrderedRows() {
   add(rules.custom_direct, 'direct');
 
   let rows = Array.from(byDomain, ([domain, status]) => ({ domain, status }));
+  // *.d is redundant when d is in the same list: the plain rule already covers every
+  // subdomain. Hide the duplicate row; a wildcard in a different list still matters.
+  rows = rows.filter(({ domain, status }) => {
+    if (!domain.startsWith('*.')) return true;
+    return byDomain.get(domain.slice(2)) !== status;
+  });
   const byName = (a, b) => a.domain.localeCompare(b.domain, undefined, { sensitivity: 'base' });
+  // A wildcard row sits in the same alphabetical slot as its base, so a scope
+  // change does not move it under A-Z.
+  const byBase = (a, b) => {
+    const ka = a.domain.replace(/^\*\./, '');
+    const kb = b.domain.replace(/^\*\./, '');
+    return ka.localeCompare(kb, undefined, { sensitivity: 'base' }) || byName(a, b);
+  };
   const added = rules.custom_domain_added || {};
   const stamp = (domain) => {
-    const t = Date.parse(added[domain] || '');
+    const base = domain.startsWith('*.') ? domain.slice(2) : domain;
+    const t = Date.parse(added[domain] || added[base] || '');
     return Number.isFinite(t) ? t : 0;
   };
   const anyStamp = rows.some((r) => stamp(r.domain) > 0);
@@ -1376,8 +1390,8 @@ function proxiedOrderedRows() {
   switch (proxiedSort) {
     case 'added-asc':
       return anyStamp ? rows.slice().sort((a, b) => stamp(a.domain) - stamp(b.domain)) : rows;
-    case 'az': return rows.slice().sort(byName);
-    case 'za': return rows.slice().sort((a, b) => byName(b, a));
+    case 'az': return rows.slice().sort(byBase);
+    case 'za': return rows.slice().sort((a, b) => byBase(b, a));
     case 'status':
       return rows.slice().sort((a, b) => DOMAIN_STATUS_RANK[a.status] - DOMAIN_STATUS_RANK[b.status]);
     case 'added-desc':
@@ -1822,6 +1836,66 @@ function openResolutionDialog(domain) {
   };
 }
 
+// proxiedPatternIndex maps every stored rule pattern to the status that wins when a
+// name appears in more than one list. The wildcard chips read it: a row has to know
+// whether *.host, *.parent or both are active, and in which list.
+function proxiedPatternIndex() {
+  const rules = currentConfig?.rules || {};
+  const index = new Map();
+  const add = (list, status) => {
+    if (!Array.isArray(list)) return;
+    for (const raw of list) {
+      const pattern = String(raw || '').trim().toLowerCase().replace(/\.$/, '');
+      if (pattern) index.set(pattern, status);
+    }
+  };
+  // Low precedence first, so the same name in two lists reads like a row does.
+  add(rules.custom_proxied_disabled, 'paused');
+  add(rules.custom_proxied, 'proxy');
+  add(rules.custom_blocked, 'blocked');
+  add(rules.custom_direct, 'direct');
+  return index;
+}
+
+// wildcardTypesFor names the wildcards that apply to one row. A wildcard is relative
+// to the row: *.example.com is the host wildcard of example.com and the parent
+// wildcard of api.example.com. Both can be active at once.
+function wildcardTypesFor(domain, index) {
+  const wildcard = domain.startsWith('*.');
+  const base = wildcard ? domain.slice(2) : domain;
+  const labels = base.split('.').filter(Boolean);
+  const types = [];
+  if (labels.length >= 2) {
+    const host = '*.' + base;
+    // A plain rule covers every subdomain already, so *.host in the same list adds
+    // nothing; only show it when it lives in a different list.
+    const redundant = !wildcard && index.has(base) && index.get(host) === index.get(base);
+    if (index.has(host) && !redundant) {
+      types.push({ type: '*.host', pattern: host, status: index.get(host) });
+    }
+  }
+  if (labels.length >= 3) {
+    const parent = '*.' + labels.slice(1).join('.');
+    if (index.has(parent)) types.push({ type: '*.parent', pattern: parent, status: index.get(parent) });
+  }
+  return types;
+}
+
+// wildcardLabelFor is the second line under a domain: the wildcard type active for
+// that row, or "exact" when there is none. The title carries the stored pattern and
+// its list, so the short label cannot be mistaken for the rule itself.
+function wildcardLabelFor(domain, index) {
+  const types = wildcardTypesFor(domain, index);
+  if (!types.length) {
+    return { text: 'exact', title: 'No wildcard rule for this name', wildcard: false };
+  }
+  const title = types.map(({ pattern, status }) => {
+    const statusLabel = (DOMAIN_STATUS_META[status] || DOMAIN_STATUS_META.direct).label.toLowerCase();
+    return `${pattern} — ${statusLabel}`;
+  }).join(' · ');
+  return { text: types.map(({ type }) => type).join(' · '), title, wildcard: true };
+}
+
 function renderProxiedList() {
   const container = document.getElementById('custom-proxied-rows');
   if (!container) return;
@@ -1872,6 +1946,7 @@ function renderProxiedList() {
   }
   if (moreBtn) moreBtn.classList.toggle('hidden', !proxiedHasMore);
 
+  const wildcardIndex = proxiedPatternIndex();
   rows.forEach(({ domain, status }) => {
     const meta = DOMAIN_STATUS_META[status] || DOMAIN_STATUS_META.direct;
     const row = document.createElement('tr');
@@ -1880,10 +1955,8 @@ function renderProxiedList() {
     // they are the two entries the escaping sweep allows by name.
     const domainClass = meta.domainClass;
     const statusClass = meta.badge;
-    const wildcard = domain.startsWith('*.');
-    const wildcardBadge = wildcard
-      ? `<span class="badge badge-custom ms-1 shrink-0" title="Subdomains of ${escapeHTML(domain.slice(2))}">WILD</span>`
-      : '';
+    const wildcardInfo = wildcardLabelFor(domain, wildcardIndex);
+    const wildcardClass = wildcardInfo.wildcard ? 'text-purple-300' : 'text-slate-500';
     const statusBadge = `<button type="button" class="proxied-route-btn badge ${statusClass} inline-flex items-center gap-1" data-domain="${escapeHTML(domain)}" title="Proxy, block or direct ${escapeHTML(domain)}" aria-haspopup="menu" aria-expanded="false">${meta.label}</button>`;
 
     // Keep the same actions on every status. Paused is still a proxy state (the
@@ -1913,13 +1986,13 @@ function renderProxiedList() {
         <input type="checkbox" class="proxied-select-check proxied-check" data-val="${escapeHTML(domain)}" ${proxiedSelected.has(domain) ? 'checked' : ''} aria-label="Select ${escapeHTML(domain)}">
       </td>
       <td class="py-2.5 px-3 text-start" title="${escapeHTML(domain)}">
-        <div class="flex items-center gap-1 min-w-0">
+        <div class="flex flex-col min-w-0">
           <span class="font-mono ${domainClass} truncate">${escapeHTML(domain)}</span>
-          ${wildcardBadge}
+          <span class="text-[10px] font-mono truncate ${wildcardClass}" title="${escapeHTML(wildcardInfo.title)}">${escapeHTML(wildcardInfo.text)}</span>
         </div>
       </td>
       <td class="py-2.5 px-3 text-center">
-        <div class="flex items-center justify-center gap-2">
+        <div class="flex items-center justify-center gap-3">
           ${resolutionButton}
           ${pauseControl}
           <button class="remove-proxied inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-red-500/10 text-red-400 border border-red-500/30 text-[11px] font-semibold transition" data-val="${escapeHTML(domain)}" aria-label="Remove ${escapeHTML(domain)}">Remove</button>
@@ -2298,7 +2371,8 @@ async function saveRules() {
     custom_proxied_disabled: currentConfig.rules.custom_proxied_disabled || [],
     custom_blocked: currentConfig.rules.custom_blocked,
     custom_direct: currentConfig.rules.custom_direct,
-    custom_records: currentConfig.rules.custom_records
+    custom_records: currentConfig.rules.custom_records,
+    custom_domain_added: currentConfig.rules.custom_domain_added || {}
   };
 
   try {
@@ -3097,6 +3171,23 @@ const STREAM_ACTION_BADGES = {
   DIRECT: '<span class="badge badge-direct">DIRECT</span>',
 };
 
+// Colour per protocol for the PROTO column. The shown value is the transport that
+// resolved the query (upstream_protocol), falling back to the client protocol when
+// nothing upstream answered. Unknown or blank values stay muted.
+const PROTO_COLORS = {
+  UDP: 'text-blue-400',
+  TCP: 'text-sky-400',
+  DOT: 'text-emerald-400',
+  DOH: 'text-purple-400',
+  DOQ: 'text-amber-400',
+  DOH3: 'text-orange-400',
+  DNSCRYPT: 'text-fuchsia-400',
+};
+
+function protocolClass(protocol) {
+  return PROTO_COLORS[String(protocol || '').toUpperCase()] || 'text-slate-500';
+}
+
 // queryRowHTML renders one query into the seven cells of the stream table. Everything that
 // came off the wire is escaped — the row reaches the DOM through innerHTML, and a domain is
 // whatever a client asked this resolver to look up.
@@ -3133,6 +3224,7 @@ function queryRowHTML(q) {
   const protoTitle = resolutionProto
     ? `Resolution: ${resolutionProto} · Client: ${clientProto}`
     : `Client: ${clientProto}`;
+  const protoClass = protocolClass(protoStr);
 
   // clientIP is escaped like the domain beside it. It is normally a parsed address,
   // but on DoH it can originate from a forwarding header, and the row is written with
@@ -3154,7 +3246,7 @@ function queryRowHTML(q) {
   return `
     <td class="stream-col-time py-2.5 px-2 sm:px-3 text-slate-400 whitespace-nowrap">${timeStr}</td>
     <td class="stream-col-client py-2.5 px-2 sm:px-3">${clientDisplay}</td>
-    <td class="stream-col-proto py-2.5 px-2 sm:px-3 text-purple-400 font-bold hidden sm:table-cell" title="${escapeHTML(protoTitle)}">${escapeHTML(protoStr)}</td>
+    <td class="stream-col-proto py-2.5 px-2 sm:px-3 ${protoClass} font-bold hidden sm:table-cell" title="${escapeHTML(protoTitle)}">${escapeHTML(protoStr)}</td>
     <td class="stream-col-domain py-2.5 px-2 sm:px-3">
       <div class="text-cyan-300 font-semibold truncate" title="${escapeHTML(domain)}">${escapeHTML(domain)}</div>
       ${upstreamLine}
@@ -3298,45 +3390,216 @@ function insertStreamQuery(q) {
 // action is the same write as editing the Proxied or Rules tab by hand.
 let streamActionDomain = '';
 let streamActionScope = 'exact';
+// Patterns written by a scope click in the current menu session. They let the next
+// click undo the previous conversion even when the origin domain no longer appears
+// in any list (the *.parent case).
+let streamActionApplied = [];
 
-// streamActionTarget resolves a domain under the chosen scope. A wildcard is only
-// offered when it would still be specific: the naive leftmost-label strip means
-// api.target.com -> *.target.com, but target.com has no parent wildcard to offer
-// (its parent is "com", and *.com is not a rule anybody wants), so it returns the
-// empty string and the caller refuses rather than writing it.
-function streamActionTarget(domain, scope) {
-  const raw = String(domain || '').trim().toLowerCase().replace(/^\.+/, '');
-  if (!raw) return '';
-  const wildcard = raw.startsWith('*.');
-  const host = wildcard ? raw.slice(2) : raw;
-  const labels = host.split('.').filter(Boolean);
-  if (scope === 'exact') return wildcard ? '*.' + host : host;
-  // A row that is already a wildcard has no meaningful *.host (that would be
-  // *.*.base) and no parent wildcard below a TLD. Only Exact applies.
-  if (wildcard) return '';
-  if (scope === 'host') {
-    return labels.length >= 2 ? '*.' + host : '';
+// streamManagedPatterns is every domain pattern the routing lists already hold,
+// across all four statuses. The quick-action menu reads it to open on the scope
+// that is actually configured instead of resetting to exact on every open.
+function streamManagedPatterns() {
+  const rules = (currentConfig && currentConfig.rules) || {};
+  const patterns = new Set();
+  for (const key of ['custom_proxied', 'custom_proxied_disabled', 'custom_blocked', 'custom_direct']) {
+    for (const d of rules[key] || []) {
+      const pattern = String(d || '').trim().toLowerCase().replace(/\.$/, '');
+      if (pattern) patterns.add(pattern);
+    }
   }
-  if (scope === 'parent') {
-    return labels.length >= 3 ? '*.' + labels.slice(1).join('.') : '';
-  }
-  return host;
+  return patterns;
 }
 
-// updateStreamActionScopes labels each scope with the pattern it would write and
-// disables the ones that would produce nothing. That is both the "which wildcard
-// am I applying" hint and the fix for selecting *.parent on a bare host, which
-// used to fail only after the action was chosen.
+// The last scope the operator picked for a name. Reopening the menu keeps that
+// choice instead of snapping back to exact; it is session state, not a saved rule.
+const streamActionScopeMemory = new Map();
+
+// streamScopeTargets lists every pattern a scope writes.
+//
+// - exact  : the name itself (a wildcard row stays its wildcard)
+// - *.host : subdomains of the name only; on a wildcard row that is the row itself
+// - host+* : the name AND its subdomains (two entries, so the host stays covered)
+// - *.parent: the parent's subtree, which already contains the name
+//
+// Nothing is written for a scope that would name a bare TLD, and host+* is not
+// offered on a row that is already a wildcard (it would duplicate *.host).
+function streamScopeTargets(domain, scope) {
+  const raw = String(domain || '').trim().toLowerCase().replace(/^\.+/, '');
+  if (!raw) return [];
+  const wildcard = raw.startsWith('*.');
+  const base = wildcard ? raw.slice(2) : raw;
+  const labels = base.split('.').filter(Boolean);
+  // Exact is the host itself. On a wildcard row that means dropping the "*.", so
+  // selecting Exact converts *.a.b.c back to a.b.c instead of being a no-op.
+  if (scope === 'exact') return [base];
+  if (scope === 'host') return labels.length >= 2 ? ['*.' + base] : [];
+  if (scope === 'parent') {
+    return labels.length >= 3 ? ['*.' + labels.slice(1).join('.')] : [];
+  }
+  return [];
+}
+
+// The four rule lists, in the precedence the Domains rows use. A scope change keeps
+// the list the name is already in, so the status is preserved.
+const STREAM_ACTION_LISTS = [
+  ['custom_proxied', 'proxy'],
+  ['custom_proxied_disabled', 'paused'],
+  ['custom_blocked', 'blocked'],
+  ['custom_direct', 'direct'],
+];
+
+// replacePatterns rewrites one rule list in place: the new patterns take the slot of
+// the first removed one, so a scope change never moves the row to the end of the
+// list (and therefore never to the top under "Added (newest)"). With nothing to
+// remove the patterns are appended, which is the live-log case.
+function replacePatterns(list, remove, add) {
+  const first = list.findIndex((d) => remove.includes(d) || add.includes(d));
+  const keep = (d) => !remove.includes(d) && !add.includes(d);
+  const kept = list.filter(keep);
+  if (first < 0) return kept.concat(add);
+  const at = list.slice(0, first).filter(keep).length;
+  return [...kept.slice(0, at), ...add, ...kept.slice(at)];
+}
+
+// streamRowStamp returns the added-at stamp already stored for a row, from any of its
+// patterns or its base, so a rename keeps the original position in "Added" sorting.
+function streamRowStamp(domain) {
+  const added = (currentConfig?.rules?.custom_domain_added) || {};
+  const base = domain.startsWith('*.') ? domain.slice(2) : domain;
+  for (const pattern of [...streamRowPatterns(domain), base]) {
+    if (added[pattern]) return added[pattern];
+  }
+  return '';
+}
+
+// streamRowPatterns is what "this row's rule" means: a wildcard row owns itself, a
+// plain row owns its exact entry and its host wildcard. Switching scope replaces
+// these, so choosing *.parent cannot leave *.host behind.
+function streamRowPatterns(domain) {
+  const raw = String(domain || '').trim().toLowerCase();
+  if (!raw) return [];
+  const wildcard = raw.startsWith('*.');
+  const base = wildcard ? raw.slice(2) : raw;
+  return wildcard ? [raw] : [base, '*.' + base];
+}
+
+// streamActionListKey finds the list the clicked name is stored in, or null when the
+// name has no rule yet. A live-log host may only have its wildcard stored, so any of
+// the row's patterns counts.
+function streamActionListKey(domain) {
+  const rules = currentConfig && currentConfig.rules;
+  if (!rules || !domain) return null;
+  const rowPatterns = streamRowPatterns(domain);
+  for (const [key, status] of STREAM_ACTION_LISTS) {
+    if (rowPatterns.some((p) => (rules[key] || []).includes(p))) return { key, status };
+  }
+  return null;
+}
+
+// applyStreamScope rewrites an existing rule in place when the operator picks a scope.
+// Selecting *.host used to only arm the next action, so the line under the domain
+// stayed "exact" and the change looked unsaved. Now the row's own patterns are
+// replaced in the same list and the subtitle updates immediately. A name with no rule
+// is left alone: there the scope stays a modifier for Proxy/Block/Direct.
+function applyStreamScope(domain, scope) {
+  const rules = currentConfig && currentConfig.rules;
+  // After *.parent the origin domain is gone from every list; the pattern the last
+  // click wrote is where the rule now lives, so use it to find the status.
+  const current = streamActionListKey(domain) ||
+    (streamActionApplied.length ? streamActionListKey(streamActionApplied[0]) : null);
+  if (!rules || !current) return false;
+  const targets = streamScopeTargets(domain, scope);
+  if (!targets.length) return false;
+  const rowPatterns = streamRowPatterns(domain);
+  const stamp = streamRowStamp(domain) || streamRowStamp(streamActionApplied[0] || '');
+  const remove = [...new Set([...rowPatterns, ...streamActionApplied, ...targets])];
+  for (const [key] of STREAM_ACTION_LISTS) {
+    if (key === current.key) continue;
+    rules[key] = (rules[key] || []).filter((x) => !remove.includes(x));
+  }
+  rules[current.key] = replacePatterns(rules[current.key] || [], remove, targets);
+  const added = rules.custom_domain_added || {};
+  for (const pattern of rowPatterns) delete added[pattern];
+  if (stamp) for (const target of targets) added[target] = stamp;
+  rules.custom_domain_added = added;
+  streamActionApplied = targets;
+  saveRules();
+  renderConfig(currentConfig);
+  renderQueryStream();
+  showToast(`Scope: ${targets.join(' + ')}`, 'success');
+  return true;
+}
+
+// streamActionTarget is the single-pattern form, kept for callers that only need
+// the primary target (host+* returns the exact host first).
+function streamActionTarget(domain, scope) {
+  return streamScopeTargets(domain, scope)[0] || '';
+}
+
+// currentStreamScope picks the scope whose pattern is already in the routing
+// lists. host+* wins when both its entries exist, then exact, then the host
+// wildcard, then the parent wildcard.
+function currentStreamScope(domain, patterns) {
+  const raw = String(domain || '').trim().toLowerCase().replace(/^\.+/, '');
+  if (!raw) return 'exact';
+  const wildcard = raw.startsWith('*.');
+  const base = wildcard ? raw.slice(2) : raw;
+  const labels = base.split('.').filter(Boolean);
+  if (!wildcard) {
+    // A plain rule already covers the host and every subdomain, so it is the
+    // broadest thing that can be stored for this row.
+    if (patterns.has(base)) return 'exact';
+    if (labels.length >= 2 && patterns.has('*.' + base)) return 'host';
+  } else if (patterns.has(raw)) {
+    // The wildcard row's own rule is the host wildcard.
+    return 'host';
+  }
+  if (labels.length >= 3 && patterns.has('*.' + labels.slice(1).join('.'))) return 'parent';
+  return 'exact';
+}
+
+// One-line explanation for each scope; the exact rule covers subdomains too, which
+// the bare label cannot say on its own.
+const STREAM_SCOPE_HINTS = {
+  exact: 'host + subdomains',
+  host: 'subdomains only',
+  parent: 'parent subtree',
+};
+
+// updateStreamActionScopes disables the scopes that would produce nothing. That is
+// both the "which wildcard am I applying" hint and the fix for selecting *.parent
+// on a bare host, which used to fail only after the action was chosen.
 function updateStreamActionScopes(domain) {
   streamActionScopeButtons().forEach((b) => {
-    const target = streamActionTarget(domain, b.dataset.scope || 'exact');
-    b.disabled = !target;
-    b.title = target ? 'Apply to this scope' : 'Not available for this domain';
-    if (!target) {
+    const targets = streamScopeTargets(domain, b.dataset.scope || 'exact');
+    b.disabled = targets.length === 0;
+    const hint = STREAM_SCOPE_HINTS[b.dataset.scope] || '';
+    b.title = targets.length
+      ? `Apply to ${targets.join(' + ')} (${hint})`
+      : 'Not available for this domain';
+    if (!targets.length) {
       b.classList.remove('is-active');
       b.setAttribute('aria-checked', 'false');
     }
   });
+}
+
+// updateStreamActionPreview shows the exact patterns the chosen scope writes.
+// The scope labels are short on purpose: without this, *.host on
+// s-imp.rmp.rakuten.com looks like it covers that host, while it writes
+// *.s-imp.rmp.rakuten.com and covers its subdomains only.
+function updateStreamActionPreview() {
+  const el = document.getElementById('stream-action-target');
+  if (!el) return;
+  const targets = streamScopeTargets(streamActionDomain, streamActionScope);
+  if (!targets.length) {
+    el.textContent = 'No pattern for this scope';
+    el.title = '';
+    return;
+  }
+  const hint = STREAM_SCOPE_HINTS[streamActionScope] || '';
+  el.textContent = `applies to ${targets.join(' + ')} (${hint})`;
+  el.title = targets.join(' + ');
 }
 
 function streamActionScopeButtons() {
@@ -3348,15 +3611,25 @@ function openStreamActionMenu(trigger) {
   const menu = document.getElementById('stream-action-menu');
   if (!menu) return;
   streamActionDomain = trigger.dataset.domain || '';
-  streamActionScope = 'exact';
+  streamActionApplied = [];
+  const patterns = streamManagedPatterns();
+  // Keep the last scope picked for this name; fall back to the one its rules imply.
+  const remembered = streamActionScopeMemory.get(streamActionDomain);
+  streamActionScope = remembered && streamScopeTargets(streamActionDomain, remembered).length
+    ? remembered
+    : currentStreamScope(streamActionDomain, patterns);
   const domainEl = document.getElementById('stream-action-domain');
   if (domainEl) domainEl.textContent = streamActionDomain;
   updateStreamActionScopes(streamActionDomain);
+  // The chosen scope can be disabled on a row whose base has no parent; fall back
+  // to exact rather than opening with nothing selected.
+  if (!streamScopeTargets(streamActionDomain, streamActionScope).length) streamActionScope = 'exact';
   streamActionScopeButtons().forEach((b) => {
-    const active = b.dataset.scope === 'exact' && !b.disabled;
+    const active = b.dataset.scope === streamActionScope && !b.disabled;
     b.classList.toggle('is-active', active);
     b.setAttribute('aria-checked', active ? 'true' : 'false');
   });
+  updateStreamActionPreview();
   document.querySelectorAll('.stream-action-btn[aria-expanded="true"], .proxied-route-btn[aria-expanded="true"]')
     .forEach((b) => b.setAttribute('aria-expanded', 'false'));
   trigger.setAttribute('aria-expanded', 'true');
@@ -3391,12 +3664,13 @@ const STREAM_ACTION_LOG_BADGE = { proxy: 'PROXY', block: 'BLOCK', direct: 'DIREC
 
 function applyStreamAction(action) {
   if (!currentConfig || !currentConfig.rules || !streamActionDomain) return;
-  const target = streamActionTarget(streamActionDomain, streamActionScope);
-  if (!target) {
+  const targets = streamScopeTargets(streamActionDomain, streamActionScope);
+  if (!targets.length) {
     showToast('That scope has no specific domain to match', 'error');
     closeStreamActionMenu();
     return;
   }
+  streamActionScopeMemory.set(streamActionDomain, streamActionScope);
   const rules = currentConfig.rules;
   const lists = {
     custom_proxied: Array.isArray(rules.custom_proxied) ? rules.custom_proxied : [],
@@ -3406,16 +3680,26 @@ function applyStreamAction(action) {
   };
   // Every action starts from a clean slate: a domain lives in exactly one list,
   // so switching it from blocked to proxied is a move, not an addition to both.
-  for (const key of Object.keys(lists)) lists[key] = lists[key].filter((x) => x !== target);
-  if (action === 'proxy') lists.custom_proxied.push(target);
-  else if (action === 'block') lists.custom_blocked.push(target);
-  else if (action === 'direct') lists.custom_direct.push(target);
+  const rowPatterns = streamRowPatterns(streamActionDomain);
+  const stamp = streamRowStamp(streamActionDomain) || streamRowStamp(streamActionApplied[0] || '');
+  const remove = [...new Set([...rowPatterns, ...streamActionApplied, ...targets])];
+  const targetKey = { proxy: 'custom_proxied', block: 'custom_blocked', direct: 'custom_direct' }[action] || '';
+  for (const key of Object.keys(lists)) {
+    if (key === targetKey) continue;
+    lists[key] = lists[key].filter((x) => !remove.includes(x));
+  }
+  if (targetKey) lists[targetKey] = replacePatterns(lists[targetKey], remove, targets);
   else if (action !== 'remove') return;
 
   rules.custom_proxied = lists.custom_proxied;
   rules.custom_proxied_disabled = lists.custom_proxied_disabled;
   rules.custom_blocked = lists.custom_blocked;
   rules.custom_direct = lists.custom_direct;
+  streamActionApplied = [];
+  const added = rules.custom_domain_added || {};
+  for (const pattern of rowPatterns) delete added[pattern];
+  if (stamp && action !== 'remove') for (const target of targets) added[target] = stamp;
+  rules.custom_domain_added = added;
 
   // Rewrite the buffered rows for this exact host so the badge the operator just
   // acted on (and any sibling row for the same host) shows the new action at once.
@@ -3427,10 +3711,15 @@ function applyStreamAction(action) {
   }
 
   const label = { proxy: 'Proxied', block: 'Blocked', direct: 'Set direct', remove: 'Removed' }[action] || 'Updated';
+  // Only a wildcard-only target leaves the clicked host out, so say that once here
+  // as well as in the menu preview: otherwise the original row keeps resolving and
+  // the action reads as a no-op. host+* includes the host, so it needs no warning.
+  const scopeNote = targets.every((t) => t.startsWith('*.')) ? ' (subdomains only)' : '';
+  const target = targets.join(' + ');
   saveRules();
   renderConfig(currentConfig);
   renderQueryStream();
-  showToast(`${label} ${target}`, 'success');
+  showToast(`${label} ${target}${scopeNote}`, 'success');
   closeStreamActionMenu();
 }
 
@@ -3438,11 +3727,16 @@ function onStreamActionMenuClick(e) {
   const scopeBtn = e.target.closest('.stream-action-scope');
   if (scopeBtn) {
     streamActionScope = scopeBtn.dataset.scope || 'exact';
+    streamActionScopeMemory.set(streamActionDomain, streamActionScope);
     streamActionScopeButtons().forEach((b) => {
       const active = b === scopeBtn;
       b.classList.toggle('is-active', active);
       b.setAttribute('aria-checked', active ? 'true' : 'false');
     });
+    updateStreamActionPreview();
+    // Rows that already have a rule change scope on the spot; nothing is written for
+    // a name with no rule until an action button is pressed.
+    applyStreamScope(streamActionDomain, streamActionScope);
     return;
   }
   const actionBtn = e.target.closest('.stream-action-item');

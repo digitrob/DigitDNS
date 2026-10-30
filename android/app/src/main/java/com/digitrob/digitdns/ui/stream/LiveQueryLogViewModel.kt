@@ -42,6 +42,8 @@ data class LiveQueryLogUiState(
     val refreshTick: Int = 0,
     /** A one-shot message for the last quick action, shown as a snackbar. */
     val message: String? = null,
+    /** Every configured routing pattern; the quick-action menu preselects from this. */
+    val patterns: Set<String> = emptySet(),
 ) {
     /** The source list respecting pause: frozen while paused, live otherwise. */
     val source: List<QueryEvent> get() = pausedBuffer ?: buffer
@@ -110,6 +112,12 @@ class LiveQueryLogViewModel @Inject constructor(
                 }
             }
         }
+        // The quick-action menu preselects the scope a name is already routed with.
+        // Best-effort: a failure leaves the menu on Exact, and the action still works.
+        viewModelScope.launch {
+            runCatching { rulesRepository.load() }
+                .onSuccess { lists -> _state.update { it.copy(patterns = lists.managedPatterns) } }
+        }
     }
 
     fun onSearchChange(value: String) = _state.update { it.copy(search = value) }
@@ -164,31 +172,59 @@ class LiveQueryLogViewModel @Inject constructor(
         }
     }
 
-    /** Apply a quick action to the already-resolved [target] (e.g. `*.target.com`). */
-    fun applyQuickAction(action: RouteAction, target: String) {
-        if (target.isBlank()) return
+    /** Apply a quick action to the already-resolved [targets] (e.g. host + `*.host`). */
+    fun applyQuickAction(domain: String, action: RouteAction, targets: List<String>) {
+        val unique = targets.distinct()
+        if (unique.isEmpty()) return
+        val joined = unique.joinToString(" + ")
         viewModelScope.launch {
-            val result = runCatching {
-                when (action) {
-                    RouteAction.Proxy -> rulesRepository.addDomain(RuleList.Proxied, target)
-                        .let { it != null } to "Proxying $target"
-                    RouteAction.Block -> rulesRepository.addDomain(RuleList.Blocked, target)
-                        .let { it != null } to "Blocking $target"
-                    RouteAction.Direct -> rulesRepository.addDomain(RuleList.Direct, target)
-                        .let { it != null } to "Routing $target direct"
-                    RouteAction.Remove -> rulesRepository.removeDomain(RuleList.Proxied, target)
-                        .let { it != null } to "Removed $target from proxied"
-                }
-            }
+            val result = runCatching { performQuickAction(domain, action, unique) }
             val message = result.fold(
-                onSuccess = { (ok, text) -> if (ok) text else "Could not update $target" },
+                onSuccess = { (ok, text) -> if (ok) text else "Could not update $joined" },
                 onFailure = { e ->
                     Timber.w(e, "quick action failed")
-                    (e as? ApiException)?.userMessage ?: "Could not update $target"
+                    (e as? ApiException)?.userMessage ?: "Could not update $joined"
                 },
             )
-            _state.update { it.copy(message = message) }
+            _state.update {
+                val patterns = if (action == RouteAction.Remove) {
+                    it.patterns - unique.toSet()
+                } else {
+                    it.patterns + unique
+                }
+                it.copy(message = message, patterns = patterns)
+            }
         }
+    }
+
+    /** One read-modify-write for the target list, plus the message for the snackbar. */
+    private suspend fun performQuickAction(
+        domain: String,
+        action: RouteAction,
+        domains: List<String>,
+    ): Pair<Boolean, String> {
+        val key = when (action) {
+            RouteAction.Proxy -> RuleList.Proxied
+            RouteAction.Block -> RuleList.Blocked
+            RouteAction.Direct -> RuleList.Direct
+            RouteAction.Remove -> null
+        }
+        val ok = rulesRepository.route(key, rowPatterns(domain), domains)
+        val joined = domains.joinToString(" + ")
+        val message = when (action) {
+            RouteAction.Proxy -> "Proxying $joined"
+            RouteAction.Block -> "Blocking $joined"
+            RouteAction.Direct -> "Routing $joined direct"
+            RouteAction.Remove -> "Removed $joined from proxied"
+        }
+        return ok to message
+    }
+
+    /** What "this row's rule" means: a wildcard row owns itself, a plain host its pair. */
+    private fun rowPatterns(domain: String): Set<String> {
+        val wildcard = domain.startsWith("*.")
+        val base = if (wildcard) domain.removePrefix("*.") else domain
+        return if (wildcard) setOf(domain) else setOf(base, "*.$base")
     }
 
     override fun onCleared() {

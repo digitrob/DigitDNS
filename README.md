@@ -85,7 +85,7 @@ source is right here on GitHub.
 As `root` on Ubuntu 20.04+, Debian 11+, or AlmaLinux/Rocky 8+:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.5.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.5.3/scripts/install.sh | sudo bash
 ```
 
 The installer needs a **domain pointed at your server** (A record → server IP).
@@ -157,7 +157,7 @@ docker logs digitdns
 | Tag | What it is |
 | :--- | :--- |
 | `latest` | Latest stable release — use this |
-| `3.5.2` | A specific immutable release |
+| `3.5.3` | A specific immutable release |
 | `edge` | Nightly/dev build from the default branch — not for production |
 
 Verify an image's signature (proves it was built by this repo's CI):
@@ -176,7 +176,7 @@ Checksums are in `checksums.txt` (signed with the project's release key).
 
 ```bash
 # Linux amd64 example:
-curl -fsSL -o digitdns https://github.com/digitrob/DigitDNS/releases/download/v3.5.2/digitdns-linux-amd64
+curl -fsSL -o digitdns https://github.com/digitrob/DigitDNS/releases/download/v3.5.3/digitdns-linux-amd64
 chmod +x digitdns
 sudo ./digitdns -server
 ```
@@ -366,7 +366,10 @@ The web panel manages everything:
 - **Domain rules** — add/edit/proxy/block/direct, bulk import, and one list of
   every managed domain: proxied, paused, blocked and direct names together, with
   Proxy / Blocked / Paused / Direct chips to filter it (tap the active chip to
-  show all). A status change keeps the row where it is. The live query log keeps
+  show all). A status change keeps the row where it is. Each row shows its
+  wildcard scope underneath — `exact` (host + subdomains), `*.host` (subdomains
+  only) or `*.parent` (the parent's subtree) — and the row menu switches between
+  them in one click without moving the row. The live query log keeps
   the last hundred queries, pauses without losing arrivals, and its Clear button
   empties the server's buffer too — a reconnect cannot bring the cleared rows
   back; PROTO names the transport the resolver was queried over. Both lists use
@@ -397,7 +400,7 @@ customized with your own domain, title, and CSS to match your branding.
 DigitDNS also ships a native Android companion app — the same control surface as
 the web panel, in your pocket, talking to your server over the REST API and the
 live event stream. It is a separate product on its own version line
-(`android-v3.5.2` and friends), side-loaded from the GitHub release page rather
+(`android-v3.5.3` and friends), side-loaded from the GitHub release page rather
 than distributed through Play.
 
 **What it does (feature parity with the web panel):**

@@ -4,6 +4,7 @@ import com.digitrob.digitdns.core.network.RulesApi
 import com.digitrob.digitdns.core.network.RulesUpdateRequest
 import com.digitrob.digitdns.domain.model.RuleList
 import com.digitrob.digitdns.domain.model.RuleLists
+import com.digitrob.digitdns.domain.model.replaceDomainPatterns
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -61,9 +62,68 @@ class RulesRepository @Inject constructor(
     suspend fun addDomain(key: RuleList, domain: String): List<String>? =
         mutateList(key) { current -> if (domain in current) current else current + domain }
 
+    /**
+     * Add several patterns in one read-modify-write. The "host + *" scope writes the
+     * host and its wildcard together, and two saves would otherwise race and leave
+     * whichever finished last with the older list.
+     */
+    suspend fun addDomains(key: RuleList, domains: List<String>): List<String>? =
+        mutateList(key) { current -> current + domains.filter { it !in current } }
+
     /** Remove [domain] from one list, read-modify-write. Used by the "Remove rule" action. */
     suspend fun removeDomain(key: RuleList, domain: String): List<String>? =
         mutateList(key) { current -> current - domain }
+
+    /**
+     * Move a row's rule to [target] in one read-modify-write. The row's old patterns
+     * and the new targets are cleared from every list first, then the targets are
+     * written to [target]; a null [target] only clears. This is what stops a live-log
+     * action from leaving the previous wildcard behind when the scope changes.
+     */
+    suspend fun route(
+        target: RuleList?,
+        rowPatterns: Collection<String>,
+        domains: List<String>,
+    ): Boolean {
+        val lists = load()
+        fun strip(list: List<String>) = list.filter { it !in rowPatterns && it !in domains }
+        // The target list keeps the row's slot when the rule is already there; the
+        // other lists only lose the row's patterns.
+        fun rewrite(list: List<String>) = replaceDomainPatterns(list, rowPatterns, domains)
+        val next = when (target) {
+            RuleList.Proxied -> lists.copy(
+                proxied = rewrite(lists.proxied),
+                proxiedDisabled = strip(lists.proxiedDisabled),
+                blocked = strip(lists.blocked),
+                direct = strip(lists.direct),
+            )
+            RuleList.ProxiedDisabled -> lists.copy(
+                proxied = strip(lists.proxied),
+                proxiedDisabled = rewrite(lists.proxiedDisabled),
+                blocked = strip(lists.blocked),
+                direct = strip(lists.direct),
+            )
+            RuleList.Blocked -> lists.copy(
+                proxied = strip(lists.proxied),
+                proxiedDisabled = strip(lists.proxiedDisabled),
+                blocked = rewrite(lists.blocked),
+                direct = strip(lists.direct),
+            )
+            RuleList.Direct -> lists.copy(
+                proxied = strip(lists.proxied),
+                proxiedDisabled = strip(lists.proxiedDisabled),
+                blocked = strip(lists.blocked),
+                direct = rewrite(lists.direct),
+            )
+            null -> lists.copy(
+                proxied = strip(lists.proxied),
+                proxiedDisabled = strip(lists.proxiedDisabled),
+                blocked = strip(lists.blocked),
+                direct = strip(lists.direct),
+            )
+        }
+        return save(next)
+    }
 
     private suspend fun mutateList(
         key: RuleList,

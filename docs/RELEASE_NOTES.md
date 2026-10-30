@@ -1,3 +1,35 @@
+# DigitDNS v3.5.3
+
+Wildcards became a visible, one-click control on both clients, the Domains list
+gained a scope line, and the live log now colours its transports. No migrations
+and no configuration changes.
+
+## Highlights
+
+- **Three scopes, one click.** **exact** covers the host and every subdomain,
+  **\*.host** covers subdomains only, **\*.parent** covers the parent's subtree.
+  A preview shows the exact pattern, and selecting a scope rewrites the rule in
+  place — `*.parent → exact` restores the original host.
+- **You can see the active wildcard.** Under each domain the list shows `exact`,
+  `*.host` or `*.parent` (both when two apply), on web and Android.
+- **The row does not move.** A scope change replaces the pattern in the same slot,
+  keeps its “Added” stamp, and A–Z sorts wildcards by their base name.
+- **Protocol colours in the live log.** UDP blue, TCP sky, DoT emerald, DoH purple,
+  DoQ amber, DoH3 orange, DNSCrypt fuchsia.
+- **Tighter layout.** Android Domains rows now match the live-log height (58 dp),
+  the gear ripple is centred, the web quick-action menu stays on screen, and the
+  Upstream Resolvers card lost its redundant footer.
+
+## Upgrading
+
+Docker users on `ghcr.io/digitrob/digitdns:latest` get it on restart, or pull
+`3.5.3` explicitly. Binary installs: replace `digitdns` and restart. Android is a
+separate download on this page — version 3.5.3 (versionCode 355).
+
+Full changelog: docs/CHANGELOG.md
+
+---
+
 # DigitDNS v3.5.2
 
 Two more resolution strategies, one Domains list on the web dashboard, and a

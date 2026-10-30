@@ -216,3 +216,42 @@ func TestConfigRulesGuards(t *testing.T) {
 		t.Errorf("truncated JSON = %d, want 400", w.Code)
 	}
 }
+
+// A scope rename keeps its "Added" position: the dashboard sends the stamp map with
+// the save, and the handler honours entries for keys that are actually in the saved
+// lists. Unknown keys and unparsable values are dropped rather than persisted.
+func TestConfigRulesKeepsProvidedAddedStamps(t *testing.T) {
+	_, h, tok, cleanup := authedServer(t)
+	defer cleanup()
+
+	const stamp = "2026-01-02T03:04:05Z"
+	body := `{
+		"custom_proxied": ["*.keep.example", "fresh.example"],
+		"custom_domain_added": {
+			"*.keep.example": "` + stamp + `",
+			"unknown.example": "` + stamp + `",
+			"bad.example": "not-a-time"
+		}
+	}`
+	if w := postJSON(t, h, "/api/config/rules", body, tok); w.Code != http.StatusOK {
+		t.Fatalf("save = %d — %s", w.Code, w.Body.String())
+	}
+
+	rules := rulesFromConfig(t, h, tok)
+	added, ok := rules["custom_domain_added"].(map[string]any)
+	if !ok {
+		t.Fatalf("custom_domain_added = %#v, want an object", rules["custom_domain_added"])
+	}
+	if got := added["*.keep.example"]; got != stamp {
+		t.Errorf("stamp for the renamed wildcard = %v, want %s", got, stamp)
+	}
+	if _, ok := added["unknown.example"]; ok {
+		t.Error("unknown.example kept a stamp for a domain that is not in any list")
+	}
+	if _, ok := added["bad.example"]; ok {
+		t.Error("bad.example kept an unparsable stamp")
+	}
+	if got, _ := added["fresh.example"].(string); got == "" {
+		t.Error("fresh.example has no seeded stamp")
+	}
+}

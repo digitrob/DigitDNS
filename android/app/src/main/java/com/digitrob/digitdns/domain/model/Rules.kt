@@ -17,6 +17,10 @@ data class RuleLists(
     val direct: List<String> = emptyList(),
     val records: Map<String, String> = emptyMap(),
 ) {
+    /** Every pattern any of the four lists holds; the quick-action menu preselects from this. */
+    val managedPatterns: Set<String>
+        get() = (proxied + proxiedDisabled + blocked + direct).toSet()
+
     companion object {
         fun from(dto: RulesResponse): RuleLists = RuleLists(
             proxied = dto.customProxied,
@@ -26,6 +30,25 @@ data class RuleLists(
             records = dto.customRecords,
         )
     }
+}
+
+/**
+ * Replace [remove] with [add] in one rule list, keeping the slot of the first removed
+ * entry. A scope change (a.b.c -> *.a.b.c) must not move the row to the end of the
+ * list, which is what "Added (newest)" shows as a jump to the top. With nothing to
+ * remove the patterns are appended (the live-log case).
+ */
+fun replaceDomainPatterns(
+    list: List<String>,
+    remove: Collection<String>,
+    add: List<String>,
+): List<String> {
+    val first = list.indexOfFirst { it in remove || it in add }
+    val keep = { d: String -> d !in remove && d !in add }
+    val kept = list.filter(keep)
+    if (first < 0) return kept + add
+    val at = list.take(first).count(keep)
+    return kept.take(at) + add + kept.drop(at)
 }
 
 /** Which custom list a domain belongs to. The wire key is [wireKey]. */

@@ -43,6 +43,17 @@ import androidx.compose.ui.unit.DpOffset
 import com.digitrob.digitdns.ui.rules.MatchScope
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 
+/** The last scope picked per name, so reopening the menu keeps it even before a write. */
+private object RouteScopeMemory {
+    private val scopes = mutableMapOf<String, MatchScope>()
+
+    fun get(domain: String): MatchScope? = scopes[domain]
+
+    fun put(domain: String, scope: MatchScope) {
+        scopes[domain] = scope
+    }
+}
+
 /**
  * The routing quick-action menu, shared by the Domains list and the Live Query Log so
  * both offer the panel's identical menu: a match-scope selector (exact / *.host /
@@ -52,21 +63,34 @@ import com.digitrob.digitdns.ui.theme.DigitDnsTheme
  * is decided here and the caller only has to route the result.
  */
 @Composable
-@Suppress("LongMethod", "CyclomaticComplexMethod")
+@Suppress("LongMethod", "CyclomaticComplexMethod", "LongParameterList")
 fun RouteActionMenu(
     domain: String,
     expanded: Boolean,
     onDismiss: () -> Unit,
-    onAction: (RouteAction, String) -> Unit,
+    onAction: (RouteAction, List<String>) -> Unit,
+    onScopeChange: (MatchScope, List<String>) -> Unit = { _, _ -> },
+    patterns: Set<String> = emptySet(),
     anchorSize: IntSize = IntSize.Zero,
     anchorY: Float = 0f,
 ) {
-    var scope by remember(domain) { mutableStateOf(MatchScope.Exact) }
+    // Keep the last scope picked for this name, then fall back to the one its
+    // rules imply. Reopening after choosing *.host must not snap back to exact.
+    var scope by remember(domain, patterns) {
+        mutableStateOf(RouteScopeMemory.get(domain) ?: MatchScope.initialScope(domain, patterns))
+    }
+    // What a scope click wrote in this menu session. The next click removes it, so
+    // *.parent -> exact restores the origin even though the origin left the lists.
+    var appliedTargets by remember(domain, expanded) { mutableStateOf(emptyList<String>()) }
     val colors = DigitDnsTheme.colors
     val density = LocalDensity.current
     val config = LocalConfiguration.current
     val screenHeightPx = with(density) { config.screenHeightDp.dp.toPx() }
-    val menuWidthPx = with(density) { 280.dp.toPx() }
+    // The menu carries four scopes plus two lines of text now, so it takes the
+    // window width minus 16 dp margins, capped at 340 dp. The previous fixed 280 dp
+    // left each scope ~63 dp and wrapped the hints into a cramped column.
+    val menuWidth = (config.screenWidthDp - 32).coerceIn(280, 340).dp
+    val menuWidthPx = with(density) { menuWidth.toPx() }
     val offsetX = if (anchorSize.width > 0) {
         ((anchorSize.width - menuWidthPx) / 2f).toInt()
     } else 0
@@ -91,7 +115,7 @@ fun RouteActionMenu(
         modifier = Modifier
             .background(colors.bgCard)
             .border(1.dp, colors.borderColor, RoundedCornerShape(12.dp))
-            .width(280.dp)
+            .width(menuWidth)
             .onSizeChanged { menuHeightPx = it.height.toFloat() },
     ) {
         Text(
@@ -102,20 +126,40 @@ fun RouteActionMenu(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
         )
-        ScopeSelector(domain, scope, onSelect = { scope = it })
+        ScopeSelector(domain, scope, onSelect = { chosen ->
+            onScopeChange(chosen, appliedTargets)
+            appliedTargets = chosen.targets(domain)
+            scope = chosen
+            RouteScopeMemory.put(domain, chosen)
+        })
+        // The scope labels are short on purpose: without the resolved pattern a
+        // *.host action on a host looks like it covers that host, while it writes
+        // *.host and covers its subdomains only.
+        val targets = scope.targets(domain)
+        Text(
+            text = if (targets.isEmpty()) {
+                "No pattern for this scope"
+            } else {
+                "applies to ${targets.joinToString(" + ")}"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+        )
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             val moveActions = listOf(RouteAction.Proxy, RouteAction.Block, RouteAction.Direct)
             moveActions.forEach { action ->
-                val target = scope.resolve(domain)
-                val enabled = target != null
+                val enabled = targets.isNotEmpty()
                 OutlinedButton(
                     onClick = {
-                        val resolved = target ?: return@OutlinedButton
+                        if (targets.isEmpty()) return@OutlinedButton
                         onDismiss()
-                        onAction(action, resolved)
+                        onAction(action, targets)
                     },
                     enabled = enabled,
                     modifier = Modifier.weight(1f),
@@ -133,13 +177,12 @@ fun RouteActionMenu(
             }
         }
         val removeAction = RouteAction.Remove
-        val removeTarget = scope.resolve(domain)
-        val removeEnabled = removeTarget != null
+        val removeEnabled = targets.isNotEmpty()
         Button(
             onClick = {
-                val resolved = removeTarget ?: return@Button
+                if (targets.isEmpty()) return@Button
                 onDismiss()
-                onAction(removeAction, resolved)
+                onAction(removeAction, targets)
             },
             enabled = removeEnabled,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
@@ -155,53 +198,77 @@ fun RouteActionMenu(
     }
 }
 
-/** The scope radiogroup row inside the menu: exact / *.host / *.parent. */
+/** The scope selector: a 2 x 2 grid, so every label and hint fits on one line. */
 @Composable
 private fun ScopeSelector(domain: String, selected: MatchScope, onSelect: (MatchScope) -> Unit) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        MatchScope.entries.forEach { scope ->
-            val valid = scope.resolve(domain) != null
-            val active = scope == selected && valid
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(
-                        if (active) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                        } else {
-                            Color.Transparent
-                        },
-                    )
-                    .clickable(enabled = valid) { if (valid) onSelect(scope) }
-                    .padding(horizontal = 6.dp, vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+        MatchScope.entries.chunked(SCOPE_COLUMNS).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(
-                    text = scope.label,
-                    style = MaterialTheme.typography.labelMedium,
-                    textAlign = TextAlign.Center,
-                    color = if (!valid) {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                    } else if (active) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-                Text(
-                    text = scope.hint,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (valid) 1f else 0.4f),
-                    maxLines = 2,
-                    textAlign = TextAlign.Center,
-                )
+                row.forEach { scope ->
+                    ScopeCell(
+                        scope = scope,
+                        domain = domain,
+                        selected = scope == selected,
+                        onSelect = onSelect,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                repeat(SCOPE_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
 }
+
+/** One scope in the selector: the pattern label plus a one-line hint. */
+@Composable
+private fun ScopeCell(
+    scope: MatchScope,
+    domain: String,
+    selected: Boolean,
+    onSelect: (MatchScope) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val valid = scope.targets(domain).isNotEmpty()
+    val active = selected && valid
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(
+                if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent,
+            )
+            .clickable(enabled = valid) { if (valid) onSelect(scope) }
+            .padding(horizontal = 6.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = scope.label,
+            style = MaterialTheme.typography.labelMedium,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = when {
+                !valid -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                active -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
+        Text(
+            text = scope.hint,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (valid) 1f else 0.4f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private const val SCOPE_COLUMNS = 3

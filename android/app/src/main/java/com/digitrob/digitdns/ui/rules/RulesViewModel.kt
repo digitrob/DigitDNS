@@ -10,6 +10,7 @@ import com.digitrob.digitdns.data.RulesRepository
 import com.digitrob.digitdns.data.SettingsRepository
 import com.digitrob.digitdns.data.UpstreamsRepository
 import com.digitrob.digitdns.domain.model.RuleLists
+import com.digitrob.digitdns.domain.model.replaceDomainPatterns
 import com.digitrob.digitdns.ui.components.RouteAction
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,9 +56,88 @@ enum class DomainFilter(val label: String) {
 data class DomainRow(
     val domain: String,
     val status: DomainStatus,
+    /** The wildcards that apply to this row, relative to it. */
+    val wildcards: List<DomainWildcard> = emptyList(),
 ) {
     /** A proxied row's switch is on; paused is off. Other statuses carry no switch. */
     val enabled: Boolean get() = status == DomainStatus.PROXY
+}
+
+/**
+ * One wildcard active for a row, named the way the operator sees it: `*.host` for
+ * `*.domain` on the domain's own row, `*.parent` for the parent's wildcard. The
+ * [pattern] is what is stored; [status] is the list it lives in.
+ */
+data class DomainWildcard(
+    val type: String,
+    val pattern: String,
+    val status: DomainStatus,
+)
+
+/** What "this row's rule" means: a wildcard row owns itself, a plain host its pair. */
+private fun rowPatterns(domain: String): Set<String> {
+    val wildcard = domain.startsWith("*.")
+    val base = if (wildcard) domain.removePrefix("*.") else domain
+    return if (wildcard) setOf(domain) else setOf(base, "*.$base")
+}
+
+/** The list a name lives in, or null when it has no rule. */
+private fun RuleLists.statusOf(domain: String): DomainStatus? = when {
+    proxied.contains(domain) -> DomainStatus.PROXY
+    proxiedDisabled.contains(domain) -> DomainStatus.PAUSED
+    blocked.contains(domain) -> DomainStatus.BLOCKED
+    direct.contains(domain) -> DomainStatus.DIRECT
+    else -> null
+}
+
+/**
+ * Move [domain]'s rule to [scope] inside [lists], keeping the list it already lives in
+ * so its status is preserved. Returns null when the name has no rule (the scope is
+ * only a modifier then) or the scope writes nothing.
+ *
+ * A base row owns its exact entry and its host wildcard; a wildcard row owns itself.
+ * Both are replaced by the new scope's patterns.
+ */
+fun RuleLists.withScope(
+    domain: String,
+    scope: MatchScope,
+    previous: List<String> = emptyList(),
+): RuleLists? {
+    // After *.parent the origin is no longer in any list; the pattern the previous
+    // click wrote is where the rule lives, so its status is the fallback.
+    val status = statusOf(domain)
+        ?: previous.firstNotNullOfOrNull { statusOf(it) }
+        ?: return null
+    return scope.targets(domain).takeIf { it.isNotEmpty() }?.let { targets ->
+        val wildcard = domain.startsWith("*.")
+        val base = if (wildcard) domain.removePrefix("*.") else domain
+        val rowPatterns = if (wildcard) setOf(domain) else setOf(base, "*.$base")
+        val remove = rowPatterns + previous + targets
+        fun strip(list: List<String>) = list.filter { it !in remove }
+        // The target list keeps the row's slot; the others only lose the patterns.
+        copy(
+            proxied = if (status == DomainStatus.PROXY) {
+                replaceDomainPatterns(proxied, remove, targets)
+            } else {
+                strip(proxied)
+            },
+            proxiedDisabled = if (status == DomainStatus.PAUSED) {
+                replaceDomainPatterns(proxiedDisabled, remove, targets)
+            } else {
+                strip(proxiedDisabled)
+            },
+            blocked = if (status == DomainStatus.BLOCKED) {
+                replaceDomainPatterns(blocked, remove, targets)
+            } else {
+                strip(blocked)
+            },
+            direct = if (status == DomainStatus.DIRECT) {
+                replaceDomainPatterns(direct, remove, targets)
+            } else {
+                strip(direct)
+            },
+        )
+    }
 }
 
 /**
@@ -88,16 +168,64 @@ data class RulesUiState(
 ) {
     /** Every editable domain, tagged with its status. */
     private val allRows: List<DomainRow>
-        get() = buildList {
-            // distinct(): the saved list on a live install can carry the same domain
-            // twice (the panel accepts a paste that repeats an entry), and two rows
-            // with the same LazyColumn key crash the Domains tab on open. One row per
-            // domain is also what the operator means.
-            lists.proxied.distinct().forEach { add(DomainRow(it, DomainStatus.PROXY)) }
-            lists.proxiedDisabled.distinct().forEach { add(DomainRow(it, DomainStatus.PAUSED)) }
-            lists.blocked.distinct().forEach { add(DomainRow(it, DomainStatus.BLOCKED)) }
-            lists.direct.distinct().forEach { add(DomainRow(it, DomainStatus.DIRECT)) }
+        get() {
+            // Effective status per stored pattern, low precedence first so a name in
+            // two lists reads the way the row projection above does.
+            val statuses = LinkedHashMap<String, DomainStatus>()
+            fun put(list: List<String>, status: DomainStatus) {
+                list.distinct().forEach { statuses[it] = status }
+            }
+            put(lists.proxiedDisabled, DomainStatus.PAUSED)
+            put(lists.proxied, DomainStatus.PROXY)
+            put(lists.blocked, DomainStatus.BLOCKED)
+            put(lists.direct, DomainStatus.DIRECT)
+
+            val rows = buildList {
+                // distinct(): the saved list on a live install can carry the same domain
+                // twice (the panel accepts a paste that repeats an entry), and two rows
+                // with the same LazyColumn key crash the Domains tab on open. One row per
+                // domain is also what the operator means.
+                lists.proxied.distinct().forEach { add(DomainRow(it, DomainStatus.PROXY)) }
+                lists.proxiedDisabled.distinct().forEach { add(DomainRow(it, DomainStatus.PAUSED)) }
+                lists.blocked.distinct().forEach { add(DomainRow(it, DomainStatus.BLOCKED)) }
+                lists.direct.distinct().forEach { add(DomainRow(it, DomainStatus.DIRECT)) }
+            }
+            return rows
+                // *.d is redundant when d is in the same list: the plain rule already
+                // covers every subdomain. Hide the duplicate row; a wildcard in a
+                // different list still changes what subdomains do.
+                .filter { row ->
+                    !row.domain.startsWith("*.") ||
+                        statuses[row.domain.removePrefix("*.")] != row.status
+                }
+                .map { row -> row.copy(wildcards = wildcardTypesFor(row.domain, statuses)) }
         }
+
+    /** The wildcards that apply to [domain], relative to that row. */
+    private fun wildcardTypesFor(
+        domain: String,
+        statuses: Map<String, DomainStatus>,
+    ): List<DomainWildcard> {
+        val wildcard = domain.startsWith("*.")
+        val base = if (wildcard) domain.removePrefix("*.") else domain
+        val labels = base.split('.').filter { it.isNotEmpty() }
+        val out = mutableListOf<DomainWildcard>()
+        if (labels.size >= WILDCARD_MIN_LABELS) {
+            val host = "*.$base"
+            val hostStatus = statuses[host]
+            // A plain rule covers every subdomain already; only show *.host when it
+            // lives in a different list (and therefore changes the answer).
+            val redundant = !wildcard && statuses[base] != null && hostStatus == statuses[base]
+            if (hostStatus != null && !redundant) {
+                out += DomainWildcard("*.host", host, hostStatus)
+            }
+        }
+        if (labels.size >= PARENT_WILDCARD_MIN_LABELS) {
+            val parent = "*." + labels.drop(1).joinToString(".")
+            statuses[parent]?.let { out += DomainWildcard("*.parent", parent, it) }
+        }
+        return out
+    }
 
     /** The domains after the active chip, search and sort, ready to render. */
     val rows: List<DomainRow>
@@ -117,8 +245,15 @@ data class RulesUiState(
             return when (sort) {
                 DomainSort.ADDED_DESC -> searched.reversed()
                 DomainSort.ADDED_ASC -> searched
-                DomainSort.AZ -> searched.sortedBy { it.domain.lowercase(Locale.US) }
-                DomainSort.ZA -> searched.sortedByDescending { it.domain.lowercase(Locale.US) }
+                // A wildcard row keeps its base's alphabetical slot, so a scope
+                // change does not move it under A-Z.
+                DomainSort.AZ -> searched.sortedWith(
+                    compareBy({ it.domain.removePrefix("*.").lowercase(Locale.US) }, { it.domain }),
+                )
+                DomainSort.ZA -> searched.sortedWith(
+                    compareByDescending<DomainRow> { it.domain.removePrefix("*.").lowercase(Locale.US) }
+                        .thenByDescending { it.domain },
+                )
                 DomainSort.STATUS -> searched.sortedBy { it.status.ordinal }
             }
         }
@@ -306,21 +441,41 @@ class RulesViewModel @Inject constructor(
      * domain lives in exactly one list — so switching it from blocked to proxied is a
      * move, not an addition to both, exactly as the web panel does.
      */
-    fun routeAction(action: RouteAction, domain: String) {
-        if (domain.isBlank()) return
+    fun routeAction(action: RouteAction, domains: List<String>, origin: String? = null) {
+        if (domains.isEmpty()) return
+        val unique = domains.distinct()
         viewModelScope.launch {
             val lists = _state.value.lists
-            val stripped = lists.copy(
-                proxied = lists.proxied - domain,
-                proxiedDisabled = lists.proxiedDisabled - domain,
-                blocked = lists.blocked - domain,
-                direct = lists.direct - domain,
-            )
+            // The row's old patterns are replaced in place, so an action taken from
+            // the Domains list does not move it to the end either.
+            val old = origin?.let { rowPatterns(it) } ?: unique.toSet()
+            val keep = { d: String -> d !in old && d !in unique }
+            fun strip(list: List<String>) = list.filter(keep)
             val next = when (action) {
-                RouteAction.Proxy -> stripped.copy(proxied = stripped.proxied + domain)
-                RouteAction.Block -> stripped.copy(blocked = stripped.blocked + domain)
-                RouteAction.Direct -> stripped.copy(direct = stripped.direct + domain)
-                RouteAction.Remove -> stripped
+                RouteAction.Proxy -> lists.copy(
+                    proxied = replaceDomainPatterns(lists.proxied, old, unique),
+                    proxiedDisabled = strip(lists.proxiedDisabled),
+                    blocked = strip(lists.blocked),
+                    direct = strip(lists.direct),
+                )
+                RouteAction.Block -> lists.copy(
+                    proxied = strip(lists.proxied),
+                    proxiedDisabled = strip(lists.proxiedDisabled),
+                    blocked = replaceDomainPatterns(lists.blocked, old, unique),
+                    direct = strip(lists.direct),
+                )
+                RouteAction.Direct -> lists.copy(
+                    proxied = strip(lists.proxied),
+                    proxiedDisabled = strip(lists.proxiedDisabled),
+                    blocked = strip(lists.blocked),
+                    direct = replaceDomainPatterns(lists.direct, old, unique),
+                )
+                RouteAction.Remove -> lists.copy(
+                    proxied = strip(lists.proxied),
+                    proxiedDisabled = strip(lists.proxiedDisabled),
+                    blocked = strip(lists.blocked),
+                    direct = strip(lists.direct),
+                )
             }
             val verb = when (action) {
                 RouteAction.Proxy -> "Proxying"
@@ -328,7 +483,20 @@ class RulesViewModel @Inject constructor(
                 RouteAction.Direct -> "Routing direct"
                 RouteAction.Remove -> "Removed"
             }
-            write(next, "$verb $domain.")
+            write(next, "$verb ${unique.joinToString(" + ")}.")
+        }
+    }
+
+    /**
+     * Apply a scope change to a name that already has a rule. The line under the
+     * domain is drawn from the saved lists, so this is what makes selecting *.host
+     * visible immediately instead of only arming the next action.
+     */
+    fun changeScope(domain: String, scope: MatchScope, previous: List<String> = emptyList()) {
+        val next = _state.value.lists.withScope(domain, scope, previous) ?: return
+        val targets = scope.targets(domain)
+        viewModelScope.launch {
+            write(next, "Scope: ${targets.joinToString(" + ")}.")
         }
     }
 
@@ -388,3 +556,9 @@ class RulesViewModel @Inject constructor(
             .toList()
     }
 }
+
+/** A wildcard needs host.tld at least. */
+private const val WILDCARD_MIN_LABELS = 2
+
+/** A parent wildcard needs a real parent above host.tld. */
+private const val PARENT_WILDCARD_MIN_LABELS = 3

@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.5.3] — Wildcards you can see, and tighter rows
+
+The wildcard scope is now a first-class control on both clients: pick exact,
+*.host or *.parent, see the pattern it writes, and the rule changes in place
+with its list position intact.
+
+### ✨ Added
+- **Wildcard scope menu on web and Android.** The routing menu offers **exact** (the host and every subdomain), **\*.host** (subdomains only) and **\*.parent** (the parent's subtree), with a live `applies to …` preview. Selecting a scope rewrites an existing rule immediately — no separate action needed — and `*.parent → exact` restores the original host.
+- **The wildcard status under every domain.** Domains rows carry a second line: `exact`, `*.host` or `*.parent` (both when two wildcards apply), so the active scope is visible without opening a menu.
+- **Protocol colours in the live log.** UDP blue, TCP sky, DoT emerald, DoH purple, DoQ amber, DoH3 orange, DNSCrypt fuchsia. The web tooltip still separates the resolution transport from the client transport.
+
+### 🔄 Changed
+- **Exact is labelled for what it always did.** A plain rule covers the host and every subdomain, so the **host + \*** option is gone; `*.host` stays for subdomains-only, and a redundant `*.domain` row beside its plain rule is hidden.
+- **A wildcard change keeps the row where it is.** Patterns are replaced in the same slot, the original added-at stamp survives a rename, and A–Z sorts wildcards by their base name.
+- **A scope change replaces the old scope.** The row's patterns are cleared from every list before the new ones are written, so selecting parent no longer leaves a host wildcard behind. The menu remembers what its last click wrote, so conversions inside a session always land.
+- **Android Domains rows are as compact as the live-log rows** (58 dp), and the gear ripple is centred (36 dp hit area, 24 dp glyph) with the same 6 dp gap to the status pill.
+- **The web quick-action menu is viewport-sized and wraps its text**, so it no longer stretches to 545 px and off a phone screen; the scope row shows three options.
+- **Web Domains actions** gained a 12 px gap. The Upstream Resolvers card dropped the redundant “Racing Policy / Validated” footer, giving the resolver list its space.
+- **Android live-log protocol** is coloured inline; the rest of the details line stays muted.
+
+### 🔴 Removed
+- The `host + *` scope, redundant wildcard rows left by older pairs, and the menu's `saved:` / “not saved yet” status line.
+
+### 🐛 Fixed
+- **Scope buttons could silently do nothing.** After `*.parent` the origin no longer existed in the lists, so the next scope click moved only the pill; conversions now retarget through the pattern the menu last wrote.
+- **The popup and the stored rule could disagree** about the active wildcard; both now come from the same pattern.
+- **The live log's PROTO colour matches the transport actually shown** — the resolution protocol, falling back to the client transport.
+
 ## 🏷️ [v3.5.2] — Strategies you steer, and one Domains list
 
 The resolution policy gained two strategies that trade queries for latency, the

@@ -163,7 +163,9 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
                             row = row,
                             onToggle = { viewModel.toggleDomain(row.domain, row.enabled) },
                             onRemove = { viewModel.removeDomain(row.domain) },
-                            onAction = viewModel::routeAction,
+                            onAction = { action, targets -> viewModel.routeAction(action, targets, row.domain) },
+                            onScopeChange = { scope, previous -> viewModel.changeScope(row.domain, scope, previous) },
+                            patterns = state.lists.managedPatterns,
                             hasResolution = state.resolution?.profiles?.containsKey(row.domain) == true,
                             onResolution = { viewModel.loadResolution(); resolutionDomain = row.domain },
                         )
@@ -673,11 +675,14 @@ private fun FilterChips(selected: DomainFilter?, onSelect: (DomainFilter) -> Uni
 }
 
 @Composable
+@Suppress("LongParameterList")
 private fun DomainRowItem(
     row: DomainRow,
     onToggle: () -> Unit,
     onRemove: () -> Unit,
-    onAction: (RouteAction, String) -> Unit,
+    onAction: (RouteAction, List<String>) -> Unit,
+    onScopeChange: (MatchScope, List<String>) -> Unit,
+    patterns: Set<String>,
     hasResolution: Boolean,
     onResolution: () -> Unit,
 ) {
@@ -697,7 +702,9 @@ private fun DomainRowItem(
                 // lists read at the same density. The switch is the tallest content
                 // here (32 dp); the shared floor plus centred content absorbs the rest.
                 modifier = Modifier.fillMaxWidth().heightIn(min = PanelRowDefaults.height),
-                verticalPadding = 8.dp,
+                // The Material switch already guarantees a 48 dp touch height; 5 dp
+                // of padding around it lands the card at 58 dp, the live-log height.
+                verticalPadding = 5.dp,
                 contentAlignment = Alignment.CenterStart,
                 highlighted = menuOpen,
             ) {
@@ -705,17 +712,7 @@ private fun DomainRowItem(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = row.domain,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (row.domain.startsWith("*.")) {
-                        Spacer(Modifier.width(4.dp))
-                        StatusBadge(text = "WILD", color = DigitDnsTheme.colors.purple)
-                    }
+                    DomainNameCell(row = row, modifier = Modifier.weight(1f))
                     // The action set is identical on every status. Blocked/direct rows
                     // keep the gear and pause switch visible but disabled, so the row
                     // does not reflow and the unavailable actions stay legible.
@@ -726,7 +723,9 @@ private fun DomainRowItem(
                         highlighted = hasResolution,
                         onClick = onResolution,
                     )
-                    Spacer(Modifier.width(6.dp))
+                    // No spacer: the 36 dp gear keeps 6 dp of its own padding, so the
+                    // glyph ends 6 dp from the pill just like the pill ends 6 dp from
+                    // the switch.
                     Box {
                         DomainStatusPill(
                             status = row.status,
@@ -747,6 +746,8 @@ private fun DomainRowItem(
                 expanded = menuOpen,
                 onDismiss = { menuOpen = false },
                 onAction = onAction,
+                onScopeChange = onScopeChange,
+                patterns = patterns,
                 anchorSize = rowSize,
                 anchorY = rowY,
             )
@@ -755,11 +756,43 @@ private fun DomainRowItem(
 }
 
 /**
- * The 40 dp Override Resolving gear. The glyph hugs the right edge of the hit area
- * so the visible gap to the status pill is the row's 6 dp; a centred 20 dp icon in
- * a 40 dp button added ~10 dp of invisible padding and read as a wider gap than
- * the switch side. The hit area itself stays 40 x 40 dp and is dimmed when the
- * status does not accept the action.
+ * The domain with its wildcard line underneath. The second line always exists: the
+ * wildcard type active for this row, or "exact" when none. Relative to the row, so
+ * *.example.com reads as *.host here and as *.parent on api.example.com.
+ */
+@Composable
+private fun DomainNameCell(row: DomainRow, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(
+            text = row.domain,
+            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = if (row.wildcards.isEmpty()) {
+                "exact"
+            } else {
+                row.wildcards.joinToString(" · ") { it.type }
+            },
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
+            color = if (row.wildcards.isEmpty()) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                DigitDnsTheme.colors.purple
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * The Override Resolving gear. A 36 dp hit area with a centred 24 dp glyph: the
+ * ripple is centred on the glyph, and the 6 dp of padding inside the button is the
+ * same gap the status pill leaves before the switch, so no spacer is needed. The
+ * hit area is dimmed when the status does not accept the action.
  */
 @Composable
 private fun DomainGearButton(
@@ -769,18 +802,18 @@ private fun DomainGearButton(
 ) {
     Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(36.dp)
             .alpha(if (enabled) 1f else 0.4f)
             .clip(CircleShape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
-        contentAlignment = Alignment.CenterEnd,
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = Icons.Filled.Settings,
             contentDescription = "Override Resolving",
             tint = if (highlighted && enabled) MaterialTheme.colorScheme.primary
             else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(24.dp),
         )
     }
 }

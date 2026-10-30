@@ -1175,10 +1175,6 @@
               <p class="text-[10px] text-slate-500">Fallback: Pool Default</p>
               <p class="text-[10px] text-slate-500">Per-domain overrides live in the Domains list.</p>
             </div>
-            <div class="mt-3 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between shrink-0">
-              <span>Racing Policy: <strong class="text-cyan-400">Fastest Wins</strong></span>
-              <span class="text-emerald-400">● Validated</span>
-            </div>
           </div>
 
           <!-- Resolver latency, moved under the chart so the racer column can run the
@@ -2384,6 +2380,10 @@ async function onBuySubscription(ctx, username) {
         <button type="button" class="stream-action-scope" data-scope="host" role="radio" aria-checked="false">*.host</button>
         <button type="button" class="stream-action-scope" data-scope="parent" role="radio" aria-checked="false">*.parent</button>
       </div>
+      <!-- The exact patterns the chosen scope writes. The scope labels are short,
+           so without this *.host on a host looks like it covers that host; it
+           writes *.host and covers its subdomains only. -->
+      <div id="stream-action-target" class="stream-action-target" aria-live="polite"></div>
       <button type="button" class="stream-action-item" data-action="proxy" role="menuitem">
         <i data-feather="shield" class="stream-action-icon"></i><span>Proxy</span>
       </button>

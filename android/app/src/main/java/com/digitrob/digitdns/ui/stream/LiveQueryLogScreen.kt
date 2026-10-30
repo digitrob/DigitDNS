@@ -52,7 +52,11 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
@@ -127,7 +131,13 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
                         items(state.visible, key = { it.id }, contentType = { 0 }) { event ->
-                            QueryRow(event = event, onAction = viewModel::applyQuickAction)
+                            QueryRow(
+                                event = event,
+                                onAction = { action, targets ->
+                                    viewModel.applyQuickAction(event.domain, action, targets)
+                                },
+                                patterns = state.patterns,
+                            )
                         }
                     }
                 }
@@ -265,7 +275,11 @@ private fun EmptyState(state: LiveQueryLogUiState) {
 }
 
 @Composable
-private fun QueryRow(event: QueryEvent, onAction: (RouteAction, String) -> Unit) {
+private fun QueryRow(
+    event: QueryEvent,
+    onAction: (RouteAction, List<String>) -> Unit,
+    patterns: Set<String>,
+) {
     var menuOpen by remember { mutableStateOf(false) }
     var rowSize by remember { mutableStateOf(IntSize.Zero) }
     var rowY by remember { mutableStateOf(0f) }
@@ -291,13 +305,20 @@ private fun QueryRow(event: QueryEvent, onAction: (RouteAction, String) -> Unit)
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                // The transport that resolved the name; the client transport is only
+                // shown when nothing upstream was involved. Only that token is
+                // coloured, so the rest of the line stays at the muted body colour.
+                val resolvedBy = event.upstreamProtocol.ifBlank { event.protocol }
+                val protocolTint = protocolColor(resolvedBy)
                 Text(
-                    text = buildString {
+                    text = buildAnnotatedString {
                         append(event.accountName.ifBlank { event.clientIp.ifBlank { "unknown" } })
-                        // The transport that resolved the name; the client transport is
-                        // only shown when nothing upstream was involved.
-                        val resolvedBy = event.upstreamProtocol.ifBlank { event.protocol }
-                        if (resolvedBy.isNotBlank()) append(" · $resolvedBy")
+                        if (resolvedBy.isNotBlank()) {
+                            append(" · ")
+                            withStyle(SpanStyle(color = protocolTint, fontWeight = FontWeight.SemiBold)) {
+                                append(resolvedBy)
+                            }
+                        }
                         if (event.latencyMs > 0) append(" · ${formatLatency(event.latencyMs)}")
                         if (event.upstream.isNotBlank()) append(" · via ${event.upstream}")
                         if (event.timestamp.isNotBlank()) {
@@ -327,9 +348,30 @@ private fun QueryRow(event: QueryEvent, onAction: (RouteAction, String) -> Unit)
             expanded = menuOpen,
             onDismiss = { menuOpen = false },
             onAction = onAction,
+            patterns = patterns,
             anchorSize = rowSize,
             anchorY = rowY,
         )
+    }
+}
+
+/**
+ * One colour per resolution transport, matching the web panel's PROTO palette:
+ * UDP cyan, TCP blue, DoT green, DoH purple, DoQ amber, DoH3/orange-soft, DNSCrypt
+ * blurple. Unknown or blank protocols stay muted.
+ */
+@Composable
+private fun protocolColor(protocol: String): Color {
+    val colors = DigitDnsTheme.colors
+    return when (protocol.uppercase()) {
+        "UDP" -> colors.discord
+        "TCP" -> colors.info
+        "DOT" -> colors.success
+        "DOH" -> colors.purple
+        "DOQ" -> colors.warning
+        "DOH3" -> colors.warning.copy(alpha = 0.75f)
+        "DNSCRYPT" -> colors.discord.copy(alpha = 0.75f)
+        else -> colors.textMuted
     }
 }
 

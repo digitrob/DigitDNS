@@ -141,9 +141,122 @@ class RulesUiStateTest {
     }
 
     @Test
-    fun wildcardRowOnlyOffersTheExactScope() {
-        assertEquals("*.example.com", MatchScope.Exact.resolve("*.example.com"))
-        assertNull(MatchScope.Host.resolve("*.example.com"))
+    fun `changing scope rewrites the rule in the same list`() {
+        val lists = RuleLists(blocked = listOf("a.b.c", "other.example"))
+        val next = lists.withScope("a.b.c", MatchScope.Host)!!
+        // The new pattern takes the old one's slot, so the row does not move.
+        assertEquals(listOf("*.a.b.c", "other.example"), next.blocked)
+        // The exact entry is gone; the status is preserved by staying in blocked.
+        assertTrue(next.proxied.isEmpty() && next.direct.isEmpty())
+    }
+
+    @Test
+    fun `parent then exact restores the origin from the session pattern`() {
+        val lists = RuleLists(blocked = listOf("x.example", "a.b.c", "y.example"))
+        val parent = lists.withScope("a.b.c", MatchScope.Parent)!!
+        assertEquals(listOf("x.example", "*.b.c", "y.example"), parent.blocked)
+        // The origin is no longer in the list; the previous pattern carries the status.
+        val back = parent.withScope("a.b.c", MatchScope.Exact, previous = listOf("*.b.c"))!!
+        assertEquals(listOf("x.example", "a.b.c", "y.example"), back.blocked)
+    }
+
+    @Test
+    fun `changing scope replaces the companion wildcard too`() {
+        val lists = RuleLists(proxied = listOf("a.b.c", "*.a.b.c"))
+        val next = lists.withScope("a.b.c", MatchScope.Parent)!!
+        assertEquals(listOf("*.b.c"), next.proxied)
+    }
+
+    @Test
+    fun `exact on a wildcard row drops the wildcard`() {
+        val lists = RuleLists(proxiedDisabled = listOf("*.a.b.c"))
+        val next = lists.withScope("*.a.b.c", MatchScope.Exact)!!
+        assertEquals(listOf("a.b.c"), next.proxiedDisabled)
+    }
+
+    @Test
+    fun `a name with no rule keeps the scope as a modifier`() {
+        assertNull(RuleLists().withScope("a.b.c", MatchScope.Host))
+        // Parent of example.com is a TLD, so there is nothing to write.
+        assertNull(RuleLists(proxied = listOf("example.com")).withScope("example.com", MatchScope.Parent))
+    }
+
+    @Test
+    fun `a scope change keeps the row in the middle of the list`() {
+        val lists = RuleLists(proxied = listOf("x.example", "a.b.c", "y.example"))
+        val next = lists.withScope("a.b.c", MatchScope.Host)!!
+        assertEquals(listOf("x.example", "*.a.b.c", "y.example"), next.proxied)
+        val back = next.withScope("*.a.b.c", MatchScope.Exact)!!
+        assertEquals(listOf("x.example", "a.b.c", "y.example"), back.proxied)
+    }
+
+    @Test
+    fun `A-Z sorting uses the base name for wildcard rows`() {
+        val state = RulesUiState(
+            lists = RuleLists(proxied = listOf("b.example", "*.a.example")),
+            sort = DomainSort.AZ,
+        )
+        assertEquals(listOf("*.a.example", "b.example"), state.rows.map { it.domain })
+    }
+
+    @Test
+    fun `a redundant wildcard row is hidden next to its plain rule`() {
+        val state = RulesUiState(
+            lists = RuleLists(blocked = listOf("a.b.c", "*.a.b.c", "*.b.c")),
+        )
+        // The plain rule covers every subdomain, so *.a.b.c is not a second row.
+        // The parent wildcard is a separate rule for the whole parent subtree.
+        assertEquals(setOf("a.b.c", "*.b.c"), state.rows.map { it.domain }.toSet())
+        val row = state.rows.first { it.domain == "a.b.c" }
+        // *.a.b.c adds nothing, but the parent wildcard still applies.
+        assertEquals(listOf("*.parent"), row.wildcards.map { it.type })
+    }
+
+    @Test
+    fun `a wildcard in a different list stays visible`() {
+        val state = RulesUiState(
+            lists = RuleLists(proxied = listOf("a.b.c"), blocked = listOf("*.a.b.c")),
+        )
+        assertEquals(setOf("a.b.c", "*.a.b.c"), state.rows.map { it.domain }.toSet())
+        val row = state.rows.first { it.domain == "a.b.c" }
+        assertEquals(listOf("*.host"), row.wildcards.map { it.type })
+    }
+
+    @Test
+    fun `rows name the host and parent wildcards that apply`() {
+        val state = RulesUiState(
+            lists = RuleLists(
+                proxied = listOf("a.b.c"),
+                blocked = listOf("*.a.b.c", "*.b.c"),
+            ),
+        )
+        val row = state.rows.first { it.domain == "a.b.c" }
+        assertEquals(listOf("*.host", "*.parent"), row.wildcards.map { it.type })
+        assertEquals(listOf("*.a.b.c", "*.b.c"), row.wildcards.map { it.pattern })
+        // The winning list is reported with each type.
+        assertEquals(DomainStatus.BLOCKED, row.wildcards.first().status)
+    }
+
+    @Test
+    fun `wildcard rows report their own host type`() {
+        val state = RulesUiState(lists = RuleLists(proxied = listOf("*.a.b.c")))
+        val row = state.rows.first { it.domain == "*.a.b.c" }
+        assertEquals(listOf("*.host"), row.wildcards.map { it.type })
+        assertEquals(DomainStatus.PROXY, row.wildcards.first().status)
+    }
+
+    @Test
+    fun `a plain domain with no companions has no wildcard labels`() {
+        val state = RulesUiState(lists = RuleLists(proxied = listOf("plain.example")))
+        assertTrue(state.rows.first { it.domain == "plain.example" }.wildcards.isEmpty())
+    }
+
+    @Test
+    fun wildcardRowKeepsAllItsScopesUsable() {
+        assertEquals("example.com", MatchScope.Exact.resolve("*.example.com"))
+        // Its own wildcard, not *.*.example.com.
+        assertEquals("*.example.com", MatchScope.Host.resolve("*.example.com"))
+        // The parent of example.com is a TLD, so there is no parent wildcard.
         assertNull(MatchScope.Parent.resolve("*.example.com"))
     }
 }

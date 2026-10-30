@@ -1716,7 +1716,23 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 		case "custom_direct":
 			customDirect = toStringSlice(val)
 		case "custom_domain_added":
-			// Server-managed; client values are ignored.
+			// The dashboard owns these stamps and sends the full map. Accepting it
+			// lets a scope rename (a.b.c -> *.a.b.c) keep its "Added" position
+			// instead of being stamped now and jumping to the top. Values must parse
+			// as RFC3339; unknown keys are dropped with the rest of the map below.
+			if m, ok := val.(map[string]any); ok {
+				for d, ts := range m {
+					d = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(d)), ".")
+					tsStr := strings.TrimSpace(fmt.Sprint(ts))
+					if d == "" || tsStr == "" {
+						continue
+					}
+					if _, err := time.Parse(time.RFC3339, tsStr); err != nil {
+						continue
+					}
+					customAdded[d] = tsStr
+				}
+			}
 		case "custom_records":
 			// Replace rather than merge. Merging into the persisted map meant a
 			// record could be added but never removed: the UI sends the full
