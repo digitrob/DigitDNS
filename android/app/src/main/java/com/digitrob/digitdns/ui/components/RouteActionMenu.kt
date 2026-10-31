@@ -57,7 +57,9 @@ private object RouteScopeMemory {
 /**
  * The routing quick-action menu, shared by the Domains list and the Live Query Log so
  * both offer the panel's identical menu: a match-scope selector (exact / *.host /
- * *.parent) followed by the four pictogram actions Proxy / Block / Direct / Remove.
+ * *.parent) followed by the routing actions Proxy / Block / Direct. [allowRemove]
+ * is true only on the Domains list; deleting is a managed-list decision, so the
+ * live log does not carry a Remove button.
  *
  * [onAction] receives the resolved scope string the caller should write, so the scope
  * is decided here and the caller only has to route the result.
@@ -70,6 +72,7 @@ fun RouteActionMenu(
     onDismiss: () -> Unit,
     onAction: (RouteAction, List<String>) -> Unit,
     onScopeChange: (MatchScope, List<String>) -> Unit = { _, _ -> },
+    allowRemove: Boolean = true,
     patterns: Set<String> = emptySet(),
     anchorSize: IntSize = IntSize.Zero,
     anchorY: Float = 0f,
@@ -176,24 +179,26 @@ fun RouteActionMenu(
                 }
             }
         }
-        val removeAction = RouteAction.Remove
-        val removeEnabled = targets.isNotEmpty()
-        Button(
-            onClick = {
-                if (targets.isEmpty()) return@Button
-                onDismiss()
-                onAction(removeAction, targets)
-            },
-            enabled = removeEnabled,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (removeEnabled) colors.danger else MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            ),
-        ) {
-            Icon(removeAction.icon, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(removeAction.label)
+        if (allowRemove) {
+            val removeAction = RouteAction.Remove
+            val removeEnabled = targets.isNotEmpty()
+            Button(
+                onClick = {
+                    if (targets.isEmpty()) return@Button
+                    onDismiss()
+                    onAction(removeAction, targets)
+                },
+                enabled = removeEnabled,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (removeEnabled) colors.danger else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
+                Icon(removeAction.icon, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(removeAction.label)
+            }
         }
     }
 }

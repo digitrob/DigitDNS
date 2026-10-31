@@ -50,6 +50,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -58,6 +59,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.digitrob.digitdns.R
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.domain.model.Client
@@ -184,7 +186,7 @@ private fun ClientsTopBar(
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        label = { Text("Search name, id or IP") },
+        label = { Text(stringResource(R.string.clients_search_hint)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
     )
@@ -203,14 +205,14 @@ private fun ClientsTopBar(
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(4.dp))
-        Text("Public Mode", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.clients_public_mode), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.width(8.dp))
         Switch(
             checked = !allowAll,
             onCheckedChange = { onAccessModeChange(!it) },
         )
         Spacer(Modifier.width(8.dp))
-        Text("Whitelist Mode", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.clients_whitelist_mode), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.width(4.dp))
         Icon(
             Icons.Filled.Lock,
@@ -329,7 +331,7 @@ private fun QuickActions(
             onClick = onShowBotCard,
             enabled = origin.isNotBlank(),
             leadingIcon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(16.dp)) },
-            label = { Text("Bot", style = MaterialTheme.typography.labelSmall) },
+            label = { Text(stringResource(R.string.clients_bot), style = MaterialTheme.typography.labelSmall) },
         )
 
         AssistChip(
@@ -342,7 +344,7 @@ private fun QuickActions(
                     Icon(Icons.Filled.Timer, contentDescription = null, modifier = Modifier.size(16.dp))
                 }
             },
-            label = { Text("+30d", style = MaterialTheme.typography.labelSmall) },
+            label = { Text(stringResource(R.string.clients_renew_30d), style = MaterialTheme.typography.labelSmall) },
         )
 
         AssistChip(
@@ -355,7 +357,7 @@ private fun QuickActions(
                     modifier = Modifier.size(16.dp),
                 )
             },
-            label = { Text("Lifetime", style = MaterialTheme.typography.labelSmall) },
+            label = { Text(stringResource(R.string.clients_lifetime), style = MaterialTheme.typography.labelSmall) },
         )
 
         // Fills the end of the slideable row so the last chip never touches the border.
@@ -374,7 +376,7 @@ private fun LinkChip(
         AssistChip(
             onClick = { showLink = true },
             leadingIcon = { Icon(Icons.Filled.Link, contentDescription = null, modifier = Modifier.size(16.dp)) },
-            label = { Text("Link", style = MaterialTheme.typography.labelSmall) },
+            label = { Text(stringResource(R.string.clients_link), style = MaterialTheme.typography.labelSmall) },
         )
         val colors = DigitDnsTheme.colors
         DropdownMenu(
@@ -391,7 +393,7 @@ private fun LinkChip(
             )
             if (subscription.isNotBlank()) {
                 DropdownMenuItem(
-                    text = { Text("Copy link") },
+                    text = { Text(stringResource(R.string.clients_copy_link)) },
                     leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null) },
                     onClick = {
                         showLink = false
@@ -420,7 +422,7 @@ private fun BotCardDialog(
     )
     PanelDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Telegram bot card") },
+        title = { Text(stringResource(R.string.clients_telegram_card)) },
         solid = true,
         text = {
             Text(
@@ -433,9 +435,9 @@ private fun BotCardDialog(
             TextButton(onClick = {
                 onCopy(message, "Bot card")
                 onDismiss()
-            }) { Text("Copy") }
+            }) { Text(stringResource(R.string.action_copy)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
     )
 }
 

@@ -62,7 +62,7 @@ ${subscriptionLink(origin, client)}
 🔹 Secondary : 1.1.1.1
 
 Steps to register your IP :
-1️⃣ Connect your phone and game console to the same internet connection .
+1️⃣ Connect your phone and other devices to the same internet connection .
 2️⃣ Open the subscription panel link above (without a VPN/proxy) .
 3️⃣ Enter the registration secret below and press "Register my IP" .
 ❌ Without registering your IP, DNS will not be enabled for you ❌

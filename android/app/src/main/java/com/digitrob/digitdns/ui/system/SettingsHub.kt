@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.ui.system
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,7 +38,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.connect.ConnectScreen
 import com.digitrob.digitdns.ui.rules.AccessScreen
 import com.digitrob.digitdns.ui.rules.GroupsScreen
@@ -56,22 +59,22 @@ import com.digitrob.digitdns.ui.rules.UpstreamsScreen
  * Each section carries the panel's own Feather icon, matched to the nearest Material
  * glyph, so the row reads the same way it does on the web.
  */
-private enum class SettingsSection(val label: String, val icon: ImageVector) {
-    App("App", Icons.Filled.Tune),
-    Servers("Servers", Icons.Filled.Dns),
-    ConnectGuide("Connect Guide", Icons.Filled.Wifi),
-    Diagnostics("Diagnostics", Icons.Filled.MonitorHeart),
-    Tls("SSL / TLS", Icons.Filled.Lock),
-    Network("Network & Server", Icons.Filled.Settings),
-    RestApi("REST API", Icons.Filled.Code),
-    Security("Security", Icons.Filled.VerifiedUser),
-    Groups("Groups", Icons.Filled.Layers),
-    Policies("Policies", Icons.Filled.Policy),
-    Access("Access", Icons.Filled.Key),
-    Upstreams("Upstreams", Icons.Filled.Podcasts),
-    Subscription("Subscription", Icons.Filled.Share),
-    Alerts("Alerts", Icons.Filled.Notifications),
-    About("About", Icons.Filled.Info),
+private enum class SettingsSection(@StringRes val labelRes: Int, val icon: ImageVector) {
+    App(R.string.settings_app, Icons.Filled.Tune),
+    Servers(R.string.settings_servers, Icons.Filled.Dns),
+    ConnectGuide(R.string.settings_connect_guide, Icons.Filled.Wifi),
+    Diagnostics(R.string.settings_diagnostics, Icons.Filled.MonitorHeart),
+    Tls(R.string.settings_tls, Icons.Filled.Lock),
+    Network(R.string.settings_network, Icons.Filled.Settings),
+    RestApi(R.string.settings_rest_api, Icons.Filled.Code),
+    Security(R.string.settings_security, Icons.Filled.VerifiedUser),
+    Groups(R.string.settings_groups, Icons.Filled.Layers),
+    Policies(R.string.settings_policies, Icons.Filled.Policy),
+    Access(R.string.settings_access, Icons.Filled.Key),
+    Upstreams(R.string.settings_upstreams, Icons.Filled.Podcasts),
+    Subscription(R.string.settings_subscription, Icons.Filled.Share),
+    Alerts(R.string.settings_alerts, Icons.Filled.Notifications),
+    About(R.string.settings_about, Icons.Filled.Info),
 }
 
 /**
@@ -106,7 +109,7 @@ fun SettingsHubScreen(
                                 modifier = Modifier.size(16.dp),
                             )
                             Spacer(Modifier.width(6.dp))
-                            Text(candidate.label)
+                            Text(stringResource(candidate.labelRes))
                         }
                     },
                 )

@@ -276,7 +276,7 @@
             <div class="text-xs text-slate-500 text-center py-3">No servers yet — add one below to measure its latency.</div>
           </div>
           <form id="diag-target-form" class="flex flex-col sm:flex-row gap-2">
-            <input type="text" id="diag-target-name" placeholder="Name (e.g. Game server)" autocomplete="off" aria-label="Diagnostic server name"
+            <input type="text" id="diag-target-name" placeholder="Name (e.g. office VPN)" autocomplete="off" aria-label="Diagnostic server name"
               class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:border-cyan-500/50 outline-none">
             <input type="text" id="diag-target-host" placeholder="Host or host:port" autocomplete="off" spellcheck="false" aria-label="Diagnostic server host or host and port"
               class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-slate-200 focus:border-cyan-500/50 outline-none">
@@ -330,7 +330,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
             <label for="edit-client-name" class="block text-[11px] font-semibold text-slate-400 mb-1"><span class="text-red-400 font-bold">*</span> Email / Client Name</label>
-            <input type="text" id="edit-client-name" required placeholder="e.g. gamer-alex"
+            <input type="text" id="edit-client-name" required placeholder="e.g. customer-alex"
               class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
           </div>
           <div class="grid grid-cols-2 gap-3.5">
@@ -466,7 +466,7 @@
         <!-- Row 4: Comment / Note -->
         <div>
           <label for="edit-client-note" class="block text-[11px] font-semibold text-slate-400 mb-1">Comment / Note</label>
-          <input type="text" id="edit-client-note" placeholder="e.g. customer-a / VIP Gamer Plan"
+          <input type="text" id="edit-client-note" placeholder="e.g. customer-a / VIP Plan"
             class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
         </div>
 
@@ -810,23 +810,23 @@
         </button>
         <button class="sidebar-nav-item" data-tab="clients" data-route="/clients">
           <i data-feather="users" class="w-4 h-4"></i>
-          <span>Client Management</span>
+          <span>Clients</span>
         </button>
         <button class="sidebar-nav-item" data-tab="stream" data-route="/logs">
           <i data-feather="terminal" class="w-4 h-4"></i>
-          <span>Live Query Log</span>
+          <span>Live Log</span>
         </button>
         <button class="sidebar-nav-item" data-tab="api" data-route="/api">
           <i data-feather="code" class="w-4 h-4"></i>
-          <span>REST API Gateway</span>
+          <span>API</span>
         </button>
         <button class="sidebar-nav-item" data-tab="rules" data-route="/settings">
           <i data-feather="sliders" class="w-4 h-4"></i>
-          <span>Settings &amp; SSL</span>
+          <span>Settings</span>
         </button>
         <button class="sidebar-nav-item" data-tab="connect" data-route="/guide">
           <i data-feather="wifi" class="w-4 h-4"></i>
-          <span>Connect Guide</span>
+          <span>Guide</span>
         </button>
       </nav>
     </div>
@@ -1197,7 +1197,7 @@
                Percentiles rather than an average, because with a healthy cache hit rate
                the mean is dominated by hits and stays under a millisecond no matter how
                slow the upstreams get. The large row is cache misses only — the queries
-               that actually did resolution work, and the ones a game launcher stalls on.
+               that actually did resolution work, and the ones a download or update stalls on.
                The footer covers every query. -->
           <div class="glass-panel p-4 sm:p-5 lg:col-span-2">
             <div class="flex items-center justify-between mb-3 sm:mb-4 gap-3">
@@ -1272,7 +1272,7 @@
                way rather than evicting the two shrink-0 buttons. -->
           <div class="flex gap-2">
             <input type="text" id="new-proxied-input" list="proxied-add-suggestions"
-              autocomplete="off" aria-label="New proxied domain" placeholder="e.g. *.newgame.com or api.target.com"
+              autocomplete="off" aria-label="New proxied domain" placeholder="e.g. *.example.com or api.target.com"
               class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
             <!-- Filled with the configured domains by renderProxiedSuggestions. Picking
                  one from the list also filters the table (the box feeds the same filter
@@ -1713,7 +1713,7 @@ curl -s "http://127.0.0.1:8080/api/v2/status" \
 curl -s -X POST "http://127.0.0.1:8080/api/v2/clients" \
   -H "X-API-Key: digitdns_live_your_key_here" \
   -H "Content-Type: application/json" \
-  -d '{"display_name":"Gamer-VIP","validity_days":30}'</pre>
+  -d '{"display_name":"Customer-VIP","validity_days":30}'</pre>
 
           <pre id="snippet-python" class="api-snippet-content p-4 rounded-xl bg-slate-950 font-mono text-xs text-slate-300 overflow-x-auto border border-slate-800/80 hidden">import requests
 
@@ -2298,7 +2298,7 @@ async function onBuySubscription(ctx, username) {
               <i data-feather="wifi" class="w-5 h-5 text-cyan-400"></i> How to Connect Client Devices
             </h2>
             <p class="text-[11px] sm:text-xs text-slate-400 mt-1">
-              Connect your Gaming PC, PlayStation, Xbox, Android, iOS, or Router in seconds without installing any client software.
+              Connect your Windows PC, PlayStation, Xbox, Android, iOS, or Router in seconds without installing any client software.
             </p>
           </div>
 
@@ -2308,7 +2308,7 @@ async function onBuySubscription(ctx, username) {
             <div class="p-5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
               <div class="flex items-center gap-2.5">
                 <i data-feather="monitor" class="text-cyan-400 w-5 h-5"></i>
-                <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Windows 10 / 11 (Gaming PC)</h4>
+                <h4 class="text-xs sm:text-sm font-bold text-white font-heading">Windows 10 / 11</h4>
               </div>
               <ol class="text-[11px] sm:text-xs text-slate-300 space-y-1.5 list-decimal list-inside leading-relaxed">
                 <li>Open <strong>Settings</strong> &gt; <strong>Network & Internet</strong> &gt; <strong>Wi-Fi / Ethernet</strong>.</li>
@@ -2414,7 +2414,7 @@ async function onBuySubscription(ctx, username) {
     <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800 px-1 py-1 flex items-stretch justify-around">
       <button class="mobile-nav-item active flex flex-col items-center gap-1 text-[10px] font-semibold text-cyan-400 transition" data-tab="dashboard" data-route="/home">
         <i data-feather="activity" class="w-4 h-4"></i>
-        <span>Dash</span>
+        <span>Dashboard</span>
       </button>
       <button class="mobile-nav-item flex flex-col items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-white transition" data-tab="proxied" data-route="/proxied">
         <i data-feather="shield" class="w-4 h-4"></i>
@@ -2426,7 +2426,7 @@ async function onBuySubscription(ctx, username) {
       </button>
       <button class="mobile-nav-item flex flex-col items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-white transition" data-tab="stream" data-route="/logs">
         <i data-feather="terminal" class="w-4 h-4"></i>
-        <span>Logs</span>
+        <span>Live Log</span>
       </button>
       <button class="mobile-nav-item flex flex-col items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-white transition" data-tab="api" data-route="/api">
         <i data-feather="code" class="w-4 h-4"></i>
@@ -2434,7 +2434,7 @@ async function onBuySubscription(ctx, username) {
       </button>
       <button class="mobile-nav-item flex flex-col items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-white transition" data-tab="rules" data-route="/settings">
         <i data-feather="sliders" class="w-4 h-4"></i>
-        <span>SSL</span>
+        <span>Settings</span>
       </button>
       <button class="mobile-nav-item flex flex-col items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-white transition" data-tab="connect" data-route="/guide">
         <i data-feather="wifi" class="w-4 h-4"></i>

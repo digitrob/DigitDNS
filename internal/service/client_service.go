@@ -171,10 +171,12 @@ type ClientService struct {
 	bindWG map[string]*sync.Mutex
 	mu     sync.RWMutex
 
-	// traffic accumulates metered bytes between database writes; flushMu
-	// serialises the read-modify-write that persists them against the reset that
-	// zeroes them, so neither can overwrite the other's result.
+	// traffic accumulates metered bytes between database writes; queries counts
+	// answered lookups per account on the same schedule. flushMu serialises the
+	// read-modify-write that persists them against the reset that zeroes traffic,
+	// so neither can overwrite the other's result.
 	traffic *trafficLedger
+	queries *trafficLedger
 	flushMu sync.Mutex
 }
 
@@ -187,6 +189,7 @@ func NewClientService(db *database.DB, allowAll bool) *ClientService {
 		tokenMap: make(map[string]*database.Client),
 		uuidMap:  make(map[string]*database.Client),
 		traffic:  newTrafficLedger(),
+		queries:  newTrafficLedger(),
 	}
 	s.loadResolverAllowCIDRs()
 	s.reloadCache()
@@ -944,6 +947,7 @@ func (s *ClientService) GetClient(id string) (*database.Client, error) {
 		return nil, err
 	}
 	client.TrafficUsedBytes += s.traffic.get(client.ID)
+	client.TotalQueries += s.queries.get(client.ID)
 	return client, nil
 }
 
@@ -1091,6 +1095,7 @@ func (s *ClientService) ListClients() ([]database.Client, error) {
 	}
 	for i := range clients {
 		clients[i].TrafficUsedBytes += s.traffic.get(clients[i].ID)
+		clients[i].TotalQueries += s.queries.get(clients[i].ID)
 	}
 	return clients, nil
 }

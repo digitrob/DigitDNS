@@ -116,7 +116,7 @@ private fun ConnectGuides(
             color = MaterialTheme.colorScheme.onBackground,
         )
         GuideCard(
-            title = "Windows 10 / 11 (Gaming PC)",
+            title = "Windows 10 / 11",
             steps = listOf(
                 "Settings › Network & Internet › Wi-Fi / Ethernet.",
                 "Edit DNS assignment › Manual.",

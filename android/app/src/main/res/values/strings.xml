@@ -29,4 +29,67 @@
     <string name="alerts_title">Live alerts</string>
     <string name="alerts_description">Get a notification when a query is blocked on your install. Keeps a small persistent connection open.</string>
     <string name="alerts_permission_needed">Notifications are turned off for DigitDNS. Enable them in system settings to receive alerts.</string>
+
+    <!-- Bottom navigation. These match the web panel's labels one for one. -->
+    <string name="tab_dashboard">Dashboard</string>
+    <string name="tab_domains">Domains</string>
+    <string name="tab_live_log">Live Log</string>
+    <string name="tab_clients">Clients</string>
+    <string name="tab_settings">Settings</string>
+
+    <!-- Shared actions. -->
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_remove">Remove</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_add">Add</string>
+
+    <!-- Settings hub sections. -->
+    <string name="settings_app">App</string>
+    <string name="settings_servers">Servers</string>
+    <string name="settings_connect_guide">Connect Guide</string>
+    <string name="settings_diagnostics">Diagnostics</string>
+    <string name="settings_tls">SSL / TLS</string>
+    <string name="settings_network">Network &amp; Server</string>
+    <string name="settings_rest_api">REST API</string>
+    <string name="settings_security">Security</string>
+    <string name="settings_groups">Groups</string>
+    <string name="settings_policies">Policies</string>
+    <string name="settings_access">Access</string>
+    <string name="settings_upstreams">Upstreams</string>
+    <string name="settings_subscription">Subscription</string>
+    <string name="settings_alerts">Alerts</string>
+    <string name="settings_about">About</string>
+
+    <!-- Clients list. -->
+    <string name="clients_search_hint">Search name, id or IP</string>
+    <string name="clients_public_mode">Public Mode</string>
+    <string name="clients_whitelist_mode">Whitelist Mode</string>
+    <string name="clients_bot">Bot</string>
+    <string name="clients_renew_30d">+30d</string>
+    <string name="clients_lifetime">Lifetime</string>
+    <string name="clients_link">Link</string>
+    <string name="clients_copy_link">Copy link</string>
+    <string name="clients_telegram_card">Telegram bot card</string>
+
+    <!-- Client detail and editor. -->
+    <string name="client_edit_uuid">Edit UUID</string>
+    <string name="client_uuid">UUID</string>
+    <string name="client_use_uuid">Use UUID</string>
+    <string name="client_name">Name</string>
+    <string name="client_allowed_ips">Allowed IPs (comma or space separated)</string>
+    <string name="client_traffic_gb">Traffic (GB)</string>
+    <string name="client_max_devices">Max devices</string>
+    <string name="client_note">Note</string>
+    <string name="client_reset_traffic">Reset traffic</string>
+    <string name="client_new_uuid">New UUID</string>
+    <string name="client_new_secret">New secret</string>
+    <string name="client_delete_title">Delete this client?</string>
+    <string name="client_delete_body">Their subscription link and whitelisted address stop working immediately. This cannot be undone.</string>
+    <string name="client_regenerate_title">Regenerate %1$s?</string>
+    <string name="client_regenerate">Regenerate</string>
+    <string name="client_days">+%1$d days</string>
 </resources>

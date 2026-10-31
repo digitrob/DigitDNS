@@ -3,6 +3,7 @@ package com.digitrob.digitdns
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.annotation.StringRes
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +21,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +37,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.data.AppMode
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.AuthRepository
@@ -154,14 +157,18 @@ private object Routes {
 }
 
 /** The top-level tabs the bottom bar carries, labelled as the panel labels them. */
-private data class Tab(val route: String, val label: String, val icon: ImageVector)
+private data class Tab(
+    val route: String,
+    @StringRes val labelRes: Int,
+    val icon: ImageVector,
+)
 
 private val tabs = listOf(
-    Tab(Routes.DASHBOARD, "Dashboard", Icons.Filled.Dashboard),
-    Tab(Routes.PROXIED, "Domains", Icons.Filled.Shield),
-    Tab(Routes.STREAM, "Live Log", Icons.AutoMirrored.Filled.ListAlt),
-    Tab(Routes.CLIENTS, "Clients", Icons.Filled.People),
-    Tab(Routes.SETTINGS, "Settings", Icons.Filled.Settings),
+    Tab(Routes.DASHBOARD, R.string.tab_dashboard, Icons.Filled.Dashboard),
+    Tab(Routes.PROXIED, R.string.tab_domains, Icons.Filled.Shield),
+    Tab(Routes.STREAM, R.string.tab_live_log, Icons.AutoMirrored.Filled.ListAlt),
+    Tab(Routes.CLIENTS, R.string.tab_clients, Icons.Filled.People),
+    Tab(Routes.SETTINGS, R.string.tab_settings, Icons.Filled.Settings),
 )
 
 @Composable
@@ -317,8 +324,8 @@ private fun TabShell(
                                 restoreState = true
                             }
                         },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) },
+                        icon = { Icon(tab.icon, contentDescription = stringResource(tab.labelRes)) },
+                        label = { Text(stringResource(tab.labelRes)) },
                     )
                 }
             }

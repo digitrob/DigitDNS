@@ -103,6 +103,23 @@ func TestLoginDocumentsOfferRememberMe(t *testing.T) {
 
 // TestRetiredDashLoginRedirects: bookmarks of /<p>/dash/login must land on the
 // new page with a redirect that does not leak anything the target does not show.
+// TestLoginDocumentStoresCanonicalSessionKey: the standalone page and the dashboard
+// must agree on one localStorage key. Writing the legacy hyperdns_token while an older
+// digitdns_token was still present made the panel boot with a dead token, answer 401
+// and show its login overlay — the "asked me to sign in twice" report.
+func TestLoginDocumentStoresCanonicalSessionKey(t *testing.T) {
+	doc := readAsset(t, "login.html")
+	if !strings.Contains(doc, `localStorage.setItem('digitdns_token'`) {
+		t.Error("login.html does not store the new session under digitdns_token, the key app.js reads first")
+	}
+	if strings.Contains(doc, `localStorage.setItem('hyperdns_token'`) {
+		t.Error("login.html still writes the legacy hyperdns_token key")
+	}
+	if !strings.Contains(doc, `localStorage.removeItem('hyperdns_token'`) {
+		t.Error("login.html does not clear the legacy hyperdns_token key after a successful login")
+	}
+}
+
 func TestRetiredDashLoginRedirects(t *testing.T) {
 	ws, _, cleanup := setupTestWebServer(t)
 	defer cleanup()

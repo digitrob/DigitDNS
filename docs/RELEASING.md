@@ -61,7 +61,7 @@ of its own, and the *Latest* badge always points at the server release.
 
 ## Where this repository stands
 
-`main` carries the stable line (currently `v3.6.0`, see `version.json`). The
+`main` carries the stable line (currently `v3.6.1`, see `version.json`). The
 `2.3`–`2.6` betas that followed the v2.2.0 era were published before this
 policy existed; their prerelease flags have been corrected on GitHub, but no
 number, tag, asset or link was changed. New stable releases are cut on `main`

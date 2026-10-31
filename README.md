@@ -1,119 +1,168 @@
 # ⚡ DigitDNS
 
 [![Release](https://img.shields.io/github/v/release/digitrob/DigitDNS?display=tag&style=for-the-badge&label=Release)](https://github.com/digitrob/DigitDNS/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/digitrob/DigitDNS/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/digitrob/DigitDNS/actions/workflows/ci.yml)
+[![Android](https://img.shields.io/github/actions/workflow/status/digitrob/DigitDNS/android.yml?branch=main&style=for-the-badge&label=Android)](https://github.com/digitrob/DigitDNS/actions/workflows/android.yml)
 [![Docker](https://img.shields.io/github/actions/workflow/status/digitrob/DigitDNS/docker.yml?branch=main&style=for-the-badge&label=Docker)](https://github.com/digitrob/DigitDNS/actions/workflows/docker.yml)
-[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go&label=Language)](https://go.dev)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge&logo=gnu)](LICENSE)
 
-**Your own smart DNS server with a built-in proxy relay and web dashboard.**
-Point your devices (or your subscribers' devices) at it, and it decides for every
-domain: resolve normally, block it, or quietly route the connection through your
-server — so blocked or throttled services work again, while everything else keeps
-its direct, fast path.
+**A self-hosted smart DNS server, a TLS pass-through relay and a subscriber
+panel in one static binary.** Point a phone, console, TV or router at it and
+every domain gets one of three answers: resolve normally, refuse, or connect
+through your server. The dashboard manages the rules, the subscribers, the
+certificates and the upstream resolvers; a native Android app and a customer
+portal give subscribers their own view.
 
-Forked from [HyperDNS](https://github.com/IzumiRain/HyperDNS) by HyperRAIN,
-maintained by [Digitrob](https://github.com/digitrob). Free, open-source
-(AGPL-3.0), no account required, no cloud dependency — you run it on your own
-VPS. For self-hosting and education; only use it on servers and networks you're
-allowed to operate.
+Forked from [HyperDNS](https://github.com/IzumiRain/HyperDNS) by HyperRAIN and
+maintained by [Digitrob](https://github.com/digitrob). Free, open source
+(AGPL-3.0), no account, no cloud dependency — it runs on your own VPS or home
+server. Use it only on servers and networks you are allowed to operate.
 
 <p align="center">
-  <img src="docs/digitdns-dashboard.png" alt="DigitDNS web administration dashboard" width="100%">
+  <img src="docs/digitdns-dashboard.png" alt="DigitDNS web dashboard" width="100%">
 </p>
 
 <p align="center">
-  <a href="#-install">🚀 Install</a> •
-  <a href="#-what-it-does">💡 What It Does</a> •
-  <a href="#-features">🌟 Features</a> •
-  <a href="#-after-you-install">🔒 Setup</a> •
-  <a href="#-dashboard">🖥️ Dashboard</a> •
-  <a href="docs/TUTORIAL.md">📖 Tutorial</a> •
-  <a href="docs/API.md">🔌 API</a> •
-  <a href="docs/SECURITY.md">🛡️ Security</a>
+  <a href="#quick-start">🚀 Quick start</a> •
+  <a href="#installation">📦 Install</a> •
+  <a href="#features">🌟 Features</a> •
+  <a href="#client-area">👤 Client area</a> •
+  <a href="#android-app">📱 Android</a> •
+  <a href="#operations">🔧 Operations</a> •
+  <a href="#security">🛡️ Security</a> •
+  <a href="#documentation">📚 Docs</a>
 </p>
 
 ---
 
-## 💡 What It Does
+## Why DigitDNS
 
-DigitDNS is one program that does three jobs:
+- **One binary, no runtime.** DNS, DoT, DoH, the TLS relay, the panel, the REST
+  API, the subscriber portal and the self-updater are compiled into
+  `digitdns`. The only state is a local encrypted database, a master key and a
+  JSON config.
+- **Rules per domain, not a mystery blocklist.** Proxy, block or route direct —
+  with wildcard scopes you can see (`exact`, `*.host`, `*.parent`), named
+  groups, bulk import and a single searchable Domains list.
+- **A relay that never decrypts.** Proxied HTTPS is forwarded byte-for-byte;
+  the server never holds the session keys or the plaintext.
+- **Built for paying subscribers.** Per-client quotas, expiry, device limits,
+  traffic accounting, a private portal link, a registration secret and an
+  Android client area.
+- **Encrypted DNS where it matters.** DoT and DoH for clients; DoT, DoH, DoQ,
+  DoH3 and DNSCrypt for upstreams.
 
-1. **It's a DNS server.** Devices ask it "where is this domain?" and it answers.
-   It speaks plain DNS as well as the encrypted kinds (DoT, DoH, DoQ, DNSCrypt),
-   so phones, consoles and routers can all use it.
+**What it is not:** a VPN. Only names you mark as proxied are relayed; all other
+traffic keeps its direct path. It also does not hide your server's IP from the
+destination of a proxied connection — that is the point of the relay.
 
-2. **It's a proxy relay.** For domains you mark as "proxied", it tells the device
-   to connect to *your server* instead of the real site. Your server then relays
-   the encrypted traffic straight through — it never decrypts it and never sees
-   what's inside. This is how a blocked or throttled game store, chat app, or
-   update service starts working again.
-
-3. **It's a small hosting panel.** A web dashboard manages everything: who may
-   use it, which domains go where, upstream servers, certificates, traffic
-   stats. There's also a REST API if you want to run a billing bot or automate
-   client management.
-
-The classic use case: a cheap VPS in another country becomes a **private gaming
-DNS** for your console or for paying subscribers. Your PlayStation, Xbox, Switch
-or router just changes its DNS address — no app to install, no VPN to run. Game
-traffic itself still goes direct to the real servers (lowest ping), while the
-domains your ISP blocks get relayed through your VPS instead.
-
-A 1-vCPU / 1 GB VPS handles personal use; a 2 vCPU box comfortably serves around
-ten subscribers. It's a single static binary — no database server, no runtime
-dependencies.
+<p align="center">
+  <img src="docs/digitdns-architecture.png" alt="Devices, the DigitDNS resolver/relay, upstreams and proxied destinations" width="100%">
+</p>
 
 ---
 
-## 🚀 Install
+## Quick start
 
-**Four ways to get it — pick whatever fits you:**
+**You need:** a Linux server (1 vCPU / 1 GB is enough for personal use), root
+access, and one hostname whose **A record points at the server**. The panel is
+HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
+optional for a normal install.
 
-| Way | Best for |
+```bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.6.1/scripts/install.sh | sudo bash
+```
+
+The installer sets up the service, firewall, certificate, admin password and a
+random panel port/path, then prints the login URL. Open it, sign in, and point a
+device at the server's IP on port 53 (UDP and TCP).
+
+Verify from another machine:
+
+```bash
+dig @YOUR_SERVER_IP example.com A
+```
+
+> [!IMPORTANT]
+> Save the admin password and back up `master.key` from the data directory.
+> The key encrypts every subscriber record; without it the database cannot be
+> read. See [Backup & restore](#backup--restore).
+
+---
+
+## Requirements
+
+| | Minimum | Comfortable |
+| :--- | :--- | :--- |
+| CPU / RAM | 1 vCPU, 1 GB | 2 vCPU, 2 GB (~10 active subscribers) |
+| Disk | 1 GB | 5 GB (logs, certificates, database growth) |
+| OS | Ubuntu 20.04+, Debian 11+, AlmaLinux/Rocky 8+ (systemd) | Ubuntu 22.04+ / Debian 12+ |
+| Network | A public IPv4; IPv6 optional | Static IP, port 80 reachable for ACME |
+| Domain | One hostname → server A record | A second hostname for DoH/DoT is optional |
+
+**Ports**
+
+| Port | Protocol | Purpose |
+| :--- | :--- | :--- |
+| 53 | UDP + TCP | Plain DNS for clients |
+| 80 | TCP | ACME HTTP-01 challenge and the HTTP relay |
+| 443 | TCP | HTTPS relay for proxied domains |
+| 853 | TCP | DNS-over-TLS (when TLS is configured) |
+| 8443 | TCP | DNS-over-HTTPS at `/dns-query` (when TLS is configured) |
+| random 20000–60000 | TCP | Web dashboard; chosen at install and printed in the URL |
+
+DoQ, DoH3 and DNSCrypt are **upstream transports**, not client-facing
+listeners. Clients use plain DNS, DoT or DoH.
+
+---
+
+## Installation
+
+### 1. One-line installer (Linux, recommended)
+
+Interactive:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.6.1/scripts/install.sh | sudo bash
+```
+
+Non-interactive:
+
+```bash
+DIGITDNS_DOMAIN=dns.example.com \
+DIGITDNS_EMAIL=you@example.com \
+bash install.sh
+```
+
+Optional environment variables:
+
+| Variable | Meaning |
 | :--- | :--- |
-| 📦 **One-line installer** | Bare Linux servers — recommended; sets up the service, certificate and updates for you |
-| 🐳 **Docker image** | Container fans — `ghcr.io/digitrob/digitdns:latest` |
-| 📁 **Pre-built binaries** | Windows, macOS, or running it by hand |
-| 🔧 **Build from source** | Contributors — `go build` from this repo |
+| `DIGITDNS_DOMAIN` | Panel hostname (must already point at the server) |
+| `DIGITDNS_EMAIL` | Let's Encrypt account email |
+| `DIGITDNS_PUBLIC_IP` | Override the detected public IPv4 |
+| `DIGITDNS_FRESH=1` | Confirm a non-interactive fresh install / reinstall |
 
-Every release ships all of: install scripts, signed binaries for Linux /
-Windows / macOS (amd64 + arm64), and a multi-arch container image. The full
-source is right here on GitHub.
+The installer supports amd64 and arm64, writes a systemd unit, opens the
+required firewall ports, installs `restore.sh` and `uninstall.sh`, and archives
+an existing install before upgrading it. Everything lives under
+`/opt/digitdns`.
 
-### Option 1: One-Line Installer (Linux)
+**Offline install:** download `digitdns-offline-bundle.tar.gz` (or `.zip`) from
+the release page, copy it to the server, then run `install.sh` from the
+extracted directory. The offline bundle is Linux amd64; it needs internet only
+for the first certificate issuance.
 
-As `root` on Ubuntu 20.04+, Debian 11+, or AlmaLinux/Rocky 8+:
+### 2. Docker
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.6.0/scripts/install.sh | sudo bash
-```
-
-The installer needs a **domain pointed at your server** (A record → server IP).
-It obtains a Let's Encrypt certificate by itself — no certbot, no manual steps —
-and prints your dashboard address (including its random port), secret admin
-path and admin password when it's done.
-
-Non-interactive example:
-
-```bash
-DIGITDNS_DOMAIN=dns.example.com DIGITDNS_EMAIL=you@example.com bash install.sh
-```
-
-> [!NOTE]
-> **Coming from HyperDNS?** The installer detects the old `/opt/hyperdns`
-> install, archives it, and migrates your data in place — nothing is wiped.
-
-### Option 2: Docker
-
-Works on amd64 and arm64. Images are published to GitHub Container Registry
-and signed, so you can verify what you're pulling.
+Images are published for amd64 and arm64 and signed with cosign.
 
 ```bash
 docker pull ghcr.io/digitrob/digitdns:latest
 
 mkdir -p data certs
 docker run -d --name digitdns --network host \
-  -v ./data:/app/data -v ./certs:/app/certs \
+  -v "$PWD/data:/app/data" -v "$PWD/certs:/app/certs" \
   -e TZ=UTC \
   ghcr.io/digitrob/digitdns:latest
 ```
@@ -138,29 +187,20 @@ services:
 
 ```bash
 mkdir -p data certs && docker compose up -d
+docker logs -f digitdns
 ```
 
-Everything that must survive a restart lives in `data/` (database, keys,
-config). The container uses host networking on purpose — the server needs to
-see real client IP addresses to recognize subscribers and rate-limit
-correctly.
+**Host networking is required**, not a preference: the resolver must see real
+client addresses for whitelisting, subscriber recognition and rate limiting,
+and DNS/DoT/DoH are not simple `-p` mappings.
 
-On first start the daemon generates your admin password, a secret dashboard
-path, and a random dashboard port — all printed once to the container log:
-
-```bash
-docker logs digitdns
-```
-
-**Which tag should I use?**
-
-| Tag | What it is |
+| Tag | Meaning |
 | :--- | :--- |
-| `latest` | Latest stable release — use this |
-| `3.6.0` | A specific immutable release |
-| `edge` | Nightly/dev build from the default branch — not for production |
+| `latest` | Latest stable release |
+| `3.6.1` | A specific immutable release |
+| `edge` | Nightly build from `main` — not for production |
 
-Verify an image's signature (proves it was built by this repo's CI):
+Verify the image:
 
 ```bash
 cosign verify ghcr.io/digitrob/digitdns:latest \
@@ -168,20 +208,50 @@ cosign verify ghcr.io/digitrob/digitdns:latest \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-### Option 3: Binaries
+### 3. Pre-built binary + systemd
 
-Download from the [latest release](https://github.com/digitrob/DigitDNS/releases/latest) —
-assets include `digitdns-linux-amd64` and `digitdns-linux-arm64`.
-Checksums are in `checksums.txt` (signed with the project's release key).
+Release binaries are Linux amd64 and arm64. Checksums are published as
+`checksums.txt` and signed as `checksums.sig`.
 
 ```bash
-# Linux amd64 example:
-curl -fsSL -o digitdns https://github.com/digitrob/DigitDNS/releases/download/v3.6.0/digitdns-linux-amd64
+curl -fsSL -o digitdns \
+  https://github.com/digitrob/DigitDNS/releases/download/v3.6.1/digitdns-linux-amd64
 chmod +x digitdns
-sudo ./digitdns -server
+sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
 
-### Option 4: Build from Source
+Use the canonical unit from `scripts/digitdns.service` (or adapt it):
+
+```ini
+[Unit]
+Description=DigitDNS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/digitdns
+RuntimeDirectory=digitdns
+RuntimeDirectoryMode=0700
+ExecStart=/opt/digitdns/digitdns -daemon \
+  -config /opt/digitdns/config.json \
+  -db /opt/digitdns/data.db \
+  -key /opt/digitdns/master.key
+Restart=always
+RestartSec=3s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Start with `./digitdns -server` on a fresh machine to generate the database,
+key, config and first-run credentials; the service runs `-daemon`.
+
+### 4. Build from source
+
+Requires Go 1.26+.
 
 ```bash
 git clone https://github.com/digitrob/DigitDNS.git
@@ -190,318 +260,323 @@ go build -ldflags="-s -w" -o bin/digitdns ./cmd/digitdns
 ./bin/digitdns -server
 ```
 
+The Go daemon builds on other operating systems for development, but the
+installer, systemd unit and packaged binaries target Linux.
+
+### 5. Android app
+
+The companion APKs are attached to every release. See
+[Android app](#android-app) for the architecture table and installation steps.
+
+### Migrating from HyperDNS
+
+The installer detects `/opt/hyperdns`, archives it and migrates the data in
+place. For a HyperDNS 1.x install, run `migrate-from-v1.sh` from the offline
+bundle first.
+
 ---
 
-## 🖥️ What You Need
+## First run
 
-| | Minimum | Recommended |
-| :--- | :--- | :--- |
-| **Server** | 1 vCPU, 1 GB RAM | 2 vCPU, 2 GB RAM (for ~10 subscribers) |
-| **OS** | Any Linux, Windows, macOS | Ubuntu 22.04+ |
-| **Domain** | One hostname pointing at the server | — |
+On a fresh install the daemon generates:
 
-**Ports the server listens on:**
+- an admin password, printed **once**;
+- a hidden 16-character admin path;
+- a dashboard port between 20000 and 60000;
+- `master.key`, `data.db` and `config.json` under `/opt/digitdns`.
 
-| Port | What it's for |
+The panel is at:
+
+```
+https://YOUR_DOMAIN:PANEL_PORT/ADMIN_PATH/login
+```
+
+The bare hostname intentionally shows nothing, so scanners cannot discover the
+panel. Bookmark the full URL.
+
+**Where things live**
+
+| Path | What it is |
 | :--- | :--- |
-| 53 (UDP+TCP) | DNS — the main service clients connect to |
-| 443 (TCP) | Proxy relay for proxied HTTPS traffic |
-| 80 (TCP) | Certificate issuance + HTTP relay |
-| 8443 (TCP) | DNS-over-HTTPS |
-| 853 (TCP) | DNS-over-TLS |
-| **random port** (TCP) | Web dashboard — picked automatically at first install (between 20000 and 60000), printed in your login URL, and opened in the firewall by the installer. You can change it later in Settings or with TUI option `11`. |
+| `/opt/digitdns/data.db` | Encrypted subscriber/rule database |
+| `/opt/digitdns/master.key` | Key that decrypts the database — back this up |
+| `/opt/digitdns/config.json` | Server, DNS, relay, access and TLS settings |
+| `/opt/digitdns/certs/` | Certificates |
+| `/opt/digitdns/backups/` | Archives created by the installer |
 
-If something else already owns port 53, 443, or 8443, the installer warns you
-before anything is installed.
+Run `digitdns` with no arguments over SSH for the text console: status,
+diagnostics, restart/stop, subscriber management, upstream benchmark, cache
+flush, panel port, API key rotation, admin recovery and uninstall.
 
 ---
 
-## 🌟 Features
+## Features
 
-### Proxy, Block, or Direct — Your Choice
+### Domains and routing
 
-You decide which domains are proxied, blocked, or resolved normally — no
-built-in "recommended" list is forced on you. Manage it all from the dashboard:
+- One Domains list holds proxied, paused, blocked and direct names, with status
+  chips, search, sort and bulk selection.
+- **Wildcard scopes you can see:** `exact` (host and subdomains), `*.host`
+  (subdomains only), `*.parent` (the parent's subtree). Changing a scope
+  rewrites the rule in place and keeps its row position.
+- **Groups** bundle domains into named, enable/disable-able sets with optional
+  icons.
+- **Bulk import** accepts pasted or uploaded lists with `#` comments and
+  `*.wildcards`.
+- Built-in direct routing keeps a handful of high-bandwidth services
+  (voice chat, game-store CDNs, OS update CDNs) off the relay.
 
-- **Proxied** — traffic for these domains relays through your server (for
-  blocked/throttled services).
-- **Blocked** — these domains are refused (ads, telemetry, whatever you don't
-  want phoning home).
-- **Direct** — force these to resolve normally, even if a rule above would
-  proxy them.
-- **Groups** — bundle domains into named groups you can toggle on/off as a
-  unit, with optional icons.
-- **Bulk import** — paste or upload a whole list at once. Wildcards (`*.foo.com`)
-  and comments (`#`) are supported.
-- **Search and autocomplete** — the proxied list narrows as you type, exactly
-  like the live query log, and the Add field suggests names that are already
-  listed so duplicate entries are obvious before you save one.
+### Proxy relay
 
-A handful of high-bandwidth services (Discord voice, Steam's connection
-manager, Google update CDNs) are always resolved directly so game downloads
-and voice chat use the player's own connection, not your server's bandwidth.
+Domains marked as proxied resolve to your server. The device opens TLS to the
+server, which forwards the encrypted stream to the real host and back. No
+decryption, no certificate substitution, up to 4,096 concurrent relays, with
+optional TLS fragmentation for DPI resistance.
 
-### The Proxy Relay (Why Consoles Don't Need a VPN)
+### Subscribers and quotas
 
-When a device looks up a proxied domain, DigitDNS answers with *your server's*
-address. The device then opens a connection to your server, and the server
-forwards it to the real destination. From the outside it just looks like the
-device is talking to your server.
+- Per-client traffic quota, reset cycle, expiry, device limit, notes and policy
+  set.
+- Whitelist mode by default: unknown source addresses are refused.
+- Per-client traffic is metered through the relay and persisted every 30
+  seconds.
+- Registration secret lets a subscriber rebind their IP without an admin.
+- Copy-ready provisioning card and subscription link for Telegram or your own
+  bot.
 
-- The encrypted traffic is passed through untouched — the server relays bytes,
-  it never holds decryption keys.
-- Optional TLS fingerprint obfuscation helps the connection look like ordinary
-  HTTPS, which matters when DPI systems try to detect proxies.
-- Handles up to 4,096 connections at once, then politely refuses new ones
-  instead of falling over.
-- No client software needed: change the DNS address on the console, phone, or
-  router, and you're done.
+### Client area
 
-### Subscribers & Accounts
+A subscriber gets a private link (`https://your-server/sub/<token>`) and, on
+Android, the same surface natively:
 
-- Add clients from the dashboard or API, each with their own traffic quota,
-  expiry date, and allowed devices.
-- **Whitelist mode (default):** unknown devices are refused — only people you
-  add can use your DNS. Turn this off if you want an open resolver (not
-  recommended).
-- Each subscriber gets a private link where they can see their own status, and
-  a one-click way to update their IP (useful on mobile or home connections
-  where the address changes).
-- Send a Telegram provisioning card with the portal link, DNS address, and
-  registration details in one tap.
+<p align="center">
+  <img src="docs/digitdns-client-area.png" alt="Subscriber portal: registration, usage, endpoints and setup guide" width="70%">
+</p>
 
-### The Client Area
-
-Every subscriber gets a private link (`https://your-server/sub/<token>`) and, on
-Android, a native client area built into the app — no browser needed.
-
-- **Status** — account name and status, the detected IP in the portal's green,
-  traffic used and remaining, quota, reset date and expiry countdown at a
-  glance. The Registration Secret and Registered Address controls sit at the
-  bottom, so a customer can bind their current device or protect a console,
-  TV box or router behind a different address or subnet.
-- **Connect** — every registered address and subnet in one comma-separated
-  list, plus the DNS, DoH and DoT endpoints for this server, each with a copy
-  button.
-- **Guide** — the full setup guide for PlayStation, Xbox, Switch, Windows,
-  iOS/macOS, Android and routers, with the live values for that subscription.
-  It ships in the app, so the instructions work without a browser tab.
-- **Saved subscriptions** — signing in with a link keeps the subscription with
-  its account name in **Manage Servers**, above the admin servers, ready to
-  reopen with one tap. **Switch to Admin** returns to the dashboard when an
-  admin session is still signed in.
-
-The same information is on the web portal, so a subscriber without the app can
-do everything from a browser. The portal's colours, title and CSS can be
-customized per install from the dashboard.
+- **Status** — account state, detected IP, traffic, quota, reset and expiry;
+  Registration Secret and Registered Address controls at the bottom.
+- **Connect** — every registered address and subnet, plus DNS, DoH and DoT
+  endpoints with copy buttons.
+- **Guide** — complete setup steps for PlayStation, Xbox, Switch, Windows,
+  iOS/macOS, Android and routers, using the live values for that subscription.
+- **Saved subscriptions** — the app keeps a subscription with its account name
+  above the admin servers, with one-tap reopen and **Switch to Admin**.
 
 ### Encrypted DNS
 
-Clients can use encrypted connections instead of plain DNS:
+| Transport | Direction | Where |
+| :--- | :--- | :--- |
+| DoT | Clients and upstreams | Client listener on 853; upstream `tls://host` |
+| DoH | Clients and upstreams | Client listener on 8443 `/dns-query`; upstream `https://host/dns-query` |
+| DoQ | Upstreams | `quic://host` |
+| DoH3 | Upstreams | `h3://host/dns-query` |
+| DNSCrypt | Upstreams | `sdns://…` stamp |
 
-- **DoT** (DNS-over-TLS) on port 853 — what Android's "Private DNS" uses
-- **DoH** (DNS-over-HTTPS) on port 8443 — what browsers and desktop apps use
-- **DoQ** (DNS-over-QUIC) and **DNSCrypt** for the newest/fastest options
+Client DoT/DoH need a valid certificate, so they require a domain. The server
+keeps upstream connections alive between queries to cut handshake latency.
 
-Connections are kept alive between queries so phones don't re-handshake every
-time they look something up — less latency, less battery use.
+### Upstream resolvers and policy
 
-### Upstream Resolvers and Resolution Policy
+- Plain UDP/TCP, DoT, DoH, DoQ, DoH3 and DNSCrypt upstreams, benchmarked live
+  from your server.
+- Global **Default upstream**, **Strategy** and **Transports** policy.
+- Strategies: **Fastest Wins**, **In Order**, **Hedged** (next resolver after
+  50 ms) and **Best Known** (fastest measured, then latency order on failure).
+- Transport policies: **Any Transport**, **Encrypted Only**, **Regular DNS** —
+  enforced, not advisory.
+- Per-domain overrides from the Domains gear; failures fall back to the pool.
 
-Forward queries to whatever upstream you like — Cloudflare, Google, your own
-recursive server, or a chain of them. Plain UDP/TCP and encrypted upstreams
-(DoT, DoH, DoQ, DNSCrypt) are all supported, and the resolver card benchmarks
-each one so you can see which is fastest from your server.
+### Certificates, dashboard and diagnostics
 
-- **Transports are a policy, not a label.** Choose **Any Transport**, **Encrypted
-  Only** (DoT · DoH · DoQ) or **Regular DNS** (UDP · TCP). Encrypted Only really
-  means encrypted: a pinned plain resolver is ignored while it is active. The
-  encrypted choice is offered only when an encrypted resolver is configured.
-- **A global default, or per-domain overrides.** Pick a **Default upstream**
-  (`Pool Default`, or one resolver) and a strategy — **Fastest Wins**, **In
-  Order**, **Hedged** or **Best Known**. Fastest Wins races the whole pool and
-  takes the first answer; In Order walks the list as configured; **Hedged** starts
-  the fastest measured resolver and adds the next one every 50 ms, cancelling the
-  rest when an answer lands; **Best Known** sends to the fastest measured resolver
-  only and falls through the others in latency order on failure. On the Domains
-  list, the gear on a proxied or paused row opens **Override Resolving**, where
-  that domain can pin its own resolver, strategy and transport. The two fields
-  keep each other honest: choosing a resolver selects its transport, and choosing
-  a transport selects a matching resolver.
-- **Failure falls back to the pool.** When a rule cannot resolve, the query
-  continues through the pool rather than switching transport or answering
-  SERVFAIL. The rule dialog states this instead of offering a choice.
-- **The list shows the policy.** The chosen default resolver dims the others;
-  Encrypted Only dims plain resolvers; Regular DNS dims encrypted ones. Only the
-  resolver list scrolls past five rows — the card and its controls stay put.
-- **Proxied names are still answered from your server.** A per-domain rule
-  applies when the domain is paused or for query types other than A/AAAA; the
-  dialog says so, so the setting is not mistaken for a proxy override.
-
-### Certificates Without Certbot
-
-The server obtains and renews its own HTTPS certificates (Let's Encrypt) while
-running — no certbot, no cron jobs, no downtime when a certificate renews.
-Point your domain at the server and it handles the rest.
-
-### Web Dashboard & API
-
-Full admin panel for everything above, plus a REST API with Swagger docs for
-automation (billing bots, client provisioning, monitoring). See
-[docs/API.md](docs/API.md).
-
-### Terminal Interface
-
-Run the `digitdns` command with no arguments for a simple text menu: check
-status, restart the service, add/remove subscribers, benchmark upstreams,
-flush the cache — handy over SSH when you don't want to open a browser.
+- Embedded ACME client: issues and renews the panel certificate, plus an
+  optional DoH/DoT certificate, without certbot or cron.
+- Live dashboard: QPS, cache hits, memory, CPU, relay counts, traffic, latency
+  percentiles and a rolling live query log with search, filters and quick
+  actions.
+- Diagnostics with operator-defined targets, a reachability score and per-target
+  latency.
+- Server location from a self-updating GeoIP database, and in-panel update
+  checks with signature verification.
+- REST API v2/v3 with Swagger docs at
+  `https://YOUR_DOMAIN:PANEL_PORT/ADMIN_PATH/api/v3/docs`.
 
 ---
 
-## 🔒 After You Install
+## A look at it
 
-A few things to know before you let anyone else use it:
+<p align="center">
+  <img src="docs/digitdns-tour.gif" alt="A short tour: dashboard, domains, clients and the subscriber portal" width="100%">
+</p>
 
-1. **Save your admin password.** It's printed once during installation and
-   can't be recovered (only reset). Store it somewhere safe.
+| Domains | Clients |
+| :---: | :---: |
+| <img src="docs/digitdns-domains.png" alt="Domains list with wildcard scopes and status filters"> | <img src="docs/digitdns-clients.png" alt="Client cards with quotas, registered IPs and provisioning actions"> |
 
-2. **The dashboard is hidden.** On first start, the server generates a secret
-   path and prints your login URL once — something like
-   `https://yourdomain.com:28443/a1b2c3d4e5f6g7h8/login` (note the random
-   port). Bookmark it. The main website shows a blank page on purpose so
-   scanners don't find your panel.
+## Android app
 
-3. **Back up `master.key`.** It's in the data directory and encrypts all your
-   subscriber records. Lose it and your data is unreadable; keep it off the
-   server where possible.
+A native companion with the same control surface as the panel, on its own
+version line (`android-v3.6.1`). Side-load it; it is not on Play.
 
-4. **Whitelist mode stays on** unless you deliberately want anyone to use your
-   resolver. An open DNS server gets abused within hours.
-
-Full hardening guide: [docs/SECURITY.md](docs/SECURITY.md).
-
----
-
-## 🖥️ Dashboard
-
-The web panel manages everything:
-
-- **Live stats** — queries per second, cache hits, traffic, latency, who's
-  using it right now
-- **Domain rules** — add/edit/proxy/block/direct, bulk import, and one list of
-  every managed domain: proxied, paused, blocked and direct names together, with
-  Proxy / Blocked / Paused / Direct chips to filter it (tap the active chip to
-  show all). A status change keeps the row where it is. Each row shows its
-  wildcard scope underneath — `exact` (host + subdomains), `*.host` (subdomains
-  only) or `*.parent` (the parent's subtree) — and the row menu switches between
-  them in one click without moving the row. The live query log keeps
-  the last hundred queries, pauses without losing arrivals, and its Clear button
-  empties the server's buffer too — a reconnect cannot bring the cleared rows
-  back; PROTO names the transport the resolver was queried over. Both lists use
-  zebra rows so long entries stay readable
-- **Clients** — add subscribers, set quotas and expiry, suspend, see usage.
-  Editing a client gives you a full-width IP list, and a client with many
-  addresses keeps a normal-sized card (the address chips scroll)
-- **Upstream Resolvers** — add and benchmark DNS upstreams on any transport;
-  set the default resolver, strategy and transport policy, and attach
-  per-domain overrides from the Proxied Domains list
-- **Server location** — the panel shows the server's country flag beside its
-  public IP, resolved from a self-updating GeoIP database. Settings & SSL can
-  refresh that database on demand, and the **Server Update** card next to it
-  checks for and installs a new release without leaving the panel
-- **Settings** — 2FA, hidden path, certificates, portal branding, API keys.
-  Certificate renewal switches (Let's Encrypt and DoT/DoH) live together on the
-  SSL/TLS page, next to issuance
-
-Subscriber-facing pages (where clients check their own status) can be
-customized with your own domain, title, and CSS to match your branding.
-
----
-
----
-
-## 📱 Android Companion App
-
-DigitDNS also ships a native Android companion app — the same control surface as
-the web panel, in your pocket, talking to your server over the REST API and the
-live event stream. It is a separate product on its own version line
-(`android-v3.6.0` and friends), side-loaded from the GitHub release page rather
-than distributed through Play.
-
-**What it does (feature parity with the web panel):**
-
-- **Login & accounts** — sign in with your admin username and password, with
-  TOTP when two-factor is enabled; holds a real, revocable session token.
-- **Dashboard** — live stats, query rate, cache hits, proxy relay counts, CPU,
-  RAM and live traffic, plus the QPS chart. Upstream Resolvers leads by default,
-  the six metric tiles share one compact size, and Settings → Dashboard cards
-  can reorder them or reset the layout. The server IP box carries the country
-  flag and answers to swipes: sideways blurs the address for privacy, up or
-  down swaps it for the domain the server answers on. The flags come from a
-  GeoIP database the server refreshes daily.
-- **Domain rules** — add, edit, proxy, block or route domains direct; bulk
-  import; groups with icons; one-tap actions straight from the live log.
-- **Clients (subscribers)** — create and edit subscribers, set quotas, expiry
-  and device limits, run actions (enable/disable, renew, reset traffic, new
-  UUID/secret), suspend or delete.
-- **Client area (subscriber mode)** — sign in with a subscription link and get
-  the customer's own Status / Connect / Settings surface: live account and
-  traffic status, a green Device IP, IP registration with the registration
-  secret, the registered-address list, DNS/DoH/DoT endpoints and the complete
-  platform setup guide, all native and copy-friendly. Saved subscriptions sit
-  above the admin servers with one-tap reopen and **Switch to Admin**.
-- **Upstream Resolvers** — add, remove, reorder and benchmark DNS upstreams on
-  any transport; set the default resolver, strategy (Fastest Wins, In Order,
-  Hedged, Best Known) and transport policy, and open **Override Resolving** from
-  a proxied domain's gear to pin that domain's resolver, strategy and transport.
-  The resolver list scrolls after five rows, and rows dim to show what the active
-  policy excludes.
-- **Live Query Log** — the same live feed as the panel, with search, filters,
-  sorting, pause/resume (paused arrivals are kept, not dropped), clear that also
-  empties the server's buffer, and quick actions.
-- **Diagnostics** — run the server diagnostic suite against your own targets.
-- **Settings** — access lists, TLS/ACME certificate issuance and renewal (the
-  "Certificate Auto-renew" and "DoT/DoH Auto-renew" switches sit together there),
-  subscription/portal settings, server connection management. The About page
-  shows the server location (with the GeoIP database date and a refresh button)
-  and a Server Update card that can check for and apply a release. Manage servers
-  keeps three saved servers on screen (the list scrolls for more), the tail with
-  Add server, signed-in details and Sign out sits above Cancel/Done, and the
-  Add-server form has a Cancel that returns to the app.
-- **Live stream service** — a foreground service keeps the SSE connection
-  alive and raises notifications while the app is in the background.
-
-**Requirements:** Android 10 (API 29) or newer. The companion APKs ship with
-each server release — grab one from the
-[latest release page](https://github.com/digitrob/DigitDNS/releases/latest) —
-`digitdns-arm64-v8a.apk` for virtually all phones since ~2016,
-`digitdns-armeabi-v7a.apk` for older devices, `digitdns-x86_64.apk` for
-emulators, or `digitdns-universal.apk` if you are unsure. Verify against the
-matching `.sha256` before installing.
-
-The app carries its own version, so a server update never forces an app update
-and vice versa.
-
-
-## 📚 Documentation
-
-| Document | What's in it |
+| APK | Architecture |
 | :--- | :--- |
-| **[Tutorial](docs/TUTORIAL.md)** | Step-by-step: first boot, custom domain, adding clients, registration tokens — **start here** |
-| **[Security](docs/SECURITY.md)** | Threat model, encryption details, hardening, RFC compliance |
-| **[API Reference](docs/API.md)** | REST API v2 & v3, with Python / Node.js / cURL examples |
-| **[Changelog](docs/CHANGELOG.md)** | What changed in each release |
-| **[Releasing](docs/RELEASING.md)** | Version policy and update channels |
+| `digitdns-arm64-v8a.apk` | 64-bit ARM — almost every phone since ~2016 |
+| `digitdns-armeabi-v7a.apk` | 32-bit ARM — older devices |
+| `digitdns-x86_64.apk` | Emulators and some tablets |
+| `digitdns-universal.apk` | All of the above, larger |
 
-**Versions:** the project follows SemVer. `latest` Docker tag and GitHub
-releases track stable; `-beta` tags are prereleases. Release binaries are
-signed; Docker images are cosign-signed.
+Download from the [latest release](https://github.com/digitrob/DigitDNS/releases/latest)
+and verify against the matching `.sha256`. Requires **Android 10 (API 29)** or
+newer.
+
+It covers the dashboard, Domains and wildcards, Clients and quotas, the live
+query log with quick actions, upstream resolvers and policies, diagnostics,
+certificates, settings, server switching (multiple saved servers, saved
+credentials, API keys with an optional **Save key** tick) and the subscriber
+client area. Login supports password + TOTP and master API keys.
+
+The app keeps its own version, so a server update never forces an app update.
+
+<p align="center">
+  <img src="docs/digitdns-android-status.png" alt="Android client area: Status with account, Device IP, traffic and registration" width="42%">
+  &nbsp;&nbsp;
+  <img src="docs/digitdns-android-connect.png" alt="Android client area: registered addresses and endpoints" width="42%">
+</p>
+
 
 ---
 
-## ☕ Support
+## Operations
 
-If this project helps you out, you can support ongoing development:
+### Upgrade
+
+- **Panel:** Settings → Server Update checks for a signed release and installs
+  it with a backup and restart.
+- **Docker:** `docker pull ghcr.io/digitrob/digitdns:latest && docker compose up -d`.
+- **Binary:** replace `/opt/digitdns/digitdns`, then `systemctl restart digitdns`.
+- **Installer:** rerun it; the existing install is archived first.
+
+Back up before any upgrade. Database and config format changes are handled
+automatically, but `master.key` must travel with `data.db`.
+
+### Backup & restore
+
+Stop the service before copying the database for a consistent snapshot:
+
+```bash
+sudo systemctl stop digitdns
+sudo tar -czf /root/digitdns-backup-$(date +%F).tar.gz \
+  -C /opt/digitdns data.db master.key config.json certs
+sudo systemctl start digitdns
+```
+
+Keep the archive off the server. Restore with the service stopped by putting
+the four items back, or use `scripts/restore.sh` for an archive produced by the
+uninstaller. Never restore an old `master.key` into a fresh database — it will
+not decrypt it.
+
+### Logs
+
+```bash
+sudo journalctl -u digitdns -f          # systemd install
+docker logs -f digitdns                 # container
+```
+
+### Troubleshooting
+
+| Symptom | Check |
+| :--- | :--- |
+| Blank page or 404 at the hostname | You need the full hidden URL with the panel port and admin path |
+| Certificate issuance fails | A record points at this server; port 80 is open; Let's Encrypt rate limits |
+| `dig` times out | Port 53 UDP/TCP open in the firewall; the service is running |
+| DNS works but sites do not | Ports 80/443 must be reachable for the relay |
+| Subscriber shows "not registered" | Their current public IP differs; register it with the secret |
+| Phone cannot use Private DNS | Use the hostname, not an IP; it needs a valid DoT certificate |
+| Locked out of the panel | Run `digitdns` over SSH → **Emergency admin reset** |
+| `master.key` lost | The database is unrecoverable; restore a backup |
+
+### Uninstall
+
+```bash
+sudo /opt/digitdns/scripts/uninstall.sh
+```
+
+The uninstaller archives data and offers a restore script. The TUI option
+**Uninstall DigitDNS** does the same.
+
+---
+
+## Security
+
+- Save the generated admin password; enable **two-factor authentication**.
+- Keep the hidden admin path and panel port private.
+- Keep **whitelist mode** on. An open resolver is abused within hours.
+- Back up `master.key` offline; it is the only way to read `data.db`.
+- Expose only the ports you use. The dashboard does not need to be public if
+  you reach it through a VPN or SSH tunnel.
+- The API binds to `127.0.0.1` by default; widen it deliberately.
+- Release checksums are signed, Docker images are cosign-signed and the
+  in-panel updater verifies signatures before installing.
+
+Full threat model and hardening guide: [docs/SECURITY.md](docs/SECURITY.md).
+
+---
+
+## API & automation
+
+REST API v2 and v3 cover clients, domains, settings, resolution policy,
+upstreams, diagnostics and updates. Authenticate with a dashboard session or the
+master API key (`X-API-Key`). Contracts, payloads and Python/Node/cURL examples:
+[docs/API.md](docs/API.md). Swagger is served from the panel at
+`/ADMIN_PATH/api/v3/docs`.
+
+---
+
+## FAQ
+
+**Do I need a domain?** For the panel and client DoT/DoH, yes — the panel is
+HTTPS-only and DoT/DoH need a trusted certificate. A pure DNS lab can run
+without one, but that is not the supported install path.
+
+**Does it hide my IP from websites?** Proxied domains see your server's IP, not
+the client's. Direct domains see the client's own IP as usual. This is not a
+VPN.
+
+**Can I share it with family or customers?** Yes — that is what clients,
+quotas, expiry, device limits and the portal are for. Keep whitelist mode on.
+
+**Does it work behind Cloudflare or another CDN?** No. DNS and the relay need
+direct access to the server's ports; a proxying CDN breaks both.
+
+**Are Windows/macOS server binaries published?** No. The daemon builds from
+source on Go-supported systems, but release binaries, installers and the
+systemd unit target Linux.
+
+**Is the Android app on Play Store?** No. Signed APKs are attached to each
+release and side-loaded.
+
+**Will upgrades keep my data?** Yes; the schema is migrated automatically. Back
+up `data.db` and `master.key` first.
+
+---
+
+## Documentation
+
+| Document | Contents |
+| :--- | :--- |
+| [Tutorial](docs/TUTORIAL.md) | First boot, domain, first client, registration — start here |
+| [Security](docs/SECURITY.md) | Threat model, encryption, hardening, RFC notes |
+| [API](docs/API.md) | REST v2/v3 with examples |
+| [Changelog](docs/CHANGELOG.md) | Every release |
+| [Releasing](docs/RELEASING.md) | Versioning and update channels |
+
+Release channels: `latest` and untagged `vX.Y.Z` releases are stable; `-beta`
+tags are prereleases and never take the *Latest* badge.
+
+---
+
+## Support
+
+If DigitDNS helps you, you can support development:
 
 | Method | Address |
 | :--- | :--- |
@@ -511,14 +586,11 @@ If this project helps you out, you can support ongoing development:
 
 ---
 
-## 📜 License
+## License
 
-DigitDNS is licensed under **AGPL-3.0**, the same as its upstream project.
+AGPL-3.0, the same as the upstream project. This is a modified fork of
+**HyperDNS** by HyperRAIN ([github.com/IzumiRain/HyperDNS](https://github.com/IzumiRain/HyperDNS));
+original copyright notices are retained. See [NOTICE](NOTICE) for attribution
+and a summary of changes.
 
-This is a modified fork of **HyperDNS** by HyperRAIN
-([github.com/IzumiRain/HyperDNS](https://github.com/IzumiRain/HyperDNS)),
-used under AGPL-3.0. Original copyright notices are retained; see
-[NOTICE](NOTICE) for the full attribution and a summary of what changed in
-this fork.
-
-Source code: [github.com/digitrob/DigitDNS](https://github.com/digitrob/DigitDNS)
+Source: [github.com/digitrob/DigitDNS](https://github.com/digitrob/DigitDNS)

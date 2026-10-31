@@ -10,7 +10,7 @@
 # note, this file passed no `-daemon` and all three installers did.
 
 [Unit]
-Description=DigitDNS — Standalone SmartDNS & Gaming Gateway
+Description=DigitDNS — Standalone SmartDNS & Relay
 Documentation=https://github.com/digitrob/DigitDNS
 After=network.target network-online.target
 Wants=network-online.target

@@ -803,6 +803,21 @@ func applyDeviceBind(c *Client, newIP string, now time.Time) {
 // An account that no longer exists is dropped rather than reported: its bytes have
 // nowhere to go and retrying them forever is not an operator-actionable error.
 func (db *DB) AddClientTraffic(deltas map[string]uint64) (map[string]uint64, error) {
+	return db.addClientCounters(deltas, func(c *Client, n uint64) {
+		c.TrafficUsedBytes += n
+	})
+}
+
+// AddClientQueries applies per-account query deltas the same way AddClientTraffic
+// applies bytes: one transaction, a fresh read per record, and every unreadable or
+// missing account handed back so the caller can retry it.
+func (db *DB) AddClientQueries(deltas map[string]uint64) (map[string]uint64, error) {
+	return db.addClientCounters(deltas, func(c *Client, n uint64) {
+		c.TotalQueries += n
+	})
+}
+
+func (db *DB) addClientCounters(deltas map[string]uint64, apply func(*Client, uint64)) (map[string]uint64, error) {
 	if len(deltas) == 0 {
 		return nil, nil
 	}
@@ -828,7 +843,7 @@ func (db *DB) AddClientTraffic(deltas map[string]uint64) (map[string]uint64, err
 				unapplied[id] = n
 				continue
 			}
-			client.TrafficUsedBytes += n
+			apply(client, n)
 			packed, err := db.packClient(*client)
 			if err != nil {
 				unapplied[id] = n

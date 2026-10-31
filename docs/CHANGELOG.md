@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.6.1] — One login, honest numbers and a readable README
+
+A patch release for the things you notice every day: signing in once, seeing
+real per-client query counts, and finding out how to install or fix things.
+
+### 🐛 Fixed
+- **The web panel asked for the password twice.** The standalone login page saved the new session under the old `hyperdns_token` key while the dashboard read `digitdns_token` first, so a stale token in the canonical key made the first visit after login look unauthenticated. The page now writes the canonical key and clears the legacy one.
+- **Light/Dark could revert on reload.** The theme module kept writing the pre-rename storage key. One key, one migration, and the choice survives a reload.
+- **Android “Queries” was always 0.** `total_queries` existed on the record and in the API but nothing ever incremented it. The resolver now counts each lookup for a recognised account in memory and the usage flush persists it, so the client card, the web panel and v3 API show a real figure.
+- **The Android live-log popup offered Remove.** Proxying, blocking and direct routing stay there; deleting a domain remains a Domains-row or Remove Selected action, matching the web panel.
+
+### 🔄 Changed
+- **One navigation vocabulary on the web.** Dashboard, Domains, Clients, Live Log, API, Settings and Guide read the same on desktop and mobile; the Domains badge says PROXY like the rest of the status set.
+- **Android strings have a home.** Bottom navigation, Settings sections, Clients and the client editor now read from `strings.xml`, the foundation for translation and consistent copy.
+- **No more “Gaming PC” copy.** Windows setup says Windows 10 / 11, and placeholders/examples and the provisioning text no longer assume a gamer profile.
+
+### 📚 Documentation
+- **README rebuilt** around a five-minute quick start, every install path (installer, Docker, binary + systemd, source, offline bundle, Android), first-run and ports, feature deep-dives, operations, backup/restore, troubleshooting, FAQ and security.
+- **Corrected claims:** DoQ/DNSCrypt are upstream transports, not client listeners; release binaries are Linux-only.
+- **New visuals:** dashboard, Domains, Clients, subscriber portal, two Android screens, an architecture diagram, a four-frame tour GIF and a social preview. All personal data, IPs, hostnames, IDs, UUIDs and credentials are blurred or replaced with demo values.
+
+### ⬆️ Upgrading
+
+No migration or configuration change. Docker users pull `ghcr.io/digitrob/digitdns:latest` (or `3.6.1`); binary installs replace `digitdns` and restart; Android is version 3.6.1 (versionCode 361). Back up `data.db` and `master.key` before any upgrade.
+
 ## 🏷️ [v3.6.0] — A client area that feels like the app
 
 Subscribers can now use a proper native client area on Android instead of being

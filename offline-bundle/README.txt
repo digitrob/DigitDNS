@@ -1,5 +1,5 @@
 ========================================================================
-   DigitDNS v3.0.0 — OFFLINE INSTALLER
+   DigitDNS v3.6.1 — OFFLINE INSTALLER
    100% Standalone · Zero Internet Required · Single Binary
 ========================================================================
 
@@ -7,7 +7,7 @@ WHAT'S IN THIS PACKAGE
 ----------------------
   digitdns              The complete daemon (Linux amd64, static, zero CGO).
                         DNS 53 (UDP/TCP) + DoT 853 + DoH (own port) + Panel
-                        + REST API v1/v2 + Subscriber portal + TUI — all
+                        + REST API v2/v3 + Subscriber portal + TUI — all
                         embedded. The ACME client is IN the binary: the
                         daemon issues and renews its own Let's Encrypt
                         certificates while the service runs.
@@ -23,7 +23,7 @@ WHAT'S IN THIS PACKAGE
                         /root, then hands over to install.sh.
                         bash migrate-from-v1.sh        (asks MIGRATE)
                         bash migrate-from-v1.sh -y    (no prompt)
-  version.json          Build version metadata (3.0.0).
+  version.json          Build version metadata (3.6.1).
   scripts/uninstall.sh  Clean uninstaller.
   scripts/restore.sh    Restore an uninstall backup (requires Python 3).
   LICENSE               AGPL-3.0.

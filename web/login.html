@@ -285,7 +285,13 @@
             // would otherwise be prefilled on the next visit.
             if (rememberBox.checked) saveRemembered(username, password);
             else forgetRemembered();
-            try { localStorage.setItem('hyperdns_token', body.token); } catch (e2) { /* private mode */ }
+            // Canonical session key, the one the dashboard reads first. Writing the
+            // legacy hyperdns_token here left an older digitdns_token in place, so the
+            // panel opened with a dead token, answered 401 and asked for the password
+            // a second time. Store the new token under the canonical key and drop the
+            // old one.
+            try { localStorage.setItem('digitdns_token', body.token); } catch (e2) { /* private mode */ }
+            try { localStorage.removeItem('hyperdns_token'); } catch (e2) { /* private mode */ }
             window.location.replace(BASE + '/dash/home');
           });
         }).catch(function () {

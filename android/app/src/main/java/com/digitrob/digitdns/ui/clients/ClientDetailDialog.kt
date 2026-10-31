@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -59,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.domain.model.Client
 import com.digitrob.digitdns.domain.model.ClientAction
 import com.digitrob.digitdns.domain.model.ClientLinks
@@ -153,10 +155,10 @@ fun ClientDetailDialog(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                Text("Save")
+                Text(stringResource(R.string.action_save))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 
     if (showUuidEditor && state.client != null) {
@@ -274,13 +276,13 @@ private fun UuidEditorDialog(
     PanelDialog(
         onDismissRequest = onDismiss,
         solid = true,
-        title = { Text("Edit UUID") },
+        title = { Text(stringResource(R.string.client_edit_uuid)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it.trim() },
-                    label = { Text("UUID") },
+                    label = { Text(stringResource(R.string.client_uuid)) },
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     modifier = Modifier.fillMaxWidth(),
@@ -294,10 +296,10 @@ private fun UuidEditorDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(draft) }, enabled = draft.isNotBlank()) {
-                Text("Use UUID")
+                Text(stringResource(R.string.client_use_uuid))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 
@@ -310,14 +312,14 @@ internal fun ClientForm(
     OutlinedTextField(
         value = state.name,
         onValueChange = viewModel::onNameChange,
-        label = { Text("Name") },
+        label = { Text(stringResource(R.string.client_name)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
         value = state.allowedIps,
         onValueChange = viewModel::onAllowedIpsChange,
-        label = { Text("Allowed IPs (comma or space separated)") },
+        label = { Text(stringResource(R.string.client_allowed_ips)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -327,7 +329,7 @@ internal fun ClientForm(
         OutlinedTextField(
             value = state.trafficLimitGb,
             onValueChange = viewModel::onTrafficLimitChange,
-            label = { Text("Traffic (GB)") },
+            label = { Text(stringResource(R.string.client_traffic_gb)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.weight(1f),
@@ -335,7 +337,7 @@ internal fun ClientForm(
         OutlinedTextField(
             value = state.maxDevices,
             onValueChange = viewModel::onMaxDevicesChange,
-            label = { Text("Max devices") },
+            label = { Text(stringResource(R.string.client_max_devices)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.weight(1f),
@@ -381,7 +383,7 @@ internal fun NoteField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text("Note") },
+        label = { Text(stringResource(R.string.client_note)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -682,7 +684,7 @@ private fun ClientOverflowItems(
     )
     HorizontalDivider()
     DropdownMenuItem(
-        text = { Text("Reset traffic") },
+        text = { Text(stringResource(R.string.client_reset_traffic)) },
         leadingIcon = { Icon(Icons.Filled.RestartAlt, contentDescription = null) },
         enabled = !busy,
         onClick = {
@@ -691,7 +693,7 @@ private fun ClientOverflowItems(
         },
     )
     DropdownMenuItem(
-        text = { Text("New UUID") },
+        text = { Text(stringResource(R.string.client_new_uuid)) },
         leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
         enabled = !busy,
         onClick = {
@@ -700,7 +702,7 @@ private fun ClientOverflowItems(
         },
     )
     DropdownMenuItem(
-        text = { Text("New secret") },
+        text = { Text(stringResource(R.string.client_new_secret)) },
         leadingIcon = { Icon(Icons.Filled.Key, contentDescription = null) },
         enabled = !busy,
         onClick = {
@@ -746,7 +748,7 @@ private fun ClientOverflowDialogs(
 private fun RenewMenuItems(enabled: Boolean, onRenew: (Int) -> Unit) {
     listOf(7, 30, 60, 90).forEach { days ->
         DropdownMenuItem(
-            text = { Text("+$days days") },
+            text = { Text(stringResource(R.string.client_days, days)) },
             leadingIcon = { Icon(Icons.Filled.Autorenew, contentDescription = null) },
             enabled = enabled,
             onClick = { onRenew(days) },
@@ -758,7 +760,7 @@ private fun RenewMenuItems(enabled: Boolean, onRenew: (Int) -> Unit) {
 @Composable
 private fun DeleteMenuItem(enabled: Boolean, onClick: () -> Unit) {
     DropdownMenuItem(
-        text = { Text("Delete", color = DigitDnsTheme.colors.danger) },
+        text = { Text(stringResource(R.string.action_delete), color = DigitDnsTheme.colors.danger) },
         leadingIcon = {
             Icon(
                 Icons.Filled.Delete,
@@ -782,7 +784,7 @@ private fun InvalidateDialog(
     PanelDialog(
         onDismissRequest = onDismiss,
         solid = true,
-        title = { Text("Regenerate $what?") },
+        title = { Text(stringResource(R.string.client_regenerate_title, what)) },
         text = {
             Text(
                 "The subscriber's existing configuration stops working immediately. " +
@@ -791,10 +793,10 @@ private fun InvalidateDialog(
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Regenerate", color = DigitDnsTheme.colors.warning)
+                Text(stringResource(R.string.client_regenerate), color = DigitDnsTheme.colors.warning)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 
@@ -804,13 +806,13 @@ private fun DeleteDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
     PanelDialog(
         onDismissRequest = onDismiss,
         solid = true,
-        title = { Text("Delete this client?") },
-        text = { Text("Their subscription link and whitelisted address stop working immediately. This cannot be undone.") },
+        title = { Text(stringResource(R.string.client_delete_title)) },
+        text = { Text(stringResource(R.string.client_delete_body)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Delete", color = DigitDnsTheme.colors.danger)
+                Text(stringResource(R.string.action_delete), color = DigitDnsTheme.colors.danger)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }

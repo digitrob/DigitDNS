@@ -7,7 +7,12 @@
  * labels and icons in step with the stored choice and the OS default.
  */
 (function () {
-  var THEME_KEY = 'hyperdns_theme';
+  /* The canonical key. The panel's pre-paint script in index.html reads
+     digitdns_theme first and migrates the pre-rename key, so writing the old name
+     here made a theme change revert on the next load once the canonical key
+     existed. Both names are handled for existing installs. */
+  var THEME_KEY = 'digitdns_theme';
+  var LEGACY_THEME_KEY = 'hyperdns_theme';
 
   var theme = 'dark';
 
@@ -69,7 +74,19 @@
     }
   }
 
+  /* Move a pre-rename choice onto the canonical key once, so a browser that
+     carried hyperdns_theme does not keep it forever. */
+  function migrateThemeKey() {
+    try {
+      var legacy = localStorage.getItem(LEGACY_THEME_KEY);
+      if (!legacy) return;
+      if (!localStorage.getItem(THEME_KEY)) localStorage.setItem(THEME_KEY, legacy);
+      localStorage.removeItem(LEGACY_THEME_KEY);
+    } catch (e) { /* private mode: nothing to migrate */ }
+  }
+
   function init() {
+    migrateThemeKey();
     /* The inline script in index.html already set data-theme before first paint;
        this recovers it into module state and wires the toggles, which it cannot
        do because it runs before <body> exists. */

@@ -1416,7 +1416,7 @@ const DOMAIN_STATUS_PRECEDENCE = { paused: 0, proxy: 1, blocked: 2, direct: 3 };
 // Matches Android's DomainStatus enum order for the STATUS sort.
 const DOMAIN_STATUS_RANK = { proxy: 0, blocked: 1, paused: 2, direct: 3 };
 const DOMAIN_STATUS_META = {
-  proxy: { label: 'PROXIED', badge: 'badge-proxy', domainClass: 'text-cyan-300' },
+  proxy: { label: 'PROXY', badge: 'badge-proxy', domainClass: 'text-cyan-300' },
   paused: { label: 'PAUSED', badge: 'badge-unknown', domainClass: 'text-slate-400' },
   blocked: { label: 'BLOCKED', badge: 'badge-block', domainClass: 'text-red-300' },
   direct: { label: 'DIRECT', badge: 'badge-direct', domainClass: 'text-emerald-300' },
@@ -4280,7 +4280,7 @@ curl -s "${apiBase}/status" \\
 curl -s -X POST "${apiBase}/clients" \\
   -H "X-API-Key: ${apiKey}" \\
   -H "Content-Type: application/json" \\
-  -d '{"display_name":"Gamer-VIP","validity_days":30}'`;
+  -d '{"display_name":"Customer-VIP","validity_days":30}'`;
   }
 
   const pyEl = document.getElementById('snippet-python');
@@ -6293,7 +6293,7 @@ ${subUrl}
 🔹 Secondary : 1.1.1.1
 
 Steps to register your IP :
-1️⃣ Connect your phone and game console to the same internet connection .
+1️⃣ Connect your phone and other devices to the same internet connection .
 2️⃣ Open the subscription panel link above (without a VPN/proxy) .
 3️⃣ Enter the registration secret below and press "Register my IP" .
 ❌ Without registering your IP, DNS will not be enabled for you ❌

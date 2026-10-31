@@ -34,6 +34,13 @@ type QuotaEnforcer interface {
 	QuotaExceeded(c *database.Client) bool
 }
 
+// ClientQueryCounter is how the resolver tells the client service that an account
+// just had a lookup answered. Optional like QuotaEnforcer, so a test double that
+// only knows about IP checks keeps working.
+type ClientQueryCounter interface {
+	RecordClientQuery(clientID string)
+}
+
 type Handler struct {
 	access     AccessProvider
 	cache      *cache.Cache
@@ -52,7 +59,8 @@ type Handler struct {
 	selfNames    atomic.Pointer[map[string]struct{}]
 	totalQueries atomic.Uint64
 
-	quota QuotaEnforcer
+	quota        QuotaEnforcer
+	queryCounter ClientQueryCounter
 
 	// limiter is replaced only during startup, before any listener is accepting,
 	// so the query path reads it without synchronisation.
@@ -79,6 +87,9 @@ func NewHandler(
 	}
 	if q, ok := access.(QuotaEnforcer); ok {
 		h.quota = q
+	}
+	if q, ok := access.(ClientQueryCounter); ok {
+		h.queryCounter = q
 	}
 	// Let the cache renew its own entries through the pool. A name anyone is
 	// actually using is then refreshed in the background before it expires,
@@ -473,6 +484,11 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		if allowed && client != nil {
 			activeClient = client
 			accountName = client.Name
+			// Counted before quota and rule handling: the account asked, and a
+			// blocked or quota-refused lookup is still a query it made.
+			if h.queryCounter != nil {
+				h.queryCounter.RecordClientQuery(client.ID)
+			}
 		} else if !h.access.IsAllowAll() {
 			m := new(dns.Msg)
 			m.SetRcode(r, dns.RcodeRefused)

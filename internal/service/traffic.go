@@ -138,6 +138,13 @@ func (s *ClientService) PendingTraffic(clientID string) uint64 {
 	return s.traffic.get(clientID)
 }
 
+// RecordClientQuery counts one DNS query answered for [clientID]. It touches only
+// an atomic counter on the query path — the same shape as AddTraffic, because it
+// runs for every lookup the resolver serves.
+func (s *ClientService) RecordClientQuery(clientID string) {
+	s.queries.add(clientID, 1)
+}
+
 // QuotaExceeded reports whether a client has spent its whole allowance. A limit
 // of zero means unlimited, which is what every account created before quotas were
 // enforced carries, so switching this on cannot retroactively cut anyone off.
@@ -178,28 +185,47 @@ func (s *ClientService) FlushTraffic() error {
 	s.flushMu.Lock()
 	defer s.flushMu.Unlock()
 
-	deltas := s.traffic.drain()
-	if len(deltas) == 0 {
-		return nil
+	trafficDeltas := s.traffic.drain()
+	queryDeltas := s.queries.drain()
+	applied := false
+	var firstErr error
+
+	if len(trafficDeltas) > 0 {
+		unapplied, err := s.db.AddClientTraffic(trafficDeltas)
+		for id, n := range unapplied {
+			s.traffic.add(id, n)
+		}
+		if len(unapplied) < len(trafficDeltas) {
+			applied = true
+		}
+		if err != nil {
+			firstErr = err
+		}
 	}
 
-	unapplied, err := s.db.AddClientTraffic(deltas)
-	for id, n := range unapplied {
-		s.traffic.add(id, n)
-	}
-	if err != nil {
-		return err
+	if len(queryDeltas) > 0 {
+		unapplied, err := s.db.AddClientQueries(queryDeltas)
+		for id, n := range unapplied {
+			s.queries.add(id, n)
+		}
+		if len(unapplied) < len(queryDeltas) {
+			applied = true
+		}
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 
-	// The cached client records carry the pre-flush TrafficUsedBytes, and
+	// The cached client records carry the pre-flush usage figures, and
 	// QuotaExceeded is evaluated against exactly those copies — so without this the
 	// pending counter would reset to zero every flush while the cached total stayed
 	// behind, and a subscriber over quota would come back under it every 30
-	// seconds.
-	if len(unapplied) < len(deltas) {
+	// seconds. Query totals are folded from the same cached copies, so a query-only
+	// flush needs the reload too.
+	if applied {
 		s.reloadCache()
 	}
-	return nil
+	return firstErr
 }
 
 // StartTrafficFlusher persists accounted usage on a ticker and once more when the

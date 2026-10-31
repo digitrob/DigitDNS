@@ -1,3 +1,39 @@
+# DigitDNS v3.6.1
+
+A patch release: one login instead of two, real per-client query counts, and a
+README that explains how to install, run and fix the thing.
+
+## Highlights
+
+- **Sign in once on the web.** The standalone login page was saving the session
+  under the old storage key; with an expired token in the current key, the panel
+  opened its login overlay a second time. It now writes the canonical key and
+  clears the legacy one.
+- **Light/Dark sticks.** The theme module used the same pre-rename key; the
+  choice now survives every reload.
+- **Android “Queries” is real.** The resolver counts each lookup per recognised
+  client, shows it live in the client card and API, and persists it with the
+  normal 30-second usage flush.
+- **Android live-log popup has no Remove.** Deleting stays on the Domains row
+  and Remove Selected, exactly as on the web.
+- **Consistent navigation and copy.** Web labels now match across desktop and
+  mobile; Android’s navigation, Settings and Clients screens live in
+  `strings.xml`; gamer/gaming wording is gone from the UI.
+- **README rebuilt.** Quick start first, every install path, ports and first
+  run, feature deep-dives, backup/troubleshooting/FAQ, corrected DoQ/DNSCrypt
+  and binary claims, and redacted screenshots, an architecture diagram and a
+  tour GIF.
+
+## Upgrading
+
+Docker: `docker pull ghcr.io/digitrob/digitdns:latest` (or `3.6.1`) and restart.
+Binary: replace `digitdns` and restart. Android: version 3.6.1 (versionCode
+361). No database migration; back up `data.db` and `master.key` first.
+
+Full changelog: docs/CHANGELOG.md
+
+---
+
 # DigitDNS v3.6.0
 
 A native client area on Android, an easier web login, and a few long-standing

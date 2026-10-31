@@ -279,7 +279,7 @@ echo -e "  ${GREEN}✓ Architecture detected: ${ARCH} (${BIN_ARCH})${NC}"
 # one-liner pins it to the tag the user is installing, so the binary, the config
 # template and version.json can never disagree with the installer itself.
 # RELEASE CHECKLIST: bump this to the new tag on every release.
-DIGITDNS_REF="${DIGITDNS_REF:-v3.0.0}"
+DIGITDNS_REF="${DIGITDNS_REF:-v3.6.1}"
 RAW_BASE="https://raw.githubusercontent.com/digitrob/DigitDNS/${DIGITDNS_REF}"
 RELEASE_BASE="https://github.com/digitrob/DigitDNS/releases/download/${DIGITDNS_REF}"
 

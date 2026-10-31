@@ -348,6 +348,7 @@ private fun QueryRow(
             expanded = menuOpen,
             onDismiss = { menuOpen = false },
             onAction = onAction,
+            allowRemove = false,
             patterns = patterns,
             anchorSize = rowSize,
             anchorY = rowY,
