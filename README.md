@@ -85,7 +85,7 @@ source is right here on GitHub.
 As `root` on Ubuntu 20.04+, Debian 11+, or AlmaLinux/Rocky 8+:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.5.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.6.0/scripts/install.sh | sudo bash
 ```
 
 The installer needs a **domain pointed at your server** (A record → server IP).
@@ -157,7 +157,7 @@ docker logs digitdns
 | Tag | What it is |
 | :--- | :--- |
 | `latest` | Latest stable release — use this |
-| `3.5.3` | A specific immutable release |
+| `3.6.0` | A specific immutable release |
 | `edge` | Nightly/dev build from the default branch — not for production |
 
 Verify an image's signature (proves it was built by this repo's CI):
@@ -176,7 +176,7 @@ Checksums are in `checksums.txt` (signed with the project's release key).
 
 ```bash
 # Linux amd64 example:
-curl -fsSL -o digitdns https://github.com/digitrob/DigitDNS/releases/download/v3.5.3/digitdns-linux-amd64
+curl -fsSL -o digitdns https://github.com/digitrob/DigitDNS/releases/download/v3.6.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo ./digitdns -server
 ```
@@ -269,6 +269,31 @@ device is talking to your server.
   where the address changes).
 - Send a Telegram provisioning card with the portal link, DNS address, and
   registration details in one tap.
+
+### The Client Area
+
+Every subscriber gets a private link (`https://your-server/sub/<token>`) and, on
+Android, a native client area built into the app — no browser needed.
+
+- **Status** — account name and status, the detected IP in the portal's green,
+  traffic used and remaining, quota, reset date and expiry countdown at a
+  glance. The Registration Secret and Registered Address controls sit at the
+  bottom, so a customer can bind their current device or protect a console,
+  TV box or router behind a different address or subnet.
+- **Connect** — every registered address and subnet in one comma-separated
+  list, plus the DNS, DoH and DoT endpoints for this server, each with a copy
+  button.
+- **Guide** — the full setup guide for PlayStation, Xbox, Switch, Windows,
+  iOS/macOS, Android and routers, with the live values for that subscription.
+  It ships in the app, so the instructions work without a browser tab.
+- **Saved subscriptions** — signing in with a link keeps the subscription with
+  its account name in **Manage Servers**, above the admin servers, ready to
+  reopen with one tap. **Switch to Admin** returns to the dashboard when an
+  admin session is still signed in.
+
+The same information is on the web portal, so a subscriber without the app can
+do everything from a browser. The portal's colours, title and CSS can be
+customized per install from the dashboard.
 
 ### Encrypted DNS
 
@@ -400,7 +425,7 @@ customized with your own domain, title, and CSS to match your branding.
 DigitDNS also ships a native Android companion app — the same control surface as
 the web panel, in your pocket, talking to your server over the REST API and the
 live event stream. It is a separate product on its own version line
-(`android-v3.5.3` and friends), side-loaded from the GitHub release page rather
+(`android-v3.6.0` and friends), side-loaded from the GitHub release page rather
 than distributed through Play.
 
 **What it does (feature parity with the web panel):**
@@ -419,6 +444,12 @@ than distributed through Play.
 - **Clients (subscribers)** — create and edit subscribers, set quotas, expiry
   and device limits, run actions (enable/disable, renew, reset traffic, new
   UUID/secret), suspend or delete.
+- **Client area (subscriber mode)** — sign in with a subscription link and get
+  the customer's own Status / Connect / Settings surface: live account and
+  traffic status, a green Device IP, IP registration with the registration
+  secret, the registered-address list, DNS/DoH/DoT endpoints and the complete
+  platform setup guide, all native and copy-friendly. Saved subscriptions sit
+  above the admin servers with one-tap reopen and **Switch to Admin**.
 - **Upstream Resolvers** — add, remove, reorder and benchmark DNS upstreams on
   any transport; set the default resolver, strategy (Fastest Wins, In Order,
   Hedged, Best Known) and transport policy, and open **Override Resolving** from

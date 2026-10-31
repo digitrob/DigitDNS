@@ -475,9 +475,20 @@ class AuthRepository @Inject constructor(
      * this stores it and lets the caller probe (`me()`), turning a 401 into a clear
      * "this key was rejected" rather than a silent no-op.
      */
-    suspend fun useApiKey(key: String) {
+    suspend fun useApiKey(key: String, persist: Boolean = true) {
         authState.updateMode(CredentialMode.API_KEY)
-        authState.updateApiKey(key)
+        authState.updateApiKey(key, persist)
+    }
+
+    /**
+     * Remove a key from disk without dropping the in-memory one. Used after a login
+     * with "Save key" off: the session keeps working, but a relaunch has no stored
+     * key to replay.
+     */
+    fun clearStoredApiKeyFor(id: String) {
+        if (id.isBlank()) return
+        secretStore.setApiKey(id, null)
+        _credentialRevision.value += 1
     }
 
     /**

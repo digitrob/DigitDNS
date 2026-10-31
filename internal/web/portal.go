@@ -119,7 +119,56 @@ func (ws *WebServer) handleSubDataAPI(w http.ResponseWriter, r *http.Request) {
 		// account has no cycle.
 		"next_traffic_reset": view.NextTrafficReset,
 		"quota_exceeded":     view.QuotaExceeded,
+
+		// Display data the app needs to build the same cards as the portal: the
+		// operator-configured transport ports, whether this caller's address is
+		// already bound (including CIDR entries), and one word for the account state.
+		"doh_port":               dohPortForDisplay(ws.dnsCfg),
+		"dot_port":               dotPortForDisplay(ws.dnsCfg),
+		"detected_ip_registered": ipMatchesBindings(clientIP, client.AllowedIPs),
+		"status":                 portalAccountStatus(client, view),
 	})
+}
+
+// ipMatchesBindings reports whether ip is already covered by the subscription's
+// stored addresses, exact or CIDR. The portal shows a "registered" pill from this;
+// Android does the same without re-implementing CIDR parsing.
+func ipMatchesBindings(ip string, bindings []string) bool {
+	parsed := net.ParseIP(strings.TrimSpace(ip))
+	if parsed == nil {
+		return false
+	}
+	for _, entry := range bindings {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if strings.Contains(entry, "/") {
+			if _, network, err := net.ParseCIDR(entry); err == nil && network.Contains(parsed) {
+				return true
+			}
+			continue
+		}
+		if candidate := net.ParseIP(entry); candidate != nil && candidate.Equal(parsed) {
+			return true
+		}
+	}
+	return false
+}
+
+// portalAccountStatus is the one-word state the portal page implies: suspended
+// outranks expired, and a quota-drained account is still active but out of traffic.
+func portalAccountStatus(client *database.Client, view service.ClientView) string {
+	switch {
+	case !client.Enabled:
+		return "suspended"
+	case !client.ExpiresAt.IsZero() && time.Now().After(client.ExpiresAt):
+		return "expired"
+	case view.QuotaExceeded:
+		return "quota"
+	default:
+		return "active"
+	}
 }
 
 // handleSubscriptionPage renders the subscriber portal at GET /sub/<token>.
@@ -485,10 +534,6 @@ type portalData struct {
 	// as a countdown of 9999 days, which reads as a bug to the person paying for the plan.
 	Lifetime bool
 
-	// Policies holds display labels. Empty means the subscriber inherits every
-	// rule the server has enabled, which the page says in words instead.
-	Policies []string
-
 	// The recurring-quota figures, taken from the daemon's own view of the record
 	// rather than worked out here. A subscriber whose plan renews on the 31st needs
 	// to be told the same date the resolver will actually reset on, and February is
@@ -736,14 +781,6 @@ func (ws *WebServer) renderIPResultPage(w http.ResponseWriter, r *http.Request, 
 			data.Hours = int(remaining.Hours()) % 24
 			data.Mins = int(remaining.Minutes()) % 60
 		}
-	}
-
-	// Display labels only: "custom_proxied" reads as "CUSTOM PROXIED" on the page.
-	// These used to be escaped by hand here because they were pasted into markup;
-	// the template does it now, and does it for the right context.
-	for _, p := range client.CustomPolicies {
-		label := strings.ToUpper(strings.ReplaceAll(strings.TrimPrefix(p, "enable_"), "_", " "))
-		data.Policies = append(data.Policies, label)
 	}
 
 	renderPortal(w, status.httpStatus(), portalPageTpl, data)
@@ -1046,20 +1083,6 @@ const portalPageHTML = `<!DOCTYPE html>
         {{- end}}
       </div>
 
-    </div>
-
-
-    <div class="card">
-      <div class="hd-title"><i class="ico ico-gamepad" aria-hidden="true"></i>{{.T.CardPolicies}}</div>
-      <div class="chips">
-        {{- if .Policies}}
-        {{- range .Policies}}
-        <span class="chip"><i class="ico ico-gamepad" aria-hidden="true"></i>{{.}}</span>
-        {{- end}}
-        {{- else}}
-        <span class="chip chip-all"><i class="ico ico-star" aria-hidden="true"></i>{{.T.PolicyAll}}</span>
-        {{- end}}
-      </div>
     </div>
 
 

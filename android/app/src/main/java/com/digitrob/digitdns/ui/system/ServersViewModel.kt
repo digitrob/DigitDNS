@@ -2,8 +2,11 @@ package com.digitrob.digitdns.ui.system
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.digitrob.digitdns.data.AppMode
+import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.AuthRepository
 import com.digitrob.digitdns.data.ServerSwitchResult
+import com.digitrob.digitdns.data.SubscriberSession
 import com.digitrob.digitdns.domain.model.Connection
 import com.digitrob.digitdns.domain.model.CredentialMode
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +32,17 @@ data class ServerEdit(
     val password: String,
     val apiKey: String,
     val saveCredentials: Boolean,
+)
+
+/**
+ * The saved subscription as the Servers list renders it: an account name, the portal
+ * it belongs to, and the masked link. It is not a [ServerRow] — it has no admin path,
+ * no credential mode and no probe — so it stays a distinct row type.
+ */
+data class SubscriptionRow(
+    val label: String,
+    val authority: String,
+    val maskedUrl: String,
 )
 
 data class ServerRow(
@@ -58,6 +72,10 @@ sealed interface ServerSwitchOutcome {
 /** What the Servers view shows, and whether a switch or removal is in flight. */
 data class ServersUiState(
     val servers: List<ServerRow> = emptyList(),
+    /** The subscriber session on this device, if one was opened. */
+    val subscription: SubscriptionRow? = null,
+    /** Set when "Open" was pressed; the host navigates and consumes it. */
+    val openSubscriber: Boolean = false,
     val isBusy: Boolean = false,
     /**
      * The pull-to-refresh indicator's own flag.
@@ -87,6 +105,8 @@ data class ServersUiState(
 @HiltViewModel
 class ServersViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val subscriberSession: SubscriberSession,
+    private val appPreferences: AppPreferences,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ServersUiState())
@@ -109,11 +129,22 @@ class ServersViewModel @Inject constructor(
         probeJob?.cancel()
         viewModelScope.launch {
             _state.update { it.copy(isRefreshing = userInitiated && it.servers.isNotEmpty()) }
+            val link = subscriberSession.currentLink()
+            val subscription = link?.let {
+                SubscriptionRow(
+                    // The portal's account name arrives after the link is adopted;
+                    // until then the host is an honest stand-in.
+                    label = subscriberSession.currentLabel().ifBlank { it.host },
+                    authority = it.authority,
+                    maskedUrl = it.maskedPortalUrl,
+                )
+            }
             val servers = try {
                 val active = authRepository.currentConnection()
                 val loaded = authRepository.listServers()
                 _state.update {
                     it.copy(
+                        subscription = subscription,
                         servers = loaded.map { c ->
                             ServerRow(
                                 id = c.id,
@@ -170,6 +201,31 @@ class ServersViewModel @Inject constructor(
 
     /** The host has navigated or closed its popup; do not replay the switch. */
     fun consumeSwitchOutcome() = _state.update { it.copy(switchOutcome = null) }
+
+    /**
+     * Open the subscriber surface. The admin session stays saved and active, so the
+     * way back is a mode change, not a login.
+     */
+    fun openSubscriber() {
+        if (_state.value.subscription == null) return
+        viewModelScope.launch {
+            appPreferences.setAppMode(AppMode.SUBSCRIBER)
+            appPreferences.setSubscriberActive(true)
+            _state.update { it.copy(openSubscriber = true) }
+        }
+    }
+
+    fun consumeOpenSubscriber() = _state.update { it.copy(openSubscriber = false) }
+
+    /** Forget the saved subscription, its secret and this host's certificate pin. */
+    fun removeSubscriber() {
+        viewModelScope.launch {
+            subscriberSession.forget()
+            appPreferences.setSubscriberActive(false)
+            appPreferences.setAppMode(AppMode.ADMIN)
+            refresh()
+        }
+    }
 
     /** Forget [id]: drop its credential and remove it from the list. */
     fun remove(id: String) {

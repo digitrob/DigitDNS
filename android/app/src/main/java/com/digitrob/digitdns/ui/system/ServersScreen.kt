@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -19,7 +20,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -67,6 +70,7 @@ fun ServersScreen(
     onAddServer: () -> Unit,
     onLoginRequired: () -> Unit = onLoggedOut,
     onSwitched: () -> Unit = {},
+    onOpenSubscriber: () -> Unit = {},
     embedded: Boolean = false,
     viewModel: ServersViewModel = hiltViewModel(),
 ) {
@@ -74,16 +78,34 @@ fun ServersScreen(
     // The edit dialog's target, or null while none is open. The dialog owns its
     // text fields: the screen remembers only which row opened it.
     var editing by remember { mutableStateOf<ServerRow?>(null) }
+    var removingSubscription by remember { mutableStateOf(false) }
 
-    editing?.let { target ->
-        EditServerDialog(
-            server = target,
-            onConfirm = { edited ->
-                viewModel.editServer(target.id, edited)
-                editing = null
-            },
-            onDismiss = { editing = null },
-        )
+    ServersDialogs(
+        editing = editing,
+        subscriptionLabel = state.subscription?.label.orEmpty(),
+        removingSubscription = removingSubscription,
+        onEditConfirm = { target, edited ->
+            viewModel.editServer(target.id, edited)
+            editing = null
+        },
+        onEditDismiss = { editing = null },
+        onRemoveCancel = { removingSubscription = false },
+        onRemoveConfirm = {
+            removingSubscription = false
+            viewModel.removeSubscriber()
+        },
+    )
+
+    // Reload when the section is opened: a subscriber sign-in from Add server happens
+    // while this view model already exists, and its subscription must appear here.
+    LaunchedEffect(Unit) { viewModel.refresh() }
+
+    // A subscription row's Open requests a mode change the host performs.
+    LaunchedEffect(state.openSubscriber) {
+        if (state.openSubscriber) {
+            viewModel.consumeOpenSubscriber()
+            onOpenSubscriber()
+        }
     }
 
     // A switch has two endings the host must act on: close the picker when it worked,
@@ -111,6 +133,8 @@ fun ServersScreen(
             onSwitch = viewModel::switchTo,
             onRemove = viewModel::remove,
             onEdit = { editing = it },
+            onOpenSubscription = viewModel::openSubscriber,
+            onRemoveSubscriber = { removingSubscription = true },
             modifier = Modifier.fillMaxWidth(),
             embedded = true,
         )
@@ -127,12 +151,41 @@ fun ServersScreen(
                 onSwitch = viewModel::switchTo,
                 onRemove = viewModel::remove,
                 onEdit = { editing = it },
+                onOpenSubscription = viewModel::openSubscriber,
+                onRemoveSubscriber = { removingSubscription = true },
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(16.dp),
             )
         }
+    }
+}
+
+/** The manager's two confirmations, kept out of the screen body so it stays readable. */
+@Composable
+private fun ServersDialogs(
+    editing: ServerRow?,
+    subscriptionLabel: String,
+    removingSubscription: Boolean,
+    onEditConfirm: (ServerRow, ServerEdit) -> Unit,
+    onEditDismiss: () -> Unit,
+    onRemoveCancel: () -> Unit,
+    onRemoveConfirm: () -> Unit,
+) {
+    editing?.let { target ->
+        EditServerDialog(
+            server = target,
+            onConfirm = { edited -> onEditConfirm(target, edited) },
+            onDismiss = onEditDismiss,
+        )
+    }
+    if (removingSubscription) {
+        RemoveSubscriptionDialog(
+            label = subscriptionLabel,
+            onCancel = onRemoveCancel,
+            onConfirm = onRemoveConfirm,
+        )
     }
 }
 
@@ -145,6 +198,8 @@ private fun ServersBody(
     onSwitch: (String) -> Unit,
     onRemove: (String) -> Unit,
     onEdit: (ServerRow) -> Unit,
+    onOpenSubscription: () -> Unit,
+    onRemoveSubscriber: () -> Unit,
     modifier: Modifier,
     embedded: Boolean = false,
 ) {
@@ -152,6 +207,15 @@ private fun ServersBody(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        state.subscription?.let { subscription ->
+            Text("Subscriptions", style = MaterialTheme.typography.titleMedium)
+            SubscriptionCard(
+                subscription = subscription,
+                onOpen = onOpenSubscription,
+                onRemove = onRemoveSubscriber,
+            )
+        }
+
         Text("Saved servers", style = MaterialTheme.typography.titleMedium)
 
         state.error?.let { message ->
@@ -347,6 +411,99 @@ private fun ServerCardDetails(server: ServerRow, modifier: Modifier = Modifier) 
     }
 }
 
+
+/**
+ * The saved subscription card. It sits above the admin servers because it is the
+ * other surface this device can open, and a tap anywhere on the card opens it; the
+ * two buttons make the same choice explicit and put Remove slightly out of the way.
+ */
+@Composable
+private fun SubscriptionCard(
+    subscription: SubscriptionRow,
+    onOpen: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onOpen),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                Icons.Filled.Person,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = subscription.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subscription.authority,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subscription.maskedUrl,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            TextButton(onClick = onOpen) { Text("Open") }
+            IconButton(onClick = onRemove) {
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = "Remove subscription",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemoveSubscriptionDialog(
+    label: String,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    PanelDialog(
+        onDismissRequest = onCancel,
+        solid = true,
+        title = { Text("Remove subscription?") },
+        text = {
+            Text(
+                (if (label.isBlank()) "The saved subscription" else label) +
+                    " and its registration secret are removed from this device. " +
+                    "Your admin servers are not changed.",
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Remove", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
+    )
+}
 
 /** The edit dialog behind a row's pencil. The fields are deliberately narrow: they
  * rewrite the profile's connection details in place, never the id, so a saved

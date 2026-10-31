@@ -1,3 +1,53 @@
+# DigitDNS v3.6.0
+
+A native client area on Android, an easier web login, and a few long-standing
+paper cuts fixed. No migrations and no configuration changes.
+
+## Highlights
+
+- **Subscribers get a real app surface.** Paste the subscription link and the
+  app opens **Status**, **Connect** and **Settings** with the same cards and
+  headings as the admin app — no browser round-trip. Status shows the account,
+  the green Device IP, traffic and expiry; Connect lists the registered
+  addresses, the DNS/DoH/DoT endpoints and the full setup guide; the
+  Registration Secret and Registered Address controls sit at the bottom of
+  Status, with the secret optionally saved on the device.
+- **Subscriptions remember themselves.** A client session started from
+  **Add server → User** is saved with its account name, shown above the saved
+  servers, one tap to reopen, and removable with its secret and certificate
+  pin. The dashboard's server switcher carries the same entry. When an admin is
+  still signed in, **Switch to Admin** returns without a login; when none is,
+  the button is disabled and says so.
+- **The client area fits a phone.** Card headers match the admin panel, the
+  Status page fills the screen without scrolling, Device IP is the portal's
+  green hero value, and the registered-address list is a comma-separated block
+  that scrolls inside its card rather than moving the page.
+- **The top-right pill now means connectivity.** It reads **Online** or
+  **Offline**; the Account card keeps the subscription status — Active,
+  Suspended, Expired or Quota spent.
+- **Web login can remember you.** Both the standalone page and the dashboard
+  overlay have a **Remember me** tick that fills the fields next visit and
+  forgets them the moment it is cleared. Android's API-key login gained a
+  matching **Save key** choice beside **Show key**.
+- **Domains Remove works on blocked and direct rows.** The button used to edit
+  only the proxied lists, so those rows stayed put. It now clears all four
+  lists, the hidden wildcard twin and the Added stamp. **Remove** also left the
+  shared quick-action menu; deleting stays on the Domains row and Remove
+  Selected.
+- **Smaller fixes.** The three resolution dropdowns are equal width, subscription
+  links with stray whitespace parse, and the portal's “Games and services” box
+  is gone.
+
+## Upgrading
+
+Docker users on `ghcr.io/digitrob/digitdns:latest` get it on restart, or pull
+`3.6.0` explicitly. Binary installs: replace `digitdns` and restart. Android is
+a separate download on this page — version 3.6.0 (versionCode 360).
+
+Full changelog: docs/CHANGELOG.md
+
+---
+
 # DigitDNS v3.5.3
 
 Wildcards became a visible, one-click control on both clients, the Domains list

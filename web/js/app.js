@@ -369,6 +369,59 @@ document.addEventListener('submit', (e) => {
   }
 }, true);
 
+// "Remember me" on the login overlay. The token in localStorage is not enough on
+// its own: dashboard sessions live in the daemon's memory and are revoked when it
+// restarts or after two idle hours, so the operator lands back on this form with
+// nothing filled in. Ticking the box stores the submitted pair under its own key
+// and fills both fields on the next load. That pair is plain JSON in localStorage
+// — anything running on this origin can read it — which is the trade the tick
+// asks the operator to accept; the box is off the moment it is unticked and the
+// stored copy is deleted with it. Nothing here is sent anywhere.
+const REMEMBER_KEY = 'digitdns_remember';
+
+function readRememberedLogin() {
+  try {
+    const raw = localStorage.getItem(REMEMBER_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    if (!saved || typeof saved.u !== 'string' || typeof saved.p !== 'string') return null;
+    return saved;
+  } catch (e) {
+    // A corrupt or unreadable entry is treated as "nothing remembered".
+    return null;
+  }
+}
+
+function saveRememberedLogin(username, password) {
+  try {
+    localStorage.setItem(REMEMBER_KEY, JSON.stringify({ u: username, p: password }));
+  } catch (e) {
+    // Blocked or full storage: the login still worked, only the convenience is lost.
+  }
+}
+
+function forgetRememberedLogin() {
+  try { localStorage.removeItem(REMEMBER_KEY); } catch (e) {}
+}
+
+// Runs before checkAuthAndBoot so the fields are filled by the time the overlay
+// is unhidden. The password field only takes focus when there is no live session
+// to boot into — otherwise it would pull focus off the dashboard underneath.
+function applyRememberedLogin() {
+  const userInput = document.getElementById('login-username');
+  const passInput = document.getElementById('login-password');
+  const box = document.getElementById('login-remember');
+  if (!userInput || !passInput || !box) return;
+  const saved = readRememberedLogin();
+  box.checked = !!saved;
+  if (!saved) return;
+  userInput.value = saved.u;
+  passInput.value = saved.p;
+  if (!authToken && !document.getElementById('login-modal')?.classList.contains('hidden')) {
+    passInput.focus();
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   safeFeatherReplace();
   try { initChart(); } catch (e) {}
@@ -376,6 +429,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // inside have to be watching already or they miss the modal that is up first.
   initModalA11y();
   checkAuthAndBoot();
+  // Filled after checkAuthAndBoot: opening the overlay runs the focus trap, which
+  // would otherwise land the cursor on the theme toggle and override the password
+  // focus. Everything here is synchronous, so no empty fields are painted.
+  applyRememberedLogin();
 
   // The API docs live under the admin namespace too, and the anchors' hrefs in
   // index.html are static ("/api/v2/docs", "/api/v3/docs") that
@@ -453,6 +510,12 @@ document.addEventListener('DOMContentLoaded', () => {
         authToken = data.token;
         localStorage.setItem('digitdns_token', authToken);
         try { localStorage.removeItem('hyperdns_token'); } catch (e) {}
+        // Only a verified login is worth remembering: saving the pair before the
+        // server answered would keep a typo, and a 401 would leave the next visit
+        // prefilled with a password known to be wrong.
+        const rememberBox = document.getElementById('login-remember');
+        if (rememberBox && rememberBox.checked) saveRememberedLogin(u, p);
+        else forgetRememberedLogin();
         hideLoginModal();
         bootDashboard();
 
@@ -465,6 +528,15 @@ document.addEventListener('DOMContentLoaded', () => {
           errDiv.classList.remove('hidden');
         }
       }
+    });
+  }
+
+  // Unticking clears the stored pair at once rather than waiting for the next
+  // successful login: "remember me" off should not leave a password behind.
+  const rememberToggle = document.getElementById('login-remember');
+  if (rememberToggle) {
+    rememberToggle.addEventListener('change', () => {
+      if (!rememberToggle.checked) forgetRememberedLogin();
     });
   }
 
@@ -532,6 +604,12 @@ document.addEventListener('DOMContentLoaded', () => {
           authToken = data.token;
           localStorage.setItem('digitdns_token', authToken);
         try { localStorage.removeItem('hyperdns_token'); } catch (e) {}
+        }
+        // A remembered login is only useful while it matches the live credentials;
+        // a rotated password or renamed account would otherwise leave the next
+        // visit prefilled with values that cannot work.
+        if ((newPassword || newUsername) && readRememberedLogin()) {
+          saveRememberedLogin(data.username || newUsername || liveUser, newPassword || currentPassword);
         }
         // Keep the local copy in step so the Settings card and the next open of
         // this modal show the name that is now in force.
@@ -1344,6 +1422,9 @@ const DOMAIN_STATUS_META = {
   direct: { label: 'DIRECT', badge: 'badge-direct', domainClass: 'text-emerald-300' },
 };
 
+// The four routing lists, in the order a status takes precedence.
+const DOMAIN_RULE_LISTS = ['custom_proxied', 'custom_proxied_disabled', 'custom_blocked', 'custom_direct'];
+
 function proxiedOrderedRows() {
   const rules = currentConfig?.rules || {};
   const byDomain = new Map();
@@ -1398,6 +1479,46 @@ function proxiedOrderedRows() {
     default:
       return anyStamp ? rows.slice().sort((a, b) => stamp(b.domain) - stamp(a.domain)) : rows.slice().reverse();
   }
+}
+
+// domainRemovalPatterns is every stored pattern one visible row stands for.
+//
+// The table hides *.base when base is in the same list, because the plain rule
+// already covers its subdomains. Deleting that row therefore has to delete the
+// hidden twin too, or the next render brings a wildcard row back where the
+// operator just removed one. A wildcard row is only itself.
+function domainRemovalPatterns(domain) {
+  const raw = String(domain || '').trim();
+  if (!raw || !currentConfig || !currentConfig.rules) return [];
+  const rules = currentConfig.rules;
+  if (raw.startsWith('*.')) return [raw];
+  const patterns = [raw];
+  const twin = '*.' + raw;
+  for (const key of DOMAIN_RULE_LISTS) {
+    if (Array.isArray(rules[key]) && rules[key].includes(raw) && rules[key].includes(twin)) {
+      patterns.push(twin);
+    }
+  }
+  return patterns;
+}
+
+// removeDomainEverywhere deletes a row from all four routing lists, not just the
+// proxied pair. The Domains table shows blocked and direct rows too, and those
+// used to survive the row's Remove button untouched.
+function removeDomainEverywhere(domain) {
+  if (!currentConfig || !currentConfig.rules) return false;
+  const patterns = domainRemovalPatterns(domain);
+  if (!patterns.length) return false;
+  const rules = currentConfig.rules;
+  for (const key of DOMAIN_RULE_LISTS) {
+    if (Array.isArray(rules[key])) rules[key] = rules[key].filter((d) => !patterns.includes(d));
+  }
+  // The "Added" stamp belongs to the rule: keeping it would make a re-added
+  // domain look older than it is and sort it into the wrong place.
+  const added = rules.custom_domain_added || {};
+  for (const pattern of patterns) delete added[pattern];
+  rules.custom_domain_added = added;
+  return true;
 }
 
 // proxiedFilterNeedle is what the table is currently narrowed to, or '' for the
@@ -2388,9 +2509,13 @@ async function saveRules() {
     if (res.ok) {
       currentConfig.rules = payload;
       showToast('Routing rules saved & active!', 'success');
+      return true;
     }
+    showToast(await errorMessage(res, 'Failed to save routing rules'), 'error');
+    return false;
   } catch (e) {
     showToast('Failed to save routing rules', 'error');
+    return false;
   }
 }
 
@@ -3688,8 +3813,8 @@ function applyStreamAction(action) {
     if (key === targetKey) continue;
     lists[key] = lists[key].filter((x) => !remove.includes(x));
   }
-  if (targetKey) lists[targetKey] = replacePatterns(lists[targetKey], remove, targets);
-  else if (action !== 'remove') return;
+  if (!targetKey) return;
+  lists[targetKey] = replacePatterns(lists[targetKey], remove, targets);
 
   rules.custom_proxied = lists.custom_proxied;
   rules.custom_proxied_disabled = lists.custom_proxied_disabled;
@@ -3698,7 +3823,7 @@ function applyStreamAction(action) {
   streamActionApplied = [];
   const added = rules.custom_domain_added || {};
   for (const pattern of rowPatterns) delete added[pattern];
-  if (stamp && action !== 'remove') for (const target of targets) added[target] = stamp;
+  if (stamp) for (const target of targets) added[target] = stamp;
   rules.custom_domain_added = added;
 
   // Rewrite the buffered rows for this exact host so the badge the operator just
@@ -3710,7 +3835,7 @@ function applyStreamAction(action) {
     });
   }
 
-  const label = { proxy: 'Proxied', block: 'Blocked', direct: 'Set direct', remove: 'Removed' }[action] || 'Updated';
+  const label = { proxy: 'Proxied', block: 'Blocked', direct: 'Set direct' }[action] || 'Updated';
   // Only a wildcard-only target leaves the clicked host out, so say that once here
   // as well as in the menu preview: otherwise the original row keeps resolving and
   // the action reads as a no-op. host+* includes the host, so it needs no warning.
@@ -5205,16 +5330,12 @@ function initEventListeners() {
         updateStats();
       } catch (err) {}
     } else if (btn.classList.contains('remove-proxied')) {
-      const val = btn.dataset.val;
-      if (currentConfig) {
-        // Delete from both lists: the × on a switched-off row must remove it for
-        // good, not just from the active set the row no longer lives in.
-        currentConfig.rules.custom_proxied = currentConfig.rules.custom_proxied.filter(x => x !== val);
-        if (Array.isArray(currentConfig.rules.custom_proxied_disabled)) {
-          currentConfig.rules.custom_proxied_disabled = currentConfig.rules.custom_proxied_disabled.filter(x => x !== val);
-        }
-        saveRules();
+      if (removeDomainEverywhere(btn.dataset.val)) {
+        // Render before the round-trip so the row leaves at once, then put the
+        // panel back in step with the server if the save was rejected — otherwise
+        // the row silently reappears on the next refresh.
         renderConfig(currentConfig);
+        if (!await saveRules()) loadConfig();
       }
     } else if (btn.classList.contains('proxied-pause-btn')) {
       const val = btn.dataset.val;

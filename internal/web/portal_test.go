@@ -78,7 +78,7 @@ func TestPortalEscapesClientName(t *testing.T) {
 	}
 }
 
-func TestPortalEscapesCustomPolicies(t *testing.T) {
+func TestPortalOmitsPoliciesCard(t *testing.T) {
 	ws, _, cleanup := setupTestWebServer(t)
 	defer cleanup()
 
@@ -86,9 +86,9 @@ func TestPortalEscapesCustomPolicies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateClient: %v", err)
 	}
-	// Policy keys reach the store from the API without a charset check, and
-	// ToUpper neutralises nothing.
-	policies := []string{`enable_<img src=x onerror=alert(1)>`}
+	// A client with custom policies used to render them in a "Games and services"
+	// card. That card is gone from the portal; the policies still apply server-side.
+	policies := []string{"enable_riot", "enable_steam"}
 	if _, err := ws.clients.UpdateClient(client.ID, service.UpdateClientRequest{CustomPolicies: &policies}); err != nil {
 		t.Fatalf("UpdateClient: %v", err)
 	}
@@ -98,36 +98,23 @@ func TestPortalEscapesCustomPolicies(t *testing.T) {
 	w := httptest.NewRecorder()
 	ws.buildAdminHandler().ServeHTTP(w, req)
 
-	// The label is upper-cased before it reaches the page, so asserting on the
-	// lowercase payload would pass on an unescaped page too.
-	body := w.Body.String()
-	if strings.Contains(body, "<IMG SRC=X") {
-		t.Error("a policy key was written to the page as live markup")
+	if w.Code != http.StatusOK {
+		t.Fatalf("portal page = %d, want 200", w.Code)
 	}
-	// The chip is a text node, so html/template runs its text escaper here: "<" and ">"
-	// become entities and "=" is left alone, because "=" only needs escaping in an
-	// unquoted attribute (that is the context htmlNospaceReplacementTable serves, and
-	// where &#61; comes from). Matching on the "&lt;IMG SRC" prefix therefore proves both
-	// halves of what this test is for — the label reached the page, and the one character
-	// that could open a tag did not survive — without pinning a detail of the escaper
-	// that this context does not exercise.
-	if !strings.Contains(body, "&lt;IMG SRC") {
-		// Distinguishing the two ways this can break is worth a line: an empty Policies
-		// slice renders the inherit-everything chip instead, which is a storage or
-		// lookup failure rather than an escaping one.
-		if strings.Contains(body, "Full Inherit") {
-			t.Error("the portal rendered the inherit-everything chip: the custom policy never reached the page")
-		} else {
-			t.Error("the escaped policy label is missing; the page did not render it at all")
+	body := w.Body.String()
+	for _, gone := range []string{
+		"Games and services enabled on this subscription",
+		"Full Inherit",
+		"RIOT",
+		"STEAM",
+	} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the portal still renders %q — the policies box was meant to be removed", gone)
 		}
 	}
 }
 
-// TestPortalFiltersHostHeader covers the reflected case: serverDNS falls back to
-// r.Host, an attacker-chosen value that the page prints as text, puts in a
-// data-copy attribute, and repeats inside every device guide. The assertions are
-// written against the rendered body rather than against one context, so they hold
-// whichever of those the value is read from.
+
 func TestPortalFiltersHostHeader(t *testing.T) {
 	ws, _, cleanup := setupTestWebServer(t)
 	defer cleanup()
@@ -226,7 +213,6 @@ func TestPortalTemplatesExecute(t *testing.T) {
 		Days:             120,
 		Hours:            7,
 		Mins:             42,
-		Policies:         []string{"RIOT", "STEAM"},
 
 		QuotaExceeded: true,
 		HasCycle:      true,
@@ -588,5 +574,52 @@ func TestPortalListsRegisteredAddresses(t *testing.T) {
 	}
 	if !strings.Contains(body, `id="register-ip"`) {
 		t.Error("the register card has no custom-address field")
+	}
+}
+
+// The Android subscriber app reads the same JSON as the portal's sync button. These
+// fields are display data the app cannot derive without duplicating server logic.
+func TestSubDataAPICarriesAppDisplayFields(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	client, err := ws.clients.CreateClient("App Reader", 30, "10.0.0.13")
+	if err != nil {
+		t.Fatalf("CreateClient: %v", err)
+	}
+
+	decode := func(remote string) map[string]any {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/sub/"+client.Token, nil)
+		req.RemoteAddr = remote
+		w := httptest.NewRecorder()
+		ws.buildAdminHandler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 — %s", w.Code, w.Body.String())
+		}
+		var body map[string]any
+		if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return body
+	}
+
+	body := decode("10.0.0.13:1234")
+	if got := body["doh_port"]; got != float64(8443) {
+		t.Errorf("doh_port = %v, want 8443", got)
+	}
+	if got := body["dot_port"]; got != float64(853) {
+		t.Errorf("dot_port = %v, want 853", got)
+	}
+	if got := body["detected_ip_registered"]; got != true {
+		t.Errorf("detected_ip_registered = %v, want true for a bound address", got)
+	}
+	if got := body["status"]; got != "active" {
+		t.Errorf("status = %v, want active", got)
+	}
+
+	other := decode("198.51.100.9:1234")
+	if got := other["detected_ip_registered"]; got != false {
+		t.Errorf("detected_ip_registered = %v, want false for an unbound address", got)
 	}
 }

@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.6.0] — A client area that feels like the app
+
+Subscribers can now use a proper native client area on Android instead of being
+sent to the portal in a browser, and the web panel's login got a little easier to
+live with. No migrations and no configuration changes.
+
+### ✨ Added
+- **A native client area on Android.** Sign in with the subscription link your provider gave you and get three tabs — **Status**, **Connect** and **Settings** — with the same cards, headings and typography as the admin app. Status shows the account, a green Device IP, traffic and expiry at a glance; Connect lists the registered addresses, the DNS/DoH/DoT endpoints, and the complete per-platform setup guide; Settings holds the subscription, appearance and account controls.
+- **Registrations without the portal.** The Registration Secret and Registered Address controls live on the Status tab: enter the secret, register this device or type another address or subnet, and the result appears in Connect. The secret can be saved on the device.
+- **Saved subscriptions in Manage Servers.** A subscriber session started from **Add server → User** is kept with the account name the portal reports, appears above the saved servers, can be reopened with one tap, and can be removed with its secret and certificate pin. The same entry is at the top of the dashboard's server switcher.
+- **Switch to Admin.** When an admin account is still signed in, subscriber Settings offers a one-tap return to the dashboard; with no admin account the button is visibly disabled and says why.
+- **Remember me on the web login.** Both the standalone login page and the dashboard overlay remember the username and password on request, prefill them next visit, and forget them the moment the tick is cleared. The credentials stay on that browser only.
+- **Save key on the Android admin login.** API-key sign-in now has a **Save key** tick beside **Show key**. Leave it off and the key works for this run only; a relaunch asks again. Change the key or the admin password and the remembered copy follows.
+- **Copy controls everywhere in the client area.** ID, UUID, device IP and every endpoint value copy with a pictogram; the subscription link in Settings does the same.
+
+### 🔄 Changed
+- **Client-area cards use the panel's headers.** Uppercase `labelSmall` titles with the same 14 dp glyph as the admin dashboard, on Status, Connect, Guide and Settings. Card copy is unchanged.
+- **The Status page fits without scrolling.** Traffic stays content-sized and the registration card takes the remaining height, so the screen is always filled and nothing is cut off — even with the larger green device IP the portal uses.
+- **The top-right pill means connectivity.** It reads **Online** or **Offline** for the server connection, while the Account card keeps the subscription's own status: **Active**, **Suspended**, **Expired** or **Quota spent**. Both pills sit on one vertical line.
+- **Registered addresses are a list, not chips.** The Connect card fills the tab, lists every address and subnet comma-separated, and scrolls only that text — the page and its header stay still.
+- **The web Domains Remove button works on every status.** Blocked and direct rows now disappear too, along with the hidden wildcard twin and the “Added” stamp. A rejected save re-syncs from the server instead of leaving a phantom row.
+- **Equal-width resolution pickers.** Transports, Default upstream and Strategy are one grid, so all three dropdowns are exactly as wide as the Default upstream one.
+- **The subscription portal no longer shows a Games and services box.** Policy inheritance is unchanged; the card is simply gone.
+
+### 🔴 Removed
+- **Remove from the shared quick-action menu.** Proxying, blocking and direct routing stay there; deleting a domain belongs to the Domains row button and Remove Selected, where the managed list is.
+- **The portal's “Games and services enabled on this subscription” card**, its “Full Inherit” chip, and the associated copy.
+
+### 🐛 Fixed
+- **Subscriber login from Add server did nothing.** The route was missing the callback, so the link verified and the app stayed on the form. It now opens the client area.
+- **Removing a blocked or direct domain appeared to do nothing.** The row handler only edited the two proxied lists; it now clears all four and their timestamps.
+- **A subscription link with a line break or stray space failed to parse.** Android strips whitespace before parsing and explains when only the token was pasted.
+- **API keys were always saved, tick or no tick.** The new Save key choice is honoured, and a failed attempt no longer leaves a rejected key behind.
+
 ## 🏷️ [v3.5.3] — Wildcards you can see, and tighter rows
 
 The wildcard scope is now a first-class control on both clients: pick exact,

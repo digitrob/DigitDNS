@@ -109,6 +109,7 @@ import kotlin.math.abs
 fun DashboardScreen(
     onAddServer: () -> Unit,
     onLoginRequired: () -> Unit,
+    onOpenSubscriber: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -201,6 +202,10 @@ fun DashboardScreen(
             onLoginRequired = {
                 showServerSwitcher = false
                 onLoginRequired()
+            },
+            onOpenSubscriber = {
+                showServerSwitcher = false
+                onOpenSubscriber()
             },
             onSwitched = {
                 showServerSwitcher = false

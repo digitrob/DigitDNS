@@ -1449,26 +1449,31 @@ input:checked + .slider:before {
   }
 }
 
-/* Resolution settings rows: the label and its select are one pair instead of
-   being pushed to opposite ends of the card, which left a wide dead gap in the
-   middle of every row. The select takes the row remainder instead of a fixed
-   208 px, so the longest transport option no longer clips, and the label stays
-   content-sized: at the card's ~310 px a shared column wide enough for
-   "Default upstream" would have left the selects narrower than before.
-   Plain CSS: the served purged Tailwind sheet has no w-64 / w-28 for this. */
-.resolution-setting-row {
-  display: flex;
+/* Resolution settings rows: labels and selects live in one two-column grid so
+   every select is exactly as wide as the Default upstream one. Separate flex
+   rows measured each select against its own label, so the shorter "Transports"
+   and "Strategy" labels left those selects wider than the Default upstream one.
+   The label column is max-content, i.e. the width of the longest label, and
+   the select column takes the rest. */
+.resolution-settings {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
-  gap: 0.5rem;
+  column-gap: 0.5rem;
+  row-gap: 0.375rem;
+}
+
+/* The pin warning belongs to the Default upstream row but spans both columns,
+   so it does not add a label-sized empty cell of its own. */
+.resolution-setting-note {
+  grid-column: 1 / -1;
 }
 
 .resolution-setting-label {
-  flex: 0 0 auto;
   white-space: nowrap;
 }
 
 .resolution-setting-select {
-  flex: 1 1 auto;
   min-width: 0;
 }
 

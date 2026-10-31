@@ -79,7 +79,11 @@ private enum class SettingsSection(val label: String, val icon: ImageVector) {
  * the host can return to the login screen — the tab itself owns no navigation.
  */
 @Composable
-fun SettingsHubScreen(onLoggedOut: () -> Unit, onAddServer: () -> Unit) {
+fun SettingsHubScreen(
+    onLoggedOut: () -> Unit,
+    onAddServer: () -> Unit,
+    onOpenSubscriber: () -> Unit = {},
+) {
     var section by rememberSaveable { mutableStateOf(SettingsSection.App) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -109,7 +113,7 @@ fun SettingsHubScreen(onLoggedOut: () -> Unit, onAddServer: () -> Unit) {
             }
         }
 
-        SettingsSectionContent(section, onLoggedOut, onAddServer)
+        SettingsSectionContent(section, onLoggedOut, onAddServer, onOpenSubscriber)
     }
 }
 
@@ -122,10 +126,15 @@ private fun SettingsSectionContent(
     section: SettingsSection,
     onLoggedOut: () -> Unit,
     onAddServer: () -> Unit,
+    onOpenSubscriber: () -> Unit,
 ) {
     when (section) {
         SettingsSection.App -> AppSettingsScreen()
-        SettingsSection.Servers -> ServersScreen(onLoggedOut = onLoggedOut, onAddServer = onAddServer)
+        SettingsSection.Servers -> ServersScreen(
+            onLoggedOut = onLoggedOut,
+            onAddServer = onAddServer,
+            onOpenSubscriber = onOpenSubscriber,
+        )
         SettingsSection.ConnectGuide -> ConnectScreen()
         SettingsSection.Diagnostics -> DiagnosticsScreen()
         SettingsSection.Tls -> TlsScreen()

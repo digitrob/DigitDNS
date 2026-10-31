@@ -35,8 +35,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.digitrob.digitdns.data.AppMode
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.AuthRepository
+import com.digitrob.digitdns.data.SubscriberSession
 import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.core.network.AuthState
 import com.digitrob.digitdns.ui.auth.LoginScreen
@@ -44,9 +46,11 @@ import com.digitrob.digitdns.ui.clients.ClientsScreen
 import com.digitrob.digitdns.ui.dashboard.DashboardScreen
 import com.digitrob.digitdns.ui.rules.ProxiedDomainsScreen
 import com.digitrob.digitdns.ui.stream.LiveQueryLogScreen
+import com.digitrob.digitdns.ui.subscriber.SubscriberScreen
 import com.digitrob.digitdns.ui.system.SettingsHubScreen
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 /**
@@ -67,6 +71,7 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
     @Inject lateinit var authRepository: AuthRepository
     @Inject lateinit var appPreferences: AppPreferences
+    @Inject lateinit var subscriberSession: SubscriberSession
     @Inject lateinit var authState: AuthState
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -94,6 +99,7 @@ class MainActivity : ComponentActivity() {
                     // [AuthRepository.hasCredential] is only truthful after that. Routing
                     // early would flash the login screen for an already-signed-in user.
                     var ready by remember { mutableStateOf(false) }
+                    var startSubscriber by remember { mutableStateOf(false) }
                     LaunchedEffect(Unit) {
                         authRepository.migrateLegacyIfNeeded()
                         authRepository.loadActiveCredential()
@@ -101,14 +107,21 @@ class MainActivity : ComponentActivity() {
                         // screen fires its calls, so a backgrounded-then-reopened app
                         // does not come back to a wall of "Unauthorized" banners.
                         runCatching { authRepository.ensureSession() }
+                        startSubscriber = appPreferences.appMode.first() == AppMode.SUBSCRIBER &&
+                            appPreferences.subscriberActive.first() &&
+                            subscriberSession.currentLink() != null
                         ready = true
                     }
                     if (ready) {
-                        // Skip the login screen when a credential survived the last run:
-                        // either a session token [AuthState] revived from [SecretStore],
-                        // or an API key. The screens above handle a lapsed token by
-                        // re-prompting, so this is a shortcut, not a bypass.
-                        val start = if (authRepository.hasCredential()) Routes.DASHBOARD else Routes.LOGIN
+                        // A subscriber session wins over the admin shortcut: it was the
+                        // last surface the user opened. Otherwise a surviving admin
+                        // credential goes straight to the dashboard, and neither means
+                        // the login screen.
+                        val start = when {
+                            startSubscriber -> Routes.SUBSCRIBER
+                            authRepository.hasCredential() -> Routes.DASHBOARD
+                            else -> Routes.LOGIN
+                        }
                         DigitDnsNavHost(
                             startDestination = start,
                             sessionExpired = authState.sessionExpired,
@@ -137,6 +150,7 @@ private object Routes {
     const val PROXIED = "proxied"
     const val STREAM = "stream"
     const val SETTINGS = "settings"
+    const val SUBSCRIBER = "subscriber"
 }
 
 /** The top-level tabs the bottom bar carries, labelled as the panel labels them. */
@@ -174,6 +188,11 @@ private fun DigitDnsNavHost(
             popUpTo(navController.graph.id) { inclusive = true }
         }
     }
+    val goToSubscriber: () -> Unit = {
+        navController.navigate(Routes.SUBSCRIBER) {
+            popUpTo(navController.graph.id) { inclusive = true }
+        }
+    }
 
     // When a session lapses with no silent recovery available, any screen's 401 flips
     // this and the app returns to the login form rather than leaving dead panels up.
@@ -181,24 +200,60 @@ private fun DigitDnsNavHost(
     LaunchedEffect(expired) {
         if (expired) {
             val current = navController.currentDestination?.route
-            if (current != Routes.LOGIN && current != Routes.LOGIN_ADD) goToLogin()
+            // Only the admin graph has sessions; a subscriber screen never sets this.
+            if (current != Routes.LOGIN && current != Routes.LOGIN_ADD && current != Routes.SUBSCRIBER) goToLogin()
         }
     }
 
+    DigitDnsGraph(
+        navController = navController,
+        startDestination = startDestination,
+        sessionExpired = expired,
+        goToLogin = goToLogin,
+        goToDashboard = goToDashboard,
+        goToSubscriber = goToSubscriber,
+    )
+}
+
+/**
+ * The destination table, kept apart from the navigation lambdas it closes over: the
+ * graph reads as a list of routes, while the host owns "back to login/dashboard".
+ */
+@Composable
+private fun DigitDnsGraph(
+    navController: androidx.navigation.NavHostController,
+    startDestination: String,
+    sessionExpired: Boolean,
+    goToLogin: () -> Unit,
+    goToDashboard: () -> Unit,
+    goToSubscriber: () -> Unit,
+) {
     NavHost(navController = navController, startDestination = startDestination) {
         composable(Routes.LOGIN) {
-            LoginScreen(onAuthenticated = goToDashboard, sessionExpired = expired)
+            LoginScreen(
+                onAuthenticated = goToDashboard,
+                onSubscriberAuthenticated = goToSubscriber,
+                sessionExpired = sessionExpired,
+            )
         }
         // The "Add server" entry point: the same form with an empty prefill, so the
         // operator does not have to clear the active install's fields by hand.
         composable(Routes.LOGIN_ADD) {
             LoginScreen(
                 onAuthenticated = goToDashboard,
+                onSubscriberAuthenticated = goToSubscriber,
                 addNewServer = true,
                 onCancel = { navController.popBackStack() },
             )
         }
 
+        composable(Routes.SUBSCRIBER) {
+            SubscriberScreen(
+                onSignedOut = goToLogin,
+                onForgotten = goToLogin,
+                onSwitchToAdmin = goToDashboard,
+            )
+        }
         composable(Routes.DASHBOARD) {
             TabShell(navController, Routes.DASHBOARD) {
                 DashboardScreen(
@@ -206,6 +261,7 @@ private fun DigitDnsNavHost(
                         navController.navigate(Routes.LOGIN_ADD) { launchSingleTop = true }
                     },
                     onLoginRequired = goToLogin,
+                    onOpenSubscriber = goToSubscriber,
                 )
             }
         }
@@ -225,6 +281,7 @@ private fun DigitDnsNavHost(
                 SettingsHubScreen(
                     onLoggedOut = goToLogin,
                     onAddServer = { navController.navigate(Routes.LOGIN_ADD) { launchSingleTop = true } },
+                    onOpenSubscriber = goToSubscriber,
                 )
             }
         }

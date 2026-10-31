@@ -89,6 +89,30 @@
     input::placeholder { color: #475569; }
     #login-code { letter-spacing: .35em; text-align: center; }
     .hidden { display: none !important; }
+    /* "Remember me": the global input rule is sized for text fields, so the
+       checkbox opts out of the full width and the field padding. */
+    .remember {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      margin-top: .95rem;
+      font-size: .82rem;
+      font-weight: 500;
+      letter-spacing: normal;
+      text-transform: none;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .remember input {
+      width: 1rem;
+      height: 1rem;
+      flex: none;
+      margin: 0;
+      padding: 0;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .remember input:focus { box-shadow: none; }
     .error {
       display: none;
       margin-top: .9rem;
@@ -151,6 +175,11 @@
         <input type="text" id="login-code" name="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
       </div>
 
+      <label class="remember" for="login-remember">
+        <input type="checkbox" id="login-remember" name="remember">
+        <span>Remember me</span>
+      </label>
+
       <div id="login-error" class="error" role="alert" aria-live="assertive"></div>
 
       <button type="submit" id="login-submit">Authenticate &amp; access</button>
@@ -187,6 +216,33 @@
       var errBox = document.getElementById('login-error');
       var codeRow = document.getElementById('login-2fa-row');
       var submitBtn = document.getElementById('login-submit');
+      var rememberBox = document.getElementById('login-remember');
+
+      // Remember me. The session token alone cannot keep the operator signed in:
+      // sessions live in the daemon's memory and expire after two idle hours, so
+      // this form is what a restart or a long break comes back to. Ticking the box
+      // stores the submitted pair under its own localStorage key (the same one the
+      // dashboard's own login overlay uses) and fills both fields next time. It
+      // is plain JSON on this origin, not encrypted; unticking deletes it at once.
+      var REMEMBER_KEY = 'digitdns_remember';
+
+      function readRemembered() {
+        try {
+          var raw = localStorage.getItem(REMEMBER_KEY);
+          if (!raw) return null;
+          var saved = JSON.parse(raw);
+          if (!saved || typeof saved.u !== 'string' || typeof saved.p !== 'string') return null;
+          return saved;
+        } catch (e) { return null; }
+      }
+
+      function saveRemembered(username, password) {
+        try { localStorage.setItem(REMEMBER_KEY, JSON.stringify({ u: username, p: password })); } catch (e) { /* storage blocked */ }
+      }
+
+      function forgetRemembered() {
+        try { localStorage.removeItem(REMEMBER_KEY); } catch (e) { /* storage blocked */ }
+      }
 
       function showError(text) {
         errBox.textContent = text;
@@ -225,6 +281,10 @@
               showError(MSG.net);
               return;
             }
+            // Only a verified login is worth remembering: a rejected password
+            // would otherwise be prefilled on the next visit.
+            if (rememberBox.checked) saveRemembered(username, password);
+            else forgetRemembered();
             try { localStorage.setItem('hyperdns_token', body.token); } catch (e2) { /* private mode */ }
             window.location.replace(BASE + '/dash/home');
           });
@@ -235,9 +295,26 @@
         });
       });
 
-      // Focus the first empty field, for keyboard operators.
-      var first = document.getElementById('login-username');
-      if (first && !first.value) first.focus();
+      // Unticking forgets the stored pair immediately rather than at the next
+      // successful sign-in, so "off" never leaves a password behind.
+      rememberBox.addEventListener('change', function () {
+        if (!rememberBox.checked) forgetRemembered();
+      });
+
+      // Fill the fields before the first paint, then put the cursor where the
+      // operator will type: the password when the pair came back, otherwise the
+      // username.
+      var savedLogin = readRemembered();
+      if (savedLogin) {
+        rememberBox.checked = true;
+        document.getElementById('login-username').value = savedLogin.u;
+        document.getElementById('login-password').value = savedLogin.p;
+        document.getElementById('login-password').focus();
+      } else {
+        // Focus the first empty field, for keyboard operators.
+        var first = document.getElementById('login-username');
+        if (first && !first.value) first.focus();
+      }
     })();
   </script>
 </body>

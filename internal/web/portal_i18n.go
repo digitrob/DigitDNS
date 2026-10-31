@@ -106,10 +106,6 @@ type portalText struct {
 	UnitMins      string
 	LabelEndDate  string
 
-	// Policies card.
-	CardPolicies string
-	PolicyAll    string
-
 	// Endpoints card.
 	CardEndpoints   string
 	HintTapCopy     string
@@ -252,9 +248,6 @@ var portalEn = portalText{
 	UnitHours:     "Hours",
 	UnitMins:      "Mins",
 	LabelEndDate:  "Expires on:",
-
-	CardPolicies: "Games and services enabled on this subscription:",
-	PolicyAll:    "Every game and service enabled on the server (Full Inherit)",
 
 	CardEndpoints:   "Your dedicated DNS endpoints",
 	HintTapCopy:     "tap any address to copy it",

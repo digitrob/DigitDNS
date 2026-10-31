@@ -137,6 +137,17 @@
             placeholder="6-digit code"
             class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-sm font-mono">
         </div>
+        <!-- The session token alone cannot keep the operator signed in: sessions
+             live in the daemon's memory and expire after two idle hours, so a
+             restart or a long lunch lands here again. Ticking this stores the
+             pair on this device and the fields come back filled; see the
+             digitdns_remember key in app.js for what that does and does not
+             protect. -->
+        <label for="login-remember"
+          class="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+          <input type="checkbox" id="login-remember" class="accent-cyan-500 w-4 h-4">
+          <span>Remember me</span>
+        </label>
         <div id="login-error" class="text-xs text-red-400 hidden">Invalid username or password.</div>
         <button type="submit"
           class="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 text-slate-950 font-bold rounded-lg transition duration-200 shadow-lg shadow-cyan-500/20 text-sm font-heading">
@@ -1145,23 +1156,27 @@
             </div>
 
             <div class="mt-3 pt-2 border-t border-slate-800 space-y-1.5 shrink-0">
-              <label class="resolution-setting-row">
-                <span class="resolution-setting-label text-[11px] text-slate-400">Transports</span>
+              <!-- One grid for all three rows: the label column sizes itself to the
+                   longest label ("Default upstream"), so every select gets the same
+                   width. Separate flex rows left each select sized against its own
+                   label, which is why the Transports and Strategy menus were wider
+                   than the Default upstream one. -->
+              <div class="resolution-settings">
+                <label for="resolution-transport"
+                  class="resolution-setting-label text-[11px] text-slate-400">Transports</label>
                 <select id="resolution-transport" aria-label="Global transport policy"
                   class="resolution-setting-select bg-slate-950 border border-slate-700 text-[11px] text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 font-mono">
                   <option value="any">Any Transport</option>
                   <option value="encrypted">Encrypted Only (DoT · DoH · DoQ)</option>
                   <option value="regular">Regular DNS (UDP · TCP)</option>
                 </select>
-              </label>
-              <label class="resolution-setting-row">
-                <span class="resolution-setting-label text-[11px] text-slate-400">Default upstream</span>
+                <label for="resolution-default-upstream"
+                  class="resolution-setting-label text-[11px] text-slate-400">Default upstream</label>
                 <select id="resolution-default-upstream" aria-label="Default upstream"
                   class="resolution-setting-select bg-slate-950 border border-slate-700 text-[11px] text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 font-mono"></select>
-              </label>
-              <p id="resolution-pin-note" class="hidden text-[10px] text-amber-400"></p>
-              <label class="resolution-setting-row">
-                <span class="resolution-setting-label text-[11px] text-slate-400">Strategy</span>
+                <p id="resolution-pin-note" class="resolution-setting-note hidden text-[10px] text-amber-400"></p>
+                <label for="resolution-default-strategy"
+                  class="resolution-setting-label text-[11px] text-slate-400">Strategy</label>
                 <select id="resolution-default-strategy" aria-label="Default resolution strategy"
                   title="Hedged starts the next resolver after 50 ms; Best Known uses the fastest measured resolver"
                   class="resolution-setting-select bg-slate-950 border border-slate-700 text-[11px] text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 font-mono">
@@ -1171,7 +1186,7 @@
                   <option value="hedged">Hedged</option>
                   <option value="best">Best Known</option>
                 </select>
-              </label>
+              </div>
               <p class="text-[10px] text-slate-500">Fallback: Pool Default</p>
               <p class="text-[10px] text-slate-500">Per-domain overrides live in the Domains list.</p>
             </div>
@@ -2392,9 +2407,6 @@ async function onBuySubscription(ctx, username) {
       </button>
       <button type="button" class="stream-action-item" data-action="direct" role="menuitem">
         <i data-feather="corner-up-right" class="stream-action-icon"></i><span>Direct</span>
-      </button>
-      <button type="button" class="stream-action-item stream-action-danger" data-action="remove" role="menuitem">
-        <i data-feather="trash-2" class="stream-action-icon"></i><span>Remove</span>
       </button>
     </div>
 

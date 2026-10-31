@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -62,6 +63,21 @@ enum class DashboardCard {
     }
 }
 
+/**
+ * Which product surface the app opens. Admin is the original dashboard; Subscriber is
+ * the customer portal represented natively. The saved admin credentials survive a
+ * switch to Subscriber, so going back does not require re-entering them.
+ */
+enum class AppMode {
+    ADMIN,
+    SUBSCRIBER,
+    ;
+
+    companion object {
+        fun fromStored(value: String?): AppMode = entries.firstOrNull { it.name == value } ?: ADMIN
+    }
+}
+
 /** The three ways the app can decide between its dark and light schemes. */
 enum class ThemeMode {
     /** Follow the OS setting. The default, so the app matches the rest of the phone. */
@@ -96,6 +112,25 @@ class AppPreferences @Inject constructor(
         val themeMode = stringPreferencesKey("theme_mode")
         val dashboardOrder = stringPreferencesKey("dashboard_order")
         val dashboardDisabled = stringPreferencesKey("dashboard_disabled")
+        val appMode = stringPreferencesKey("app_mode")
+        val subscriberActive = booleanPreferencesKey("subscriber_active")
+    }
+
+    val appMode: Flow<AppMode> = context.appPrefsDataStore.data.map { prefs ->
+        AppMode.fromStored(prefs[Keys.appMode])
+    }
+
+    suspend fun setAppMode(mode: AppMode) {
+        context.appPrefsDataStore.edit { prefs -> prefs[Keys.appMode] = mode.name }
+    }
+
+    /** True while a subscriber session is open; sign-out clears it without forgetting the link. */
+    val subscriberActive: Flow<Boolean> = context.appPrefsDataStore.data.map { prefs ->
+        prefs[Keys.subscriberActive] ?: false
+    }
+
+    suspend fun setSubscriberActive(active: Boolean) {
+        context.appPrefsDataStore.edit { prefs -> prefs[Keys.subscriberActive] = active }
     }
 
     val themeMode: Flow<ThemeMode> = context.appPrefsDataStore.data.map { prefs ->

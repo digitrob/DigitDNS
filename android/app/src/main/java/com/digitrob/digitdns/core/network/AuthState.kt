@@ -107,9 +107,14 @@ class AuthState @Inject constructor(
         bumpCredentialRevision()
     }
 
-    fun updateApiKey(key: String?) {
+    /**
+     * Set the master key. [persist] is the operator's "save key" choice: when it is
+     * off the key lives in memory for this session only, and a restart returns to
+     * the login form instead of replaying a key that was never meant to be kept.
+     */
+    fun updateApiKey(key: String?, persist: Boolean = true) {
         apiKey = key
-        activeId?.let { secretStore.setApiKey(it, key) }
+        if (persist) activeId?.let { secretStore.setApiKey(it, key) }
         bumpCredentialRevision()
     }
 

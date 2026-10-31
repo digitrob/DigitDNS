@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -57,6 +58,7 @@ fun ServerSwitcherDialog(
     onAddServer: () -> Unit,
     onLoginRequired: () -> Unit,
     onSwitched: () -> Unit,
+    onOpenSubscriber: () -> Unit = {},
     viewModel: ServersViewModel = hiltViewModel(key = "server-switcher"),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -65,6 +67,15 @@ fun ServerSwitcherDialog(
     // The dialog is composed afresh on every open, but its view model outlives it.
     // Reload the list so a server added under Settings is visible immediately.
     LaunchedEffect(Unit) { viewModel.refresh() }
+
+    // A subscription row asked to open the subscriber surface. The view model has
+    // already flipped the app mode; the host only has to navigate.
+    LaunchedEffect(state.openSubscriber) {
+        if (state.openSubscriber) {
+            viewModel.consumeOpenSubscriber()
+            onOpenSubscriber()
+        }
+    }
 
     LaunchedEffect(state.switchOutcome) {
         when (state.switchOutcome) {
@@ -95,6 +106,7 @@ fun ServerSwitcherDialog(
                 showManager = false
                 onSwitched()
             },
+            onOpenSubscriber = onOpenSubscriber,
         )
     } else {
         PanelDialog(
@@ -106,6 +118,7 @@ fun ServerSwitcherDialog(
                     state = state,
                     onAddServer = onAddServer,
                     onSwitch = viewModel::switchTo,
+                    onOpenSubscriber = viewModel::openSubscriber,
                 )
             },
             confirmButton = {
@@ -123,6 +136,7 @@ private fun ServerSwitchContent(
     state: ServersUiState,
     onAddServer: () -> Unit,
     onSwitch: (String) -> Unit,
+    onOpenSubscriber: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         state.error?.let { message ->
@@ -131,6 +145,11 @@ private fun ServerSwitchContent(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
+        }
+
+        state.subscription?.let { subscription ->
+            SubscriptionSwitchRow(subscription = subscription, onOpen = onOpenSubscriber)
+            HorizontalDivider()
         }
 
         Column(
@@ -168,6 +187,46 @@ private fun ServerSwitchContent(
             )
             Text("Add server")
         }
+    }
+}
+
+/** The saved subscription, directly above the admin servers. */
+@Composable
+private fun SubscriptionSwitchRow(subscription: SubscriptionRow, onOpen: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            Icons.Filled.Person,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = subscription.label,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "Subscription · ${subscription.authority}",
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            text = "Open",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
 
@@ -261,6 +320,7 @@ private fun ManageServersDialog(
     onAddServer: () -> Unit,
     onLoginRequired: () -> Unit,
     onSwitched: () -> Unit,
+    onOpenSubscriber: () -> Unit,
 ) {
     PanelWideDialog(
         modifier = Modifier.fillMaxHeight(0.92f),
@@ -272,6 +332,7 @@ private fun ManageServersDialog(
                 onAddServer = onAddServer,
                 onLoginRequired = onLoginRequired,
                 onSwitched = onSwitched,
+                onOpenSubscriber = onOpenSubscriber,
                 embedded = true,
                 viewModel = hiltViewModel(key = "server-manager"),
             )

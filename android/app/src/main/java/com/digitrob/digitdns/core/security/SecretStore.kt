@@ -23,6 +23,7 @@ import timber.log.Timber
  * logs in again. Losing a session is recoverable; crashing on launch is not.
  */
 @Singleton
+@Suppress("TooManyFunctions")
 class SecretStore @Inject constructor(
     private val context: Context,
 ) {
@@ -36,6 +37,15 @@ class SecretStore @Inject constructor(
         const val API_KEY_PREFIX = "api_key_"
         const val SAVED_USERNAME_PREFIX = "saved_username_"
         const val SAVED_PASSWORD_PREFIX = "saved_password_"
+
+        // The subscriber portal link is a read credential too (its path carries the
+        // token), so it lives here beside the operator's session rather than in a
+        // plain preference file. The registration secret is the write credential.
+        const val SUBSCRIBER_LINK = "subscriber_link"
+        const val SUBSCRIBER_SECRET = "subscriber_secret"
+        // The account name the portal reports, kept beside the link so the saved
+        // subscription reads as a name rather than a hostname in the server list.
+        const val SUBSCRIBER_LABEL = "subscriber_label"
 
         // Legacy single-connection keys, read once so an existing install keeps its
         // session across the upgrade to multi-server, then removed.
@@ -94,6 +104,28 @@ class SecretStore @Inject constructor(
     private fun put(key: String, value: String?) {
         prefs?.edit()?.apply {
             if (value == null) remove(key) else putString(key, value)
+        }?.apply()
+    }
+
+    fun subscriberLink(): String? = prefs?.getString(Keys.SUBSCRIBER_LINK, null)
+
+    fun setSubscriberLink(link: String?) = put(Keys.SUBSCRIBER_LINK, link)
+
+    fun subscriberSecret(): String? = prefs?.getString(Keys.SUBSCRIBER_SECRET, null)
+
+    fun setSubscriberSecret(secret: String?) = put(Keys.SUBSCRIBER_SECRET, secret)
+
+    fun subscriberLabel(): String? = prefs?.getString(Keys.SUBSCRIBER_LABEL, null)
+
+    fun setSubscriberLabel(label: String?) = put(Keys.SUBSCRIBER_LABEL, label)
+
+    /** Forget the saved subscription link, its secret, and this host's certificate pin. */
+    fun clearSubscriber(host: String? = null) {
+        prefs?.edit()?.apply {
+            remove(Keys.SUBSCRIBER_LINK)
+            remove(Keys.SUBSCRIBER_SECRET)
+            remove(Keys.SUBSCRIBER_LABEL)
+            if (!host.isNullOrBlank()) remove(Keys.PIN_PREFIX + host)
         }?.apply()
     }
 

@@ -2,15 +2,22 @@ package com.digitrob.digitdns.ui.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.digitrob.digitdns.data.AppMode
+import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.AuthRepository
 import com.digitrob.digitdns.data.CredentialCheck
 import com.digitrob.digitdns.data.LoginResult
+import com.digitrob.digitdns.data.SubscriberRepository
+import com.digitrob.digitdns.data.SubscriberResult
+import com.digitrob.digitdns.data.SubscriberSession
+import com.digitrob.digitdns.domain.model.SubscriberLink
 import com.digitrob.digitdns.domain.model.Connection
 import com.digitrob.digitdns.domain.model.CredentialMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -18,8 +25,12 @@ import javax.inject.Inject
 /** RFC 6238 codes are six digits. */
 private const val TOTP_CODE_LENGTH = 6
 
+/** Which product surface the login form is for. */
+enum class LoginRole { ADMIN, SUBSCRIBER }
+
 /** Everything the login screen renders. */
 data class LoginUiState(
+    val role: LoginRole = LoginRole.ADMIN,
     val host: String = "",
     val port: String = "443",
     val adminPath: String = "",
@@ -53,7 +64,18 @@ data class LoginUiState(
      * action; on confirm the fingerprint is pinned and the attempt is retried.
      */
     val trustPrompt: TrustPrompt? = null,
+
+    /** The pasted /sub/ link and the optional out-of-band registration secret. */
+    val subscriberLink: String = "",
+    val subscriberSecret: String = "",
+    val saveSubscriber: Boolean = true,
+    val subscriberLoading: Boolean = false,
+    val subscriberError: String? = null,
+    val subscriberAuthenticated: Boolean = false,
 ) {
+    val canSubmitSubscriber: Boolean
+        get() = !subscriberLoading && subscriberLink.isNotBlank()
+
     val canSubmit: Boolean
         get() = !isLoading && host.isNotBlank() && port.toIntOrNull() in 1..65535 && when (credentialMode) {
             CredentialMode.SESSION -> username.isNotBlank() && password.isNotBlank()
@@ -77,12 +99,19 @@ data class TrustPrompt(val fingerprint: String, val changedFrom: String?)
  * whole connection is known.
  */
 @HiltViewModel
+@Suppress("TooManyFunctions")
 class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val subscriberRepository: SubscriberRepository,
+    private val subscriberSession: SubscriberSession,
+    private val appPreferences: AppPreferences,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LoginUiState())
     val state: StateFlow<LoginUiState> = _state.asStateFlow()
+
+    /** Set while a subscriber link is waiting for its certificate to be trusted. */
+    private var trustSubscriberHost: String? = null
 
     /**
      * Prepare the form. Called once by the screen.
@@ -96,6 +125,16 @@ class LoginViewModel @Inject constructor(
     fun start(addNewServer: Boolean) {
         if (addNewServer) return
         viewModelScope.launch {
+            val mode = appPreferences.appMode.firstOrNull()
+            if (mode == AppMode.SUBSCRIBER) {
+                _state.update {
+                    it.copy(
+                        role = LoginRole.SUBSCRIBER,
+                        subscriberLink = subscriberSession.currentLink()?.portalUrl.orEmpty(),
+                        saveSubscriber = subscriberSession.hasSavedLink(),
+                    )
+                }
+            }
             authRepository.currentConnection()?.let { conn ->
                 _state.update {
                     it.copy(
@@ -148,6 +187,78 @@ class LoginViewModel @Inject constructor(
         it.copy(credentialMode = mode, error = null, needsTwoFactor = false)
     }
 
+    fun onRoleChange(role: LoginRole) = _state.update {
+        it.copy(role = role, error = null, subscriberError = null, trustPrompt = null)
+    }
+
+    fun onSubscriberLinkChange(value: String) = _state.update {
+        it.copy(subscriberLink = value, subscriberError = null)
+    }
+
+    fun onSubscriberSecretChange(value: String) = _state.update {
+        it.copy(subscriberSecret = value, subscriberError = null)
+    }
+
+    fun onSaveSubscriberChange(value: Boolean) = _state.update { it.copy(saveSubscriber = value) }
+
+    /**
+     * Validate the link against the portal, then adopt it. The registration secret is
+     * not probed here: the only thing it unlocks is a write, and trying it at login
+     * would bind an address as a side effect.
+     */
+    fun submitSubscriber() {
+        val current = _state.value
+        if (!current.canSubmitSubscriber) return
+        val link = SubscriberLink.parse(current.subscriberLink)
+        if (link == null) {
+            val compact = current.subscriberLink.filterNot { it.isWhitespace() }
+            val message = if (!compact.contains("/sub/")) {
+                "That looks like only the token — paste the full https://host/sub/<token> link."
+            } else {
+                "Paste the full subscription link, e.g. https://host/sub/<token>."
+            }
+            _state.update { it.copy(subscriberError = message) }
+            return
+        }
+        _state.update {
+            it.copy(subscriberLoading = true, subscriberError = null, trustPrompt = null)
+        }
+        trustSubscriberHost = null
+        loadSubscriber(link)
+    }
+
+    private fun loadSubscriber(link: SubscriberLink) {
+        viewModelScope.launch {
+            when (val result = subscriberRepository.loadStatus(link)) {
+                is SubscriberResult.Ok -> {
+                    val current = _state.value
+                    val secret = current.subscriberSecret.ifBlank { subscriberSession.secret() }
+                    subscriberSession.adopt(link, secret, current.saveSubscriber)
+                    appPreferences.setAppMode(AppMode.SUBSCRIBER)
+                    appPreferences.setSubscriberActive(true)
+                    _state.update {
+                        it.copy(subscriberLoading = false, subscriberAuthenticated = true)
+                    }
+                }
+
+                is SubscriberResult.TrustRequired -> {
+                    trustSubscriberHost = link.host
+                    _state.update {
+                        it.copy(
+                            subscriberLoading = false,
+                            trustPrompt = TrustPrompt(result.fingerprint, result.changedFrom),
+                            subscriberError = null,
+                        )
+                    }
+                }
+
+                is SubscriberResult.Failed -> _state.update {
+                    it.copy(subscriberLoading = false, subscriberError = result.message)
+                }
+            }
+        }
+    }
+
     /** Leave the add-server detour: drop anything staged, keep the app's session. */
     fun cancelAddServer() {
         viewModelScope.launch { authRepository.rollbackStagedConnection() }
@@ -175,7 +286,7 @@ class LoginViewModel @Inject constructor(
 
             when (current.credentialMode) {
                 CredentialMode.SESSION -> submitSession(current, staged.id)
-                CredentialMode.API_KEY -> submitApiKey(current)
+                CredentialMode.API_KEY -> submitApiKey(current.apiKey, staged.id, current.saveCredentials)
             }
         }
     }
@@ -196,6 +307,8 @@ class LoginViewModel @Inject constructor(
                     authRepository.clearSavedCredentialsFor(connectionId)
                 }
                 authRepository.commitStagedConnection()
+                appPreferences.setAppMode(AppMode.ADMIN)
+                appPreferences.setSubscriberActive(false)
                 _state.update { it.copy(isLoading = false, authenticated = true) }
             }
 
@@ -213,11 +326,16 @@ class LoginViewModel @Inject constructor(
         }
     }
 
-    private suspend fun submitApiKey(current: LoginUiState) {
-        authRepository.useApiKey(current.apiKey)
+    private suspend fun submitApiKey(apiKey: String, connectionId: String, save: Boolean) {
+        authRepository.useApiKey(apiKey, persist = save)
         when (val check = authRepository.verifyCredential()) {
             CredentialCheck.Valid -> {
+                // "Save key" off means exactly that: the key stays in memory for
+                // this run and any key previously stored under this install goes.
+                if (!save) authRepository.clearStoredApiKeyFor(connectionId)
                 authRepository.commitStagedConnection()
+                appPreferences.setAppMode(AppMode.ADMIN)
+                appPreferences.setSubscriberActive(false)
                 _state.update {
                     it.copy(isLoading = false, authenticated = true)
                 }
@@ -261,6 +379,15 @@ class LoginViewModel @Inject constructor(
      */
     fun onTrustCertificate() {
         val prompt = _state.value.trustPrompt ?: return
+        val subscriberHost = trustSubscriberHost
+        if (subscriberHost != null) {
+            viewModelScope.launch {
+                subscriberRepository.trust(subscriberHost, prompt.fingerprint)
+                _state.update { it.copy(trustPrompt = null) }
+                SubscriberLink.parse(_state.value.subscriberLink)?.let { loadSubscriber(it) }
+            }
+            return
+        }
         val host = _state.value.host
         viewModelScope.launch {
             authRepository.trustHost(host, prompt.fingerprint)
@@ -270,5 +397,8 @@ class LoginViewModel @Inject constructor(
     }
 
     /** The operator declined: forget the prompt and stop. */
-    fun onDismissTrust() = _state.update { it.copy(trustPrompt = null) }
+    fun onDismissTrust() {
+        trustSubscriberHost = null
+        _state.update { it.copy(trustPrompt = null) }
+    }
 }

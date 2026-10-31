@@ -83,6 +83,24 @@ func TestLoginDocumentHasAccessibleHeadingAndEmbeddedFavicon(t *testing.T) {
 	}
 }
 
+// TestLoginDocumentsOfferRememberMe: both sign-in surfaces must carry the tick and
+// read the same storage key, or a login remembered on the standalone page would
+// not come back in the dashboard's own overlay.
+func TestLoginDocumentsOfferRememberMe(t *testing.T) {
+	for _, name := range []string{"login.html", "index.html"} {
+		doc := readAsset(t, name)
+		if !strings.Contains(doc, `id="login-remember"`) {
+			t.Errorf("%s has no remember-me tick", name)
+		}
+	}
+	for _, name := range []string{"login.html", "js/app.js"} {
+		doc := readAsset(t, name)
+		if !strings.Contains(doc, "digitdns_remember") {
+			t.Errorf("%s does not read the digitdns_remember key", name)
+		}
+	}
+}
+
 // TestRetiredDashLoginRedirects: bookmarks of /<p>/dash/login must land on the
 // new page with a redirect that does not leak anything the target does not show.
 func TestRetiredDashLoginRedirects(t *testing.T) {
