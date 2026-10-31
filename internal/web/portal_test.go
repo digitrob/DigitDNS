@@ -114,7 +114,6 @@ func TestPortalOmitsPoliciesCard(t *testing.T) {
 	}
 }
 
-
 func TestPortalFiltersHostHeader(t *testing.T) {
 	ws, _, cleanup := setupTestWebServer(t)
 	defer cleanup()
