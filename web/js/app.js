@@ -5828,7 +5828,7 @@ function clientsPanelMessage(icon, title, body, titleClass = 'text-slate-300') {
   const listContainer = document.getElementById('clients-list');
   if (!listContainer) return;
   listContainer.innerHTML = `
-    <div class="clients-placeholder col-span-1 md:col-span-2 glass-panel p-8 text-center text-slate-400 border border-slate-800">
+    <div class="clients-placeholder col-span-1 md:col-span-2 glass-panel panel-card p-8 text-center text-slate-400">
       <i data-feather="${icon}" class="w-8 h-8 mx-auto text-slate-600 mb-2"></i>
       <div class="font-bold ${titleClass} font-heading">${title}</div>
       <p class="text-xs text-slate-500 mt-1">${body}</p>
@@ -5960,13 +5960,13 @@ function renderClientsView(data) {
     // notices rather than subscriber cards, and loadClients uses that class to decide whether a
     // reload should show its loading state or leave a populated grid alone.
     listContainer.innerHTML = allClients.length === 0 ? `
-      <div class="clients-placeholder col-span-1 md:col-span-2 glass-panel p-8 text-center text-slate-400 border border-slate-800">
+      <div class="clients-placeholder col-span-1 md:col-span-2 glass-panel panel-card p-8 text-center text-slate-400">
         <i data-feather="users" class="w-8 h-8 mx-auto text-slate-600 mb-2"></i>
         <div class="font-bold text-slate-300 font-heading">No Clients Yet</div>
         <p class="text-xs text-slate-500 mt-1">Click "Add New Client" above to create client accounts &amp; registration links.</p>
       </div>
     ` : `
-      <div class="clients-placeholder col-span-1 md:col-span-2 glass-panel p-8 text-center text-slate-400 border border-slate-800">
+      <div class="clients-placeholder col-span-1 md:col-span-2 glass-panel panel-card p-8 text-center text-slate-400">
         <i data-feather="search" class="w-8 h-8 mx-auto text-slate-600 mb-2"></i>
         <div class="font-bold text-slate-300 font-heading">No Match</div>
         <p class="text-xs text-slate-500 mt-1">None of your ${allClients.length} client(s) match &ldquo;${escapeHTML(searchVal)}&rdquo;. The search looks at the name, the ID and the registered IPs.</p>
@@ -6147,7 +6147,7 @@ function renderClientsView(data) {
     }
 
     const card = document.createElement('div');
-    card.className = 'glass-panel p-4 sm:p-5 flex flex-col justify-between space-y-4 border border-slate-800 hover:border-cyan-500/40 transition';
+    card.className = 'glass-panel panel-card p-4 sm:p-5 flex flex-col justify-between space-y-4 hover:border-cyan-500/40 transition';
     card.innerHTML = `
       <div>
         <!-- Card Header -->
