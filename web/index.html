@@ -1393,7 +1393,7 @@
       <section id="tab-clients" class="tab-content space-y-6 hidden">
         
         <!-- Access Control Mode Banner -->
-        <div class="glass-panel panel-card p-5 sm:p-6 border border-cyan-500/30">
+        <div class="glass-panel panel-card p-5 sm:p-6">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div class="flex items-start gap-3">
               <div class="p-2.5 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex-shrink-0 mt-0.5">
@@ -1598,7 +1598,7 @@
       <section id="tab-api" class="tab-content space-y-6 hidden">
         
         <!-- Header Banner -->
-        <div class="glass-panel panel-card p-5 sm:p-6 border border-cyan-500/30">
+        <div class="glass-panel panel-card p-5 sm:p-6">
           <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div class="flex items-center gap-3">
               <div class="w-12 h-12 rounded-2xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center">
@@ -1623,7 +1623,7 @@
         </div>
 
         <!-- API Security & Network Binding Configuration -->
-        <div class="glass-panel panel-card p-5 sm:p-6 border border-slate-800 space-y-4">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
           <div class="flex items-center justify-between border-b border-slate-800/80 pb-3">
             <div class="flex items-center gap-2">
               <span class="policy-icon"><i data-feather="lock" class="w-4 h-4"></i></span>
@@ -1659,7 +1659,7 @@
         </div>
 
         <!-- Master API Key Card -->
-        <div class="glass-panel panel-card p-5 sm:p-6 border border-slate-800 space-y-4">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
           <div class="flex items-center justify-between border-b border-slate-800/80 pb-3">
             <div class="flex items-center gap-2">
               <span class="policy-icon"><i data-feather="key" class="w-4 h-4"></i></span>
@@ -1689,7 +1689,7 @@
         </div>
 
         <!-- Quick Code Integration Samples -->
-        <div class="glass-panel panel-card p-5 sm:p-6 border border-slate-800 space-y-4">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
           <div class="flex items-center justify-between border-b border-slate-800/80 pb-3">
             <h3 class="text-sm font-bold text-white font-heading flex items-center gap-2">
               <i data-feather="terminal" class="w-4 h-4 text-purple-400"></i>
@@ -1762,7 +1762,7 @@ async function onBuySubscription(ctx, username) {
                install's public address, plus the age of that database and a manual
                refresh. The flag is served from this panel's own /flags/ path
                (img-src 'self'), never from an external image host. -->
-          <div class="glass-panel panel-card p-5 sm:p-6 border border-slate-800 space-y-3">
+          <div class="glass-panel panel-card p-5 sm:p-6 space-y-3">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div class="flex items-center gap-3">
                 <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
@@ -1788,7 +1788,7 @@ async function onBuySubscription(ctx, username) {
           <!-- Server Update: the same check/apply the sidebar's update badge does.
                "Update now" opens the shared update modal, which owns the verified
                download, backup, restart and progress reporting. -->
-          <div class="glass-panel panel-card p-5 sm:p-6 border border-slate-800 space-y-3">
+          <div class="glass-panel panel-card p-5 sm:p-6 space-y-3">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div class="flex items-center gap-3">
                 <div class="p-2 rounded-xl bg-amber-500/20 text-amber-300">
@@ -1818,7 +1818,7 @@ async function onBuySubscription(ctx, username) {
         <!-- v2.1 Phase 6: two-factor authentication. The secret is shown exactly
              once, at enrollment; after that the server never returns it and the
              page never asks for it. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 border border-sky-500/30 space-y-4" id="twofa-card">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4" id="twofa-card">
           <div class="flex items-center gap-3">
             <div class="p-2 rounded-xl bg-sky-500/20 text-sky-400">
               <i data-feather="smartphone" class="w-5 h-5"></i>
@@ -1892,7 +1892,7 @@ async function onBuySubscription(ctx, username) {
         <!-- v2.1: hidden admin namespace. The path is a locator, not a credential,
              but the operator must be able to see and (deliberately) rotate it —
              regeneration kills every session and every bookmark at once. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 border border-fuchsia-500/30">
+        <div class="glass-panel panel-card p-5 sm:p-6">
           <div class="flex flex-col sm:flex-row sm:items-center gap-4 sm:justify-between">
             <div class="flex items-center gap-3">
               <div class="p-2 rounded-xl bg-fuchsia-500/20 text-fuchsia-400">
@@ -1918,7 +1918,7 @@ async function onBuySubscription(ctx, username) {
         </div>
 
         <!-- v2.1: subscription surface settings (3x-ui style, third tab group). -->
-        <div class="glass-panel panel-card p-5 sm:p-6 border border-emerald-500/30 space-y-4">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
           <div class="flex items-center gap-3">
             <div class="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
               <i data-feather="share-2" class="w-5 h-5"></i>
@@ -2016,7 +2016,7 @@ async function onBuySubscription(ctx, username) {
         </div>
 
         <!-- Administrator Credentials -->
-        <div class="glass-panel panel-card p-5 sm:p-6 border border-amber-500/30">
+        <div class="glass-panel panel-card p-5 sm:p-6">
           <div class="flex flex-col sm:flex-row sm:items-center gap-4 sm:justify-between">
             <div class="flex items-center gap-3">
               <div class="p-2 rounded-xl bg-amber-500/20 text-amber-400">
@@ -2047,7 +2047,7 @@ async function onBuySubscription(ctx, username) {
              re-domained the whole dashboard — the ERR_CERT_COMMON_NAME_INVALID
              field report. The subheadings make each field's blast radius
              readable at a glance instead of inferred from position. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 border border-cyan-500/30">
+        <div class="glass-panel panel-card p-5 sm:p-6">
           <div class="flex items-center gap-3 mb-3">
             <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
               <i data-feather="lock" class="w-5 h-5"></i>
