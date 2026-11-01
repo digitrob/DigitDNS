@@ -100,7 +100,7 @@
     <!-- Capped like the rest. Short here means landscape more than small: a 568×320 phone gives
          the panel less height than it needs, and this is the gate — an unreachable SIGN IN button
          is the whole dashboard, not one form. -->
-    <div class="glass-panel p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto border border-cyan-500/30">
+    <div class="glass-panel p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
       <div class="flex items-center gap-3 mb-6">
         <div class="w-10 h-10 rounded-xl bg-cyan-500/20 flex items-center justify-center text-cyan-400 border border-cyan-500/30 shrink-0">
           <i data-feather="shield"></i>
@@ -169,7 +169,7 @@
          overflowed off BOTH ends, putting SAVE out of reach with nothing to scroll. This is also
          the modal that cannot be dismissed when it is forced, so an operator opening the
          dashboard on a phone with a weak password had no way forward and no way out. -->
-    <div class="glass-panel p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto border border-amber-500/40 shadow-2xl shadow-amber-500/10">
+    <div class="glass-panel p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl shadow-amber-500/10">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400 border border-amber-500/30">
           <i data-feather="alert-triangle" id="change-pwd-icon"></i>
@@ -239,7 +239,7 @@
   <div id="diagnostics-modal" role="dialog" aria-modal="true" aria-labelledby="diagnostics-title"
     data-modal-close="close-diagnostics-btn"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md px-3 sm:px-4 hidden">
-    <div class="glass-panel p-4 sm:p-6 w-full max-w-2xl border border-cyan-500/40 shadow-2xl max-h-[90vh] flex flex-col">
+    <div class="glass-panel p-4 sm:p-6 w-full max-w-2xl shadow-2xl max-h-[90vh] flex flex-col">
       <div class="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-800">
         <div class="flex items-center gap-2.5 sm:gap-3">
           <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-cyan-500/20 flex items-center justify-center text-cyan-400 border border-cyan-500/30">
@@ -304,7 +304,7 @@
   <div id="edit-client-modal" role="dialog" aria-modal="true" aria-labelledby="edit-client-title"
     data-modal-close="close-edit-client-btn"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md px-4 hidden">
-    <div class="glass-panel p-6 sm:p-7 w-full max-w-xl max-h-[90vh] overflow-y-auto border border-cyan-500/40 shadow-2xl space-y-4">
+    <div class="glass-panel p-6 sm:p-7 w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
       <div class="flex items-center justify-between pb-3.5 border-b border-slate-800">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center text-cyan-400 border border-cyan-500/30">
@@ -521,7 +521,7 @@
     <!-- Same max-w-xl and row shape as the edit modal: the two forms carry the same
          fields now, and a create form that is narrower than the editor it feeds
          re-wraps every row the operator already learned in the other one. -->
-    <div class="glass-panel p-6 sm:p-7 w-full max-w-xl max-h-[90vh] overflow-y-auto border border-cyan-500/40 shadow-2xl space-y-4">
+    <div class="glass-panel p-6 sm:p-7 w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
       <div class="flex items-center justify-between pb-3.5 border-b border-slate-800">
         <div class="flex items-center gap-2.5">
           <div class="w-9 h-9 rounded-xl bg-cyan-500/20 flex items-center justify-center text-cyan-400 border border-cyan-500/30">
@@ -662,7 +662,7 @@
   <div id="client-created-modal" role="dialog" aria-modal="true" aria-labelledby="client-created-title"
     data-modal-close="close-client-created-btn"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md px-4 hidden">
-    <div class="glass-panel p-6 sm:p-7 w-full max-w-xl max-h-[90vh] overflow-y-auto border border-emerald-500/40 shadow-2xl space-y-4">
+    <div class="glass-panel p-6 sm:p-7 w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
       <div class="flex items-center justify-between pb-3.5 border-b border-slate-800">
         <div class="flex items-center gap-2.5">
           <div class="w-9 h-9 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 border border-emerald-500/30">
@@ -735,7 +735,7 @@
   <div id="bulk-import-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-import-title"
     data-modal-close="bulk-import-cancel-btn"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md px-4 hidden">
-    <div class="glass-panel p-6 sm:p-7 w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-cyan-500/40 shadow-2xl space-y-4">
+    <div class="glass-panel p-6 sm:p-7 w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
       <div class="flex items-center justify-between pb-3.5 border-b border-slate-800">
         <div class="flex items-center gap-2.5">
           <div class="w-9 h-9 rounded-xl bg-cyan-500/20 flex items-center justify-center text-cyan-400 border border-cyan-500/30">
@@ -1699,9 +1699,9 @@
 
           <!-- Code Tabs -->
           <div class="flex gap-2 border-b border-slate-800 pb-2">
-            <button class="api-snippet-tab px-3 py-1.5 rounded-lg text-xs font-bold font-heading bg-cyan-500/20 text-cyan-300 border border-cyan-500/30" data-snippet="curl">cURL</button>
-            <button class="api-snippet-tab px-3 py-1.5 rounded-lg text-xs font-bold font-heading bg-slate-900 text-slate-400 hover:text-white" data-snippet="python">Python (Requests)</button>
-            <button class="api-snippet-tab px-3 py-1.5 rounded-lg text-xs font-bold font-heading bg-slate-900 text-slate-400 hover:text-white" data-snippet="nodejs">Node.js / Telegram Bot</button>
+            <button class="api-snippet-tab is-active" data-snippet="curl">cURL</button>
+            <button class="api-snippet-tab" data-snippet="python">Python (Requests)</button>
+            <button class="api-snippet-tab" data-snippet="nodejs">Node.js / Telegram Bot</button>
           </div>
 
           <pre id="snippet-curl" class="api-snippet-content p-4 rounded-xl bg-slate-950 font-mono text-xs text-slate-300 overflow-x-auto border border-slate-800/80"># 1. Check Engine Health

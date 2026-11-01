@@ -4587,10 +4587,8 @@ function initAPIEvents() {
   document.querySelectorAll('.api-snippet-tab').forEach(tab => {
     tab.onclick = () => {
       const snip = tab.dataset.snippet;
-      document.querySelectorAll('.api-snippet-tab').forEach(t => {
-        t.className = 'api-snippet-tab px-3 py-1.5 rounded-lg text-xs font-bold font-heading bg-slate-900 text-slate-400 hover:text-white';
-      });
-      tab.className = 'api-snippet-tab px-3 py-1.5 rounded-lg text-xs font-bold font-heading bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
+      document.querySelectorAll('.api-snippet-tab').forEach(t => t.classList.remove('is-active'));
+      tab.classList.add('is-active');
 
       document.querySelectorAll('.api-snippet-content').forEach(c => c.classList.add('hidden'));
       document.getElementById(`snippet-${snip}`)?.classList.remove('hidden');
@@ -6742,14 +6740,14 @@ function showDialog(opts) {
     const tone = o.destructive
       ? {
           icon: 'alert-triangle',
-          panel: 'glass-panel p-6 w-full max-w-md border border-red-500/40 shadow-2xl shadow-red-500/10',
+          panel: 'glass-panel p-6 w-full max-w-md shadow-2xl shadow-red-500/10',
           badge: 'w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center text-red-400 border border-red-500/30 shrink-0',
           hint: 'text-xs text-red-400 font-mono',
           submit: 'flex-1 py-3 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-onfill font-bold rounded-lg transition duration-200 shadow-lg shadow-red-500/20 text-sm font-heading',
         }
       : {
           icon: 'help-circle',
-          panel: 'glass-panel p-6 w-full max-w-md border border-cyan-500/40 shadow-2xl shadow-cyan-500/10',
+          panel: 'glass-panel p-6 w-full max-w-md shadow-2xl shadow-cyan-500/10',
           badge: 'w-10 h-10 rounded-xl bg-cyan-500/20 flex items-center justify-center text-cyan-400 border border-cyan-500/30 shrink-0',
           hint: 'text-xs text-cyan-400 font-mono',
           submit: 'flex-1 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 text-slate-950 font-bold rounded-lg transition duration-200 shadow-lg shadow-cyan-500/20 text-sm font-heading',
@@ -7695,7 +7693,7 @@ function openUpdateModal(st) {  if (hdnsUpdateModal) hdnsUpdateModal.remove();
   const backdrop = document.createElement('div');
   backdrop.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md px-4';
   backdrop.innerHTML = `
-    <div class="glass-panel p-6 w-full max-w-md border border-cyan-500/40 shadow-2xl shadow-cyan-500/10" role="dialog" aria-modal="true" aria-labelledby="hdns-update-title">
+    <div class="glass-panel p-6 w-full max-w-md shadow-2xl shadow-cyan-500/10" role="dialog" aria-modal="true" aria-labelledby="hdns-update-title">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-cyan-500/20 flex items-center justify-center text-cyan-400 border border-cyan-500/30 shrink-0"><i data-feather="download-cloud"></i></div>
         <div>

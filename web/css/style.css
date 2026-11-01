@@ -1549,6 +1549,31 @@ input:checked + .slider:before {
   border-color: rgb(34 211 238 / 0.6);
   color: rgb(103 232 249);
 }
+/* Snippet tabs. Owned here rather than by a className string in app.js, which
+   rebuilt the whole class list on every switch - any token added in the markup
+   was erased on the first click. The transparent border is deliberate: only the
+   active state ever had one, so the tab grew 2px when selected. Reserving it
+   keeps the row still. */
+.api-snippet-tab {
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-family: var(--font-heading);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  background: rgb(var(--c-slate-900));
+  color: rgb(var(--c-slate-400));
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.api-snippet-tab:hover {
+  color: var(--text-main);
+}
+.api-snippet-tab.is-active {
+  background: rgb(var(--c-cyan-500) / 0.2);
+  border-color: rgb(var(--c-cyan-500) / 0.3);
+  color: rgb(var(--c-cyan-300));
+}
+
 #api-bind-custom-wrap.hidden {
   display: none;
 }
@@ -1761,7 +1786,10 @@ input:checked + .slider:before {
 :where(.panel-field):focus {
   outline: none;
   border-color: var(--border-focus, var(--accent-cyan));
-  box-shadow: 0 0 0 3px rgb(var(--c-cyan-500) / 0.12);
+  /* Neutral rather than cyan: the border colour is per-field (a red blocklist
+     field, an emerald static-records field), and a cyan halo around a red edge
+     read as a mistake. The ring only has to say "this one has focus". */
+  box-shadow: 0 0 0 3px rgb(var(--c-slate-100) / 0.14);
 }
 
 /* Dense variant, for controls that live inside a card's interior — an inline
