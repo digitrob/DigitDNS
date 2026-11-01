@@ -18,10 +18,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.QrCode
@@ -66,9 +68,7 @@ fun ConnectScreen(viewModel: ConnectViewModel = hiltViewModel()) {
                     val url = state.subscriptionUrl
                     if (url.isBlank()) {
                         Text(
-                            text = "No subscription origin is configured on the server, so no " +
-                                "shareable link can be built. Set the public address in the " +
-                                "panel's Settings.",
+                            text = stringResource(R.string.connect_no_origin),
                             color = DigitDnsTheme.colors.warning,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -86,7 +86,7 @@ fun ConnectScreen(viewModel: ConnectViewModel = hiltViewModel()) {
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Text(
-                                    text = "Tap to copy link",
+                                    text = stringResource(R.string.connect_tap_to_copy),
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.clickableText { clipboard.setText(AnnotatedString(url)) },
@@ -111,7 +111,7 @@ private fun ConnectGuides(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            text = "How to connect devices",
+            text = stringResource(R.string.connect_how_to),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
@@ -190,7 +190,7 @@ private fun GuideCard(
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = "Copy",
+                        text = stringResource(R.string.action_copy),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickableText { clipboard.setText(AnnotatedString(code)) },

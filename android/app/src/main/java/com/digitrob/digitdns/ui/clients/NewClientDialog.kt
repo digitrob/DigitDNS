@@ -21,11 +21,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.domain.model.ClientLinks
 import com.digitrob.digitdns.ui.components.PanelWideDialog
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
@@ -128,8 +130,7 @@ private fun CreatedCredentials(
         color = MaterialTheme.colorScheme.onSurface,
     )
     Text(
-        text = "Copy these now — the secret and UUID are the credentials the " +
-            "subscriber needs. They stay available in the client's details.",
+        text = stringResource(R.string.clients_credentials_warning),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

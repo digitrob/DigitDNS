@@ -394,4 +394,22 @@
     <string name="switch_saved">Saved credentials — signs in automatically</string>
     <string name="switch_no_creds">No saved credentials</string>
     <string name="switch_done">Done</string>
+
+    <!-- Login screen -->
+    <string name="login_session_expired">Your session expired. Sign in again to continue.</string>
+    <string name="login_subtitle">Connect to your server</string>
+    <string name="login_subscriber_ip_hint">Only used to register this device\'s IP. You can add it later.</string>
+    <string name="login_save_subscription">Save this subscription on this device</string>
+    <string name="login_trust_tip">Tip: connecting by the certificate\'s hostname (e.g. a domain) lets the system validate it automatically, with no prompt.</string>
+    <string name="login_2fa_hint">Enter the 6-digit code from your authenticator app.</string>
+    <string name="login_save_credentials_hint">Stays signed in across restarts and re-logs in after the session lapses.</string>
+    <string name="login_master_key_hint">The master key grants full control of the install. Prefer an account where you can.</string>
+
+    <!-- Connect / clients / rules -->
+    <string name="clients_credentials_warning">Copy these now — the secret and UUID are the credentials the subscriber needs. They stay available in the client\'s details.</string>
+    <string name="connect_no_origin">No subscription origin is configured on the server, so no shareable link can be built. Set the public address in the panel\'s Settings.</string>
+    <string name="connect_tap_to_copy">Tap to copy link</string>
+    <string name="connect_how_to">How to connect devices</string>
+    <string name="rules_cidr_hint">One per line. Entries are stored in canonical CIDR form.</string>
+    <string name="rules_doh_token_hint">One per line. Required by the DoH endpoint when set.</string>
 </resources>

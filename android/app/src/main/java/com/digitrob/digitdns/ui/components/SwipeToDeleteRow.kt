@@ -34,8 +34,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -293,7 +295,7 @@ private fun DeleteBackground(state: androidx.compose.material3.SwipeToDismissBox
     ) {
         if (swiping) {
             Text(
-                text = "Delete",
+                text = stringResource(R.string.action_delete),
                 style = MaterialTheme.typography.labelLarge,
                 color = danger.copy(alpha = (0.4f + 0.6f * amount).coerceIn(0f, 1f)),
             )

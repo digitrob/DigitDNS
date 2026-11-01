@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.domain.model.CredentialMode
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.components.PanelDialog
@@ -168,7 +170,7 @@ fun LoginScreen(
 
                 if (sessionExpired && state.error == null) {
                     Text(
-                        text = "Your session expired. Sign in again to continue.",
+                        text = stringResource(R.string.login_session_expired),
                         color = extended.warning,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -209,13 +211,13 @@ private fun LoginHeader() {
         )
         Spacer(Modifier.width(10.dp))
         Text(
-            text = "DigitDNS",
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.displaySmall,
             color = MaterialTheme.colorScheme.primary,
         )
     }
     Text(
-        text = "Connect to your server",
+        text = stringResource(R.string.login_subtitle),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -310,7 +312,7 @@ private fun SubscriberFields(
         modifier = Modifier.fillMaxWidth(),
     )
     Text(
-        text = "Only used to register this device's IP. You can add it later.",
+        text = stringResource(R.string.login_subscriber_ip_hint),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -318,7 +320,7 @@ private fun SubscriberFields(
         Switch(checked = state.saveSubscriber, onCheckedChange = viewModel::onSaveSubscriberChange)
         Spacer(Modifier.width(12.dp))
         Text(
-            text = "Save this subscription on this device",
+            text = stringResource(R.string.login_save_subscription),
             style = MaterialTheme.typography.bodyMedium,
         )
     }
@@ -408,8 +410,7 @@ private fun TrustCertificateDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = "Tip: connecting by the certificate's hostname (e.g. a domain) lets the " +
-                        "system validate it automatically, with no prompt.",
+                    text = stringResource(R.string.login_trust_tip),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -533,7 +534,7 @@ private fun SessionFields(state: LoginUiState, viewModel: LoginViewModel) {
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            text = "Enter the 6-digit code from your authenticator app.",
+            text = stringResource(R.string.login_2fa_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -555,7 +556,7 @@ private fun SaveCredentialsToggle(state: LoginUiState, viewModel: LoginViewModel
         Column {
             Text("Save credentials", style = MaterialTheme.typography.bodyMedium)
             Text(
-                text = "Stays signed in across restarts and re-logs in after the session lapses.",
+                text = stringResource(R.string.login_save_credentials_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -589,7 +590,7 @@ private fun ApiKeyFields(state: LoginUiState, viewModel: LoginViewModel) {
         Text("Save key", style = MaterialTheme.typography.bodySmall)
     }
     Text(
-        text = "The master key grants full control of the install. Prefer an account where you can.",
+        text = stringResource(R.string.login_master_key_hint),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

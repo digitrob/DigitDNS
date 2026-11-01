@@ -19,9 +19,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.PanelSwitch
@@ -73,7 +75,7 @@ fun AccessScreen(viewModel: AccessViewModel = hiltViewModel()) {
             label = { Text("Allowed IPs / CIDRs") },
             supportingText = {
                 Text(
-                    text = "One per line. Entries are stored in canonical CIDR form.",
+                    text = stringResource(R.string.rules_cidr_hint),
                     style = MaterialTheme.typography.bodySmall,
                 )
             },
@@ -88,7 +90,7 @@ fun AccessScreen(viewModel: AccessViewModel = hiltViewModel()) {
             label = { Text("DoH tokens") },
             supportingText = {
                 Text(
-                    text = "One per line. Required by the DoH endpoint when set.",
+                    text = stringResource(R.string.rules_doh_token_hint),
                     style = MaterialTheme.typography.bodySmall,
                 )
             },
