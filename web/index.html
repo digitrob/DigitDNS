@@ -1123,7 +1123,7 @@
               <h3 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2 font-heading">
                 <i data-feather="radio" class="w-4 h-4 text-emerald-400"></i> Upstream Resolvers
               </h3>
-              <button id="run-benchmark-btn" class="text-[10px] sm:text-[11px] font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 px-2.5 py-1 rounded bg-cyan-500/10 border border-cyan-500/30 transition">
+              <button id="run-benchmark-btn" class="panel-btn panel-btn-sm panel-btn-soft">
                 <i data-feather="play" class="w-3 h-3"></i> Benchmark
               </button>
             </div>
@@ -1136,8 +1136,8 @@
                  and would evict the Add button from the card instead of shrinking. -->
             <div class="flex gap-1.5 mb-3 shrink-0">
               <input type="text" id="new-upstream-input" aria-label="New upstream resolver address" placeholder="1.1.1.1, tls://1.1.1.1, https://dns.google/dns-query, quic://dns.adguard-dns.com, h3://dns.google/dns-query, sdns://…"
-                class="flex-1 min-w-0 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
-              <button id="add-upstream-btn" class="shrink-0 px-3 py-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-xs font-heading transition">Add</button>
+                class="panel-field panel-field-sm flex-1 min-w-0 font-mono">
+              <button id="add-upstream-btn" class="panel-btn panel-btn-sm panel-btn-primary shrink-0">Add</button>
             </div>
 
             <!-- Upstreams List Container. The row below is what the panel shows until the
@@ -1165,7 +1165,7 @@
                 <label for="resolution-transport"
                   class="resolution-setting-label text-[11px] text-slate-400">Transports</label>
                 <select id="resolution-transport" aria-label="Global transport policy"
-                  class="resolution-setting-select bg-slate-950 border border-slate-700 text-[11px] text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 font-mono">
+                  class="resolution-setting-select panel-field panel-field-sm font-mono">
                   <option value="any">Any Transport</option>
                   <option value="encrypted">Encrypted Only (DoT · DoH · DoQ)</option>
                   <option value="regular">Regular DNS (UDP · TCP)</option>
@@ -1173,13 +1173,13 @@
                 <label for="resolution-default-upstream"
                   class="resolution-setting-label text-[11px] text-slate-400">Default upstream</label>
                 <select id="resolution-default-upstream" aria-label="Default upstream"
-                  class="resolution-setting-select bg-slate-950 border border-slate-700 text-[11px] text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 font-mono"></select>
+                  class="resolution-setting-select panel-field panel-field-sm font-mono"></select>
                 <p id="resolution-pin-note" class="resolution-setting-note hidden text-[10px] text-amber-400"></p>
                 <label for="resolution-default-strategy"
                   class="resolution-setting-label text-[11px] text-slate-400">Strategy</label>
                 <select id="resolution-default-strategy" aria-label="Default resolution strategy"
                   title="Hedged starts the next resolver after 50 ms; Best Known uses the fastest measured resolver"
-                  class="resolution-setting-select bg-slate-950 border border-slate-700 text-[11px] text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 font-mono">
+                  class="resolution-setting-select panel-field panel-field-sm font-mono">
                   <option value="">Pool default</option>
                   <option value="fastest">Fastest wins</option>
                   <option value="sequential">In order</option>

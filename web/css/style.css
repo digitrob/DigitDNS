@@ -1752,6 +1752,41 @@ input:checked + .slider:before {
   box-shadow: 0 0 0 3px rgb(var(--c-cyan-500) / 0.12);
 }
 
+/* Dense variant, for controls that live inside a card's interior — an inline
+   add-an-upstream form, the resolution selects — where the 36px default would
+   push the row out of the panel. Same anatomy one step down: 26px tall, 8px
+   radius.
+   The type is 12px literal rather than --text-xs, because that token is 11px
+   here and these controls have always rendered at 12px; borrowing the token
+   would have shrunk them. */
+.panel-btn-sm,
+.panel-field-sm {
+  min-height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+/* Tinted secondary: the accent as a wash rather than a fill, for actions that
+   sit beside the card's own content instead of leading it (Benchmark, Save
+   Allowlist). Matches the fill .panel-btn-primary uses, one step back. */
+.panel-btn-soft {
+  background: rgb(var(--c-cyan-500) / 0.14);
+  border-color: rgb(var(--c-cyan-500) / 0.3);
+  color: var(--accent-cyan);
+}
+
+.panel-btn-soft:hover:not(:disabled) {
+  background: rgb(var(--c-cyan-500) / 0.24);
+}
+
+/* Layout hook only: the resolution grid sizes the select, the surface comes
+   from .panel-field-sm. min-width:0 is what lets the text column shrink
+   instead of forcing the grid wider than its card. */
+.resolution-setting-select {
+  min-width: 0;
+}
+
 /* Status/filter pills. */
 .panel-chip {
   display: inline-flex;
