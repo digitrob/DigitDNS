@@ -966,12 +966,34 @@ input:checked + .slider:before {
    with a 40px target. WCAG 2.2 SC 2.5.8 asks for 24, Material asks for 48, and 40 is what
    fits once the bar keeps its height. `flex: 1` also makes the seven targets equal width and
    gapless (360 / 7 ≈ 51px each, enough for the widest label, "Clients", at 10px), so a thumb
-   landing between two labels hits one of them rather than the bar itself. */
+   landing between two labels hits one of them rather than the bar itself.
+
+   The item's own presentation lives here too. Each of the seven buttons used to
+   repeat `flex flex-col items-center gap-1 text-[10px] font-semibold
+   text-slate-400 hover:text-white transition` in its class attribute, and the
+   active one a second variant of the same list — seven copies of six
+   declarations. It is one component, so it is one rule.
+   The inactive colour is --text-muted and the hover --text-main rather than the
+   literal slate shades: both tokens are re-pointed in the light theme, so the
+   bar follows the theme without a second selector. */
 .mobile-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
   flex: 1 1 0%;
   min-width: 0;
   min-height: 40px;
   justify-content: center;
+  transition: color 0.15s;
+}
+/* :not(.active) keeps the active item cyan under the pointer, which is what the
+   markup did when only the inactive copies carried `hover:text-white`. */
+.mobile-nav-item:not(.active):hover {
+  color: var(--text-main);
 }
 .mobile-nav-item.active {
   color: var(--accent-cyan);
