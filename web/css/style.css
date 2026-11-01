@@ -1692,7 +1692,7 @@ input:checked + .slider:before {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-color);
   font-family: var(--font-heading);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
@@ -1755,16 +1755,35 @@ input:checked + .slider:before {
 /* Dense variant, for controls that live inside a card's interior — an inline
    add-an-upstream form, the resolution selects — where the 36px default would
    push the row out of the panel. Same anatomy one step down: 26px tall, 8px
-   radius.
-   The type is 12px literal rather than --text-xs, because that token is 11px
-   here and these controls have always rendered at 12px; borrowing the token
-   would have shrunk them. */
+   radius, and one step down the type ramp too (--text-xs, 11px), so the
+   hierarchy stays the right way round: a smaller control never carries larger
+   type than the base one. */
 .panel-btn-sm,
 .panel-field-sm {
   min-height: 26px;
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
-  font-size: 12px;
+  font-size: var(--text-xs);
+}
+
+/* A field that carries its icon inside the box, like the client search. The
+   inset has to be its own rule: .panel-field's `padding` shorthand would
+   otherwise win over a ps-* utility, since this sheet loads after the Tailwind
+   one and both selectors weigh the same. */
+.panel-field-icon {
+  padding-inline-start: 2rem;
+}
+
+/* The glyph inside such a field. Centred from the block axis rather than with
+   a fixed top offset: the offset was tuned for a 34px control and sat 1px high
+   once the field moved to the 36px token, and it would break again on any
+   future height change. */
+.field-icon {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 0.625rem;
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
 /* Tinted secondary: the accent as a wash rather than a fill, for actions that

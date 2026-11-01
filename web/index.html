@@ -1326,7 +1326,7 @@
                 aria-label="Search proxied domains"
                 placeholder="Search domains..."
                 class="w-full ps-8 pe-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono">
-              <i data-feather="search" class="w-3.5 h-3.5 text-slate-500 absolute start-2.5 top-2.5"></i>
+              <i data-feather="search" class="field-icon w-3.5 h-3.5 text-slate-500"></i>
             </div>
 
             <!-- Bulk actions over the selected rows. The buttons carry .proxied-bulk-btn
@@ -1427,8 +1427,8 @@
             <label for="access-allow-cidrs" class="block text-[11px] font-semibold text-slate-400 mb-1">Server-wide Resolver Allowlist (CIDR, comma or newline separated)</label>
             <div class="flex flex-col sm:flex-row gap-2">
               <input type="text" id="access-allow-cidrs" placeholder="e.g. 203.0.113.0/24, 198.51.100.5"
-                class="flex-1 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
-              <button type="button" id="access-allow-cidrs-save" class="px-4 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-xs font-bold font-heading whitespace-nowrap">Save Allowlist</button>
+                class="panel-field flex-1 font-mono">
+              <button type="button" id="access-allow-cidrs-save" class="panel-btn panel-btn-soft whitespace-nowrap">Save Allowlist</button>
             </div>
             <p class="text-[10px] text-slate-500 mt-1">These ranges are served as anonymous <span class="font-mono">Public</span> (unmetered) while whitelist mode is on. Bare IPs are widened to /32 or /128.</p>
           </div>
@@ -1444,12 +1444,12 @@
           <div class="flex items-center gap-3 w-full sm:w-auto">
             <div class="relative w-full sm:w-72 sm:max-w-full">
               <input type="text" id="client-search-input" aria-label="Search subscriber accounts" placeholder="Search client name, ID, or IP..."
-                class="w-full ps-8 pe-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono">
-              <i data-feather="search" class="w-3.5 h-3.5 text-slate-500 absolute start-2.5 top-2.5"></i>
+                class="panel-field panel-field-icon w-full font-mono">
+              <i data-feather="search" class="field-icon w-3.5 h-3.5 text-slate-500"></i>
             </div>
           </div>
 
-          <button id="open-add-client-btn" class="w-full sm:w-auto sm:ms-auto sm:shrink-0 px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 text-slate-950 font-bold rounded-lg text-xs font-heading flex items-center justify-center gap-2 transition shadow-lg shadow-cyan-500/20 whitespace-nowrap">
+          <button id="open-add-client-btn" class="panel-btn panel-btn-primary w-full sm:w-auto sm:ms-auto sm:shrink-0 whitespace-nowrap">
             <i data-feather="user-plus" class="w-4 h-4"></i>
             <span>Add New Client</span>
           </button>
@@ -1494,7 +1494,7 @@
               <div class="relative w-full sm:flex-1 sm:min-w-0">
                 <input type="text" id="stream-search" aria-label="Search live queries" placeholder="Search domain or IP..."
                   class="w-full ps-8 pe-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono">
-                <i data-feather="search" class="w-3.5 h-3.5 text-slate-500 absolute start-2.5 top-2.5"></i>
+                <i data-feather="search" class="field-icon w-3.5 h-3.5 text-slate-500"></i>
               </div>
 
               <!-- Filter Selector -->
