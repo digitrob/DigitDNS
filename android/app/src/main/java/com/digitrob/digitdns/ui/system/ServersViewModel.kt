@@ -6,6 +6,8 @@ import com.digitrob.digitdns.data.AppMode
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.AuthRepository
 import com.digitrob.digitdns.data.ServerSwitchResult
+import com.digitrob.digitdns.data.SubscriberRepository
+import com.digitrob.digitdns.data.SubscriberResult
 import com.digitrob.digitdns.data.SubscriberSession
 import com.digitrob.digitdns.domain.model.Connection
 import com.digitrob.digitdns.domain.model.CredentialMode
@@ -43,6 +45,8 @@ data class SubscriptionRow(
     val label: String,
     val authority: String,
     val maskedUrl: String,
+    /** null while probing, or when the status cannot be verified. */
+    val isActive: Boolean? = null,
 )
 
 data class ServerRow(
@@ -107,6 +111,7 @@ class ServersViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val subscriberSession: SubscriberSession,
     private val appPreferences: AppPreferences,
+    private val subscriberRepository: SubscriberRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ServersUiState())
@@ -168,12 +173,32 @@ class ServersViewModel @Inject constructor(
                 val results = servers.map { connection ->
                     async { connection.id to authRepository.probeServer(connection) }
                 }.awaitAll().toMap()
+                // The subscription's own status is a second, independent probe: it
+                // answers over the portal origin, not the admin session, and may
+                // require a certificate trust the popup cannot ask for. An
+                // unverifiable answer stays null (muted dot) rather than claiming
+                // the account is down.
+                val subscriptionActive = probeSubscription(link)
                 _state.update { state ->
-                    state.copy(servers = state.servers.map { row ->
-                        row.copy(isOnline = results[row.id])
-                    })
+                    state.copy(
+                        servers = state.servers.map { row ->
+                            row.copy(isOnline = results[row.id])
+                        },
+                        subscription = state.subscription?.copy(isActive = subscriptionActive),
+                    )
                 }
             }
+        }
+    }
+
+    private suspend fun probeSubscription(link: com.digitrob.digitdns.domain.model.SubscriberLink?): Boolean? {
+        if (link == null) return null
+        return when (val result = subscriberRepository.loadStatus(link)) {
+            is SubscriberResult.Ok -> result.value.status.equals("active", ignoreCase = true)
+            // A suspended, expired or quota-spent account is a definite answer and
+            // shows the red dot; transport/trust failures stay unknown (muted).
+            is SubscriberResult.Failed -> null
+            is SubscriberResult.TrustRequired -> null
         }
     }
 

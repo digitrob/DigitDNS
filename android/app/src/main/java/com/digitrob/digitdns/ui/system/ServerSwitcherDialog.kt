@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelWideDialog
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
@@ -112,7 +114,7 @@ fun ServerSwitcherDialog(
         PanelDialog(
             onDismissRequest = onDismiss,
             solid = true,
-            title = { Text("Switch server") },
+            title = { Text(stringResource(R.string.switch_server_title)) },
             text = {
                 ServerSwitchContent(
                     state = state,
@@ -123,10 +125,10 @@ fun ServerSwitcherDialog(
             },
             confirmButton = {
                 TextButton(onClick = { showManager = true }, enabled = !state.isBusy) {
-                    Text("Manage servers")
+                    Text(stringResource(R.string.switch_manage))
                 }
             },
-            dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.switch_close)) } },
         )
     }
 }
@@ -160,7 +162,7 @@ private fun ServerSwitchContent(
         ) {
             if (state.servers.isEmpty()) {
                 Text(
-                    "No servers saved yet.",
+                    stringResource(R.string.servers_none),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -185,7 +187,7 @@ private fun ServerSwitchContent(
                 contentDescription = null,
                 modifier = Modifier.padding(end = 8.dp),
             )
-            Text("Add server")
+            Text(stringResource(R.string.servers_add))
         }
     }
 }
@@ -214,7 +216,7 @@ private fun SubscriptionSwitchRow(subscription: SubscriptionRow, onOpen: () -> U
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "Subscription · ${subscription.authority}",
+                text = stringResource(R.string.switch_subscription, subscription.authority),
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -222,10 +224,21 @@ private fun SubscriptionSwitchRow(subscription: SubscriptionRow, onOpen: () -> U
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(
-            text = "Open",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
+        // A status dot instead of "Open": the whole row is the action, and the dot
+        // says whether the subscription's own account is active (green), suspended
+        // or expired (red), or could not be verified (muted).
+        val colors = DigitDnsTheme.colors
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(
+                    when (subscription.isActive) {
+                        true -> colors.success
+                        false -> colors.danger
+                        null -> colors.textMuted
+                    },
+                ),
         )
     }
 }
@@ -236,11 +249,12 @@ private fun SubscriptionSwitchRow(subscription: SubscriptionRow, onOpen: () -> U
  * session pair and a master API key, so it is read from the row, not implied from
  * "is this server active at the moment".
  */
+@Composable
 private fun savedCredentialsLine(server: ServerRow): String = when {
-    server.isActive && server.credentialsSaved -> "Active · saved credentials"
-    server.isActive -> "Active"
-    server.credentialsSaved -> "Saved credentials — signs in automatically"
-    else -> "No saved credentials"
+    server.isActive && server.credentialsSaved -> stringResource(R.string.switch_active_saved)
+    server.isActive -> stringResource(R.string.servers_active)
+    server.credentialsSaved -> stringResource(R.string.switch_saved)
+    else -> stringResource(R.string.switch_no_creds)
 }
 
 @Composable
@@ -337,7 +351,7 @@ private fun ManageServersDialog(
                 viewModel = hiltViewModel(key = "server-manager"),
             )
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.switch_done)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }

@@ -1,9 +1,11 @@
 package com.digitrob.digitdns.ui.subscriber
 
+import androidx.annotation.StringRes
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.digitrob.digitdns.R
 import kotlin.math.max
 import kotlin.math.min
 
@@ -78,11 +80,12 @@ object SubscriberFormat {
     }
 
     /** A short human label for the server's status word. */
-    fun statusLabel(status: String): String = when (status.lowercase(Locale.US)) {
-        "suspended" -> "Suspended"
-        "expired" -> "Expired"
-        "quota" -> "Quota spent"
-        else -> "Active"
+    @StringRes
+    fun statusLabelRes(status: String): Int = when (status.lowercase(Locale.US)) {
+        "suspended" -> R.string.subscriber_status_suspended
+        "expired" -> R.string.subscriber_status_expired
+        "quota" -> R.string.subscriber_status_quota
+        else -> R.string.subscriber_status_active
     }
 
     /** The next reset date, or null when the plan has no recurring quota. */

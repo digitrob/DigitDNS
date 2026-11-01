@@ -1,5 +1,7 @@
 package com.digitrob.digitdns.ui.rules
 
+import com.digitrob.digitdns.R
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
@@ -24,20 +26,20 @@ import javax.inject.Inject
 import timber.log.Timber
 
 /** How the domains list is ordered. Mirrors the panel's own sort select. */
-enum class DomainSort(val label: String) {
-    ADDED_DESC("Added (newest)"),
-    ADDED_ASC("Added (oldest)"),
-    AZ("Name A–Z"),
-    ZA("Name Z–A"),
-    STATUS("Status (on first)"),
+enum class DomainSort(@StringRes val labelRes: Int) {
+    ADDED_DESC(R.string.domains_sort_added_desc),
+    ADDED_ASC(R.string.domains_sort_added_asc),
+    AZ(R.string.domains_sort_az),
+    ZA(R.string.domains_sort_za),
+    STATUS(R.string.domains_sort_status),
 }
 
 /** The status a domain row is in: an active proxy rule, a paused proxy rule, blocked, or direct. */
-enum class DomainStatus(val label: String) {
-    PROXY("Proxy"),
-    BLOCKED("Blocked"),
-    PAUSED("Paused"),
-    DIRECT("Direct"),
+enum class DomainStatus(@StringRes val labelRes: Int) {
+    PROXY(R.string.domains_status_proxy),
+    BLOCKED(R.string.domains_status_blocked),
+    PAUSED(R.string.domains_status_paused),
+    DIRECT(R.string.domains_status_direct),
 }
 
 /**
@@ -45,11 +47,11 @@ enum class DomainStatus(val label: String) {
  * clears it, and with no chip selected the list shows every status. [DIRECT] surfaces
  * the direct-resolved set, which otherwise has no rows of its own.
  */
-enum class DomainFilter(val label: String) {
-    PROXY("Proxy"),
-    BLOCKED("Blocked"),
-    PAUSED("Paused"),
-    DIRECT("Direct"),
+enum class DomainFilter(@StringRes val labelRes: Int) {
+    PROXY(R.string.domains_status_proxy),
+    BLOCKED(R.string.domains_status_blocked),
+    PAUSED(R.string.domains_status_paused),
+    DIRECT(R.string.domains_status_direct),
 }
 
 /** One row of the domains list: a proxied (active/paused), blocked, or direct domain. */
@@ -259,7 +261,7 @@ data class RulesUiState(
         }
 
     val countLabel: String
-        get() = if (filter == null) "${rows.size} domains" else "${rows.size} ${filter.label.lowercase()} domains"
+        get() = "${rows.size} domains"
 }
 
 /**

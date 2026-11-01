@@ -1,5 +1,7 @@
 package com.digitrob.digitdns.ui.subscriber
 
+import androidx.annotation.ArrayRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -27,117 +29,67 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.SubscriberStatusDto
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
 
-/**
- * One platform's setup guide. [privateDns] marks the Android page, whose first
- * option is the encrypted Private DNS hostname rather than a plain resolver IP.
- */
+/** One platform's guide, stored as resources so the steps can be translated. */
 private data class GuidePlatform(
-    val chip: String,
-    val title: String,
-    val steps: List<String>,
-    val note: String? = null,
+    @StringRes val chipRes: Int,
+    @StringRes val titleRes: Int,
+    @ArrayRes val stepsRes: Int,
+    @StringRes val noteRes: Int? = null,
     val privateDns: Boolean = false,
 )
 
 private val playStationGuide = GuidePlatform(
-    chip = "PlayStation",
-    title = "Setting the DNS on a PlayStation",
-    steps = listOf(
-        "Open Settings on the console and go to Network.",
-        "Choose Set Up Internet Connection and pick how you connect (Wi-Fi or LAN).",
-        "Choose Custom so the manual settings appear.",
-        "Leave IP Address on Automatic and DHCP Host Name on Do Not Specify.",
-        "Under DNS Settings choose Manual and enter the two values below.",
-        "Leave MTU on Automatic and Proxy Server on Do Not Use, then run Test Internet Connection.",
-    ),
+    chipRes = R.string.guide_chip_playstation,
+    titleRes = R.string.guide_title_playstation,
+    stepsRes = R.array.guide_playstation_steps,
 )
 
 private val xboxGuide = GuidePlatform(
-    chip = "Xbox",
-    title = "Setting the DNS on an Xbox",
-    steps = listOf(
-        "Press the Xbox button and open Settings.",
-        "Go to General ➔ Network settings ➔ Advanced settings.",
-        "Open DNS settings and switch it to Manual.",
-        "Enter the two values below as the primary and secondary IPv4 DNS, then save.",
-    ),
+    chipRes = R.string.guide_chip_xbox,
+    titleRes = R.string.guide_title_xbox,
+    stepsRes = R.array.guide_xbox_steps,
 )
 
 private val switchGuide = GuidePlatform(
-    chip = "Switch",
-    title = "Setting the DNS on a Nintendo Switch",
-    steps = listOf(
-        "Go to System Settings ➔ Internet ➔ Internet Settings.",
-        "Select the Wi-Fi network you are on and choose Change Settings.",
-        "Set DNS Settings to Manual and enter the two values below.",
-    ),
+    chipRes = R.string.guide_chip_switch,
+    titleRes = R.string.guide_title_switch,
+    stepsRes = R.array.guide_switch_steps,
 )
 
 private val windowsGuide = GuidePlatform(
-    chip = "Windows",
-    title = "Setting the DNS on Windows 10 / 11",
-    steps = listOf(
-        "Open Settings ➔ Network & Internet.",
-        "Click the connection you are using (Wi-Fi or Ethernet) and press Edit next to DNS server assignment.",
-        "Change Automatic to Manual and turn the IPv4 switch on.",
-        "Enter the two values below as Preferred DNS and Alternate DNS, then press Save.",
-    ),
+    chipRes = R.string.guide_chip_windows,
+    titleRes = R.string.guide_title_windows,
+    stepsRes = R.array.guide_windows_steps,
 )
 
 private val appleGuide = GuidePlatform(
-    chip = "iOS / macOS",
-    title = "Setting the DNS on iOS and macOS",
-    steps = listOf(
-        "iPhone and iPad: Settings ➔ Wi-Fi ➔ the (i) icon next to your network ➔ " +
-            "Configure DNS ➔ Manual, delete the listed addresses, then use Add Server " +
-            "to add the address below.",
-        "Mac: System Settings ➔ Network ➔ Details ➔ DNS, add the address below with " +
-            "the (+) button, and press OK.",
-    ),
+    chipRes = R.string.guide_chip_apple,
+    titleRes = R.string.guide_title_apple,
+    stepsRes = R.array.guide_apple_steps,
 )
 
 private val routerGuide = GuidePlatform(
-    chip = "Router",
-    title = "Setting the DNS on a modem or router",
-    steps = listOf(
-        "Open your modem's admin page in a browser (usually 192.168.1.1 or 192.168.0.1).",
-        "Find the WAN, Internet or DHCP section and change DNS from Automatic to Manual/Static.",
-        "Enter the two values below, save, and restart the modem once. Every device in " +
-            "the house then uses this DNS with no setup of its own.",
-    ),
+    chipRes = R.string.guide_chip_router,
+    titleRes = R.string.guide_title_router,
+    stepsRes = R.array.guide_router_steps,
 )
 
 /** Android differs by install: Private DNS needs a hostname, static Wi-Fi does not. */
 private fun androidGuide(status: SubscriberStatusDto) = GuidePlatform(
-    chip = "Android",
-    title = "Setting the DNS on Android",
-    steps = if (status.hasDomain) {
-        listOf(
-            "Option 1 — Private DNS: open Settings ➔ Network & internet ➔ Private DNS, " +
-                "choose “Private DNS provider hostname” and enter the hostname shown below.",
-            "Option 2 — static Wi-Fi: open Settings ➔ Wi-Fi ➔ long-press your network ➔ " +
-                "Modify network ➔ Advanced, set IP settings to Static, and enter the two DNS " +
-                "values shown below as DNS 1 and DNS 2.",
-        )
-    } else {
-        listOf(
-            "This server has no domain and TLS certificate yet, so Android's Private DNS " +
-                "cannot be used — that field will not accept an IP address.",
-            "Static Wi-Fi: open Settings ➔ Wi-Fi ➔ long-press your network ➔ Modify network ➔ " +
-                "Advanced, set IP settings to Static, and enter the two DNS values shown below " +
-                "as DNS 1 and DNS 2. Or ask your provider to add a domain.",
-        )
-    },
-    note = if (status.hasDomain) null else
-        "Private DNS needs a hostname. Until this server has a domain, use the static " +
-            "Wi-Fi option below.",
+    chipRes = R.string.guide_chip_android,
+    titleRes = R.string.guide_title_android,
+    stepsRes = if (status.hasDomain) R.array.guide_android_steps else R.array.guide_android_nodomain_steps,
+    noteRes = if (status.hasDomain) null else R.string.guide_note_android_no_domain,
     privateDns = true,
 )
 
@@ -179,18 +131,19 @@ internal fun GuideTab(status: SubscriberStatusDto, onCopy: (String) -> Unit) {
                     selected = index == selected,
                     onClick = { selected = index },
                     label = {
-                        Text(entry.chip, style = MaterialTheme.typography.labelSmall)
+                        Text(stringResource(entry.chipRes), style = MaterialTheme.typography.labelSmall)
                     },
                 )
             }
         }
 
-        SubscriberCard(verticalPadding = 10.dp, title = "Guide", icon = Icons.Filled.MenuBook) {
+        SubscriberCard(verticalPadding = 10.dp, title = stringResource(R.string.guide_card_guide), icon = Icons.Filled.MenuBook) {
             Text(
-                platform.title,
+                stringResource(platform.titleRes),
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
             )
-            platform.steps.forEachIndexed { index, step ->
+            val steps = stringArrayResource(platform.stepsRes)
+            steps.forEachIndexed { index, step ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         "${index + 1}.",
@@ -204,25 +157,25 @@ internal fun GuideTab(status: SubscriberStatusDto, onCopy: (String) -> Unit) {
                     )
                 }
             }
-            platform.note?.let { note ->
+            platform.noteRes?.let { noteRes ->
                 Text(
-                    note,
+                    stringResource(noteRes),
                     style = MaterialTheme.typography.bodySmall,
                     color = DigitDnsTheme.colors.warning,
                 )
             }
         }
 
-        SubscriberCard(verticalPadding = 10.dp, title = "Values", icon = Icons.Filled.Dns) {
-            GuideValueRow("Primary DNS", status.serverDns, onCopy)
-            GuideValueRow("Secondary DNS", "1.1.1.1", onCopy)
+        SubscriberCard(verticalPadding = 10.dp, title = stringResource(R.string.guide_card_values), icon = Icons.Filled.Dns) {
+            GuideValueRow(stringResource(R.string.subscriber_primary_dns), status.serverDns, onCopy)
+            GuideValueRow(stringResource(R.string.subscriber_secondary_dns), "1.1.1.1", onCopy)
             if (platform.privateDns && status.hasDomain) {
-                GuideValueRow("Private DNS hostname", status.serverHost, onCopy)
+                GuideValueRow(stringResource(R.string.guide_private_dns_hostname), status.serverHost, onCopy)
             }
             if (status.hasDomain) {
-                GuideValueRow("DoH", "https://${status.serverHost}:${status.dohPort}/dns-query", onCopy)
+                GuideValueRow(stringResource(R.string.subscriber_doh), "https://${status.serverHost}:${status.dohPort}/dns-query", onCopy)
             }
-            GuideValueRow("DoT", "${status.serverHost}:${status.dotPort}", onCopy)
+            GuideValueRow(stringResource(R.string.subscriber_dot), "${status.serverHost}:${status.dotPort}", onCopy)
         }
     }
 }
@@ -246,7 +199,7 @@ private fun GuideValueRow(label: String, value: String, onCopy: (String) -> Unit
         IconButton(onClick = { onCopy(value) }, modifier = Modifier.size(32.dp)) {
             Icon(
                 Icons.Filled.ContentCopy,
-                contentDescription = "Copy $label",
+                contentDescription = stringResource(R.string.subscriber_copy_value, label),
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )

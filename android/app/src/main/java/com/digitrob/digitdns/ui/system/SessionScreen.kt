@@ -19,9 +19,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.digitrob.digitdns.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.ui.components.PanelDialog
 
@@ -49,7 +51,7 @@ fun SessionScreen(
                 onClick = { confirming = true },
             )
             Text(
-                text = CONSEQUENCE,
+                text = stringResource(R.string.session_signout_body),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -59,7 +61,7 @@ fun SessionScreen(
             // for a session that does not exist) claimed otherwise. It stays visible
             // in the Saved servers list, which is where it belongs.
             Text(
-                text = "Not signed in to a server.",
+                text = stringResource(R.string.session_not_signed_in),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -75,10 +77,6 @@ fun SessionScreen(
     }
 }
 
-private const val CONSEQUENCE =
-    "Signing out revokes the session on the server and removes any saved credentials " +
-        "from this device."
-
 @Composable
 private fun SessionIdentityCard(state: SessionUiState) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -86,7 +84,7 @@ private fun SessionIdentityCard(state: SessionUiState) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text("Signed in to", style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.session_signed_in_to), style = MaterialTheme.typography.labelMedium)
             Text(
                 text = state.authority.ifBlank { "—" },
                 style = MaterialTheme.typography.titleMedium,
@@ -94,22 +92,22 @@ private fun SessionIdentityCard(state: SessionUiState) {
             )
             if (state.adminPath.isNotBlank()) {
                 Text(
-                    text = "Admin path: ${state.adminPath}",
+                    text = stringResource(R.string.session_admin_path, state.adminPath),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
                 )
             }
             Text(
-                text = "Credential: ${state.credentialLabel}",
+                text = stringResource(R.string.session_credential, state.credentialLabel),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 text = if (state.credentialsSaved) {
-                    "Saved credentials: yes — the app re-logs in automatically."
+                    stringResource(R.string.session_creds_saved)
                 } else {
-                    "Saved credentials: no."
+                    stringResource(R.string.session_creds_not_saved)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -132,7 +130,7 @@ private fun SignOutButton(isSigningOut: Boolean, onClick: () -> Unit) {
         if (isSigningOut) {
             CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
         }
-        Text("Sign out")
+        Text(stringResource(R.string.session_sign_out))
     }
 }
 
@@ -144,13 +142,13 @@ private fun SignOutDialog(
 ) {
     PanelDialog(
         onDismissRequest = { if (!isSigningOut) onDismiss() },
-        title = { Text("Sign out?") },
-        text = { Text(CONSEQUENCE) },
+        title = { Text(stringResource(R.string.session_sign_out_title)) },
+        text = { Text(stringResource(R.string.session_signout_body)) },
         confirmButton = {
-            TextButton(onClick = onConfirm, enabled = !isSigningOut) { Text("Sign out") }
+            TextButton(onClick = onConfirm, enabled = !isSigningOut) { Text(stringResource(R.string.session_sign_out)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isSigningOut) { Text("Cancel") }
+            TextButton(onClick = onDismiss, enabled = !isSigningOut) { Text(stringResource(R.string.action_cancel)) }
         },
     )
 }

@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.ui.subscriber
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,18 +33,20 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.SubscriberStatusDto
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
 
-private enum class ConnectSection(val label: String) {
-    ADDRESSES("Addresses"),
-    ENDPOINTS("Endpoints"),
-    GUIDE("Guide"),
+private enum class ConnectSection(@StringRes val labelRes: Int) {
+    ADDRESSES(R.string.subscriber_tab_addresses),
+    ENDPOINTS(R.string.subscriber_tab_endpoints),
+    GUIDE(R.string.subscriber_tab_guide),
 }
 
 /** Registered addresses, the copy-card endpoints, and the full device guide. */
@@ -64,7 +67,7 @@ internal fun ConnectTab(
                 FilterChip(
                     selected = section == entry,
                     onClick = { section = entry },
-                    label = { Text(entry.label) },
+                    label = { Text(stringResource(entry.labelRes)) },
                 )
             }
         }
@@ -73,7 +76,7 @@ internal fun ConnectTab(
         val status = state.status
         if (status == null) {
             Text(
-                "Waiting for the subscription details…",
+                stringResource(R.string.subscriber_waiting),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -99,14 +102,14 @@ private fun AddressesTab(
     val exactCount = client.allowedIps.count { !it.contains("/") }
     SubscriberCard(
         verticalPadding = 10.dp,
-        title = "Registered Addresses",
+        title = stringResource(R.string.subscriber_registered_addresses),
         icon = Icons.Filled.Dns,
         modifier = modifier.fillMaxWidth(),
         fillHeight = true,
     ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = status.detectedIp.ifBlank { "Unknown" },
+                text = status.detectedIp.ifBlank { stringResource(R.string.subscriber_unknown) },
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
@@ -131,7 +134,7 @@ private fun AddressesTab(
         ) {
             if (client.allowedIps.isEmpty()) {
                 Text(
-                    "None yet. Register this device or a specific address on the Status tab.",
+                    stringResource(R.string.subscriber_none_registered),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -145,7 +148,7 @@ private fun AddressesTab(
             }
         }
         Text(
-            "Subnets are shown as CIDR. Scroll the list if it is long.",
+            stringResource(R.string.subscriber_subnets_hint),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -156,16 +159,16 @@ private fun AddressesTab(
 private fun EndpointsCard(status: SubscriberStatusDto, onCopy: (String) -> Unit) {
     val doh = "https://${status.serverHost}:${status.dohPort}/dns-query"
     val dot = "${status.serverHost}:${status.dotPort}"
-    SubscriberCard(verticalPadding = 10.dp, title = "Endpoints", icon = Icons.Filled.Lan) {
+    SubscriberCard(verticalPadding = 10.dp, title = stringResource(R.string.subscriber_endpoints), icon = Icons.Filled.Lan) {
         Text(
-            "Tap a value to copy",
+            stringResource(R.string.subscriber_tap_copy),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        CopyRow("Primary DNS", status.serverDns, onCopy)
-        CopyRow("Secondary DNS", "1.1.1.1", onCopy)
-        if (status.hasDomain) CopyRow("DoH", doh, onCopy)
-        CopyRow("DoT", dot, onCopy)
+        CopyRow(stringResource(R.string.subscriber_primary_dns), status.serverDns, onCopy)
+        CopyRow(stringResource(R.string.subscriber_secondary_dns), "1.1.1.1", onCopy)
+        if (status.hasDomain) CopyRow(stringResource(R.string.subscriber_doh), doh, onCopy)
+        CopyRow(stringResource(R.string.subscriber_dot), dot, onCopy)
     }
 }
 
@@ -192,7 +195,7 @@ private fun CopyRow(label: String, value: String, onCopy: (String) -> Unit) {
         IconButton(onClick = { onCopy(value) }, modifier = Modifier.size(32.dp)) {
             Icon(
                 Icons.Filled.ContentCopy,
-                contentDescription = "Copy $label",
+                contentDescription = stringResource(R.string.subscriber_copy_value, label),
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )

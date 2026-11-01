@@ -1,7 +1,9 @@
 package com.digitrob.digitdns.ui.subscriber
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.SubscriberStatusDto
 import com.digitrob.digitdns.data.AppMode
 import com.digitrob.digitdns.data.AppPreferences
@@ -12,6 +14,7 @@ import com.digitrob.digitdns.data.SubscriberSession
 import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.ui.auth.TrustPrompt
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -50,6 +53,7 @@ class SubscriberViewModel @Inject constructor(
     private val session: SubscriberSession,
     private val appPreferences: AppPreferences,
     private val authRepository: AuthRepository,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -84,7 +88,7 @@ class SubscriberViewModel @Inject constructor(
     fun refresh(silent: Boolean = false) {
         val link = session.currentLink()
         if (link == null) {
-            _state.update { it.copy(error = "No subscription is loaded. Sign in again.") }
+            _state.update { it.copy(error = context.getString(R.string.subscriber_error_no_link)) }
             return
         }
         _state.update {
@@ -126,7 +130,7 @@ class SubscriberViewModel @Inject constructor(
         val link = session.currentLink() ?: return
         val effective = secret.trim().ifBlank { session.secret() }
         if (effective.isBlank()) {
-            _state.update { it.copy(error = "Enter the registration secret to change this device's IP.") }
+            _state.update { it.copy(error = context.getString(R.string.subscriber_error_secret_required)) }
             return
         }
         _state.update { it.copy(registerBusy = true, error = null) }
@@ -135,9 +139,12 @@ class SubscriberViewModel @Inject constructor(
                 is SubscriberResult.Ok -> {
                     session.updateSecret(effective, saveSecret || secret.isBlank())
                     val text = if (result.value.alreadyBound) {
-                        "That address is already registered."
+                        context.getString(R.string.subscriber_msg_already_registered)
                     } else {
-                        "Registered ${result.value.boundIp.ifBlank { ip ?: "this device" }}."
+                        context.getString(
+                            R.string.subscriber_msg_registered,
+                            result.value.boundIp.ifBlank { ip ?: "this device" },
+                        )
                     }
                     _state.update {
                         it.copy(

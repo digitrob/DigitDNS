@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.ui.subscriber
 
+import com.digitrob.digitdns.R
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -53,10 +54,10 @@ class SubscriberFormatTest {
 
     @Test
     fun `status words map to the header label`() {
-        assertEquals("Active", SubscriberFormat.statusLabel("active"))
-        assertEquals("Suspended", SubscriberFormat.statusLabel("suspended"))
-        assertEquals("Expired", SubscriberFormat.statusLabel("expired"))
-        assertEquals("Quota spent", SubscriberFormat.statusLabel("quota"))
+        assertEquals(R.string.subscriber_status_active, SubscriberFormat.statusLabelRes("active"))
+        assertEquals(R.string.subscriber_status_suspended, SubscriberFormat.statusLabelRes("suspended"))
+        assertEquals(R.string.subscriber_status_expired, SubscriberFormat.statusLabelRes("expired"))
+        assertEquals(R.string.subscriber_status_quota, SubscriberFormat.statusLabelRes("quota"))
     }
 
     @Test

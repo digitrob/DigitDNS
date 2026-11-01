@@ -1251,10 +1251,10 @@
              original card, so the add / bulk-import / remove handlers in app.js
              keep working untouched. Each row now carries a switch: off keeps the
              domain in the list but lifts it out of the proxy set. -->
-        <div class="glass-panel p-5 sm:p-6 space-y-4">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
           <div>
-            <h3 class="text-xs sm:text-sm font-bold uppercase text-white flex items-center gap-2 font-heading">
-              <i data-feather="shield" class="w-4 h-4 text-cyan-400"></i> Domains
+            <h3 class="panel-card-header">
+              <i data-feather="shield" class="w-4 h-4"></i> Domains
             </h3>
             <p class="text-[11px] text-slate-400 mt-0.5">All managed domains — proxied, paused, blocked and direct. Filter with the chips, and open a row's status badge to change its routing.</p>
           </div>
@@ -1273,15 +1273,15 @@
           <div class="flex gap-2">
             <input type="text" id="new-proxied-input" list="proxied-add-suggestions"
               autocomplete="off" aria-label="New proxied domain" placeholder="e.g. *.example.com or api.target.com"
-              class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
+              class="panel-field flex-1 min-w-0 font-mono">
             <!-- Filled with the configured domains by renderProxiedSuggestions. Picking
                  one from the list also filters the table (the box feeds the same filter
                  as the search field), which is what makes an existing domain obvious
                  before Add is pressed. -->
             <datalist id="proxied-add-suggestions"></datalist>
-            <button id="add-proxied-btn" class="shrink-0 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Add</button>
+            <button id="add-proxied-btn" class="panel-btn panel-btn-primary shrink-0">Add</button>
             <button type="button" id="bulk-proxied-btn"
-              class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">
+              class="panel-btn panel-btn-ghost shrink-0">
               <i data-feather="upload-cloud" class="w-3.5 h-3.5"></i> Bulk import
             </button>
           </div>

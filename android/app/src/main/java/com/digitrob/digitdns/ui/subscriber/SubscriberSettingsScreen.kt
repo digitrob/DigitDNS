@@ -32,10 +32,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.domain.model.SubscriberLink
 import com.digitrob.digitdns.ui.components.PanelCard
@@ -98,7 +100,7 @@ private fun SubscriptionCard(
     onOpenPortal: (String) -> Unit,
     onRefresh: () -> Unit,
 ) {
-    SubscriberCard(verticalPadding = 10.dp, title = "Subscription", icon = Icons.Filled.Link) {
+    SubscriberCard(verticalPadding = 10.dp, title = stringResource(R.string.subscriber_subscription), icon = Icons.Filled.Link) {
         Text(
             text = link?.authority ?: "—",
             style = MaterialTheme.typography.titleSmall.copy(
@@ -110,7 +112,7 @@ private fun SubscriptionCard(
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = link?.maskedPortalUrl ?: "No link",
+            text = link?.maskedPortalUrl ?: stringResource(R.string.subscriber_no_link),
             style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -118,7 +120,10 @@ private fun SubscriptionCard(
         )
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             StatusBadge(
-                text = if (state.secretSaved) "Secret saved" else "Secret not saved",
+                text = stringResource(
+                    if (state.secretSaved) R.string.subscriber_secret_saved_badge
+                    else R.string.subscriber_secret_missing_badge,
+                ),
                 color = if (state.secretSaved) DigitDnsTheme.colors.success else DigitDnsTheme.colors.warning,
             )
             Spacer(Modifier.weight(1f))
@@ -129,22 +134,22 @@ private fun SubscriptionCard(
             ) {
                 Icon(
                     Icons.Filled.ContentCopy,
-                    contentDescription = "Copy subscription link",
+                    contentDescription = stringResource(R.string.subscriber_copy_link),
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { link?.portalUrl?.let(onOpenPortal) }) { Text("Open portal") }
-            OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+            OutlinedButton(onClick = { link?.portalUrl?.let(onOpenPortal) }) { Text(stringResource(R.string.subscriber_open_portal)) }
+            OutlinedButton(onClick = onRefresh) { Text(stringResource(R.string.subscriber_refresh)) }
         }
     }
 }
 
 @Composable
 private fun AppearanceCard(state: SubscriberUiState, viewModel: SubscriberViewModel) {
-    SubscriberCard(verticalPadding = 10.dp, title = "Appearance", icon = Icons.Filled.Palette) {
+    SubscriberCard(verticalPadding = 10.dp, title = stringResource(R.string.subscriber_appearance), icon = Icons.Filled.Palette) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ThemeMode.entries.forEach { mode ->
                 FilterChip(
@@ -153,9 +158,9 @@ private fun AppearanceCard(state: SubscriberUiState, viewModel: SubscriberViewMo
                     label = {
                         Text(
                             when (mode) {
-                                ThemeMode.SYSTEM -> "System"
-                                ThemeMode.DARK -> "Dark"
-                                ThemeMode.LIGHT -> "Light"
+                                ThemeMode.SYSTEM -> stringResource(R.string.subscriber_theme_system)
+                                ThemeMode.DARK -> stringResource(R.string.subscriber_theme_dark)
+                                ThemeMode.LIGHT -> stringResource(R.string.subscriber_theme_light)
                             },
                         )
                     },
@@ -172,10 +177,9 @@ private fun AccountCard(
     onSignOut: () -> Unit,
     onForget: () -> Unit,
 ) {
-    SubscriberCard(verticalPadding = 10.dp, title = "Account", icon = Icons.Filled.Person) {
+    SubscriberCard(verticalPadding = 10.dp, title = stringResource(R.string.subscriber_account_card), icon = Icons.Filled.Person) {
         Text(
-            "Signing out keeps the link saved on this device. Forgetting removes the " +
-                "link, the secret and this server's certificate pin.",
+stringResource(R.string.subscriber_account_body),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -188,19 +192,19 @@ private fun AccountCard(
             onClick = onSwitchToAdmin,
             enabled = canSwitchToAdmin,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("Switch to Admin") }
+        ) { Text(stringResource(R.string.subscriber_switch_admin)) }
         if (!canSwitchToAdmin) {
             Text(
-                "No admin account is signed in on this device.",
+                stringResource(R.string.subscriber_no_admin),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onSignOut) { Text("Sign out") }
+            Button(onClick = onSignOut) { Text(stringResource(R.string.subscriber_sign_out)) }
             TextButton(onClick = onForget) {
-                Text("Forget subscription", color = DigitDnsTheme.colors.danger)
+                Text(stringResource(R.string.subscriber_forget), color = DigitDnsTheme.colors.danger)
             }
         }
     }
@@ -211,18 +215,17 @@ private fun ForgetDialog(onCancel: () -> Unit, onConfirm: () -> Unit) {
     PanelDialog(
         onDismissRequest = onCancel,
         solid = true,
-        title = { Text("Forget this subscription?") },
+        title = { Text(stringResource(R.string.subscriber_forget_title)) },
         text = {
             Text(
-                "The saved link and registration secret are removed from this device. " +
-                    "You can sign in again with the link your provider gave you.",
+stringResource(R.string.subscriber_forget_body),
             )
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Forget", color = DigitDnsTheme.colors.danger)
+                Text(stringResource(R.string.subscriber_forget_action), color = DigitDnsTheme.colors.danger)
             }
         },
-        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) } },
     )
 }

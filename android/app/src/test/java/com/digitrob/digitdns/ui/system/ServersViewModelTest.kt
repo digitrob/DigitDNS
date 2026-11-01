@@ -5,6 +5,9 @@ import com.digitrob.digitdns.data.AppMode
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.AuthRepository
 import com.digitrob.digitdns.data.ServerSwitchResult
+import com.digitrob.digitdns.core.network.SubscriberStatusDto
+import com.digitrob.digitdns.data.SubscriberRepository
+import com.digitrob.digitdns.data.SubscriberResult
 import com.digitrob.digitdns.data.SubscriberSession
 import com.digitrob.digitdns.domain.model.Connection
 import com.digitrob.digitdns.domain.model.CredentialMode
@@ -41,6 +44,7 @@ class ServersViewModelTest {
     private lateinit var authRepository: AuthRepository
     private lateinit var subscriberSession: SubscriberSession
     private lateinit var appPreferences: AppPreferences
+    private lateinit var subscriberRepository: SubscriberRepository
 
     @Before
     fun setUp() {
@@ -52,6 +56,7 @@ class ServersViewModelTest {
         // subscription row stays null unless a test says otherwise.
         subscriberSession = mockk(relaxed = true)
         appPreferences = mockk(relaxed = true)
+        subscriberRepository = mockk(relaxed = true)
     }
 
     @After
@@ -77,7 +82,7 @@ class ServersViewModelTest {
             listOf(activeConnection("Norwich")),
         )
 
-        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences)
+        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences, subscriberRepository)
         testScheduler.advanceUntilIdle() // the init refresh completes here
         viewModel.state.test {
             // StateFlows conflate intermediate refresh states, so the semantics live
@@ -99,7 +104,7 @@ class ServersViewModelTest {
         coEvery { authRepository.currentConnection() } returns activeConnection()
         coEvery { authRepository.listServers() } returns listOf(activeConnection())
 
-        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences)
+        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences, subscriberRepository)
         testScheduler.advanceUntilIdle()
         viewModel.state.test {
             assertEquals("docs.example.com", awaitItem().servers.single().label)
@@ -111,7 +116,7 @@ class ServersViewModelTest {
         coEvery { authRepository.currentConnection() } returns activeConnection()
         coEvery { authRepository.listServers() } returns listOf(activeConnection())
 
-        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences)
+        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences, subscriberRepository)
         advanceUntilIdle()
         viewModel.refresh()
         runCurrent()
@@ -130,7 +135,7 @@ class ServersViewModelTest {
             listOf(activeConnection())
         }
 
-        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences)
+        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences, subscriberRepository)
         advanceUntilIdle()
         viewModel.refresh(userInitiated = true)
         runCurrent()
@@ -146,7 +151,7 @@ class ServersViewModelTest {
         coEvery { authRepository.listServers() } returns listOf(activeConnection())
         coEvery { authRepository.switchToServer("id-1") } returns ServerSwitchResult.Ready
 
-        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences)
+        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences, subscriberRepository)
         advanceUntilIdle()
         viewModel.switchTo("id-1")
         advanceUntilIdle()
@@ -163,7 +168,7 @@ class ServersViewModelTest {
         coEvery { authRepository.listServers() } returns listOf(activeConnection())
         coEvery { authRepository.switchToServer("id-1") } returns ServerSwitchResult.LoginRequired
 
-        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences)
+        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences, subscriberRepository)
         advanceUntilIdle()
         viewModel.switchTo("id-1")
         advanceUntilIdle()
@@ -178,7 +183,7 @@ class ServersViewModelTest {
         coEvery { authRepository.switchToServer("id-1") } returns
             ServerSwitchResult.Failed("Host not found. Check the address.")
 
-        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences)
+        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences, subscriberRepository)
         advanceUntilIdle()
         viewModel.switchTo("id-1")
         advanceUntilIdle()
@@ -193,10 +198,12 @@ class ServersViewModelTest {
         assertNotNull(link)
         every { subscriberSession.currentLink() } returns link
         every { subscriberSession.currentLabel() } returns "Norwich UI probe"
+        coEvery { subscriberRepository.loadStatus(link!!) } returns
+            SubscriberResult.Ok(SubscriberStatusDto(status = "active"))
         coEvery { authRepository.currentConnection() } returns activeConnection()
         coEvery { authRepository.listServers() } returns listOf(activeConnection())
 
-        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences)
+        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences, subscriberRepository)
         advanceUntilIdle()
 
         val row = viewModel.state.value.subscription
@@ -204,6 +211,7 @@ class ServersViewModelTest {
         assertEquals("Norwich UI probe", row?.label)
         assertEquals("norwich.example:27586", row?.authority)
         assertEquals("https://norwich.example:27586/sub/abcdef…7890", row?.maskedUrl)
+        assertEquals(true, row?.isActive)
     }
 
     @Test
@@ -214,7 +222,7 @@ class ServersViewModelTest {
         coEvery { authRepository.currentConnection() } returns activeConnection()
         coEvery { authRepository.listServers() } returns emptyList()
 
-        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences)
+        val viewModel = ServersViewModel(authRepository, subscriberSession, appPreferences, subscriberRepository)
         advanceUntilIdle()
         viewModel.openSubscriber()
         advanceUntilIdle()

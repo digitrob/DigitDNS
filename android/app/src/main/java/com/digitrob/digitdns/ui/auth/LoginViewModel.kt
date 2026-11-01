@@ -1,7 +1,9 @@
 package com.digitrob.digitdns.ui.auth
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.data.AppMode
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.AuthRepository
@@ -14,6 +16,7 @@ import com.digitrob.digitdns.domain.model.SubscriberLink
 import com.digitrob.digitdns.domain.model.Connection
 import com.digitrob.digitdns.domain.model.CredentialMode
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -105,6 +108,7 @@ class LoginViewModel @Inject constructor(
     private val subscriberRepository: SubscriberRepository,
     private val subscriberSession: SubscriberSession,
     private val appPreferences: AppPreferences,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LoginUiState())
@@ -213,9 +217,9 @@ class LoginViewModel @Inject constructor(
         if (link == null) {
             val compact = current.subscriberLink.filterNot { it.isWhitespace() }
             val message = if (!compact.contains("/sub/")) {
-                "That looks like only the token — paste the full https://host/sub/<token> link."
+                context.getString(R.string.login_subscriber_token_only)
             } else {
-                "Paste the full subscription link, e.g. https://host/sub/<token>."
+                context.getString(R.string.login_subscriber_paste_link)
             }
             _state.update { it.copy(subscriberError = message) }
             return

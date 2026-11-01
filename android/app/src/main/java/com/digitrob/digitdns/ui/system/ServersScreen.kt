@@ -44,12 +44,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.domain.model.CredentialMode
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
@@ -208,7 +210,7 @@ private fun ServersBody(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         state.subscription?.let { subscription ->
-            Text("Subscriptions", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.servers_subscriptions), style = MaterialTheme.typography.titleMedium)
             SubscriptionCard(
                 subscription = subscription,
                 onOpen = onOpenSubscription,
@@ -216,7 +218,7 @@ private fun ServersBody(
             )
         }
 
-        Text("Saved servers", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.servers_saved), style = MaterialTheme.typography.titleMedium)
 
         state.error?.let { message ->
             Text(
@@ -254,7 +256,7 @@ private fun ServersBody(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-            Text("Add server")
+            Text(stringResource(R.string.servers_add))
         }
 
         SessionScreen(onLoggedOut = onLoggedOut)
@@ -271,7 +273,7 @@ private fun SavedServersList(
 ) {
     if (state.servers.isEmpty()) {
         Text(
-            text = "No servers saved yet.",
+            text = stringResource(R.string.servers_none),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -301,10 +303,9 @@ private fun ServerCard(
 ) {
     SwipeToDeleteRow(
         onDelete = { if (enabled) onRemove() },
-        confirmTitle = "Remove server?",
-        confirmText = "This forgets ${server.label} (${server.authority}) and its saved " +
-            "credentials on this device. The server itself is not changed.",
-        confirmLabel = "Remove",
+        confirmTitle = stringResource(R.string.servers_remove_title),
+        confirmText = stringResource(R.string.servers_remove_body, server.label, server.authority),
+        confirmLabel = stringResource(R.string.servers_remove_action),
     ) {
         Card(
             colors = if (server.isActive) {
@@ -336,7 +337,7 @@ private fun ServerCard(
                 IconButton(onClick = { if (enabled) onEdit() }) {
                     Icon(
                         Icons.Filled.Edit,
-                        contentDescription = "Edit server",
+                        contentDescription = stringResource(R.string.servers_edit),
                         modifier = Modifier.size(20.dp),
                     )
                 }
@@ -355,7 +356,7 @@ private fun ServerCardLeading(server: ServerRow, busy: Boolean) {
     } else if (server.isActive) {
         Icon(
             Icons.Filled.Check,
-            contentDescription = "Active",
+            contentDescription = stringResource(R.string.servers_active),
             tint = MaterialTheme.colorScheme.onSecondaryContainer,
         )
     }
@@ -385,7 +386,7 @@ private fun ServerCardDetails(server: ServerRow, modifier: Modifier = Modifier) 
         )
         if (server.adminPath.isNotBlank()) {
             Text(
-                text = "Admin path: ${server.adminPath}",
+                text = stringResource(R.string.servers_admin_path, server.adminPath),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontFamily = FontFamily.Monospace,
@@ -397,8 +398,8 @@ private fun ServerCardDetails(server: ServerRow, modifier: Modifier = Modifier) 
             text = buildString {
                 append(
                     when (server.credentialMode) {
-                        CredentialMode.SESSION -> "Account session"
-                        CredentialMode.API_KEY -> "Master API key"
+                        CredentialMode.SESSION -> stringResource(R.string.servers_credential_account)
+                        CredentialMode.API_KEY -> stringResource(R.string.servers_credential_api_key)
                     },
                 )
                 if (server.credentialsSaved) append(" · credentials saved")
@@ -466,11 +467,11 @@ private fun SubscriptionCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            TextButton(onClick = onOpen) { Text("Open") }
+            TextButton(onClick = onOpen) { Text(stringResource(R.string.servers_open)) }
             IconButton(onClick = onRemove) {
                 Icon(
                     Icons.Filled.Delete,
-                    contentDescription = "Remove subscription",
+                    contentDescription = stringResource(R.string.servers_remove_subscription),
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(20.dp),
                 )
@@ -488,20 +489,21 @@ private fun RemoveSubscriptionDialog(
     PanelDialog(
         onDismissRequest = onCancel,
         solid = true,
-        title = { Text("Remove subscription?") },
+        title = { Text(stringResource(R.string.servers_remove_subscription_title)) },
         text = {
             Text(
-                (if (label.isBlank()) "The saved subscription" else label) +
-                    " and its registration secret are removed from this device. " +
-                    "Your admin servers are not changed.",
+                stringResource(
+                    R.string.servers_remove_subscription_body,
+                    if (label.isBlank()) stringResource(R.string.servers_subscriptions) else label,
+                ),
             )
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Remove", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.servers_remove_action), color = MaterialTheme.colorScheme.error)
             }
         },
-        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 
@@ -536,15 +538,15 @@ private fun EditServerDialog(
     PanelDialog(
         onDismissRequest = onDismiss,
         solid = true,
-        title = { Text("Edit server") },
+        title = { Text(stringResource(R.string.servers_edit_title)) },
         text = { ServerEditFields(state, onStateChange = { state = it }) },
         confirmButton = {
             TextButton(
                 enabled = state.host.isNotBlank() && state.port in 1..65535,
                 onClick = { onConfirm(state) },
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.action_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 
@@ -564,21 +566,21 @@ private fun ServerConnectionFields(state: ServerEdit, onStateChange: (ServerEdit
     OutlinedTextField(
         value = state.label,
         onValueChange = { onStateChange(state.copy(label = it)) },
-        label = { Text("Friendly name") },
+        label = { Text(stringResource(R.string.servers_friendly_name)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
         value = state.host,
         onValueChange = { onStateChange(state.copy(host = it.trim())) },
-        label = { Text("Host") },
+        label = { Text(stringResource(R.string.servers_host)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
         value = state.port.toString(),
         onValueChange = { text -> text.toIntOrNull()?.let { onStateChange(state.copy(port = it)) } },
-        label = { Text("Port") },
+        label = { Text(stringResource(R.string.servers_port)) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = Modifier.fillMaxWidth(),
@@ -586,7 +588,7 @@ private fun ServerConnectionFields(state: ServerEdit, onStateChange: (ServerEdit
     OutlinedTextField(
         value = state.adminPath,
         onValueChange = { onStateChange(state.copy(adminPath = it.trim('/'))) },
-        label = { Text("Admin path") },
+        label = { Text(stringResource(R.string.servers_admin_path_label)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -610,8 +612,8 @@ private fun ServerCredentialFields(state: ServerEdit, onStateChange: (ServerEdit
     ) {
         Text(
             when (state.credentialMode) {
-                CredentialMode.SESSION -> "Account session"
-                CredentialMode.API_KEY -> "Master API key"
+                CredentialMode.SESSION -> stringResource(R.string.servers_credential_account)
+                CredentialMode.API_KEY -> stringResource(R.string.servers_credential_api_key)
             },
         )
     }
@@ -620,14 +622,14 @@ private fun ServerCredentialFields(state: ServerEdit, onStateChange: (ServerEdit
         OutlinedTextField(
             value = state.username,
             onValueChange = { onStateChange(state.copy(username = it.trim())) },
-            label = { Text("Username") },
+            label = { Text(stringResource(R.string.servers_username)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
             value = state.password,
             onValueChange = { onStateChange(state.copy(password = it)) },
-            label = { Text("Password") },
+            label = { Text(stringResource(R.string.servers_password)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -635,7 +637,7 @@ private fun ServerCredentialFields(state: ServerEdit, onStateChange: (ServerEdit
         OutlinedTextField(
             value = state.apiKey,
             onValueChange = { onStateChange(state.copy(apiKey = it.trim())) },
-            label = { Text("API key") },
+            label = { Text(stringResource(R.string.servers_api_key)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -646,6 +648,6 @@ private fun ServerCredentialFields(state: ServerEdit, onStateChange: (ServerEdit
             checked = state.saveCredentials,
             onCheckedChange = { onStateChange(state.copy(saveCredentials = it)) },
         )
-        Text("Save credentials", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.servers_save_credentials), style = MaterialTheme.typography.bodyMedium)
     }
 }

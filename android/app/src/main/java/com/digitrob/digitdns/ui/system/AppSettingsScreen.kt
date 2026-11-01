@@ -1,6 +1,7 @@
 package com.digitrob.digitdns.ui.system
 
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -38,6 +40,7 @@ import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.data.DashboardCard
 import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.ui.components.PanelCard
@@ -63,19 +66,18 @@ fun AppSettingsScreen(viewModel: AppSettingsViewModel = hiltViewModel()) {
     ) {
         PanelCard(modifier = Modifier.fillMaxWidth()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Theme", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.settings_theme), style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ThemeMode.entries.forEach { mode ->
                         FilterChip(
                             selected = state.themeMode == mode,
                             onClick = { viewModel.setThemeMode(mode) },
-                            label = { Text(mode.label()) },
+                            label = { Text(stringResource(mode.labelRes())) },
                         )
                     }
                 }
                 Text(
-                    text = "Follow system matches the rest of the phone. Dark and Light " +
-                        "pin the app regardless of the OS setting.",
+                    text = stringResource(R.string.settings_theme_help),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -113,16 +115,15 @@ private fun DashboardLayoutCard(
 
     PanelCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Dashboard cards", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_dashboard_cards), style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "Choose which cards the dashboard shows, and their order. " +
-                        "Long-press a handle to drag a card.",
+                    text = stringResource(R.string.settings_dashboard_cards_help),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onReset) { Text("Reset layout") }
+                TextButton(onClick = onReset) { Text(stringResource(R.string.settings_reset_layout)) }
             }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 order.forEachIndexed { index, card ->
@@ -199,13 +200,13 @@ private fun DashboardCardRow(
     ) {
         Icon(
             Icons.Filled.DragHandle,
-            contentDescription = "Drag to reorder ${card.label()}",
+            contentDescription = stringResource(R.string.card_drag_reorder, stringResource(card.labelRes())),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(24.dp).then(dragHandle()),
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            text = card.label(),
+            text = stringResource(card.labelRes()),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
@@ -214,20 +215,22 @@ private fun DashboardCardRow(
     }
 }
 
-private fun DashboardCard.label(): String = when (this) {
-    DashboardCard.QUERY_RATE -> "Query rate"
-    DashboardCard.RAM_CACHE -> "RAM cache"
-    DashboardCard.SNI_PROXY -> "SNI proxy"
-    DashboardCard.CPU_USAGE -> "CPU usage"
-    DashboardCard.RAM_USAGE -> "DigitDNS RAM usage"
-    DashboardCard.LIVE_TRAFFIC -> "Live traffic"
-    DashboardCard.TELEMETRY_CHART -> "Query-rate chart"
-    DashboardCard.UPSTREAM_RACERS -> "Upstream racers"
-    DashboardCard.RESOLVER_LATENCY -> "Resolver latency"
+@StringRes
+private fun DashboardCard.labelRes(): Int = when (this) {
+    DashboardCard.QUERY_RATE -> R.string.card_query_rate
+    DashboardCard.RAM_CACHE -> R.string.card_ram_cache
+    DashboardCard.SNI_PROXY -> R.string.card_sni_proxy
+    DashboardCard.CPU_USAGE -> R.string.card_cpu_usage
+    DashboardCard.RAM_USAGE -> R.string.card_ram_usage
+    DashboardCard.LIVE_TRAFFIC -> R.string.card_live_traffic
+    DashboardCard.TELEMETRY_CHART -> R.string.card_telemetry_chart
+    DashboardCard.UPSTREAM_RACERS -> R.string.card_upstream_racers
+    DashboardCard.RESOLVER_LATENCY -> R.string.card_resolver_latency
 }
 
-private fun ThemeMode.label(): String = when (this) {
-    ThemeMode.SYSTEM -> "Follow system"
-    ThemeMode.DARK -> "Dark"
-    ThemeMode.LIGHT -> "Light"
+@StringRes
+private fun ThemeMode.labelRes(): Int = when (this) {
+    ThemeMode.SYSTEM -> R.string.theme_system
+    ThemeMode.DARK -> R.string.theme_dark
+    ThemeMode.LIGHT -> R.string.theme_light
 }

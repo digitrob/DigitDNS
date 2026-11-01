@@ -92,4 +92,306 @@
     <string name="client_regenerate_title">Regenerate %1$s?</string>
     <string name="client_regenerate">Regenerate</string>
     <string name="client_days">+%1$d days</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_server_address">Server Public IP/Domain</string>
+    <string name="dashboard_switch_server">Switch server</string>
+    <string name="dashboard_copy_address">Copy server address</string>
+    <string name="dashboard_query_rate">Query Rate</string>
+    <string name="dashboard_ram_cache">RAM Cache</string>
+    <string name="dashboard_sni_proxy">SNI Proxy</string>
+    <string name="dashboard_cpu_usage">CPU Usage</string>
+    <string name="dashboard_ram_usage">RAM Usage</string>
+    <string name="dashboard_live_traffic">Live Traffic</string>
+    <string name="dashboard_resolver_latency">Resolver Latency</string>
+    <string name="dashboard_qps">QPS</string>
+    <string name="dashboard_qps_value">%1$.1f qps</string>
+    <string name="dashboard_total">Total %1$s</string>
+    <string name="dashboard_total_limit">Total %1$s · Limit %2$s/s</string>
+    <string name="dashboard_dropped">Dropped %1$s</string>
+    <string name="dashboard_hits_unit" formatted="false">% hits</string>
+    <string name="dashboard_cache_items">Items %1$s · %2$s hits</string>
+    <string name="dashboard_cache_missed">Missed %1$s</string>
+    <string name="dashboard_relays">Relays</string>
+    <string name="dashboard_relay_total">Total %1$s · %2$s drops</string>
+    <string name="dashboard_relay_total_clean">Total %1$s · no drops</string>
+    <string name="dashboard_cores">%1$d cores</string>
+    <string name="dashboard_system_percent">System %1$s</string>
+    <string name="dashboard_traffic_total">Total · ↓ %1$s · ↑ %2$s</string>
+    <string name="dashboard_samples">Last %1$d samples, every 3s</string>
+    <string name="dashboard_no_observations">No observations yet.</string>
+    <string name="dashboard_uptime">Uptime %1$s</string>
+    <string name="dashboard_p50">p50 median</string>
+    <string name="dashboard_p95">p95</string>
+    <string name="dashboard_p99" formatted="false">p99 worst 1%</string>
+    <string name="dashboard_peak">Peak</string>
+
+    <!-- Dashboard card names in Settings. -->
+    <string name="card_query_rate">Query rate</string>
+    <string name="card_ram_cache">RAM cache</string>
+    <string name="card_sni_proxy">SNI proxy</string>
+    <string name="card_cpu_usage">CPU usage</string>
+    <string name="card_ram_usage">DigitDNS RAM usage</string>
+    <string name="card_live_traffic">Live traffic</string>
+    <string name="card_telemetry_chart">Query-rate chart</string>
+    <string name="card_upstream_racers">Upstream racers</string>
+    <string name="card_resolver_latency">Resolver latency</string>
+
+    <!-- Domains -->
+    <string name="domains_reload">Reload</string>
+    <string name="domains_empty">No domains yet.</string>
+    <string name="domains_empty_filtered">No %1$s domains yet.</string>
+    <string name="domains_override_title">Override Resolving</string>
+    <string name="domains_override_body">Overrides the global defaults for this proxied domain. It applies when the name is not being spoofed (paused) or for query types other than A/AAAA.</string>
+    <string name="domains_resolution_loading">Resolution settings are still loading</string>
+    <string name="domains_upstream">Upstream</string>
+    <string name="domains_strategy">Strategy</string>
+    <string name="domains_transports">Transports</string>
+    <string name="domains_inherit_global">Inherit Global</string>
+    <string name="strategy_fastest">Fastest Wins</string>
+    <string name="strategy_sequential">In Order</string>
+    <string name="strategy_hedged">Hedged</string>
+    <string name="strategy_best">Best Known</string>
+    <string name="domains_transport_excluded">The selected upstream is excluded by this transport and is ignored.</string>
+    <string name="domains_fallback">Fallback: Pool Default</string>
+    <string name="domains_pinned_records">Pinned records</string>
+    <string name="domains_pinned_body">Map a hostname straight to an IP, bypassing upstreams.</string>
+    <string name="domains_hostname">Hostname</string>
+    <string name="domains_ip">IP</string>
+    <string name="domains_pin">Pin</string>
+    <string name="domains_remove_named">Remove %1$s?</string>
+    <string name="domains_pinned_removed">The pinned record is removed from the panel.</string>
+    <string name="domains_bulk_import">Bulk import</string>
+    <string name="domains_bulk_body">One name per line, or separated by commas, semicolons or spaces. Lines starting with # are ignored. A leading *. covers every subdomain.</string>
+    <string name="domains_bulk_placeholder">example.com\n*.sub.example.com</string>
+    <string name="domains_choose_file">Choose file</string>
+    <string name="domains_import">Import</string>
+    <string name="domains_search">Search</string>
+    <string name="domains_sort">Sort</string>
+    <string name="domains_add_hint">Add domain</string>
+    <string name="domains_add_placeholder">e.g. api.target.com</string>
+    <string name="domains_remove_title">Remove %1$s?</string>
+    <string name="domains_remove_body">The domain is removed from the routing lists.</string>
+    <string name="domains_status_proxy">Proxy</string>
+    <string name="domains_status_blocked">Blocked</string>
+    <string name="domains_status_paused">Paused</string>
+    <string name="domains_status_direct">Direct</string>
+    <string name="domains_sort_added_desc">Added (newest)</string>
+    <string name="domains_sort_added_asc">Added (oldest)</string>
+    <string name="domains_sort_az">Name A–Z</string>
+    <string name="domains_sort_za">Name Z–A</string>
+    <string name="domains_sort_status">Status (on first)</string>
+    <string name="domains_status_pill">Override Resolving</string>
+    <string name="card_drag_reorder">Drag to reorder %1$s</string>
+    <string name="theme_system">Follow system</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
+    <string name="domains_count">%1$d domains</string>
+    <string name="domains_count_filtered">%1$d %2$s domains</string>
+    <string name="upstream_none">No upstreams reported yet.</string>
+    <string name="upstream_resolvers">Upstream Resolvers</string>
+    <string name="upstream_default">Default upstream</string>
+    <string name="upstream_pool_default">Pool Default</string>
+    <string name="upstream_pool_default_lower">Pool default</string>
+    <string name="upstream_excluded">Default upstream %1$s is excluded by the active transport and is ignored.</string>
+    <string name="upstream_benchmark">Benchmark</string>
+    <string name="upstream_add">Add upstream</string>
+    <string name="upstream_remove_title">Remove upstream?</string>
+    <string name="transport_any">Any Transport</string>
+    <string name="transport_encrypted">Encrypted Only (DoT · DoH · DoQ)</string>
+    <string name="transport_regular">Regular DNS (UDP · TCP)</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_help">Follow system matches the rest of the phone. Dark and Light pin the app regardless of the OS setting.</string>
+    <string name="settings_dashboard_cards">Dashboard cards</string>
+    <string name="settings_dashboard_cards_help">Choose which cards the dashboard shows, and their order. Long-press a handle to drag a card.</string>
+    <string name="settings_reset_layout">Reset layout</string>
+
+    <!-- Subscriber area -->
+    <string name="subscriber_tab_status">Status</string>
+    <string name="subscriber_tab_connect">Connect</string>
+    <string name="subscriber_tab_settings">Settings</string>
+    <string name="subscriber_online">Online</string>
+    <string name="subscriber_offline">Offline</string>
+    <string name="subscriber_copied">Copied</string>
+    <string name="subscriber_refresh">Refresh</string>
+    <string name="subscriber_account">Account</string>
+    <string name="subscriber_fallback_name">Subscriber</string>
+    <string name="subscriber_device_ip">Device IP</string>
+    <string name="subscriber_unknown">Unknown</string>
+    <string name="subscriber_registered">Registered</string>
+    <string name="subscriber_not_registered">Not registered</string>
+    <string name="subscriber_copy_device_ip">Copy device IP</string>
+    <string name="subscriber_copy_value">Copy %1$s</string>
+    <string name="subscriber_traffic">Traffic</string>
+    <string name="subscriber_lifetime">Lifetime</string>
+    <string name="subscriber_resets">Resets %1$s</string>
+    <string name="subscriber_policies_all">Policies · All</string>
+    <string name="subscriber_policies_list">Policies · %1$s</string>
+    <string name="subscriber_cert_changed">Certificate changed</string>
+    <string name="subscriber_trust_title">Trust this server?</string>
+    <string name="subscriber_cert_changed_body">The certificate has changed since you last trusted it. Confirm the fingerprint before continuing.</string>
+    <string name="subscriber_trust_body">This subscription\'s server uses a certificate your device does not yet trust.</string>
+    <string name="subscriber_trust_continue">Trust and continue</string>
+
+    <string name="subscriber_tab_addresses">Addresses</string>
+    <string name="subscriber_tab_endpoints">Endpoints</string>
+    <string name="subscriber_tab_guide">Guide</string>
+    <string name="subscriber_waiting">Waiting for the subscription details…</string>
+    <string name="subscriber_registered_addresses">Registered Addresses</string>
+    <string name="subscriber_none_registered">None yet. Register this device or a specific address on the Status tab.</string>
+    <string name="subscriber_subnets_hint">Subnets are shown as CIDR. Scroll the list if it is long.</string>
+    <string name="subscriber_endpoints">Endpoints</string>
+    <string name="subscriber_tap_copy">Tap a value to copy</string>
+    <string name="subscriber_primary_dns">Primary DNS</string>
+    <string name="subscriber_secondary_dns">Secondary DNS</string>
+    <string name="subscriber_doh">DoH</string>
+    <string name="subscriber_dot">DoT</string>
+
+    <string name="subscriber_registration_secret">Registration Secret</string>
+    <string name="subscriber_save_secret">Save on this device</string>
+    <string name="subscriber_secret_saved">Saved on this device</string>
+    <string name="subscriber_secret_from_provider">From your provider</string>
+    <string name="subscriber_registered_address">Registered Address</string>
+    <string name="subscriber_address_placeholder">203.0.113.9 or 10.0.0.0/24</string>
+    <string name="subscriber_register_device">Register This Device</string>
+    <string name="subscriber_register_address">Register Address</string>
+
+    <string name="subscriber_subscription">Subscription</string>
+    <string name="subscriber_no_link">No link</string>
+    <string name="subscriber_secret_saved_badge">Secret saved</string>
+    <string name="subscriber_secret_missing_badge">Secret not saved</string>
+    <string name="subscriber_copy_link">Copy subscription link</string>
+    <string name="subscriber_open_portal">Open portal</string>
+    <string name="subscriber_appearance">Appearance</string>
+    <string name="subscriber_theme_system">System</string>
+    <string name="subscriber_theme_dark">Dark</string>
+    <string name="subscriber_theme_light">Light</string>
+    <string name="subscriber_account_card">Account</string>
+    <string name="subscriber_account_body">Signing out keeps the link saved on this device. Forgetting removes the link, the secret and this server\'s certificate pin.</string>
+    <string name="subscriber_switch_admin">Switch to Admin</string>
+    <string name="subscriber_no_admin">No admin account is signed in on this device.</string>
+    <string name="subscriber_sign_out">Sign out</string>
+    <string name="subscriber_forget">Forget subscription</string>
+    <string name="subscriber_forget_title">Forget this subscription?</string>
+    <string name="subscriber_forget_body">The saved link and registration secret are removed from this device. You can sign in again with the link your provider gave you.</string>
+    <string name="subscriber_forget_action">Forget</string>
+
+    <!-- Subscriber guide -->
+    <string name="guide_chip_playstation">PlayStation</string>
+    <string name="guide_chip_xbox">Xbox</string>
+    <string name="guide_chip_switch">Switch</string>
+    <string name="guide_chip_windows">Windows</string>
+    <string name="guide_chip_apple">iOS / macOS</string>
+    <string name="guide_chip_android">Android</string>
+    <string name="guide_chip_router">Router</string>
+    <string name="guide_title_playstation">Setting the DNS on a PlayStation</string>
+    <string name="guide_title_xbox">Setting the DNS on an Xbox</string>
+    <string name="guide_title_switch">Setting the DNS on a Nintendo Switch</string>
+    <string name="guide_title_windows">Setting the DNS on Windows 10 / 11</string>
+    <string name="guide_title_apple">Setting the DNS on iOS and macOS</string>
+    <string name="guide_title_android">Setting the DNS on Android</string>
+    <string name="guide_title_router">Setting the DNS on a modem or router</string>
+    <string name="guide_note_android_no_domain">Private DNS needs a hostname. Until this server has a domain, use the static Wi-Fi option below.</string>
+    <string name="guide_card_guide">Guide</string>
+    <string name="guide_card_values">Values</string>
+    <string name="guide_private_dns_hostname">Private DNS hostname</string>
+    <string-array name="guide_playstation_steps">
+        <item>Open Settings on the console and go to Network.</item>
+        <item>Choose Set Up Internet Connection and pick how you connect (Wi-Fi or LAN).</item>
+        <item>Choose Custom so the manual settings appear.</item>
+        <item>Leave IP Address on Automatic and DHCP Host Name on Do Not Specify.</item>
+        <item>Under DNS Settings choose Manual and enter the two values below.</item>
+        <item>Leave MTU on Automatic and Proxy Server on Do Not Use, then run Test Internet Connection.</item>
+    </string-array>
+    <string-array name="guide_xbox_steps">
+        <item>Press the Xbox button and open Settings.</item>
+        <item>Go to General ➔ Network settings ➔ Advanced settings.</item>
+        <item>Open DNS settings and switch it to Manual.</item>
+        <item>Enter the two values below as the primary and secondary IPv4 DNS, then save.</item>
+    </string-array>
+    <string-array name="guide_switch_steps">
+        <item>Go to System Settings ➔ Internet ➔ Internet Settings.</item>
+        <item>Select the Wi-Fi network you are on and choose Change Settings.</item>
+        <item>Set DNS Settings to Manual and enter the two values below.</item>
+    </string-array>
+    <string-array name="guide_windows_steps">
+        <item>Open Settings ➔ Network &amp; Internet.</item>
+        <item>Click the connection you are using (Wi-Fi or Ethernet) and press Edit next to DNS server assignment.</item>
+        <item>Change Automatic to Manual and turn the IPv4 switch on.</item>
+        <item>Enter the two values below as Preferred DNS and Alternate DNS, then press Save.</item>
+    </string-array>
+    <string-array name="guide_apple_steps">
+        <item>iPhone and iPad: Settings ➔ Wi-Fi ➔ the (i) icon next to your network ➔ Configure DNS ➔ Manual, delete the listed addresses, then use Add Server to add the address below.</item>
+        <item>Mac: System Settings ➔ Network ➔ Details ➔ DNS, add the address below with the (+) button, and press OK.</item>
+    </string-array>
+    <string-array name="guide_android_steps">
+        <item>Option 1 — Private DNS: open Settings ➔ Network &amp; internet ➔ Private DNS, choose “Private DNS provider hostname” and enter the hostname shown below.</item>
+        <item>Option 2 — static Wi-Fi: open Settings ➔ Wi-Fi ➔ long-press your network ➔ Modify network ➔ Advanced, set IP settings to Static, and enter the two DNS values shown below as DNS 1 and DNS 2.</item>
+    </string-array>
+    <string-array name="guide_android_nodomain_steps">
+        <item>This server has no domain and TLS certificate yet, so Android\'s Private DNS cannot be used — that field will not accept an IP address.</item>
+        <item>Static Wi-Fi: open Settings ➔ Wi-Fi ➔ long-press your network ➔ Modify network ➔ Advanced, set IP settings to Static, and enter the two DNS values shown below as DNS 1 and DNS 2. Or ask your provider to add a domain.</item>
+    </string-array>
+    <string-array name="guide_router_steps">
+        <item>Open your modem\'s admin page in a browser (usually 192.168.1.1 or 192.168.0.1).</item>
+        <item>Find the WAN, Internet or DHCP section and change DNS from Automatic to Manual/Static.</item>
+        <item>Enter the two values below, save, and restart the modem once. Every device in the house then uses this DNS with no setup of its own.</item>
+    </string-array>
+
+    <string name="subscriber_status_active">Active</string>
+    <string name="subscriber_status_suspended">Suspended</string>
+    <string name="subscriber_status_expired">Expired</string>
+    <string name="subscriber_status_quota">Quota spent</string>
+    <string name="subscriber_error_no_link">No subscription is loaded. Sign in again.</string>
+    <string name="subscriber_error_secret_required">Enter the registration secret to change this device\'s IP.</string>
+    <string name="subscriber_msg_already_registered">That address is already registered.</string>
+    <string name="subscriber_msg_registered">Registered %1$s.</string>
+    <string name="login_subscriber_token_only">That looks like only the token — paste the full https://host/sub/&lt;token&gt; link.</string>
+    <string name="login_subscriber_paste_link">Paste the full subscription link, e.g. https://host/sub/&lt;token&gt;.</string>
+
+    <string name="servers_subscriptions">Subscriptions</string>
+    <string name="servers_saved">Saved servers</string>
+    <string name="servers_add">Add server</string>
+    <string name="servers_none">No servers saved yet.</string>
+    <string name="servers_remove_title">Remove server?</string>
+    <string name="servers_remove_body">This forgets %1$s (%2$s) and its saved credentials on this device. The server itself is not changed.</string>
+    <string name="servers_edit">Edit server</string>
+    <string name="servers_active">Active</string>
+    <string name="servers_admin_path">Admin path: %1$s</string>
+    <string name="servers_credential_account">Account session</string>
+    <string name="servers_credential_api_key">Master API key</string>
+    <string name="servers_open">Open</string>
+    <string name="servers_remove_subscription">Remove subscription</string>
+    <string name="servers_remove_subscription_title">Remove subscription?</string>
+    <string name="servers_remove_subscription_body">%1$s and its registration secret are removed from this device. Your admin servers are not changed.</string>
+    <string name="servers_remove_action">Remove</string>
+    <string name="servers_edit_title">Edit server</string>
+    <string name="servers_friendly_name">Friendly name</string>
+    <string name="servers_host">Host</string>
+    <string name="servers_port">Port</string>
+    <string name="servers_admin_path_label">Admin path</string>
+    <string name="servers_username">Username</string>
+    <string name="servers_password">Password</string>
+    <string name="servers_api_key">API key</string>
+    <string name="servers_save_credentials">Save credentials</string>
+
+    <string name="session_not_signed_in">Not signed in to a server.</string>
+    <string name="session_signout_body">Signing out revokes the session on the server and removes any saved credentials from this device.</string>
+    <string name="session_signed_in_to">Signed in to</string>
+    <string name="session_admin_path">Admin path: %1$s</string>
+    <string name="session_credential">Credential: %1$s</string>
+    <string name="session_creds_saved">Saved credentials: yes — the app re-logs in automatically.</string>
+    <string name="session_creds_not_saved">Saved credentials: no.</string>
+    <string name="session_sign_out">Sign out</string>
+    <string name="session_sign_out_title">Sign out?</string>
+
+    <string name="switch_server_title">Switch server</string>
+    <string name="switch_manage">Manage servers</string>
+    <string name="switch_close">Close</string>
+    <string name="switch_subscription">Subscription · %1$s</string>
+    <string name="switch_open">Open</string>
+    <string name="switch_active_saved">Active · saved credentials</string>
+    <string name="switch_saved">Saved credentials — signs in automatically</string>
+    <string name="switch_no_creds">No saved credentials</string>
+    <string name="switch_done">Done</string>
 </resources>

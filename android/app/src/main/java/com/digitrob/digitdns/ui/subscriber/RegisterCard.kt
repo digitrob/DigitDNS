@@ -21,9 +21,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 
 /**
@@ -44,15 +46,23 @@ internal fun RegisterCard(
 ) {
     SubscriberCard(
         verticalPadding = 10.dp,
-        title = "Registration Secret",
+        title = stringResource(R.string.subscriber_registration_secret),
         icon = Icons.Filled.Key,
         modifier = modifier,
         fillHeight = true,
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // Four dp here, on top of the card's 4 dp column gap, gives the switch
+        // row 8 dp above and below, so it sits evenly between the header and the
+        // secret field instead of crowding the field.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Spacer(Modifier.weight(1f))
             Text(
-                "Save on this device",
+                stringResource(R.string.subscriber_save_secret),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -68,7 +78,11 @@ internal fun RegisterCard(
             onValueChange = { onChange(form.copy(secret = it)) },
             placeholder = {
                 Text(
-                    if (state.secretSaved) "Saved on this device" else "From your provider",
+                    if (state.secretSaved) {
+                        stringResource(R.string.subscriber_secret_saved)
+                    } else {
+                        stringResource(R.string.subscriber_secret_from_provider)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                 )
             },
@@ -82,14 +96,14 @@ internal fun RegisterCard(
         // its bottom instead of leaving the extra height as a void under the fields.
         Spacer(Modifier.weight(1f))
         Text(
-            "Registered Address",
+            stringResource(R.string.subscriber_registered_address),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
             value = form.customIp,
             onValueChange = { onChange(form.copy(customIp = it)) },
-            placeholder = { Text("203.0.113.9 or 10.0.0.0/24", style = MaterialTheme.typography.bodySmall) },
+            placeholder = { Text(stringResource(R.string.subscriber_address_placeholder), style = MaterialTheme.typography.bodySmall) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             textStyle = MaterialTheme.typography.bodySmall,
@@ -132,7 +146,7 @@ private fun RegisterActions(
                 CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(6.dp))
             }
-            Text("Register This Device", style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.subscriber_register_device), style = MaterialTheme.typography.labelMedium)
         }
         Button(
             onClick = onRegisterCustom,
@@ -140,7 +154,7 @@ private fun RegisterActions(
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
             modifier = Modifier.weight(1f),
         ) {
-            Text("Register Address", style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.subscriber_register_address), style = MaterialTheme.typography.labelMedium)
         }
     }
 }

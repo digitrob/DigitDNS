@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.ui.subscriber
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -62,6 +64,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.SubscriberStatusDto
 import com.digitrob.digitdns.ui.auth.TrustPrompt
 import com.digitrob.digitdns.ui.components.PanelCard
@@ -74,10 +77,10 @@ import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
 
 /** The subscriber bottom-bar destinations. */
-private enum class SubscriberTab(val label: String) {
-    STATUS("Status"),
-    CONNECT("Connect"),
-    SETTINGS("Settings"),
+private enum class SubscriberTab(@StringRes val labelRes: Int) {
+    STATUS(R.string.subscriber_tab_status),
+    CONNECT(R.string.subscriber_tab_connect),
+    SETTINGS(R.string.subscriber_tab_settings),
 }
 
 /** The register card's editable fields, grouped so the composable keeps a short signature. */
@@ -109,7 +112,7 @@ fun SubscriberScreen(
     val onCopy: (String) -> Unit = { value ->
         val clipboard = context.getSystemService(ClipboardManager::class.java)
         clipboard?.setPrimaryClip(ClipData.newPlainText("DigitDNS", value))
-        scope.launch { snackbar.showPanelToast("Copied") }
+        scope.launch { snackbar.showPanelToast(context.getString(R.string.subscriber_copied)) }
     }
     // The registration form lives here, not inside the Status tab, so switching to
     // Connect and back does not throw away a half-typed secret. It is shown on
@@ -200,10 +203,10 @@ private fun SubscriberBottomBar(tab: SubscriberTab, onSelect: (SubscriberTab) ->
                             SubscriberTab.CONNECT -> Icons.Filled.WifiTethering
                             SubscriberTab.SETTINGS -> Icons.Filled.Settings
                         },
-                        contentDescription = entry.label,
+                        contentDescription = stringResource(entry.labelRes),
                     )
                 },
-                label = { Text(entry.label) },
+                label = { Text(stringResource(entry.labelRes)) },
             )
         }
     }
@@ -244,7 +247,7 @@ private fun SubscriberHeader(state: SubscriberUiState, onRefresh: () -> Unit) {
     // corner answers only "can the app reach the server", like the server screen.
     val online = state.error == null
     val color = if (online) DigitDnsTheme.colors.success else DigitDnsTheme.colors.textMuted
-    val label = if (online) "Online" else "Offline"
+    val label = stringResource(if (online) R.string.subscriber_online else R.string.subscriber_offline)
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -252,7 +255,7 @@ private fun SubscriberHeader(state: SubscriberUiState, onRefresh: () -> Unit) {
         Icon(Icons.Filled.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(8.dp))
         Text(
-            text = "DigitDNS",
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             color = MaterialTheme.colorScheme.primary,
         )
@@ -263,7 +266,7 @@ private fun SubscriberHeader(state: SubscriberUiState, onRefresh: () -> Unit) {
             if (state.refreshing || state.loading) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
             } else {
-                Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.subscriber_refresh))
             }
         }
         Spacer(Modifier.width(4.dp))
@@ -320,17 +323,17 @@ private fun StatusTab(
 @Composable
 private fun IdentityCard(status: SubscriberStatusDto, onCopy: (String) -> Unit) {
     val client = status.client
-    SubscriberCard(verticalPadding = 8.dp, title = "Account", icon = Icons.Filled.Person) {
+    SubscriberCard(verticalPadding = 8.dp, title = stringResource(R.string.subscriber_account), icon = Icons.Filled.Person) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = client.name.ifBlank { "Subscriber" },
+                text = client.name.ifBlank { stringResource(R.string.subscriber_fallback_name) },
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             StatusBadge(
-                text = SubscriberFormat.statusLabel(status.status),
+                text = stringResource(SubscriberFormat.statusLabelRes(status.status)),
                 color = statusColor(status.status),
             )
             // The Device IP row ends with a 28 dp copy button; the same slot here
@@ -345,10 +348,10 @@ private fun IdentityCard(status: SubscriberStatusDto, onCopy: (String) -> Unit) 
 /** The address this device reaches the internet from, with a copy action. */
 @Composable
 private fun DeviceIpCard(status: SubscriberStatusDto, onCopy: (String) -> Unit) {
-    SubscriberCard(verticalPadding = 8.dp, title = "Device IP", icon = Icons.Filled.Public) {
+    SubscriberCard(verticalPadding = 8.dp, title = stringResource(R.string.subscriber_device_ip), icon = Icons.Filled.Public) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = status.detectedIp.ifBlank { "Unknown" },
+                text = status.detectedIp.ifBlank { stringResource(R.string.subscriber_unknown) },
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontFamily = PanelMono,
                     fontWeight = FontWeight.Bold,
@@ -359,7 +362,10 @@ private fun DeviceIpCard(status: SubscriberStatusDto, onCopy: (String) -> Unit) 
                 overflow = TextOverflow.Ellipsis,
             )
             StatusBadge(
-                text = if (status.detectedIpRegistered) "Registered" else "Not registered",
+                text = stringResource(
+                    if (status.detectedIpRegistered) R.string.subscriber_registered
+                    else R.string.subscriber_not_registered,
+                ),
                 color = if (status.detectedIpRegistered) DigitDnsTheme.colors.success else DigitDnsTheme.colors.warning,
             )
             IconButton(
@@ -369,7 +375,7 @@ private fun DeviceIpCard(status: SubscriberStatusDto, onCopy: (String) -> Unit) 
             ) {
                 Icon(
                     Icons.Filled.ContentCopy,
-                    contentDescription = "Copy device IP",
+                    contentDescription = stringResource(R.string.subscriber_copy_device_ip),
                     modifier = Modifier.size(14.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -402,7 +408,7 @@ private fun CopyValueRow(label: String, value: String, onCopy: (String) -> Unit)
         ) {
             Icon(
                 Icons.Filled.ContentCopy,
-                contentDescription = "Copy $label",
+                contentDescription = stringResource(R.string.subscriber_copy_value, label),
                 modifier = Modifier.size(14.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -419,7 +425,7 @@ private fun UsageCard(status: SubscriberStatusDto, now: Long) {
         fraction >= 0.8f -> DigitDnsTheme.colors.warning
         else -> MaterialTheme.colorScheme.primary
     }
-    SubscriberCard(verticalPadding = 8.dp, title = "Traffic", icon = Icons.Filled.DataUsage) {
+    SubscriberCard(verticalPadding = 8.dp, title = stringResource(R.string.subscriber_traffic), icon = Icons.Filled.DataUsage) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = SubscriberFormat.traffic(client.trafficUsedBytes, client.trafficLimitGb),
@@ -456,7 +462,7 @@ private fun UsageCard(status: SubscriberStatusDto, now: Long) {
 private fun UsageFooter(status: SubscriberStatusDto, now: Long) {
     val countdown = SubscriberFormat.countdown(status.client.expiresAt, now)
     val left = if (countdown.lifetime) {
-        "Lifetime"
+        stringResource(R.string.subscriber_lifetime)
     } else {
         "${countdown.days}d ${countdown.hours}h ${countdown.minutes}m left"
     }
@@ -470,7 +476,7 @@ private fun UsageFooter(status: SubscriberStatusDto, now: Long) {
         Spacer(Modifier.weight(1f))
         SubscriberFormat.reset(status.nextTrafficReset)?.let { reset ->
             Text(
-                text = "Resets $reset",
+                text = stringResource(R.string.subscriber_resets, reset),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -484,7 +490,11 @@ private fun UsageFooter(status: SubscriberStatusDto, now: Long) {
             modifier = Modifier.weight(1f),
         )
         Text(
-            text = "Policies · ${if (policies.isEmpty()) "All" else policies.joinToString(", ")}",
+            text = if (policies.isEmpty()) {
+                stringResource(R.string.subscriber_policies_all)
+            } else {
+                stringResource(R.string.subscriber_policies_list, policies.joinToString(", "))
+            },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -503,15 +513,21 @@ private fun SubscriberTrustDialog(
     PanelDialog(
         onDismissRequest = onDismiss,
         solid = true,
-        title = { Text(if (prompt.changedFrom != null) "Certificate changed" else "Trust this server?") },
+        title = {
+            Text(
+                stringResource(
+                    if (prompt.changedFrom != null) R.string.subscriber_cert_changed
+                    else R.string.subscriber_trust_title,
+                ),
+            )
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    if (prompt.changedFrom != null) {
-                        "The certificate has changed since you last trusted it. Confirm the fingerprint before continuing."
-                    } else {
-                        "This subscription's server uses a certificate your device does not yet trust."
-                    },
+                    stringResource(
+                        if (prompt.changedFrom != null) R.string.subscriber_cert_changed_body
+                        else R.string.subscriber_trust_body,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
@@ -521,8 +537,8 @@ private fun SubscriberTrustDialog(
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onTrust) { Text("Trust and continue") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = onTrust) { Text(stringResource(R.string.subscriber_trust_continue)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 

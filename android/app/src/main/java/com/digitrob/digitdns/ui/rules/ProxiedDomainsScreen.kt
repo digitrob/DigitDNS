@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.ui.rules
 
+import com.digitrob.digitdns.R
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -117,7 +119,7 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
                 TextButton(onClick = viewModel::load, modifier = Modifier.padding(end = 4.dp)) {
                     Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Reload")
+                    Text(stringResource(R.string.domains_reload))
                 }
             }
 
@@ -149,8 +151,7 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
                     if (state.rows.isEmpty() && !state.isLoading) {
                         item {
                             Text(
-                                text = state.filter?.let { "No ${it.label.lowercase()} domains yet." }
-                                    ?: "No domains yet.",
+                                text = emptyListText(state.filter),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 24.dp),
@@ -266,7 +267,7 @@ private fun ResolutionDialog(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = "Override Resolving",
+                    text = stringResource(R.string.domains_override_title),
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
@@ -277,9 +278,7 @@ private fun ResolutionDialog(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "Overrides the global defaults for this proxied domain. It applies " +
-                        "when the name is not being spoofed (paused) or for query types other " +
-                        "than A/AAAA.",
+                    text = stringResource(R.string.domains_override_body),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -288,7 +287,7 @@ private fun ResolutionDialog(
                     // The picker can still show the live pool, but a save built from
                     // an empty snapshot would overwrite the operator's profiles.
                     Text(
-                        text = error ?: "Resolution settings are still loading",
+                        text = error ?: stringResource(R.string.domains_resolution_loading),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -298,16 +297,16 @@ private fun ResolutionDialog(
                     horizontalArrangement = Arrangement.End,
                 ) {
                     if (settings == null) {
-                        TextButton(onClick = onRetry) { Text("Retry") }
+                        TextButton(onClick = onRetry) { Text(stringResource(R.string.action_retry)) }
                     }
-                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
                     TextButton(
                         enabled = settings != null,
                         onClick = {
                             val profile = draft.toProfile()
                             onSave(if (profile == ResolutionProfileDto()) null else profile)
                         },
-                    ) { Text("Save") }
+                    ) { Text(stringResource(R.string.action_save)) }
                 }
             }
         }
@@ -344,9 +343,9 @@ private fun ResolutionFields(
         if (draft.upstream.isNotEmpty() && draft.upstream !in it) it + draft.upstream else it
     }
     DialogPicker(
-        label = "Upstream",
+        label = stringResource(R.string.domains_upstream),
         value = draft.upstream,
-        choices = listOf("" to "Inherit Global") + choices.map { it to it },
+        choices = listOf("" to stringResource(R.string.domains_inherit_global)) + choices.map { it to it },
         onSelect = { picked ->
             draft.upstream = picked
             if (picked.isNotEmpty()) {
@@ -359,27 +358,27 @@ private fun ResolutionFields(
         resolverExcludedByTransport(draft.upstream, effectiveTransport, encrypted)
     ) {
         Text(
-            text = "The selected upstream is excluded by this transport and is ignored.",
+            text = stringResource(R.string.domains_transport_excluded),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.tertiary,
         )
     }
     DialogPicker(
-        label = "Strategy",
+        label = stringResource(R.string.domains_strategy),
         value = draft.strategy,
         choices = listOf(
-            "" to "Inherit Global",
-            "fastest" to "Fastest Wins",
-            "sequential" to "In Order",
-            "hedged" to "Hedged",
-            "best" to "Best Known",
+            "" to stringResource(R.string.domains_inherit_global),
+            "fastest" to stringResource(R.string.strategy_fastest),
+            "sequential" to stringResource(R.string.strategy_sequential),
+            "hedged" to stringResource(R.string.strategy_hedged),
+            "best" to stringResource(R.string.strategy_best),
         ),
         onSelect = { draft.strategy = it },
     )
     DialogPicker(
-        label = "Transports",
+        label = stringResource(R.string.domains_transports),
         value = draft.transport,
-        choices = listOf("inherit" to "Inherit Global") + transportChoices(),
+        choices = listOf("inherit" to stringResource(R.string.domains_inherit_global)) + transportChoices(),
         unavailable = buildSet {
             if (!hasEncrypted) add("encrypted")
             if (choices.isNotEmpty() && !hasRegular) add("regular")
@@ -393,7 +392,7 @@ private fun ResolutionFields(
         },
     )
     Text(
-        text = "Fallback: Pool Default",
+        text = stringResource(R.string.domains_fallback),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -451,9 +450,9 @@ private fun PinnedRecordsCard(
     var ip by remember { mutableStateOf("") }
     PanelCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Pinned records", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.domains_pinned_records), style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "Map a hostname straight to an IP, bypassing upstreams.",
+                text = stringResource(R.string.domains_pinned_body),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -461,14 +460,14 @@ private fun PinnedRecordsCard(
                 OutlinedTextField(
                     value = domain,
                     onValueChange = { domain = it },
-                    label = { Text("Hostname") },
+                    label = { Text(stringResource(R.string.domains_hostname)) },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                 )
                 OutlinedTextField(
                     value = ip,
                     onValueChange = { ip = it },
-                    label = { Text("IP") },
+                    label = { Text(stringResource(R.string.domains_ip)) },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                 )
@@ -480,13 +479,13 @@ private fun PinnedRecordsCard(
                     ip = ""
                 },
                 enabled = domain.isNotBlank() && ip.isNotBlank(),
-            ) { Text("Pin") }
+            ) { Text(stringResource(R.string.domains_pin)) }
             records.forEach { (name, address) ->
                 SwipeToDeleteRow(
                     onDelete = { onRemove(name) },
-                    confirmTitle = "Remove $name?",
-                    confirmText = "The pinned record is removed from the panel.",
-                    confirmLabel = "Remove",
+                    confirmTitle = stringResource(R.string.domains_remove_named, name),
+                    confirmText = stringResource(R.string.domains_pinned_removed),
+                    confirmLabel = stringResource(R.string.action_remove),
                 ) {
                     Text(
                         text = "$name → $address",
@@ -509,8 +508,8 @@ private fun AddRow(onAdd: (String) -> Unit) {
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },
-            label = { Text("Add domain") },
-            placeholder = { Text("e.g. api.target.com") },
+            label = { Text(stringResource(R.string.domains_add_hint)) },
+            placeholder = { Text(stringResource(R.string.domains_add_placeholder)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -525,11 +524,11 @@ private fun AddRow(onAdd: (String) -> Unit) {
                     text = ""
                 },
                 enabled = text.isNotBlank(),
-            ) { Text("Add") }
+            ) { Text(stringResource(R.string.action_add)) }
             OutlinedButton(onClick = { bulkOpen = true }, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Bulk import")
+                Text(stringResource(R.string.domains_bulk_import))
             }
         }
     }
@@ -562,20 +561,18 @@ private fun BulkImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) 
     PanelDialog(
         onDismissRequest = onDismiss,
         solid = true,
-        title = { Text("Bulk import") },
+        title = { Text(stringResource(R.string.domains_bulk_import)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "One name per line, or separated by commas, semicolons or " +
-                        "spaces. Lines starting with # are ignored. A leading *. covers " +
-                        "every subdomain.",
+                    text = stringResource(R.string.domains_bulk_body),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
                     value = body,
                     onValueChange = { body = it },
-                    placeholder = { Text("example.com\n*.sub.example.com") },
+                    placeholder = { Text(stringResource(R.string.domains_bulk_placeholder)) },
                     modifier = Modifier.fillMaxWidth().height(160.dp),
                 )
                 OutlinedButton(
@@ -583,7 +580,7 @@ private fun BulkImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) 
                 ) {
                     Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Choose file")
+                    Text(stringResource(R.string.domains_choose_file))
                 }
             }
         },
@@ -591,9 +588,9 @@ private fun BulkImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) 
             TextButton(
                 onClick = { onImport(body) },
                 enabled = body.isNotBlank(),
-            ) { Text("Import") }
+            ) { Text(stringResource(R.string.domains_import)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 
@@ -612,19 +609,35 @@ private fun SearchSortRow(
             OutlinedTextField(
                 value = state.search,
                 onValueChange = onSearch,
-                label = { Text("Search") },
+                label = { Text(stringResource(R.string.domains_search)) },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
             )
             SortDropdown(state.sort, onSort)
         }
         Text(
-            text = state.countLabel,
+            text = countText(state),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
+
+@Composable
+private fun emptyListText(filter: DomainFilter?): String =
+    filter?.let {
+        stringResource(R.string.domains_empty_filtered, stringResource(it.labelRes).lowercase())
+    } ?: stringResource(R.string.domains_empty)
+
+@Composable
+private fun countText(state: RulesUiState): String =
+    state.filter?.let {
+        stringResource(
+            R.string.domains_count_filtered,
+            state.rows.size,
+            stringResource(it.labelRes).lowercase(),
+        )
+    } ?: stringResource(R.string.domains_count, state.rows.size)
 
 /** The sort selector as a dropdown button, placed to the right of the search field. */
 @Composable
@@ -632,13 +645,13 @@ private fun SortDropdown(selected: DomainSort, onSelect: (DomainSort) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         OutlinedButton(onClick = { expanded = true }) {
-            Text(selected.label, maxLines = 1)
-            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Sort")
+            Text(stringResource(selected.labelRes), maxLines = 1)
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.domains_sort))
         }
         DigitDnsDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DomainSort.entries.forEach { sort ->
                 DropdownMenuItem(
-                    text = { Text(sort.label) },
+                    text = { Text(stringResource(sort.labelRes)) },
                     trailingIcon = {
                         if (sort == selected) {
                             Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -668,7 +681,7 @@ private fun FilterChips(selected: DomainFilter?, onSelect: (DomainFilter) -> Uni
             FilterChip(
                 selected = filter == selected,
                 onClick = { onSelect(filter) },
-                label = { Text(filter.label) },
+                label = { Text(stringResource(filter.labelRes)) },
             )
         }
     }
@@ -690,9 +703,9 @@ private fun DomainRowItem(
 
     SwipeToDeleteRow(
         onDelete = onRemove,
-        confirmTitle = "Remove ${row.domain}?",
-        confirmText = "The domain is removed from the routing lists.",
-        confirmLabel = "Remove",
+        confirmTitle = stringResource(R.string.domains_remove_title, row.domain),
+        confirmText = stringResource(R.string.domains_remove_body),
+        confirmLabel = stringResource(R.string.action_remove),
     ) {
         var rowSize by remember { mutableStateOf(IntSize.Zero) }
         var rowY by remember { mutableStateOf(0f) }
@@ -810,7 +823,7 @@ private fun DomainGearButton(
     ) {
         Icon(
             imageVector = Icons.Filled.Settings,
-            contentDescription = "Override Resolving",
+            contentDescription = stringResource(R.string.domains_status_pill),
             tint = if (highlighted && enabled) MaterialTheme.colorScheme.primary
             else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(24.dp),
@@ -834,12 +847,13 @@ private fun DomainStatusPill(status: DomainStatus, onClick: () -> Unit) {
     val style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium)
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    val pillWidth = remember(style, density) {
-        val widest = DomainStatus.entries.maxOf { measurer.measure(it.label, style).size.width }
+    val labels = DomainStatus.entries.map { stringResource(it.labelRes) }
+    val pillWidth = remember(style, density, labels) {
+        val widest = labels.maxOf { measurer.measure(it, style).size.width }
         with(density) { widest.toDp() } + 22.dp
     }
     StatusBadge(
-        text = status.label,
+        text = stringResource(status.labelRes),
         color = color,
         modifier = Modifier.width(pillWidth).clickable(onClick = onClick),
     )

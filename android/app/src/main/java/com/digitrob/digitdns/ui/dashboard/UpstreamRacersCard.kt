@@ -39,11 +39,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
@@ -116,7 +118,7 @@ internal fun UpstreamRacersCard(
 
             if (upstreams.isEmpty()) {
                 Text(
-                    text = "No upstreams reported yet.",
+                    text = stringResource(R.string.upstream_none),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -226,7 +228,7 @@ private fun ResolutionDefaults(
     }.toSet()
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         ResolutionPicker(
-            label = "Transports",
+            label = stringResource(R.string.domains_transports),
             value = base.transport.ifEmpty { "any" },
             choices = transportChoices(),
             unavailable = buildSet {
@@ -236,35 +238,34 @@ private fun ResolutionDefaults(
             onSelect = { onChange(base.copy(transport = it)) },
         )
         ResolutionPicker(
-            label = "Default upstream",
+            label = stringResource(R.string.upstream_default),
             value = base.defaultUpstream,
             // A pin is a preference, not a policy override: the pool ignores one
             // the transport excludes, so the UI must still let it be chosen.
-            choices = listOf("" to "Pool Default") + configured.map { it to it },
+            choices = listOf("" to stringResource(R.string.upstream_pool_default)) + configured.map { it to it },
             onSelect = { onChange(base.copy(defaultUpstream = it)) },
         )
         if (base.defaultUpstream.isNotEmpty() && base.defaultUpstream in excluded) {
             Text(
-                text = "Default upstream ${base.defaultUpstream} is excluded by the active " +
-                    "transport and is ignored.",
+                text = stringResource(R.string.upstream_excluded, base.defaultUpstream),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.tertiary,
             )
         }
         ResolutionPicker(
-            label = "Strategy",
+            label = stringResource(R.string.domains_strategy),
             value = base.defaultStrategy,
             choices = listOf(
-                "" to "Pool default",
-                "fastest" to "Fastest Wins",
-                "sequential" to "In Order",
-                "hedged" to "Hedged",
-                "best" to "Best Known",
+                "" to stringResource(R.string.upstream_pool_default_lower),
+                "fastest" to stringResource(R.string.strategy_fastest),
+                "sequential" to stringResource(R.string.strategy_sequential),
+                "hedged" to stringResource(R.string.strategy_hedged),
+                "best" to stringResource(R.string.strategy_best),
             ),
             onSelect = { onChange(base.copy(defaultStrategy = it)) },
         )
         Text(
-            text = "Fallback: Pool Default",
+            text = stringResource(R.string.domains_fallback),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -286,10 +287,11 @@ internal fun resolverExcludedByTransport(
 }
 
 /** The three transport choices. Availability is expressed by disabling, not by text. */
+@Composable
 internal fun transportChoices(): List<Pair<String, String>> = listOf(
-    "any" to "Any Transport",
-    "encrypted" to "Encrypted Only (DoT · DoH · DoQ)",
-    "regular" to "Regular DNS (UDP · TCP)",
+    "any" to stringResource(R.string.transport_any),
+    "encrypted" to stringResource(R.string.transport_encrypted),
+    "regular" to stringResource(R.string.transport_regular),
 )
 
 /**
@@ -369,7 +371,7 @@ private fun RacerHeader(isBenchmarking: Boolean, onBenchmark: () -> Unit) {
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(6.dp))
-        Label("Upstream Resolvers", modifier = Modifier.weight(1f))
+        Label(stringResource(R.string.upstream_resolvers), modifier = Modifier.weight(1f))
         // Fixed-height slot so swapping the Benchmark button for its spinner does not
         // change the header row height and make the card jump while a run is in flight.
         Box(
@@ -390,7 +392,7 @@ private fun RacerHeader(isBenchmarking: Boolean, onBenchmark: () -> Unit) {
                         modifier = Modifier.size(16.dp),
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text("Benchmark")
+                    Text(stringResource(R.string.upstream_benchmark))
                 }
             }
         }
@@ -418,7 +420,7 @@ private fun UpstreamAddRow(
         IconButton(onClick = onSubmit, enabled = !busy && value.isNotBlank()) {
             Icon(
                 Icons.Filled.Add,
-                contentDescription = "Add upstream",
+                contentDescription = stringResource(R.string.upstream_add),
                 tint = MaterialTheme.colorScheme.primary,
             )
         }
@@ -435,9 +437,9 @@ private fun UpstreamRow(
     val colors = DigitDnsTheme.colors
     SwipeToDeleteRow(
         onDelete = onRemove,
-        confirmTitle = "Remove upstream?",
+        confirmTitle = stringResource(R.string.upstream_remove_title),
         confirmText = "${stat.address} will be removed from the resolver pool.",
-        confirmLabel = "Remove",
+        confirmLabel = stringResource(R.string.action_remove),
         // Strict mode, and almost the full row: the card sits inside the scrolling
         // dashboard grid, where Material's velocity-based settling could turn a
         // diagonal brush during a scroll into a delete prompt. Only a deliberate,
