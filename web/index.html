@@ -769,7 +769,7 @@
 
       <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
         <button type="button" id="bulk-import-cancel-btn-bottom"
-          class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg text-xs transition">Cancel</button>
+          class="panel-btn panel-btn-neutral">Cancel</button>
         <button type="button" id="bulk-import-apply-btn"
           class="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Import Domains</button>
       </div>
@@ -1643,16 +1643,16 @@
               Choose who may reach the REST API. <strong class="text-amber-300">Public (0.0.0.0)</strong> requires an active custom domain and HTTPS to protect credentials. Add one or more <strong class="text-amber-300">addresses or networks</strong> below to admit several at once (e.g. a tailnet <code class="text-cyan-400">100.64.0.0/10</code> plus a home IP) — local calls are always allowed.
             </p>
             <div class="flex flex-wrap gap-2" role="radiogroup" aria-label="API exposure scope">
-              <button type="button" class="api-bind-opt px-3 py-1.5 rounded-lg text-xs font-bold font-heading transition" data-bind="127.0.0.1">Localhost only</button>
-              <button type="button" class="api-bind-opt px-3 py-1.5 rounded-lg text-xs font-bold font-heading transition" data-bind="0.0.0.0">Public (0.0.0.0)</button>
-              <button type="button" class="api-bind-opt px-3 py-1.5 rounded-lg text-xs font-bold font-heading transition" data-bind="__custom__">Custom addresses / CIDRs</button>
+              <button type="button" class="api-bind-opt" data-bind="127.0.0.1">Localhost only</button>
+              <button type="button" class="api-bind-opt" data-bind="0.0.0.0">Public (0.0.0.0)</button>
+              <button type="button" class="api-bind-opt" data-bind="__custom__">Custom addresses / CIDRs</button>
             </div>
             <div id="api-bind-custom-wrap" class="flex flex-col gap-2 hidden">
               <textarea id="api-bind-list-input" aria-label="REST API allowed addresses or CIDR blocks" rows="3" class="w-full min-w-0 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-slate-300 resize-y" placeholder="One per line, e.g.&#10;100.64.0.0/10&#10;203.0.113.5" spellcheck="false" autocomplete="off"></textarea>
               <div class="flex flex-col sm:flex-row gap-2">
-                <input id="api-bind-custom-input" aria-label="Add one API bind address or CIDR" class="flex-1 min-w-0 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-slate-300" placeholder="Add one: e.g. 100.64.0.0/10 or 203.0.113.5" spellcheck="false" autocomplete="off">
-                <button id="api-bind-add" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs font-heading transition whitespace-nowrap">Add</button>
-                <button id="api-bind-custom-save" class="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs font-heading transition whitespace-nowrap">Apply list</button>
+                <input id="api-bind-custom-input" aria-label="Add one API bind address or CIDR" class="panel-field flex-1 min-w-0 font-mono" placeholder="Add one: e.g. 100.64.0.0/10 or 203.0.113.5" spellcheck="false" autocomplete="off">
+                <button id="api-bind-add" class="panel-btn panel-btn-neutral whitespace-nowrap">Add</button>
+                <button id="api-bind-custom-save" class="panel-btn panel-btn-primary whitespace-nowrap">Apply list</button>
               </div>
             </div>
           </div>
@@ -1668,7 +1668,7 @@
                 <p class="text-xs text-slate-400">Full administrative access key for headers (<code class="text-cyan-400">X-API-Key: digitdns_live_...</code>)</p>
               </div>
             </div>
-            <button id="regenerate-api-key-btn" class="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-bold font-heading flex items-center gap-1.5 transition">
+            <button id="regenerate-api-key-btn" class="panel-btn panel-btn-sm panel-btn-danger">
               <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i>
               <span>Regenerate Key</span>
             </button>
@@ -1681,7 +1681,7 @@
                 <i data-feather="eye" class="w-4 h-4"></i>
               </button>
             </div>
-            <button id="copy-api-key-btn" class="shrink-0 px-4 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs font-heading flex items-center justify-center gap-2 transition whitespace-nowrap">
+            <button id="copy-api-key-btn" class="panel-btn panel-btn-primary shrink-0 whitespace-nowrap">
               <i data-feather="copy" class="w-4 h-4"></i>
               <span>Copy API Key</span>
             </button>
@@ -1778,7 +1778,7 @@ async function onBuySubscription(ctx, username) {
                 </div>
               </div>
               <button type="button" id="geoip-update-btn"
-                class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed">
+                class="panel-btn panel-btn-ghost shrink-0">
                 <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i> <span>Update database</span>
               </button>
             </div>
@@ -1802,7 +1802,7 @@ async function onBuySubscription(ctx, username) {
               </div>
               <div class="server-update-actions shrink-0">
                 <button type="button" id="server-update-check-btn"
-                  class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  class="panel-btn panel-btn-ghost">
                   <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i> <span>Check for updates</span>
                 </button>
                 <button type="button" id="server-update-apply-btn"
@@ -1837,7 +1837,7 @@ async function onBuySubscription(ctx, username) {
               <form id="twofa-enable-form" class="flex-1 min-w-0">
                 <input type="text" name="username" autocomplete="username" hidden aria-hidden="true" tabindex="-1">
                 <input type="password" id="twofa-enable-password" aria-label="Current password, to enable two-factor" placeholder="Current password"
-                  class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-sky-400">
+                  class="panel-field w-full font-mono focus:border-sky-400">
               </form>
               <button id="twofa-begin-btn" type="button"
                 class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
@@ -1859,9 +1859,9 @@ async function onBuySubscription(ctx, username) {
                 <form id="twofa-confirm-form" class="contents">
                   <input type="text" name="username" autocomplete="username" hidden aria-hidden="true" tabindex="-1">
                   <input type="password" id="twofa-confirm-password" aria-label="Current password, to confirm enrollment" placeholder="Current password" autocomplete="current-password"
-                    class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-sky-400">
+                    class="panel-field flex-1 min-w-0 font-mono focus:border-sky-400">
                   <input type="text" id="twofa-enable-code" aria-label="Six-digit code, to enable two-factor" placeholder="6-digit code" inputmode="numeric" maxlength="6"
-                    class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-sky-400">
+                    class="panel-field flex-1 min-w-0 font-mono focus:border-sky-400">
                 </form>
                 <button id="twofa-confirm-btn" type="button"
                   class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
@@ -1876,9 +1876,9 @@ async function onBuySubscription(ctx, username) {
               <form id="twofa-disable-form" class="contents">
                 <input type="text" name="username" autocomplete="username" hidden aria-hidden="true" tabindex="-1">
                 <input type="password" id="twofa-disable-password" aria-label="Current password, to disable two-factor" placeholder="Current password"
-                  class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-red-400">
+                  class="panel-field flex-1 min-w-0 font-mono focus:border-red-400">
                 <input type="text" id="twofa-disable-code" aria-label="Six-digit code, to disable two-factor" placeholder="6-digit code" inputmode="numeric" maxlength="6"
-                  class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-red-400">
+                  class="panel-field flex-1 min-w-0 font-mono focus:border-red-400">
               </form>
               <button id="twofa-disable-btn" type="button"
                 class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
@@ -1938,11 +1938,11 @@ async function onBuySubscription(ctx, username) {
               Portal enabled
             </label>
             <input type="text" id="sub-domain-input" aria-label="Subscription domain" placeholder="Custom Subscription Domain (empty = panel domain)"
-              class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-emerald-400">
+              class="panel-field font-mono focus:border-emerald-400">
             <input type="number" id="sub-port-input" aria-label="Subscription advertised port" min="0" max="65535" placeholder="Advertised port"
-              class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-emerald-400">
+              class="panel-field font-mono focus:border-emerald-400">
             <input type="text" id="sub-title-input" aria-label="Subscription portal title" placeholder="Portal title (default DigitDNS)"
-              class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-emerald-400">
+              class="panel-field font-mono focus:border-emerald-400">
           </div>
 
           <!-- Custom portal CSS (v2.4): inline text, a server-local file, or an
@@ -1951,17 +1951,17 @@ async function onBuySubscription(ctx, username) {
           <div class="space-y-2 border-t border-slate-800 pt-4">
             <label for="sub-css-source" class="block text-[11px] font-semibold text-slate-400">Portal custom CSS</label>
             <select id="sub-css-source" aria-label="Custom CSS source"
-              class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-400">
+              class="panel-field w-full focus:border-emerald-400">
               <option value="inline">Inline CSS (paste below)</option>
               <option value="local">Local file on the server</option>
               <option value="url">Online URL</option>
             </select>
             <textarea id="sub-css-inline" rows="4" aria-label="Inline portal CSS" placeholder=".portal { --accent: #00f0ff; }"
-              class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-emerald-400"></textarea>
+              class="panel-field w-full font-mono focus:border-emerald-400"></textarea>
             <input type="text" id="sub-css-path" aria-label="Local CSS file path" placeholder="/root/css/sub.css"
-              class="hidden w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-emerald-400">
+              class="panel-field hidden w-full font-mono focus:border-emerald-400">
             <input type="text" id="sub-css-url" aria-label="Online CSS URL" placeholder="https://example.com/portal/sub.css"
-              class="hidden w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-emerald-400">
+              class="panel-field hidden w-full font-mono focus:border-emerald-400">
             <p class="text-[10px] text-slate-500">A local file is read from the server's disk and inlined; a URL is loaded by the subscriber's browser. Inline and local CSS are sanitised (no <code>@import</code> or external <code>url()</code>).</p>
           </div>
 
@@ -2062,7 +2062,7 @@ async function onBuySubscription(ctx, username) {
           <p class="text-[11px] font-bold text-cyan-300 mb-1.5">DNS TRANSPORTS (DoT :853 / DoH :8443)</p>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <input type="text" id="dot-domain-input" aria-label="Custom DoH DoT domain" placeholder="Custom DoH, DoT domain (empty = panel domain)"
-              class="sm:col-span-2 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
+              class="panel-field sm:col-span-2 font-mono focus:border-cyan-400">
             <button id="issue-dot-ssl-btn" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition disabled:opacity-50 disabled:cursor-not-allowed">
               Let's Encrypt
             </button>
@@ -2088,9 +2088,9 @@ async function onBuySubscription(ctx, username) {
           <p class="text-[11px] font-bold text-slate-300 mt-4 mb-1.5">ADMIN PANEL (the dashboard itself)</p>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <input type="text" id="ssl-domain-input" aria-label="Panel domain name" placeholder="Panel domain — the dashboard's own name"
-              class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
+              class="panel-field font-mono focus:border-cyan-400">
             <input type="email" id="ssl-email-input" aria-label="Certificate contact email" placeholder="Admin Email (optional)"
-              class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
+              class="panel-field font-mono focus:border-cyan-400">
             <button id="issue-ssl-btn" class="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 text-slate-950 font-bold rounded-lg text-xs font-heading transition disabled:opacity-50 disabled:cursor-not-allowed">
               Issue SSL Certificate
             </button>
@@ -2121,7 +2121,7 @@ async function onBuySubscription(ctx, username) {
 
             <div class="flex gap-2">
               <input type="text" id="new-blocked-input" aria-label="New blocked domain" placeholder="e.g. *.telemetry.com or ads.tracker.net"
-                class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-red-400">
+                class="panel-field flex-1 min-w-0 font-mono focus:border-red-400">
               <button id="add-blocked-btn" class="shrink-0 px-4 py-2 bg-red-600 hover:bg-red-700 text-onfill font-bold rounded-lg text-xs transition font-heading">Block</button>
             </div>
 
@@ -2144,7 +2144,7 @@ async function onBuySubscription(ctx, username) {
 
             <div class="flex gap-2">
               <input type="text" id="new-token-input" aria-label="New DoH access token" placeholder="Enter secure token (e.g. mysecretkey)"
-                class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-purple-400">
+                class="panel-field flex-1 min-w-0 font-mono focus:border-purple-400">
               <button id="add-token-btn" class="shrink-0 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-onfill font-bold rounded-lg text-xs transition font-heading">Add Token</button>
             </div>
 
@@ -2162,10 +2162,10 @@ async function onBuySubscription(ctx, username) {
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input type="text" id="custom-record-domain" aria-label="Static record hostname" placeholder="hostname.com"
-                class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-emerald-400">
+                class="panel-field font-mono focus:border-emerald-400">
               <div class="flex gap-2">
                 <input type="text" id="custom-record-ip" aria-label="Static record IP address" placeholder="1.2.3.4"
-                  class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-emerald-400">
+                  class="panel-field flex-1 min-w-0 font-mono focus:border-emerald-400">
                 <button id="add-custom-record-btn" class="shrink-0 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Save</button>
               </div>
             </div>
@@ -2202,11 +2202,11 @@ async function onBuySubscription(ctx, username) {
                 <div>
                   <label for="custom-group-name" class="block text-[11px] font-semibold text-slate-400 mb-1">Group name</label>
                   <input type="text" id="custom-group-name" placeholder="e.g. My Streaming Bundle"
-                    class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-violet-400">
+                    class="panel-field w-full focus:border-violet-400">
                 </div>
                 <div>
                   <label for="custom-group-action" class="block text-[11px] font-semibold text-slate-400 mb-1">Action</label>
-                  <select id="custom-group-action" class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-violet-400">
+                  <select id="custom-group-action" class="panel-field w-full focus:border-violet-400">
                     <option value="proxy">Proxy (SNI)</option>
                     <option value="direct">Direct</option>
                     <option value="block">Block</option>
@@ -2216,7 +2216,7 @@ async function onBuySubscription(ctx, username) {
               <div>
                 <label for="custom-group-domains" class="block text-[11px] font-semibold text-slate-400 mb-1">Domains (one per line; <code>*.example.com</code> covers subdomains)</label>
                 <textarea id="custom-group-domains" rows="4" placeholder="example.com&#10;*.example.com"
-                  class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-violet-400"></textarea>
+                  class="panel-field w-full font-mono focus:border-violet-400"></textarea>
               </div>
               <label class="flex items-center gap-2 text-xs text-slate-300">
                 <input type="checkbox" id="custom-group-enabled" checked class="accent-violet-500"> Enabled
@@ -2238,7 +2238,7 @@ async function onBuySubscription(ctx, username) {
               </div>
               <div class="flex items-center gap-2">
                 <button id="save-custom-group-btn" class="px-4 py-2 bg-violet-500 hover:bg-violet-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Save Group</button>
-                <button id="cancel-custom-group-btn" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg text-xs transition">Cancel</button>
+                <button id="cancel-custom-group-btn" class="panel-btn panel-btn-neutral">Cancel</button>
                 <span id="custom-group-status" class="text-[11px] text-slate-400"></span>
               </div>
             </div>
@@ -2259,7 +2259,7 @@ async function onBuySubscription(ctx, username) {
             </div>
             <div class="flex items-center gap-2 flex-none">
               <input type="number" id="session-idle-minutes" min="5" max="1440" step="1"
-                class="w-20 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-sm font-mono text-center"
+                class="panel-field w-20 focus:border-cyan-400 font-mono text-center"
                 aria-label="Session idle timeout in minutes">
               <span class="text-[11px] text-slate-400">min</span>
               <button type="button" id="session-idle-save"
