@@ -1621,6 +1621,17 @@ input:checked + .slider:before {
   contain: paint;
 }
 
+/* .glass-panel::after draws the 1px top edge glow inset to an 18px radius,
+   because 18px is the radius .glass-panel itself is drawn at. A card carrying
+   both classes is drawn at --radius-lg instead, so the overlay has to follow it
+   or the glow's corners sit outside the card edge and show as a sliver.
+   Scoped to .panel-card rather than changing .glass-panel's own rule so the two
+   surfaces can be migrated one batch at a time without the un-migrated cards
+   picking up a mismatch of their own. */
+.panel-card::after {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
 /* A card heading: icon + uppercase label, the same shape on every screen. */
 .panel-card-header {
   display: flex;
