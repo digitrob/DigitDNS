@@ -1632,23 +1632,53 @@ input:checked + .slider:before {
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
-/* A card heading: icon + uppercase label, the same shape on every screen. */
+/* Card headings come in two shapes across the panel, and both are spelled out
+   from the utilities they replace rather than from the --text-* scale.
+   That scale is deliberately tighter than Tailwind's (--text-xs is 11px,
+   --text-sm is 12px), so borrowing --text-sm here would have dropped every
+   desktop heading from 14px to 12px — a regression dressed as a token.
+   The ramp below is `text-xs sm:text-sm`: 12px/16px, then 14px/20px at the
+   640px breakpoint. */
+
+/* Icon + uppercase label. */
 .panel-card-header {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   font-family: var(--font-heading);
-  font-size: var(--text-sm);
+  font-size: 12px;
+  line-height: 1rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  line-height: 1.25;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-main);
 }
 
-.panel-card-header i,
-.panel-card-header svg {
+/* The glyph defaults to the accent, but a heading may pick its own colour:
+   the Settings cards distinguish themselves this way (red for the blocklist,
+   purple for the DoH tokens, emerald for static records). :where() carries
+   zero specificity, so a `text-red-400` on the icon still wins instead of
+   being flattened to cyan by this rule. */
+:where(.panel-card-header i, .panel-card-header svg) {
   color: var(--accent-cyan);
+}
+
+/* Sentence-case heading, for the cards that read as a sentence rather than a
+   label. Same type ramp, no uppercase, no icon slot. */
+.panel-card-title {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  line-height: 1rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+@media (min-width: 640px) {
+  .panel-card-header,
+  .panel-card-title {
+    font-size: 14px;
+    line-height: 1.25rem;
+  }
 }
 
 /* Buttons: one height, one radius, three intents. */
