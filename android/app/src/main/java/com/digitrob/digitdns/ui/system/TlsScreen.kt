@@ -26,9 +26,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.domain.model.AcmeRun
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
@@ -105,7 +107,11 @@ private fun CertDetails(cert: com.digitrob.digitdns.core.network.CertView) {
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            text = "Valid ${formatCertDate(cert.notBefore)} → ${formatCertDate(cert.notAfter)}",
+            text = stringResource(
+                R.string.tls_valid_range,
+                formatCertDate(cert.notBefore),
+                formatCertDate(cert.notAfter),
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -198,7 +204,7 @@ private fun SubscriptionAutoRenewCard(
             Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                 Text("Certificate Auto-renew", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = "Renew Let's Encrypt SSL certificate.",
+                    text = stringResource(R.string.tls_renew_le),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -219,7 +225,7 @@ private fun AutoRenewCard(autoRenew: Boolean, onToggle: (Boolean) -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("DoT/DoH Auto-renew", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = "Renew the DNS-over-TLS/HTTPS certificate automatically.",
+                    text = stringResource(R.string.tls_renew_auto),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -260,7 +266,7 @@ private fun RunCard(run: AcmeRun) {
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    text = "${run.stage} · ${run.progress}%",
+                    text = stringResource(R.string.tls_run_progress, run.stage, run.progress),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

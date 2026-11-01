@@ -27,9 +27,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.GeoipStatusDto
 import com.digitrob.digitdns.ui.components.CountryFlag
 import com.digitrob.digitdns.ui.components.PanelCard
@@ -73,7 +75,7 @@ fun AboutScreen(viewModel: MaintenanceViewModel = hiltViewModel()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("DigitDNS Companion", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            text = "Android companion for the DigitDNS panel.",
+                            text = stringResource(R.string.about_tagline),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -90,8 +92,7 @@ fun AboutScreen(viewModel: MaintenanceViewModel = hiltViewModel()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("License", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            text = "DigitDNS is free software, licensed under the GNU Affero " +
-                                "General Public License v3.0 or later.",
+                            text = stringResource(R.string.about_license),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

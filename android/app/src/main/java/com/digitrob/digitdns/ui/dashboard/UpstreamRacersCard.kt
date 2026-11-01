@@ -39,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -474,7 +475,9 @@ private fun UpstreamRow(
                     maxLines = 1,
                 )
                 Text(
-                    text = "${formatCount(stat.hits)} hits · ${formatCount(stat.errors)} errors",
+                    text = pluralStringResource(R.plurals.upstream_hit_count, stat.hits.toInt(), stat.hits) +
+                        " · " +
+                        pluralStringResource(R.plurals.upstream_error_count, stat.errors.toInt(), stat.errors),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

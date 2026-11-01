@@ -412,4 +412,40 @@
     <string name="connect_how_to">How to connect devices</string>
     <string name="rules_cidr_hint">One per line. Entries are stored in canonical CIDR form.</string>
     <string name="rules_doh_token_hint">One per line. Required by the DoH endpoint when set.</string>
+
+    <!-- System screens -->
+    <string name="tls_valid_range">Valid %1$s → %2$s</string>
+    <string name="tls_renew_le">Renew Let\'s Encrypt SSL certificate.</string>
+    <string name="tls_renew_auto">Renew the DNS-over-TLS/HTTPS certificate automatically.</string>
+    <string name="tls_run_progress">%1$s · %2$s%%</string>
+    <string name="sub_portal_origin">Portal origin</string>
+    <string name="sub_portal_title">Subscription portal</string>
+    <string name="maint_cache_body">Clears the resolver\'s cached answers. Clients re-resolve on their next query.</string>
+    <string name="maint_progress">%1$s · %2$s%%</string>
+    <string name="maint_progress_restarting">%1$s · %2$s%% · restarting</string>
+    <string name="diag_no_servers">No servers yet.</string>
+    <string name="diag_score">%1$s%%</string>
+    <string name="diag_reachable">%1$s/%2$s reachable · %3$s avg</string>
+    <string name="diag_run_hint">Run the test to measure reachability and latency.</string>
+    <string name="settings_weak_password">The admin password is weak — change it in the web panel.</string>
+    <string name="security_regen_hint">Regeneration lives on the REST API page.</string>
+    <string name="security_manual_code">Or enter the code manually:</string>
+    <string name="alerts_sign_in">Sign in first — the stream authenticates with your saved credential.</string>
+    <string name="restapi_exposure_hint">Exposure addresses are edited under Network &amp; Server.</string>
+    <string name="about_tagline">Android companion for the DigitDNS panel.</string>
+    <string name="about_license">DigitDNS is free software, licensed under the GNU Affero General Public License v3.0 or later.</string>
+
+    <!-- Counts. Separated from the plain strings so translators get quantity rules. -->
+    <plurals name="stream_query_count">
+        <item quantity="one">%1$d query</item>
+        <item quantity="other">%1$d queries</item>
+    </plurals>
+    <plurals name="upstream_hit_count">
+        <item quantity="one">%1$d hit</item>
+        <item quantity="other">%1$d hits</item>
+    </plurals>
+    <plurals name="upstream_error_count">
+        <item quantity="one">%1$d error</item>
+        <item quantity="other">%1$d errors</item>
+    </plurals>
 </resources>

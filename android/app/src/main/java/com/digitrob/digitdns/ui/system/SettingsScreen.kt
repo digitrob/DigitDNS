@@ -20,11 +20,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
@@ -119,7 +121,7 @@ private fun ServerCard(state: SettingsUiState) {
             InfoRow("Bind host", "${state.bindHost}:${state.webPort}")
             if (state.adminPasswordWeak) {
                 Text(
-                    text = "The admin password is weak — change it in the web panel.",
+                    text = stringResource(R.string.settings_weak_password),
                     color = DigitDnsTheme.colors.warning,
                     style = MaterialTheme.typography.bodySmall,
                 )

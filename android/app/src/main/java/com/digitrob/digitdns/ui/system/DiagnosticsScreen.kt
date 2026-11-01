@@ -28,9 +28,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.domain.model.DiagnosticReport
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRowDefaults
@@ -82,7 +84,7 @@ private fun DiagnosticsBody(state: DiagnosticsUiState, viewModel: DiagnosticsVie
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             } else if (state.targets.isEmpty()) {
                 Text(
-                    text = "No servers yet.",
+                    text = stringResource(R.string.diag_no_servers),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -176,7 +178,7 @@ private fun ReportCard(
                     if (report != null) {
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "${report.overallScore}%",
+                            text = stringResource(R.string.diag_score, report.overallScore),
                             style = MaterialTheme.typography.headlineSmall,
                             color = DigitDnsTheme.colors.success,
                         )
@@ -205,13 +207,18 @@ private fun ReportCard(
             }
             if (report != null) {
                 Text(
-                    text = "${report.reachable}/${report.total} reachable · ${formatLatency(report.avgLatencyMs)} avg",
+                    text = stringResource(
+                        R.string.diag_reachable,
+                        report.reachable,
+                        report.total,
+                        formatLatency(report.avgLatencyMs),
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
                 Text(
-                    text = "Run the test to measure reachability and latency.",
+                    text = stringResource(R.string.diag_run_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

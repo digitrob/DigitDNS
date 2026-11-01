@@ -29,12 +29,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.QrCode
@@ -146,7 +148,7 @@ private fun CredentialsCard(state: SecurityUiState) {
             CredentialValue("API key", state.apiKey) { clipboard.setText(AnnotatedString(state.apiKey)) }
             CredentialValue("Admin path", state.adminPath) { clipboard.setText(AnnotatedString(state.adminPath)) }
             Text(
-                text = "Regeneration lives on the REST API page.",
+                text = stringResource(R.string.security_regen_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -219,7 +221,7 @@ private fun EnrolmentCard(state: SecurityUiState, viewModel: SecurityViewModel) 
                 QrCode(content = state.enrolmentUri, size = 200.dp)
             }
             Text(
-                text = "Or enter the code manually:",
+                text = stringResource(R.string.security_manual_code),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

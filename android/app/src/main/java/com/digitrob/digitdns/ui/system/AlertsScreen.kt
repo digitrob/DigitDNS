@@ -110,7 +110,7 @@ fun AlertsScreen(viewModel: LiveAlertsViewModel = hiltViewModel()) {
         }
         if (!state.canEnable) {
             Text(
-                text = "Sign in first — the stream authenticates with your saved credential.",
+                text = stringResource(R.string.alerts_sign_in),
                 style = MaterialTheme.typography.bodySmall,
                 color = DigitDnsTheme.colors.warning,
             )

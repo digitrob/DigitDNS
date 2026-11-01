@@ -19,8 +19,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.digitrob.digitdns.R
 import com.digitrob.digitdns.data.SystemSummary
 import com.digitrob.digitdns.domain.model.UpdateProgressView
 import com.digitrob.digitdns.domain.model.UpdateStatus
@@ -139,7 +141,7 @@ internal fun CacheCard(state: MaintenanceUiState, viewModel: MaintenanceViewMode
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Cache", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "Clears the resolver's cached answers. Clients re-resolve on their next query.",
+                text = stringResource(R.string.maint_cache_body),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
