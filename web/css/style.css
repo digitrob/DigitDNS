@@ -1184,6 +1184,17 @@ input:checked + .slider:before {
 #main-content {
   display: flex;
   flex-direction: column;
+  /* Use the width of the window: the panels sit closer to the sidebar and the
+     right edge. The id wins over the Tailwind px-* classes, which are left in
+     the markup for the no-CSS case. Each step is half of the old gutter. */
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+@media (min-width: 640px) {
+  #main-content { padding-left: 0.75rem; padding-right: 0.75rem; }
+}
+@media (min-width: 1024px) {
+  #main-content { padding-left: 1rem; padding-right: 1rem; }
 }
 #tab-stream:not(.hidden) {
   flex: 1;
@@ -1910,7 +1921,10 @@ input:checked + .slider:before {
 }
 @media (min-width: 1024px) {
   .services-layout {
-    grid-template-columns: 190px minmax(0, 1fr);
+    /* The services column grows with the viewport instead of staying at one
+       fixed width: 220px at 1024, 20vw through the middle, capped at 340px so
+       it never crowds the domain table on an ultrawide display. */
+    grid-template-columns: clamp(220px, 20vw, 340px) minmax(0, 1fr);
   }
   .services-aside {
     position: sticky;
@@ -1959,6 +1973,15 @@ input:checked + .slider:before {
 .service-row { cursor: pointer; }
 .service-row:focus-visible { outline: 1px solid var(--accent-cyan); outline-offset: -1px; }
 
+/* The page shell. overflow-x-hidden computes overflow-y:auto, which turns the
+   shell into a growing scroll container and breaks position:sticky for anything
+   inside it (the Services column scrolled away with the list). clip hides any
+   horizontal overflow without creating a scroller, so sticky keeps working
+   against the document. */
+.app-shell {
+  overflow-x: clip;
+}
+
 /* The services row is a grid, not a flex line: the count keeps its own rightmost
    column whatever the name's length and whether the hover actions are showing,
    so the numbers form a column instead of drifting with the content. */
@@ -1997,3 +2020,4 @@ input:checked + .slider:before {
   font-weight: 600;
 }
 .service-row.is-active .service-count { color: var(--accent-cyan); }
+
