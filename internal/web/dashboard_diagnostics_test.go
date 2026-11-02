@@ -197,11 +197,13 @@ func TestDiagnosticsClearsTheScoreBeforeAndOnFailure(t *testing.T) {
 			"still reads like a completed measurement.")
 	}
 
-	// The failure copy has to reach the DOM escaped: errorMessage returns whatever string the
-	// response body carried, and this one is assigned to innerHTML rather than textContent.
-	if !strings.Contains(body, "${escapeHTML(msg)}") {
-		t.Error("the diagnostics failure message is interpolated into innerHTML without " +
-			"escapeHTML. errorMessage returns the server's own error text, so a handler that " +
-			"echoes part of a request back would render it as markup here.")
+	// The failure copy must not reach markup at all. It used to be interpolated into
+	// the results list with escapeHTML; now the list is the configured targets, so
+	// the message only goes through showToast, which sets textContent. Asserting the
+	// absence is the stronger form: there is no escaping to forget later.
+	if strings.Contains(body, "innerHTML") {
+		t.Error("runFullDiagnostics writes markup again. Its only user-facing text is " +
+			"errorMessage's, which is the server's own string; it belongs in a toast, " +
+			"not in the targets list.")
 	}
 }

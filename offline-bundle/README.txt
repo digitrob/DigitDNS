@@ -1,5 +1,5 @@
 ========================================================================
-   DigitDNS v3.6.1 — OFFLINE INSTALLER
+   DigitDNS v3.6.2 — OFFLINE INSTALLER
    100% Standalone · Zero Internet Required · Single Binary
 ========================================================================
 

@@ -34,6 +34,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.domain.model.DiagnosticReport
+import com.digitrob.digitdns.domain.model.DiagnosticResult
+import com.digitrob.digitdns.domain.model.DiagnosticTarget
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRowDefaults
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
@@ -41,6 +43,7 @@ import com.digitrob.digitdns.ui.components.SwipeToDeleteRow
 import com.digitrob.digitdns.ui.formatLatency
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
+import androidx.compose.foundation.shape.CircleShape
 
 /**
  * Reachability diagnostics: a target list plus an on-demand run. The run probes every
@@ -76,7 +79,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
 
 @Composable
 private fun DiagnosticsBody(state: DiagnosticsUiState, viewModel: DiagnosticsViewModel) {
-    val latencies = state.report?.results?.associateBy { it.name }.orEmpty()
+    val latencies = state.report?.results?.associateBy { it.target }.orEmpty()
     PanelCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Servers", style = MaterialTheme.typography.titleMedium)
@@ -96,34 +99,7 @@ private fun DiagnosticsBody(state: DiagnosticsUiState, viewModel: DiagnosticsVie
                         confirmText = "It is no longer checked for reachability and latency.",
                         confirmLabel = "Remove",
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = PanelRowDefaults.height)
-                                .background(MaterialTheme.colorScheme.surface)
-                                .padding(horizontal = 4.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = target.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f),
-                            )
-                            val result = latencies[target.name]
-                            Text(
-                                text = when {
-                                    result == null -> ""
-                                    result.success -> formatLatency(result.latencyMs)
-                                    else -> "unreachable"
-                                },
-                                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
-                                color = when {
-                                    result == null -> MaterialTheme.colorScheme.onSurfaceVariant
-                                    result.success -> DigitDnsTheme.colors.success
-                                    else -> DigitDnsTheme.colors.danger
-                                },
-                            )
-                        }
+                        DiagnosticTargetRow(target = target, result = latencies[target.host])
                     }
                 }
             }
@@ -161,6 +137,61 @@ private fun DiagnosticsBody(state: DiagnosticsUiState, viewModel: DiagnosticsVie
  * report, so the card shows a neutral placeholder — keeping Run visible without a
  * second layout for the "never run" case.
  */
+// One configured server and the result of the last run against it. Kept as its own
+// composable because the row carries a status dot, two lines of text and a result,
+// and inlining that pushed DiagnosticsBody past detekt's length and complexity
+// limits - which is a fair signal that it was two things.
+@Composable
+private fun DiagnosticTargetRow(target: DiagnosticTarget, result: DiagnosticResult?) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = PanelRowDefaults.height)
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // The result belongs to the row it measured, not to a second list below:
+        // the same server was printed twice, and matching the two by eye was the
+        // only way to read which one failed. Keyed on the host because that is what
+        // was measured; two targets sharing a display name would otherwise collide.
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .background(
+                    color = when {
+                        result == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                        result.success -> DigitDnsTheme.colors.success
+                        else -> DigitDnsTheme.colors.danger
+                    },
+                    shape = CircleShape,
+                ),
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = target.name, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = target.host,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            text = when {
+                result == null -> stringResource(R.string.diag_not_tested)
+                result.success -> formatLatency(result.latencyMs)
+                else -> stringResource(R.string.diag_unreachable)
+            },
+            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
+            color = when {
+                result == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                result.success -> DigitDnsTheme.colors.success
+                else -> DigitDnsTheme.colors.danger
+            },
+        )
+    }
+}
+
 @Composable
 private fun ReportCard(
     report: DiagnosticReport?,

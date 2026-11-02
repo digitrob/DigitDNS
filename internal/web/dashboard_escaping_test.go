@@ -119,10 +119,12 @@ var storedValueExprs = []string{
 	"c.name", "c.uuid", "c.id", // client record, operator free text
 	"currentIP", "dnsPrimaryIP", // addresses, including pre-validation records
 	"expText", "remainingText", // formatted from a stored expiry
-	"item",               // a blocklist / whitelist entry
-	"dom",                // a static record's domain
-	"u.address",          // an upstream address
-	"r.name", "r.target", // a diagnostics result
+	"item",      // a blocklist / whitelist entry
+	"dom",       // a static record's domain
+	"u.address", // an upstream address
+	// A diagnostics result no longer carries its own markup: the fields land
+	// on the target row through textContent, keyed by the same host. See
+	// renderDiagTargets.
 	"domain", "ruleStr", // query log
 	"clientIP", "protoStr", // query log, the two that can come off-box
 	"accountName", // query log, resolved from the client record

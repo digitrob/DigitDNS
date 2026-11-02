@@ -435,4 +435,6 @@
         <item quantity="one">%1$d error</item>
         <item quantity="other">%1$d errors</item>
     </plurals>
+    <string name="diag_not_tested">not tested</string>
+    <string name="diag_unreachable">unreachable</string>
 </resources>

@@ -5512,6 +5512,21 @@ let diagTargets = [];
 // Every value goes in through textContent or a createElement attribute: the name
 // and host are operator input and are echoed back by the GET, so innerHTML here
 // would be a stored-XSS sink reached through the panel itself.
+// The last run's results, keyed by the host that was measured. The row it belongs
+// to is the target row itself - there used to be a second list below repeating
+// every server, and reading "which one failed" meant matching the two by eye.
+let diagResultsByHost = {};
+
+function diagStatusFor(host) {
+  const r = diagResultsByHost[host];
+  if (!r) return { dot: 'bg-slate-600', text: 'not tested', cls: 'text-slate-500' };
+  if (r.success) {
+    const ms = Number.isFinite(r.latency_ms) ? r.latency_ms.toFixed(1) : '?';
+    return { dot: 'bg-emerald-400', text: `${ms} ms`, cls: 'text-emerald-400' };
+  }
+  return { dot: 'bg-red-400', text: 'BLOCKED', cls: 'text-red-400' };
+}
+
 function renderDiagTargets() {
   const container = document.getElementById('diag-targets-list');
   if (!container) return;
@@ -5526,19 +5541,26 @@ function renderDiagTargets() {
   }
 
   for (const t of diagTargets) {
+    const status = diagStatusFor(t.host || '');
     const row = document.createElement('div');
     row.className = 'flex items-center justify-between gap-2 py-1.5 px-2.5 rounded-lg bg-slate-900/60 border border-slate-800 text-xs';
 
     const label = document.createElement('div');
-    label.className = 'min-w-0 flex-1';
+    label.className = 'min-w-0 flex-1 flex items-center gap-2';
+    const dot = document.createElement('span');
+    dot.className = `w-2 h-2 rounded-full shrink-0 ${status.dot}`;
+    const text = document.createElement('div');
+    text.className = 'min-w-0';
     const nameEl = document.createElement('div');
     nameEl.className = 'font-bold text-white truncate';
     nameEl.textContent = t.name || t.host || '';
     const hostEl = document.createElement('div');
     hostEl.className = 'text-[10px] text-slate-500 font-mono truncate';
     hostEl.textContent = t.host || '';
-    label.appendChild(nameEl);
-    label.appendChild(hostEl);
+    text.appendChild(nameEl);
+    text.appendChild(hostEl);
+    label.appendChild(dot);
+    label.appendChild(text);
 
     const remove = document.createElement('button');
     remove.type = 'button';
@@ -5549,7 +5571,12 @@ function renderDiagTargets() {
     remove.innerHTML = '<i data-feather="trash-2" class="w-3.5 h-3.5"></i>';
     remove.onclick = () => removeDiagTarget(t.host || '');
 
+    const result = document.createElement('span');
+    result.className = `font-mono font-bold shrink-0 ${status.cls}`;
+    result.textContent = status.text;
+
     row.appendChild(label);
+    row.appendChild(result);
     row.appendChild(remove);
     container.appendChild(row);
   }
@@ -5657,14 +5684,8 @@ async function removeDiagTarget(host) {
 // target in data-diag-target (renderDiagnosticsReport sets it), so the match is an
 // exact string compare against the same stored host:port the delete used.
 function removeDiagResultRow(host) {
-  const container = document.getElementById('diag-items-list');
-  if (!container) return;
-  container.querySelectorAll('[data-diag-target]').forEach((row) => {
-    if (row.dataset.diagTarget === host) row.remove();
-  });
-  if (!container.querySelector('[data-diag-target]')) {
-    container.innerHTML = '<div class="text-center py-6 text-slate-500 text-xs">No servers configured. Add a name and host above, then run the test again.</div>';
-  }
+  delete diagResultsByHost[host];
+  renderDiagTargets();
 }
 
 let diagRunning = false;
@@ -5673,7 +5694,6 @@ async function runFullDiagnostics() {
   if (diagRunning) return;
   diagRunning = true;
 
-  const container = document.getElementById('diag-items-list');
   const scoreEl = document.getElementById('diag-score');
   const qualEl = document.getElementById('diag-quality');
   const rerunBtn = document.getElementById('rerun-diagnostics-btn');
@@ -5688,16 +5708,9 @@ async function runFullDiagnostics() {
     rerunBtn.disabled = true;
     rerunBtn.classList.add('opacity-50', 'cursor-not-allowed');
   }
-  if (container) {
-    container.innerHTML = '<div class="text-center py-8 text-cyan-400 font-mono text-xs"><span class="pulse-dot inline-block me-2"></span> Testing your servers\' reachability and latency...</div>';
-  }
-
   const fail = (msg) => {
     showToast(msg, 'error');
     if (qualEl) qualEl.innerText = 'Test failed';
-    if (container) {
-      container.innerHTML = `<div class="text-center py-6 text-red-400 text-xs">${escapeHTML(msg)}</div>`;
-    }
   };
 
   try {
@@ -5769,45 +5782,15 @@ function renderDiagnosticsReport(rep) {
     qualEl.innerText = bits.length ? bits.join(' · ') : 'No result';
   }
 
-  const container = document.getElementById('diag-items-list');
-  if (!container) return;
-
-  if (results.length === 0) {
-    container.innerHTML = '<div class="text-center py-6 text-slate-500 text-xs">No servers configured. Add a name and host above, then run the test again.</div>';
-    return;
-  }
-
-  const frag = document.createDocumentFragment();
+  // Fold the results into the rows that name the servers, and repaint that one
+  // list. There used to be a second list here repeating every target; the result
+  // belongs to the row it measured.
+  diagResultsByHost = {};
   for (const r of results) {
-    const row = document.createElement('div');
-    row.className = 'flex items-center justify-between py-2 px-3 rounded-lg bg-slate-950/70 border border-slate-800 text-xs';
-    // The stored host:port this row measured, so removeDiagTarget can drop the row
-    // the moment its server is deleted rather than leaving a result on screen for
-    // a target that no longer exists.
-    row.dataset.diagTarget = r.target || '';
-
-    // latency_ms is 0 on a failed dial and absent from nothing the server sends — but
-    // toFixed on a missing field throws, and that throw used to be reported as a network
-    // error.
-    const ms = Number.isFinite(r.latency_ms) ? r.latency_ms.toFixed(1) : '?';
-    const badge = r.success
-      ? `<span class="text-emerald-400 font-bold font-mono">${ms} ms</span>`
-      : '<span class="text-red-400 font-bold font-mono">BLOCKED</span>';
-
-    row.innerHTML = `
-      <div class="flex items-center gap-2">
-        <span class="w-2 h-2 rounded-full ${r.success ? 'bg-emerald-400' : 'bg-red-400'}"></span>
-        <div>
-          <span class="font-bold text-white">${escapeHTML(r.name)}</span>
-          <span class="text-[10px] text-slate-500 font-mono ms-1.5">(${escapeHTML(r.target)})</span>
-        </div>
-      </div>
-      <div>${badge}</div>
-    `;
-    frag.appendChild(row);
+    const host = r.target || r.name || '';
+    if (host) diagResultsByHost[host] = r;
   }
-  container.innerHTML = '';
-  container.appendChild(frag);
+  renderDiagTargets();
 }
 
 // =======================================================
