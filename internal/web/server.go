@@ -989,7 +989,10 @@ func (ws *WebServer) withSecurityHeaders(next http.Handler) http.Handler {
 const contentSecurityPolicy = "default-src 'self'; " +
 	"script-src 'self' 'unsafe-inline'; " +
 	"style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data: blob:; " +
+	// https: is allowed for images because a service's mark is an operator-chosen
+	// favicon or icon URL, which is necessarily cross-origin. It cannot execute or
+	// read anything: img-src only permits rendering the response.
+	"img-src 'self' data: blob: https:; " +
 	"font-src 'self' data:; " +
 	"connect-src 'self' ws: wss:; " +
 	"object-src 'none'; " +
@@ -1464,6 +1467,13 @@ func (ws *WebServer) loadRulesConfig() map[string]any {
 	rules["custom_direct"] = []string{}
 	rules["custom_records"] = map[string]string{}
 	rules["custom_domain_added"] = map[string]string{}
+	// Services are organisational: services maps id -> name, domain_services maps
+	// a domain to that id, service_icons maps an id to an optional icon URL. None
+	// of them changes how anything is routed; they exist so a group of domains can
+	// be found and filtered as one thing.
+	rules["services"] = map[string]string{}
+	rules["domain_services"] = map[string]string{}
+	rules["service_icons"] = map[string]string{}
 
 	policies, err := ws.db.ListPolicies()
 	if err != nil {
@@ -1475,6 +1485,17 @@ func (ws *WebServer) loadRulesConfig() map[string]any {
 			if p.CustomDomains != nil {
 				rules[p.Key] = dedupeDomains(p.CustomDomains)
 			}
+		case "services", "domain_services", "service_icons":
+			m := map[string]string{}
+			for _, entry := range p.CustomDomains {
+				if k, v, ok := strings.Cut(entry, "="); ok {
+					k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+					if k != "" && v != "" {
+						m[k] = v
+					}
+				}
+			}
+			rules[p.Key] = m
 		case "custom_records":
 			recs := map[string]string{}
 			for _, entry := range p.CustomDomains {
@@ -1709,6 +1730,9 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 
 	var customProxied, customProxiedDisabled, customBlocked, customDirect []string
 	customRecords := map[string]string{}
+	services := map[string]string{}
+	domainServices := map[string]string{}
+	serviceIcons := map[string]string{}
 
 	// Start from the persisted state so a partial update never wipes the saved
 	// custom domain lists.
@@ -1751,6 +1775,41 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 					customAdded[d] = tsStr
+				}
+			}
+		case "services":
+			// Replace, like every other map key: the dashboard owns the full set, so
+			// a renamed or deleted service is simply absent from the payload.
+			if m, ok := val.(map[string]any); ok {
+				services = make(map[string]string, len(m))
+				for id, name := range m {
+					key := strings.TrimSpace(fmt.Sprint(id))
+					label := strings.TrimSpace(fmt.Sprint(name))
+					if key != "" && label != "" {
+						services[key] = label
+					}
+				}
+			}
+		case "domain_services":
+			if m, ok := val.(map[string]any); ok {
+				domainServices = make(map[string]string, len(m))
+				for d, id := range m {
+					domain := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(fmt.Sprint(d))), ".")
+					label := strings.TrimSpace(fmt.Sprint(id))
+					if domain != "" && label != "" {
+						domainServices[domain] = label
+					}
+				}
+			}
+		case "service_icons":
+			if m, ok := val.(map[string]any); ok {
+				serviceIcons = make(map[string]string, len(m))
+				for id, u := range m {
+					key := strings.TrimSpace(fmt.Sprint(id))
+					url := strings.TrimSpace(fmt.Sprint(u))
+					if key != "" && url != "" {
+						serviceIcons[key] = url
+					}
 				}
 			}
 		case "custom_records":
@@ -1831,6 +1890,41 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 		recordEntries = append(recordEntries, d+"="+ip)
 	}
 	customSaves = append(customSaves, database.Policy{Key: "custom_records", Name: "Custom A Records", Category: "custom", Enabled: true, CustomDomains: recordEntries})
+
+	// A label means something only for a domain that still exists, and only for a
+	// service that still does; an icon means something only for a service that
+	// still does. Pruning all three here stops the panel filtering against ghosts.
+	for d := range domainServices {
+		if !allDomains[d] {
+			delete(domainServices, d)
+			continue
+		}
+		if _, ok := services[domainServices[d]]; !ok {
+			delete(domainServices, d)
+		}
+	}
+	for id := range serviceIcons {
+		if _, ok := services[id]; !ok {
+			delete(serviceIcons, id)
+		}
+	}
+	serviceEntries := make([]string, 0, len(services))
+	for id, name := range services {
+		serviceEntries = append(serviceEntries, id+"="+name)
+	}
+	linkEntries := make([]string, 0, len(domainServices))
+	for d, id := range domainServices {
+		linkEntries = append(linkEntries, d+"="+id)
+	}
+	iconEntries := make([]string, 0, len(serviceIcons))
+	for id, u := range serviceIcons {
+		iconEntries = append(iconEntries, id+"="+u)
+	}
+	customSaves = append(customSaves,
+		database.Policy{Key: "services", Name: "Services", Category: "custom", Enabled: true, CustomDomains: serviceEntries},
+		database.Policy{Key: "domain_services", Name: "Domain Service Labels", Category: "custom", Enabled: true, CustomDomains: linkEntries},
+		database.Policy{Key: "service_icons", Name: "Service Icons", Category: "custom", Enabled: true, CustomDomains: iconEntries},
+	)
 	customSaves = append(customSaves, database.Policy{Key: "custom_domain_added", Name: "Custom Domain Added Times", Category: "custom", Enabled: true, CustomDomains: addedEntries})
 	for _, p := range customSaves {
 		if err := ws.db.SavePolicy(p); err != nil {

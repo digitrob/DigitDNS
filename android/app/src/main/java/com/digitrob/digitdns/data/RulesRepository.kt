@@ -29,6 +29,9 @@ class RulesRepository @Inject constructor(
             customBlocked = lists.blocked,
             customDirect = lists.direct,
             customRecords = lists.records,
+            services = lists.services,
+            domainServices = lists.domainServices,
+            serviceIcons = lists.serviceIcons,
         ),
     ).success
 

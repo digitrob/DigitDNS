@@ -16,10 +16,19 @@ data class RuleLists(
     val blocked: List<String> = emptyList(),
     val direct: List<String> = emptyList(),
     val records: Map<String, String> = emptyMap(),
+    /** Service id -> display name. A label, never a routing decision. */
+    val services: Map<String, String> = emptyMap(),
+    /** Domain -> service id. A domain without an entry has no service. */
+    val domainServices: Map<String, String> = emptyMap(),
+    /** Service id -> icon URL. Optional and separate from the name. */
+    val serviceIcons: Map<String, String> = emptyMap(),
 ) {
     /** Every pattern any of the four lists holds; the quick-action menu preselects from this. */
     val managedPatterns: Set<String>
         get() = (proxied + proxiedDisabled + blocked + direct).toSet()
+
+    /** The service a domain is labelled with, or empty when it has none. */
+    fun serviceOf(domain: String): String = domainServices[domain.normalizedDomain()].orEmpty()
 
     companion object {
         fun from(dto: RulesResponse): RuleLists = RuleLists(
@@ -28,7 +37,53 @@ data class RuleLists(
             blocked = dto.customBlocked,
             direct = dto.customDirect,
             records = dto.customRecords,
+            services = dto.services,
+            domainServices = dto.domainServices,
+            serviceIcons = dto.serviceIcons,
         )
+    }
+}
+
+/** The key a domain is stored under: trimmed, no trailing dot, lowercase. */
+fun String.normalizedDomain(): String = trim().trimEnd('.').lowercase(java.util.Locale.US)
+
+/**
+ * Turn a service name into its stable id. Renaming keeps the id, so every domain
+ * already carrying the label survives it; only a new service derives one.
+ */
+fun serviceIdFromName(name: String): String =
+    name.trim().lowercase(java.util.Locale.US)
+        .replace(Regex("[^a-z0-9]+"), "-")
+        .trim('-')
+        .ifEmpty { "service" }
+
+/**
+ * Normalise the icon field. A bare domain becomes that site's favicon, an http(s)
+ * URL is kept as given, and anything else is ignored — the same rule the panel
+ * applies, so a service created on one client renders on the other.
+ */
+/**
+ * The URL Android actually fetches for an icon. The panel stores DuckDuckGo's
+ * `.ico` favicon, which Android's BitmapFactory/Coil cannot decode; its Google
+ * S2 PNG equivalent renders on both. Any other URL is left exactly as given.
+ */
+fun serviceDisplayIcon(url: String): String {
+    val match = DUCK_ICON.matchEntire(url.trim()) ?: return url
+    return "https://www.google.com/s2/favicons?domain=${match.groupValues[1]}&sz=64"
+}
+
+private val DUCK_ICON =
+    Regex("^https://icons\\.duckduckgo\\.com/ip3/(.+)\\.ico$", RegexOption.IGNORE_CASE)
+
+fun serviceIconUrl(raw: String): String {
+    val value = raw.trim()
+    return when {
+        value.isEmpty() -> ""
+        value.startsWith("http://", ignoreCase = true) ||
+            value.startsWith("https://", ignoreCase = true) -> value
+        Regex("^[a-z0-9.-]+\\.[a-z]{2,}$", RegexOption.IGNORE_CASE).matches(value) ->
+            "https://icons.duckduckgo.com/ip3/$value.ico"
+        else -> ""
     }
 }
 

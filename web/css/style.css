@@ -1110,6 +1110,9 @@ input:checked + .slider:before {
  * width, so it absorbs all remaining space and the other columns stay pushed
  * against its right edge however wide the panel gets. */
 .proxied-col-domain { width: auto; }
+/* Wide enough for the gear, the pause/on switch and Remove together: at 12rem the
+   flex row was wider than its cell and the gear spilled left into the SERVICE
+   column, which read as if it belonged to the service name. */
 .proxied-col-actions { width: 16rem; }
 .proxied-col-status { width: 5.5rem; }
 
@@ -1877,3 +1880,120 @@ input:checked + .slider:before {
   background: rgb(var(--c-cyan-500) / 0.12);
   color: var(--accent-cyan);
 }
+
+/* The Service column: a native select, because it is a label picker with few
+   options and the whole point is that changing it is a one-click act. Sized to
+   shrink, so a long domain keeps the space it needs. */
+.proxied-col-service { width: 10rem; }
+.proxied-service-select {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--c-slate-700));
+  background: rgb(var(--c-slate-950));
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 11px;
+}
+.proxied-service-select:focus { outline: none; border-color: var(--accent-cyan); }
+
+/* Services + Domains. Plain CSS rather than utilities because the two-column
+   template needs an arbitrary value, and arbitrary values are not in the purged
+   Tailwind sheet - the class silently did nothing and the aside took the full
+   width. Below the breakpoint the two stack, which is also the right shape for
+   a phone. */
+.services-layout {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+}
+@media (min-width: 1024px) {
+  .services-layout {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+  .services-aside {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+/* A service's mark. Falls back to the first letter on a colour derived from the
+   name, so every service has a stable identity with no upload and no external
+   request. A real icon, when one is given, replaces the letter. */
+.service-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  object-fit: contain;
+  background: rgb(var(--c-slate-800));
+  color: var(--text-muted);
+}
+.service-row.is-active .service-mark { color: var(--accent-cyan); }
+
+/* Rename / delete, revealed on the row they act on rather than shown on all of
+   them: the column is narrow and two icons on every service would compete with
+   the name and the count. Focus also reveals them, so keyboard users reach them. */
+.service-row-actions {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.service-row:hover .service-row-actions,
+.service-row:focus-within .service-row-actions {
+  opacity: 1;
+}
+
+/* The SERVICE cell keeps a gap before the action icons. The select fills the
+   cell, so without this its right edge sat against the gear button and a long
+   service name read as if it belonged to the actions. */
+.proxied-service-cell { padding-right: 1.5rem; }
+
+/* The service row is a div, not a button: it wraps the rename/delete buttons, and
+   nested buttons are invalid (the parser hoisted them out of the row). */
+.service-row { cursor: pointer; }
+.service-row:focus-visible { outline: 1px solid var(--accent-cyan); outline-offset: -1px; }
+
+/* The services row is a grid, not a flex line: the count keeps its own rightmost
+   column whatever the name's length and whether the hover actions are showing,
+   so the numbers form a column instead of drifting with the content. */
+.service-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 30px auto;
+  align-items: center;
+  column-gap: 8px;
+}
+.service-row > .service-mark { grid-column: 1; }
+.service-row > .service-name { grid-column: 2; min-width: 0; }
+.service-row > .service-row-actions { grid-column: 3; justify-content: flex-end; }
+.service-count {
+  grid-column: 4;
+  min-width: 2ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Column boundaries in the header only. The body stays quiet: a full grid of
+   rules competes with the data, but the header needs to say where one column
+   ends and the next begins. */
+.proxied-table thead th + th {
+  border-left: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+/* The selected service. A tint and a left accent rather than a border all round:
+   the card is narrow, and the accent reads as "this row is the current filter"
+   without moving the name or the count. */
+.service-row.is-active {
+  background: rgba(34, 211, 238, 0.10);
+  box-shadow: inset 2px 0 0 var(--accent-cyan);
+}
+.service-row.is-active .service-name {
+  color: var(--accent-cyan);
+  font-weight: 600;
+}
+.service-row.is-active .service-count { color: var(--accent-cyan); }

@@ -2024,7 +2024,19 @@ function renderProxiedList() {
   updateDomainFilterChips();
   const needle = proxiedFilterNeedle();
   const ordered = proxiedFilteredRows();
-  const total = ordered.length;
+  // The service filter is a view over the same in-memory rules, but it has to be
+  // applied before the count and the pagination slice - otherwise the header says
+  // "3 domains" while one row is visible and "Load more" grows a hidden list.
+  const serviceScoped = activeService
+    ? ordered.filter(({ domain }) => {
+        const sid = serviceOfDomain(domain);
+        return activeService === '__none__' ? !sid : sid === activeService;
+      })
+    : ordered;
+  const total = serviceScoped.length;
+  const serviceScope = activeService === '__none__'
+    ? 'No service'
+    : (activeService ? serviceName(activeService) : '');
   const countEl = document.getElementById('proxied-count');
   const moreBtn = document.getElementById('proxied-load-more');
   const statusLabel = proxiedStatusFilter
@@ -2037,18 +2049,26 @@ function renderProxiedList() {
     // the selected status chip. They mean different things to the operator.
     const empty = needle
       ? `No domains match “${escapeHTML(needle)}”`
-      : proxiedStatusFilter
-        ? `No ${statusLabel} domains yet.`
-        : 'No domains yet.';
-    container.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-slate-500 text-xs">${empty}</td></tr>`;
+      : serviceScope
+        ? `No ${statusLabel ? statusLabel + ' ' : ''}domains in ${escapeHTML(serviceScope)} yet.`
+        : proxiedStatusFilter
+          ? `No ${statusLabel} domains yet.`
+          : 'No domains yet.';
+    container.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500 text-xs">${empty}</td></tr>`;
     proxiedHasMore = false;
-    if (countEl) countEl.textContent = needle ? '0 matches' : (proxiedStatusFilter ? `0 ${statusLabel} domains` : '');
+    if (countEl) {
+      countEl.textContent = needle
+        ? '0 matches'
+        : serviceScope
+          ? `0 domains in ${serviceScope}`
+          : (proxiedStatusFilter ? `0 ${statusLabel} domains` : '');
+    }
     if (moreBtn) moreBtn.classList.add('hidden');
     updateProxiedBulkBar();
     return;
   }
 
-  const rows = ordered.slice(0, proxiedVisible);
+  const rows = serviceScoped.slice(0, proxiedVisible);
   proxiedHasMore = rows.length < total;
   if (countEl) {
     if (needle) {
@@ -2056,17 +2076,20 @@ function renderProxiedList() {
         ? `Showing ${rows.length} of ${total} matches`
         : `${total} match${total === 1 ? '' : 'es'}`;
     } else if (proxiedStatusFilter) {
-      countEl.textContent = proxiedHasMore
+      countEl.textContent = (proxiedHasMore
         ? `Showing ${rows.length} of ${total} ${statusLabel} domains`
-        : `${total} ${statusLabel} domain${total === 1 ? '' : 's'}`;
+        : `${total} ${statusLabel} domain${total === 1 ? '' : 's'}`) +
+        (serviceScope ? ` in ${serviceScope}` : '');
     } else {
-      countEl.textContent = proxiedHasMore
+      countEl.textContent = (proxiedHasMore
         ? `Showing ${rows.length} of ${total}`
-        : `${total} domain${total === 1 ? '' : 's'}`;
+        : `${total} domain${total === 1 ? '' : 's'}`) +
+        (serviceScope ? ` in ${serviceScope}` : '');
     }
   }
   if (moreBtn) moreBtn.classList.toggle('hidden', !proxiedHasMore);
 
+  renderServices();
   const wildcardIndex = proxiedPatternIndex();
   rows.forEach(({ domain, status }) => {
     const meta = DOMAIN_STATUS_META[status] || DOMAIN_STATUS_META.direct;
@@ -2112,6 +2135,7 @@ function renderProxiedList() {
           <span class="text-[10px] font-mono truncate ${wildcardClass}" title="${escapeHTML(wildcardInfo.title)}">${escapeHTML(wildcardInfo.text)}</span>
         </div>
       </td>
+      <td class="py-2.5 px-3 text-start proxied-service-cell"></td>
       <td class="py-2.5 px-3 text-center">
         <div class="flex items-center justify-center gap-3">
           ${resolutionButton}
@@ -2121,6 +2145,25 @@ function renderProxiedList() {
       </td>
       <td class="py-2.5 px-3 text-center">${statusBadge}</td>
     `;
+    // Filled here rather than in the template: the select needs its change
+    // listener, and a native select avoids inventing another popover.
+    const svcCell = row.children[2];
+    if (svcCell) {
+      const services = (currentConfig.rules && currentConfig.rules.services) || {};
+      const current = serviceOfDomain(domain);
+      const sel = document.createElement('select');
+      sel.className = 'proxied-service-select';
+      sel.setAttribute('aria-label', `Service for ${escapeHTML(domain)}`);
+      sel.innerHTML = '<option value="">No service</option>' +
+        Object.entries(services)
+          .sort((a, b) => a[1].localeCompare(b[1]))
+          .map(([id, name]) => `<option value="${escapeHTML(id)}">${escapeHTML(name)}</option>`)
+          .join('');
+      sel.value = current;
+      sel.addEventListener('change', () => assignService(domain, sel.value));
+      svcCell.appendChild(sel);
+    }
+
     row.addEventListener('click', (e) => {
       const target = e.target;
       if (target && (target.closest('input, button, label, .switch'))) return;
@@ -2493,7 +2536,10 @@ async function saveRules() {
     custom_blocked: currentConfig.rules.custom_blocked,
     custom_direct: currentConfig.rules.custom_direct,
     custom_records: currentConfig.rules.custom_records,
-    custom_domain_added: currentConfig.rules.custom_domain_added || {}
+    custom_domain_added: currentConfig.rules.custom_domain_added || {},
+    services: currentConfig.rules.services || {},
+    domain_services: currentConfig.rules.domain_services || {},
+    service_icons: currentConfig.rules.service_icons || {}
   };
 
   try {
@@ -4138,6 +4184,237 @@ function pushChartData(val) {
 // =======================================================
 // EVENT LISTENERS & SPA ROUTING
 // =======================================================
+/* ── Services ─────────────────────────────────────────────────────────────────
+ * A service is a label that groups domains so they can be found. It carries no
+ * action and never touches routing: the worst a wrong label can do is make a
+ * domain harder to find. Stored as two maps in the rules payload -
+ * services[id] = name, domain_services[domain] = id - which is the same shape
+ * custom_records and custom_domain_added already use.
+ */
+let activeService = '';   // '' = all, '__none__' = unlabelled
+
+function serviceName(id) {
+  const services = (currentConfig && currentConfig.rules && currentConfig.rules.services) || {};
+  return services[id] || '';
+}
+
+function serviceOfDomain(domain) {
+  const links = (currentConfig && currentConfig.rules && currentConfig.rules.domain_services) || {};
+  return links[String(domain || '').toLowerCase()] || '';
+}
+
+function serviceCounts() {
+  const rules = (currentConfig && currentConfig.rules) || {};
+  const links = rules.domain_services || {};
+  // Count what the table actually shows: every pattern in the four lists, once.
+  const all = new Set();
+  for (const key of ['custom_proxied', 'custom_proxied_disabled', 'custom_blocked', 'custom_direct']) {
+    for (const d of (rules[key] || [])) all.add(String(d).toLowerCase());
+  }
+  const counts = {};
+  let none = 0;
+  for (const d of all) {
+    const id = links[d];
+    if (!id) { none++; continue; }
+    counts[id] = (counts[id] || 0) + 1;
+  }
+  return { counts, none, total: all.size };
+}
+
+function serviceHue(name) {
+  let h = 0;
+  for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return h;
+}
+
+// The icon is stored with the service: a bare domain is turned into a favicon
+// URL, anything else is used as given. Both are rendered as an <img> with the
+// letter mark behind it, so a dead URL degrades instead of leaving a hole.
+function serviceIconURL(raw) {
+  const v = String(raw || '').trim();
+  if (!v) return '';
+  if (/^https?:\/\//i.test(v)) return v;
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(v)) return '';
+  return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(v)}.ico`;
+}
+
+function renderServices() {
+  const list = document.getElementById('services-list');
+  if (!list || !currentConfig || !currentConfig.rules) return;
+  const services = currentConfig.rules.services || {};
+  const { counts, none, total } = serviceCounts();
+
+  const marks = currentConfig.rules.service_icons || {};
+  const row = (id, label, count) => {
+    const hue = serviceHue(label);
+    const markStyle = `background:hsl(${hue} 45% 22%);color:hsl(${hue} 70% 70%)`;
+    const cls = 'service-row w-full text-start px-2 py-1.5 rounded text-[11px]' +
+      (id === activeService ? ' is-active' : '');
+    return `
+    <div role="button" tabindex="0" class="${escapeHTML(cls)}"
+      data-service="${escapeHTML(id)}">
+      ${id && id !== '__none__'
+        ? (marks[id]
+            ? `<img class="service-mark" src="${escapeHTML(marks[id])}" alt="" data-letter="${escapeHTML((label || '?').trim().charAt(0).toUpperCase())}" data-hue="${escapeHTML(String(hue))}">`
+            : `<span class="service-mark" style="${escapeHTML(markStyle)}">${escapeHTML((label || '?').trim().charAt(0).toUpperCase())}</span>`)
+        : '<span class="service-mark" aria-hidden="true">·</span>'}
+      <span class="service-name truncate">${label}</span>
+      ${id && id !== '__none__'
+        ? `<span class="service-row-actions flex items-center gap-1">
+             <button type="button" data-service-edit="${escapeHTML(id)}" title="Rename" aria-label="Rename ${escapeHTML(label)}" class="text-slate-500 hover:text-cyan-300"><i data-feather="edit-2" class="w-3 h-3"></i></button>
+             <button type="button" data-service-del="${escapeHTML(id)}" title="Delete" aria-label="Delete ${escapeHTML(label)}" class="text-slate-500 hover:text-red-400"><i data-feather="trash-2" class="w-3 h-3"></i></button>
+           </span>`
+        : ''}
+      <span class="service-count text-[10px] font-mono text-slate-500">${count}</span>
+    </div>`;
+  };
+
+  const entries = Object.entries(services).sort((a, b) => a[1].localeCompare(b[1]));
+  // No virtual "All domains" entry: with no service selected the table already
+  // shows everything, and an explicit row for it competed with the real groups.
+  // "No service" stays last because it is the remainder, not a group among them.
+  list.innerHTML =
+    entries.map(([id, name]) => row(id, escapeHTML(name), counts[id] || 0)).join('') +
+    row('__none__', 'No service', none);
+
+  // A favicon that 404s or is blocked leaves an <img> with no pixels. Replace it
+  // with the same letter mark used when no icon was given, so a service always
+  // has an identity. addEventListener, not onerror: the CSP forbids inline handlers.
+  list.querySelectorAll('img.service-mark').forEach((img) => {
+    img.addEventListener('error', () => {
+      const fallback = document.createElement('span');
+      fallback.className = 'service-mark';
+      fallback.textContent = img.dataset.letter || '?';
+      const hue = img.dataset.hue || '210';
+      fallback.style.background = `hsl(${hue} 45% 22%)`;
+      fallback.style.color = `hsl(${hue} 70% 70%)`;
+      img.replaceWith(fallback);
+    }, { once: true });
+  });
+  safeFeatherReplace();
+}
+
+function setActiveService(id) {
+  // Tapping the already-selected service clears the filter, since there is no
+  // separate "All domains" row to go back to.
+  const next = id || '';
+  activeService = activeService === next ? '' : next;
+  renderServices();
+  renderProxiedList();
+}
+
+function assignService(domain, id) {
+  const rules = currentConfig.rules;
+  const links = Object.assign({}, rules.domain_services || {});
+  const key = String(domain || '').toLowerCase();
+  if (id) links[key] = id; else delete links[key];
+  rules.domain_services = links;
+  saveRules();
+  renderServices();
+  renderProxiedList();
+}
+
+// Which service the form is editing. Empty means "creating a new one", so the
+// same two fields serve both flows instead of a second dialog.
+let serviceEditing = '';
+
+function openServiceForm(id) {
+  const f = document.getElementById('add-service-form');
+  if (!f) return;
+  serviceEditing = id || '';
+  const nameEl = document.getElementById('service-name');
+  const iconEl = document.getElementById('service-icon');
+  const services = (currentConfig.rules && currentConfig.rules.services) || {};
+  const icons = (currentConfig.rules && currentConfig.rules.service_icons) || {};
+  if (nameEl) nameEl.value = serviceEditing ? (services[serviceEditing] || '') : '';
+  if (iconEl) iconEl.value = serviceEditing ? (icons[serviceEditing] || '') : '';
+  document.getElementById('save-service-btn').textContent = serviceEditing ? 'Save' : 'Add';
+  f.classList.remove('hidden');
+  nameEl?.focus();
+}
+
+async function createService() {
+  const nameEl = document.getElementById('service-name');
+  const iconEl = document.getElementById('service-icon');
+  const name = (nameEl?.value || '').trim();
+  if (!name) { nameEl?.focus(); return; }
+
+  const rules = currentConfig.rules;
+  const services = Object.assign({}, rules.services || {});
+  // Renaming keeps the id, so every domain already labelled stays labelled: the
+  // id is the identity, the name is only what it is called.
+  const id = serviceEditing || (name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'service');
+  services[id] = name;
+  rules.services = services;
+
+  const iconURL = serviceIconURL(iconEl?.value || '');
+  const icons = Object.assign({}, rules.service_icons || {});
+  if (iconURL) icons[id] = iconURL; else delete icons[id];
+  rules.service_icons = icons;
+
+  await saveRules();
+  renderServices();
+  // The per-row selects are built from the same map, so they need repainting too;
+  // otherwise a new service is missing from them until the next reload.
+  renderProxiedList();
+  document.getElementById('add-service-form')?.classList.add('hidden');
+  serviceEditing = '';
+  if (nameEl) nameEl.value = '';
+  if (iconEl) iconEl.value = '';
+}
+
+async function deleteService(id) {
+  if (!id) return;
+  const rules = currentConfig.rules;
+  const name = (rules.services || {})[id] || id;
+  if (!window.confirm(`Delete "${name}"? Domains keep their routing; they just lose the label.`)) return;
+
+  const services = Object.assign({}, rules.services || {});
+  delete services[id];
+  rules.services = services;
+
+  const icons = Object.assign({}, rules.service_icons || {});
+  delete icons[id];
+  rules.service_icons = icons;
+
+  // Clear the labels here as well as on the server: the save prunes them, but the
+  // in-memory copy drives the table and would otherwise keep showing a service
+  // that no longer exists until the next reload.
+  const links = Object.assign({}, rules.domain_services || {});
+  for (const [d, sid] of Object.entries(links)) {
+    if (sid === id) delete links[d];
+  }
+  rules.domain_services = links;
+
+  await saveRules();
+  if (activeService === id) activeService = '';
+  renderServices();
+  renderProxiedList();
+}
+
+function initServices() {
+  document.getElementById('add-service-btn')?.addEventListener('click', () => openServiceForm(''));
+  document.getElementById('save-service-btn')?.addEventListener('click', createService);
+  document.getElementById('cancel-service-btn')?.addEventListener('click', () => {
+    document.getElementById('add-service-form')?.classList.add('hidden');
+  });
+  document.getElementById('services-list')?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('[data-service]');
+    if (!row || e.target !== row) return;
+    e.preventDefault();
+    setActiveService(row.dataset.service);
+  });
+  document.getElementById('services-list')?.addEventListener('click', (e) => {
+    const edit = e.target.closest('[data-service-edit]');
+    if (edit) { openServiceForm(edit.dataset.serviceEdit); return; }
+    const del = e.target.closest('[data-service-del]');
+    if (del) { deleteService(del.dataset.serviceDel); return; }
+    const b = e.target.closest('[data-service]');
+    if (b) setActiveService(b.dataset.service);
+  });
+}
+
 const tabRoutes = {
   'dashboard': '/home',
   'proxied': '/proxied',
@@ -4664,6 +4941,7 @@ function initAdminPathControls() {
 
 function initEventListeners() {
   initUpstreamAddressScroll();
+  initServices();
   // Tabs Navigation (Sidebar & Mobile Bottom Bar)
   document.querySelectorAll('.sidebar-nav-item, .nav-tab, .mobile-nav-item').forEach(tab => {
     tab.onclick = (e) => {

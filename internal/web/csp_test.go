@@ -234,3 +234,14 @@ func TestStylesheetFetchesNoWebfontsTheCSPWouldRefuse(t *testing.T) {
 		}
 	}
 }
+
+// A service's mark is a favicon or icon URL chosen by the operator, so it is
+// necessarily cross-origin. Without https: in img-src the <img> is silently
+// refused and every service falls back to a letter — which is exactly what
+// happened until this was noticed. Pinned so tightening the policy has to be
+// a deliberate decision rather than a silent regression.
+func TestCSPAllowsCrossOriginServiceIcons(t *testing.T) {
+	if !strings.Contains(contentSecurityPolicy, "img-src 'self' data: blob: https:") {
+		t.Error("img-src must allow https: images or service favicons never render")
+	}
+}

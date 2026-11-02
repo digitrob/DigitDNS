@@ -42,6 +42,51 @@ class RulesTest {
     }
 
     @Test
+    fun ruleListsCarryTheServiceMaps() {
+        val lists = RuleLists.from(
+            RulesResponse(
+                services = mapOf("bbc" to "BBC iPlayer"),
+                domainServices = mapOf("bbc.co.uk" to "bbc"),
+                serviceIcons = mapOf("bbc" to "https://icons.duckduckgo.com/ip3/bbc.co.uk.ico"),
+            ),
+        )
+
+        assertEquals("BBC iPlayer", lists.services["bbc"])
+        assertEquals("bbc", lists.serviceOf("bbc.co.uk"))
+        assertEquals("bbc", lists.serviceOf("BBC.CO.UK."))
+        assertTrue(lists.serviceIcons["bbc"]!!.startsWith("https://"))
+    }
+
+    @Test
+    fun serviceIdsAreStableSlugs() {
+        assertEquals("bbc-iplayer", serviceIdFromName("BBC iPlayer"))
+        assertEquals("ard-mediathek", serviceIdFromName("  ARD Mediathek  "))
+        assertEquals("service", serviceIdFromName("***"))
+    }
+
+    @Test
+    fun anIconIsEitherADomainOrAUrl() {
+        assertEquals(
+            "https://icons.duckduckgo.com/ip3/bbc.co.uk.ico",
+            serviceIconUrl("bbc.co.uk"),
+        )
+        assertEquals("https://example.com/icon.png", serviceIconUrl("https://example.com/icon.png"))
+        // Bare words are not a host: they would resolve to a 404 favicon and leave a hole.
+        assertEquals("", serviceIconUrl("not a domain"))
+        assertEquals("", serviceIconUrl(""))
+    }
+
+    @Test
+    fun aStoredFaviconIsShownAsAPngAndroidCanDecode() {
+        assertEquals(
+            "https://www.google.com/s2/favicons?domain=bbc.co.uk&sz=64",
+            serviceDisplayIcon("https://icons.duckduckgo.com/ip3/bbc.co.uk.ico"),
+        )
+        // Custom icons are already a format Coil renders; leave them alone.
+        assertEquals("https://example.com/icon.png", serviceDisplayIcon("https://example.com/icon.png"))
+    }
+
+    @Test
     fun groupActionRoundTripsAndFallsBack() {
         assertEquals(GroupAction.Proxy, GroupAction.from("proxy"))
         assertEquals(GroupAction.Direct, GroupAction.from("direct"))

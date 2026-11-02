@@ -91,6 +91,32 @@ class RulesApiTest {
     }
 
     @Test
+    fun servicesRoundTripOnTheirOwnKeys() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"services":{"bbc":"BBC iPlayer"},""" +
+                    """"domain_services":{"bbc.co.uk":"bbc"},""" +
+                    """"service_icons":{"bbc":"https://icons.duckduckgo.com/ip3/bbc.co.uk.ico"}}""",
+            ),
+        )
+        val lists = repo.load()
+        assertEquals("BBC iPlayer", lists.services["bbc"])
+        assertEquals("bbc", lists.domainServices["bbc.co.uk"])
+        assertEquals("https://icons.duckduckgo.com/ip3/bbc.co.uk.ico", lists.serviceIcons["bbc"])
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"success":true}"""))
+        repo.save(lists)
+        // The load above is still first in the queue; the save is the request whose
+        // body matters here.
+        server.takeRequest()
+        val body = server.takeRequest().body.readUtf8()
+        // The same keys the panel writes, so a service is shared between the two clients.
+        assertTrue(body, body.contains("\"services\":{\"bbc\":\"BBC iPlayer\"}"))
+        assertTrue(body.contains("\"domain_services\":{\"bbc.co.uk\":\"bbc\"}"))
+        assertTrue(body.contains("\"service_icons\""))
+    }
+
+    @Test
     fun saveReportsTheServerAcknowledgement() = runTest {
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"success":true}"""))
         assertTrue(repo.saveRecords(emptyMap()))

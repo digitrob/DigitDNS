@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug builds talk to a development instance over plain HTTP; the emulator
+    reaches the host as 10.0.2.2. The release manifest deliberately sets
+    usesCleartextTraffic="false", so this debug-only override is what lets the
+    Domains screen be exercised against the local server. It is not part of a
+    release APK.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:usesCleartextTraffic="true"
+        tools:replace="android:usesCleartextTraffic" />
+
+</manifest>

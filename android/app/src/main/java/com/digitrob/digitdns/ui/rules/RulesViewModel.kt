@@ -12,7 +12,10 @@ import com.digitrob.digitdns.data.RulesRepository
 import com.digitrob.digitdns.data.SettingsRepository
 import com.digitrob.digitdns.data.UpstreamsRepository
 import com.digitrob.digitdns.domain.model.RuleLists
+import com.digitrob.digitdns.domain.model.normalizedDomain
 import com.digitrob.digitdns.domain.model.replaceDomainPatterns
+import com.digitrob.digitdns.domain.model.serviceIconUrl
+import com.digitrob.digitdns.domain.model.serviceIdFromName
 import com.digitrob.digitdns.ui.components.RouteAction
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,6 +63,8 @@ data class DomainRow(
     val status: DomainStatus,
     /** The wildcards that apply to this row, relative to it. */
     val wildcards: List<DomainWildcard> = emptyList(),
+    /** The service label's id, or empty when the row has no service. */
+    val serviceId: String = "",
 ) {
     /** A proxied row's switch is on; paused is off. Other statuses carry no switch. */
     val enabled: Boolean get() = status == DomainStatus.PROXY
@@ -155,6 +160,8 @@ data class RulesUiState(
     val search: String = "",
     val sort: DomainSort = DomainSort.ADDED_DESC,
     val filter: DomainFilter? = null,
+    /** The service the list is narrowed to: null = every service, [NO_SERVICE] = unlabelled. */
+    val serviceFilter: String? = null,
     val isLoading: Boolean = false,
     /** True only for a pull-to-refresh gesture, so the header Reload button never spins the indicator. */
     val isRefreshing: Boolean = false,
@@ -200,7 +207,12 @@ data class RulesUiState(
                     !row.domain.startsWith("*.") ||
                         statuses[row.domain.removePrefix("*.")] != row.status
                 }
-                .map { row -> row.copy(wildcards = wildcardTypesFor(row.domain, statuses)) }
+                .map { row ->
+                    row.copy(
+                        wildcards = wildcardTypesFor(row.domain, statuses),
+                        serviceId = lists.serviceOf(row.domain),
+                    )
+                }
         }
 
     /** The wildcards that apply to [domain], relative to that row. */
@@ -241,7 +253,14 @@ data class RulesUiState(
                 }
             }
             val filtered = if (status == null) allRows else allRows.filter { it.status == status }
-            val searched = filtered.filter {
+            // The service filter is a view over the same rows: switching services never
+            // refetches and never changes a status. NO_SERVICE selects the unlabelled.
+            val byService = when (serviceFilter) {
+                null -> filtered
+                NO_SERVICE -> filtered.filter { it.serviceId.isEmpty() }
+                else -> filtered.filter { it.serviceId == serviceFilter }
+            }
+            val searched = byService.filter {
                 search.isBlank() || it.domain.contains(search.trim(), ignoreCase = true)
             }
             return when (sort) {
@@ -262,6 +281,24 @@ data class RulesUiState(
 
     val countLabel: String
         get() = "${rows.size} domains"
+
+    /** How many rows carry each service label, over the whole list (not the filter). */
+    val serviceCounts: Map<String, Int>
+        get() {
+            val counts = HashMap<String, Int>()
+            for (row in allRows) {
+                if (row.serviceId.isNotEmpty()) counts[row.serviceId] = (counts[row.serviceId] ?: 0) + 1
+            }
+            return counts
+        }
+
+    /** Unlabelled rows, the "No service" virtual filter. */
+    val noServiceCount: Int get() = allRows.count { it.serviceId.isEmpty() }
+
+    val totalCount: Int get() = allRows.size
+
+    /** A service's display name, falling back to its id if the two ever disagree. */
+    fun serviceName(id: String): String = lists.services[id] ?: id
 }
 
 /**
@@ -270,6 +307,7 @@ data class RulesUiState(
  * domain between the four custom lists.
  */
 @HiltViewModel
+@Suppress("TooManyFunctions")
 class RulesViewModel @Inject constructor(
     private val repository: RulesRepository,
     private val settingsRepository: SettingsRepository,
@@ -395,6 +433,79 @@ class RulesViewModel @Inject constructor(
         it.copy(filter = if (it.filter == value) null else value)
     }
 
+    /** Narrow the list to one service. Null shows every service, [NO_SERVICE] the unlabelled. */
+    fun setServiceFilter(value: String?) = _state.update { it.copy(serviceFilter = value) }
+
+    /**
+     * Put [domain] in [id], or clear its label when [id] is blank. This writes only
+     * `domain_services`: routing is decided by the four lists and is never touched here.
+     */
+    fun assignService(domain: String, id: String) {
+        viewModelScope.launch {
+            val lists = _state.value.lists
+            val links = lists.domainServices.toMutableMap()
+            val key = domain.normalizedDomain()
+            if (id.isEmpty()) links.remove(key) else links[key] = id
+            val message = if (id.isEmpty()) {
+                "Service label cleared for $domain."
+            } else {
+                "${lists.services[id] ?: id}: $domain."
+            }
+            write(lists.copy(domainServices = links), message)
+        }
+    }
+
+    /**
+     * Create a service when [id] is null, otherwise rename (and re-icon) that one.
+     * A rename keeps the id, so every domain already labelled stays labelled.
+     */
+    fun saveService(id: String?, name: String, icon: String) {
+        val label = name.trim()
+        if (label.isEmpty()) return
+        viewModelScope.launch {
+            val lists = _state.value.lists
+            val services = lists.services.toMutableMap()
+            val icons = lists.serviceIcons.toMutableMap()
+            val serviceId = id ?: uniqueServiceId(serviceIdFromName(label), services)
+            services[serviceId] = label
+            val url = serviceIconUrl(icon)
+            if (url.isEmpty()) icons.remove(serviceId) else icons[serviceId] = url
+            write(
+                lists.copy(services = services, serviceIcons = icons),
+                if (id == null) "Added $label." else "Renamed to $label.",
+            )
+        }
+    }
+
+    /**
+     * Delete a service and every label pointing at it. Domains keep their routing:
+     * a deleted label is the absence of organisation, not a pause or a block.
+     */
+    fun deleteService(id: String) {
+        if (id.isEmpty()) return
+        viewModelScope.launch {
+            val lists = _state.value.lists
+            val name = lists.services[id] ?: id
+            write(
+                lists.copy(
+                    services = lists.services - id,
+                    serviceIcons = lists.serviceIcons - id,
+                    domainServices = lists.domainServices.filterValues { it != id },
+                ),
+                "Deleted $name. Domains keep their routing.",
+            )
+            if (_state.value.serviceFilter == id) _state.update { it.copy(serviceFilter = null) }
+        }
+    }
+
+    /** Avoid overwriting an existing service when a new name slugs to a taken id. */
+    private fun uniqueServiceId(base: String, existing: Map<String, String>): String {
+        if (base !in existing) return base
+        var n = 2
+        while ("$base-$n" in existing) n++
+        return "$base-$n"
+    }
+
     fun dismissMessage() = _state.update { it.copy(savedMessage = null) }
 
     /** Add a proxied domain (bulk paste: one or more names, any separators). */
@@ -432,6 +543,9 @@ class RulesViewModel @Inject constructor(
                 proxiedDisabled = lists.proxiedDisabled - domain,
                 blocked = lists.blocked - domain,
                 direct = lists.direct - domain,
+                // The server prunes a label whose domain is gone; doing it here keeps
+                // the screen from showing a label the next save would drop anyway.
+                domainServices = lists.domainServices - domain.normalizedDomain(),
             )
             write(next, "Removed $domain.")
         }
@@ -477,6 +591,9 @@ class RulesViewModel @Inject constructor(
                     proxiedDisabled = strip(lists.proxiedDisabled),
                     blocked = strip(lists.blocked),
                     direct = strip(lists.direct),
+                    // Removing the rule also drops the label: it would otherwise be
+                    // pruned by the server on the next save and blink out later.
+                    domainServices = lists.domainServices.filterKeys { it !in unique.map(String::normalizedDomain) },
                 )
             }
             val verb = when (action) {
@@ -564,3 +681,6 @@ private const val WILDCARD_MIN_LABELS = 2
 
 /** A parent wildcard needs a real parent above host.tld. */
 private const val PARENT_WILDCARD_MIN_LABELS = 3
+
+/** The service filter's virtual "unlabelled" entry; never a stored service id. */
+const val NO_SERVICE = "__none__"

@@ -37,6 +37,10 @@ data class RulesResponse(
     @SerialName("custom_blocked") val customBlocked: List<String> = emptyList(),
     @SerialName("custom_direct") val customDirect: List<String> = emptyList(),
     @SerialName("custom_records") val customRecords: Map<String, String> = emptyMap(),
+    /** Services are organisational: id -> display name, domain -> id, id -> icon URL. */
+    @SerialName("services") val services: Map<String, String> = emptyMap(),
+    @SerialName("domain_services") val domainServices: Map<String, String> = emptyMap(),
+    @SerialName("service_icons") val serviceIcons: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -51,6 +55,9 @@ data class RulesUpdateRequest(
     @SerialName("custom_blocked") val customBlocked: List<String>? = null,
     @SerialName("custom_direct") val customDirect: List<String>? = null,
     @SerialName("custom_records") val customRecords: Map<String, String>? = null,
+    @SerialName("services") val services: Map<String, String>? = null,
+    @SerialName("domain_services") val domainServices: Map<String, String>? = null,
+    @SerialName("service_icons") val serviceIcons: Map<String, String>? = null,
 )
 
 /** The shared `{"success": true}` acknowledgement many write routes return. */

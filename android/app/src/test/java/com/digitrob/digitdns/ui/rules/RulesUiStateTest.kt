@@ -252,6 +252,30 @@ class RulesUiStateTest {
     }
 
     @Test
+    fun `the service filter narrows the list without changing a status`() {
+        val labelled = lists.copy(
+            services = mapOf("bbc" to "BBC"),
+            domainServices = mapOf("a.com" to "bbc", "ads.com" to "bbc"),
+        )
+        val state = RulesUiState(lists = labelled, serviceFilter = "bbc", sort = DomainSort.AZ)
+        assertEquals(listOf("a.com", "ads.com"), state.rows.map { it.domain })
+        assertEquals(DomainStatus.BLOCKED, state.rows.first { it.domain == "ads.com" }.status)
+    }
+
+    @Test
+    fun `no service is the unlabelled set, not a stored service`() {
+        val labelled = lists.copy(
+            services = mapOf("bbc" to "BBC"),
+            domainServices = mapOf("a.com" to "bbc"),
+        )
+        val state = RulesUiState(lists = labelled, serviceFilter = NO_SERVICE)
+        assertFalse(state.rows.any { it.domain == "a.com" })
+        assertEquals(state.totalCount - 1, state.rows.size)
+        assertEquals(1, state.serviceCounts["bbc"])
+        assertEquals(state.totalCount - 1, state.noServiceCount)
+    }
+
+    @Test
     fun wildcardRowKeepsAllItsScopesUsable() {
         assertEquals("example.com", MatchScope.Exact.resolve("*.example.com"))
         // Its own wildcard, not *.*.example.com.

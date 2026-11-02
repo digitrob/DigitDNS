@@ -6,6 +6,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 
@@ -28,7 +29,10 @@ fun DigitDnsDropdownMenu(
         onDismissRequest = onDismissRequest,
         modifier = modifier,
         shape = RoundedCornerShape(12.dp),
-        containerColor = colors.bgCardHover,
+        // bgCardHover carries alpha in dark mode (the cards are glass), and a menu
+        // that lets the list show through its own popup is unreadable. Compositing
+        // it over the page background gives the same colour, fully opaque.
+        containerColor = colors.bgCardHover.compositeOver(colors.bgMain),
         tonalElevation = 0.dp,
         shadowElevation = 8.dp,
         border = BorderStroke(1.dp, colors.borderColor),

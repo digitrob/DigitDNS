@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
@@ -105,23 +106,17 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
 
     // The message floats over the list and needs no acknowledgement: a removal asks
     // first, and once it is done the toast only reports what happened.
-    LaunchedEffect(state.savedMessage) {
-        val message = state.savedMessage ?: return@LaunchedEffect
-        snackbar.showPanelToast(message)
-        viewModel.dismissMessage()
-    }
+    SavedMessageToast(state.savedMessage, snackbar, viewModel::dismissMessage)
 
     var resolutionDomain by remember { mutableStateOf<String?>(null) }
+    // The row whose service picker is open. A dialog rather than a second column:
+    // a phone has no room for the panel's two-pane layout.
+    var servicePickerDomain by remember { mutableStateOf<String?>(null) }
+    var managingServices by remember { mutableStateOf(false) }
 
     Scaffold(snackbarHost = { PanelSnackbarHost(snackbar) }, contentWindowInsets = WindowInsets(0)) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            PanelScreenHeader {
-                TextButton(onClick = viewModel::load, modifier = Modifier.padding(end = 4.dp)) {
-                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.domains_reload))
-                }
-            }
+            DomainsHeader(viewModel::load)
 
             PanelRefreshBox(
                 isRefreshing = state.isRefreshing,
@@ -134,24 +129,17 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
                     // separate cards this short.
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    state.error?.let { message ->
-                        item {
-                            Text(
-                                message,
-                                color = DigitDnsTheme.colors.danger,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
+                    state.error?.let { message -> item { DomainErrorLine(message) } }
 
-                    item { AddRow(onAdd = viewModel::addDomain) }
-                    item { SearchSortRow(state, viewModel::setSearch, viewModel::setSort) }
+                    item { AddRow(viewModel::addDomain) }
+                    item { SearchBulkRow(state, viewModel::setSearch, viewModel::addDomain) }
+                    item { ServicesSortRow(state, viewModel::setServiceFilter, viewModel::setSort) { managingServices = true } }
                     item { FilterChips(state.filter, viewModel::setFilter) }
 
                     if (state.rows.isEmpty() && !state.isLoading) {
                         item {
                             Text(
-                                text = emptyListText(state.filter),
+                                text = emptyListText(state),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 24.dp),
@@ -169,6 +157,8 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
                             patterns = state.lists.managedPatterns,
                             hasResolution = state.resolution?.profiles?.containsKey(row.domain) == true,
                             onResolution = { viewModel.loadResolution(); resolutionDomain = row.domain },
+                            serviceLabel = row.serviceId.takeIf { it.isNotEmpty() }?.let(state::serviceName),
+                            onService = { servicePickerDomain = row.domain },
                         )
                     }
 
@@ -180,19 +170,90 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
         }
     }
 
-    ResolutionDialogHost(
-        domain = resolutionDomain,
+    ResolutionHost(resolutionDomain, state, viewModel) { resolutionDomain = null }
+
+    ServicePickerHost(
+        domain = servicePickerDomain,
+        visible = servicePickerDomain != null || managingServices,
         state = state,
-        onRetry = viewModel::loadResolution,
-        onDismiss = { resolutionDomain = null },
-        onSave = { domain, profile ->
-            viewModel.saveResolution(domain, profile)
-            resolutionDomain = null
+        onAssign = { target, id ->
+            viewModel.assignService(target, id)
+            servicePickerDomain = null
+        },
+        onSaveService = viewModel::saveService,
+        onDeleteService = viewModel::deleteService,
+        onDismiss = {
+            servicePickerDomain = null
+            managingServices = false
         },
     )
 }
 
+@Composable
+private fun SavedMessageToast(
+    message: String?,
+    snackbar: SnackbarHostState,
+    onShown: () -> Unit,
+) {
+    LaunchedEffect(message) {
+        val text = message ?: return@LaunchedEffect
+        snackbar.showPanelToast(text)
+        onShown()
+    }
+}
+
+@Composable
+private fun DomainsHeader(onReload: () -> Unit) {
+    PanelScreenHeader {
+        TextButton(onClick = onReload, modifier = Modifier.padding(end = 4.dp)) {
+            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.domains_reload))
+        }
+    }
+}
+
+/** Opens the service picker for a row, if one is open. */
+@Composable
+private fun ServicePickerHost(
+    domain: String?,
+    visible: Boolean,
+    state: RulesUiState,
+    onAssign: (String, String) -> Unit,
+    onSaveService: (String?, String, String) -> Unit,
+    onDeleteService: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (!visible) return
+    ServicePickerDialog(
+        domain = domain,
+        state = state,
+        onAssign = { id -> domain?.let { onAssign(it, id) } },
+        onSaveService = onSaveService,
+        onDeleteService = onDeleteService,
+        onDismiss = onDismiss,
+    )
+}
+
 /** Opens the override dialog for the tapped row, if any. */
+@Composable
+private fun ResolutionHost(
+    domain: String?,
+    state: RulesUiState,
+    viewModel: RulesViewModel,
+    onDismiss: () -> Unit,
+) {
+    ResolutionDialogHost(
+        domain = domain,
+        state = state,
+        onRetry = viewModel::loadResolution,
+        onDismiss = onDismiss,
+        onSave = { target, profile ->
+            viewModel.saveResolution(target, profile)
+            onDismiss()
+        },
+    )
+}
 @Composable
 private fun ResolutionDialogHost(
     domain: String?,
@@ -503,33 +564,61 @@ private fun PinnedRecordsCard(
 @Composable
 private fun AddRow(onAdd: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
-    var bulkOpen by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },
             label = { Text(stringResource(R.string.domains_add_hint)) },
             placeholder = { Text(stringResource(R.string.domains_add_placeholder)) },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.weight(1f),
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        TextButton(
+            onClick = {
+                onAdd(text)
+                text = ""
+            },
+            enabled = text.isNotBlank(),
+        ) { Text(stringResource(R.string.action_add)) }
+    }
+}
+
+/**
+ * The service filter and Bulk import. This sits below Search because both filter
+ * or add to the same list; the header is page-level (Reload, status), not a place
+ * for list controls.
+ */
+@Composable
+private fun SearchBulkRow(
+    state: RulesUiState,
+    onSearch: (String) -> Unit,
+    onAdd: (String) -> Unit,
+) {
+    var bulkOpen by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(
+            value = state.search,
+            onValueChange = onSearch,
+            label = { Text(stringResource(R.string.domains_search)) },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        OutlinedButton(
+            onClick = { bulkOpen = true },
+            modifier = Modifier.width(CompactActionWidth),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
         ) {
-            TextButton(
-                onClick = {
-                    onAdd(text)
-                    text = ""
-                },
-                enabled = text.isNotBlank(),
-            ) { Text(stringResource(R.string.action_add)) }
-            OutlinedButton(onClick = { bulkOpen = true }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.domains_bulk_import))
-            }
+            Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.domains_bulk_import), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 
@@ -595,10 +684,11 @@ private fun BulkImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) 
 }
 
 @Composable
-private fun SearchSortRow(
+private fun ServicesSortRow(
     state: RulesUiState,
-    onSearch: (String) -> Unit,
+    onServiceFilter: (String?) -> Unit,
     onSort: (DomainSort) -> Unit,
+    onManageServices: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
@@ -606,15 +696,19 @@ private fun SearchSortRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedTextField(
-                value = state.search,
-                onValueChange = onSearch,
-                label = { Text(stringResource(R.string.domains_search)) },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
+            // Fills the row beside the sort selector: the service name is the widest
+            // thing here and was being truncated into "BBC i…".
+            Box(modifier = Modifier.weight(1f)) {
+                ServiceFilterDropdown(
+                    state = state,
+                    onSelect = onServiceFilter,
+                    onManage = onManageServices,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             SortDropdown(state.sort, onSort)
         }
+        // Directly above the status chips it describes.
         Text(
             text = countText(state),
             style = MaterialTheme.typography.bodySmall,
@@ -624,28 +718,64 @@ private fun SearchSortRow(
 }
 
 @Composable
-private fun emptyListText(filter: DomainFilter?): String =
-    filter?.let {
-        stringResource(R.string.domains_empty_filtered, stringResource(it.labelRes).lowercase())
-    } ?: stringResource(R.string.domains_empty)
+private fun DomainErrorLine(message: String) {
+    Text(
+        message,
+        color = DigitDnsTheme.colors.danger,
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
 
 @Composable
-private fun countText(state: RulesUiState): String =
-    state.filter?.let {
-        stringResource(
+private fun emptyListText(state: RulesUiState): String {
+    val service = state.serviceFilter
+    val filter = state.filter
+    return when {
+        service != null -> stringResource(
+            R.string.domains_empty_service,
+            if (service == NO_SERVICE) stringResource(R.string.services_none) else state.serviceName(service),
+        )
+        filter != null -> stringResource(
+            R.string.domains_empty_filtered,
+            stringResource(filter.labelRes).lowercase(),
+        )
+        else -> stringResource(R.string.domains_empty)
+    }
+}
+
+@Composable
+private fun countText(state: RulesUiState): String {
+    val filter = state.filter
+    val base = when {
+        filter != null -> stringResource(
             R.string.domains_count_filtered,
             state.rows.size,
-            stringResource(it.labelRes).lowercase(),
+            stringResource(filter.labelRes).lowercase(),
         )
-    } ?: stringResource(R.string.domains_count, state.rows.size)
+        state.rows.size == 1 -> stringResource(R.string.domains_count_one)
+        else -> stringResource(R.string.domains_count, state.rows.size)
+    }
+    val service = state.serviceFilter ?: return base
+    val name = if (service == NO_SERVICE) stringResource(R.string.services_none) else state.serviceName(service)
+    return "$base · $name"
+}
+
+/** Bulk import and the sort selector share a width so the two row-ends align. */
+private val CompactActionWidth = 150.dp
 
 /** The sort selector as a dropdown button, placed to the right of the search field. */
 @Composable
 private fun SortDropdown(selected: DomainSort, onSelect: (DomainSort) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick = { expanded = true }) {
-            Text(stringResource(selected.labelRes), maxLines = 1)
+        // Same width as Bulk import so the two row-ends line up; the custom padding
+        // is what lets "Added (newest)" fit at that width without clipping.
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.width(CompactActionWidth),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+        ) {
+            Text(stringResource(selected.labelRes), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.domains_sort))
         }
         DigitDnsDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -698,6 +828,8 @@ private fun DomainRowItem(
     patterns: Set<String>,
     hasResolution: Boolean,
     onResolution: () -> Unit,
+    serviceLabel: String?,
+    onService: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -725,7 +857,12 @@ private fun DomainRowItem(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    DomainNameCell(row = row, modifier = Modifier.weight(1f))
+                    DomainNameCell(
+                        row = row,
+                        serviceLabel = serviceLabel,
+                        onService = onService,
+                        modifier = Modifier.weight(1f),
+                    )
                     // The action set is identical on every status. Blocked/direct rows
                     // keep the gear and pause switch visible but disabled, so the row
                     // does not reflow and the unavailable actions stay legible.
@@ -769,12 +906,19 @@ private fun DomainRowItem(
 }
 
 /**
- * The domain with its wildcard line underneath. The second line always exists: the
- * wildcard type active for this row, or "exact" when none. Relative to the row, so
- * *.example.com reads as *.host here and as *.parent on api.example.com.
+ * The domain with its second line underneath: the service label on the left, then the
+ * wildcard type active for this row (or "exact" when none). The label is tappable and
+ * opens the picker; tapping it never changes routing, only which group the row is in.
+ * Relative to the row, so *.example.com reads as *.host here and *.parent on
+ * api.example.com.
  */
 @Composable
-private fun DomainNameCell(row: DomainRow, modifier: Modifier = Modifier) {
+private fun DomainNameCell(
+    row: DomainRow,
+    serviceLabel: String?,
+    onService: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier = modifier) {
         Text(
             text = row.domain,
@@ -783,21 +927,38 @@ private fun DomainNameCell(row: DomainRow, modifier: Modifier = Modifier) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(
-            text = if (row.wildcards.isEmpty()) {
-                "exact"
-            } else {
-                row.wildcards.joinToString(" · ") { it.type }
-            },
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
-            color = if (row.wildcards.isEmpty()) {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                DigitDnsTheme.colors.purple
-            },
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = serviceLabel ?: stringResource(R.string.services_none),
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
+                color = if (serviceLabel != null) {
+                    DigitDnsTheme.colors.info
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable(role = Role.Button, onClick = onService)
+                    .padding(horizontal = 3.dp, vertical = 1.dp),
+            )
+            Text(
+                text = " · " + if (row.wildcards.isEmpty()) {
+                    "exact"
+                } else {
+                    row.wildcards.joinToString(" · ") { it.type }
+                },
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
+                color = if (row.wildcards.isEmpty()) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    DigitDnsTheme.colors.purple
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

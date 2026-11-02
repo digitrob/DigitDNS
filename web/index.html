@@ -1245,6 +1245,34 @@
              original card, so the add / bulk-import / remove handlers in app.js
              keep working untouched. Each row now carries a switch: off keeps the
              domain in the list but lifts it out of the proxy set. -->
+        <div class="services-layout">
+
+        <!-- Services. Purely organisational: a label that groups domains so they can
+             be found. Selecting one filters the list beside it; it never changes how
+             anything is routed. "All domains" and "No service" are virtual entries -
+             neither is stored, and No service is simply the absence of a label. -->
+        <aside class="glass-panel panel-card p-3 space-y-2 services-aside">
+          <h3 class="panel-card-header px-1">
+            <i data-feather="folder" class="w-4 h-4"></i> Services
+          </h3>
+          <div id="services-list" class="space-y-1"></div>
+          <button id="add-service-btn" type="button"
+            class="w-full panel-btn panel-btn-sm panel-btn-neutral">+ New service</button>
+          <div id="add-service-form" class="hidden space-y-2 mt-1">
+            <input id="service-name" type="text" maxlength="40" autocomplete="off"
+              placeholder="Name (e.g. BBC iPlayer)"
+              class="panel-field panel-field-sm w-full" aria-label="Service name">
+            <input id="service-icon" type="text" autocomplete="off" spellcheck="false"
+              placeholder="Icon URL or domain (optional)"
+              class="panel-field panel-field-sm w-full font-mono" aria-label="Service icon URL or domain">
+            <p class="text-[10px] text-slate-500">A domain fetches its favicon; a URL uses that image.</p>
+            <div class="flex gap-2">
+              <button id="save-service-btn" type="button" class="panel-btn panel-btn-sm panel-btn-primary flex-1">Add</button>
+              <button id="cancel-service-btn" type="button" class="panel-btn panel-btn-sm panel-btn-neutral">Cancel</button>
+            </div>
+          </div>
+        </aside>
+
         <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
           <div>
             <h3 class="panel-card-header">
@@ -1365,12 +1393,13 @@
                     <input type="checkbox" id="proxied-select-all" aria-label="Select all managed domains" class="proxied-check">
                   </th>
                   <th class="proxied-col-domain py-2.5 px-3 text-start">DOMAIN</th>
+                  <th class="proxied-col-service py-2.5 px-3 text-start">SERVICE</th>
                   <th class="proxied-col-actions py-2.5 px-3 text-center">ACTIONS</th>
                   <th class="proxied-col-status py-2.5 px-3 text-center">STATUS</th>
                 </tr>
               </thead>
               <tbody id="custom-proxied-rows" class="divide-y divide-slate-800/50 text-slate-300">
-                <tr><td colspan="4" class="py-8 text-center text-slate-500">Loading rules…</td></tr>
+                <tr><td colspan="5" class="py-8 text-center text-slate-500">Loading rules…</td></tr>
               </tbody>
             </table>
             <div id="proxied-sentinel" class="proxied-sentinel" aria-hidden="true"></div>
@@ -1378,6 +1407,8 @@
           <button type="button" id="proxied-load-more"
             class="hidden px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">Load more</button>
         </div>
+
+        </div><!-- /grid -->
 
       </section>
 
