@@ -1,5 +1,5 @@
 ========================================================================
-   DigitDNS v3.7.0 — OFFLINE INSTALLER
+   DigitDNS v3.7.1 — OFFLINE INSTALLER
    100% Standalone · Zero Internet Required · Single Binary
 ========================================================================
 
