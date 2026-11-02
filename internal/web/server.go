@@ -414,6 +414,26 @@ func (ws *WebServer) BuildHandler() http.Handler {
 			return
 		}
 
+		// 2.5 Liveness probe, deliberately unauthenticated and contentless.
+		//
+		// The container healthcheck used to hit the versioned API, which lives
+		// under the generated admin path. That path is a locator an operator can
+		// regenerate from the panel, so the check broke the moment it was rotated -
+		// and the container was reported unhealthy while the resolver was fine. A
+		// probe must not depend on a credential-shaped path, and it must not be able
+		// to leak one: this answers "the HTTP stack is up" and nothing else.
+		if p == "/healthz" {
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				w.Header().Set("Allow", "GET, HEAD")
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+			return
+		}
+
 		// 3. DNS-over-HTTPS, a service endpoint rather than a web page.
 		if p == "/dns-query" && ws.dohHandler != nil {
 			ws.dohHandler.ServeHTTP(w, r)
