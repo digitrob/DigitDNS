@@ -55,6 +55,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
@@ -397,28 +400,27 @@ private fun AgentCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                IconButton(onClick = onEdit) {
-                    Icon(
-                        Icons.Filled.Edit,
-                        contentDescription = stringResource(R.string.agents_edit),
-                        modifier = Modifier.size(18.dp),
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(1.dp),
+                ) {
+                    AgentActionButton(
+                        icon = Icons.Filled.Edit,
+                        label = stringResource(R.string.agents_edit),
+                        onClick = onEdit,
                     )
-                }
-                IconButton(onClick = onToggle) {
-                    Icon(
-                        if (agent.enabled) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = stringResource(
+                    AgentActionButton(
+                        icon = if (agent.enabled) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        label = stringResource(
                             if (agent.enabled) R.string.agents_disable else R.string.agents_enable,
                         ),
-                        modifier = Modifier.size(18.dp),
+                        onClick = onToggle,
                     )
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = stringResource(R.string.agents_delete),
+                    AgentActionButton(
+                        icon = Icons.Filled.Delete,
+                        label = stringResource(R.string.agents_delete),
+                        onClick = onDelete,
                         tint = DigitDnsTheme.colors.danger,
-                        modifier = Modifier.size(18.dp),
                     )
                 }
             }
@@ -505,6 +507,31 @@ private fun agentMeta(agent: RelayAgentInfo): String {
             if (name.isNotBlank() && name != code) "$code · $name" else code
         }
     return listOfNotNull(country, agent.id.takeIf { it.isNotBlank() }).joinToString(" · ")
+}
+
+/** A compact card-header action: 32 dp, so the agent name keeps the space that
+ * three stock 48 dp IconButtons used to take. */
+@Composable
+private fun AgentActionButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(18.dp),
+        )
+    }
 }
 
 @Composable

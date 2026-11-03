@@ -29,4 +29,7 @@ data class QueryEvent(
     val upstream: String = "",
     /** How that resolver was queried (UDP/TCP/DoT/DoH/DoQ/DoH3/DNSCrypt); empty for cache/local. */
     @SerialName("upstream_protocol") val upstreamProtocol: String = "",
+    /** The relay agent this proxied query has left through, if any. */
+    @SerialName("relay_agent_name") val relayAgentName: String = "",
+    @SerialName("relay_country") val relayCountry: String = "",
 )

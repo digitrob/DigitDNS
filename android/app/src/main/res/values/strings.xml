@@ -66,6 +66,9 @@
     <string name="relay_bulk_body">This writes one relay override per selected domain. It does not change their service labels or routing status.</string>
     <string name="relay_service_default">Default relay</string>
     <string name="relay_service_default_body">Used only by domains with no relay override. This Server is the default.</string>
+    <string name="live_log_relay_desc">Relay: %1$s. Tap for details.</string>
+    <string name="live_log_relay_title">Relay for this query</string>
+    <string name="live_log_relay_body">This query exited through the relay shown above. Relay assignments are edited on the Domains screen.</string>
     <string name="relay_row_content">Relay: %1$s. Tap to change.</string>
     <!-- Relay agents. -->
     <string name="agents_summary">%1$d agents · %2$d online</string>

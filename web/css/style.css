@@ -1212,6 +1212,9 @@ input:checked + .slider:before {
 #main-content {
   display: flex;
   flex-direction: column;
+  /* Without this the flex item's automatic min-height is its content, so a long
+     live log grows the page and the table viewport never becomes the scroller. */
+  min-height: 0;
   /* Use the width of the window: the panels sit closer to the sidebar and the
      right edge. The id wins over the Tailwind px-* classes, which are left in
      the markup for the no-CSS case. Each step is half of the old gutter. */
@@ -1238,7 +1241,7 @@ input:checked + .slider:before {
 }
 .stream-viewport {
   max-height: none;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
 }
@@ -1256,15 +1259,15 @@ input:checked + .slider:before {
  * sm:table-cell), so their widths only apply where they are shown. */
 .stream-table {
   table-layout: fixed;
-  /* The seven fixed columns leave the domain column whatever is left, and at a
+  /* The eight fixed columns leave the domain column whatever is left, and at a
    * narrow panel that was zero pixels: the domain vanished while every other
    * cell kept its width. A floor on the table keeps at least a readable share
    * for the domain; the viewport scrolls horizontally instead. Phones drop the
    * proto and rule columns, so their floor is lower. */
-  min-width: 40rem;
+  min-width: 48rem;
 }
 @media (min-width: 640px) {
-  .stream-table { min-width: 52rem; }
+  .stream-table { min-width: 60rem; }
 }
 /* The fixed columns add up, and the domain column is the one that takes what is
  * left. The first set of widths summed to 50.5rem, so a panel whose content box
@@ -1278,6 +1281,7 @@ input:checked + .slider:before {
 .stream-col-proto { width: 4rem; }
 .stream-col-domain { width: auto; }
 .stream-col-rule { width: 8.5rem; }
+.stream-col-relay { width: 9.5rem; }
 /* The action column has to hold "PROXY · IPv6 SINK" on one line, and the domain
  * column is the auto one, so the two widths trade against each other: +1.5rem
  * here narrows the domain by the same 24px and stops the status chip wrapping. */
@@ -1289,7 +1293,7 @@ input:checked + .slider:before {
 .stream-col-latency { width: 6.5rem; }
 
 /* Zebra rows for the live log, so a dense block of queries can be tracked across
- * the seven columns without losing the line. Same theme token and weight as the
+ * the eight columns without losing the line. Same theme token and weight as the
  * proxied list. The placeholder rows are excluded: they are a single centred
  * message, not a data row, and a tint behind them reads as a stray empty row. */
 .stream-table tbody tr:nth-child(even) {
@@ -2288,6 +2292,43 @@ input:checked + .slider:before {
   outline: 1px dashed rgba(34, 211, 238, 0.6);
   outline-offset: -1px;
 }
+.dash-edit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dash-reset-btn { flex-shrink: 0; }
+.dash-edit-bar.hidden { display: none; }
+
+/* Explicit 12-column layout. The inline grid-column/grid-row values come from
+   the layout engine; this block only supplies the geometry those values use. */
+#tab-dashboard.dash-custom-layout [data-dash-grid] {
+  align-items: stretch;
+  justify-items: stretch;
+}
+#tab-dashboard.dash-custom-layout [data-dash-card] {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  box-sizing: border-box;
+  align-self: stretch;
+  scrollbar-width: thin;
+}
+#tab-dashboard.dash-custom-layout .upstream-col {
+  grid-row: auto;
+  height: auto;
+  min-height: 0;
+}
+#tab-dashboard.dash-custom-layout .upstream-list {
+  max-height: none;
+}
+#tab-dashboard.dash-custom-layout.is-editing [data-dash-grid] {
+  background-image: linear-gradient(to right, rgba(34, 211, 238, 0.06) 1px, transparent 1px);
+  background-size: calc((100% + 16px) / 12) 100%;
+}
+
 .dash-edit-cover {
   position: absolute;
   inset: 0;
@@ -2298,13 +2339,27 @@ input:checked + .slider:before {
 }
 .dash-edit-cover:active { cursor: grabbing; }
 .dash-dragging { opacity: 0.55; }
+.dash-drag-origin { opacity: 0.18; }
+.dash-drag-ghost {
+  position: fixed;
+  z-index: 300;
+  pointer-events: none;
+  opacity: 0.96;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  transform: rotate(0.2deg);
+}
+.dash-placeholder {
+  position: fixed;
+  z-index: 250;
+  pointer-events: none;
+  border: 2px dashed rgba(34, 211, 238, 0.9);
+  border-radius: var(--radius-lg);
+  background: rgba(34, 211, 238, 0.08);
+  box-shadow: 0 0 24px rgba(34, 211, 238, 0.16) inset;
+}
 .dash-resize {
   position: absolute;
-  right: 3px;
-  bottom: 3px;
   z-index: 40;
-  width: 18px;
-  height: 18px;
   padding: 0;
   display: flex;
   align-items: center;
@@ -2313,18 +2368,68 @@ input:checked + .slider:before {
   border: 1px solid rgba(34, 211, 238, 0.55);
   background: rgba(34, 211, 238, 0.16);
   color: var(--accent-cyan);
-  cursor: nwse-resize;
   touch-action: none;
 }
-.dash-resize::before {
+.dash-resize-se {
+  right: 3px;
+  bottom: 3px;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+}
+.dash-resize-se::before {
   content: "";
   width: 7px;
   height: 7px;
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
 }
+.dash-resize-e {
+  right: 3px;
+  top: 50%;
+  width: 8px;
+  height: 28px;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+}
+.dash-resize-s {
+  bottom: 3px;
+  left: 50%;
+  width: 28px;
+  height: 8px;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+}
+.dash-resize-e::before,
+.dash-resize-s::before {
+  content: "";
+  width: 3px;
+  height: 3px;
+  border-radius: 99px;
+  background: currentColor;
+}
 @media (max-width: 1023px) {
   .dash-resize { display: none; }
+}
+
+/* A per-card refresh spin, shared by the relay-agent card. */
+.agent-icon-btn.is-refreshing svg { animation: dash-spin 0.8s linear infinite; }
+@keyframes dash-spin { to { transform: rotate(360deg); } }
+
+/* The live log's RELAY column: the same flag + name the Domains list uses, but
+   read-only — the choice is edited on the domain row. */
+.stream-relay {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-main);
+}
+.stream-relay span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Relay agents ────────────────────────────────────────────────────────────
@@ -2494,7 +2599,16 @@ input:checked + .slider:before {
   text-align: left;
 }
 .proxied-relay-trigger:hover { border-color: rgba(34, 211, 238, 0.5); }
-.proxied-relay-trigger .agent-flag { width: 16px; height: 12px; }
+.proxied-relay-trigger .agent-flag { width: 18px; height: 13px; }
+.relay-flag {
+  width: 18px;
+  height: 13px;
+  border-radius: 2px;
+  object-fit: cover;
+  flex-shrink: 0;
+  align-self: center;
+}
+.proxied-bulk-option .relay-flag { margin-top: 0; }
 .proxied-relay-trigger .proxied-relay-name {
   flex: 1;
   min-width: 0;
@@ -2559,3 +2673,13 @@ input:checked + .slider:before {
   #agents-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 .agent-empty { grid-column: 1 / -1; }
+
+/* The live-log header is sticky inside the scrolling viewport. Its utility
+   background is 80% opaque, which let rows show through it while the body
+   scrolled; the column labels must sit on a solid strip. */
+#tab-stream .stream-table thead {
+  background: rgb(var(--c-slate-950));
+}
+#tab-stream .stream-table thead th {
+  background: rgb(var(--c-slate-950));
+}

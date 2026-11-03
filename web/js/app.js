@@ -1074,14 +1074,185 @@ function renderTLSCertDetails(cfg) {
 }
 
 
-// ── Dashboard layout editor ───────────────────────────────────────────────────
-// Cards stay in their original grid sections; the editor reorders within a
-// section and changes each card's column span and height. The arrangement is
-// stored install-wide (dashboard_layout), not in one browser.
-const DASH_ROW_PX = 48;
-let dashLayout = { order: {}, cards: {} };
+// ── Dashboard layout engine ───────────────────────────────────────────────────
+// The dashboard is an explicit 12-column grid. A card owns x/y/w/h in that grid,
+// not just DOM order: that is what lets a card move to any column and row, keeps
+// a tall card from stretching its neighbours, and makes the layout survive a
+// reload. Positions are stored under the existing dashboard_layout policy.
+//
+// Pure helpers (DASH_LAYOUT_PURE_START .. DASH_LAYOUT_PURE_END) are extracted by
+// tests/web/dashboard-layout.test.cjs and must not touch the DOM or window.
+// DASH_LAYOUT_PURE_START
+const DASH_COLS = 12;
+const DASH_ROW_PX = 24;
+const DASH_GRID_GAP = 16;
+const DASH_MAX_ROWS = 80;
+const DASH_CARD_MIN = {
+  qps: { w: 2, h: 3 },
+  cache: { w: 2, h: 3 },
+  sni: { w: 2, h: 3 },
+  cpu: { w: 2, h: 3 },
+  ram: { w: 2, h: 3 },
+  traffic: { w: 2, h: 3 },
+  chart: { w: 6, h: 6 },
+  upstream: { w: 3, h: 6 },
+  latency: { w: 6, h: 5 },
+};
+
+function dashInt(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n) : fallback;
+}
+
+function dashMin(id) {
+  return DASH_CARD_MIN[id] || { w: 2, h: 3 };
+}
+
+function dashClampCard(card, id) {
+  const min = dashMin(id);
+  const w = Math.max(min.w, Math.min(DASH_COLS, dashInt(card && card.w, min.w)));
+  const x = Math.max(0, Math.min(DASH_COLS - w, dashInt(card && card.x, 0)));
+  const h = Math.max(min.h, Math.min(DASH_MAX_ROWS, dashInt(card && card.h, min.h)));
+  const y = Math.max(0, Math.min(DASH_MAX_ROWS - h, dashInt(card && card.y, 0)));
+  return { x, y, w, h };
+}
+
+function dashOverlaps(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function dashSortOrder(cards, ids) {
+  return [...ids].sort((a, b) => {
+    const A = cards[a] || { x: 0, y: 0 };
+    const B = cards[b] || { x: 0, y: 0 };
+    return A.y - B.y || A.x - B.x || ids.indexOf(a) - ids.indexOf(b);
+  });
+}
+
+// Vertical gravity. The anchor (the card the operator just dropped or resized)
+// keeps its chosen y so a deliberate placement is not undone; every other card
+// falls to the nearest free row in its own columns.
+function dashCompact(cards, order, anchorId) {
+  const ids = Array.from(new Set([...order, ...Object.keys(cards)]));
+  const rank = new Map(order.map((id, i) => [id, i]));
+  const anchor = anchorId && cards[anchorId] ? anchorId : '';
+  const byPosition = (a, b) => {
+    const A = cards[a] || { x: 0, y: 0 };
+    const B = cards[b] || { x: 0, y: 0 };
+    return A.y - B.y || A.x - B.x || (rank.get(a) ?? 0) - (rank.get(b) ?? 0);
+  };
+  const sequence = anchor
+    ? [anchor, ...ids.filter((id) => id !== anchor).sort(byPosition)]
+    : ids.sort(byPosition);
+  const placed = [];
+  sequence.forEach((id) => {
+    if (!cards[id]) return;
+    const card = { ...cards[id] };
+    if (id !== anchor) card.y = 0;
+    let guard = 0;
+    while (placed.some((other) => dashOverlaps(card, other)) && guard++ < DASH_MAX_ROWS * 2) {
+      card.y += 1;
+    }
+    cards[id] = card;
+    placed.push(card);
+  });
+  return cards;
+}
+
+function dashDefaultCards(name, ids) {
+  const cards = {};
+  if (name === 'metrics') {
+    ids.forEach((id, i) => {
+      cards[id] = { x: (i * 2) % DASH_COLS, y: Math.floor((i * 2) / DASH_COLS) * 4, w: 2, h: 4 };
+    });
+    return cards;
+  }
+  if (name === 'main') {
+    const defaults = {
+      chart: { x: 0, y: 0, w: 8, h: 10 },
+      upstream: { x: 8, y: 0, w: 4, h: 17 },
+      latency: { x: 0, y: 10, w: 8, h: 7 },
+    };
+    ids.forEach((id, i) => {
+      cards[id] = defaults[id] || { x: (i * 4) % DASH_COLS, y: 0, w: 4, h: 6 };
+    });
+    return cards;
+  }
+  ids.forEach((id, i) => {
+    cards[id] = { x: (i * 2) % DASH_COLS, y: 0, w: 2, h: 3 };
+  });
+  return cards;
+}
+
+// Accepts the old {order, cards:{w,h}} document and the v2 {grids} document.
+// The old format had 6 columns for metrics and 3 for the main area; those are
+// scaled to the 12-column model, and the old 48px height unit becomes 24px.
+function dashNormalizeLayout(raw, gridIds) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const v2 = source.version === 2 && source.grids && typeof source.grids === 'object';
+  const out = { version: 2, grids: {} };
+  Object.entries(gridIds).forEach(([name, ids]) => {
+    const defaults = dashDefaultCards(name, ids);
+    const cards = {};
+    if (v2) {
+      const group = source.grids[name] || {};
+      const supplied = group.cards && typeof group.cards === 'object' ? group.cards : {};
+      ids.forEach((id) => { cards[id] = dashClampCard(supplied[id] || defaults[id], id); });
+    } else {
+      const submitted = Array.isArray(source.order && source.order[name]) ? source.order[name] : [];
+      const order = submitted.filter((id, i) => ids.includes(id) && submitted.indexOf(id) === i);
+      ids.forEach((id) => { if (!order.includes(id)) order.push(id); });
+      const scale = name === 'metrics' ? 2 : 4;
+      let x = 0;
+      let y = 0;
+      let bottom = 0;
+      order.forEach((id) => {
+        const legacy = source.cards && source.cards[id];
+        const base = defaults[id];
+        let w = legacy && Number.isFinite(Number(legacy.w)) ? dashInt(Number(legacy.w) * scale, base.w) : base.w;
+        let h = legacy && Number.isFinite(Number(legacy.h)) ? dashInt(Number(legacy.h) * 2, base.h) : base.h;
+        w = Math.max(dashMin(id).w, Math.min(DASH_COLS, w));
+        h = Math.max(dashMin(id).h, Math.min(DASH_MAX_ROWS, h));
+        if (x + w > DASH_COLS) {
+          x = 0;
+          y = bottom;
+        }
+        cards[id] = { x, y, w, h };
+        x += w;
+        bottom = Math.max(bottom, y + h);
+        if (x >= DASH_COLS) {
+          x = 0;
+          y = bottom;
+        }
+      });
+      ids.forEach((id) => {
+        if (cards[id]) return;
+        const base = defaults[id];
+        if (x + base.w > DASH_COLS) {
+          x = 0;
+          y = bottom;
+        }
+        cards[id] = { ...base, x, y };
+        x += base.w;
+        bottom = Math.max(bottom, y + base.h);
+      });
+    }
+    let order = dashSortOrder(cards, ids);
+    dashCompact(cards, order, '');
+    order = dashSortOrder(cards, ids);
+    out.grids[name] = { cards, order };
+  });
+  return out;
+}
+
+function dashCloneLayout(layout) {
+  return JSON.parse(JSON.stringify(layout));
+}
+// DASH_LAYOUT_PURE_END
+
+let dashLayout = { version: 2, grids: {} };
+let dashOriginalIds = null;
 let dashEditing = false;
-let dashSaveTimer = null;
 let dashLayoutDirty = false;
 
 function dashGridEls() {
@@ -1096,85 +1267,149 @@ function dashIsDesktop() {
   return window.matchMedia('(min-width: 1024px)').matches;
 }
 
-function dashMaxCols(grid) {
-  return grid.dataset.dashGrid === 'metrics' ? 6 : 3;
-}
-
-function dashCols(grid) {
-  if (grid.dataset.dashGrid === 'metrics') {
-    if (window.matchMedia('(min-width: 1280px)').matches) return 6;
-    if (window.matchMedia('(min-width: 640px)').matches) return 3;
-    return 2;
-  }
-  if (grid.dataset.dashGrid === 'main') {
-    return window.matchMedia('(min-width: 1024px)').matches ? 3 : 1;
-  }
-  return 1;
-}
-
-function normalizeDashLayout(raw) {
-  const source = raw && typeof raw === 'object' ? raw : {};
-  const layout = { order: {}, cards: {} };
+function dashGridIds() {
+  const ids = {};
   dashGridEls().forEach((grid) => {
-    const name = grid.dataset.dashGrid;
-    const ids = dashCardsOf(grid).map((el) => el.dataset.dashCard);
-    const submitted = Array.isArray(source.order && source.order[name]) ? source.order[name] : [];
-    const order = submitted.filter((id, i) => ids.includes(id) && submitted.indexOf(id) === i);
-    ids.forEach((id) => { if (!order.includes(id)) order.push(id); });
-    layout.order[name] = order;
-    order.forEach((id) => {
-      const cfg = source.cards && source.cards[id];
-      if (!cfg || typeof cfg !== 'object') return;
-      const w = Number(cfg.w);
-      const h = Number(cfg.h);
-      layout.cards[id] = {
-        w: Number.isFinite(w) ? Math.max(1, Math.min(dashMaxCols(grid), Math.round(w))) : 1,
-        h: Number.isFinite(h) ? Math.max(1, Math.min(30, Math.round(h))) : 2,
-      };
-    });
+    ids[grid.dataset.dashGrid] = dashCardsOf(grid).map((el) => el.dataset.dashCard);
   });
-  return layout;
+  return ids;
 }
 
-function applyDashboardLayout(raw) {
-  if (!document.getElementById('tab-dashboard')) return;
-  if (raw !== undefined) dashLayout = normalizeDashLayout(raw);
+// The markup order, captured before any layout reorders the DOM. Reset must
+// restore this, not whichever order the last drag left behind.
+function dashOriginalGridIds() {
+  if (!dashOriginalIds) dashOriginalIds = dashGridIds();
+  return dashOriginalIds;
+}
+
+function dashGridMetrics(grid) {
+  const rect = grid.getBoundingClientRect();
+  const style = getComputedStyle(grid);
+  const columnGap = parseFloat(style.columnGap) || DASH_GRID_GAP;
+  const rowGap = parseFloat(style.rowGap) || DASH_GRID_GAP;
+  const colWidth = Math.max(1, (grid.clientWidth - columnGap * (DASH_COLS - 1)) / DASH_COLS);
+  return { rect, columnGap, rowGap, colWidth };
+}
+
+function dashApplyCardStyle(card, cfg) {
+  card.style.gridColumn = `${cfg.x + 1} / span ${cfg.w}`;
+  card.style.gridRow = `${cfg.y + 1} / span ${cfg.h}`;
+  card.style.height = '';
+  card.style.overflow = 'auto';
+}
+
+function dashFlip(before) {
+  if (!before || !before.size) return;
+  requestAnimationFrame(() => {
+    document.querySelectorAll('#tab-dashboard [data-dash-card]').forEach((card) => {
+      const old = before.get(card);
+      if (!old) return;
+      const now = card.getBoundingClientRect();
+      const dx = old.left - now.left;
+      const dy = old.top - now.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      card.style.transition = 'none';
+      card.style.transform = `translate(${dx}px, ${dy}px)`;
+      requestAnimationFrame(() => {
+        card.style.transition = 'transform 180ms ease';
+        card.style.transform = '';
+        setTimeout(() => { card.style.transition = ''; }, 220);
+      });
+    });
+    if (qpsChart) qpsChart.resize();
+  });
+}
+
+// A saved height is a minimum, not a promise: text and canvases have their own
+// natural height. Grow a card until its own content fits, then compact the grid
+// so the extra rows do not overlap the card below.
+function dashEnsureContentFits() {
+  if (!dashIsDesktop()) return false;
+  let changed = false;
   dashGridEls().forEach((grid) => {
     const name = grid.dataset.dashGrid;
+    const group = dashLayout.grids[name];
+    if (!group) return;
+    const cards = dashCardsOf(grid);
+    let grew = false;
+    cards.forEach((card) => {
+      const cfg = group.cards[card.dataset.dashCard];
+      if (!cfg) return;
+      let h = cfg.h;
+      let guard = 0;
+      while (h < DASH_MAX_ROWS - cfg.y && card.scrollHeight > card.clientHeight + 1 && guard++ < DASH_MAX_ROWS) {
+        h += 1;
+        card.style.gridRow = `${cfg.y + 1} / span ${h}`;
+      }
+      if (h !== cfg.h) {
+        cfg.h = h;
+        grew = true;
+        changed = true;
+      }
+    });
+    if (grew) {
+      dashCompact(group.cards, group.order, '');
+      group.order = dashSortOrder(group.cards, Object.keys(group.cards));
+      cards.forEach((card) => {
+        const cfg = group.cards[card.dataset.dashCard];
+        if (cfg) dashApplyCardStyle(card, cfg);
+      });
+    }
+  });
+  return changed;
+}
+
+function applyDashboardLayout(raw, animate) {
+  if (!document.getElementById('tab-dashboard')) return;
+  if (raw !== undefined) dashLayout = dashNormalizeLayout(raw, dashGridIds());
+  const section = document.getElementById('tab-dashboard');
+  const desktop = dashIsDesktop();
+  const before = animate ? new Map(
+    Array.from(document.querySelectorAll('#tab-dashboard [data-dash-card]')).map((card) => [card, card.getBoundingClientRect()]),
+  ) : null;
+  section.classList.toggle('dash-custom-layout', desktop);
+  dashGridEls().forEach((grid) => {
+    const name = grid.dataset.dashGrid;
+    const group = dashLayout.grids[name];
+    if (!group) return;
     const cards = dashCardsOf(grid);
     const byId = {};
-    cards.forEach((el) => { byId[el.dataset.dashCard] = el; });
-    (dashLayout.order[name] || Object.keys(byId)).forEach((id) => {
-      if (byId[id]) grid.appendChild(byId[id]);
-    });
-    cards.forEach((card) => {
-      const cfg = dashLayout.cards[card.dataset.dashCard];
-      const cols = dashCols(grid);
-      if (!dashIsDesktop() || !cfg) {
+    cards.forEach((card) => { byId[card.dataset.dashCard] = card; });
+    group.order.forEach((id) => { if (byId[id]) grid.appendChild(byId[id]); });
+    if (desktop) {
+      grid.style.gridTemplateColumns = `repeat(${DASH_COLS}, minmax(0, 1fr))`;
+      grid.style.gridAutoRows = `${DASH_ROW_PX}px`;
+      grid.style.columnGap = `${DASH_GRID_GAP}px`;
+      grid.style.rowGap = `${DASH_GRID_GAP}px`;
+      cards.forEach((card) => {
+        const cfg = group.cards[card.dataset.dashCard];
+        if (cfg) dashApplyCardStyle(card, cfg);
+      });
+    } else {
+      ['gridTemplateColumns', 'gridAutoRows', 'columnGap', 'rowGap'].forEach((key) => {
+        grid.style[key] = '';
+      });
+      cards.forEach((card) => {
         card.style.gridColumn = '';
+        card.style.gridRow = '';
         card.style.height = '';
         card.style.overflow = '';
-        return;
-      }
-      const span = Math.max(1, Math.min(cols, Math.round((cfg.w / dashMaxCols(grid)) * cols)));
-      card.style.gridColumn = `span ${span}`;
-      if (cfg.h) {
-        card.style.height = `${cfg.h * DASH_ROW_PX}px`;
-        card.style.overflow = 'auto';
-      }
-    });
+      });
+    }
   });
-  if (qpsChart) requestAnimationFrame(() => qpsChart.resize());
+  if (desktop) dashEnsureContentFits();
+  if (animate) dashFlip(before);
+  else requestAnimationFrame(() => { if (qpsChart) qpsChart.resize(); });
 }
 
+// Edits stay in memory while the editor is open. The only write happens when
+// the pencil is clicked to leave edit mode; there is deliberately no debounce,
+// so an experiment that is not confirmed never reaches the database.
 function markDashLayoutDirty() {
   dashLayoutDirty = true;
-  clearTimeout(dashSaveTimer);
-  dashSaveTimer = setTimeout(() => saveDashboardLayout(false), 800);
 }
 
 async function saveDashboardLayout(announce) {
-  clearTimeout(dashSaveTimer);
   if (!dashLayoutDirty) return true;
   dashLayoutDirty = false;
   if (currentConfig) currentConfig.dashboard_layout = dashLayout;
@@ -1196,10 +1431,10 @@ async function saveDashboardLayout(announce) {
 
 function syncDashEditUi() {
   const section = document.getElementById('tab-dashboard');
+  const bar = document.getElementById('dash-edit-bar');
   const hint = document.getElementById('dash-edit-hint');
   if (!section) return;
   section.classList.toggle('is-editing', dashEditing);
-  // One state, two entry points: the desktop sidebar and the phone tab bar.
   document.querySelectorAll('.dash-edit-toggle').forEach((btn) => {
     btn.classList.toggle('is-editing', dashEditing);
     btn.setAttribute('aria-pressed', dashEditing ? 'true' : 'false');
@@ -1207,34 +1442,32 @@ function syncDashEditUi() {
     btn.title = label;
     btn.setAttribute('aria-label', label);
   });
+  if (bar) bar.classList.toggle('hidden', !dashEditing);
   if (hint) {
-    hint.classList.toggle('hidden', !dashEditing);
     hint.textContent = dashIsDesktop()
-      ? 'Drag a card to move it · drag the corner to resize'
-      : 'Long-press a card to move it';
+      ? 'Drag a card anywhere · resize from the right, bottom or corner · saved when you exit'
+      : 'Long-press a card to reorder it · saved when you exit';
   }
 }
 
 function clearDashHandles() {
-  document.querySelectorAll('.dash-edit-cover, .dash-resize').forEach((el) => el.remove());
+  document.querySelectorAll('.dash-edit-cover, .dash-resize, .dash-placeholder, .dash-drag-ghost').forEach((el) => el.remove());
+  document.querySelectorAll('.dash-drag-origin').forEach((el) => el.classList.remove('dash-drag-origin'));
 }
 
-function beginDashDrag(e, card, grid, overlay, requireHold) {
+function beginDashDragMobile(e, card, grid, overlay) {
   if (e.button !== undefined && e.button !== 0) return;
   e.preventDefault();
   const startX = e.clientX;
   const startY = e.clientY;
   let active = false;
   let holdTimer = null;
-
   const activate = () => {
     active = true;
     card.classList.add('dash-dragging');
     document.body.style.userSelect = 'none';
   };
-  if (!requireHold) activate();
-  else holdTimer = setTimeout(activate, 450);
-
+  holdTimer = setTimeout(activate, 450);
   const move = (ev) => {
     if (!active) {
       if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > 8) cleanup();
@@ -1245,15 +1478,18 @@ function beginDashDrag(e, card, grid, overlay, requireHold) {
     const target = under && under.closest('[data-dash-card]');
     if (target && target !== card && target.parentElement === grid) {
       const r = target.getBoundingClientRect();
-      const before = ev.clientX < r.left + r.width / 2;
+      const before = ev.clientY < r.top + r.height / 2;
       grid.insertBefore(card, before ? target : target.nextSibling);
     }
   };
   const finish = () => {
     const wasActive = active;
     cleanup();
-    if (wasActive) {
-      dashLayout.order[grid.dataset.dashGrid] = dashCardsOf(grid).map((el) => el.dataset.dashCard);
+    if (!wasActive) return;
+    const name = grid.dataset.dashGrid;
+    const group = dashLayout.grids[name];
+    if (group) {
+      group.order = dashCardsOf(grid).map((el) => el.dataset.dashCard);
       markDashLayoutDirty();
     }
   };
@@ -1265,42 +1501,138 @@ function beginDashDrag(e, card, grid, overlay, requireHold) {
     document.removeEventListener('pointerup', finish);
     document.removeEventListener('pointercancel', finish);
   };
-  // Listen on the document: the card moves under the pointer, so listeners bound
-  // to its own overlay stop firing as soon as the pointer leaves the card.
   document.addEventListener('pointermove', move, { passive: false });
   document.addEventListener('pointerup', finish, { once: true });
   document.addEventListener('pointercancel', finish, { once: true });
 }
 
-function beginDashResize(e, card, grid) {
+function beginDashDrag(e, card, grid) {
+  if (!dashIsDesktop()) {
+    beginDashDragMobile(e, card, grid);
+    return;
+  }
+  if (e.button !== undefined && e.button !== 0) return;
+  e.preventDefault();
+  const name = grid.dataset.dashGrid;
+  const id = card.dataset.dashCard;
+  const group = dashLayout.grids[name];
+  const cfg = group && group.cards[id];
+  if (!cfg) return;
+  const startRect = card.getBoundingClientRect();
+  const offsetX = e.clientX - startRect.left;
+  const offsetY = e.clientY - startRect.top;
+  const ghost = card.cloneNode(true);
+  ghost.querySelectorAll('.dash-edit-cover, .dash-resize').forEach((el) => el.remove());
+  ghost.classList.add('dash-drag-ghost');
+  ghost.style.width = `${startRect.width}px`;
+  ghost.style.height = `${startRect.height}px`;
+  ghost.style.left = `${startRect.left}px`;
+  ghost.style.top = `${startRect.top}px`;
+  const placeholder = document.createElement('div');
+  placeholder.className = 'dash-placeholder';
+  document.body.append(ghost, placeholder);
+  card.classList.add('dash-drag-origin');
+  document.body.style.userSelect = 'none';
+  let target = { x: cfg.x, y: cfg.y };
+  let moved = false;
+  const move = (ev) => {
+    ev.preventDefault();
+    const left = ev.clientX - offsetX;
+    const top = ev.clientY - offsetY;
+    ghost.style.left = `${left}px`;
+    ghost.style.top = `${top}px`;
+    const m = dashGridMetrics(grid);
+    const x = Math.max(0, Math.min(DASH_COLS - cfg.w, Math.round((left - m.rect.left) / (m.colWidth + m.columnGap))));
+    const y = Math.max(0, Math.min(DASH_MAX_ROWS - cfg.h, Math.round((top - m.rect.top) / (DASH_ROW_PX + m.rowGap))));
+    const draft = dashCloneLayout(dashLayout);
+    const draftGroup = draft.grids[name];
+    if (!draftGroup) return;
+    draftGroup.cards[id] = { ...draftGroup.cards[id], x, y };
+    dashCompact(draftGroup.cards, draftGroup.order, id);
+    target = { x: draftGroup.cards[id].x, y: draftGroup.cards[id].y };
+    moved = moved || target.x !== cfg.x || target.y !== cfg.y;
+    placeholder.style.left = `${m.rect.left + target.x * (m.colWidth + m.columnGap)}px`;
+    placeholder.style.top = `${m.rect.top + target.y * (DASH_ROW_PX + m.rowGap)}px`;
+    placeholder.style.width = `${cfg.w * m.colWidth + (cfg.w - 1) * m.columnGap}px`;
+    placeholder.style.height = `${cfg.h * DASH_ROW_PX + (cfg.h - 1) * m.rowGap}px`;
+  };
+  const finish = (cancelled) => {
+    cleanup();
+    if (cancelled || !moved) return;
+    const current = dashLayout.grids[name];
+    if (!current) return;
+    current.cards[id] = { ...current.cards[id], x: target.x, y: target.y };
+    dashCompact(current.cards, current.order, id);
+    current.order = dashSortOrder(current.cards, Object.keys(current.cards));
+    markDashLayoutDirty();
+    applyDashboardLayout(undefined, true);
+  };
+  const cleanup = () => {
+    ghost.remove();
+    placeholder.remove();
+    card.classList.remove('dash-drag-origin');
+    document.body.style.userSelect = '';
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onCancel);
+  };
+  const onUp = () => finish(false);
+  const onCancel = () => finish(true);
+  document.addEventListener('pointermove', move, { passive: false });
+  document.addEventListener('pointerup', onUp, { once: true });
+  document.addEventListener('pointercancel', onCancel, { once: true });
+}
+
+function beginDashResize(e, card, grid, edge) {
   e.preventDefault();
   e.stopPropagation();
+  const name = grid.dataset.dashGrid;
+  const id = card.dataset.dashCard;
+  const group = dashLayout.grids[name];
+  const cfg = group && group.cards[id];
+  if (!cfg) return;
   const startX = e.clientX;
   const startY = e.clientY;
-  const startW = card.getBoundingClientRect().width;
-  const startH = card.getBoundingClientRect().height;
-  const cols = dashCols(grid);
-  const maxCols = dashMaxCols(grid);
-  const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
-  const colW = Math.max(1, (grid.clientWidth - gap * (cols - 1)) / cols);
-  const id = card.dataset.dashCard;
-
+  const startW = cfg.w;
+  const startH = cfg.h;
+  const min = dashMin(id);
+  let lastW = startW;
+  let lastH = startH;
   const move = (ev) => {
-    const wCols = Math.max(1, Math.min(cols, Math.round((startW + ev.clientX - startX + gap) / (colW + gap))));
-    const h = Math.max(1, Math.min(30, Math.round((startH + ev.clientY - startY) / DASH_ROW_PX)));
-    const storedW = Math.max(1, Math.min(maxCols, Math.round((wCols / cols) * maxCols)));
-    card.style.gridColumn = `span ${wCols}`;
-    card.style.height = `${h * DASH_ROW_PX}px`;
-    card.style.overflow = 'auto';
-    dashLayout.cards[id] = { w: storedW, h };
+    const m = dashGridMetrics(grid);
+    let w = startW;
+    let h = startH;
+    if (edge === 'e' || edge === 'se') {
+      w = Math.max(min.w, Math.min(DASH_COLS - cfg.x, startW + Math.round((ev.clientX - startX) / (m.colWidth + m.columnGap))));
+    }
+    if (edge === 's' || edge === 'se') {
+      h = Math.max(min.h, Math.min(DASH_MAX_ROWS - cfg.y, startH + Math.round((ev.clientY - startY) / (DASH_ROW_PX + m.rowGap))));
+    }
+    card.style.gridColumn = `${cfg.x + 1} / span ${w}`;
+    // Let the browser lay the new height out before asking whether the content
+    // still fits. If it does not, add rows instead of letting text overlap.
+    card.style.gridRow = `${cfg.y + 1} / span ${h}`;
+    while (h < DASH_MAX_ROWS - cfg.y && card.scrollHeight > card.clientHeight + 1) {
+      h += 1;
+      card.style.gridRow = `${cfg.y + 1} / span ${h}`;
+    }
+    lastW = w;
+    lastH = h;
     if (qpsChart) qpsChart.resize();
   };
   const finish = () => {
     document.removeEventListener('pointermove', move);
     document.removeEventListener('pointerup', finish);
     document.removeEventListener('pointercancel', finish);
+    card.style.zIndex = '';
+    if (!group) return;
+    group.cards[id] = { ...group.cards[id], w: lastW, h: lastH };
+    dashCompact(group.cards, group.order, id);
+    group.order = dashSortOrder(group.cards, Object.keys(group.cards));
     markDashLayoutDirty();
+    applyDashboardLayout(undefined, true);
   };
+  card.style.zIndex = '20';
   document.addEventListener('pointermove', move, { passive: false });
   document.addEventListener('pointerup', finish, { once: true });
   document.addEventListener('pointercancel', finish, { once: true });
@@ -1317,17 +1649,18 @@ function setDashEditing(on) {
         const overlay = document.createElement('div');
         overlay.className = 'dash-edit-cover';
         overlay.setAttribute('aria-hidden', 'true');
-        overlay.addEventListener('pointerdown', (e) =>
-          beginDashDrag(e, card, grid, overlay, !dashIsDesktop()));
+        overlay.addEventListener('pointerdown', (e) => beginDashDrag(e, card, grid));
         card.appendChild(overlay);
         if (dashIsDesktop()) {
-          const handle = document.createElement('button');
-          handle.type = 'button';
-          handle.className = 'dash-resize';
-          handle.title = 'Drag to resize';
-          handle.setAttribute('aria-label', 'Resize card');
-          handle.addEventListener('pointerdown', (e) => beginDashResize(e, card, grid));
-          card.appendChild(handle);
+          ['e', 's', 'se'].forEach((edge) => {
+            const handle = document.createElement('button');
+            handle.type = 'button';
+            handle.className = `dash-resize dash-resize-${edge}`;
+            handle.title = edge === 'e' ? 'Drag to resize width' : (edge === 's' ? 'Drag to resize height' : 'Drag to resize');
+            handle.setAttribute('aria-label', handle.title);
+            handle.addEventListener('pointerdown', (e) => beginDashResize(e, card, grid, edge));
+            card.appendChild(handle);
+          });
         }
       });
     });
@@ -1338,8 +1671,6 @@ function setDashEditing(on) {
 
 async function toggleDashboardEditing() {
   if (dashEditing) {
-    // Leaving edit mode persists the arrangement. A failed save keeps the
-    // editor open rather than pretending the change was stored.
     if (!(await saveDashboardLayout(true))) return;
     setDashEditing(false);
     return;
@@ -1349,9 +1680,7 @@ async function toggleDashboardEditing() {
 }
 
 function initDashboardEditor() {
-  // Both entry points share one handler: the desktop sidebar and the badge on
-  // the phone tab bar. Naming them here also keeps the dashboard-id audit able
-  // to see that each declared control is wired.
+  dashOriginalIds = dashGridIds();
   [
     document.getElementById('dash-edit-btn'),
     document.getElementById('dash-edit-btn-mobile'),
@@ -1362,10 +1691,16 @@ function initDashboardEditor() {
       toggleDashboardEditing();
     });
   });
+  document.getElementById('dash-reset-btn')?.addEventListener('click', () => {
+    dashLayout = dashNormalizeLayout({}, dashOriginalGridIds());
+    markDashLayoutDirty();
+    applyDashboardLayout(undefined, true);
+    showToast('Dashboard layout reset', 'success');
+  });
   window.addEventListener('resize', () => {
     clearTimeout(initDashboardEditor._resizeTimer);
     initDashboardEditor._resizeTimer = setTimeout(() => {
-      applyDashboardLayout(dashLayout);
+      applyDashboardLayout();
       if (dashEditing) syncDashEditUi();
     }, 150);
   });
@@ -2096,18 +2431,20 @@ function openRelayPicker(domain, trigger) {
     : 'Inherit service — This Server';
   const rows = [
     `<button type="button" class="proxied-bulk-option" role="option" data-relay-id="__inherit__">
-      <i data-feather="corner-up-left" class="w-3.5 h-3.5"></i>
+      ${(serviceRelay?.country || currentConfig?.server?.country)
+        ? countryFlagHTML(serviceRelay?.country || currentConfig.server.country, 'agent-flag relay-flag')
+        : '<i data-feather="corner-up-left" class="w-3.5 h-3.5"></i>'}
       <span class="truncate">${escapeHTML(inheritLabel)}${stored === '' ? ' · selected' : ''}</span>
     </button>`,
     `<button type="button" class="proxied-bulk-option" role="option" data-relay-id="__local__">
-      <i data-feather="server" class="w-3.5 h-3.5"></i>
+      ${currentConfig?.server?.country ? countryFlagHTML(currentConfig.server.country, 'agent-flag relay-flag') : '<i data-feather="server" class="w-3.5 h-3.5"></i>'}
       <span class="truncate">This Server${stored === '__local__' ? ' · selected' : ''}</span>
     </button>`,
   ];
   if (agentsCache.length) {
     for (const a of agentsCache) {
       rows.push(`<button type="button" class="proxied-bulk-option" role="option" data-relay-id="${escapeHTML(a.id)}">
-        ${agentFlagHTML(a)}
+        ${agentFlagHTML(a, 'agent-flag relay-flag')}
         <span class="truncate">${escapeHTML(a.name || a.id)} · ${escapeHTML(a.country || '')}${agentIsOnline(a) ? '' : ' (offline)'}${stored === a.id ? ' · selected' : ''}</span>
       </button>`);
     }
@@ -2713,7 +3050,7 @@ function renderProxiedList() {
       trigger.setAttribute('aria-label', `Relay for ${escapeHTML(domain)}`);
       trigger.title = 'Change the relay for this domain';
       if (relay.local) {
-        const localFlag = countryFlagHTML(currentConfig?.server?.country);
+        const localFlag = countryFlagHTML(currentConfig?.server?.country, 'agent-flag relay-flag');
         trigger.innerHTML = (localFlag || '<i data-feather="server" class="w-3.5 h-3.5"></i>') +
           '<span class="proxied-relay-name"></span>' +
           '<i data-feather="chevron-down" class="w-3 h-3"></i>';
@@ -2725,7 +3062,7 @@ function renderProxiedList() {
         const agent = relay.agent;
         const isOnline = agent ? agentIsOnline(agent) : false;
         const name = agent ? (agent.name || agent.id) : (relay.id || 'Agent');
-        trigger.innerHTML = (agent ? agentFlagHTML(agent) : '') +
+        trigger.innerHTML = (agent ? agentFlagHTML(agent, 'agent-flag relay-flag') : '') +
           '<span class="proxied-relay-name"></span>' +
           (isOnline ? '' : '<span class="proxied-relay-offline">offline</span>') +
           '<i data-feather="chevron-down" class="w-3 h-3"></i>';
@@ -3952,7 +4289,7 @@ function protocolClass(protocol) {
   return PROTO_COLORS[String(protocol || '').toUpperCase()] || 'text-slate-500';
 }
 
-// queryRowHTML renders one query into the seven cells of the stream table. Everything that
+// queryRowHTML renders one query into the eight cells of the stream table. Everything that
 // came off the wire is escaped — the row reaches the DOM through innerHTML, and a domain is
 // whatever a client asked this resolver to look up.
 //
@@ -3965,11 +4302,23 @@ function queryRowHTML(q) {
   const accountName = q.account_name || 'Public';
 
   const action = q.action || 'DIRECT';
-  const relayFlag = action === 'PROXY' && q.relay_country && flagURL(q.relay_country)
-    ? `<img class="agent-flag agent-flag-sm" src="${escapeHTML(flagURL(q.relay_country))}" alt="${escapeHTML(countryName(q.relay_country))}" title="via ${escapeHTML(q.relay_agent_name || countryName(q.relay_country))}">`
+  // Relay is the route's exit, not part of the PROXY badge. It gets its own
+  // display-only column, matching the Domains table; editing stays there.
+  const relayName = action === 'PROXY'
+    ? String(q.relay_agent_name || 'This Server').trim()
     : '';
-  const actBadgeInner = relayFlag + (STREAM_ACTION_BADGES[action]
-    || `<span class="badge badge-unknown">${escapeHTML(action)}</span>`);
+  const relayCountry = action === 'PROXY'
+    ? String(q.relay_country || (currentConfig?.server?.country || '')).trim()
+    : '';
+  const relayFlag = relayCountry && flagURL(relayCountry)
+    ? `<img class="agent-flag agent-flag-sm" src="${escapeHTML(flagURL(relayCountry))}" alt="${escapeHTML(countryName(relayCountry))}" title="${escapeHTML(countryName(relayCountry))}">`
+    : '';
+  const relayTitle = relayCountry ? `${relayName} · ${countryName(relayCountry)}` : relayName;
+  const relayCell = action === 'PROXY'
+    ? `<span class="stream-relay" title="Relay: ${escapeHTML(relayTitle)}">${relayFlag}<span>${escapeHTML(relayName)}</span></span>`
+    : '<span class="text-slate-600">—</span>';
+  const actBadgeInner = STREAM_ACTION_BADGES[action]
+    || `<span class="badge badge-unknown">${escapeHTML(action)}</span>`;
   // The badge is the trigger for the quick-action menu: it carries the row's
   // domain, and clicking it opens the one shared popover. It is a <button> so it
   // is focusable and Enter/Space reach it; the badge styling stays on the inner
@@ -4019,6 +4368,7 @@ function queryRowHTML(q) {
       ${upstreamLine}
     </td>
     <td class="stream-col-rule py-2.5 px-2 sm:px-3 text-slate-400 hidden sm:table-cell">${escapeHTML(ruleStr)}</td>
+    <td class="stream-col-relay py-2.5 px-2 sm:px-3">${relayCell}</td>
     <td class="stream-col-action py-2.5 px-2 sm:px-3">${actBadge}${cacheBadge}</td>
     <td class="stream-col-latency py-2.5 px-2 sm:px-3 text-end text-emerald-400 font-mono">${latStr}</td>
   `;
@@ -4040,7 +4390,7 @@ function newQueryRow(q) {
 // query forever, with nothing anywhere to say why.
 const STREAM_LISTENING_ROW = `
   <tr class="stream-placeholder">
-    <td colspan="7" class="py-12 text-center text-slate-500">
+    <td colspan="8" class="py-12 text-center text-slate-500">
       <div class="flex flex-col items-center gap-2">
         <div class="pulse-dot"></div>
         <span>Listening for live DNS queries...</span>
@@ -4066,7 +4416,7 @@ function streamNoMatchRow(f) {
     : `None of the last ${held} queries match`;
   return `
     <tr class="stream-placeholder">
-      <td colspan="7" class="py-12 text-center text-slate-500">
+      <td colspan="8" class="py-12 text-center text-slate-500">
         <div class="flex flex-col items-center gap-1.5">
           <div class="font-bold text-slate-400 font-heading">No Match</div>
           <p class="text-xs">${lead} ${what}.</p>
@@ -5266,6 +5616,48 @@ async function loadAgents() {
   }
 }
 
+// Reload one card meaningfully: the agent snapshot gives traffic, heartbeat and
+// ping, while /api/config gives the assignment maps that drive the Domains
+// count. Loading only the agent list would update traffic and leave a stale
+// count, which is the exact confusion this button exists to remove.
+async function refreshAgentCard(id, button) {
+  if (!id) return;
+  if (button) {
+    button.classList.add('is-refreshing');
+    button.disabled = true;
+  }
+  try {
+    const [agentRes, configRes] = await Promise.all([
+      fetch(api('/api/agents'), { headers: { 'Authorization': `Bearer ${authToken}` } }),
+      fetch(api('/api/config'), { headers: { 'Authorization': `Bearer ${authToken}` } }),
+    ]);
+    if (!agentRes.ok) throw new Error(await errorMessage(agentRes, 'Could not refresh the agent'));
+    if (!configRes.ok) throw new Error(await errorMessage(configRes, 'Could not refresh relay assignments'));
+    const agentData = await agentRes.json();
+    const cfg = await configRes.json();
+    agentsCache = Array.isArray(agentData.agents) ? agentData.agents : [];
+    if (currentConfig) {
+      currentConfig.rules = cfg.rules || currentConfig.rules;
+      currentConfig.dashboard_layout = cfg.dashboard_layout ?? currentConfig.dashboard_layout;
+    } else {
+      currentConfig = cfg;
+    }
+    renderAgents();
+    updateAgentSummary();
+    renderServiceRelayControl();
+    if (currentConfig && document.getElementById('custom-proxied-rows')) renderProxiedList();
+    showToast('Agent refreshed', 'success');
+  } catch (e) {
+    showToast(e.message || 'Could not refresh the agent', 'error');
+  } finally {
+    if (button) {
+      button.classList.remove('is-refreshing');
+      button.disabled = false;
+    }
+    safeFeatherReplace();
+  }
+}
+
 function agentPingBadge(a) {
   const measured = Number(a.ping_ms) > 0 && a.ping_at && !String(a.ping_at).startsWith('0001');
   if (!measured) {
@@ -5330,6 +5722,9 @@ function renderAgents() {
               <div class="agent-meta mt-0.5 truncate">${escapeHTML(a.country || '—')}${a.country ? ' · ' + escapeHTML(countryName(a.country)) : ''} · ${escapeHTML(a.id)}</div>
             </div>
             <div class="flex items-center gap-1 shrink-0">
+              <button type="button" class="agent-icon-btn" data-agent-refresh="${escapeHTML(a.id)}" title="Refresh agent" aria-label="Refresh agent ${escapeHTML(a.name || a.id)}">
+                <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i>
+              </button>
               <button type="button" class="agent-icon-btn" data-agent-edit="${escapeHTML(a.id)}" title="Edit agent" aria-label="Edit agent ${escapeHTML(a.name || a.id)}">
                 <i data-feather="edit-2" class="w-3.5 h-3.5"></i>
               </button>
@@ -5674,6 +6069,8 @@ function initAgentPage() {
     showToast('Key copied.', 'success');
   });
   document.getElementById('agents-list')?.addEventListener('click', (e) => {
+    const refresh = e.target.closest('[data-agent-refresh]');
+    if (refresh) { refreshAgentCard(refresh.dataset.agentRefresh, refresh); return; }
     const edit = e.target.closest('[data-agent-edit]');
     if (edit) { openAgentForm(agentForId(edit.dataset.agentEdit)); return; }
     const toggle = e.target.closest('[data-agent-toggle]');

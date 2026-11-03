@@ -47,18 +47,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.draw.clip
+import com.digitrob.digitdns.ui.components.CountryFlag
+import com.digitrob.digitdns.ui.components.PanelDialog
+import java.util.Locale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -277,12 +284,14 @@ private fun EmptyState(state: LiveQueryLogUiState) {
 }
 
 @Composable
+@Suppress("LongMethod")
 private fun QueryRow(
     event: QueryEvent,
     onAction: (RouteAction, List<String>) -> Unit,
     patterns: Set<String>,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    var relayOpen by remember(event.id) { mutableStateOf(false) }
     var rowSize by remember { mutableStateOf(IntSize.Zero) }
     var rowY by remember { mutableStateOf(0f) }
     Box(modifier = Modifier.onGloballyPositioned { coords -> rowSize = coords.size; rowY = coords.positionInRoot().y }) {
@@ -335,15 +344,41 @@ private fun QueryRow(
                 )
             }
 
-            // The status badge itself is the menu trigger, matching the panel where the
-            // badge opens the quick-action menu.
-            ActionBadge(
-                action = event.action,
-                onClick = { menuOpen = true },
-                enabled = event.domain.isNotBlank(),
-            )
+            // Relay flag + status badge. The flag is a second, read-only detail:
+            // tapping it explains the exit without opening the routing menu.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (event.action.equals("PROXY", ignoreCase = true) && event.relayCountry.isNotBlank()) {
+                    val relayLabel = event.relayAgentName.ifBlank { event.relayCountry }
+                    val relayDescription = stringResource(R.string.live_log_relay_desc, relayLabel)
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable { relayOpen = true }
+                            .semantics { contentDescription = relayDescription },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CountryFlag(
+                            country = event.relayCountry,
+                            width = 18.dp,
+                            height = 13.dp,
+                        )
+                    }
+                }
+                ActionBadge(
+                    action = event.action,
+                    onClick = { menuOpen = true },
+                    enabled = event.domain.isNotBlank(),
+                )
+            }
         }
 
+        }
+        if (relayOpen) {
+            RelayDetailsDialog(event, onDismiss = { relayOpen = false })
         }
         RouteActionMenu(
             domain = event.domain,
@@ -376,6 +411,51 @@ private fun protocolColor(protocol: String): Color {
         "DNSCRYPT" -> colors.discord.copy(alpha = 0.75f)
         else -> colors.textMuted
     }
+}
+
+/** The read-only relay explanation opened by the small flag in a live-log row. */
+@Composable
+private fun RelayDetailsDialog(event: QueryEvent, onDismiss: () -> Unit) {
+    val country = event.relayCountry.trim().uppercase(Locale.US)
+    val countryLabel = if (country.length == 2) {
+        Locale("", country).getDisplayCountry(Locale.getDefault()).ifBlank { country }
+    } else {
+        ""
+    }
+    val name = event.relayAgentName.ifBlank { countryLabel.ifBlank { stringResource(R.string.relay_this_server) } }
+    PanelDialog(
+        onDismissRequest = onDismiss,
+        solid = true,
+        title = { Text(stringResource(R.string.live_log_relay_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CountryFlag(country = country, width = 28.dp, height = 21.dp)
+                    Column {
+                        Text(name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                        if (countryLabel.isNotBlank()) {
+                            Text(
+                                countryLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                Text(
+                    stringResource(R.string.live_log_relay_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+        },
+    )
 }
 
 @Composable

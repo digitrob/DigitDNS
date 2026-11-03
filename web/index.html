@@ -960,9 +960,12 @@
       <!-- TAB 1: DASHBOARD OVERVIEW -->
       <!-- ============================================== -->
       <section id="tab-dashboard" class="tab-content space-y-6">
-        <!-- The pencil beside "Dashboard" in the sidebar is the only control:
-             while editing, this hint is the one piece of chrome the cards gain. -->
-        <p id="dash-edit-hint" class="dash-hint hidden" role="status">Drag a card to move it · drag the corner to resize</p>
+        <!-- The pencil beside "Dashboard" in the sidebar is the only control.
+             While editing, the hint and Reset layout are the only extra chrome. -->
+        <div id="dash-edit-bar" class="dash-edit-bar hidden">
+          <p id="dash-edit-hint" class="dash-hint" role="status">Drag a card anywhere · resize from the edge or corner · saved when you exit</p>
+          <button id="dash-reset-btn" type="button" class="panel-btn panel-btn-sm panel-btn-neutral dash-reset-btn">Reset layout</button>
+        </div>
 
         <!-- 6 Telemetry Metric Cards (Responsive Grid) -->
         <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4" data-dash-grid="metrics">
@@ -1701,7 +1704,7 @@
                306px. queryRowHTML in app.js carries the same `hidden sm:table-cell` pair on
                its third and fifth cells; the two must move together or the header and the
                body will disagree about which column is which. The placeholder rows keep
-               colspan="7" — a colspan wider than the visible column count is harmless.
+               colspan="8" — a colspan wider than the visible column count is harmless.
 
                What sets the remaining travel is `min-w-[420px]`, NOT the column count.
                Measured on a 360px viewport (294px of usable wrapper): hiding TIME as well
@@ -1726,6 +1729,7 @@
                   <th class="stream-col-proto py-2.5 px-2 sm:px-3 hidden sm:table-cell text-start">PROTO</th>
                   <th class="stream-col-domain py-2.5 px-2 sm:px-3 text-start">QUERY DOMAIN</th>
                   <th class="stream-col-rule py-2.5 px-2 sm:px-3 hidden sm:table-cell text-start">RULE MATCHED</th>
+                  <th class="stream-col-relay py-2.5 px-2 sm:px-3 text-start">RELAY</th>
                   <th class="stream-col-action py-2.5 px-2 sm:px-3 text-start">ACTION</th>
                   <th class="stream-col-latency py-2.5 px-2 sm:px-3 text-end">LATENCY</th>
                 </tr>
@@ -1737,7 +1741,7 @@
                      text instead, so rewording this copy would have pinned the placeholder
                      above every query for the life of the page. -->
                 <tr class="stream-placeholder">
-                  <td colspan="7" class="py-12 text-center text-slate-500">
+                  <td colspan="8" class="py-12 text-center text-slate-500">
                     <div class="flex flex-col items-center gap-2">
                       <div class="pulse-dot"></div>
                       <span>Listening for live DNS queries...</span>
