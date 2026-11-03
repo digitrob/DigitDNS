@@ -11,6 +11,7 @@ import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.data.RulesRepository
 import com.digitrob.digitdns.data.SettingsRepository
 import com.digitrob.digitdns.data.UpstreamsRepository
+import com.digitrob.digitdns.domain.model.RelayAgent
 import com.digitrob.digitdns.domain.model.RuleLists
 import com.digitrob.digitdns.domain.model.normalizedDomain
 import com.digitrob.digitdns.domain.model.replaceDomainPatterns
@@ -65,6 +66,8 @@ data class DomainRow(
     val wildcards: List<DomainWildcard> = emptyList(),
     /** The service label's id, or empty when the row has no service. */
     val serviceId: String = "",
+    /** The geo relay this row exits through, or null for the local relay. */
+    val relayAgent: RelayAgent? = null,
 ) {
     /** A proxied row's switch is on; paused is off. Other statuses carry no switch. */
     val enabled: Boolean get() = status == DomainStatus.PROXY
@@ -176,7 +179,25 @@ data class RulesUiState(
     val resolutionUpstreams: List<String> = emptyList(),
     /** Non-null when the settings snapshot could not be loaded; saving is disabled. */
     val resolutionError: String? = null,
+    /** The install's own ISO country, used as the flag on "This Server". */
+    val serverCountry: String = "",
 ) {
+    /** The exact `domain_agents` value stored for [domain], or empty when it inherits. */
+    fun storedRelayId(domain: String): String =
+        lists.domainAgents[domain.normalizedDomain()].orEmpty()
+
+    /** The relay a service default would apply to [domain], or null for This Server. */
+    fun serviceRelayAgent(domain: String): RelayAgent? {
+        val id = lists.serviceAgents[lists.serviceOf(domain)].orEmpty()
+        if (id.isBlank()) return null
+        return lists.relayAgents[id]?.copy(id = id)
+    }
+
+    /** Every agent as a picker row, ordered by display name. */
+    fun relayAgents(): List<RelayAgent> =
+        lists.relayAgents.map { (id, meta) -> meta.copy(id = id) }
+            .sortedBy { it.name.ifBlank { it.id }.lowercase(Locale.US) }
+
     /** Every editable domain, tagged with its status. */
     private val allRows: List<DomainRow>
         get() {
@@ -213,6 +234,7 @@ data class RulesUiState(
                     row.copy(
                         wildcards = wildcardTypesFor(row.domain, statuses),
                         serviceId = lists.serviceOf(row.domain),
+                        relayAgent = lists.relayFor(row.domain),
                     )
                 }
         }
@@ -329,6 +351,15 @@ class RulesViewModel @Inject constructor(
     init {
         load()
         loadResolution()
+        loadServerCountry()
+    }
+
+    /** The local flag on relay choices comes from the settings view, not the rules body. */
+    private fun loadServerCountry() {
+        viewModelScope.launch {
+            val country = runCatching { settingsRepository.load().server?.country }.getOrNull().orEmpty()
+            if (country.isNotBlank()) _state.update { it.copy(serverCountry = country) }
+        }
     }
 
     private var resolutionLoading = false
@@ -477,19 +508,27 @@ class RulesViewModel @Inject constructor(
      * Create a service when [id] is null, otherwise rename (and re-icon) that one.
      * A rename keeps the id, so every domain already labelled stays labelled.
      */
-    fun saveService(id: String?, name: String, icon: String) {
+    fun saveService(id: String?, name: String, icon: String, relayId: String = "") {
         val label = name.trim()
         if (label.isEmpty()) return
         viewModelScope.launch {
             val lists = _state.value.lists
             val services = lists.services.toMutableMap()
             val icons = lists.serviceIcons.toMutableMap()
+            val serviceAgents = lists.serviceAgents.toMutableMap()
             val serviceId = id ?: uniqueServiceId(serviceIdFromName(label), services)
             services[serviceId] = label
             val url = serviceIconUrl(icon)
             if (url.isEmpty()) icons.remove(serviceId) else icons[serviceId] = url
+            // This Server is the absence of a default, matching the panel. An agent
+            // default only applies when the domain has no relay override.
+            if (relayId.isBlank() || relayId == "__local__") {
+                serviceAgents.remove(serviceId)
+            } else {
+                serviceAgents[serviceId] = relayId
+            }
             write(
-                lists.copy(services = services, serviceIcons = icons),
+                lists.copy(services = services, serviceIcons = icons, serviceAgents = serviceAgents),
                 if (id == null) "Added $label." else "Renamed to $label.",
             )
         }
@@ -509,6 +548,7 @@ class RulesViewModel @Inject constructor(
                     services = lists.services - id,
                     serviceIcons = lists.serviceIcons - id,
                     domainServices = lists.domainServices.filterValues { it != id },
+                    serviceAgents = lists.serviceAgents - id,
                 ),
                 "Deleted $name. Domains keep their routing.",
             )
@@ -567,6 +607,53 @@ class RulesViewModel @Inject constructor(
             write(
                 lists.copy(domainServices = links),
                 "Assigned ${domains.size} domain(s) to $name.",
+            )
+            _state.update { it.copy(selectedDomains = emptySet()) }
+        }
+    }
+
+    /**
+     * Set one domain's relay: `__inherit__` removes the override so the service
+     * default applies, `__local__` writes an explicit This Server choice, and any
+     * other value is an agent id. The second line's chip is the only control, so
+     * the row height and the right-side actions never move.
+     */
+    fun assignRelay(domain: String, id: String) {
+        viewModelScope.launch {
+            val lists = _state.value.lists
+            val links = lists.domainAgents.toMutableMap()
+            val key = domain.normalizedDomain()
+            if (id.isEmpty() || id == "__inherit__") links.remove(key) else links[key] = id
+            val message = when (id) {
+                "", "__inherit__" -> "Relay now follows the service default for $domain."
+                "__local__" -> "Relay set to This Server for $domain."
+                else -> {
+                    val name = lists.relayAgents[id]?.name?.ifBlank { id } ?: id
+                    "Relayed $domain through $name."
+                }
+            }
+            write(lists.copy(domainAgents = links), message)
+        }
+    }
+
+    /** The bulk Egress action: the same map write for every selected domain. */
+    fun assignRelayToMany(domains: Set<String>, id: String) {
+        if (domains.isEmpty()) return
+        viewModelScope.launch {
+            val lists = _state.value.lists
+            val links = lists.domainAgents.toMutableMap()
+            for (domain in domains) {
+                val key = domain.normalizedDomain()
+                if (id.isEmpty() || id == "__inherit__") links.remove(key) else links[key] = id
+            }
+            val label = when (id) {
+                "", "__inherit__" -> "the service default"
+                "__local__" -> "This Server"
+                else -> lists.relayAgents[id]?.name?.ifBlank { id } ?: id
+            }
+            write(
+                lists.copy(domainAgents = links),
+                "Set ${domains.size} domain(s) to relay through $label.",
             )
             _state.update { it.copy(selectedDomains = emptySet()) }
         }

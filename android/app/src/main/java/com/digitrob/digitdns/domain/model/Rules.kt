@@ -22,6 +22,12 @@ data class RuleLists(
     val domainServices: Map<String, String> = emptyMap(),
     /** Service id -> icon URL. Optional and separate from the name. */
     val serviceIcons: Map<String, String> = emptyMap(),
+    /** Domain pattern -> relay agent id. "__local__" forces the local relay. */
+    val domainAgents: Map<String, String> = emptyMap(),
+    /** Service id -> relay agent id, inherited when the domain has no override. */
+    val serviceAgents: Map<String, String> = emptyMap(),
+    /** Agent id -> display metadata (name, country) for the relay badge. */
+    val relayAgents: Map<String, RelayAgent> = emptyMap(),
 ) {
     /** Every pattern any of the four lists holds; the quick-action menu preselects from this. */
     val managedPatterns: Set<String>
@@ -29,6 +35,25 @@ data class RuleLists(
 
     /** The service a domain is labelled with, or empty when it has none. */
     fun serviceOf(domain: String): String = domainServices[domain.normalizedDomain()].orEmpty()
+
+    /**
+     * The relay an agent-assigned domain exits through. A domain override wins
+     * over a service default; "__local__" is an explicit local choice and
+     * "__inherit__" falls through to the service default.
+     */
+    @Suppress("ReturnCount")
+    fun relayFor(domain: String): RelayAgent? {
+        val key = domain.normalizedDomain()
+        val direct = matchRelayPattern(domainAgents, key)
+        val serviceId = serviceOf(key)
+        val id = when {
+            direct == "__local__" -> return null
+            direct.isNotEmpty() && direct != "__inherit__" -> direct
+            else -> serviceAgents[serviceId].orEmpty()
+        }
+        if (id.isEmpty()) return null
+        return relayAgents[id]?.copy(id = id)
+    }
 
     companion object {
         fun from(dto: RulesResponse): RuleLists = RuleLists(
@@ -40,8 +65,52 @@ data class RuleLists(
             services = dto.services,
             domainServices = dto.domainServices,
             serviceIcons = dto.serviceIcons,
+            domainAgents = dto.domainAgents,
+            serviceAgents = dto.serviceAgents,
+            relayAgents = dto.relayAgents.mapValues { (id, meta) ->
+                RelayAgent(id = id, name = meta.name, country = meta.country)
+            },
         )
     }
+}
+
+/** An exact host outranks a wildcard match of the same length. */
+private const val EXACT_MATCH_BONUS = 1000
+
+/** One relay agent as the domain row needs it: a flag and a name. */
+data class RelayAgent(
+    val id: String,
+    val name: String,
+    val country: String,
+)
+
+/**
+ * Longest-pattern match, mirroring the server: a plain pattern covers its
+ * subdomains, "*.host" covers subdomains only.
+ */
+@Suppress("LoopWithTooManyJumpStatements")
+private fun matchRelayPattern(assignments: Map<String, String>, domain: String): String {
+    var best = ""
+    var bestScore = -1
+    for ((raw, value) in assignments) {
+        if (value.isEmpty()) continue
+        val pattern = raw.normalizedDomain()
+        if (pattern.isEmpty()) continue
+        val matched: Pair<Boolean, Int> = when {
+            pattern.startsWith("*.") -> {
+                val base = pattern.removePrefix("*.")
+                (base.isNotEmpty() && domain.endsWith("." + base)) to (base.length + 1)
+            }
+            domain == pattern -> true to (pattern.length + EXACT_MATCH_BONUS)
+            domain.endsWith("." + pattern) -> true to pattern.length
+            else -> false to 0
+        }
+        if (matched.first && matched.second > bestScore) {
+            best = value
+            bestScore = matched.second
+        }
+    }
+    return best
 }
 
 /** The key a domain is stored under: trimmed, no trailing dot, lowercase. */

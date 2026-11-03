@@ -1,7 +1,6 @@
 package com.digitrob.digitdns.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -75,8 +75,12 @@ fun PanelDialog(
     solid: Boolean = false,
 ) {
     val colors = DigitDnsTheme.colors
+    // Resolve the surface from the app's own theme tokens, not the system setting:
+    // the app can be pinned to Dark while the phone stays Light. bgCard carries
+    // alpha in both themes, so compositing it over bgMain gives the same colour the
+    // cards use, fully opaque and readable under the dialog's scrim.
     val container = if (solid) {
-        if (isSystemInDarkTheme()) Color(0xFF0F172A) else Color(0xFFFFFFFF)
+        colors.bgCard.compositeOver(colors.bgMain)
     } else {
         colors.bgCard
     }
@@ -121,7 +125,7 @@ fun PanelWideDialog(
 ) {
     val colors = DigitDnsTheme.colors
     val container = if (solid) {
-        if (isSystemInDarkTheme()) Color(0xFF0F172A) else Color(0xFFFFFFFF)
+        colors.bgCard.compositeOver(colors.bgMain)
     } else {
         colors.bgCard
     }

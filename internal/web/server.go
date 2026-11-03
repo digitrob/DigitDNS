@@ -40,6 +40,9 @@ type WebServer struct {
 	cache        *cache.Cache
 	matcher      *matcher.Matcher
 	customGroups *service.CustomGroupService
+	// relayRouter is the live geo-agent assignment map shared with the DNS
+	// handler. Nil in the lighter test harnesses.
+	relayRouter  *service.RelayRouter
 	upstreams    *upstream.UpstreamPool
 	dohHandler   http.Handler
 	updater      *selfupdate.Updater
@@ -265,6 +268,35 @@ func (ws *WebServer) refreshSelfDomains() {
 // zero WebServer used in the lighter tests carries no dependency on it.
 func (ws *WebServer) SetCustomGroupService(s *service.CustomGroupService) {
 	ws.customGroups = s
+}
+
+// SetRelayRouter installs the live assignment map shared with the DNS handler.
+func (ws *WebServer) SetRelayRouter(r *service.RelayRouter) {
+	ws.relayRouter = r
+}
+
+// refreshRelayAssignments pushes a just-saved rules payload into the hot-path
+// router. The agent snapshot is refreshed too, because an agent may have been
+// enrolled or deleted between two rules saves.
+func (ws *WebServer) refreshRelayAssignments(domainAgents, serviceAgents, domainServices map[string]string) {
+	if ws.relayRouter == nil {
+		return
+	}
+	if agents, err := ws.db.ListAgents(); err == nil {
+		ws.relayRouter.SetAgents(agents)
+	}
+	ws.relayRouter.SetAssignments(domainAgents, serviceAgents, domainServices)
+}
+
+// refreshRelayAgents refreshes only the agent snapshot after a heartbeat,
+// enable/disable, enrolment or delete. Assignments did not change.
+func (ws *WebServer) refreshRelayAgents() {
+	if ws.relayRouter == nil {
+		return
+	}
+	if agents, err := ws.db.ListAgents(); err == nil {
+		ws.relayRouter.SetAgents(agents)
+	}
 }
 
 // serverSettingsView is the shape of ServerSettings that leaves the process.
@@ -771,6 +803,13 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	// 6. Internal Dashboard Ajax APIs (all authenticated)
 	mux.HandleFunc("/api/icons/search", ws.requireAuth(ws.handleIconSearch))
 	mux.HandleFunc("/api/dashboard/layout", ws.requireAuth(ws.handleDashboardLayout))
+	// Relay agents: panel routes require an admin session, the agent-facing
+	// routes require an agent key. They intentionally share no middleware.
+	mux.HandleFunc("/api/agents", ws.requireAuth(ws.handleAgents))
+	mux.HandleFunc("/api/agents/", ws.requireAuth(ws.handleAgentByID))
+	mux.HandleFunc("/agent/enrol", ws.handleAgentEnrol)
+	mux.HandleFunc("/agent/catalogue", ws.handleAgentCatalogue)
+	mux.HandleFunc("/agent/heartbeat", ws.handleAgentHeartbeat)
 	mux.HandleFunc("/api/diagnostics/run", ws.requireAuth(ws.handleDiagnosticsRun))
 	mux.HandleFunc("/api/diagnostics/targets", ws.requireAuth(ws.handleDiagnosticsTargets))
 	mux.HandleFunc("/api/stats", ws.requireAuth(ws.handleStats))
@@ -849,6 +888,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 			"/policy":    true,
 			"/logs":      true,
 			"/stream":    true,
+			"/agents":    true,
 			"/api":       true,
 			"/settings":  true,
 			"/guide":     true,
@@ -1476,6 +1516,14 @@ func (ws *WebServer) loadRulesConfig() map[string]any {
 	rules["services"] = map[string]string{}
 	rules["domain_services"] = map[string]string{}
 	rules["service_icons"] = map[string]string{}
+	// Relay assignments are routing data: a domain pattern can point at an
+	// agent directly, or inherit one from its service. Patterns, not just exact
+	// hosts, so a wildcard rule can point at an agent too.
+	rules["domain_agents"] = map[string]string{}
+	rules["service_agents"] = map[string]string{}
+	// relay_agents is display metadata for clients that show an agent badge
+	// (currently Android). The assignment maps above remain the source of truth.
+	rules["relay_agents"] = map[string]map[string]string{}
 
 	policies, err := ws.db.ListPolicies()
 	if err != nil {
@@ -1487,7 +1535,7 @@ func (ws *WebServer) loadRulesConfig() map[string]any {
 			if p.CustomDomains != nil {
 				rules[p.Key] = dedupeDomains(p.CustomDomains)
 			}
-		case "services", "domain_services", "service_icons":
+		case "services", "domain_services", "service_icons", "domain_agents", "service_agents":
 			m := map[string]string{}
 			for _, entry := range p.CustomDomains {
 				if k, v, ok := strings.Cut(entry, "="); ok {
@@ -1535,6 +1583,16 @@ func (ws *WebServer) loadRulesConfig() map[string]any {
 				missing = true
 			}
 		}
+	}
+	if agents, err := ws.db.ListAgents(); err == nil {
+		meta := make(map[string]map[string]string, len(agents))
+		for _, a := range agents {
+			meta[a.ID] = map[string]string{
+				"name":    a.Name,
+				"country": a.Country,
+			}
+		}
+		rules["relay_agents"] = meta
 	}
 	if missing {
 		entries := make([]string, 0, len(added))
@@ -1739,6 +1797,8 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	services := map[string]string{}
 	domainServices := map[string]string{}
 	serviceIcons := map[string]string{}
+	domainAgents := map[string]string{}
+	serviceAgents := map[string]string{}
 
 	// Start from the persisted state so a partial update never wipes the saved
 	// custom domain lists.
@@ -1761,6 +1821,12 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	}
 	if m, ok := persisted["service_icons"].(map[string]string); ok {
 		serviceIcons = m
+	}
+	if m, ok := persisted["domain_agents"].(map[string]string); ok {
+		domainAgents = m
+	}
+	if m, ok := persisted["service_agents"].(map[string]string); ok {
+		serviceAgents = m
 	}
 	customAdded := map[string]string{}
 	if m, ok := persisted["custom_domain_added"].(map[string]string); ok {
@@ -1827,6 +1893,28 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 					url := strings.TrimSpace(fmt.Sprint(u))
 					if key != "" && url != "" {
 						serviceIcons[key] = url
+					}
+				}
+			}
+		case "domain_agents":
+			if m, ok := val.(map[string]any); ok {
+				domainAgents = make(map[string]string, len(m))
+				for d, id := range m {
+					domain := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(fmt.Sprint(d))), ".")
+					agent := strings.TrimSpace(fmt.Sprint(id))
+					if domain != "" && agent != "" {
+						domainAgents[domain] = agent
+					}
+				}
+			}
+		case "service_agents":
+			if m, ok := val.(map[string]any); ok {
+				serviceAgents = make(map[string]string, len(m))
+				for id, agent := range m {
+					key := strings.TrimSpace(fmt.Sprint(id))
+					val := strings.TrimSpace(fmt.Sprint(agent))
+					if key != "" && val != "" {
+						serviceAgents[key] = val
 					}
 				}
 			}
@@ -1926,6 +2014,18 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 			delete(serviceIcons, id)
 		}
 	}
+	// A relay assignment means something only for a domain that still exists and
+	// a service that still exists. Prune both maps here, like the service labels.
+	for d := range domainAgents {
+		if !allDomains[d] {
+			delete(domainAgents, d)
+		}
+	}
+	for id := range serviceAgents {
+		if _, ok := services[id]; !ok {
+			delete(serviceAgents, id)
+		}
+	}
 	serviceEntries := make([]string, 0, len(services))
 	for id, name := range services {
 		serviceEntries = append(serviceEntries, id+"="+name)
@@ -1938,10 +2038,20 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	for id, u := range serviceIcons {
 		iconEntries = append(iconEntries, id+"="+u)
 	}
+	domainAgentEntries := make([]string, 0, len(domainAgents))
+	for d, id := range domainAgents {
+		domainAgentEntries = append(domainAgentEntries, d+"="+id)
+	}
+	serviceAgentEntries := make([]string, 0, len(serviceAgents))
+	for id, agent := range serviceAgents {
+		serviceAgentEntries = append(serviceAgentEntries, id+"="+agent)
+	}
 	customSaves = append(customSaves,
 		database.Policy{Key: "services", Name: "Services", Category: "custom", Enabled: true, CustomDomains: serviceEntries},
 		database.Policy{Key: "domain_services", Name: "Domain Service Labels", Category: "custom", Enabled: true, CustomDomains: linkEntries},
 		database.Policy{Key: "service_icons", Name: "Service Icons", Category: "custom", Enabled: true, CustomDomains: iconEntries},
+		database.Policy{Key: "domain_agents", Name: "Domain Relay Agents", Category: "custom", Enabled: true, CustomDomains: domainAgentEntries},
+		database.Policy{Key: "service_agents", Name: "Service Relay Agents", Category: "custom", Enabled: true, CustomDomains: serviceAgentEntries},
 	)
 	customSaves = append(customSaves, database.Policy{Key: "custom_domain_added", Name: "Custom Domain Added Times", Category: "custom", Enabled: true, CustomDomains: addedEntries})
 	for _, p := range customSaves {
@@ -1969,6 +2079,7 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	if ws.cache != nil {
 		ws.cache.Flush()
 	}
+	ws.refreshRelayAssignments(domainAgents, serviceAgents, domainServices)
 
 	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }

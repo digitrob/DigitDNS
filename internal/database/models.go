@@ -103,6 +103,11 @@ type QueryLogItem struct {
 	// or "*.base" when a wildcard matched. Empty for the built-in direct fallback
 	// and the early refusal paths.
 	MatchedPattern string `json:"matched_pattern,omitempty"`
+	// RelayAgent* describe a proxied query answered with a geo agent's address.
+	// They stay empty for the local relay, so existing consumers see no change.
+	RelayAgentID   string `json:"relay_agent_id,omitempty"`
+	RelayAgentName string `json:"relay_agent_name,omitempty"`
+	RelayCountry   string `json:"relay_country,omitempty"`
 }
 
 // ServerSettings holds core daemon & network binding settings.

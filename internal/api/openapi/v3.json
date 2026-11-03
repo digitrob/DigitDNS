@@ -17,7 +17,7 @@
   ],
   "tags": [
     {"name": "meta"}, {"name": "auth"}, {"name": "clients"}, {"name": "policies"},
-    {"name": "custom-groups"}, {"name": "rules"}, {"name": "access"}, {"name": "upstreams"},
+    {"name": "custom-groups"}, {"name": "agents"}, {"name": "rules"}, {"name": "access"}, {"name": "upstreams"},
     {"name": "settings"}, {"name": "tls"}, {"name": "stats"}, {"name": "diagnostics"},
     {"name": "system"}
   ],
@@ -196,6 +196,29 @@
     "/api/v3/custom-groups/{id}": {
       "put": {"tags": ["custom-groups"], "summary": "Update a custom group", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "404": {"$ref": "#/components/responses/NotFound"}}},
       "delete": {"tags": ["custom-groups"], "summary": "Delete a custom group", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/v3/agents": {
+      "get": {"tags": ["agents"], "summary": "List relay agents", "description": "Agent keys are never included in the list.", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"type": "object", "properties": {"agents": {"type": "array", "items": {"$ref": "#/components/schemas/GenericObject"}}}}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}},
+      "post": {"tags": ["agents"], "summary": "Create a relay agent", "description": "Returns the agent and its clear key once. A country is required; the key is stored encrypted for later copies.", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["country"], "properties": {"name": {"type": "string"}, "country": {"type": "string"}}}}}}, "responses": {"201": {"description": "Created"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/agents/{id}": {
+      "put": {"tags": ["agents"], "summary": "Edit a relay agent", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"name": {"type": "string"}, "country": {"type": "string"}, "public_ip": {"type": "string"}}}}}}, "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "404": {"$ref": "#/components/responses/NotFound"}}},
+      "delete": {"tags": ["agents"], "summary": "Delete a relay agent and prune its assignments", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/v3/agents/{id}/enable": {
+      "post": {"tags": ["agents"], "summary": "Enable a relay agent", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/v3/agents/{id}/disable": {
+      "post": {"tags": ["agents"], "summary": "Disable a relay agent", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/v3/agents/{id}/key": {
+      "get": {"tags": ["agents"], "summary": "Copy the clear agent key", "description": "Returns 409 when the stored key predates encrypted clear-key storage: rotate it first.", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}, "409": {"$ref": "#/components/responses/Problem"}}}
+    },
+    "/api/v3/agents/{id}/rotate-key": {
+      "post": {"tags": ["agents"], "summary": "Rotate the agent key", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/v3/agents/{id}/test": {
+      "post": {"tags": ["agents"], "summary": "Test the relay TCP connection", "description": "Opens a real TCP connection to the agent's advertised relay port and stores ping_ms/ping_at.", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}, "409": {"$ref": "#/components/responses/Problem"}}}
     },
     "/api/v3/rules": {
       "get": {"tags": ["rules"], "summary": "Read the rule sets", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}},

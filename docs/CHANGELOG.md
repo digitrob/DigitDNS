@@ -6,6 +6,123 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v4.0.0] — Geo relay agents: another country, without another hub
+
+DigitDNS can now send chosen domains out through a small relay agent on a VPS in
+another country. The hub keeps the panel, the subscriber database, the
+certificates and every credential; the agent only carries the encrypted stream.
+That is the headline, but the release also gives the feature a real home on both
+clients and fixes several rough edges found while building it.
+
+This is a major version because the product gained a second deployable role and
+a new control surface — not because existing installs must change anything.
+A hub with no agents behaves exactly as it did in 3.8.0.
+
+### ✨ Added
+
+- **A relay agent you can install anywhere.** `digitdns-agent` is a separate,
+  deliberately small binary with no panel, database or DNS server. It enrols
+  with a key, pulls a host and client allowlist from the hub, relays TCP/TLS
+  byte-for-byte, and reports traffic every 30 seconds. The hub learns the
+  agent's public IPv4 from the connection, not from a claim in the payload.
+- **Settings → Relay Agents on the web.** Add, edit, enable/disable, delete,
+  rotate a key, copy the key and run a real connection test. Each card shows the
+  country flag, online/offline/disabled state, public IP, masked key, version,
+  last heartbeat, assigned domains, relayed traffic and the services using it.
+  The edited card is outlined in cyan with an `EDITING` badge so it is obvious
+  which card the form belongs to.
+- **Relay control on every domain row.** The web domain table has a relay
+  chooser; a domain can inherit its service default, force **This Server**, or
+  name an agent. The Android row puts the same choice behind an icon-only relay
+  flag on the second line, so the gear, status pill and switch never move.
+- **Service defaults and bulk Egress.** A service can carry a default relay, and
+  a selection of domains can be pointed at one exit in a single action. The
+  precedence is: domain override, then service default, then This Server.
+- **A genuine connection test.** **Test connection** opens a TCP connection to
+  the agent's advertised relay port, measures the round trip, stores
+  `ping_ms`/`ping_at`, and shows green under 40 ms, amber over 40 ms and red over
+  80 ms — the same palette as the upstream resolver rows. A failed test says what
+  address it tried and why it failed.
+- **Agent keys that can be managed safely.** Create returns the clear key once;
+  the server also stores an encrypted copy for later authenticated copying.
+  Rotation invalidates the old key immediately. Agent list responses never
+  include a clear key. A key created before encrypted storage existed answers
+  409 and needs one rotation.
+- **Agent lifecycle controls.** Disabling or deleting an agent stops its relay
+  immediately and prunes its assignments, so DNS answers fall back to This
+  Server instead of naming an agent that no longer exists.
+- **Android parity.** **Settings → Relay Agents** sits beside Servers. The cards
+  are client-card shaped: flag, name, status, edit/pause/delete, copyable public
+  IP, masked key with rotate and copy, version, last seen, domains, traffic and
+  service defaults. The page is one card wide on a phone and two across when the
+  window is wide enough.
+- **Agent binaries and a container image.** Release assets now include
+  `digitdns-agent-linux-amd64` and `digitdns-agent-linux-arm64`, and the
+  multi-arch `ghcr.io/digitrob/digitdns-agent` image is built and cosign-signed
+  by the same workflow as the hub image.
+- **v3 agent API.** `GET/POST /api/v3/agents`, `PUT/DELETE /api/v3/agents/{id}`,
+  `POST …/{id}/enable|disable|rotate-key|test` and `GET …/{id}/key` expose the
+  same operations the buttons use.
+
+### 🔄 Changed
+
+- **Relay cards use the panel's card language.** Public IP and Agent Key occupy
+  a narrower left column; Version, Last Seen and Domains stack in a compact
+  right rail; the traffic line sits under the key instead of adding another
+  full-width band. The web grid fits two cards per row on a normal desktop and
+  three on a wide one.
+- **Android domain rows are icon-first.** The service favicon and relay flag are
+  the controls; tapping them opens the service or relay picker. The wildcard
+  label stays as text, and the row height and right-side controls are unchanged.
+- **The Online badge left the Android Relay Agents page.** The freed space now
+  shows `N agents · M online`, which is the information that page is about.
+- **The Android Relay Agents page is a single scroll container.** Its header and
+  Add agent row are part of the refreshable grid, so pull-to-refresh works from
+  the top of the page, and the scaffold no longer adds the status/nav bar insets
+  twice.
+- **Dark-mode dialogs follow the app, not the phone.** Shared dialog and menu
+  surfaces now resolve from the app's card tokens, so pinning the app to Dark on
+  a Light phone no longer produces a white menu with pale text.
+- **The agent test is a real network check.** It is not a heartbeat-age guess;
+  an offline-looking agent with a reachable TCP port can still be diagnosed.
+
+### 🐛 Fixed
+
+- **Relay assignments survive a rules save.** The Android repository was building
+  its rules request without `domain_agents` or `service_agents`, so a chip change
+  reported success and saved nothing. Both maps are now sent with the other rule
+  maps.
+- **The v3 rules save preserves relay maps.** Partial saves start from the
+  persisted state, and the relay maps are written in the same transaction as the
+  domain lists and service labels.
+- **Legacy agent keys explain themselves.** A 409 from the copy action now tells
+  the operator to rotate instead of surfacing the raw server wording.
+- **The Android relay picker shows the selected row.** An empty stored value is
+  drawn as **Inherit service**, so the check is on the option that is actually in
+  force.
+- **Service-key deletion removes its relay default.** Deleting a service no
+  longer leaves a `service_agents` entry pointing at a service id that no longer
+  exists.
+- **The web relay grid tracks the window.** Two columns at 768 px, three at
+  1280 px, one below; cards no longer stay full-width in a two-column layout
+  after a resize.
+
+### ⬆️ Upgrading
+
+The database schema is migrated automatically: agent records, encrypted keys,
+ping measurements and the relay assignment maps are created or extended on first
+start. Existing proxy/block/direct behaviour is unchanged; an install with no
+agents keeps using This Server.
+
+- **Hub binary:** replace `digitdns` and restart. The existing database, master
+  key and config are compatible.
+- **Hub Docker:** pull `ghcr.io/digitrob/digitdns:latest` (or `4.0.0`).
+- **Agent:** install the new `digitdns-agent` binary or pull
+  `ghcr.io/digitrob/digitdns-agent:latest`. Keep `/data/agent-state.json`.
+- **Android:** version 4.0.0 (versionCode 400), attached to the same release.
+
+Back up `data.db` and `master.key` before upgrading, as always.
+
 ## 🏷️ [v3.8.0] — A dashboard you can rearrange, and services that stay out of the way
 
 This release is mostly about finding things. The dashboard can be rearranged to

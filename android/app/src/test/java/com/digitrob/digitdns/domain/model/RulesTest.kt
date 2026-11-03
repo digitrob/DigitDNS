@@ -1,9 +1,11 @@
 package com.digitrob.digitdns.domain.model
 
 import com.digitrob.digitdns.core.network.CustomGroupDto
+import com.digitrob.digitdns.core.network.RelayAgentDto
 import com.digitrob.digitdns.core.network.RulesResponse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -55,6 +57,44 @@ class RulesTest {
         assertEquals("bbc", lists.serviceOf("bbc.co.uk"))
         assertEquals("bbc", lists.serviceOf("BBC.CO.UK."))
         assertTrue(lists.serviceIcons["bbc"]!!.startsWith("https://"))
+    }
+
+    @Test
+    fun relayOverridesAndServiceDefaultsResolve() {
+        val lists = RuleLists.from(
+            RulesResponse(
+                services = mapOf("tv" to "German TV"),
+                domainServices = mapOf("ard.example" to "tv", "zdf.example" to "tv", "service.example" to "tv"),
+                domainAgents = mapOf("zdf.example" to "us", "*.ard.example" to "de"),
+                serviceAgents = mapOf("tv" to "de"),
+                relayAgents = mapOf(
+                    "de" to RelayAgentDto(name = "Frankfurt", country = "DE"),
+                    "us" to RelayAgentDto(name = "New York", country = "US"),
+                ),
+            ),
+        )
+
+        // A domain override wins over the service default.
+        assertEquals("us", lists.relayFor("zdf.example")?.id)
+        // A wildcard assignment covers the parent's subdomains, not the parent.
+        assertEquals("de", lists.relayFor("live.ard.example")?.id)
+        assertEquals("de", lists.relayFor("ard.example")?.id)
+        // No override: the service default applies.
+        assertEquals("de", lists.relayFor("service.example")?.id)
+    }
+
+    @Test
+    fun anExplicitLocalOverrideBeatsTheServiceDefault() {
+        val lists = RuleLists.from(
+            RulesResponse(
+                services = mapOf("tv" to "German TV"),
+                domainServices = mapOf("ard.example" to "tv"),
+                domainAgents = mapOf("ard.example" to "__local__"),
+                serviceAgents = mapOf("tv" to "de"),
+                relayAgents = mapOf("de" to RelayAgentDto(name = "Frankfurt", country = "DE")),
+            ),
+        )
+        assertNull(lists.relayFor("ard.example"))
     }
 
     @Test

@@ -105,6 +105,17 @@ type V3Backend interface {
 	UpdateCustomGroup(r *http.Request, id string, body map[string]any) (map[string]any, error)
 	DeleteCustomGroup(r *http.Request, id string) (map[string]any, error)
 
+	// Relay agents. The clear key is returned only on create/rotate and through
+	// AgentKey, never from the list.
+	Agents() ([]map[string]any, error)
+	CreateAgent(r *http.Request, body map[string]any) (map[string]any, error)
+	UpdateAgent(r *http.Request, id string, body map[string]any) (map[string]any, error)
+	DeleteAgent(r *http.Request, id string) (map[string]any, error)
+	SetAgentEnabled(r *http.Request, id string, enabled bool) (map[string]any, error)
+	RotateAgentKey(r *http.Request, id string) (map[string]any, error)
+	AgentKey(r *http.Request, id string) (map[string]any, error)
+	TestAgent(r *http.Request, id string) (map[string]any, error)
+
 	// Self-update.
 	UpdateCheck(r *http.Request) (map[string]any, error)
 	UpdateApply(r *http.Request) (map[string]any, error)
@@ -159,6 +170,11 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/policies", a.SecurityMiddlewareV3(a.handleV3Policies))
 	mux.HandleFunc("/api/v3/custom-groups", a.SecurityMiddlewareV3(a.handleV3CustomGroups))
 	mux.HandleFunc("/api/v3/custom-groups/", a.SecurityMiddlewareV3(a.handleV3CustomGroupItem))
+
+	// Relay agents. The collection is GET/POST; the item is PUT/DELETE plus the
+	// key/enable/disable/rotate-key/test actions.
+	mux.HandleFunc("/api/v3/agents", a.SecurityMiddlewareV3(a.handleV3Agents))
+	mux.HandleFunc("/api/v3/agents/", a.SecurityMiddlewareV3(a.handleV3AgentItem))
 
 	// Rules & access.
 	mux.HandleFunc("/api/v3/rules", a.SecurityMiddlewareV3(a.handleV3Rules))

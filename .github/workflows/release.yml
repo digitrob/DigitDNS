@@ -74,6 +74,12 @@ jobs:
           
           # Linux ARM64
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w" -o dist/digitdns-linux-arm64 ./cmd/digitdns
+
+          # Relay agent binaries. These are a separate product with their own
+          # command, but they ship on the same release page so an operator can
+          # download the hub and its agents from one version.
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o dist/digitdns-agent-linux-amd64 ./cmd/digitdns-agent
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w" -o dist/digitdns-agent-linux-arm64 ./cmd/digitdns-agent
           
           # Build Offline Bundle. scripts/uninstall.sh is the canonical copy;
           # offline-bundle/scripts/ holds the mirror kept

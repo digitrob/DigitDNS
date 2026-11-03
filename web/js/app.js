@@ -1014,6 +1014,7 @@ async function loadConfig() {
     currentConfig = await cfgRes.json();
     renderConfig(currentConfig);
     loadResolutionSettings();
+    loadAgents();
     // Raised after the config lands so the modal can prefill the real username
     // rather than the markup's placeholder.
     if (weak) showChangePwdModal();
@@ -1915,6 +1916,55 @@ function renderBulkServiceOptions() {
       `${serviceMarkHTML(id, name)}<span class="truncate">${escapeHTML(name)}</span></button>`).join('');
 }
 
+function renderBulkEgressOptions() {
+  const menu = document.getElementById('proxied-bulk-egress-menu');
+  if (!menu) return;
+  const inherit = `<button type="button" class="proxied-bulk-option" role="option" data-bulk-egress="__inherit__">
+    <span class="service-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 12h12"/><path d="m12 6 6 6-6 6"/></svg></span>
+    <span>Inherit service</span></button>`;
+  const local = `<button type="button" class="proxied-bulk-option" role="option" data-bulk-egress="__local__">
+    <span class="service-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg></span>
+    <span>This Server</span></button>`;
+  const agents = agentsCache.length
+    ? agentsCache.map((a) => `<button type="button" class="proxied-bulk-option" role="option" data-bulk-egress="${escapeHTML(a.id)}">
+        ${agentFlagHTML(a)}
+        <span class="truncate">${escapeHTML(a.name || a.id)} · ${escapeHTML(a.country || '')}${!agentIsOnline(a) ? ' (offline)' : ''}</span>
+      </button>`).join('')
+    : '<div class="proxied-bulk-option is-disabled" role="option" aria-disabled="true"><span>No agents yet</span></div>';
+  menu.innerHTML = inherit + local + agents;
+}
+
+function closeBulkEgressMenu() {
+  document.getElementById('proxied-bulk-egress-menu')?.classList.add('hidden');
+  const btn = document.getElementById('proxied-bulk-egress');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+async function assignEgressToSelected(agentId) {
+  if (!agentId || proxiedSelected.size === 0) return;
+  closeBulkEgressMenu();
+  const domains = Array.from(proxiedSelected);
+  const rules = currentConfig.rules;
+  const links = Object.assign({}, rules.domain_agents || {});
+  for (const domain of domains) {
+    const key = String(domain || '').toLowerCase();
+    if (agentId === '__inherit__') delete links[key]; else links[key] = agentId;
+  }
+  rules.domain_agents = links;
+  const ok = await saveRules(true);
+  if (!ok) return;
+  renderProxiedList();
+  const agent = agentForId(agentId);
+  showToast(
+    agentId === '__inherit__'
+      ? `Cleared ${domains.length} domain override(s); services apply`
+      : agentId === '__local__'
+        ? `Set ${domains.length} domain(s) to This Server`
+        : `Routed ${domains.length} domain(s) through ${agent ? agent.name : agentId}`,
+    'success',
+  );
+}
+
 function closeBulkServiceMenu() {
   document.getElementById('proxied-bulk-service-menu')?.classList.add('hidden');
   const btn = document.getElementById('proxied-bulk-service');
@@ -1963,6 +2013,11 @@ function updateProxiedBulkBar() {
     bulkService.disabled = n === 0;
     if (n === 0) closeBulkServiceMenu();
   }
+  const bulkEgress = document.getElementById('proxied-bulk-egress');
+  if (bulkEgress) {
+    bulkEgress.disabled = n === 0;
+    if (n === 0) closeBulkEgressMenu();
+  }
   const all = document.getElementById('proxied-select-all');
   if (all) {
     const selectedShown = shown.filter((r) => proxiedSelected.has(r.domain)).length;
@@ -2008,6 +2063,87 @@ function openServicePicker(domain, trigger) {
   const mh = menu.offsetHeight;
   menu.style.left = `${Math.max(8, Math.min(r.left, innerWidth - mw - 8))}px`;
   menu.style.top = `${r.bottom + 4 + mh > innerHeight ? Math.max(8, r.top - mh - 4) : r.bottom + 4}px`;
+}
+
+// The per-domain relay picker. This is the row-level control: the RELAY cell
+// opens it, and it writes one domain_agents entry. Inherit removes the entry so
+// a service default applies; Local writes an explicit __local__ override.
+let relayPickerDomain = null;
+let relayPickerTrigger = null;
+
+function closeRelayPicker() {
+  document.getElementById('relay-picker-menu')?.classList.add('hidden');
+  if (relayPickerTrigger) relayPickerTrigger.setAttribute('aria-expanded', 'false');
+  relayPickerDomain = null;
+  relayPickerTrigger = null;
+}
+
+function openRelayPicker(domain, trigger) {
+  const menu = document.getElementById('relay-picker-menu');
+  if (!menu) return;
+  if (relayPickerDomain === domain && !menu.classList.contains('hidden')) {
+    closeRelayPicker();
+    return;
+  }
+  const key = String(domain || '').toLowerCase().replace(/\.$/, '');
+  const rules = currentConfig.rules || {};
+  const stored = (rules.domain_agents || {})[key] || '';
+  const serviceId = serviceOfDomain(key);
+  const serviceRelayId = serviceId ? ((rules.service_agents || {})[serviceId] || '') : '';
+  const serviceRelay = serviceRelayId ? agentForId(serviceRelayId) : null;
+  const inheritLabel = serviceRelayId
+    ? `Inherit service — ${serviceRelay ? serviceRelay.name : serviceRelayId}`
+    : 'Inherit service — This Server';
+  const rows = [
+    `<button type="button" class="proxied-bulk-option" role="option" data-relay-id="__inherit__">
+      <i data-feather="corner-up-left" class="w-3.5 h-3.5"></i>
+      <span class="truncate">${escapeHTML(inheritLabel)}${stored === '' ? ' · selected' : ''}</span>
+    </button>`,
+    `<button type="button" class="proxied-bulk-option" role="option" data-relay-id="__local__">
+      <i data-feather="server" class="w-3.5 h-3.5"></i>
+      <span class="truncate">This Server${stored === '__local__' ? ' · selected' : ''}</span>
+    </button>`,
+  ];
+  if (agentsCache.length) {
+    for (const a of agentsCache) {
+      rows.push(`<button type="button" class="proxied-bulk-option" role="option" data-relay-id="${escapeHTML(a.id)}">
+        ${agentFlagHTML(a)}
+        <span class="truncate">${escapeHTML(a.name || a.id)} · ${escapeHTML(a.country || '')}${agentIsOnline(a) ? '' : ' (offline)'}${stored === a.id ? ' · selected' : ''}</span>
+      </button>`);
+    }
+  } else {
+    rows.push('<div class="proxied-bulk-option is-disabled" role="option" aria-disabled="true"><span>No agents yet</span></div>');
+  }
+  menu.innerHTML = rows.join('');
+  menu.classList.remove('hidden');
+  relayPickerDomain = domain;
+  relayPickerTrigger = trigger;
+  trigger.setAttribute('aria-expanded', 'true');
+  const r = trigger.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  menu.style.left = `${Math.max(8, Math.min(r.left, innerWidth - mw - 8))}px`;
+  menu.style.top = `${r.bottom + 4 + mh > innerHeight ? Math.max(8, r.top - mh - 4) : r.bottom + 4}px`;
+}
+
+async function assignRelayToDomain(domain, id) {
+  const key = String(domain || '').toLowerCase().replace(/\.$/, '');
+  const links = Object.assign({}, currentConfig.rules.domain_agents || {});
+  if (id === '__inherit__') delete links[key];
+  else links[key] = id;
+  currentConfig.rules.domain_agents = links;
+  closeRelayPicker();
+  if (!(await saveRules(true))) return;
+  renderProxiedList();
+  const agent = id && id !== '__local__' && id !== '__inherit__' ? agentForId(id) : null;
+  showToast(
+    id === '__inherit__'
+      ? 'Relay now follows the service default'
+      : id === '__local__'
+        ? 'Relay set to This Server'
+        : `Relayed through ${agent ? agent.name : id}`,
+    'success',
+  );
 }
 
 // renderProxiedList draws the Proxied Domains page. Two lists feed it: the
@@ -2414,6 +2550,7 @@ function renderProxiedList() {
   const container = document.getElementById('custom-proxied-rows');
   if (!container) return;
   closeServicePicker();
+  closeRelayPicker();
   proxiedPruneSelection();
   updateDomainFilterChips();
   const needle = proxiedFilterNeedle();
@@ -2530,6 +2667,7 @@ function renderProxiedList() {
         </div>
       </td>
       <td class="py-2.5 px-3 text-start proxied-service-cell"></td>
+      <td class="py-2.5 px-3 text-start proxied-relay-cell"></td>
       <td class="py-2.5 px-3 text-center">
         <div class="flex items-center justify-center gap-3">
           ${resolutionButton}
@@ -2562,6 +2700,43 @@ function renderProxiedList() {
         openServicePicker(domain, trigger);
       });
       svcCell.appendChild(trigger);
+    }
+    const relayCell = row.children[3];
+    if (relayCell) {
+      const relay = effectiveRelay(domain);
+      const trigger = document.createElement('button');
+      trigger.type = 'button';
+      trigger.className = 'proxied-relay-trigger';
+      trigger.dataset.relayDomain = domain;
+      trigger.setAttribute('aria-haspopup', 'listbox');
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.setAttribute('aria-label', `Relay for ${escapeHTML(domain)}`);
+      trigger.title = 'Change the relay for this domain';
+      if (relay.local) {
+        const localFlag = countryFlagHTML(currentConfig?.server?.country);
+        trigger.innerHTML = (localFlag || '<i data-feather="server" class="w-3.5 h-3.5"></i>') +
+          '<span class="proxied-relay-name"></span>' +
+          '<i data-feather="chevron-down" class="w-3 h-3"></i>';
+        trigger.querySelector('.proxied-relay-name').textContent = 'This Server';
+        if (currentConfig?.server?.country) {
+          trigger.title = `This Server — ${countryName(currentConfig.server.country)}`;
+        }
+      } else {
+        const agent = relay.agent;
+        const isOnline = agent ? agentIsOnline(agent) : false;
+        const name = agent ? (agent.name || agent.id) : (relay.id || 'Agent');
+        trigger.innerHTML = (agent ? agentFlagHTML(agent) : '') +
+          '<span class="proxied-relay-name"></span>' +
+          (isOnline ? '' : '<span class="proxied-relay-offline">offline</span>') +
+          '<i data-feather="chevron-down" class="w-3 h-3"></i>';
+        trigger.querySelector('.proxied-relay-name').textContent = name;
+        if (!isOnline) trigger.classList.add('is-offline');
+      }
+      trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openRelayPicker(domain, trigger);
+      });
+      relayCell.appendChild(trigger);
     }
 
     row.addEventListener('click', (e) => {
@@ -2943,7 +3118,7 @@ function renderCustomRecords(records) {
 // =======================================================
 // SAVE RULES API
 // =======================================================
-async function saveRules() {
+async function saveRules(silent = false) {
   if (!currentConfig) return;
 
   const payload = {
@@ -2955,7 +3130,9 @@ async function saveRules() {
     custom_domain_added: currentConfig.rules.custom_domain_added || {},
     services: currentConfig.rules.services || {},
     domain_services: currentConfig.rules.domain_services || {},
-    service_icons: currentConfig.rules.service_icons || {}
+    service_icons: currentConfig.rules.service_icons || {},
+    domain_agents: currentConfig.rules.domain_agents || {},
+    service_agents: currentConfig.rules.service_agents || {}
   };
 
   try {
@@ -2970,7 +3147,7 @@ async function saveRules() {
 
     if (res.ok) {
       currentConfig.rules = payload;
-      showToast('Routing rules saved & active!', 'success');
+      if (!silent) showToast('Routing rules saved & active!', 'success');
       return true;
     }
     showToast(await errorMessage(res, 'Failed to save routing rules'), 'error');
@@ -3788,8 +3965,11 @@ function queryRowHTML(q) {
   const accountName = q.account_name || 'Public';
 
   const action = q.action || 'DIRECT';
-  const actBadgeInner = STREAM_ACTION_BADGES[action]
-    || `<span class="badge badge-unknown">${escapeHTML(action)}</span>`;
+  const relayFlag = action === 'PROXY' && q.relay_country && flagURL(q.relay_country)
+    ? `<img class="agent-flag agent-flag-sm" src="${escapeHTML(flagURL(q.relay_country))}" alt="${escapeHTML(countryName(q.relay_country))}" title="via ${escapeHTML(q.relay_agent_name || countryName(q.relay_country))}">`
+    : '';
+  const actBadgeInner = relayFlag + (STREAM_ACTION_BADGES[action]
+    || `<span class="badge badge-unknown">${escapeHTML(action)}</span>`);
   // The badge is the trigger for the quick-action menu: it carries the row's
   // domain, and clicking it opens the one shared popover. It is a <button> so it
   // is focusable and Enter/Space reach it; the badge styling stays on the inner
@@ -4769,6 +4949,7 @@ function renderServices() {
     }, { once: true });
   });
   renderBulkServiceOptions();
+  renderBulkEgressOptions();
   safeFeatherReplace();
   requestAnimationFrame(sizeProxiedScroll);
 }
@@ -4807,6 +4988,9 @@ function openServiceForm(id) {
   const icons = (currentConfig.rules && currentConfig.rules.service_icons) || {};
   if (nameEl) nameEl.value = serviceEditing ? (services[serviceEditing] || '') : '';
   if (iconEl) iconEl.value = serviceEditing ? (icons[serviceEditing] || '') : '';
+  const relayEl = document.getElementById('service-relay');
+  if (relayEl) relayEl.value = serviceEditing ? ((currentConfig.rules.service_agents || {})[serviceEditing] || '') : '';
+  renderServiceRelayControl();
   hideIconResults();
   document.getElementById('save-service-btn').textContent = serviceEditing ? 'Save' : 'Add';
   f.classList.remove('hidden');
@@ -4831,6 +5015,11 @@ async function createService() {
   const icons = Object.assign({}, rules.service_icons || {});
   if (iconURL) icons[id] = iconURL; else delete icons[id];
   rules.service_icons = icons;
+
+  const serviceRelay = document.getElementById('service-relay')?.value || '';
+  const serviceAgents = Object.assign({}, rules.service_agents || {});
+  if (serviceRelay) serviceAgents[id] = serviceRelay; else delete serviceAgents[id];
+  rules.service_agents = serviceAgents;
 
   await saveRules();
   renderServices();
@@ -4867,6 +5056,10 @@ async function deleteService(id) {
   }
   rules.domain_services = links;
 
+  const serviceAgents = Object.assign({}, rules.service_agents || {});
+  delete serviceAgents[id];
+  rules.service_agents = serviceAgents;
+
   await saveRules();
   if (activeService === id) activeService = '';
   renderServices();
@@ -4892,6 +5085,28 @@ function initServices() {
   document.getElementById('cancel-service-btn')?.addEventListener('click', () => {
     document.getElementById('add-service-form')?.classList.add('hidden');
   });
+  document.getElementById('service-relay-trigger')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openServiceRelayPicker(e.currentTarget);
+  });
+  document.getElementById('service-relay-menu')?.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-service-relay-id]');
+    if (!row) return;
+    const input = document.getElementById('service-relay');
+    if (input) input.value = row.dataset.serviceRelayId;
+    renderServiceRelayControl();
+    closeServiceRelayPicker();
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#service-relay-menu') && !e.target.closest('#service-relay-trigger')) {
+      closeServiceRelayPicker();
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeServiceRelayPicker();
+  });
+  window.addEventListener('scroll', closeServiceRelayPicker, true);
+  window.addEventListener('resize', closeServiceRelayPicker);
   document.getElementById('services-list')?.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const row = e.target.closest('[data-service]');
@@ -4910,9 +5125,574 @@ function initServices() {
   });
 }
 
+
+// ── Relay agents ─────────────────────────────────────────────────────────────
+// A relay agent is an optional egress point in another country. Domains can be
+// assigned directly, or inherit a service's default. The agent itself has no
+// certificate in this design: it reads SNI and forwards the encrypted stream.
+let agentsCache = [];
+// The agent whose inline edit form is open, so its card can stay highlighted.
+let agentEditingId = '';
+let agentCountrySelectReady = false;
+
+// Pinned first because these are the exits operators ask for most. The rest is
+// the ISO list the bundled flags cover; names come from Intl.DisplayNames.
+const AGENT_PINNED_COUNTRIES = ['gb', 'us', 'de', 'by', 'nl', 'fr', 'ca', 'au', 'jp', 'pl'];
+const AGENT_COUNTRY_CODES = `ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bl bm bn bo bq br bs bt bv bw by bz ca cc cd cf cg ch ci ck cl cm cn co cp cr cu cv cw cx cy cz de dg dj dk dm do dz ec ee eg eh er es et eu fi fj fk fm fo fr ga gb gd ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu ic id ie il im in io iq ir is it je jm jo jp ke kg kh ki km kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly ma mc md me mf mg mh mk ml mm mn mo mp mq mr ms mt mu mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pc pe pf pg ph pk pl pm pn pr ps pt pw py qa re ro rs ru rw sa sb sc sd se sg sh si sj sk sl sm sn so sr ss st sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug um un us uy uz va vc ve vg vi vn vu wf ws xk xx ye yt za zm zw`.trim().split(/\s+/);
+
+function agentIsOnline(a) {
+  if (!a || !a.enabled || !a.last_seen || String(a.last_seen).startsWith('0001')) return false;
+  return Date.now() - new Date(a.last_seen).getTime() < 120000;
+}
+
+function agentRelativeAge(iso) {
+  if (!iso || String(iso).startsWith('0001')) return 'never';
+  const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (secs < 60) return secs + 's ago';
+  if (secs < 3600) return Math.round(secs / 60) + 'm ago';
+  if (secs < 86400) return Math.round(secs / 3600) + 'h ago';
+  return Math.round(secs / 86400) + 'd ago';
+}
+
+function humanBytes(n) {
+  n = Number(n) || 0;
+  if (n < 1024) return n + ' B';
+  const units = ['KiB', 'MiB', 'GiB', 'TiB'];
+  let i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < units.length - 1);
+  return n.toFixed(1) + ' ' + units[i];
+}
+
+function countryFlagHTML(code, cls) {
+  const url = flagURL(code);
+  if (!url) return '';
+  const klass = cls || 'agent-flag';
+  return `<img class="${escapeHTML(klass)}" src="${escapeHTML(url)}" alt="${escapeHTML(countryName(code))}" title="${escapeHTML(countryName(code))}">`;
+}
+
+function agentFlagHTML(a, cls) {
+  if (!a || !a.country) return '';
+  return countryFlagHTML(a.country, cls);
+}
+
+function agentForId(id) {
+  return agentsCache.find((a) => a.id === id) || null;
+}
+
+function matchRelayPattern(assignments, domain) {
+  const d = String(domain || '').toLowerCase().replace(/\.$/, '');
+  let best = '';
+  let bestScore = -1;
+  for (const [pattern, value] of Object.entries(assignments || {})) {
+    if (!value) continue;
+    let p = String(pattern || '').toLowerCase().replace(/\.$/, '');
+    if (!p) continue;
+    let matches = false;
+    let score = 0;
+    if (p.startsWith('*.')) {
+      const base = p.slice(2);
+      if (base && d.endsWith('.' + base)) { matches = true; score = base.length + 1; }
+    } else if (d === p) {
+      matches = true; score = p.length + 1000;
+    } else if (d.endsWith('.' + p)) {
+      matches = true; score = p.length;
+    }
+    if (matches && score > bestScore) { best = value; bestScore = score; }
+  }
+  return best;
+}
+
+function effectiveRelay(domain) {
+  const rules = (currentConfig && currentConfig.rules) || {};
+  const direct = matchRelayPattern(rules.domain_agents || {}, domain);
+  if (direct && direct !== '__inherit__') {
+    if (direct === '__local__') return { local: true, source: 'domain' };
+    return { local: false, id: direct, agent: agentForId(direct), source: 'domain' };
+  }
+  const service = serviceOfDomain(domain);
+  const sid = service ? ((rules.service_agents || {})[service] || '') : '';
+  if (sid) return { local: false, id: sid, agent: agentForId(sid), source: 'service', service };
+  return { local: true, source: 'local' };
+}
+
+
+function assignedDomainsForAgent(id) {
+  const rules = (currentConfig && currentConfig.rules) || {};
+  const out = new Set();
+  for (const [d, aid] of Object.entries(rules.domain_agents || {})) {
+    if (aid === id) out.add(d);
+  }
+  const services = new Set(Object.entries(rules.service_agents || {})
+    .filter(([, aid]) => aid === id)
+    .map(([sid]) => sid));
+  for (const [d, sid] of Object.entries(rules.domain_services || {})) {
+    if (!services.has(sid)) continue;
+    const override = (rules.domain_agents || {})[d];
+    if (override && override !== id) continue;
+    out.add(d);
+  }
+  return out;
+}
+
+function updateAgentSummary() {
+  const count = agentsCache.length;
+  const upCount = agentsCache.filter(agentIsOnline).length;
+  const assigned = new Set();
+  let traffic = 0;
+  for (const a of agentsCache) {
+    for (const d of assignedDomainsForAgent(a.id)) assigned.add(d);
+    traffic += Number(a.bytes_in || 0) + Number(a.bytes_out || 0);
+  }
+  const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+  set('agent-count', String(count));
+  set('agent-online-count', String(upCount));
+  set('agent-domain-count', String(assigned.size));
+  set('agent-traffic', humanBytes(traffic));
+}
+
+async function loadAgents() {
+  const list = document.getElementById('agents-list');
+  try {
+    const res = await fetch(api('/api/agents'), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not load agents'));
+    const data = await res.json();
+    agentsCache = Array.isArray(data.agents) ? data.agents : [];
+    renderAgents();
+    renderServiceRelayControl();
+    updateAgentSummary();
+    if (currentConfig && document.getElementById('custom-proxied-rows')) renderProxiedList();
+  } catch (e) {
+    if (list) list.innerHTML = `<p class="text-xs text-red-400 py-2">Could not load agents: ${escapeHTML(e.message)}</p>`;
+  }
+}
+
+function agentPingBadge(a) {
+  const measured = Number(a.ping_ms) > 0 && a.ping_at && !String(a.ping_at).startsWith('0001');
+  if (!measured) {
+    return {
+      cls: 'text-slate-400 bg-slate-500/10 border-slate-600/40',
+      text: 'ping —',
+      title: 'No connection test yet',
+    };
+  }
+  const ms = Number(a.ping_ms);
+  let cls = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+  if (ms > 40) cls = 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30';
+  if (ms > 80) cls = 'text-red-400 bg-red-500/10 border-red-500/30';
+  return {
+    cls,
+    text: `ping ${ms.toFixed(1)} ms`,
+    title: `Last test ${agentRelativeAge(a.ping_at)}`,
+  };
+}
+
+function renderAgents() {
+  const list = document.getElementById('agents-list');
+  if (!list) return;
+  updateAgentSummary();
+  if (!agentsCache.length) {
+    list.innerHTML = `
+      <div class="agent-empty text-center py-8 border border-slate-800 rounded-lg">
+        <i data-feather="globe" class="w-6 h-6 mx-auto text-slate-600 mb-2"></i>
+        <p class="text-xs font-bold text-slate-300 font-heading">No relay agents yet</p>
+        <p class="text-[11px] text-slate-500 mt-1">Add one on a server in another country, then assign domains or services to it.</p>
+      </div>`;
+    safeFeatherReplace();
+    return;
+  }
+  list.innerHTML = agentsCache.map((a) => {
+    const isOnline = agentIsOnline(a);
+    const status = !a.enabled ? 'disabled' : (isOnline ? 'online' : 'offline');
+    const stateClass = status === 'online' ? 'is-online' : (status === 'offline' ? 'is-offline' : 'is-disabled');
+    const cardClass = 'agent-card glass-panel panel-card p-4 sm:p-5 flex flex-col justify-between space-y-3'
+      + (status === 'offline' ? ' is-offline' : '')
+      + (status === 'disabled' ? ' is-disabled' : '')
+      + (agentEditingId === a.id ? ' is-editing' : '');
+    const ip = a.public_ip || 'not reported';
+    const traffic = humanBytes((a.bytes_in || 0) + (a.bytes_out || 0));
+    const assigned = assignedDomainsForAgent(a.id).size;
+    const rules = currentConfig?.rules || {};
+    const services = Object.entries(rules.service_agents || {})
+      .filter(([, agentID]) => agentID === a.id)
+      .map(([serviceID]) => (rules.services || {})[serviceID] || serviceID);
+    const ping = agentPingBadge(a);
+    return `
+      <div class="${escapeHTML(cardClass)}">
+        <div>
+          <div class="flex items-start justify-between gap-2 mb-2 pb-2 border-b border-slate-800/80">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2 flex-wrap">
+                ${agentFlagHTML(a)}
+                <h4 class="agent-name truncate">${escapeHTML(a.name || a.id)}</h4>
+                <span class="agent-badge ${escapeHTML(stateClass)}">${escapeHTML(status)}</span>
+                ${agentEditingId === a.id ? '<span class="agent-badge is-editing">editing</span>' : ''}
+              </div>
+              <div class="agent-meta mt-0.5 truncate">${escapeHTML(a.country || '—')}${a.country ? ' · ' + escapeHTML(countryName(a.country)) : ''} · ${escapeHTML(a.id)}</div>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <button type="button" class="agent-icon-btn" data-agent-edit="${escapeHTML(a.id)}" title="Edit agent" aria-label="Edit agent ${escapeHTML(a.name || a.id)}">
+                <i data-feather="edit-2" class="w-3.5 h-3.5"></i>
+              </button>
+              <button type="button" class="agent-icon-btn" data-agent-toggle="${escapeHTML(a.id)}" data-enable="${escapeHTML(a.enabled ? '0' : '1')}" title="${escapeHTML(a.enabled ? 'Disable agent' : 'Enable agent')}" aria-label="${escapeHTML(a.enabled ? 'Disable agent' : 'Enable agent')}">
+                <i data-feather="${escapeHTML(a.enabled ? 'pause' : 'play')}" class="w-3.5 h-3.5"></i>
+              </button>
+              <button type="button" class="agent-icon-btn agent-icon-btn-danger" data-agent-delete="${escapeHTML(a.id)}" title="Delete agent" aria-label="Delete agent ${escapeHTML(a.name || a.id)}">
+                <i data-feather="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="agent-card-body">
+            <div class="agent-card-values">
+              <div class="flex items-center justify-between gap-2 text-[10px] font-mono bg-slate-950/80 px-2.5 py-1.5 rounded-lg border border-slate-800/80">
+                <span class="text-slate-500 font-semibold shrink-0">PUBLIC IP</span>
+                <span class="text-cyan-300 min-w-0 flex-1 truncate text-right select-all" title="${escapeHTML(ip)}">${escapeHTML(ip)}</span>
+                ${a.public_ip ? `<button type="button" class="agent-icon-btn agent-icon-btn-inline" data-agent-copy-ip="${escapeHTML(a.public_ip)}" title="Copy public IP" aria-label="Copy public IP"><i data-feather="copy" class="w-3 h-3"></i></button>` : ''}
+              </div>
+              <div class="flex items-center justify-between gap-2 text-[10px] font-mono bg-slate-950/80 px-2.5 py-1.5 rounded-lg border border-slate-800/80">
+                <span class="text-slate-500 font-semibold shrink-0">AGENT KEY</span>
+                <span class="text-cyan-300 min-w-0 flex-1 truncate text-right">${escapeHTML(a.id)}:••••••</span>
+                <button type="button" class="agent-icon-btn agent-icon-btn-inline" data-agent-copy-key="${escapeHTML(a.id)}" title="Copy agent key" aria-label="Copy agent key"><i data-feather="copy" class="w-3 h-3"></i></button>
+              </div>
+              <div class="agent-meta agent-card-traffic">${traffic} relayed${services.length ? ' · Services: ' + escapeHTML(services.join(', ')) : ' · No service default'}</div>
+            </div>
+
+            <div class="agent-card-side">
+              <div class="agent-side-stat"><span>Version</span><strong title="${escapeHTML(a.version || '—')}">${escapeHTML(a.version || '—')}</strong></div>
+              <div class="agent-side-stat"><span>Last Seen</span><strong>${escapeHTML(agentRelativeAge(a.last_seen))}</strong></div>
+              <div class="agent-side-stat is-domains"><span>Domains</span><strong>${assigned}</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
+          <button type="button" class="panel-btn panel-btn-sm panel-btn-neutral" data-agent-test="${escapeHTML(a.id)}" title="Open a TCP connection to the relay port">
+            <i data-feather="activity" class="w-3.5 h-3.5"></i> Test connection
+          </button>
+          <span class="shrink-0 px-2 py-0.5 rounded border ${escapeHTML(ping.cls)} text-[10px] font-bold font-mono whitespace-nowrap" title="${escapeHTML(ping.title)}">${escapeHTML(ping.text)}</span>
+        </div>
+      </div>`;
+  }).join('');
+  safeFeatherReplace();
+}
+
+
+let serviceRelayPickerTrigger = null;
+
+function renderServiceRelayControl() {
+  const input = document.getElementById('service-relay');
+  if (!input) return;
+  let id = input.value || '';
+  if (id && !agentForId(id)) {
+    id = '';
+    input.value = '';
+  }
+  const agent = id ? agentForId(id) : null;
+  const name = document.getElementById('service-relay-name');
+  const mark = document.getElementById('service-relay-mark');
+  if (name) name.textContent = agent ? (agent.name || agent.id) : 'This Server';
+  if (mark) {
+    mark.innerHTML = agent
+      ? agentFlagHTML(agent, 'agent-flag agent-flag-sm')
+      : countryFlagHTML(currentConfig?.server?.country, 'agent-flag agent-flag-sm');
+  }
+  const trigger = document.getElementById('service-relay-trigger');
+  if (trigger) {
+    trigger.title = agent
+      ? `${agent.name || agent.id} — ${agent.country || ''}`
+      : `This Server — ${countryName(currentConfig?.server?.country) || 'local'}`;
+  }
+}
+
+function closeServiceRelayPicker() {
+  document.getElementById('service-relay-menu')?.classList.add('hidden');
+  if (serviceRelayPickerTrigger) serviceRelayPickerTrigger.setAttribute('aria-expanded', 'false');
+  serviceRelayPickerTrigger = null;
+}
+
+function openServiceRelayPicker(trigger) {
+  const menu = document.getElementById('service-relay-menu');
+  if (!menu) return;
+  if (!menu.classList.contains('hidden')) { closeServiceRelayPicker(); return; }
+  const input = document.getElementById('service-relay');
+  const current = input?.value || '';
+  const localFlag = countryFlagHTML(currentConfig?.server?.country, 'agent-flag');
+  const rows = [
+    `<button type="button" class="proxied-bulk-option" role="option" data-service-relay-id="">
+      ${localFlag || '<i data-feather="server" class="w-3.5 h-3.5"></i>'}
+      <span>This Server${current === '' ? ' · selected' : ''}</span>
+    </button>`,
+  ];
+  for (const a of agentsCache) {
+    rows.push(`<button type="button" class="proxied-bulk-option" role="option" data-service-relay-id="${escapeHTML(a.id)}">
+      ${agentFlagHTML(a)}
+      <span class="truncate">${escapeHTML(a.name || a.id)} · ${escapeHTML(a.country || '')}${current === a.id ? ' · selected' : ''}</span>
+    </button>`);
+  }
+  if (!agentsCache.length) {
+    rows.push('<div class="proxied-bulk-option is-disabled" role="option" aria-disabled="true"><span>No agents yet</span></div>');
+  }
+  menu.innerHTML = rows.join('');
+  menu.classList.remove('hidden');
+  serviceRelayPickerTrigger = trigger;
+  trigger.setAttribute('aria-expanded', 'true');
+  const r = trigger.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  menu.style.left = `${Math.max(8, Math.min(r.left, innerWidth - mw - 8))}px`;
+  menu.style.top = `${r.bottom + 4 + mh > innerHeight ? Math.max(8, r.top - mh - 4) : r.bottom + 4}px`;
+}
+
+function initAgentCountrySelect() {
+  const select = document.getElementById('agent-country');
+  if (!select || agentCountrySelectReady) return;
+  agentCountrySelectReady = true;
+  const pinned = AGENT_PINNED_COUNTRIES.filter((c, i, all) => AGENT_COUNTRY_CODES.includes(c) && all.indexOf(c) === i);
+  const rest = AGENT_COUNTRY_CODES.filter((c) => !pinned.includes(c));
+  const opts = (codes) => codes.map((c) =>
+    `<option value="${escapeHTML(c)}">${escapeHTML(countryName(c))} (${escapeHTML(c.toUpperCase())})</option>`).join('');
+  select.innerHTML = `<optgroup label="Frequently used">${opts(pinned)}</optgroup><optgroup label="All countries">${opts(rest)}</optgroup>`;
+  select.value = 'de';
+  updateAgentCountryFlag();
+}
+
+function updateAgentCountryFlag() {
+  const select = document.getElementById('agent-country');
+  const img = document.getElementById('agent-country-flag');
+  if (!select || !img) return;
+  if (select.value) paintCountryFlag(img, select.value);
+  else img.classList.add('hidden');
+}
+
+function openAgentForm(agent) {
+  initAgentCountrySelect();
+  const form = document.getElementById('agent-form');
+  if (!form) return;
+  agentEditingId = agent ? agent.id : '';
+  renderAgents();
+  document.getElementById('agent-editing').value = agent ? agent.id : '';
+  document.getElementById('agent-name').value = agent ? (agent.name || '') : '';
+  document.getElementById('agent-country').value = agent && agent.country ? agent.country.toLowerCase() : 'de';
+  document.getElementById('agent-public-ip').value = agent ? (agent.public_ip || '') : '';
+  const keyEl = document.getElementById('agent-key');
+  if (keyEl) keyEl.value = agent ? 'Stored encrypted — rotate to replace' : 'Generated when you create the agent';
+  const rotate = document.getElementById('rotate-agent-key-btn');
+  if (rotate) rotate.disabled = !agent;
+  document.getElementById('save-agent-btn').textContent = agent ? 'Save changes' : 'Create agent';
+  document.getElementById('agent-form-status').textContent = '';
+  document.getElementById('agent-token-box')?.classList.add('hidden');
+  updateAgentCountryFlag();
+  form.classList.remove('hidden');
+  form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  document.getElementById('agent-name')?.focus();
+}
+
+async function saveAgentForm() {
+  initAgentCountrySelect();
+  const status = document.getElementById('agent-form-status');
+  const editing = document.getElementById('agent-editing').value;
+  const name = (document.getElementById('agent-name').value || '').trim();
+  const country = (document.getElementById('agent-country').value || '').toUpperCase();
+  const publicIP = (document.getElementById('agent-public-ip').value || '').trim();
+  if (!/^[A-Z]{2}$/.test(country)) { if (status) status.textContent = 'Choose a country.'; return; }
+  if (status) status.textContent = editing ? 'Saving…' : 'Creating agent…';
+  try {
+    if (editing) {
+      const res = await fetch(api('/api/agents/' + encodeURIComponent(editing)), {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, country, public_ip: publicIP })
+      });
+      if (!res.ok) throw new Error(await errorMessage(res, 'Could not save the agent'));
+      showToast('Agent saved.', 'success');
+      document.getElementById('agent-form').classList.add('hidden');
+      agentEditingId = '';
+      await loadAgents();
+      return;
+    }
+    const res = await fetch(api('/api/agents'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, country })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    const keyEl = document.getElementById('agent-key');
+    if (keyEl) keyEl.value = data.key || '';
+    showAgentKey(data.key, data.agent && data.agent.name);
+    document.getElementById('agent-form').classList.add('hidden');
+    agentEditingId = '';
+    if (status) status.textContent = '';
+    showToast('Agent key created.', 'success');
+    await loadAgents();
+  } catch (e) {
+    if (status) status.textContent = e.message;
+  }
+}
+
+function showAgentKey(key, name) {
+  const hub = window.location.origin + ADMIN_BASE;
+  const label = name ? ` for ${name}` : '';
+  document.getElementById('agent-token-value').textContent = key;
+  document.getElementById('agent-token-command').textContent =
+    'docker run -d --name digitdns-agent --network host --restart unless-stopped \\\n' +
+    '  -v /opt/digitdns-agent:/data \\\n' +
+    '  ghcr.io/digitrob/digitdns-agent:latest \\\n' +
+    "  -hub '" + hub + "' \\\n" +
+    "  -key '" + key + "' \\\n" +
+    '  -listen :80,:443 \\\n' +
+    '  -state /data/agent-state.json';
+  document.getElementById('agent-token-box').classList.remove('hidden');
+  const box = document.getElementById('agent-token-box');
+  const title = box && box.querySelector('p');
+  if (title) title.textContent = 'Agent key' + label;
+}
+
+async function rotateAgentKey(id) {
+  if (!id) return;
+  const res = await fetch(api('/api/agents/' + encodeURIComponent(id) + '/rotate-key'), {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${authToken}` }
+  });
+  if (!res.ok) { showToast(await errorMessage(res, 'Could not rotate the key.'), 'error'); return; }
+  const data = await res.json();
+  const agent = agentForId(id);
+  const keyEl = document.getElementById('agent-key');
+  if (keyEl) keyEl.value = data.key || '';
+  showAgentKey(data.key, agent && agent.name);
+  showToast('Agent key rotated. The old key no longer works.', 'success');
+}
+
+async function copyClipboard(value, message) {
+  const text = String(value || '');
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(message, 'success');
+    return;
+  } catch (e) { /* fall through to the textarea path */ }
+  try {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.top = '-1000px';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    if (ok) { showToast(message, 'success'); return; }
+  } catch (e) { /* report below */ }
+  showToast('Could not copy to the clipboard.', 'error');
+}
+
+async function copyAgentKey(id) {
+  const res = await fetch(api('/api/agents/' + encodeURIComponent(id) + '/key'), {
+    headers: { 'Authorization': `Bearer ${authToken}` }
+  });
+  if (!res.ok) {
+    showToast(await errorMessage(res, 'The agent key is not available; rotate it to create a copy.'), 'error');
+    return;
+  }
+  const data = await res.json();
+  await copyClipboard(data.key, 'Agent key copied.');
+}
+
+async function testAgentConnection(id) {
+  showToast('Testing connection…', 'info');
+  let data = {};
+  let status = 0;
+  try {
+    const res = await fetch(api('/api/agents/' + encodeURIComponent(id) + '/test'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    status = res.status;
+    data = await res.json().catch(() => ({}));
+  } catch (e) {
+    data = { error: e.message };
+  }
+  await loadAgents();
+  if (status === 200 && data.ok) {
+    const a = agentForId(id);
+    const ping = Number(data.ping_ms || 0).toFixed(1);
+    showToast(`Online — ping ${ping} ms${a ? ' · last heartbeat ' + agentRelativeAge(a.last_seen) : ''}`, 'success');
+    return;
+  }
+  showToast(`Test failed — ${data.error || 'agent unreachable'}`, 'error');
+}
+
+async function toggleAgent(id, enable) {
+  const res = await fetch(api('/api/agents/' + encodeURIComponent(id) + (enable ? '/enable' : '/disable')), {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${authToken}` }
+  });
+  if (!res.ok) { showToast(await errorMessage(res, 'Could not update the agent.'), 'error'); return; }
+  showToast(enable ? 'Agent enabled.' : 'Agent disabled.', 'success');
+  await loadAgents();
+}
+
+async function deleteAgent(id) {
+  const ok = await confirmAction({
+    destructive: true,
+    title: 'Delete this relay agent?',
+    hint: 'ITS DOMAINS FALL BACK TO THE LOCAL RELAY',
+    message: 'The box keeps running but can no longer sync. Domains assigned directly or through a service fall back to this server.',
+    confirmText: 'DELETE AGENT',
+  });
+  if (!ok) return;
+  const res = await fetch(api('/api/agents/' + encodeURIComponent(id)), {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${authToken}` }
+  });
+  if (!res.ok) { showToast(await errorMessage(res, 'Could not delete the agent.'), 'error'); return; }
+  showToast('Agent deleted.', 'success');
+  await loadAgents();
+}
+
+
+function initAgentPage() {
+  initAgentCountrySelect();
+  const add = document.getElementById('add-agent-btn');
+  const cancel = document.getElementById('cancel-agent-btn');
+  const save = document.getElementById('save-agent-btn');
+  add?.addEventListener('click', () => openAgentForm(null));
+  cancel?.addEventListener('click', () => {
+    document.getElementById('agent-form')?.classList.add('hidden');
+    agentEditingId = '';
+    renderAgents();
+  });
+  save?.addEventListener('click', saveAgentForm);
+  document.getElementById('rotate-agent-key-btn')?.addEventListener('click', () => {
+    const id = document.getElementById('agent-editing').value;
+    if (id) rotateAgentKey(id);
+  });
+  document.getElementById('agent-country')?.addEventListener('change', updateAgentCountryFlag);
+  document.getElementById('copy-agent-token-btn')?.addEventListener('click', () => {
+    const value = document.getElementById('agent-token-value')?.textContent || '';
+    navigator.clipboard?.writeText(value);
+    showToast('Key copied.', 'success');
+  });
+  document.getElementById('agents-list')?.addEventListener('click', (e) => {
+    const edit = e.target.closest('[data-agent-edit]');
+    if (edit) { openAgentForm(agentForId(edit.dataset.agentEdit)); return; }
+    const toggle = e.target.closest('[data-agent-toggle]');
+    if (toggle) { toggleAgent(toggle.dataset.agentToggle, toggle.dataset.enable === '1'); return; }
+    const test = e.target.closest('[data-agent-test]');
+    if (test) { testAgentConnection(test.dataset.agentTest); return; }
+    const copyKey = e.target.closest('[data-agent-copy-key]');
+    if (copyKey) { copyAgentKey(copyKey.dataset.agentCopyKey); return; }
+    const copyIP = e.target.closest('[data-agent-copy-ip]');
+    if (copyIP) { copyClipboard(copyIP.dataset.agentCopyIp, 'Public IP copied.'); return; }
+    const del = e.target.closest('[data-agent-delete]');
+    if (del) deleteAgent(del.dataset.agentDelete);
+  });
+}
+
 const tabRoutes = {
   'dashboard': '/home',
   'proxied': '/proxied',
+  'agents': '/agents',
   'clients': '/clients',
   'stream': '/logs',
   'api': '/api',
@@ -4926,6 +5706,7 @@ const routeTabs = {
   '/panel': 'dashboard',
   '/login': 'dashboard',
   '/proxied': 'proxied',
+  '/agents': 'agents',
   '/clients': 'clients',
   '/logs': 'stream',
   '/stream': 'stream',
@@ -4937,7 +5718,7 @@ const routeTabs = {
 
 function switchTab(target, updateUrl = true) {
   activeDashTab = target;
-  document.querySelectorAll('.sidebar-nav-item, .nav-tab').forEach(t => {
+  document.querySelectorAll('.sidebar-nav-item, .nav-tab, .agent-nav-link').forEach(t => {
     if (t.dataset.tab === target) {
       t.classList.add('active');
     } else {
@@ -4974,6 +5755,12 @@ function switchTab(target, updateUrl = true) {
     if (target === 'proxied') {
       proxiedFillViewport();
       requestAnimationFrame(sizeProxiedScroll);
+      // Agents enrol and go offline outside this tab, so refresh the cache
+      // before the relay column is read.
+      loadAgents();
+    }
+    if (target === 'agents') {
+      loadAgents();
     }
   }
 
@@ -5437,8 +6224,9 @@ function initAdminPathControls() {
 function initEventListeners() {
   initUpstreamAddressScroll();
   initServices();
+  initAgentPage();
   // Tabs Navigation (Sidebar & Mobile Bottom Bar)
-  document.querySelectorAll('.sidebar-nav-item, .nav-tab, .mobile-nav-item').forEach(tab => {
+  document.querySelectorAll('.sidebar-nav-item, .nav-tab, .mobile-nav-item, .agent-nav-link').forEach(tab => {
     tab.onclick = (e) => {
       e.preventDefault();
       const target = tab.dataset.tab;
@@ -5915,6 +6703,21 @@ function initEventListeners() {
     if (!row) return;
     assignServiceToSelected(row.dataset.bulkService);
   });
+  document.getElementById('proxied-bulk-egress')?.addEventListener('click', () => {
+    const btn = document.getElementById('proxied-bulk-egress');
+    if (!btn || btn.disabled) return;
+    const menu = document.getElementById('proxied-bulk-egress-menu');
+    if (!menu) return;
+    const willOpen = menu.classList.contains('hidden');
+    renderBulkEgressOptions();
+    menu.classList.toggle('hidden');
+    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  });
+  document.getElementById('proxied-bulk-egress-menu')?.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-bulk-egress]');
+    if (!row) return;
+    assignEgressToSelected(row.dataset.bulkEgress);
+  });
   document.getElementById('service-picker-menu')?.addEventListener('click', (e) => {
     const row = e.target.closest('[data-service-id]');
     if (!row) return;
@@ -5923,22 +6726,39 @@ function initEventListeners() {
     closeServicePicker();
     if (domain) assignService(domain, id);
   });
+  document.getElementById('relay-picker-menu')?.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-relay-id]');
+    if (!row) return;
+    const domain = relayPickerDomain;
+    const id = row.dataset.relayId;
+    if (domain) assignRelayToDomain(domain, id);
+  });
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.proxied-bulk-service-wrap')) closeBulkServiceMenu();
+    if (!e.target.closest('.proxied-bulk-service-wrap')) {
+      closeBulkServiceMenu();
+      closeBulkEgressMenu();
+    }
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeBulkServiceMenu();
+      closeBulkEgressMenu();
       closeServicePicker();
+      closeRelayPicker();
     }
   });
   document.addEventListener('click', (e) => {
     if (!e.target.closest('#service-picker-menu') && !e.target.closest('.proxied-service-trigger')) {
       closeServicePicker();
     }
+    if (!e.target.closest('#relay-picker-menu') && !e.target.closest('.proxied-relay-trigger')) {
+      closeRelayPicker();
+    }
   });
   window.addEventListener('scroll', closeServicePicker, true);
+  window.addEventListener('scroll', closeRelayPicker, true);
   window.addEventListener('resize', closeServicePicker);
+  window.addEventListener('resize', closeRelayPicker);
   window.addEventListener('resize', sizeProxiedScroll);
 
   // The × names itself through data-modal-close so Escape and a backdrop click reach

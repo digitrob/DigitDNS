@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+
+# Relay agent image. It is deliberately separate from the hub image: the agent
+# has no database, no panel and no DNS server, and its attack surface should not
+# grow because the hub gained a feature.
+FROM golang:1.26-alpine AS builder
+
+WORKDIR /src
+
+RUN apk add --no-cache git ca-certificates
+
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
+COPY . .
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -buildvcs=false -ldflags="-s -w" \
+    -o /out/digitdns-agent ./cmd/digitdns-agent
+
+FROM alpine:3.20
+
+# The agent dials the hub over HTTPS and resolves origin hostnames itself, so it
+# needs a trust store. tzdata keeps its log timestamps in the operator's zone.
+RUN apk add --no-cache ca-certificates tzdata \
+ && mkdir -p /data
+
+COPY --from=builder /out/digitdns-agent /usr/local/bin/digitdns-agent
+
+# Host networking is required in production: the relay must see the client's real
+# address and bind 80/443. The agent runs as root in the container for the same
+# reason the hub does — binding privileged ports inside a host-network container
+# otherwise needs an extra capability the operator has to remember.
+VOLUME ["/data"]
+
+ENTRYPOINT ["/usr/local/bin/digitdns-agent"]

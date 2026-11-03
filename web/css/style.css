@@ -1097,11 +1097,11 @@ input:checked + .slider:before {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem;
+  gap: 0.3rem;
 }
 /* A narrow, fixed sort control: "Added (newest)" still fits, but it no longer
    pushes the search and bulk buttons onto a second line. */
-.proxied-sort-select { width: 8rem; }
+.proxied-sort-select { width: 7.5rem; }
 /* The bulk buttons are compact so the whole toolbar fits one row on a desktop. */
 .proxied-controls .proxied-bulk-btn { padding: 0.375rem 0.5rem; }
 .proxied-search-box {
@@ -1110,13 +1110,13 @@ input:checked + .slider:before {
      instead of leaving a blank pocket after Remove. The count slot below is
      fixed-width, which keeps the search from resizing when "No domains
      selected" becomes "1 selected". 10rem is the floor before wrapping. */
-  flex: 1 1 12.5rem;
+  flex: 1 1 9rem;
   width: auto;
   max-width: none;
-  min-width: 10rem;
+  min-width: 7rem;
 }
 #proxied-selected-count {
-  min-width: 7rem;
+  min-width: 5rem;
   white-space: nowrap;
 }
 .proxied-bulk-bar {
@@ -1131,7 +1131,7 @@ input:checked + .slider:before {
    table-layout:fixed the auto column collapses to a few pixels and the DOMAIN
    and SERVICE headers overlap. A minimum width makes the scroll container do
    the work instead of destroying the table. */
-.proxied-table { min-width: 700px; }
+.proxied-table { min-width: 800px; }
 
 .proxied-col-check { width: 2.5rem; }
 /* Fixed compact widths on the right-side columns; the DOMAIN column carries no
@@ -1960,7 +1960,7 @@ input:checked + .slider:before {
     top: 1rem;
   }
   /* Give the domain column room on this narrower band. */
-  .proxied-col-service { width: 8rem; }
+  .proxied-col-service { width: 9.5rem; }
   .proxied-col-actions { width: 14rem; }
   .proxied-table { min-width: 0; }
 }
@@ -2326,3 +2326,236 @@ input:checked + .slider:before {
 @media (max-width: 1023px) {
   .dash-resize { display: none; }
 }
+
+/* ── Relay agents ────────────────────────────────────────────────────────────
+ * A relay agent is an optional egress point in another country. The page is a
+ * summary strip plus one card per box; the domain table gets a compact RELAY
+ * cell that shows the effective exit (service default or per-domain override). */
+.agent-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (min-width: 640px) {
+  .agent-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.agent-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--c-slate-800));
+  background: rgb(var(--c-slate-950) / 0.55);
+}
+.agent-summary-item span {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.agent-summary-item small {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+/* The agent card uses the same glass panel and header rhythm as a client card;
+   only the offline/disabled states are extra. */
+.agent-card.is-offline { border-color: rgba(245, 158, 11, 0.32) !important; }
+.agent-card.is-disabled { opacity: 0.62; }
+/* The edit form is inline above the list, so the card it belongs to carries the
+   same cyan outline and badge as the focused control. */
+.agent-card.is-editing {
+  border-color: var(--accent-cyan) !important;
+  box-shadow: 0 0 0 1px var(--accent-cyan), 0 0 20px rgba(34, 211, 238, 0.16);
+}
+.agent-badge.is-editing {
+  color: var(--accent-cyan);
+  border-color: rgba(34, 211, 238, 0.45);
+  background: rgba(34, 211, 238, 0.10);
+}
+.agent-card-main { display: flex; gap: 11px; min-width: 0; }
+.agent-flag { width: 26px; height: 19px; border-radius: 2px; object-fit: cover; box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.25); flex-shrink: 0; }
+.agent-name { font-family: var(--font-heading); font-size: 13px; font-weight: 700; color: var(--text-main); }
+.agent-meta { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+/* The IP/key rows own the left column; the right rail carries the three compact
+   stats. Stacking them beside the boxes instead of under them keeps the card from
+   growing a second full-width band, and lets the relay-traffic line use the space
+   the narrower rows free up. */
+.agent-card-body { display: flex; align-items: stretch; gap: 10px; min-width: 0; }
+.agent-card-values { display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-width: 0; }
+.agent-card-side {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 3px;
+  flex: 0 0 96px;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid rgb(var(--c-slate-800) / 0.8);
+  border-radius: 10px;
+  background: rgb(var(--c-slate-950) / 0.6);
+  font-family: var(--font-mono);
+}
+.agent-side-stat { min-width: 0; }
+.agent-side-stat span {
+  display: block;
+  font-size: 9px;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.agent-side-stat strong {
+  display: block;
+  font-size: 10px;
+  line-height: 1.35;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-side-stat.is-domains strong { color: var(--accent-cyan); }
+.agent-card-traffic { line-height: 1.35; }
+@media (max-width: 420px) {
+  .agent-card-side { flex-basis: 92px; }
+}
+.agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--c-slate-700));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.agent-badge.is-online { color: var(--accent-green); border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.08); }
+.agent-badge.is-offline { color: var(--accent-amber); border-color: rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.08); }
+.agent-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.agent-command {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--c-slate-800));
+  background: rgb(var(--c-slate-950));
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.agent-flag-sm { width: 16px; height: 12px; }
+.agent-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  border: 1px solid rgb(var(--c-slate-700));
+  background: rgb(var(--c-slate-950));
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.agent-nav-link:hover { color: var(--accent-cyan); border-color: rgba(34, 211, 238, 0.4); }
+@media (min-width: 768px) {
+  /* The desktop sidebar already carries Relay Agents; the Domains-page link is
+     the phone entry point. The custom display above must not beat md:hidden. */
+  .agent-nav-link { display: none; }
+}
+
+/* RELAY is an indicator, not a control: the routing decision lives in the
+   service default and the Override Resolving dialog. Local is the default; an
+   assigned agent shows its flag and name, with an offline hint when the DNS
+   answer has actually fallen back to this server. */
+.proxied-col-relay { width: 9.5rem; }
+.proxied-relay-cell { padding-right: 0.75rem; }
+.proxied-relay-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--c-slate-700));
+  background: rgb(var(--c-slate-950));
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 11px;
+  text-align: left;
+}
+.proxied-relay-trigger:hover { border-color: rgba(34, 211, 238, 0.5); }
+.proxied-relay-trigger .agent-flag { width: 16px; height: 12px; }
+.proxied-relay-trigger .proxied-relay-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proxied-relay-trigger.is-offline { opacity: 0.7; }
+.proxied-relay-offline {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-amber);
+}
+@media (min-width: 1280px) and (max-width: 1439px) {
+  .proxied-col-relay { width: 9rem; }
+}
+
+/* Small icon-only actions on an agent card (copy key, copy IP). */
+.agent-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--c-slate-700));
+  background: rgb(var(--c-slate-950));
+  color: var(--text-muted);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.agent-icon-btn:hover {
+  color: var(--accent-cyan);
+  border-color: rgba(34, 211, 238, 0.45);
+  background: rgba(34, 211, 238, 0.08);
+}
+.agent-icon-btn-inline {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+.service-relay-trigger { width: 100%; }
+.agent-icon-btn-danger:hover {
+  color: var(--accent-red);
+  border-color: rgba(255, 70, 85, 0.45);
+  background: rgba(255, 70, 85, 0.08);
+}
+#agents-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+/* Two cards once there is room, three on a desktop wide enough for the narrower
+   cards. The right-hand stats rail is fixed-width, so the value rows shrink first. */
+@media (min-width: 768px) {
+  #agents-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1280px) {
+  #agents-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.agent-empty { grid-column: 1 / -1; }

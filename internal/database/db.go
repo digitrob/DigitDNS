@@ -22,6 +22,11 @@ var (
 	// bucketGroupIcons holds the dashboard-uploaded icons for custom policy
 	// groups (v2.7): raw image bytes keyed by group id, created on first upload.
 	bucketGroupIcons = []byte("custom_group_icons")
+	// bucketAgents holds relay agents and their key hashes (v3.8); see
+	// agent_repo.go for why the record is plain JSON and only the key is hashed.
+	bucketAgents = []byte("agents")
+	// bucketAgentTokens holds one-time enrolment tokens, keyed by their hash.
+	bucketAgentTokens = []byte("agent_tokens")
 )
 
 // bucketsInUse is everything a v1.5.0 database actually holds.
@@ -34,7 +39,7 @@ var (
 // daemon does not make; they are dropped rather than carried forward and audited
 // again at every release.
 var (
-	bucketsInUse   = [][]byte{bucketClients, bucketPolicies, bucketSettings, bucketCustomGroups, bucketGroupIcons}
+	bucketsInUse   = [][]byte{bucketClients, bucketPolicies, bucketSettings, bucketCustomGroups, bucketGroupIcons, bucketAgents, bucketAgentTokens}
 	bucketsRetired = [][]byte{bucketLogs, bucketUpstreams}
 )
 

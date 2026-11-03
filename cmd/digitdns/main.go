@@ -477,7 +477,20 @@ func main() {
 	}
 	_ = sessionManager
 
+	// Geo relay agents: the DNS handler needs the live assignment map on the hot
+	// path, and the web layer keeps it current after every rules or agent change.
+	relayRouter := service.NewRelayRouter()
+	if err := relayRouter.Reload(db); err != nil {
+		log.Printf("[Main] Warning: could not load relay agents: %v", err)
+	}
 	dnsHandler := dns.NewHandler(clientService, c, m, u, statsService, serverSettings.PublicIP)
+	dnsHandler.SetRelayLookup(func(domain string) (string, string, string, string, bool) {
+		target, ok := relayRouter.Lookup(domain)
+		if !ok {
+			return "", "", "", "", false
+		}
+		return target.IPv4, target.AgentID, target.Name, target.Country, true
+	})
 	// v2.5: publish the server's IPv6 for proxied AAAA when one is configured, so
 	// IPv6 clients reach the SNI proxy over v6 instead of being forced to IPv4.
 	dnsHandler.SetPublicIPv6(serverSettings.PublicIPv6)
@@ -581,6 +594,7 @@ func main() {
 	webServer.SetGeoIP(geoIP)
 	webServer.SetAuthSettings(authSettings)
 	webServer.SetCustomGroupService(customGroupService)
+	webServer.SetRelayRouter(relayRouter)
 	// v2.8: a runtime domain change re-applies the resolver's self-name set, so a
 	// retired operator domain stops answering and the new one starts (audit
 	// needs-validation fix — before, only the startup set existed).

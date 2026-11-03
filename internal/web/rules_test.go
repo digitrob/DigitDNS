@@ -157,6 +157,38 @@ func TestConfigRulesPartialSaveKeepsServices(t *testing.T) {
 	}
 }
 
+// Relay assignments are routing data, so losing them on a partial save is worse
+// than losing a label: the domain would silently start exiting from the hub
+// instead of its assigned agent.
+func TestConfigRulesPartialSaveKeepsRelayAssignments(t *testing.T) {
+	_, h, tok, cleanup := authedServer(t)
+	defer cleanup()
+
+	seed := `{
+		"custom_proxied": ["example.de"],
+		"services": {"german-tv": "German TV"},
+		"domain_services": {"example.de": "german-tv"},
+		"domain_agents": {"example.de": "agt_de"},
+		"service_agents": {"german-tv": "agt_de"}
+	}`
+	if w := postJSON(t, h, "/api/config/rules", seed, tok); w.Code != http.StatusOK {
+		t.Fatalf("seed save = %d — %s", w.Code, w.Body.String())
+	}
+	if w := postJSON(t, h, "/api/config/rules", `{"custom_proxied":["example.de","other.example"]}`, tok); w.Code != http.StatusOK {
+		t.Fatalf("partial save = %d — %s", w.Code, w.Body.String())
+	}
+
+	rules := rulesFromConfig(t, h, tok)
+	domains, _ := rules["domain_agents"].(map[string]any)
+	if domains["example.de"] != "agt_de" {
+		t.Errorf("domain_agents = %#v, want example.de preserved", rules["domain_agents"])
+	}
+	services, _ := rules["service_agents"].(map[string]any)
+	if services["german-tv"] != "agt_de" {
+		t.Errorf("service_agents = %#v, want german-tv preserved", rules["service_agents"])
+	}
+}
+
 // TestConfigRulesExplicitEmptyClears is the other half of the contract. Keeping
 // absent keys must not become keeping everything: a list the operator emptied has
 // to come back empty, and a record they deleted has to disappear rather than be

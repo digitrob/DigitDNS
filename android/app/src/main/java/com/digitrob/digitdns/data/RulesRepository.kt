@@ -32,6 +32,10 @@ class RulesRepository @Inject constructor(
             services = lists.services,
             domainServices = lists.domainServices,
             serviceIcons = lists.serviceIcons,
+            // Relay assignments are routing data, not display metadata: omitting
+            // them here made every chip change report success and save nothing.
+            domainAgents = lists.domainAgents,
+            serviceAgents = lists.serviceAgents,
         ),
     ).success
 

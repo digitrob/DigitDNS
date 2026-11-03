@@ -126,6 +126,31 @@ func (f *fakeV3Backend) UpdateCustomGroup(r *http.Request, id string, b map[stri
 func (f *fakeV3Backend) DeleteCustomGroup(r *http.Request, id string) (map[string]any, error) {
 	return map[string]any{"success": true}, nil
 }
+func (f *fakeV3Backend) Agents() ([]map[string]any, error) {
+	return []map[string]any{{"id": "a1", "name": "Agent"}}, nil
+}
+func (f *fakeV3Backend) CreateAgent(r *http.Request, b map[string]any) (map[string]any, error) {
+	return map[string]any{"agent": map[string]any{"id": "a2"}, "key": "a2:secret"}, nil
+}
+func (f *fakeV3Backend) UpdateAgent(r *http.Request, id string, b map[string]any) (map[string]any, error) {
+	return map[string]any{"agent": map[string]any{"id": id}}, nil
+}
+func (f *fakeV3Backend) DeleteAgent(r *http.Request, id string) (map[string]any, error) {
+	return map[string]any{"success": true}, nil
+}
+func (f *fakeV3Backend) SetAgentEnabled(r *http.Request, id string, enabled bool) (map[string]any, error) {
+	return map[string]any{"success": true}, nil
+}
+func (f *fakeV3Backend) RotateAgentKey(r *http.Request, id string) (map[string]any, error) {
+	return map[string]any{"key": id + ":new"}, nil
+}
+func (f *fakeV3Backend) AgentKey(r *http.Request, id string) (map[string]any, error) {
+	return map[string]any{"key": id + ":secret"}, nil
+}
+func (f *fakeV3Backend) TestAgent(r *http.Request, id string) (map[string]any, error) {
+	return map[string]any{"ok": true, "ping_ms": 1.2, "agent": map[string]any{"id": id}}, nil
+}
+
 func (f *fakeV3Backend) UpdateCheck(r *http.Request) (map[string]any, error) {
 	return map[string]any{"update_available": false}, nil
 }
@@ -329,6 +354,18 @@ func TestV3_DelegatedRoutesUseBackend(t *testing.T) {
 	}
 	if w := v3Request(mux, http.MethodDelete, "/api/v3/custom-groups/g1", key, nil); w.Code != http.StatusOK {
 		t.Fatalf("delete custom-group = %d, want 200", w.Code)
+	}
+	if w := v3Request(mux, http.MethodGet, "/api/v3/agents", key, nil); w.Code != http.StatusOK {
+		t.Fatalf("agents = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodPost, "/api/v3/agents", key, map[string]any{"country": "DE"}); w.Code != http.StatusCreated {
+		t.Fatalf("create agent = %d, want 201: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodPost, "/api/v3/agents/a1/test", key, nil); w.Code != http.StatusOK {
+		t.Fatalf("test agent = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodGet, "/api/v3/agents/a1/key", key, nil); w.Code != http.StatusOK {
+		t.Fatalf("agent key = %d, want 200: %s", w.Code, w.Body.String())
 	}
 	if w := v3Request(mux, http.MethodPost, "/api/v3/tls/issue", key, map[string]any{"domain": "x.example.com"}); w.Code != http.StatusOK {
 		t.Fatalf("tls issue = %d, want 200", w.Code)

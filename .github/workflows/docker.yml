@@ -120,3 +120,69 @@ jobs:
         run: |
           image="ghcr.io/${OWNER,,}/digitdns"
           cosign sign --yes "${image}@${DIGEST}"
+
+  # The relay agent is a separate image built from the same repository and the
+  # same tag push. It is intentionally smaller than the hub: no database, no
+  # panel, no DNS server. Publishing it here keeps both products on one release
+  # page and one signing identity.
+  agent:
+    name: Build & publish relay-agent image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/digitdns-agent
+          tags: |
+            type=raw,value=edge,enable=${{ (github.event_name == 'push' && github.ref_type == 'branch') || (github.ref_type == 'tag' && contains(github.ref_name, 'beta')) }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ inputs.image-tag }},enable=${{ inputs.image-tag != '' }}
+            type=raw,value=v${{ inputs.image-tag }},enable=${{ inputs.image-tag != '' }}
+            type=raw,value=latest,enable=${{ inputs.image-tag != '' }}
+          labels: |
+            org.opencontainers.image.title=DigitDNS Relay Agent
+            org.opencontainers.image.description=Geo relay agent for DigitDNS — encrypted TLS pass-through with no panel or database
+            org.opencontainers.image.licenses=AGPL-3.0-only
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.agent
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=agent
+          cache-to: type=gha,mode=max,scope=agent
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign the image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          image="ghcr.io/${OWNER,,}/digitdns-agent"
+          cosign sign --yes "${image}@${DIGEST}"

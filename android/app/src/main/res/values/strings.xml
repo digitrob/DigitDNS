@@ -36,10 +36,13 @@
     <string name="action_remove">Remove</string>
     <string name="action_retry">Retry</string>
     <string name="action_add">Add</string>
+    <string name="action_done">Done</string>
+    <string name="action_dismiss">Dismiss</string>
 
     <!-- Settings hub sections. -->
     <string name="settings_app">App</string>
     <string name="settings_servers">Servers</string>
+    <string name="settings_relay_agents">Relay Agents</string>
     <string name="settings_connect_guide">Connect Guide</string>
     <string name="settings_diagnostics">Diagnostics</string>
     <string name="settings_tls">SSL / TLS</string>
@@ -53,6 +56,56 @@
     <string name="settings_subscription">Subscription</string>
     <string name="settings_alerts">Alerts</string>
     <string name="settings_about">About</string>
+
+    <!-- Relay choosers. -->
+    <string name="relay_inherit_service">Inherit service</string>
+    <string name="relay_this_server">This Server</string>
+    <string name="relay_picker_title">Relay for %1$s</string>
+    <string name="relay_picker_body">A domain override wins over the service default. Inherit follows the service; This Server forces the local exit.</string>
+    <string name="relay_bulk_title">Relay %1$d domains through</string>
+    <string name="relay_bulk_body">This writes one relay override per selected domain. It does not change their service labels or routing status.</string>
+    <string name="relay_service_default">Default relay</string>
+    <string name="relay_service_default_body">Used only by domains with no relay override. This Server is the default.</string>
+    <string name="relay_row_content">Relay: %1$s. Tap to change.</string>
+    <!-- Relay agents. -->
+    <string name="agents_summary">%1$d agents · %2$d online</string>
+    <string name="agents_summary_one">%1$d agent · %2$d online</string>
+    <string name="agents_add">Add agent</string>
+    <string name="agents_add_title">Add relay agent</string>
+    <string name="agents_add_body">Create the agent record here, then install the agent on a server in the chosen country and give it the key shown after saving.</string>
+    <string name="agents_edit_title">Edit relay agent</string>
+    <string name="agents_edit_body">Name and country are labels for this agent. The public IPv4 is what the agent reported; correct it only when the heartbeat cannot reach the hub.</string>
+    <string name="agents_name">Name</string>
+    <string name="agents_name_hint">Frankfurt 2</string>
+    <string name="agents_country_hint">Choose a country</string>
+    <string name="agents_public_ip">Public IP</string>
+    <string name="agents_public_ip_hint">The public IPv4 appears here after the agent first checks in.</string>
+    <string name="agents_agent_key">Agent key</string>
+    <string name="agents_edit">Edit agent</string>
+    <string name="agents_enable">Enable agent</string>
+    <string name="agents_disable">Disable agent</string>
+    <string name="agents_delete">Delete agent</string>
+    <string name="agents_delete_title">Delete %1$s?</string>
+    <string name="agents_delete_body">The agent stops relaying immediately. Domains and services assigned to it fall back to This Server. This cannot be undone.</string>
+    <string name="agents_status_online">Online</string>
+    <string name="agents_status_offline">Offline</string>
+    <string name="agents_status_disabled">Disabled</string>
+    <string name="agents_version">Version</string>
+    <string name="agents_last_seen">Last seen</string>
+    <string name="agents_domains">Domains</string>
+    <string name="agents_traffic_service_none">%1$s relayed · No service default</string>
+    <string name="agents_traffic_services">%1$s relayed · Services: %2$s</string>
+    <string name="agents_test">Test connection</string>
+    <string name="agents_testing">Testing…</string>
+    <string name="agents_ping_none">ping —</string>
+    <string name="agents_copy_value">Copy %1$s</string>
+    <string name="agents_copy_key">Copy key</string>
+    <string name="agents_rotate_key">Rotate key</string>
+    <string name="agents_key_title">Key for %1$s</string>
+    <string name="agents_key_created_body">Install the agent with this key. The server keeps an encrypted copy so you can copy it again from the card.</string>
+    <string name="agents_key_rotated_body">The old key stops working immediately. Give the agent this replacement and restart it.</string>
+    <string name="agents_empty_title">No relay agents yet</string>
+    <string name="agents_empty_body">Add one on a server in another country, then assign domains or services to it.</string>
 
     <!-- Clients list. -->
     <string name="clients_search_hint">Search name, id or IP</string>
@@ -180,7 +233,10 @@
     <string name="domains_select_all">Select all domains</string>
     <string name="domains_select_all_short">All</string>
     <string name="domains_selected_count">%1$d selected</string>
+    <string name="domains_service_content">Service: %1$s. Tap to change.</string>
+    <string name="domains_service_none_content">No service. Tap to assign one.</string>
     <string name="domains_assign_service">Assign service</string>
+    <string name="domains_assign_egress">Egress</string>
     <string name="domains_assign_service_title">Assign service to %1$d domains</string>
     <string name="domains_assign_service_body">Every selected domain gets the label, in one save. Routing is not changed.</string>
     <string name="action_clear">Clear</string>

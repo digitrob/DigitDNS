@@ -41,6 +41,12 @@ data class RulesResponse(
     @SerialName("services") val services: Map<String, String> = emptyMap(),
     @SerialName("domain_services") val domainServices: Map<String, String> = emptyMap(),
     @SerialName("service_icons") val serviceIcons: Map<String, String> = emptyMap(),
+    /** Domain pattern -> relay agent id; "__local__" is an explicit local override. */
+    @SerialName("domain_agents") val domainAgents: Map<String, String> = emptyMap(),
+    /** Service id -> relay agent id, used only when the domain has no override. */
+    @SerialName("service_agents") val serviceAgents: Map<String, String> = emptyMap(),
+    /** Agent id -> display metadata for the relay badge. */
+    @SerialName("relay_agents") val relayAgents: Map<String, RelayAgentDto> = emptyMap(),
 )
 
 /**
@@ -58,6 +64,14 @@ data class RulesUpdateRequest(
     @SerialName("services") val services: Map<String, String>? = null,
     @SerialName("domain_services") val domainServices: Map<String, String>? = null,
     @SerialName("service_icons") val serviceIcons: Map<String, String>? = null,
+    @SerialName("domain_agents") val domainAgents: Map<String, String>? = null,
+    @SerialName("service_agents") val serviceAgents: Map<String, String>? = null,
+)
+
+@Serializable
+data class RelayAgentDto(
+    @SerialName("name") val name: String = "",
+    @SerialName("country") val country: String = "",
 )
 
 /** The shared `{"success": true}` acknowledgement many write routes return. */

@@ -153,6 +153,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideAgentsApi(retrofit: Retrofit): AgentsApi = retrofit.create(AgentsApi::class.java)
+
+    @Provides
+    @Singleton
     fun provideAccessApi(retrofit: Retrofit): AccessApi = retrofit.create(AccessApi::class.java)
 
     @Provides

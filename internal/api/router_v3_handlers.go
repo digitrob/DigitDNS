@@ -686,6 +686,115 @@ func (a *API) handleV3CustomGroupItem(w http.ResponseWriter, r *http.Request) {
 }
 
 // -----------------------------------------------------------------------------
+// Relay agents (delegated)
+// -----------------------------------------------------------------------------
+
+func (a *API) handleV3Agents(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		agents, err := a.v3Backend.Agents()
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "internal", err.Error())
+			return
+		}
+		if agents == nil {
+			agents = []map[string]any{}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"agents": agents})
+	case http.MethodPost:
+		body, ok := v3Body(r)
+		if !ok {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			return
+		}
+		resp, err := a.v3Backend.CreateAgent(r, body)
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(resp)
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
+	}
+}
+
+func (a *API) handleV3AgentItem(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v3/agents/"), "/")
+	parts := strings.SplitN(rest, "/", 2)
+	id := parts[0]
+	action := ""
+	if len(parts) == 2 {
+		action = parts[1]
+	}
+	if id == "" {
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "missing agent id")
+		return
+	}
+
+	var resp map[string]any
+	var err error
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		if action != "key" {
+			writeProblemAt(w, r, http.StatusNotFound, "not_found", "unknown agent action")
+			return
+		}
+		resp, err = a.v3Backend.AgentKey(r, id)
+	case http.MethodPut, http.MethodPatch:
+		if action != "" {
+			writeProblemAt(w, r, http.StatusNotFound, "not_found", "unknown agent action")
+			return
+		}
+		body, ok := v3Body(r)
+		if !ok {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			return
+		}
+		resp, err = a.v3Backend.UpdateAgent(r, id, body)
+	case http.MethodDelete:
+		if action != "" {
+			writeProblemAt(w, r, http.StatusNotFound, "not_found", "unknown agent action")
+			return
+		}
+		resp, err = a.v3Backend.DeleteAgent(r, id)
+	case http.MethodPost:
+		switch action {
+		case "enable":
+			resp, err = a.v3Backend.SetAgentEnabled(r, id, true)
+		case "disable":
+			resp, err = a.v3Backend.SetAgentEnabled(r, id, false)
+		case "rotate-key":
+			resp, err = a.v3Backend.RotateAgentKey(r, id)
+		case "test":
+			resp, err = a.v3Backend.TestAgent(r, id)
+		default:
+			writeProblemAt(w, r, http.StatusNotFound, "not_found", "unknown agent action")
+			return
+		}
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, PUT, PATCH, POST or DELETE")
+		return
+	}
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+		return
+	}
+	if resp == nil {
+		resp = map[string]any{"success": true}
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// -----------------------------------------------------------------------------
 // Rules & access (delegated)
 // -----------------------------------------------------------------------------
 

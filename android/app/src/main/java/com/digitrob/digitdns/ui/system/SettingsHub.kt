@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Policy
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Wifi
@@ -62,6 +63,7 @@ import com.digitrob.digitdns.ui.rules.UpstreamsScreen
 private enum class SettingsSection(@StringRes val labelRes: Int, val icon: ImageVector) {
     App(R.string.settings_app, Icons.Filled.Tune),
     Servers(R.string.settings_servers, Icons.Filled.Dns),
+    RelayAgents(R.string.settings_relay_agents, Icons.Filled.Speed),
     ConnectGuide(R.string.settings_connect_guide, Icons.Filled.Wifi),
     Diagnostics(R.string.settings_diagnostics, Icons.Filled.MonitorHeart),
     Tls(R.string.settings_tls, Icons.Filled.Lock),
@@ -138,6 +140,7 @@ private fun SettingsSectionContent(
             onAddServer = onAddServer,
             onOpenSubscriber = onOpenSubscriber,
         )
+        SettingsSection.RelayAgents -> RelayAgentsScreen()
         SettingsSection.ConnectGuide -> ConnectScreen()
         SettingsSection.Diagnostics -> DiagnosticsScreen()
         SettingsSection.Tls -> TlsScreen()

@@ -159,7 +159,7 @@ internal fun ServicePickerDialog(
     domain: String?,
     state: RulesUiState,
     onAssign: (String) -> Unit,
-    onSaveService: (String?, String, String) -> Unit,
+    onSaveService: (String?, String, String, String) -> Unit,
     onDeleteService: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -207,7 +207,7 @@ internal fun ServicePickerDialog(
                 )
 
                 HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                TextButton(onClick = { form = ServiceFormState(null, "", "") }) {
+                TextButton(onClick = { form = ServiceFormState(null, "", "", "") }) {
                     Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(stringResource(R.string.services_new))
@@ -219,10 +219,11 @@ internal fun ServicePickerDialog(
 
     form?.let { editing ->
         ServiceFormDialog(
-            state = editing,
+            form = editing,
+            relayState = state,
             onDismiss = { form = null },
-            onSave = { name, icon ->
-                onSaveService(editing.id, name, icon)
+            onSave = { name, icon, relayId ->
+                onSaveService(editing.id, name, icon, relayId)
                 form = null
             },
         )
@@ -251,7 +252,7 @@ internal fun ServicePickerDialog(
  * beside them — so they carry no content description.
  */
 @Composable
-private fun ServiceIcon(
+internal fun ServiceIcon(
     url: String?,
     modifier: Modifier = Modifier,
     noService: Boolean = false,
@@ -332,12 +333,28 @@ private fun ServiceChoices(
             iconUrl = state.lists.serviceIcons[id],
             onSelect = {
                 if (managing) {
-                    onEdit(ServiceFormState(id, name, state.lists.serviceIcons[id].orEmpty()))
+                    onEdit(
+                        ServiceFormState(
+                            id,
+                            name,
+                            state.lists.serviceIcons[id].orEmpty(),
+                            state.lists.serviceAgents[id].orEmpty(),
+                        ),
+                    )
                 } else {
                     onAssign(id)
                 }
             },
-            onEdit = { onEdit(ServiceFormState(id, name, state.lists.serviceIcons[id].orEmpty())) },
+            onEdit = {
+                onEdit(
+                    ServiceFormState(
+                        id,
+                        name,
+                        state.lists.serviceIcons[id].orEmpty(),
+                        state.lists.serviceAgents[id].orEmpty(),
+                    ),
+                )
+            },
             onDelete = { onDelete(id, name) },
             editLabel = stringResource(R.string.services_edit, name),
             deleteLabel = stringResource(R.string.services_delete, name),
@@ -509,31 +526,45 @@ internal fun BulkAssignHost(
     )
 }
 
-/** The name/icon pair the service form edits; a null [id] means "create". */
-private data class ServiceFormState(val id: String?, val name: String, val icon: String)
+/**
+ * The name/icon/relay triple the service form edits; a null [id] means "create".
+ * The relay id is the same `service_agents` value the panel writes: empty for
+ * This Server, otherwise an agent id.
+ */
+private data class ServiceFormState(
+    val id: String?,
+    val name: String,
+    val icon: String,
+    val relayId: String,
+)
 
 @Composable
 private fun ServiceFormDialog(
-    state: ServiceFormState,
+    form: ServiceFormState,
+    relayState: RulesUiState,
     onDismiss: () -> Unit,
-    onSave: (String, String) -> Unit,
+    onSave: (String, String, String) -> Unit,
 ) {
-    var name by remember(state) { mutableStateOf(state.name) }
-    var icon by remember(state) { mutableStateOf(state.icon) }
+    var name by remember(form) { mutableStateOf(form.name) }
+    var icon by remember(form) { mutableStateOf(form.icon) }
+    var relayId by remember(form) { mutableStateOf(form.relayId) }
     PanelDialog(
         onDismissRequest = onDismiss,
         solid = true,
         title = {
             Text(
-                if (state.id == null) {
+                if (form.id == null) {
                     stringResource(R.string.services_new)
                 } else {
-                    stringResource(R.string.services_rename, state.name)
+                    stringResource(R.string.services_rename, form.name)
                 },
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.heightIn(max = 430.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -553,14 +584,19 @@ private fun ServiceFormDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                ServiceDefaultRelayField(
+                    state = relayState,
+                    selected = relayId,
+                    onSelect = { relayId = it },
+                )
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(name, icon) },
+                onClick = { onSave(name, icon, relayId) },
                 enabled = name.isNotBlank(),
             ) {
-                Text(stringResource(if (state.id == null) R.string.services_add else R.string.services_save))
+                Text(stringResource(if (form.id == null) R.string.services_add else R.string.services_save))
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },

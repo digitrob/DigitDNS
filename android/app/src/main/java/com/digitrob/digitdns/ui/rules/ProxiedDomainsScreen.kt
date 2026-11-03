@@ -62,9 +62,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.text.font.FontWeight
@@ -118,6 +120,10 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
     var servicePickerDomain by remember { mutableStateOf<String?>(null) }
     var managingServices by remember { mutableStateOf(false) }
     var bulkAssignOpen by remember { mutableStateOf(false) }
+    var bulkEgressOpen by remember { mutableStateOf(false) }
+    // The row whose relay chooser is open. The chip lives on the second line, so
+    // opening it never reflows the gear / status / switch group.
+    var relayPickerDomain by remember { mutableStateOf<String?>(null) }
     val selectedDomains = state.selectedDomains
     BackHandler(enabled = selectedDomains.isNotEmpty()) { viewModel.clearSelection() }
 
@@ -132,12 +138,37 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
                 onOpenResolution = { resolutionDomain = it },
                 onOpenService = { servicePickerDomain = it },
                 onOpenBulkAssign = { bulkAssignOpen = true },
+                onOpenBulkEgress = { bulkEgressOpen = true },
+                onOpenRelay = { relayPickerDomain = it },
                 onOpenManageServices = { managingServices = true },
             )
         }
     }
 
     ResolutionHost(resolutionDomain, state, viewModel) { resolutionDomain = null }
+
+    BulkRelayHost(
+        open = bulkEgressOpen,
+        domains = selectedDomains,
+        state = state,
+        onApply = { id ->
+            viewModel.assignRelayToMany(selectedDomains, id)
+            bulkEgressOpen = false
+        },
+        onDismiss = { bulkEgressOpen = false },
+    )
+
+    relayPickerDomain?.let { domain ->
+        RelayPickerDialog(
+            domain = domain,
+            state = state,
+            onPick = { id ->
+                viewModel.assignRelay(domain, id)
+                relayPickerDomain = null
+            },
+            onDismiss = { relayPickerDomain = null },
+        )
+    }
 
     BulkAssignHost(
         open = bulkAssignOpen,
@@ -177,6 +208,8 @@ private fun DomainsList(
     onOpenResolution: (String) -> Unit,
     onOpenService: (String) -> Unit,
     onOpenBulkAssign: () -> Unit,
+    onOpenBulkEgress: () -> Unit,
+    onOpenRelay: (String) -> Unit,
     onOpenManageServices: () -> Unit,
 ) {
         PanelRefreshBox(
@@ -201,6 +234,7 @@ private fun DomainsList(
                         onSort = viewModel::setSort,
                         selectedCount = selectedDomains.size,
                         onAssignSelected = { onOpenBulkAssign() },
+                        onAssignEgress = onOpenBulkEgress,
                         onClearSelection = viewModel::clearSelection,
                         onManageServices = { onOpenManageServices() },
                     )
@@ -237,7 +271,10 @@ private fun DomainsList(
                         hasResolution = state.resolution?.profiles?.containsKey(row.domain) == true,
                         onResolution = { viewModel.loadResolution(); onOpenResolution(row.domain) },
                         serviceLabel = row.serviceId.takeIf { it.isNotEmpty() }?.let(state::serviceName),
+                        serviceIconUrl = state.lists.serviceIcons[row.serviceId],
                         onService = { onOpenService(row.domain) },
+                        serverCountry = state.serverCountry,
+                        onRelay = { onOpenRelay(row.domain) },
                         selected = row.domain in selectedDomains,
                         selectionMode = selectedDomains.isNotEmpty(),
                         onLongSelect = { viewModel.toggleSelection(row.domain) },
@@ -282,7 +319,7 @@ private fun ServicePickerHost(
     visible: Boolean,
     state: RulesUiState,
     onAssign: (String, String) -> Unit,
-    onSaveService: (String?, String, String) -> Unit,
+    onSaveService: (String?, String, String, String) -> Unit,
     onDeleteService: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -746,12 +783,14 @@ private fun BulkImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) 
 }
 
 @Composable
+@Suppress("LongParameterList")
 private fun ServicesSortRow(
     state: RulesUiState,
     onServiceFilter: (String?) -> Unit,
     onSort: (DomainSort) -> Unit,
     selectedCount: Int,
     onAssignSelected: () -> Unit,
+    onAssignEgress: () -> Unit,
     onClearSelection: () -> Unit,
     onManageServices: () -> Unit,
 ) {
@@ -789,6 +828,9 @@ private fun ServicesSortRow(
                 )
                 TextButton(onClick = onAssignSelected) {
                     Text(stringResource(R.string.domains_assign_service))
+                }
+                TextButton(onClick = onAssignEgress) {
+                    Text(stringResource(R.string.domains_assign_egress))
                 }
                 TextButton(onClick = onClearSelection) {
                     Text(stringResource(R.string.action_clear))
@@ -903,7 +945,10 @@ private fun DomainRowItem(
     hasResolution: Boolean,
     onResolution: () -> Unit,
     serviceLabel: String?,
+    serviceIconUrl: String?,
     onService: () -> Unit,
+    serverCountry: String,
+    onRelay: () -> Unit,
     selected: Boolean,
     selectionMode: Boolean,
     onLongSelect: () -> Unit,
@@ -944,7 +989,10 @@ private fun DomainRowItem(
                     DomainNameCell(
                         row = row,
                         serviceLabel = serviceLabel,
+                        serviceIconUrl = serviceIconUrl,
                         onService = onService,
+                        serverCountry = serverCountry,
+                        onRelay = onRelay,
                         modifier = Modifier.weight(1f),
                     )
                     // The action set is identical on every status. Blocked/direct rows
@@ -1000,7 +1048,10 @@ private fun DomainRowItem(
 private fun DomainNameCell(
     row: DomainRow,
     serviceLabel: String?,
+    serviceIconUrl: String?,
     onService: () -> Unit,
+    serverCountry: String,
+    onRelay: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -1012,28 +1063,35 @@ private fun DomainNameCell(
             overflow = TextOverflow.Ellipsis,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = serviceLabel ?: stringResource(R.string.services_none),
-                style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
-                color = if (serviceLabel != null) {
-                    DigitDnsTheme.colors.info
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            // Service and relay are icon-only controls on the row's second line.
+            // The names live in the pickers they open, so a long agent name can
+            // never squeeze the wildcard text or force the row taller.
+            val serviceDescription = if (serviceLabel != null) {
+                stringResource(R.string.domains_service_content, serviceLabel)
+            } else {
+                stringResource(R.string.domains_service_none_content)
+            }
+            Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(5.dp))
                     .clickable(role = Role.Button, onClick = onService)
-                    .padding(horizontal = 3.dp, vertical = 1.dp),
-            )
+                    .semantics { contentDescription = serviceDescription },
+                contentAlignment = Alignment.Center,
+            ) {
+                ServiceIcon(
+                    url = serviceIconUrl,
+                    modifier = Modifier.size(18.dp),
+                    noService = serviceLabel == null,
+                )
+            }
             Text(
-                text = " · " + if (row.wildcards.isEmpty()) {
+                text = "· " + if (row.wildcards.isEmpty()) {
                     "exact"
                 } else {
                     row.wildcards.joinToString(" · ") { it.type }
                 },
-                style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono, fontSize = 10.sp),
                 color = if (row.wildcards.isEmpty()) {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 } else {
@@ -1042,6 +1100,15 @@ private fun DomainNameCell(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (row.status == DomainStatus.PROXY || row.status == DomainStatus.PAUSED) {
+                val relay = row.relayAgent
+                Spacer(Modifier.width(2.dp))
+                RelayRowIcon(
+                    label = relay?.name?.ifBlank { relay.id } ?: stringResource(R.string.relay_this_server),
+                    country = relay?.country ?: serverCountry,
+                    onClick = onRelay,
+                )
+            }
         }
     }
 }

@@ -803,6 +803,10 @@
           <i data-feather="shield" class="w-4 h-4"></i>
           <span>Domains</span>
         </button>
+        <button class="sidebar-nav-item" data-tab="agents" data-route="/agents">
+          <i data-feather="globe" class="w-4 h-4"></i>
+          <span>Relay Agents</span>
+        </button>
         <button class="sidebar-nav-item" data-tab="clients" data-route="/clients">
           <i data-feather="users" class="w-4 h-4"></i>
           <span>Clients</span>
@@ -1271,6 +1275,16 @@
               class="panel-field panel-field-sm w-full font-mono" aria-label="Service icon URL, domain or search word">
             <div id="service-icon-results" class="service-icon-results hidden" aria-live="polite"></div>
             <p class="text-[10px] text-slate-500">A domain fetches its favicon; a URL uses that image; a word searches the icon library.</p>
+            <div class="block">
+              <span class="block text-[10px] font-semibold text-slate-400 mb-1">Default relay</span>
+              <button type="button" id="service-relay-trigger" class="proxied-relay-trigger service-relay-trigger"
+                aria-haspopup="listbox" aria-expanded="false" aria-label="Default relay for this service">
+                <span id="service-relay-mark"></span>
+                <span id="service-relay-name" class="proxied-relay-name">This Server</span>
+                <i data-feather="chevron-down" class="w-3 h-3"></i>
+              </button>
+              <input type="hidden" id="service-relay" value="">
+            </div>
             <div class="flex gap-2">
               <button id="save-service-btn" type="button" class="panel-btn panel-btn-sm panel-btn-primary flex-1">Add</button>
               <button id="cancel-service-btn" type="button" class="panel-btn panel-btn-sm panel-btn-neutral">Cancel</button>
@@ -1280,9 +1294,16 @@
 
         <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
           <div>
-            <h3 class="panel-card-header">
-              <i data-feather="shield" class="w-4 h-4"></i> Domains
-            </h3>
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="panel-card-header">
+                <i data-feather="shield" class="w-4 h-4"></i> Domains
+              </h3>
+              <!-- The desktop sidebar carries Relay Agents. Phones reach it
+                   from here, which keeps the bottom bar at seven targets. -->
+              <button type="button" class="agent-nav-link md:hidden" data-tab="agents" data-route="/agents">
+                <i data-feather="globe" class="w-3.5 h-3.5"></i> Relay Agents
+              </button>
+            </div>
             <p class="text-[11px] text-slate-400 mt-0.5">All managed domains — proxied, paused, blocked and direct. Filter with the chips, and open a row's status badge to change its routing.</p>
           </div>
 
@@ -1361,13 +1382,25 @@
             <span id="proxied-selected-count" class="shrink-0 whitespace-nowrap text-[11px] text-slate-500">No domains selected</span>
             <div class="proxied-bulk-service-wrap">
               <button type="button" id="proxied-bulk-service" class="proxied-bulk-service"
+                title="Assign a service to the selected domains"
                 aria-haspopup="listbox" aria-expanded="false" disabled>
                 <i data-feather="globe" class="w-3.5 h-3.5"></i>
-                <span>Assign service</span>
+                <span>Service</span>
                 <i data-feather="chevron-down" class="w-3.5 h-3.5"></i>
               </button>
               <div id="proxied-bulk-service-menu" class="proxied-bulk-menu hidden"
                 role="listbox" aria-label="Assign a service to the selected domains"></div>
+            </div>
+            <div class="proxied-bulk-service-wrap">
+              <button type="button" id="proxied-bulk-egress" class="proxied-bulk-service"
+                title="Choose an egress agent for the selected domains"
+                aria-haspopup="listbox" aria-expanded="false" disabled>
+                <i data-feather="map-pin" class="w-3.5 h-3.5"></i>
+                <span>Egress</span>
+                <i data-feather="chevron-down" class="w-3.5 h-3.5"></i>
+              </button>
+              <div id="proxied-bulk-egress-menu" class="proxied-bulk-menu hidden"
+                role="listbox" aria-label="Choose an egress agent for the selected domains"></div>
             </div>
             <button type="button" id="proxied-bulk-pause"
               title="Pause selected domains"
@@ -1376,8 +1409,10 @@
               title="Resume selected domains"
               class="proxied-bulk-btn inline-flex shrink-0 items-center gap-1.5 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition">Resume</button>
             <button type="button" id="proxied-bulk-remove"
-              title="Remove selected domains"
-              class="proxied-bulk-btn inline-flex shrink-0 items-center gap-1.5 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-red-500/10 text-red-400 border border-red-500/30 text-[11px] font-semibold transition">Remove</button>
+              title="Remove selected domains" aria-label="Remove selected domains"
+              class="proxied-bulk-btn inline-flex shrink-0 items-center justify-center px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-red-500/10 text-red-400 border border-red-500/30 text-[11px] font-semibold transition">
+              <i data-feather="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
           </div>
 
           <!-- Status filter. The four chips mirror the Android Domains page: no
@@ -1411,12 +1446,13 @@
                   </th>
                   <th class="proxied-col-domain py-2.5 px-3 text-start">DOMAIN</th>
                   <th class="proxied-col-service py-2.5 px-3 text-start">SERVICE</th>
+                  <th class="proxied-col-relay py-2.5 px-3 text-start">RELAY</th>
                   <th class="proxied-col-actions py-2.5 px-3 text-center">ACTIONS</th>
                   <th class="proxied-col-status py-2.5 px-3 text-center">STATUS</th>
                 </tr>
               </thead>
               <tbody id="custom-proxied-rows" class="divide-y divide-slate-800/50 text-slate-300">
-                <tr><td colspan="5" class="py-8 text-center text-slate-500">Loading rules…</td></tr>
+                <tr><td colspan="6" class="py-8 text-center text-slate-500">Loading rules…</td></tr>
               </tbody>
             </table>
             <div id="proxied-sentinel" class="proxied-sentinel" aria-hidden="true"></div>
@@ -1427,6 +1463,87 @@
 
         </div><!-- /grid -->
 
+      </section>
+
+      <!-- ============================================== -->
+      <!-- TAB: RELAY AGENTS                              -->
+      <!-- ============================================== -->
+      <section id="tab-agents" class="tab-content space-y-6 hidden">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h3 class="panel-card-header">
+                <i data-feather="globe" class="w-4 h-4"></i> Relay Agents
+              </h3>
+              <p class="text-[11px] text-slate-400 mt-0.5">Extra exit points in other countries. A domain assigned to an agent resolves to that agent's address; the agent relays TLS without decrypting it.</p>
+            </div>
+            <button id="add-agent-btn" class="panel-btn panel-btn-primary shrink-0">
+              <i data-feather="plus" class="w-4 h-4"></i> Add agent
+            </button>
+          </div>
+
+          <div class="agent-summary">
+            <div class="agent-summary-item"><span id="agent-count">0</span><small>agents</small></div>
+            <div class="agent-summary-item"><span id="agent-online-count">0</span><small>online</small></div>
+            <div class="agent-summary-item"><span id="agent-domain-count">0</span><small>assigned domains</small></div>
+            <div class="agent-summary-item"><span id="agent-traffic">0 B</span><small>relayed</small></div>
+          </div>
+
+          <!-- Add / edit form. The country list is built from the bundled flags
+               and Intl.DisplayNames, with the common egress countries pinned. -->
+          <div id="agent-form" class="hidden rounded-lg border border-slate-800 bg-slate-950/60 p-4 space-y-3">
+            <input type="hidden" id="agent-editing" value="">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label class="block">
+                <span class="block text-[11px] font-semibold text-slate-400 mb-1">Name</span>
+                <input id="agent-name" type="text" placeholder="Frankfurt 1" autocomplete="off"
+                  class="panel-field w-full">
+              </label>
+              <label class="block">
+                <span class="block text-[11px] font-semibold text-slate-400 mb-1">Country</span>
+                <div class="flex items-center gap-2">
+                  <img id="agent-country-flag" class="server-flag hidden" alt="">
+                  <select id="agent-country" class="panel-field w-full" aria-label="Agent country"></select>
+                </div>
+              </label>
+              <label class="block">
+                <span class="block text-[11px] font-semibold text-slate-400 mb-1">Public IPv4 <span class="text-slate-500">(filled by the first heartbeat)</span></span>
+                <input id="agent-public-ip" type="text" placeholder="203.0.113.10" autocomplete="off"
+                  class="panel-field w-full font-mono">
+              </label>
+              <label class="block">
+                <span class="block text-[11px] font-semibold text-slate-400 mb-1">Agent key</span>
+                <div class="flex items-center gap-2">
+                  <input id="agent-key" type="text" readonly placeholder="Generated when you create the agent"
+                    class="panel-field w-full font-mono text-[11px]">
+                  <button id="rotate-agent-key-btn" type="button" class="panel-btn panel-btn-sm panel-btn-neutral shrink-0">Rotate</button>
+                </div>
+              </label>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <button id="save-agent-btn" type="button" class="panel-btn panel-btn-primary">Create agent</button>
+              <button id="cancel-agent-btn" type="button" class="panel-btn panel-btn-neutral">Cancel</button>
+              <span id="agent-form-status" class="text-[11px] text-slate-400"></span>
+            </div>
+          </div>
+
+          <!-- Shown once, after a new agent is created. -->
+          <div id="agent-token-box" class="hidden rounded-lg border border-cyan-500/30 bg-slate-950/60 p-4 space-y-2">
+            <p class="text-[11px] font-bold text-cyan-300 uppercase tracking-wider">Agent key</p>
+            <p class="text-[11px] text-slate-400">This is the agent's credential. It can be copied again from the agent card. The box needs outbound access to this panel and inbound 80/443 for relayed traffic.</p>
+            <div class="flex items-center gap-2">
+              <code id="agent-token-value" class="flex-1 min-w-0 px-3 py-2 rounded bg-slate-950 border border-slate-800 font-mono text-xs text-amber-300 break-all"></code>
+              <button id="copy-agent-token-btn" type="button" class="agent-icon-btn shrink-0"
+                title="Copy agent key" aria-label="Copy agent key">
+                <i data-feather="copy" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+            <pre id="agent-token-command" class="agent-command"></pre>
+            <p class="text-[10px] text-slate-500">No agent domain or certificate is needed for the relay itself. The agent's own admin page is optional and local to the box.</p>
+          </div>
+
+          <div id="agents-list"></div>
+        </div>
       </section>
 
       <!-- ============================================== -->
@@ -2505,6 +2622,16 @@ async function onBuySubscription(ctx, username) {
        and is positioned over the row that opened it. -->
   <div id="service-picker-menu" class="proxied-bulk-menu service-picker-popup hidden"
     role="listbox" aria-label="Assign a service to this domain"></div>
+
+  <!-- Per-domain relay picker. The RELAY cell is the control; it opens at body
+       level so the table's scroll container cannot clip it. -->
+  <div id="relay-picker-menu" class="proxied-bulk-menu service-picker-popup hidden"
+    role="listbox" aria-label="Choose the relay for this domain"></div>
+
+  <!-- Service default relay picker. Same body-level treatment so the narrow
+       Services aside cannot clip the flag list. -->
+  <div id="service-relay-menu" class="proxied-bulk-menu service-picker-popup hidden"
+    role="listbox" aria-label="Choose the default relay for this service"></div>
 
   <!-- Custom JavaScript -->
   <script src="/js/app.js"></script>

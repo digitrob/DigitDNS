@@ -386,6 +386,105 @@ func (b *v3Backend) DeleteCustomGroup(r *http.Request, id string) (map[string]an
 }
 
 // -----------------------------------------------------------------------------
+// Relay agents
+// -----------------------------------------------------------------------------
+
+func (b *v3Backend) Agents() ([]map[string]any, error) {
+	rec := httptest.NewRecorder()
+	b.ws.handleAgents(rec, httptest.NewRequest(http.MethodGet, "/api/agents", nil))
+	var wrapper struct {
+		Agents []json.RawMessage `json:"agents"`
+	}
+	if rec.Code >= 400 {
+		var parsed map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &parsed)
+		return nil, v3FromStatus(rec.Code, agentErrorMessage(parsed, "could not list agents"))
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &wrapper)
+	out := make([]map[string]any, 0, len(wrapper.Agents))
+	for _, raw := range wrapper.Agents {
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+func (b *v3Backend) CreateAgent(r *http.Request, body map[string]any) (map[string]any, error) {
+	return b.delegateBody(r, body, b.ws.handleAgents)
+}
+
+func (b *v3Backend) UpdateAgent(r *http.Request, id string, body map[string]any) (map[string]any, error) {
+	return b.agentItem(r, id, http.MethodPut, "", body)
+}
+
+func (b *v3Backend) DeleteAgent(r *http.Request, id string) (map[string]any, error) {
+	return b.agentItem(r, id, http.MethodDelete, "", nil)
+}
+
+func (b *v3Backend) SetAgentEnabled(r *http.Request, id string, enabled bool) (map[string]any, error) {
+	action := "disable"
+	if enabled {
+		action = "enable"
+	}
+	return b.agentItem(r, id, http.MethodPost, action, nil)
+}
+
+func (b *v3Backend) RotateAgentKey(r *http.Request, id string) (map[string]any, error) {
+	return b.agentItem(r, id, http.MethodPost, "rotate-key", nil)
+}
+
+func (b *v3Backend) AgentKey(r *http.Request, id string) (map[string]any, error) {
+	return b.agentItem(r, id, http.MethodGet, "key", nil)
+}
+
+func (b *v3Backend) TestAgent(r *http.Request, id string) (map[string]any, error) {
+	return b.agentItem(r, id, http.MethodPost, "test", nil)
+}
+
+// agentItem runs the panel's item handler for one id, optionally with a body.
+// The panel route is /api/agents/<id>[/<action>], so the v3 caller's credential
+// is irrelevant here: the v3 middleware has already authorised the request.
+func (b *v3Backend) agentItem(
+	r *http.Request,
+	id, method, action string,
+	body map[string]any,
+) (map[string]any, error) {
+	r2 := r.Clone(r.Context())
+	r2.Method = method
+	r2.URL.Path = "/api/agents/" + id
+	if action != "" {
+		r2.URL.Path += "/" + action
+	}
+	if body != nil {
+		cloned, err := cloneWithBody(r2, body)
+		if err != nil {
+			return nil, err
+		}
+		r2 = cloned
+	}
+	_, parsed, _, err := call(b.ws.handleAgentByID, r2)
+	if err != nil {
+		return nil, err
+	}
+	if parsed == nil {
+		parsed = map[string]any{"success": true}
+	}
+	return parsed, nil
+}
+
+func agentErrorMessage(parsed map[string]any, fallback string) string {
+	if parsed != nil {
+		if e, ok := parsed["error"].(string); ok && e != "" {
+			return e
+		}
+	}
+	return fallback
+}
+
+// -----------------------------------------------------------------------------
 // Self-update & benchmark
 // -----------------------------------------------------------------------------
 

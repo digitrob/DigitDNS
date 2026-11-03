@@ -35,22 +35,34 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
-## What's new in 3.8
+## What's new in 4.0
 
-- **Make the dashboard fit the way you work.** Click the pencil beside
-  **Dashboard** in the sidebar, then drag cards into the order you want and pull
-  the corner to resize them. The arrangement is saved on the server, so it
-  follows you to another browser. On a phone, long-press a card to move it.
-- **Services give domains a home.** Create labels such as *BBC*, *Work* or
-  *IoT*, assign them from the Domains table or in bulk, and click a service to
-  filter the list. Services are labels only — they never change whether a
-  domain is proxied, blocked or direct.
-- **Icons that look like something.** Type a domain for its favicon, paste an
-  image URL, or search a word like `tv` for a colourful icon from the Iconify
-  library.
-- **Android catches up.** Long-press to select domains, use the one-row
-  selection bar for bulk actions, and assign services from the same picker the
-  web panel uses.
+- **Geo relay agents.** Run a small agent on a VPS in another country and send
+  chosen domains out through it. A German viewer can reach a German-only
+  service while the hub, subscribers and certificates stay on your main server.
+  The agent has no panel, no database and no DNS server — it receives an
+  allowlist, relays encrypted TLS byte-for-byte, and reports traffic back.
+- **Relay control where the domains live.** Every proxied domain has a relay
+  chooser on its row. A domain can use **This Server** (the default), inherit a
+  service default, or name an agent directly. Services can carry a default
+  relay too, and a bulk **Egress** action moves a whole selection at once.
+- **A real agent page, not a command-line secret.** Add, edit, disable, delete
+  and test agents from **Settings → Relay Agents** on the web or Android. The
+  card shows the public IP, masked key, country flag, version, last heartbeat,
+  assigned domains and relayed traffic. Test connection opens a real TCP
+  connection to the relay port and shows the ping with the same green / amber /
+  red colours as the upstream resolvers.
+- **Agent keys are manageable.** Create returns the key once, the server keeps
+  an encrypted copy for later copying, and rotation invalidates the old key.
+  The list response never contains a clear key.
+- **Android catches up.** **Settings → Relay Agents** sits beside Servers, with
+  copyable IP and key, rotate, real connection tests and adaptive cards. On the
+  Domains screen the service and relay controls are icon-only on the second
+  line: tap the service mark for the service picker, tap the flag for the relay
+  picker. Nothing moves the gear, status pill or switch.
+- **Published like the hub.** Relay agents ship as Linux amd64 and arm64
+  binaries on the release page and as the multi-arch
+  `ghcr.io/digitrob/digitdns-agent` image.
 
 ---
 
@@ -89,7 +101,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.8.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.0.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -130,6 +142,12 @@ dig @YOUR_SERVER_IP example.com A
 | 8443 | TCP | DNS-over-HTTPS at `/dns-query` (when TLS is configured) |
 | random 20000–60000 | TCP | Web dashboard; chosen at install and printed in the URL |
 
+**Relay agent (optional)**
+
+An agent needs a public IPv4, inbound TCP **80/443**, outbound HTTPS to the hub,
+and no domain or certificate. It is Linux amd64/arm64. The hub keeps all other
+requirements. Full manual: [docs/AGENT.md](docs/AGENT.md).
+
 DoQ, DoH3 and DNSCrypt are **upstream transports**, not client-facing
 listeners. Clients use plain DNS, DoT or DoH.
 
@@ -142,7 +160,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.8.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.0.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -174,7 +192,9 @@ for the first certificate issuance.
 
 ### 2. Docker
 
-Images are published for amd64 and arm64 and signed with cosign.
+Images are published for amd64 and arm64 and signed with cosign. The hub is
+`ghcr.io/digitrob/digitdns`; the optional relay agent is
+`ghcr.io/digitrob/digitdns-agent` (see [Relay agent](#6-relay-agent-optional)).
 
 ```bash
 docker pull ghcr.io/digitrob/digitdns:latest
@@ -216,7 +236,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `3.8.0` | A specific immutable release |
+| `3.8.0` | A specific immutable release (older) |
+| `4.0.0` | A specific immutable release |
 | `edge` | Nightly build from `main` — not for production |
 
 Verify the image:
@@ -234,7 +255,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v3.8.0/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v4.0.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -286,6 +307,37 @@ installer, systemd unit and packaged binaries target Linux.
 
 The companion APKs are attached to every release. See
 [Android app](#android-app) for the architecture table and installation steps.
+
+### 6. Relay agent (optional)
+
+An agent is a second, much smaller process on a public IPv4 in the country you
+want to exit from. It needs no domain, certificate, database or panel; only
+outbound HTTPS to the hub and inbound TCP **80/443** for relayed traffic.
+
+1. On the hub open **Settings → Relay Agents → Add agent**, choose the country,
+   and copy the key shown after saving.
+2. Run the container on the agent VPS:
+
+```bash
+mkdir -p /opt/digitdns-agent
+docker run -d --name digitdns-agent --network host --restart unless-stopped \
+  -v /opt/digitdns-agent:/data \
+  ghcr.io/digitrob/digitdns-agent:latest \
+  -hub 'https://panel.example.com:8080/ADMIN_PATH' \
+  -key 'AGENT_ID:SECRET' \
+  -listen :80,:443 \
+  -state /data/agent-state.json
+```
+
+Host networking is required: the agent must see the real client address and
+bind 80/443 without port remapping. The `-hub` value is the same panel origin
+you use in a browser, including the hidden admin path.
+
+3. Back on the hub, wait for the card to show **online**, press **Test
+connection**, then assign domains or a service default to the agent.
+
+The full manual — binary and systemd install, every flag, key rotation,
+troubleshooting, sizing and security — is in [docs/AGENT.md](docs/AGENT.md).
 
 ### Migrating from HyperDNS
 
@@ -386,6 +438,51 @@ server, which forwards the encrypted stream to the real host and back. No
 decryption, no certificate substitution, up to 4,096 concurrent relays, with
 optional TLS fragmentation for DPI resistance.
 
+### Geo relay agents
+
+An agent is an optional egress point in another country. The hub still resolves
+the domain and enforces the client allowlist; the agent only carries the
+encrypted stream. That separation is deliberate: a box in a foreign datacentre
+holds no subscriber database and no panel credential.
+
+**How a domain chooses its exit**
+
+1. A domain override wins: **This Server**, a named agent, or **Inherit**.
+2. With no override, the service's **Default relay** applies.
+3. With no service default either, the local server is used.
+
+**Setting it up**
+
+- Add the agent on the hub, choose its country and copy the one-time key.
+- Install the agent with Docker or the release binary. Keep the key out of shell
+  history (use a file or an environment manager) and give it to the agent once.
+- Open TCP 80/443 on the agent and allow outbound HTTPS to the hub. No inbound
+  admin port is opened and no TLS certificate is installed on the agent.
+- Assign domains from the row's relay control, set a service default in the
+  service editor, or use bulk **Egress** for a selection.
+- Press **Test connection** on the card. It performs a real TCP connect to the
+  advertised relay port and records the latency; the badge is green under
+  40 ms, amber above 40 ms and red above 80 ms.
+
+**Operating an agent**
+
+- The card shows last heartbeat, version, assigned domains, traffic and the
+  services using it. An agent is online when its heartbeat is under two minutes
+  old.
+- **Rotate key** invalidates the old credential immediately. Update the agent's
+  key and restart it. A key created before encrypted copy storage existed must
+  be rotated once before the card can copy it again.
+- Disabling or deleting an agent stops its relay immediately. Assignments fall
+  back to This Server; delete removes those assignments from both the domain and
+  service maps.
+- Agents are IPv4-only. No agent certificate or agent domain is required for
+  relay traffic; the client's TLS session is passed through untouched.
+- Update an agent the same way you update the hub: pull the new image or replace
+  the binary, then restart. Keep `/data/agent-state.json` — it holds the key and
+  the last catalogue.
+
+Full manual: [docs/AGENT.md](docs/AGENT.md).
+
 ### Subscribers and quotas
 
 - Per-client traffic quota, reset cycle, expiry, device limit, notes and policy
@@ -465,7 +562,7 @@ keeps upstream connections alive between queries to cut handshake latency.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v3.8.0`) and is side-loaded; it is
+panel. It has its own version line (`android-v4.0.0`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |
@@ -486,8 +583,17 @@ credentials, API keys with an optional **Save key** tick). It also has the
 subscriber client area.
 
 On the Domains screen, long-press a row to start a selection. The selection bar
-keeps Pause, Resume, Remove and **Assign service** on one line, and the service
-filter uses the same labels and icons as the web panel.
+keeps Pause, Resume, Remove, **Assign service** and **Egress** on one line, and
+the service filter uses the same labels and icons as the web panel. The second
+line of a proxied row shows an icon-only service mark and relay flag; tapping
+the service mark opens the service picker, and tapping the flag opens the relay
+picker without moving the row's gear, status pill or switch.
+
+**Settings → Relay Agents** is the mobile agent catalogue. Cards show the public
+IP and masked key with copy buttons, a rotate-key action, version, last seen,
+assigned domains, traffic and service defaults. **Test connection** opens a real
+TCP connection to the relay port and updates the ping badge. The layout is one
+card wide on a phone and two side by side on a tablet or in landscape.
 
 The app keeps its own version, so a server update never forces an app update.
 
@@ -508,6 +614,9 @@ The app keeps its own version, so a server update never forces an app update.
 - **Docker:** `docker pull ghcr.io/digitrob/digitdns:latest && docker compose up -d`.
 - **Binary:** replace `/opt/digitdns/digitdns`, then `systemctl restart digitdns`.
 - **Installer:** rerun it; the existing install is archived first.
+- **Relay agents:** pull the new `ghcr.io/digitrob/digitdns-agent` image (or
+  replace the binary) and restart. `/data/agent-state.json` survives; it holds
+  the agent key and last catalogue.
 
 Back up before any upgrade. Database and config format changes are handled
 automatically, but `master.key` must travel with `data.db`.
@@ -532,7 +641,8 @@ not decrypt it.
 
 ```bash
 sudo journalctl -u digitdns -f          # systemd install
-docker logs -f digitdns                 # container
+docker logs -f digitdns                 # hub container
+docker logs -f digitdns-agent           # relay agent container
 ```
 
 ### Troubleshooting
@@ -547,6 +657,10 @@ docker logs -f digitdns                 # container
 | Phone cannot use Private DNS | Use the hostname, not an IP; it needs a valid DoT certificate |
 | Locked out of the panel | Run `digitdns` over SSH → **Emergency admin reset** |
 | `master.key` lost | The database is unrecoverable; restore a backup |
+| Agent card says offline | Check its heartbeat: outbound HTTPS to the hub, the key, and the hub URL including the admin path |
+| Agent says empty host allowlist | No active proxied domain or service resolves to it; assign one and wait for the 60 s catalogue sync |
+| Agent test connection fails | The advertised relay port is not reachable: open TCP 80/443 and check the agent is binding `:80,:443` |
+| Agent card cannot copy the key | The key predates encrypted storage; use **Rotate key**, then copy the new one |
 
 ### Uninstall
 
@@ -625,6 +739,7 @@ same install.
 | [Security](docs/SECURITY.md) | Threat model, encryption, hardening, RFC notes |
 | [API](docs/API.md) | REST v2/v3 with examples |
 | [Changelog](docs/CHANGELOG.md) | Every release |
+| [Relay agents](docs/AGENT.md) | Install, operate and troubleshoot a geo agent |
 | [Releasing](docs/RELEASING.md) | Versioning and update channels |
 
 Release channels: `latest` and untagged `vX.Y.Z` releases are stable; `-beta`

@@ -176,6 +176,7 @@ curl -s "https://dns.example.com/<admin-path>/api/v3/clients" \
 | Clients | `GET/POST /api/v3/clients`, `GET/PATCH/PUT/DELETE /api/v3/clients/{id}`, `POST …/clients/{id}/actions/{renew,toggle,add_ip,remove_ip,reset-traffic,regenerate-uuid,regenerate-register-secret}` |
 | Policies | `GET/POST /api/v3/policies` |
 | Custom groups | `GET/POST /api/v3/custom-groups`, `PUT/PATCH/DELETE /api/v3/custom-groups/{id}` |
+| Relay agents | `GET/POST /api/v3/agents`, `PUT/DELETE /api/v3/agents/{id}`, `POST …/{id}/{enable,disable,rotate-key,test}`, `GET …/{id}/key` |
 | Rules & access | `GET/POST /api/v3/rules`, `GET/POST /api/v3/access`, `POST /api/v3/access/mode` |
 | Upstreams | `GET/POST /api/v3/upstreams`, `POST /api/v3/upstreams/{benchmark,reorder}` |
 | Settings | `GET/POST /api/v3/settings`, `…/settings/subscription`, `…/settings/regenerate-api-key`, `…/settings/regenerate-admin-path` |
@@ -186,6 +187,33 @@ curl -s "https://dns.example.com/<admin-path>/api/v3/clients" \
 | Meta | `GET /api/v3/version`, `GET /api/v3/status`, `GET /api/v3/docs`, `GET /api/v3/openapi.json` |
 
 Managing the diagnostic target list — a dashboard-only operation in v3.1.0 — is now `GET/POST/DELETE /api/v3/diagnostics/targets`; `POST /api/v3/diagnostics/run` runs the same shared probe v2 does.
+
+### Relay agents (4.0)
+
+An agent is an optional egress point in another country. The panel routes a
+domain through it only when the domain has a direct `domain_agents` entry or its
+service has a `service_agents` default. `__local__` forces This Server;
+`__inherit__` (or no entry) follows the service default.
+
+```bash
+# List agents (the response never carries a clear key).
+curl -s "https://dns.example.com/<admin-path>/api/v3/agents" \
+  -H "X-API-Key: digitdns_live_…"
+
+# Create one; the reply contains the one-time clear key.
+curl -s -X POST "https://dns.example.com/<admin-path>/api/v3/agents" \
+  -H "X-API-Key: digitdns_live_…" -H "Content-Type: application/json" \
+  -d '{"name":"Frankfurt 2","country":"DE"}'
+
+# Real TCP test; stores ping_ms and ping_at for the card.
+curl -s -X POST "https://dns.example.com/<admin-path>/api/v3/agents/<id>/test" \
+  -H "X-API-Key: digitdns_live_…"
+```
+
+The agent-facing routes (`/agent/enrol`, `/agent/catalogue`, `/agent/heartbeat`)
+use an agent credential (`X-Agent-Key`, or a one-time token for enrolment) and
+are deliberately separate from the panel credential.
+Full operator manual: [AGENT.md](AGENT.md).
 
 ### Contract 3.1 — clients
 

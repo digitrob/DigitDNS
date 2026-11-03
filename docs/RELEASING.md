@@ -56,12 +56,18 @@ Every release is two tags on the same commit, pushed together:
    minutes for it to appear.
 
 So one release page carries everything for the version: server binaries, the
-offline bundle, and the companion APKs. `android-vX.Y.Z` never owns a release
-of its own, and the *Latest* badge always points at the server release.
+relay-agent binaries, the offline bundle, and the companion APKs.
+`android-vX.Y.Z` never owns a release of its own, and the *Latest* badge always
+points at the server release.
+
+The same `vX.Y.Z` tag also builds two multi-arch container images:
+`ghcr.io/digitrob/digitdns` (hub) and `ghcr.io/digitrob/digitdns-agent`
+(relay agent). Both are signed with keyless cosign and use the same tag rules —
+`latest` and the version tags on a stable cut, `edge` on `main`.
 
 ## Where this repository stands
 
-`main` carries the stable line (currently `v3.8.0`, see `version.json`). The
+`main` carries the stable line (currently `v4.0.0`, see `version.json`). The
 `2.3`–`2.6` betas that followed the v2.2.0 era were published before this
 policy existed; their prerelease flags have been corrected on GitHub, but no
 number, tag, asset or link was changed. New stable releases are cut on `main`

@@ -91,6 +91,18 @@ var featherInterpSources = map[string]struct {
 		},
 		why: "both names are literals inside the expression itself",
 	},
+	"a.enabled ? 'pause' : 'play'": {
+		names: func(_ *testing.T, _, expr string) []string {
+			return values(featherJSLiteralRe, expr)
+		},
+		why: "both names are literals inside the expression itself",
+	},
+	"escapeHTML(a.enabled ? 'pause' : 'play')": {
+		names: func(_ *testing.T, _, expr string) []string {
+			return values(featherJSLiteralRe, expr)
+		},
+		why: "both names are literals inside the expression itself",
+	},
 }
 
 // TestEveryFeatherIconNameIsOneTheBundleCanRender sweeps both assets and resolves every name,
