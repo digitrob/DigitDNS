@@ -74,6 +74,16 @@ func TestClientListCIDRAndBareIP(t *testing.T) {
 	}
 }
 
+func TestAnyClientCountsAsOne(t *testing.T) {
+	c := NewClientList([]string{"any"})
+	if !c.Allows(net.ParseIP("203.0.113.5")) {
+		t.Fatal("any must allow every client")
+	}
+	if got := c.Len(); got != 1 {
+		t.Fatalf("any Len = %d, want 1", got)
+	}
+}
+
 func TestEmptyClientListRefuses(t *testing.T) {
 	// An agent that has not synced yet must refuse rather than serve.
 	c := NewClientList(nil)

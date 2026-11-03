@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v4.0.2] — A truthful allowlist count
+
+A one-line follow-up to 4.0.1. The agent’s client allowlist can be the literal
+entry `any`; the status line counted only explicit CIDRs, so an allow-all agent
+printed `0 client entries` and warned that every connection would be refused —
+while it was actually relaying normally. `Len()` now counts `any` as one rule.
+
+No relay, catalogue or configuration behaviour changed. The warning is simply
+gone when the hub is in allow-all mode.
+
 ## 🏷️ [v4.0.1] — Quiet agents under internet noise
 
 A relay agent on a public IPv4 is found by scanners within minutes. Because the

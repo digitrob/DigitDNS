@@ -160,5 +160,11 @@ func (c *ClientList) Len() int {
 	if c == nil {
 		return 0
 	}
+	// "any" is one configured rule, not an empty list. Counting only explicit
+	// networks made an allow-all agent print "0 client entries" and warn that
+	// every connection would be refused while it was actually relaying for all.
+	if c.any {
+		return len(c.nets) + 1
+	}
 	return len(c.nets)
 }
