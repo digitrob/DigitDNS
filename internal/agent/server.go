@@ -70,6 +70,11 @@ type Server struct {
 	total   atomic.Uint64
 	refused atomic.Uint64
 	nohost  atomic.Uint64
+	// refusedIP counts requests whose destination was an IP literal. They can
+	// never be relayed, and scanners produce a lot of them; keeping them apart
+	// from the host allowlist makes the summary honest.
+	refusedIP atomic.Uint64
+	refusals  *refusalLog
 }
 
 // NewServer builds a relay from a config.
@@ -85,6 +90,7 @@ func NewServer(cfg Config) *Server {
 		allow:    NewAllowlist(cfg.Hosts),
 		clients:  NewClientList(cfg.Clients),
 		counters: NewCounters(),
+		refusals: newRefusalLog(time.Minute, time.Now),
 	}
 }
 
@@ -101,6 +107,9 @@ func (s *Server) ClientList() *ClientList { return s.clients }
 func (s *Server) Stats() (active, total, refused, nohost int64) {
 	return s.active.Load(), int64(s.total.Load()), int64(s.refused.Load()), int64(s.nohost.Load())
 }
+
+// RefusedIP returns the number of requests whose destination was a bare IP.
+func (s *Server) RefusedIP() int64 { return int64(s.refusedIP.Load()) }
 
 // Start binds the listen address and serves until Close.
 func (s *Server) Start() error {
@@ -136,6 +145,84 @@ func (s *Server) Close() error {
 	return first
 }
 
+// refusalLog throttles the refusal lines that a public agent attracts. A
+// scanner or a bare-IP probe can produce thousands of identical lines a minute;
+// the first one is useful, the next thousand are not. Keyed by source+reason
+// (and host where relevant), it emits one line per minute and reports how many
+// were folded into it.
+type refusalLog struct {
+	mu       sync.Mutex
+	entries  map[string]*refusalEntry
+	interval time.Duration
+	maxKeys  int
+	now      func() time.Time
+}
+
+type refusalEntry struct {
+	last       time.Time
+	suppressed int
+}
+
+func newRefusalLog(interval time.Duration, now func() time.Time) *refusalLog {
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	if now == nil {
+		now = time.Now
+	}
+	return &refusalLog{
+		entries:  map[string]*refusalEntry{},
+		interval: interval,
+		maxKeys:  2048,
+		now:      now,
+	}
+}
+
+// allow reports whether this key should be logged now, and how many identical
+// lines were suppressed since the previous one.
+func (r *refusalLog) allow(key string) (bool, int) {
+	now := r.now()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.entries) >= r.maxKeys {
+		cutoff := now.Add(-10 * r.interval)
+		for k, e := range r.entries {
+			if e.last.Before(cutoff) {
+				delete(r.entries, k)
+			}
+		}
+		if len(r.entries) >= r.maxKeys {
+			r.entries = map[string]*refusalEntry{}
+		}
+	}
+	e := r.entries[key]
+	if e == nil {
+		r.entries[key] = &refusalEntry{last: now}
+		return true, 0
+	}
+	if now.Sub(e.last) >= r.interval {
+		suppressed := e.suppressed
+		e.last = now
+		e.suppressed = 0
+		return true, suppressed
+	}
+	e.suppressed++
+	return false, 0
+}
+
+func (s *Server) logRefusal(key, format string, args ...any) {
+	ok, suppressed := s.refusals.allow(key)
+	if !ok {
+		return
+	}
+	if suppressed > 0 {
+		args = append(args, suppressed)
+		log.Printf(format+" (%d similar events suppressed)", args...)
+		return
+	}
+	log.Printf(format, args...)
+}
+
 func (s *Server) acceptLoop(ln net.Listener) {
 	for {
 		conn, err := ln.Accept()
@@ -156,21 +243,31 @@ func (s *Server) handle(clientConn net.Conn) {
 	// stranger who found the address costs one ParseIP and a close.
 	if !s.clientList().Allows(ip) {
 		s.refused.Add(1)
-		log.Printf("[agent] refused %s: client not in the allowlist", remoteIP)
+		s.logRefusal("client|"+remoteIP, "[agent] refused %s: client not in the allowlist", remoteIP)
 		return
 	}
 
 	buf := make([]byte, handshakeBufSize)
 	n, err := readHandshake(clientConn, buf)
 	if err != nil || n == 0 {
-		log.Printf("[agent] %s: no handshake (%d bytes, %v)", remoteIP, n, err)
+		s.logRefusal("handshake|"+remoteIP, "[agent] %s: no handshake (%d bytes, %v)", remoteIP, n, err)
 		return
 	}
 
 	host, isTLS, err := destination(buf[:n])
 	if err != nil {
 		s.nohost.Add(1)
-		log.Printf("[agent] %s: no readable destination in %d bytes (%v)", remoteIP, n, err)
+		s.logRefusal("nohost|"+remoteIP, "[agent] %s: no readable destination in %d bytes (%v)", remoteIP, n, err)
+		return
+	}
+
+	// A bare IP is not a relayable destination: the agent has no hostname to
+	// forward to. Scanners hit the public address this way constantly, so count
+	// it separately and keep it out of the per-host refusal log.
+	if net.ParseIP(strings.Trim(host, "[]")) != nil {
+		s.refusedIP.Add(1)
+		s.refused.Add(1)
+		s.logRefusal("ip|"+remoteIP, "[agent] refused bare IP %s from %s: no destination name", host, remoteIP)
 		return
 	}
 
@@ -179,14 +276,14 @@ func (s *Server) handle(clientConn net.Conn) {
 	// connections.
 	if !s.hostList().Allows(host) {
 		s.refused.Add(1)
-		log.Printf("[agent] refused %s from %s: not an approved host", host, remoteIP)
+		s.logRefusal("host|"+remoteIP+"|"+host, "[agent] refused %s from %s: not an approved host", host, remoteIP)
 		return
 	}
 
 	targetConn, err := s.dial(host, isTLS)
 	if err != nil {
 		s.refused.Add(1)
-		log.Printf("[agent] refused %s from %s: %v", host, remoteIP, err)
+		s.logRefusal("dial|"+remoteIP+"|"+host, "[agent] refused %s from %s: %v", host, remoteIP, err)
 		return
 	}
 	defer targetConn.Close()

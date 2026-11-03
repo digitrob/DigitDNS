@@ -273,9 +273,10 @@ func advertisedPort(listen string) int {
 
 func logSummary(srv *agent.Server) {
 	active, total, refused, nohost := srv.Stats()
+	refusedIP := srv.RefusedIP()
 	in, out := srv.Counters().Totals()
-	log.Printf("[agent] connections: %d active · %d total · %d refused · %d unreadable · traffic up %s down %s",
-		active, total, refused, nohost, humanBytes(in), humanBytes(out))
+	log.Printf("[agent] connections: %d active · %d total · %d refused · %d bare-IP · %d unreadable · traffic up %s down %s",
+		active, total, refused, refusedIP, nohost, humanBytes(in), humanBytes(out))
 	for _, h := range srv.Counters().Snapshot() {
 		log.Printf("[agent]   %-40s %s", h.Host, humanBytes(h.Bytes))
 	}

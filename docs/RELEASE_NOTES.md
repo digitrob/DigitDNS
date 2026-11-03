@@ -1,90 +1,44 @@
-# DigitDNS v4.0.0
+# DigitDNS v4.0.1
 
-DigitDNS can now exit in another country without moving the hub. A small relay
-agent runs on a VPS where the service is reachable, the hub keeps the panel,
-subscriber database, certificates and rules, and only the encrypted stream
-travels through the agent.
+A focused relay-agent patch. Routing, access control and relay behaviour are
+unchanged; this release makes the agent log readable when the box is exposed to
+the public internet.
 
-That is the main idea behind 4.0.0. It also comes with a proper agent page on
-both clients, per-domain and per-service relay choices, a real connection test,
-and agent binaries and a container image built alongside the hub.
+## What was wrong
 
-## Highlights
+A public agent is found by scanners quickly. Requests that name the agent's IP
+instead of a domain cannot be relayed — there is no destination hostname to
+forward to — so the agent correctly refused them, but wrote one log line for
+every attempt. An active probe loop could produce thousands of identical
+lines and bury the relay traffic that matters.
 
-- **Geo relay agents.** Run `digitdns-agent` on a public IPv4 in another
-  country. It has no panel, database or DNS server; it receives a host and
-  client allowlist from the hub, relays TLS byte-for-byte, and reports traffic.
-- **Relay control where the names are.** Every proxied domain can use **This
-  Server**, inherit its service default, or name an agent. Services can carry a
-  default relay, and a bulk **Egress** action moves a whole selection at once.
-- **A real agent page.** Web and Android both have **Settings → Relay Agents**
-  with add/edit/delete, enable/disable, key rotation and copy, country flags,
-  last heartbeat, traffic, assigned domains and service defaults. The card being
-  edited is outlined in cyan on the web.
-- **A real test, not a guess.** **Test connection** opens a TCP connection to the
-  agent's advertised relay port and records the latency. The badge uses the same
-  green / amber / red thresholds as the upstream resolver rows.
-- **Android parity.** Relay Agents sits beside Servers, the cards copy IP and
-  key and rotate the key, and domain rows use an icon-only service mark and
-  relay flag so the gear, status pill and switch stay exactly where they were.
-- **Same delivery as the hub.** Release assets include
-  `digitdns-agent-linux-amd64` and `digitdns-agent-linux-arm64`; the multi-arch
-  `ghcr.io/digitrob/digitdns-agent` image is signed with cosign.
+## What changed
 
-## How it behaves
+- **Refusal lines are throttled.** The first refusal for a source and reason is
+  logged immediately. Repeats are folded into at most one line per minute with
+  a `N similar events suppressed` count.
+- **Bare-IP requests have their own counter.** They are reported as `bare-IP`
+  in the 60-second summary instead of mixing with host-allowlist refusals.
+- **The throttle map is bounded**, so a scanner cannot grow agent memory by
+  rotating source addresses.
+- Domain relaying, client checks, heartbeats, catalogue sync and traffic
+  accounting are untouched.
 
-A domain exits through, in order:
+The hub in this install is intentionally running with `allow_all: true`. This
+patch does not change that; it only stops the resulting probe traffic from
+filling the log. If the agent should be private, switch the hub Access mode to
+whitelist and register the client IPs/CIDRs separately.
 
-1. its own relay choice (**This Server**, an agent, or **Inherit**);
-2. the service's default relay;
-3. This Server.
+## Upgrade
 
-The agent is IPv4-only and needs no certificate or domain of its own. The hub
-still decides whether a client is allowed; the agent re-checks the client
-address and destination against the catalogue it received. A hub outage does not
-stop a working agent — it keeps the last catalogue and reconnects.
+- **Agent Docker:** pull `ghcr.io/digitrob/digitdns-agent:4.0.1` and recreate the
+  container. Keep `/data/agent-state.json`.
+- **Agent binary:** replace `digitdns-agent` and restart the unit.
+- **Hub:** the patch is shipped alongside the hub binaries; replace the binary or
+  pull `ghcr.io/digitrob/digitdns:4.0.1`.
 
-## Install the hub
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.0.0/scripts/install.sh | sudo bash
-```
-
-Docker: `docker pull ghcr.io/digitrob/digitdns:latest` (or `4.0.0`).
-
-## Install an agent
-
-Create it under **Settings → Relay Agents**, copy the key, then on the agent VPS:
-
-```bash
-mkdir -p /opt/digitdns-agent
-docker run -d --name digitdns-agent --network host --restart unless-stopped \
-  -v /opt/digitdns-agent:/data \
-  ghcr.io/digitrob/digitdns-agent:latest \
-  -hub 'https://panel.example.com:8080/ADMIN_PATH' \
-  -key 'AGENT_ID:SECRET' \
-  -listen :80,:443 \
-  -state /data/agent-state.json
-```
-
-Open TCP 80/443 on the agent and allow outbound HTTPS to the hub. No inbound
-admin port is opened. Full manual: [docs/AGENT.md](AGENT.md).
-
-## Upgrade notes
-
-- The database is migrated automatically; existing domain, service and client
-  data is untouched.
-- An install with no agents behaves exactly as 3.8.0 did. **This Server** remains
-  the default.
-- Hub binary: replace `digitdns` and restart.
-- Hub Docker: pull the new `latest` / `4.0.0` image.
-- Agent: replace the binary or pull the new image, keeping
-  `/data/agent-state.json`.
-- Agent keys created before encrypted copy storage existed must be rotated once
-  before the card can copy them again.
-- Android is version 4.0.0 (versionCode 400) and is attached to this release.
-
-Back up `data.db` and `master.key` before upgrading.
+No database migration and no configuration change. The Android app remains
+4.0.0 and is compatible.
 
 ## Assets
 
@@ -92,6 +46,5 @@ Back up `data.db` and `master.key` before upgrading.
 - `digitdns-agent-linux-amd64`, `digitdns-agent-linux-arm64`
 - `digitdns-offline-bundle.tar.gz`, `digitdns-offline-bundle.zip`
 - `checksums.txt`, `checksums.sig`
-- Android APKs for `arm64-v8a`, `armeabi-v7a`, `x86_64` and `universal`
 
 Full list of changes: [docs/CHANGELOG.md](CHANGELOG.md).

@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v4.0.1] — Quiet agents under internet noise
+
+A relay agent on a public IPv4 is found by scanners within minutes. Because the
+hub in this release was running in allow-all mode, the agent accepted those
+connections far enough to read their destination, then refused every one that
+named a bare IP — and wrote a log line for each attempt. A single probe loop
+could bury the useful relay lines under thousands of identical refusals.
+
+This patch keeps the same access model and the same routing behaviour, but makes
+the log usable.
+
+### 🔄 Changed
+
+- **Refusal logs are throttled.** The first refusal for a source and reason is
+  printed immediately; repeats are folded into at most one line per minute with
+  a `N similar events suppressed` count. The map is bounded, so a scanner cannot
+  grow agent memory by inventing new peers.
+- **Bare-IP requests are counted separately.** A request whose destination is an
+  IP literal has no hostname to relay to, so it is now counted as `bare-IP`
+  instead of being mixed into host-allowlist refusals. The 60-second summary
+  reports it alongside active, total, refused and unreadable counts.
+- **No valid relay traffic changed.** Domain requests that pass the allowlist,
+  client checks, heartbeats, catalogue sync and traffic accounting are untouched.
+
+### 🐛 Fixed
+
+- **The agent log no longer grows one line per probe.** A public agent can still
+  be scanned, but the log now reports the pattern and the suppressed count
+  rather than the whole stream.
+
+### ⬆️ Upgrading
+
+No database or configuration change. Replace the hub binary or pull
+`ghcr.io/digitrob/digitdns:4.0.1`; update the agent with
+`ghcr.io/digitrob/digitdns-agent:4.0.1` (or the new amd64/arm64 binary). The
+Android app remains 4.0.0 and is compatible.
+
 ## 🏷️ [v4.0.0] — Geo relay agents: another country, without another hub
 
 DigitDNS can now send chosen domains out through a small relay agent on a VPS in
