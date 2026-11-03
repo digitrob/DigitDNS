@@ -6,17 +6,17 @@
 [![Docker](https://img.shields.io/github/actions/workflow/status/digitrob/DigitDNS/docker.yml?branch=main&style=for-the-badge&label=Docker)](https://github.com/digitrob/DigitDNS/actions/workflows/docker.yml)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge&logo=gnu)](LICENSE)
 
-**A self-hosted smart DNS server, a TLS pass-through relay and a subscriber
-panel in one static binary.** Point a phone, console, TV or router at it and
-every domain gets one of three answers: resolve normally, refuse, or connect
-through your server. The dashboard manages the rules, the subscribers, the
-certificates and the upstream resolvers; a native Android app and a customer
-portal give subscribers their own view.
+DigitDNS is a self-hosted DNS resolver, a TLS pass-through relay and a
+subscriber panel in one static binary. Point a phone, console, TV or router at
+it and each domain gets one of three answers: resolve normally, refuse, or
+connect through your server. The panel manages rules, subscribers,
+certificates and upstream resolvers; a customer portal and a native Android app
+give subscribers their own view.
 
-Forked from [HyperDNS](https://github.com/IzumiRain/HyperDNS) by HyperRAIN and
-maintained by [Digitrob](https://github.com/digitrob). Free, open source
-(AGPL-3.0), no account, no cloud dependency — it runs on your own VPS or home
-server. Use it only on servers and networks you are allowed to operate.
+It is a fork of [HyperDNS](https://github.com/IzumiRain/HyperDNS) by HyperRAIN,
+maintained by [Digitrob](https://github.com/digitrob). It is free, open source
+(AGPL-3.0), and runs on your own VPS or home server with no account and no cloud
+dependency. Use it only on servers and networks you are allowed to operate.
 
 <p align="center">
   <img src="docs/digitdns-dashboard.png" alt="DigitDNS web dashboard" width="100%">
@@ -35,17 +35,36 @@ server. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 3.8
+
+- **Make the dashboard fit the way you work.** Click the pencil beside
+  **Dashboard** in the sidebar, then drag cards into the order you want and pull
+  the corner to resize them. The arrangement is saved on the server, so it
+  follows you to another browser. On a phone, long-press a card to move it.
+- **Services give domains a home.** Create labels such as *BBC*, *Work* or
+  *IoT*, assign them from the Domains table or in bulk, and click a service to
+  filter the list. Services are labels only — they never change whether a
+  domain is proxied, blocked or direct.
+- **Icons that look like something.** Type a domain for its favicon, paste an
+  image URL, or search a word like `tv` for a colourful icon from the Iconify
+  library.
+- **Android catches up.** Long-press to select domains, use the one-row
+  selection bar for bulk actions, and assign services from the same picker the
+  web panel uses.
+
+---
+
 ## Why DigitDNS
 
 - **One binary, no runtime.** DNS, DoT, DoH, the TLS relay, the panel, the REST
   API, the subscriber portal and the self-updater are compiled into
   `digitdns`. The only state is a local encrypted database, a master key and a
-  JSON config.
-- **Rules per domain, not a mystery blocklist.** Proxy, block or route direct —
+  JSON config file.
+- **Rules per domain, not a mystery blocklist.** Proxy, block or route direct,
   with wildcard scopes you can see (`exact`, `*.host`, `*.parent`), named
-  groups, bulk import and a single searchable Domains list.
-- **A relay that never decrypts.** Proxied HTTPS is forwarded byte-for-byte;
-  the server never holds the session keys or the plaintext.
+  groups, bulk import and one searchable Domains list.
+- **A relay that never decrypts.** Proxied HTTPS is forwarded byte-for-byte.
+  The server never holds the session keys or the plaintext.
 - **Built for paying subscribers.** Per-client quotas, expiry, device limits,
   traffic accounting, a private portal link, a registration secret and an
   Android client area.
@@ -64,13 +83,13 @@ destination of a proxied connection — that is the point of the relay.
 
 ## Quick start
 
-**You need:** a Linux server (1 vCPU / 1 GB is enough for personal use), root
+You need a Linux server (1 vCPU / 1 GB is enough for personal use), root
 access, and one hostname whose **A record points at the server**. The panel is
 HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.6.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.8.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -123,7 +142,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.6.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v3.8.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -197,7 +216,7 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `3.6.1` | A specific immutable release |
+| `3.8.0` | A specific immutable release |
 | `edge` | Nightly build from `main` — not for production |
 
 Verify the image:
@@ -215,7 +234,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v3.6.1/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v3.8.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -314,17 +333,51 @@ flush, panel port, API key rotation, admin recovery and uninstall.
 
 ### Domains and routing
 
-- One Domains list holds proxied, paused, blocked and direct names, with status
-  chips, search, sort and bulk selection.
+One Domains list holds proxied, paused, blocked and direct names, with status
+chips, search, sort and bulk selection. You can change a row's routing from its
+status badge without losing its place in the list.
+
 - **Wildcard scopes you can see:** `exact` (host and subdomains), `*.host`
   (subdomains only), `*.parent` (the parent's subtree). Changing a scope
   rewrites the rule in place and keeps its row position.
-- **Groups** bundle domains into named, enable/disable-able sets with optional
-  icons.
+- **Policy groups** bundle domains into named, enable/disable-able sets with
+  optional icons.
 - **Bulk import** accepts pasted or uploaded lists with `#` comments and
   `*.wildcards`.
-- Built-in direct routing keeps a handful of high-bandwidth services
-  (voice chat, game-store CDNs, OS update CDNs) off the relay.
+- Built-in direct routing keeps a handful of high-bandwidth services (voice
+  chat, game-store CDNs, OS update CDNs) off the relay.
+
+### Services
+
+Services are labels, not routing rules. A domain can belong to one service, and
+selecting that service in the sidebar filters the Domains table down to it.
+
+- Create a service with a name and an optional icon.
+- Assign it from the row's **Service** control, or select several domains and
+  use **Assign service**.
+- Type a domain in the icon field to use its favicon, paste an image URL, or
+  search a word such as `tv` or `music` for a colourful icon.
+- Rename or delete a service without touching the domains themselves. Deleting
+  clears the label; it never changes proxy, block or direct status.
+
+The Services panel stays pinned while a long domain list scrolls, and the whole
+page now uses the width of a wide monitor instead of stopping at a narrow
+column.
+
+### Dashboard
+
+The dashboard is a live view, not a static report: QPS, cache hits, memory,
+CPU, relay connections, bandwidth, latency percentiles and the current upstream
+resolvers.
+
+- **Arrange it yourself.** The pencil beside **Dashboard** in the sidebar turns
+  on edit mode. Drag cards to reorder them inside their section, and pull the
+  corner grip to change width and height. Click the struck-through pencil to
+  leave edit mode; the layout is saved on the server.
+- **The same layout everywhere.** The arrangement is stored install-wide, so it
+  is there in the next browser and on the next device.
+- **Phones reorder too.** Long-press a card to pick it up. Sizes stay at the
+  normal mobile stacking, because a resized card on a phone is rarely useful.
 
 ### Proxy relay
 
@@ -386,15 +439,12 @@ keeps upstream connections alive between queries to cut handshake latency.
   enforced, not advisory.
 - Per-domain overrides from the Domains gear; failures fall back to the pool.
 
-### Certificates, dashboard and diagnostics
+### Certificates and diagnostics
 
 - Embedded ACME client: issues and renews the panel certificate, plus an
   optional DoH/DoT certificate, without certbot or cron.
-- Live dashboard: QPS, cache hits, memory, CPU, relay counts, traffic, latency
-  percentiles and a rolling live query log with search, filters and quick
-  actions.
-- Diagnostics with operator-defined targets, a reachability score and per-target
-  latency.
+- Diagnostics with operator-defined targets, a reachability score and
+  per-target latency.
 - Server location from a self-updating GeoIP database, and in-panel update
   checks with signature verification.
 - REST API v2/v3 with Swagger docs at
@@ -414,8 +464,9 @@ keeps upstream connections alive between queries to cut handshake latency.
 
 ## Android app
 
-A native companion with the same control surface as the panel, on its own
-version line (`android-v3.6.1`). Side-load it; it is not on Play.
+The Android app is a native companion with the same control surface as the
+panel. It has its own version line (`android-v3.8.0`) and is side-loaded; it is
+not on Play.
 
 | APK | Architecture |
 | :--- | :--- |
@@ -430,9 +481,13 @@ newer.
 
 It covers the dashboard, Domains and wildcards, Clients and quotas, the live
 query log with quick actions, upstream resolvers and policies, diagnostics,
-certificates, settings, server switching (multiple saved servers, saved
-credentials, API keys with an optional **Save key** tick) and the subscriber
-client area. Login supports password + TOTP and master API keys.
+certificates, settings and server switching (multiple saved servers, saved
+credentials, API keys with an optional **Save key** tick). It also has the
+subscriber client area.
+
+On the Domains screen, long-press a row to start a selection. The selection bar
+keeps Pause, Resume, Remove and **Assign service** on one line, and the service
+filter uses the same labels and icons as the web panel.
 
 The app keeps its own version, so a server update never forces an app update.
 
@@ -441,7 +496,6 @@ The app keeps its own version, so a server update never forces an app update.
   &nbsp;&nbsp;
   <img src="docs/digitdns-android-connect.png" alt="Android client area: registered addresses and endpoints" width="42%">
 </p>
-
 
 ---
 
@@ -469,8 +523,8 @@ sudo tar -czf /root/digitdns-backup-$(date +%F).tar.gz \
 sudo systemctl start digitdns
 ```
 
-Keep the archive off the server. Restore with the service stopped by putting
-the four items back, or use `scripts/restore.sh` for an archive produced by the
+Keep the archive off the server. Restore with the service stopped by putting the
+four items back, or use `scripts/restore.sh` for an archive produced by the
 uninstaller. Never restore an old `master.key` into a fresh database — it will
 not decrypt it.
 
@@ -525,8 +579,8 @@ Full threat model and hardening guide: [docs/SECURITY.md](docs/SECURITY.md).
 
 REST API v2 and v3 cover clients, domains, settings, resolution policy,
 upstreams, diagnostics and updates. Authenticate with a dashboard session or the
-master API key (`X-API-Key`). Contracts, payloads and Python/Node/cURL examples:
-[docs/API.md](docs/API.md). Swagger is served from the panel at
+master API key (`X-API-Key`). Contracts, payloads and Python/Node/cURL examples
+are in [docs/API.md](docs/API.md). Swagger is served from the panel at
 `/ADMIN_PATH/api/v3/docs`.
 
 ---
@@ -556,6 +610,10 @@ release and side-loaded.
 
 **Will upgrades keep my data?** Yes; the schema is migrated automatically. Back
 up `data.db` and `master.key` first.
+
+**Where is my dashboard layout stored?** In the encrypted database as a custom
+policy, not in the browser. It is shared by every browser that signs in to the
+same install.
 
 ---
 

@@ -177,6 +177,13 @@
     <string name="theme_dark">Dark</string>
     <string name="theme_light">Light</string>
     <string name="domains_count">%1$d domains</string>
+    <string name="domains_select_all">Select all domains</string>
+    <string name="domains_select_all_short">All</string>
+    <string name="domains_selected_count">%1$d selected</string>
+    <string name="domains_assign_service">Assign service</string>
+    <string name="domains_assign_service_title">Assign service to %1$d domains</string>
+    <string name="domains_assign_service_body">Every selected domain gets the label, in one save. Routing is not changed.</string>
+    <string name="action_clear">Clear</string>
     <string name="domains_count_one">1 domain</string>
     <string name="domains_empty_service">No domains in %1$s yet.</string>
     <string name="domains_count_filtered">%1$d %2$s domains</string>

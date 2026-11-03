@@ -8,17 +8,9 @@
 // 'hdns_session_admin' here and wrote it to localStorage, which the server has
 // never accepted — it only produced a guaranteed 401 on first load and made a
 // logged-out browser look logged in.
-let authToken = localStorage.getItem('digitdns_token') || localStorage.getItem('hyperdns_token') || '';
-// Carry a pre-rename session forward once, then keep only the current key. The
-// token itself is unchanged; this is a storage-key migration, not a new session.
-if (authToken && !localStorage.getItem('digitdns_token')) {
-  try {
-    localStorage.setItem('digitdns_token', authToken);
-    localStorage.removeItem('hyperdns_token');
-  } catch (e) {}
-}
+let authToken = localStorage.getItem('digitdns_token') || '';
 
-// The admin namespace. Since v2.1 the panel is not at the root of the host: the
+// The admin namespace. The panel is not at the root of the host: the
 // SPA lives at /<admin-path>/dash/... and every dashboard API at
 // /<admin-path>/api/..., where <admin-path> is a 16-hex-character value drawn
 // once per install. The bundle is built without knowing it — the same bytes ship
@@ -26,7 +18,7 @@ if (authToken && !localStorage.getItem('digitdns_token')) {
 // read from the address bar instead. The shape is exactly what the server
 // generates (16 lowercase hex characters, security.go's IsValidAdminPath), so a
 // match is reliable, and anything else means the page was reached some other way,
-// in which case the empty prefix degrades to the pre-v2.1 root paths.
+// in which case the empty prefix degrades to the root paths.
 const ADMIN_BASE = (function () {
   const m = window.location.pathname.match(/^\/([0-9a-f]{16})(?=\/|$)/);
   return m ? '/' + m[1] : '';
@@ -458,7 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const u = document.getElementById('login-username').value.trim();
-      // Not trimmed: the password is compared byte for byte, and a pre-v1.5.0
+      // Not trimmed: the password is compared byte for byte, and an older
       // record can hold any plaintext the operator originally chose.
       const p = document.getElementById('login-password').value;
       // The 2FA row stays hidden until the server says a code is needed; once
@@ -509,7 +501,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await res.json();
         authToken = data.token;
         localStorage.setItem('digitdns_token', authToken);
-        try { localStorage.removeItem('hyperdns_token'); } catch (e) {}
         // Only a verified login is worth remembering: saving the pair before the
         // server answered would keep a typo, and a 401 would leave the next visit
         // prefilled with a password known to be wrong.
@@ -571,7 +562,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const payload = { current_password: currentPassword };
       if (newUsername) payload.admin_username = newUsername;
       if (newPassword) payload.admin_password = newPassword;
-      // v2.1.0 (B-04 remediation): the second factor rides the same body. The
+      // The second factor rides the same body. The
       // row is revealed when the config shows 2FA enabled; sending it while 2FA
       // is off is harmless (the server ignores it).
       const codeRow = document.getElementById('change-pwd-2fa-row');
@@ -603,7 +594,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.token) {
           authToken = data.token;
           localStorage.setItem('digitdns_token', authToken);
-        try { localStorage.removeItem('hyperdns_token'); } catch (e) {}
         }
         // A remembered login is only useful while it matches the live credentials;
         // a rotated password or renamed account would otherwise leave the next
@@ -669,7 +659,6 @@ async function signOut() {
   } finally {
     stopLiveStream();
     localStorage.removeItem('digitdns_token');
-    try { localStorage.removeItem('hyperdns_token'); } catch (e) {}
     authToken = '';
     showLoginModal();
   }
@@ -1083,6 +1072,304 @@ function renderTLSCertDetails(cfg) {
   }
 }
 
+
+// ── Dashboard layout editor ───────────────────────────────────────────────────
+// Cards stay in their original grid sections; the editor reorders within a
+// section and changes each card's column span and height. The arrangement is
+// stored install-wide (dashboard_layout), not in one browser.
+const DASH_ROW_PX = 48;
+let dashLayout = { order: {}, cards: {} };
+let dashEditing = false;
+let dashSaveTimer = null;
+let dashLayoutDirty = false;
+
+function dashGridEls() {
+  return Array.from(document.querySelectorAll('#tab-dashboard [data-dash-grid]'));
+}
+
+function dashCardsOf(grid) {
+  return Array.from(grid.children).filter((el) => el.matches('[data-dash-card]'));
+}
+
+function dashIsDesktop() {
+  return window.matchMedia('(min-width: 1024px)').matches;
+}
+
+function dashMaxCols(grid) {
+  return grid.dataset.dashGrid === 'metrics' ? 6 : 3;
+}
+
+function dashCols(grid) {
+  if (grid.dataset.dashGrid === 'metrics') {
+    if (window.matchMedia('(min-width: 1280px)').matches) return 6;
+    if (window.matchMedia('(min-width: 640px)').matches) return 3;
+    return 2;
+  }
+  if (grid.dataset.dashGrid === 'main') {
+    return window.matchMedia('(min-width: 1024px)').matches ? 3 : 1;
+  }
+  return 1;
+}
+
+function normalizeDashLayout(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const layout = { order: {}, cards: {} };
+  dashGridEls().forEach((grid) => {
+    const name = grid.dataset.dashGrid;
+    const ids = dashCardsOf(grid).map((el) => el.dataset.dashCard);
+    const submitted = Array.isArray(source.order && source.order[name]) ? source.order[name] : [];
+    const order = submitted.filter((id, i) => ids.includes(id) && submitted.indexOf(id) === i);
+    ids.forEach((id) => { if (!order.includes(id)) order.push(id); });
+    layout.order[name] = order;
+    order.forEach((id) => {
+      const cfg = source.cards && source.cards[id];
+      if (!cfg || typeof cfg !== 'object') return;
+      const w = Number(cfg.w);
+      const h = Number(cfg.h);
+      layout.cards[id] = {
+        w: Number.isFinite(w) ? Math.max(1, Math.min(dashMaxCols(grid), Math.round(w))) : 1,
+        h: Number.isFinite(h) ? Math.max(1, Math.min(30, Math.round(h))) : 2,
+      };
+    });
+  });
+  return layout;
+}
+
+function applyDashboardLayout(raw) {
+  if (!document.getElementById('tab-dashboard')) return;
+  if (raw !== undefined) dashLayout = normalizeDashLayout(raw);
+  dashGridEls().forEach((grid) => {
+    const name = grid.dataset.dashGrid;
+    const cards = dashCardsOf(grid);
+    const byId = {};
+    cards.forEach((el) => { byId[el.dataset.dashCard] = el; });
+    (dashLayout.order[name] || Object.keys(byId)).forEach((id) => {
+      if (byId[id]) grid.appendChild(byId[id]);
+    });
+    cards.forEach((card) => {
+      const cfg = dashLayout.cards[card.dataset.dashCard];
+      const cols = dashCols(grid);
+      if (!dashIsDesktop() || !cfg) {
+        card.style.gridColumn = '';
+        card.style.height = '';
+        card.style.overflow = '';
+        return;
+      }
+      const span = Math.max(1, Math.min(cols, Math.round((cfg.w / dashMaxCols(grid)) * cols)));
+      card.style.gridColumn = `span ${span}`;
+      if (cfg.h) {
+        card.style.height = `${cfg.h * DASH_ROW_PX}px`;
+        card.style.overflow = 'auto';
+      }
+    });
+  });
+  if (qpsChart) requestAnimationFrame(() => qpsChart.resize());
+}
+
+function markDashLayoutDirty() {
+  dashLayoutDirty = true;
+  clearTimeout(dashSaveTimer);
+  dashSaveTimer = setTimeout(() => saveDashboardLayout(false), 800);
+}
+
+async function saveDashboardLayout(announce) {
+  clearTimeout(dashSaveTimer);
+  if (!dashLayoutDirty) return true;
+  dashLayoutDirty = false;
+  if (currentConfig) currentConfig.dashboard_layout = dashLayout;
+  try {
+    const res = await fetch(api('/api/dashboard/layout'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ layout: dashLayout }),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not save the dashboard layout'));
+    if (announce) showToast('Dashboard layout saved', 'success');
+    return true;
+  } catch (e) {
+    dashLayoutDirty = true;
+    showToast(e.message || 'Could not save the dashboard layout', 'error');
+    return false;
+  }
+}
+
+function syncDashEditUi() {
+  const section = document.getElementById('tab-dashboard');
+  const hint = document.getElementById('dash-edit-hint');
+  if (!section) return;
+  section.classList.toggle('is-editing', dashEditing);
+  // One state, two entry points: the desktop sidebar and the phone tab bar.
+  document.querySelectorAll('.dash-edit-toggle').forEach((btn) => {
+    btn.classList.toggle('is-editing', dashEditing);
+    btn.setAttribute('aria-pressed', dashEditing ? 'true' : 'false');
+    const label = dashEditing ? 'Exit dashboard layout editing' : 'Edit dashboard layout';
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  });
+  if (hint) {
+    hint.classList.toggle('hidden', !dashEditing);
+    hint.textContent = dashIsDesktop()
+      ? 'Drag a card to move it · drag the corner to resize'
+      : 'Long-press a card to move it';
+  }
+}
+
+function clearDashHandles() {
+  document.querySelectorAll('.dash-edit-cover, .dash-resize').forEach((el) => el.remove());
+}
+
+function beginDashDrag(e, card, grid, overlay, requireHold) {
+  if (e.button !== undefined && e.button !== 0) return;
+  e.preventDefault();
+  const startX = e.clientX;
+  const startY = e.clientY;
+  let active = false;
+  let holdTimer = null;
+
+  const activate = () => {
+    active = true;
+    card.classList.add('dash-dragging');
+    document.body.style.userSelect = 'none';
+  };
+  if (!requireHold) activate();
+  else holdTimer = setTimeout(activate, 450);
+
+  const move = (ev) => {
+    if (!active) {
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > 8) cleanup();
+      return;
+    }
+    ev.preventDefault();
+    const under = document.elementFromPoint(ev.clientX, ev.clientY);
+    const target = under && under.closest('[data-dash-card]');
+    if (target && target !== card && target.parentElement === grid) {
+      const r = target.getBoundingClientRect();
+      const before = ev.clientX < r.left + r.width / 2;
+      grid.insertBefore(card, before ? target : target.nextSibling);
+    }
+  };
+  const finish = () => {
+    const wasActive = active;
+    cleanup();
+    if (wasActive) {
+      dashLayout.order[grid.dataset.dashGrid] = dashCardsOf(grid).map((el) => el.dataset.dashCard);
+      markDashLayoutDirty();
+    }
+  };
+  const cleanup = () => {
+    clearTimeout(holdTimer);
+    card.classList.remove('dash-dragging');
+    document.body.style.userSelect = '';
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', finish);
+    document.removeEventListener('pointercancel', finish);
+  };
+  // Listen on the document: the card moves under the pointer, so listeners bound
+  // to its own overlay stop firing as soon as the pointer leaves the card.
+  document.addEventListener('pointermove', move, { passive: false });
+  document.addEventListener('pointerup', finish, { once: true });
+  document.addEventListener('pointercancel', finish, { once: true });
+}
+
+function beginDashResize(e, card, grid) {
+  e.preventDefault();
+  e.stopPropagation();
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const startW = card.getBoundingClientRect().width;
+  const startH = card.getBoundingClientRect().height;
+  const cols = dashCols(grid);
+  const maxCols = dashMaxCols(grid);
+  const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
+  const colW = Math.max(1, (grid.clientWidth - gap * (cols - 1)) / cols);
+  const id = card.dataset.dashCard;
+
+  const move = (ev) => {
+    const wCols = Math.max(1, Math.min(cols, Math.round((startW + ev.clientX - startX + gap) / (colW + gap))));
+    const h = Math.max(1, Math.min(30, Math.round((startH + ev.clientY - startY) / DASH_ROW_PX)));
+    const storedW = Math.max(1, Math.min(maxCols, Math.round((wCols / cols) * maxCols)));
+    card.style.gridColumn = `span ${wCols}`;
+    card.style.height = `${h * DASH_ROW_PX}px`;
+    card.style.overflow = 'auto';
+    dashLayout.cards[id] = { w: storedW, h };
+    if (qpsChart) qpsChart.resize();
+  };
+  const finish = () => {
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', finish);
+    document.removeEventListener('pointercancel', finish);
+    markDashLayoutDirty();
+  };
+  document.addEventListener('pointermove', move, { passive: false });
+  document.addEventListener('pointerup', finish, { once: true });
+  document.addEventListener('pointercancel', finish, { once: true });
+}
+
+function setDashEditing(on) {
+  const section = document.getElementById('tab-dashboard');
+  if (!section) return;
+  dashEditing = on;
+  clearDashHandles();
+  if (on) {
+    dashGridEls().forEach((grid) => {
+      dashCardsOf(grid).forEach((card) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'dash-edit-cover';
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.addEventListener('pointerdown', (e) =>
+          beginDashDrag(e, card, grid, overlay, !dashIsDesktop()));
+        card.appendChild(overlay);
+        if (dashIsDesktop()) {
+          const handle = document.createElement('button');
+          handle.type = 'button';
+          handle.className = 'dash-resize';
+          handle.title = 'Drag to resize';
+          handle.setAttribute('aria-label', 'Resize card');
+          handle.addEventListener('pointerdown', (e) => beginDashResize(e, card, grid));
+          card.appendChild(handle);
+        }
+      });
+    });
+  }
+  syncDashEditUi();
+  if (!on && qpsChart) qpsChart.resize();
+}
+
+async function toggleDashboardEditing() {
+  if (dashEditing) {
+    // Leaving edit mode persists the arrangement. A failed save keeps the
+    // editor open rather than pretending the change was stored.
+    if (!(await saveDashboardLayout(true))) return;
+    setDashEditing(false);
+    return;
+  }
+  if (activeDashTab !== 'dashboard') switchTab('dashboard');
+  setDashEditing(true);
+}
+
+function initDashboardEditor() {
+  // Both entry points share one handler: the desktop sidebar and the badge on
+  // the phone tab bar. Naming them here also keeps the dashboard-id audit able
+  // to see that each declared control is wired.
+  [
+    document.getElementById('dash-edit-btn'),
+    document.getElementById('dash-edit-btn-mobile'),
+  ].filter(Boolean).forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleDashboardEditing();
+    });
+  });
+  window.addEventListener('resize', () => {
+    clearTimeout(initDashboardEditor._resizeTimer);
+    initDashboardEditor._resizeTimer = setTimeout(() => {
+      applyDashboardLayout(dashLayout);
+      if (dashEditing) syncDashEditUi();
+    }, 150);
+  });
+}
+
 function renderConfig(cfg) {
   if (!cfg) return;
   currentConfig = cfg;
@@ -1098,24 +1385,22 @@ function renderConfig(cfg) {
   if (!cfg.access || typeof cfg.access !== 'object') cfg.access = {};
   if (!Array.isArray(cfg.access.doh_tokens)) cfg.access.doh_tokens = [];
 
-  // The subscription record may be absent on a pre-v2.1 config response; an
+  // The subscription record may be absent on an older config response; an
   // empty object keeps the renderers below total.
   if (!cfg.subscription || typeof cfg.subscription !== 'object') cfg.subscription = {};
 
-  // The v2.1 panels read straight from the config they were handed.
+  // The settings panels read straight from the config they were handed.
   if (typeof window.renderSubscriptionSettings === 'function') window.renderSubscriptionSettings();
   if (typeof window.renderAdminPath === 'function') window.renderAdminPath();
   if (typeof window.renderTwoFactor === 'function') window.renderTwoFactor();
 
   // Version badge (single source of truth: version.json embedded in the binary).
   //
-  // The mobile header deliberately gets the version *without* the commit hash. The two strings
-  // differ by eleven characters — "v1.5.0-beta" against "v1.5.0-beta [3585f9bf]" — and at 9px
-  // mono in a 56px sticky header that is the difference between a badge sitting beside the
+  // The mobile header deliberately gets the version *without* the commit hash. At 9px mono in
+  // a 56px sticky header the hash suffix is the difference between a badge sitting beside the
   // wordmark and one that wraps, taking the brand line out through the top border. The hash
   // still reaches both places it is actually used from: the desktop sidebar badge, which has
-  // Version badge displays: header and mobile show only version (e.g. "v2.0.0-beta"),
-  // footer shows version + hash for bug reports (e.g. "v2.0.0-beta [3585f9bf]").
+  // room, and the footer. The badge text is version-only; the footer shows version + hash.
   if (cfg.version && cfg.version.display) {
     const versionOnly = cfg.version.display;
     const versionWithHash = `${cfg.version.display} [${cfg.version.hash}]`;
@@ -1133,7 +1418,7 @@ function renderConfig(cfg) {
     }
   }
 
-  // v2.6: once the running version is known, ask the server whether a newer one
+  // Once the running version is known, ask the server whether a newer one
   // is published on the project's main branch. Runs once per page load and is
   // non-fatal when the box is offline.
   if (!window.__hdnsUpdateChecked) {
@@ -1266,6 +1551,7 @@ function renderConfig(cfg) {
   renderList('tokens-list', cfg.access?.doh_tokens || [], 'remove-token');
   renderCustomRecords(cfg.rules?.custom_records || {});
   loadCustomGroups();
+  if (!dashEditing) applyDashboardLayout(cfg.dashboard_layout || {});
 }
 
 // A domain, optionally wildcarded, as the matcher accepts it: labels of [a-z0-9-]
@@ -1595,6 +1881,69 @@ function proxiedPruneSelection() {
 // disabled state, and the header checkbox — checked when every row currently shown is
 // ticked, indeterminate when only some are. It counts the filtered rows, not the whole
 // list: with a search active, "select all" means the matches the operator can see.
+// The bulk assign menu: All services is a visual header (assigning "all" has no
+// meaning), No service clears the label, and every service carries its favicon
+// or the same letter mark the Services box uses.
+const BULK_ALL_MARK = '<span class="service-mark" aria-hidden="true">' +
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">' +
+  '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>' +
+  '<path d="M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></span>';
+const BULK_NONE_MARK = '<span class="service-mark" aria-hidden="true">' +
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">' +
+  '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>' +
+  '<path d="M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>' +
+  '<line x1="4" y1="4" x2="20" y2="20"/></svg></span>';
+
+function serviceMarkHTML(id, name) {
+  const icons = (currentConfig && currentConfig.rules && currentConfig.rules.service_icons) || {};
+  if (icons[id]) return `<img class="service-mark" src="${escapeHTML(icons[id])}" alt="">`;
+  const hue = serviceHue(name);
+  const style = `background:hsl(${hue} 45% 22%);color:hsl(${hue} 70% 70%)`;
+  return `<span class="service-mark" style="${escapeHTML(style)}">${escapeHTML((name || '?').trim().charAt(0).toUpperCase())}</span>`;
+}
+
+function renderBulkServiceOptions() {
+  const menu = document.getElementById('proxied-bulk-service-menu');
+  if (!menu) return;
+  const services = (currentConfig && currentConfig.rules && currentConfig.rules.services) || {};
+  const entries = Object.entries(services).sort((a, b) => a[1].localeCompare(b[1]));
+  menu.innerHTML =
+    `<div class="proxied-bulk-option is-disabled" role="option" aria-disabled="true">${BULK_ALL_MARK}<span>All services</span></div>` +
+    `<button type="button" class="proxied-bulk-option" role="option" data-bulk-service="__none__">${BULK_NONE_MARK}<span>No service</span></button>` +
+    entries.map(([id, name]) =>
+      `<button type="button" class="proxied-bulk-option" role="option" data-bulk-service="${escapeHTML(id)}">` +
+      `${serviceMarkHTML(id, name)}<span class="truncate">${escapeHTML(name)}</span></button>`).join('');
+}
+
+function closeBulkServiceMenu() {
+  document.getElementById('proxied-bulk-service-menu')?.classList.add('hidden');
+  const btn = document.getElementById('proxied-bulk-service');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+async function assignServiceToSelected(serviceId) {
+  if (!serviceId || proxiedSelected.size === 0) return;
+  closeBulkServiceMenu();
+  const domains = Array.from(proxiedSelected);
+  const rules = currentConfig.rules;
+  const links = Object.assign({}, rules.domain_services || {});
+  const id = serviceId === '__none__' ? '' : serviceId;
+  for (const domain of domains) {
+    const key = String(domain || '').toLowerCase();
+    if (id) links[key] = id; else delete links[key];
+  }
+  rules.domain_services = links;
+  await saveRules();
+  renderServices();
+  renderProxiedList();
+  showToast(
+    id
+      ? `Assigned ${domains.length} domain(s) to ${serviceName(id)}`
+      : `Cleared the service label on ${domains.length} domain(s)`,
+    'success',
+  );
+}
+
 function updateProxiedBulkBar() {
   const n = proxiedSelected.size;
   const shown = proxiedFilteredRows();
@@ -1609,12 +1958,56 @@ function updateProxiedBulkBar() {
   if (pause) pause.disabled = !pausable;
   if (resume) resume.disabled = !pausable;
   if (remove) remove.disabled = n === 0;
+  const bulkService = document.getElementById('proxied-bulk-service');
+  if (bulkService) {
+    bulkService.disabled = n === 0;
+    if (n === 0) closeBulkServiceMenu();
+  }
   const all = document.getElementById('proxied-select-all');
   if (all) {
     const selectedShown = shown.filter((r) => proxiedSelected.has(r.domain)).length;
     all.checked = shown.length > 0 && selectedShown === shown.length;
     all.indeterminate = selectedShown > 0 && selectedShown < shown.length;
   }
+}
+
+// The per-row service picker. A native select cannot show images in its
+// options, so this is a body-level listbox positioned under the clicked trigger;
+// the table's own scroll container would clip a menu placed inside the row.
+let servicePickerDomain = null;
+let servicePickerTrigger = null;
+
+function closeServicePicker() {
+  document.getElementById('service-picker-menu')?.classList.add('hidden');
+  if (servicePickerTrigger) servicePickerTrigger.setAttribute('aria-expanded', 'false');
+  servicePickerDomain = null;
+  servicePickerTrigger = null;
+}
+
+function openServicePicker(domain, trigger) {
+  const menu = document.getElementById('service-picker-menu');
+  if (!menu) return;
+  if (servicePickerDomain === domain && !menu.classList.contains('hidden')) {
+    closeServicePicker();
+    return;
+  }
+  const services = (currentConfig.rules && currentConfig.rules.services) || {};
+  const entries = Object.entries(services).sort((a, b) => a[1].localeCompare(b[1]));
+  menu.innerHTML =
+    `<button type="button" class="proxied-bulk-option" role="option" data-service-id="__none__">${BULK_NONE_MARK}<span>No service</span></button>` +
+    entries.map(([id, name]) =>
+      `<button type="button" class="proxied-bulk-option" role="option" data-service-id="${escapeHTML(id)}">` +
+      `${serviceMarkHTML(id, name)}<span class="truncate">${escapeHTML(name)}</span></button>`).join('');
+  menu.classList.remove('hidden');
+  servicePickerDomain = domain;
+  servicePickerTrigger = trigger;
+  trigger.setAttribute('aria-expanded', 'true');
+
+  const r = trigger.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  menu.style.left = `${Math.max(8, Math.min(r.left, innerWidth - mw - 8))}px`;
+  menu.style.top = `${r.bottom + 4 + mh > innerHeight ? Math.max(8, r.top - mh - 4) : r.bottom + 4}px`;
 }
 
 // renderProxiedList draws the Proxied Domains page. Two lists feed it: the
@@ -2020,6 +2413,7 @@ function wildcardLabelFor(domain, index) {
 function renderProxiedList() {
   const container = document.getElementById('custom-proxied-rows');
   if (!container) return;
+  closeServicePicker();
   proxiedPruneSelection();
   updateDomainFilterChips();
   const needle = proxiedFilterNeedle();
@@ -2149,19 +2543,25 @@ function renderProxiedList() {
     // listener, and a native select avoids inventing another popover.
     const svcCell = row.children[2];
     if (svcCell) {
-      const services = (currentConfig.rules && currentConfig.rules.services) || {};
       const current = serviceOfDomain(domain);
-      const sel = document.createElement('select');
-      sel.className = 'proxied-service-select';
-      sel.setAttribute('aria-label', `Service for ${escapeHTML(domain)}`);
-      sel.innerHTML = '<option value="">No service</option>' +
-        Object.entries(services)
-          .sort((a, b) => a[1].localeCompare(b[1]))
-          .map(([id, name]) => `<option value="${escapeHTML(id)}">${escapeHTML(name)}</option>`)
-          .join('');
-      sel.value = current;
-      sel.addEventListener('change', () => assignService(domain, sel.value));
-      svcCell.appendChild(sel);
+      const label = current ? ((currentConfig.rules.services || {})[current] || current) : 'No service';
+      const mark = current ? serviceMarkHTML(current, label) : BULK_NONE_MARK;
+      const trigger = document.createElement('button');
+      trigger.type = 'button';
+      trigger.className = 'proxied-service-trigger';
+      trigger.dataset.serviceDomain = domain;
+      trigger.setAttribute('aria-haspopup', 'listbox');
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.setAttribute('aria-label', `Service for ${escapeHTML(domain)}`);
+      trigger.innerHTML = mark +
+        '<span class="proxied-service-name"></span>' +
+        '<i data-feather="chevron-down" class="w-3 h-3"></i>';
+      trigger.querySelector('.proxied-service-name').textContent = label;
+      trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openServicePicker(domain, trigger);
+      });
+      svcCell.appendChild(trigger);
     }
 
     row.addEventListener('click', (e) => {
@@ -2175,6 +2575,22 @@ function renderProxiedList() {
   });
   safeFeatherReplace();
   updateProxiedBulkBar();
+}
+
+// Size the table viewport to the space left below the toolbar and above the
+// footer. The toolbar and the table's sticky header then stay on screen while
+// the rows scroll in their own container. Desktop only: a phone's natural page
+// scroll is better than a 180 px letterbox.
+function sizeProxiedScroll() {
+  const wrap = document.getElementById('custom-proxied-list');
+  if (!wrap || wrap.offsetParent === null || window.innerWidth < 1024) {
+    if (wrap) wrap.style.maxHeight = '';
+    return;
+  }
+  const top = wrap.getBoundingClientRect().top + window.scrollY;
+  const footer = document.querySelector('footer');
+  const footerH = footer && getComputedStyle(footer).display !== 'none' ? footer.offsetHeight : 0;
+  wrap.style.maxHeight = `${Math.max(220, Math.round(window.innerHeight - top - footerH - 64))}px`;
 }
 
 // proxiedShowMore appends the next batch. It is the one growth path, shared by
@@ -2296,7 +2712,7 @@ async function proxiedBulkRemove() {
   showToast(`Removed ${n} domain${n === 1 ? '' : 's'}`, 'success');
 }
 
-// ---- Named custom policy groups (v2.3) --------------------------------------
+// ---- Named custom policy groups ---------------------------------------------
 
 let customGroupsCache = [];
 
@@ -2377,7 +2793,7 @@ function openCustomGroupEditor(group) {
   ed.classList.remove('hidden');
 }
 
-// ---- Group icon upload (v2.7) ----------------------------------------------
+// ---- Group icon upload ------------------------------------------------------
 // One pending file per editor session; it is sent to the server right away for
 // an existing group, or held until Save creates the group for a new one.
 let pendingGroupIconFile = null;
@@ -3141,7 +3557,7 @@ async function startLiveStream() {
     sseSource = null;
   }
 
-  // v2.1.0: the long-lived token no longer rides the query string. The
+  // The long-lived token no longer rides the query string. The
   // dashboard exchanges it (POST, authenticated) for a one-time, 60-second
   // ticket that the EventSource URL carries; the ticket is consumed on first
   // use, so a leaked URL authorises nothing afterwards.
@@ -3922,7 +4338,7 @@ let activeDashTab = 'dashboard';
 // pushStreamQuery records one arriving query and, if it belongs in the current view, puts it
 // on top without redrawing the rest.
 //
-// Perf (v2.2.0): the buffer write is cheap and always runs; the DOM work is
+// Perf: the buffer write is cheap and always runs; the DOM work is
 // what made the dashboard crawl on a 1-core VPS — one <tr> build + insert per
 // DNS query at wire rate, from every tab, in every foreground state. Two
 // gates now stand before it: the Logs tab must be the active tab (buffering
@@ -4093,7 +4509,7 @@ function applyChartTheme() {
   } catch (e) { /* a chart that fails to re-colour is still a readable chart */ }
 }
 
-document.addEventListener('hyperdns:theme', applyChartTheme);
+document.addEventListener('digitdns:theme', applyChartTheme);
 
 function initChart() {
   try {
@@ -4238,6 +4654,67 @@ function serviceIconURL(raw) {
   return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(v)}.ico`;
 }
 
+// Icon-library suggestions. The search goes through the dashboard's own proxy
+// (same origin, so connect-src stays 'self'); the chosen icon is stored as its
+// normal https SVG URL, which both the panel and the Android app already render.
+const ICON_REPO_BASE = 'https://api.iconify.design';
+const ICON_CHOICE_COLOR = '%2394a3b8';
+let iconSearchTimer = null;
+let iconSearchSeq = 0;
+
+// Sets that carry their own palette: no colour parameter, or the logo/emoji
+// would be flattened to one tint. The rest are monochrome and get the neutral
+// slate so they stay visible on both themes.
+const ICON_COLORFUL_PREFIXES = new Set(['logos', 'flat-color-icons', 'twemoji', 'skill-icons', 'devicon']);
+
+function iconRepoURL(id) {
+  if (!/^[a-z0-9-]+:[a-z0-9-]+$/.test(String(id || ''))) return '';
+  const [prefix, name] = id.split(':');
+  const base = `${ICON_REPO_BASE}/${encodeURIComponent(prefix)}/${encodeURIComponent(name)}.svg`;
+  return ICON_COLORFUL_PREFIXES.has(prefix) ? base : `${base}?color=${ICON_CHOICE_COLOR}`;
+}
+
+function hideIconResults() {
+  document.getElementById('service-icon-results')?.classList.add('hidden');
+}
+
+function renderIconResults(ids) {
+  const box = document.getElementById('service-icon-results');
+  if (!box) return;
+  const urls = (Array.isArray(ids) ? ids : [])
+    .map(iconRepoURL)
+    .filter(Boolean)
+    .slice(0, 12);
+  if (!urls.length) {
+    box.innerHTML = '';
+    box.classList.add('hidden');
+    return;
+  }
+  box.innerHTML = urls.map((url) =>
+    `<button type="button" class="service-icon-choice" data-icon-url="${escapeHTML(url)}" title="Use this icon">
+       <img src="${escapeHTML(url)}" alt="" width="22" height="22" loading="lazy">
+     </button>`).join('');
+  box.classList.remove('hidden');
+}
+
+async function searchServiceIcons(raw) {
+  const q = String(raw || '').trim();
+  // A URL or a domain is an explicit choice; only unknown words are searched.
+  if (q.length < 2 || serviceIconURL(q)) { hideIconResults(); return; }
+  const seq = ++iconSearchSeq;
+  try {
+    const res = await fetch(api(`/api/icons/search?q=${encodeURIComponent(q)}`), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) { if (seq === iconSearchSeq) hideIconResults(); return; }
+    const data = await res.json();
+    if (seq !== iconSearchSeq) return;
+    renderIconResults(data && data.icons);
+  } catch (e) {
+    if (seq === iconSearchSeq) hideIconResults();
+  }
+}
+
 function renderServices() {
   const list = document.getElementById('services-list');
   if (!list || !currentConfig || !currentConfig.rules) return;
@@ -4291,7 +4768,9 @@ function renderServices() {
       img.replaceWith(fallback);
     }, { once: true });
   });
+  renderBulkServiceOptions();
   safeFeatherReplace();
+  requestAnimationFrame(sizeProxiedScroll);
 }
 
 function setActiveService(id) {
@@ -4328,6 +4807,7 @@ function openServiceForm(id) {
   const icons = (currentConfig.rules && currentConfig.rules.service_icons) || {};
   if (nameEl) nameEl.value = serviceEditing ? (services[serviceEditing] || '') : '';
   if (iconEl) iconEl.value = serviceEditing ? (icons[serviceEditing] || '') : '';
+  hideIconResults();
   document.getElementById('save-service-btn').textContent = serviceEditing ? 'Save' : 'Add';
   f.classList.remove('hidden');
   nameEl?.focus();
@@ -4358,6 +4838,7 @@ async function createService() {
   // otherwise a new service is missing from them until the next reload.
   renderProxiedList();
   document.getElementById('add-service-form')?.classList.add('hidden');
+  hideIconResults();
   serviceEditing = '';
   if (nameEl) nameEl.value = '';
   if (iconEl) iconEl.value = '';
@@ -4394,6 +4875,19 @@ async function deleteService(id) {
 
 function initServices() {
   document.getElementById('add-service-btn')?.addEventListener('click', () => openServiceForm(''));
+  document.getElementById('service-icon')?.addEventListener('input', (e) => {
+    clearTimeout(iconSearchTimer);
+    hideIconResults();
+    const value = e.target.value;
+    iconSearchTimer = setTimeout(() => searchServiceIcons(value), 350);
+  });
+  document.getElementById('service-icon-results')?.addEventListener('click', (e) => {
+    const choice = e.target.closest('[data-icon-url]');
+    if (!choice) return;
+    const iconEl = document.getElementById('service-icon');
+    if (iconEl) iconEl.value = choice.dataset.iconUrl;
+    hideIconResults();
+  });
   document.getElementById('save-service-btn')?.addEventListener('click', createService);
   document.getElementById('cancel-service-btn')?.addEventListener('click', () => {
     document.getElementById('add-service-form')?.classList.add('hidden');
@@ -4405,6 +4899,7 @@ function initServices() {
     e.preventDefault();
     setActiveService(row.dataset.service);
   });
+  initDashboardEditor();
   document.getElementById('services-list')?.addEventListener('click', (e) => {
     const edit = e.target.closest('[data-service-edit]');
     if (edit) { openServiceForm(edit.dataset.serviceEdit); return; }
@@ -4478,6 +4973,7 @@ function switchTab(target, updateUrl = true) {
     // topped up once the tab is actually on screen.
     if (target === 'proxied') {
       proxiedFillViewport();
+      requestAnimationFrame(sizeProxiedScroll);
     }
   }
 
@@ -4497,7 +4993,7 @@ function switchTab(target, updateUrl = true) {
 function handleRouteFromURL() {
   // The admin prefix and the /dash mount point are stripped before the table is
   // consulted, so the same keys work whatever path the install was given. A path
-  // that matches nothing falls back to the dashboard, which is the pre-v2.1
+  // that matches nothing falls back to the dashboard, which is the older
   // behaviour for an unknown route and still the least surprising one.
   const stripped = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const withoutBase = ADMIN_BASE && stripped.toLowerCase().startsWith(ADMIN_BASE + '/dash')
@@ -4524,7 +5020,7 @@ function renderAPIKeyDisplay() {
 }
 
 function updateCodeSnippets(pubIP, apiKey) {
-  // v2.1.0 (B-02/B-18 remediation): the snippets are generated from the live
+  // The snippets are generated from the live
   // configuration — real web port and scheme, not hardcoded 8080/http — and
   // they speak the API's actual contract: the create field is `days`
   // (`expires_days` was never read, silently producing lifetime accounts) and
@@ -4880,7 +5376,7 @@ function initAPIEvents() {
 }
 
 // =======================================================
-// v2.1 HIDDEN ADMIN PATH DISPLAY + REGENERATION
+// HIDDEN ADMIN PATH DISPLAY + REGENERATION
 // =======================================================
 
 function initAdminPathControls() {
@@ -4920,7 +5416,6 @@ function initAdminPathControls() {
         // The old token died with the session wipe; carry nothing into the new
         // namespace but the browser itself.
         localStorage.removeItem('digitdns_token');
-        try { localStorage.removeItem('hyperdns_token'); } catch (e) {}
         authToken = '';
         if (newPath) {
           showToast('Admin path regenerated. Sign in at the new address.', 'success');
@@ -5251,13 +5746,13 @@ function initEventListeners() {
     };
   }
 
-  // Custom policy groups (v2.3)
+  // Custom policy groups
   document.getElementById('add-custom-group-btn')?.addEventListener('click', () => openCustomGroupEditor(null));
   document.getElementById('cancel-custom-group-btn')?.addEventListener('click', () => {
     document.getElementById('custom-group-editor')?.classList.add('hidden');
   });
   document.getElementById('save-custom-group-btn')?.addEventListener('click', saveCustomGroup);
-  // Group icon (v2.7): choose a file → hold it as pending; Save flushes it to
+  // Group icon: choose a file → hold it as pending; Save flushes it to
   // the server (for a new group this is the only moment the id exists).
   // Remove clears it server-side for an existing group.
   document.getElementById('custom-group-icon-file')?.addEventListener('change', (e) => {
@@ -5406,6 +5901,45 @@ function initEventListeners() {
   document.getElementById('proxied-bulk-pause')?.addEventListener('click', () => proxiedBulkSetEnabled(false));
   document.getElementById('proxied-bulk-resume')?.addEventListener('click', () => proxiedBulkSetEnabled(true));
   document.getElementById('proxied-bulk-remove')?.addEventListener('click', proxiedBulkRemove);
+  document.getElementById('proxied-bulk-service')?.addEventListener('click', () => {
+    const btn = document.getElementById('proxied-bulk-service');
+    if (!btn || btn.disabled) return;
+    const menu = document.getElementById('proxied-bulk-service-menu');
+    if (!menu) return;
+    const willOpen = menu.classList.contains('hidden');
+    menu.classList.toggle('hidden');
+    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  });
+  document.getElementById('proxied-bulk-service-menu')?.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-bulk-service]');
+    if (!row) return;
+    assignServiceToSelected(row.dataset.bulkService);
+  });
+  document.getElementById('service-picker-menu')?.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-service-id]');
+    if (!row) return;
+    const domain = servicePickerDomain;
+    const id = row.dataset.serviceId === '__none__' ? '' : row.dataset.serviceId;
+    closeServicePicker();
+    if (domain) assignService(domain, id);
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.proxied-bulk-service-wrap')) closeBulkServiceMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeBulkServiceMenu();
+      closeServicePicker();
+    }
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#service-picker-menu') && !e.target.closest('.proxied-service-trigger')) {
+      closeServicePicker();
+    }
+  });
+  window.addEventListener('scroll', closeServicePicker, true);
+  window.addEventListener('resize', closeServicePicker);
+  window.addEventListener('resize', sizeProxiedScroll);
 
   // The × names itself through data-modal-close so Escape and a backdrop click reach
   // it; both still need their own handler or those paths click a dead button.
@@ -6529,8 +7063,7 @@ function renderClientsView(data) {
 // subscriber somewhere other than the portal link. It used to be a Shelcan-
 // style message that named the retired /ip/ link as if it were the subscriber
 // page and printed a bare "Your dedicated DNS:" heading with nothing after
-// it — an operator copying it sent a link that has been an API since
-// v2.1, next to an empty field.
+// it — an operator copying it sent an API link next to an empty field.
 //
 // Four pieces now, each with a job: where to manage the subscription, the
 // secret, the address to point their console at, and the API endpoint for a
@@ -6685,7 +7218,7 @@ function initClientEventListeners() {
       } else {
         // The server now persists BEFORE it applies and answers 500 when the
         // store write fails — an unchecked success here would show a green toast
-        // for a mode change that did not survive to the next boot (v2.8).
+        // for a mode change that did not survive to the next boot.
         const body = await res.json().catch(() => ({}));
         showToast(body.error || 'Could not save the access mode', 'error');
         // Snap the switch back to whatever the server actually holds, so the UI
@@ -6739,7 +7272,7 @@ function initClientEventListeners() {
     }
   });
 
-  // Search input live filter. Debounced (v2.2.0 perf pass): every keystroke
+  // Search input live filter. Debounced: every keystroke
   // rebuilt the entire clients grid — one innerHTML card per subscriber plus
   // a document-wide icon sweep — which on a large roster made typing feel
   // like lag. 150 ms collapses a burst of keys into one rebuild.
@@ -7535,7 +8068,7 @@ function showToast(msg, type = 'info') {
     const origin = currentConfig?.subscription_origin || '';
     // /sub/ is the page a subscriber opens (status, quota, IP registration);
     // /ip/ is the API endpoint the portal's register button posts to. The
-    // Reg Link button on the client card made this distinction in v2.1 —
+    // Reg Link button on the client card already made this distinction —
     // this popup was still handing out the API URL.
     if (linkEl) linkEl.value = client.token && origin ? `${origin}/sub/${client.token}` : '(no origin configured — set the public address in Settings)';
     if (secretEl) {
@@ -7846,7 +8379,7 @@ function showToast(msg, type = 'info') {
   }
 
 // =======================================================
-// SELF-UPDATE (v2.6): check the main-branch version, then apply a
+// SELF-UPDATE: check the main-branch version, then apply a
 // SHA256-verified binary swap + restart. Data is preserved and backed up.
 // =======================================================
 async function checkForUpdate() {

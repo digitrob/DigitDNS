@@ -76,9 +76,10 @@ them would break existing installs rather than rebrand them:
     flagging that password.
 
   * Local browser state. The dashboard keeps its existing `window.__hdns`
-    bridge name and the `hyperdns_token` / `hyperdns_theme` localStorage
-    keys so that a browser already logged into the panel stays logged in
-    across the upgrade. These are never rendered to the operator.
+    bridge name. The `hyperdns_token` and `hyperdns_theme` localStorage keys
+    were retired in 3.8.0, after every install that loaded the panel since
+    3.6.1 had already moved its theme to `digitdns_theme` and its session to
+    `digitdns_token`. These values are never rendered to the operator.
 
 Third-party components
 ----------------------

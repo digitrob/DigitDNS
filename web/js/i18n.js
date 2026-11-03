@@ -7,12 +7,7 @@
  * labels and icons in step with the stored choice and the OS default.
  */
 (function () {
-  /* The canonical key. The panel's pre-paint script in index.html reads
-     digitdns_theme first and migrates the pre-rename key, so writing the old name
-     here made a theme change revert on the next load once the canonical key
-     existed. Both names are handled for existing installs. */
   var THEME_KEY = 'digitdns_theme';
-  var LEGACY_THEME_KEY = 'hyperdns_theme';
 
   var theme = 'dark';
 
@@ -28,7 +23,7 @@
       try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* private mode */ }
     }
     syncSwitchLabels();
-    document.dispatchEvent(new CustomEvent('hyperdns:theme', { detail: { theme: theme } }));
+    document.dispatchEvent(new CustomEvent('digitdns:theme', { detail: { theme: theme } }));
   }
 
   /* Both toggles are addressed by attribute rather than by id: there are two of
@@ -74,19 +69,7 @@
     }
   }
 
-  /* Move a pre-rename choice onto the canonical key once, so a browser that
-     carried hyperdns_theme does not keep it forever. */
-  function migrateThemeKey() {
-    try {
-      var legacy = localStorage.getItem(LEGACY_THEME_KEY);
-      if (!legacy) return;
-      if (!localStorage.getItem(THEME_KEY)) localStorage.setItem(THEME_KEY, legacy);
-      localStorage.removeItem(LEGACY_THEME_KEY);
-    } catch (e) { /* private mode: nothing to migrate */ }
-  }
-
   function init() {
-    migrateThemeKey();
     /* The inline script in index.html already set data-theme before first paint;
        this recovers it into module state and wires the toggles, which it cannot
        do because it runs before <body> exists. */
@@ -96,18 +79,6 @@
     wireSwitches();
     if (typeof window.safeFeatherReplace === 'function') window.safeFeatherReplace();
   }
-
-  /* The API app.js consumed while the panel was bilingual. The language half is
-     inert now — the panel is English-only — but the theme half is live and
-     app.js listens for the hyperdns:theme event. */
-  window.HyperI18N = {
-    t: function (s) { return s; },
-    lang: function () { return 'en'; },
-    theme: function () { return theme; },
-    setTheme: applyTheme,
-    refresh: function () {},
-    wire: wireSwitches
-  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

@@ -121,6 +121,42 @@ func TestConfigRulesPartialSaveKeepsCustomLists(t *testing.T) {
 	}
 }
 
+// A partial save must preserve the service maps too. They are labels rather than
+// routing lists, but they are stored as map policies like custom_records; before
+// they were loaded from the persisted state, any domain toggle wrote empty
+// service policies and every label silently disappeared.
+func TestConfigRulesPartialSaveKeepsServices(t *testing.T) {
+	_, h, tok, cleanup := authedServer(t)
+	defer cleanup()
+
+	seed := `{
+		"custom_proxied": ["example.com"],
+		"services": {"bbc": "BBC"},
+		"domain_services": {"example.com": "bbc"},
+		"service_icons": {"bbc": "https://icons.duckduckgo.com/ip3/bbc.co.uk.ico"}
+	}`
+	if w := postJSON(t, h, "/api/config/rules", seed, tok); w.Code != http.StatusOK {
+		t.Fatalf("seed save = %d — %s", w.Code, w.Body.String())
+	}
+	if w := postJSON(t, h, "/api/config/rules", `{"custom_proxied":["example.com","other.example"]}`, tok); w.Code != http.StatusOK {
+		t.Fatalf("partial save = %d — %s", w.Code, w.Body.String())
+	}
+
+	rules := rulesFromConfig(t, h, tok)
+	services, _ := rules["services"].(map[string]any)
+	if services["bbc"] != "BBC" {
+		t.Errorf("services = %#v, want bbc preserved", rules["services"])
+	}
+	links, _ := rules["domain_services"].(map[string]any)
+	if links["example.com"] != "bbc" {
+		t.Errorf("domain_services = %#v, want example.com preserved", rules["domain_services"])
+	}
+	icons, _ := rules["service_icons"].(map[string]any)
+	if icons["bbc"] != "https://icons.duckduckgo.com/ip3/bbc.co.uk.ico" {
+		t.Errorf("service_icons = %#v, want bbc preserved", rules["service_icons"])
+	}
+}
+
 // TestConfigRulesExplicitEmptyClears is the other half of the contract. Keeping
 // absent keys must not become keeping everything: a list the operator emptied has
 // to come back empty, and a record they deleted has to disappear rather than be

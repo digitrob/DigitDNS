@@ -24,8 +24,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.PublicOff
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -72,6 +72,9 @@ internal fun ServiceFilterDropdown(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selected = state.serviceFilter
+    val selectedIcon = selected
+        ?.takeIf { it != NO_SERVICE }
+        ?.let { state.lists.serviceIcons[it] }
     val label = when (selected) {
         null -> stringResource(R.string.services_all)
         NO_SERVICE -> stringResource(R.string.services_none)
@@ -85,20 +88,26 @@ internal fun ServiceFilterDropdown(
             onClick = { expanded = true },
             modifier = modifier,
         ) {
+            // All services is a plain globe; No service is the crossed globe; a
+            // named service shows its own mark, falling back to the globe.
+            ServiceIcon(
+                url = selectedIcon,
+                modifier = Modifier.size(20.dp),
+                noService = selected == NO_SERVICE,
+            )
+            Spacer(Modifier.width(8.dp))
             Text(
                 label,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 150.dp),
+                modifier = Modifier.weight(1f, fill = false),
             )
             Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.services_filter))
         }
         DigitDnsDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
                 text = { Text("${stringResource(R.string.services_all)} (${state.totalCount})") },
-                leadingIcon = {
-                    Icon(Icons.Filled.List, contentDescription = null, modifier = Modifier.size(20.dp))
-                },
+                leadingIcon = { ServiceIcon(null, Modifier.size(20.dp)) },
                 trailingIcon = {
                     if (selected == null) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                 },
@@ -106,7 +115,7 @@ internal fun ServiceFilterDropdown(
             )
             DropdownMenuItem(
                 text = { Text("${stringResource(R.string.services_none)} (${state.noServiceCount})") },
-                leadingIcon = { ServiceIcon(null, Modifier.size(20.dp)) },
+                leadingIcon = { ServiceIcon(null, Modifier.size(20.dp), noService = true) },
                 trailingIcon = {
                     if (selected == NO_SERVICE) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                 },
@@ -242,7 +251,17 @@ internal fun ServicePickerDialog(
  * beside them — so they carry no content description.
  */
 @Composable
-private fun ServiceIcon(url: String?, modifier: Modifier = Modifier) {
+private fun ServiceIcon(
+    url: String?,
+    modifier: Modifier = Modifier,
+    noService: Boolean = false,
+) {
+    if (noService) {
+        // "No service" is a deliberate absence, not a service whose icon is
+        // missing; the slash distinguishes it from the plain globe fallback.
+        NoServiceIcon(modifier)
+        return
+    }
     val display = url?.takeIf { it.isNotBlank() }?.let(::serviceDisplayIcon)
     if (display == null) {
         GlobeIcon(modifier)
@@ -258,6 +277,16 @@ private fun ServiceIcon(url: String?, modifier: Modifier = Modifier) {
         // The fallback is silent by design, but a favicon that never loads
         // should still leave a trace for diagnosis.
         onError = { Timber.w(it.result.throwable, "service icon failed: %s", display) },
+    )
+}
+
+@Composable
+private fun NoServiceIcon(modifier: Modifier = Modifier) {
+    Icon(
+        Icons.Filled.PublicOff,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier,
     )
 }
 
@@ -292,6 +321,7 @@ private fun ServiceChoices(
             selected = current.isEmpty(),
             onSelect = { onAssign("") },
             iconUrl = null,
+            noService = true,
         )
     }
     state.lists.services.entries.sortedBy { it.value.lowercase(Locale.US) }.forEach { (id, name) ->
@@ -324,6 +354,7 @@ private fun ServiceChoiceRow(
     selected: Boolean,
     onSelect: () -> Unit,
     iconUrl: String?,
+    noService: Boolean = false,
     onEdit: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     editLabel: String = "",
@@ -343,7 +374,7 @@ private fun ServiceChoiceRow(
             Spacer(Modifier.width(16.dp))
         }
         Spacer(Modifier.width(6.dp))
-        ServiceIcon(iconUrl, Modifier.size(20.dp))
+        ServiceIcon(iconUrl, Modifier.size(20.dp), noService)
         Spacer(Modifier.width(8.dp))
         Text(
             text = name,
@@ -370,6 +401,112 @@ private fun ServiceChoiceRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/**
+ * Bulk assignment: the same service list as the per-domain picker, but a tap
+ * applies to every selected domain rather than one. Management controls are
+ * deliberately absent here; this dialog only answers "which label?".
+ */
+@Composable
+internal fun BulkServiceDialog(
+    count: Int,
+    state: RulesUiState,
+    onApply: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val services = state.lists.services.entries.sortedBy { it.value.lowercase(Locale.US) }
+    PanelDialog(
+        onDismissRequest = onDismiss,
+        solid = true,
+        title = { Text(stringResource(R.string.domains_assign_service_title, count)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 340.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    text = stringResource(R.string.domains_assign_service_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                ServiceChoiceRow(
+                    name = stringResource(R.string.services_none),
+                    count = state.noServiceCount,
+                    selected = false,
+                    onSelect = { onApply("") },
+                    iconUrl = null,
+                    noService = true,
+                )
+                services.forEach { (id, name) ->
+                    ServiceChoiceRow(
+                        name = name,
+                        count = state.serviceCounts[id] ?: 0,
+                        selected = false,
+                        onSelect = { onApply(id) },
+                        iconUrl = state.lists.serviceIcons[id],
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+    )
+}
+
+/** The sort selector as a dropdown button, placed to the right of the search field. */
+@Composable
+internal fun SortDropdown(selected: DomainSort, onSelect: (DomainSort) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        // Same width as Bulk import so the two row-ends line up; the custom padding
+        // is what lets "Added (newest)" fit at that width without clipping.
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.width(CompactActionWidth),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+        ) {
+            Text(stringResource(selected.labelRes), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.domains_sort))
+        }
+        DigitDnsDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DomainSort.entries.forEach { sort ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(sort.labelRes)) },
+                    trailingIcon = {
+                        if (sort == selected) {
+                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelect(sort)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** Opens the bulk service dialog while a selection exists. */
+@Composable
+internal fun BulkAssignHost(
+    open: Boolean,
+    domains: Set<String>,
+    state: RulesUiState,
+    onApply: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (!open || domains.isEmpty()) return
+    BulkServiceDialog(
+        count = domains.size,
+        state = state,
+        onApply = onApply,
+        onDismiss = onDismiss,
+    )
 }
 
 /** The name/icon pair the service form edits; a null [id] means "create". */

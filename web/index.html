@@ -31,15 +31,7 @@
   <script>
     (function () {
       try {
-        // The key predates the rename; read the old name once so an existing
-        // operator keeps their theme, then store it under the current name.
-        var t = localStorage.getItem('digitdns_theme') || localStorage.getItem('hyperdns_theme');
-        if (t) {
-          try {
-            localStorage.setItem('digitdns_theme', t);
-            localStorage.removeItem('hyperdns_theme');
-          } catch (e) {}
-        }
+        var t = localStorage.getItem('digitdns_theme');
         if (t !== 'light' && t !== 'dark') {
           t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
         }
@@ -49,7 +41,7 @@
       } catch (e) { /* private mode: the markup's own defaults stand */ }
     })();
   </script>
-  <!-- Purged, committed Tailwind stylesheet (v2.1): the Play CDN JIT engine and
+  <!-- Purged, committed Tailwind stylesheet: the Play CDN JIT engine and
        its 397 KB + 'unsafe-eval' cost are gone. The utility set was compiled
        ahead of time by tools/tailwind.config.js (dev machine only — the output
        is committed, so no Node runs at build or deploy time). The compile scans
@@ -129,7 +121,7 @@
             placeholder="Enter your admin password"
             class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-sm font-mono">
         </div>
-        <!-- v2.1: the second factor. Hidden until the server says the account
+        <!-- The second factor. Hidden until the server says the account
              carries one; typing a code when 2FA is off is harmless either way. -->
         <div id="login-2fa-row" class="hidden">
           <label for="login-code" class="block text-xs font-semibold text-slate-400 mb-1">TWO-FACTOR CODE</label>
@@ -210,7 +202,7 @@
             A short passphrase of unrelated words is both stronger and easier to type.
           </p>
         </div>
-        <!-- v2.1.0 (B-04 remediation): hidden until the server says 2FA is on. The
+        <!-- Hidden until the server says 2FA is on. The
              rotation endpoint requires a current code with the credentials, and the
              modal used to have nowhere to put one — every save 401'd. -->
         <div id="change-pwd-2fa-row" class="hidden">
@@ -320,7 +312,7 @@
         <!-- Row 1: Email/Name & the traffic plan — the limit and how often it returns.
              The cycle sits beside the limit because the two are one decision: a
              quota with no cycle has to be cleared by hand every period, which is
-             what "50 GB monthly" quietly meant before v1.5.0. -->
+             what "50 GB monthly" quietly meant before the cycle was added. -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
             <label for="edit-client-name" class="block text-[11px] font-semibold text-slate-400 mb-1"><span class="text-red-400 font-bold">*</span> Email / Client Name</label>
@@ -646,7 +638,7 @@
     </div>
   </div>
 
-  <!-- CLIENT CREATED MODAL (v2.2.0). The create response carries the register
+  <!-- CLIENT CREATED MODAL. The create response carries the register
        link id and the registration secret exactly once, at the moment they are
        minted; this modal is where the operator sees and copies both. The
        secret is the WRITE half of the subscriber credential (Phase B: the link
@@ -794,10 +786,19 @@
 
       <!-- Sidebar Navigation Menu -->
       <nav class="space-y-1">
-        <button class="sidebar-nav-item active" data-tab="dashboard" data-route="/home">
-          <i data-feather="activity" class="w-4 h-4"></i>
-          <span>Dashboard</span>
-        </button>
+        <div class="sidebar-nav-row">
+          <button class="sidebar-nav-item active" data-tab="dashboard" data-route="/home">
+            <i data-feather="activity" class="w-4 h-4"></i>
+            <span>Dashboard</span>
+          </button>
+          <!-- The dashboard editor toggle. It is a sibling, not a child, of the
+               nav button: a button inside a button is invalid and would make the
+               nav row swallow the edit click. -->
+          <button id="dash-edit-btn" type="button" class="sidebar-edit-btn dash-edit-toggle"
+            title="Edit dashboard layout" aria-label="Edit dashboard layout" aria-pressed="false">
+            <i data-feather="edit-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
         <button class="sidebar-nav-item" data-tab="proxied" data-route="/proxied">
           <i data-feather="shield" class="w-4 h-4"></i>
           <span>Domains</span>
@@ -896,12 +897,12 @@
           <i data-feather="zap" class="w-4 h-4"></i>
         </div>
         <!-- Stacked, not side by side, and the arithmetic is the reason. These two spans used
-             to be inline children of a plain div, which was invisible for as long as the badge
-             showed the markup's static "v1.5.0" and became a broken header the moment app.js
-             filled it in: the real string is "v1.5.0-beta [3585f9bf]", it does not fit beside
-             the wordmark at 9px mono, so it wrapped to a second line and then a third and
-             pushed a 68px stack through a 56px header — "DigitDNS" clipped by its own top
-             border on every phone.
+             to be inline children of a plain div, which was invisible while the badge showed
+             the markup's static placeholder and became a broken header the moment app.js filled
+             it in: the real version string plus its hash suffix does not fit beside the
+             wordmark at 9px mono, so it wrapped to a second line and then a third and pushed a
+             68px stack through a 56px header — "DigitDNS" clipped by its own top border on
+             every phone.
              Simply forbidding the wrap moves the failure rather than fixing it. At 360px the
              header has 328px of content width; a nowrap brand row is 32 (mark) + 10 + 69
              (wordmark) + 6 + 69 (badge) = 186px and the control cluster on the right is 207px,
@@ -955,12 +956,15 @@
       <!-- TAB 1: DASHBOARD OVERVIEW -->
       <!-- ============================================== -->
       <section id="tab-dashboard" class="tab-content space-y-6">
-        
+        <!-- The pencil beside "Dashboard" in the sidebar is the only control:
+             while editing, this hint is the one piece of chrome the cards gain. -->
+        <p id="dash-edit-hint" class="dash-hint hidden" role="status">Drag a card to move it · drag the corner to resize</p>
+
         <!-- 6 Telemetry Metric Cards (Responsive Grid) -->
-        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
+        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4" data-dash-grid="metrics">
           
           <!-- Card 1: QPS -->
-          <div class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden">
+          <div data-dash-card="qps" class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden">
             <div class="flex items-center justify-between mb-1 sm:mb-2">
               <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Query Rate</span>
               <div class="p-1 sm:p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400"><i data-feather="zap" class="w-3.5 h-3.5"></i></div>
@@ -982,7 +986,7 @@
           </div>
 
           <!-- Card 2: Cache Hit Rate -->
-          <div class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden">
+          <div data-dash-card="cache" class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden">
             <div class="flex items-center justify-between mb-1 sm:mb-2">
               <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">RAM Cache</span>
               <div class="p-1 sm:p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400"><i data-feather="database" class="w-3.5 h-3.5"></i></div>
@@ -995,7 +999,7 @@
           </div>
 
           <!-- Card 3: Active SNI Proxy Connections -->
-          <div class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden">
+          <div data-dash-card="sni" class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden">
             <div class="flex items-center justify-between mb-1 sm:mb-2">
               <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">SNI Proxy</span>
               <div class="p-1 sm:p-1.5 rounded-lg bg-purple-500/10 text-purple-400"><i data-feather="share-2" class="w-3.5 h-3.5"></i></div>
@@ -1017,7 +1021,7 @@
           </div>
 
           <!-- Card 4: CPU Load -->
-          <div class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden">
+          <div data-dash-card="cpu" class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden">
             <div class="flex items-center justify-between mb-1 sm:mb-2">
               <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">CPU Usage</span>
               <div class="p-1 sm:p-1.5 rounded-lg bg-orange-500/10 text-orange-400"><i data-feather="cpu" class="w-3.5 h-3.5"></i></div>
@@ -1036,7 +1040,7 @@
           </div>
 
           <!-- Card 5: RAM Usage -->
-          <div class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden">
+          <div data-dash-card="ram" class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden">
             <div class="flex items-center justify-between mb-1 sm:mb-2">
               <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">RAM Usage</span>
               <div class="p-1 sm:p-1.5 rounded-lg bg-blue-500/10 text-blue-400"><i data-feather="server" class="w-3.5 h-3.5"></i></div>
@@ -1057,7 +1061,7 @@
           </div>
 
           <!-- Card 6: Live Bandwidth / Traffic -->
-          <div class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden flex flex-col">
+          <div data-dash-card="traffic" class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden flex flex-col">
             <div class="flex items-center justify-between mb-1 sm:mb-2">
               <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Live Traffic</span>
               <div class="p-1 sm:p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400"><i data-feather="activity" class="w-3.5 h-3.5"></i></div>
@@ -1082,10 +1086,10 @@
              to show ten-plus resolvers without an inner scrollbar; the chart and the
              latency panel share the left two columns. On mobile the grid collapses to
              one column and stacks in source order: chart, racers, latency. -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6" data-dash-grid="main">
           
           <!-- Chart Column (2/3 width) -->
-          <div class="glass-panel panel-card p-5 sm:p-6 lg:col-span-2">
+          <div data-dash-card="chart" class="glass-panel panel-card p-5 sm:p-6 lg:col-span-2">
             <div class="flex items-center justify-between mb-4">
               <div>
                 <h3 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2 font-heading">
@@ -1112,7 +1116,7 @@
                latency panel (~184px) stacked to its left, the racer has roughly 540px —
                ten-plus rows at ~36px each, with the footer pinned to the bottom and no
                inner scrollbar until the list grows past that. -->
-          <div class="glass-panel panel-card p-5 sm:p-6 flex flex-col upstream-col">
+          <div data-dash-card="upstream" class="glass-panel panel-card p-5 sm:p-6 flex flex-col upstream-col">
             <div class="flex items-center justify-between mb-3 shrink-0">
               <h3 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2 font-heading">
                 <i data-feather="radio" class="w-4 h-4 text-emerald-400"></i> Upstream Resolvers
@@ -1193,7 +1197,7 @@
                slow the upstreams get. The large row is cache misses only — the queries
                that actually did resolution work, and the ones a download or update stalls on.
                The footer covers every query. -->
-          <div class="glass-panel panel-card p-4 sm:p-5 lg:col-span-2">
+          <div data-dash-card="latency" class="glass-panel panel-card p-4 sm:p-5 lg:col-span-2">
             <div class="flex items-center justify-between mb-3 sm:mb-4 gap-3">
               <div class="min-w-0">
                 <h3 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2 font-heading">
@@ -1263,9 +1267,10 @@
               placeholder="Name (e.g. BBC iPlayer)"
               class="panel-field panel-field-sm w-full" aria-label="Service name">
             <input id="service-icon" type="text" autocomplete="off" spellcheck="false"
-              placeholder="Icon URL or domain (optional)"
-              class="panel-field panel-field-sm w-full font-mono" aria-label="Service icon URL or domain">
-            <p class="text-[10px] text-slate-500">A domain fetches its favicon; a URL uses that image.</p>
+              placeholder="Icon URL, domain, or a word like “tv”"
+              class="panel-field panel-field-sm w-full font-mono" aria-label="Service icon URL, domain or search word">
+            <div id="service-icon-results" class="service-icon-results hidden" aria-live="polite"></div>
+            <p class="text-[10px] text-slate-500">A domain fetches its favicon; a URL uses that image; a word searches the icon library.</p>
             <div class="flex gap-2">
               <button id="save-service-btn" type="button" class="panel-btn panel-btn-sm panel-btn-primary flex-1">Add</button>
               <button id="cancel-service-btn" type="button" class="panel-btn panel-btn-sm panel-btn-neutral">Cancel</button>
@@ -1325,7 +1330,7 @@
             <label class="flex shrink-0 items-center gap-1.5 text-[11px] text-slate-400">
               Sort
               <select id="proxied-sort" aria-label="Sort proxied domains"
-                class="bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
+                class="proxied-sort-select bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
                 <option value="added-desc">Added (newest)</option>
                 <option value="added-asc">Added (oldest)</option>
                 <option value="az">Name A–Z</option>
@@ -1333,8 +1338,6 @@
                 <option value="status">Status (on first)</option>
               </select>
             </label>
-            <span id="proxied-count" class="shrink-0 text-[11px] text-slate-500"></span>
-
             <!-- Filters the table as it is typed, the same interaction and logic as the
                  live log's search: a case-insensitive substring of the domain, applied
                  on every keystroke. Deliberately no suggestion dropdown here — the live
@@ -1351,28 +1354,42 @@
               <i data-feather="search" class="field-icon w-3.5 h-3.5 text-slate-500"></i>
             </div>
 
-            <!-- Bulk actions over the selected rows. The buttons carry .proxied-bulk-btn
-                 so their disabled state is styled in style.css rather than with utility
-                 classes the purged sheet would have to be regenerated to contain. They
-                 are enabled by updateProxiedBulkBar as the selection changes. -->
-            <div class="proxied-bulk-bar flex flex-wrap items-center justify-end gap-2">
-              <span id="proxied-selected-count" class="text-[11px] text-slate-500">No domains selected</span>
-              <button type="button" id="proxied-bulk-pause"
-                class="proxied-bulk-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">Pause Selected</button>
-              <button type="button" id="proxied-bulk-resume"
-                class="proxied-bulk-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition">Resume Selected</button>
-              <button type="button" id="proxied-bulk-remove"
-                class="proxied-bulk-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-red-500/10 text-red-400 border border-red-500/30 text-[11px] font-semibold transition">Remove Selected</button>
+            <!-- Bulk actions live in the same row as sort/search: the row is
+                 wide enough once the search is fixed-width, and one toolbar is
+                 easier to scan than two stacked command rows. The buttons carry
+                 .proxied-bulk-btn so their disabled state is styled in style.css. -->
+            <span id="proxied-selected-count" class="shrink-0 whitespace-nowrap text-[11px] text-slate-500">No domains selected</span>
+            <div class="proxied-bulk-service-wrap">
+              <button type="button" id="proxied-bulk-service" class="proxied-bulk-service"
+                aria-haspopup="listbox" aria-expanded="false" disabled>
+                <i data-feather="globe" class="w-3.5 h-3.5"></i>
+                <span>Assign service</span>
+                <i data-feather="chevron-down" class="w-3.5 h-3.5"></i>
+              </button>
+              <div id="proxied-bulk-service-menu" class="proxied-bulk-menu hidden"
+                role="listbox" aria-label="Assign a service to the selected domains"></div>
             </div>
+            <button type="button" id="proxied-bulk-pause"
+              title="Pause selected domains"
+              class="proxied-bulk-btn inline-flex shrink-0 items-center gap-1.5 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">Pause</button>
+            <button type="button" id="proxied-bulk-resume"
+              title="Resume selected domains"
+              class="proxied-bulk-btn inline-flex shrink-0 items-center gap-1.5 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition">Resume</button>
+            <button type="button" id="proxied-bulk-remove"
+              title="Remove selected domains"
+              class="proxied-bulk-btn inline-flex shrink-0 items-center gap-1.5 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-red-500/10 text-red-400 border border-red-500/30 text-[11px] font-semibold transition">Remove</button>
           </div>
 
           <!-- Status filter. The four chips mirror the Android Domains page: no
                separate All chip; tapping the active chip clears the filter. -->
-          <div id="domain-filters" class="flex flex-wrap items-center gap-2" role="group" aria-label="Filter domains by status">
-            <button type="button" class="domain-filter-chip" data-status="proxy" aria-pressed="false">Proxy</button>
-            <button type="button" class="domain-filter-chip" data-status="blocked" aria-pressed="false">Blocked</button>
-            <button type="button" class="domain-filter-chip" data-status="paused" aria-pressed="false">Paused</button>
-            <button type="button" class="domain-filter-chip" data-status="direct" aria-pressed="false">Direct</button>
+          <div class="domain-filter-row">
+            <div id="domain-filters" class="flex flex-wrap items-center gap-2" role="group" aria-label="Filter domains by status">
+              <button type="button" class="domain-filter-chip" data-status="proxy" aria-pressed="false">Proxy</button>
+              <button type="button" class="domain-filter-chip" data-status="blocked" aria-pressed="false">Blocked</button>
+              <button type="button" class="domain-filter-chip" data-status="paused" aria-pressed="false">Paused</button>
+              <button type="button" class="domain-filter-chip" data-status="direct" aria-pressed="false">Direct</button>
+            </div>
+            <span id="proxied-count" class="proxied-count shrink-0 text-[11px] text-slate-500"></span>
           </div>
 
           <!-- The scroll region and its sentinel. renderProxiedList rewrites
@@ -1840,7 +1857,7 @@ async function onBuySubscription(ctx, username) {
           </div>
         </div>
 
-        <!-- v2.1 Phase 6: two-factor authentication. The secret is shown exactly
+        <!-- Two-factor authentication. The secret is shown exactly
              once, at enrollment; after that the server never returns it and the
              page never asks for it. -->
         <div class="glass-panel panel-card p-5 sm:p-6 space-y-4" id="twofa-card">
@@ -1914,7 +1931,7 @@ async function onBuySubscription(ctx, username) {
           </div>
         </div>
 
-        <!-- v2.1: hidden admin namespace. The path is a locator, not a credential,
+        <!-- Hidden admin namespace. The path is a locator, not a credential,
              but the operator must be able to see and (deliberately) rotate it —
              regeneration kills every session and every bookmark at once. -->
         <div class="glass-panel panel-card p-5 sm:p-6">
@@ -1942,7 +1959,7 @@ async function onBuySubscription(ctx, username) {
           </p>
         </div>
 
-        <!-- v2.1: subscription surface settings (3x-ui style, third tab group). -->
+        <!-- Subscription surface settings (3x-ui style, third tab group). -->
         <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
           <div class="flex items-center gap-3">
             <div class="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
@@ -1970,7 +1987,7 @@ async function onBuySubscription(ctx, username) {
               class="panel-field font-mono focus:border-emerald-400">
           </div>
 
-          <!-- Custom portal CSS (v2.4): inline text, a server-local file, or an
+          <!-- Custom portal CSS: inline text, a server-local file, or an
                online URL the subscriber's browser loads. Only the field for the
                selected source is shown. -->
           <div class="space-y-2 border-t border-slate-800 pt-4">
@@ -1990,7 +2007,7 @@ async function onBuySubscription(ctx, username) {
             <p class="text-[10px] text-slate-500">A local file is read from the server's disk and inlined; a URL is loaded by the subscriber's browser. Inline and local CSS are sanitised (no <code>@import</code> or external <code>url()</code>).</p>
           </div>
 
-          <!-- Automatic SSL for the subscription domain (v2.2.0). The
+          <!-- Automatic SSL for the subscription domain. The
                certificate comes from the daemon's built-in ACME client; the
                domain is applied to the record, the links and the listener
                only after the certificate exists, so the portal can never end
@@ -2062,7 +2079,7 @@ async function onBuySubscription(ctx, username) {
           </div>
         </div>
 
-        <!-- SSL / TLS Manager for DoH, DoT (Android Private DNS) (v2.2.0 renamed).
+        <!-- SSL / TLS Manager for DoH, DoT (Android Private DNS).
              Two domains live here, ordered to match the section's name: the
              DoH/DoT domain comes FIRST (it is what the title promises — the
              name subscribers type into Android's Private DNS field), and the
@@ -2203,7 +2220,7 @@ async function onBuySubscription(ctx, username) {
             </button>
           </div>
 
-          <!-- Named custom policy groups (v2.3): operator-defined bundles of
+          <!-- Named custom policy groups: operator-defined bundles of
                domains with one action, toggled as a unit and selectable later.
                Sits inside the same 2-column grid as the panels above, so it
                fills the row beside Custom Static Records instead of spanning
@@ -2246,7 +2263,7 @@ async function onBuySubscription(ctx, username) {
               <label class="flex items-center gap-2 text-xs text-slate-300">
                 <input type="checkbox" id="custom-group-enabled" checked class="accent-violet-500"> Enabled
               </label>
-              <!-- Group icon (v2.7): one SVG or PNG per group, validated and stored
+              <!-- Group icon: one SVG or PNG per group, validated and stored
                    server-side. The Feather placeholder shows until a real icon loads. -->
               <div class="flex items-center gap-3">
                 <span id="custom-group-icon-preview" class="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0">
@@ -2396,6 +2413,10 @@ async function onBuySubscription(ctx, username) {
             </div>
 
           </div>
+          <p class="text-[10px] text-slate-500 mt-4">
+            Service icon search is powered by Iconify. Twemoji graphics © Twitter,
+            Inc. and contributors, licensed CC BY 4.0.
+          </p>
         </div>
       </section>
 
@@ -2437,10 +2458,18 @@ async function onBuySubscription(ctx, username) {
 
     <!-- MOBILE STICKY BOTTOM NAVIGATION BAR -->
     <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800 px-1 py-1 flex items-stretch justify-around">
-      <button class="mobile-nav-item active" data-tab="dashboard" data-route="/home">
-        <i data-feather="activity" class="w-4 h-4"></i>
-        <span>Dashboard</span>
-      </button>
+      <div class="mobile-nav-slot">
+        <button class="mobile-nav-item active" data-tab="dashboard" data-route="/home">
+          <i data-feather="activity" class="w-4 h-4"></i>
+          <span>Dashboard</span>
+        </button>
+        <!-- The sidebar is hidden on phones, so the same toggle rides on the
+             Dashboard tab. Long-press still moves a card once editing. -->
+        <button id="dash-edit-btn-mobile" type="button" class="mobile-dash-edit dash-edit-toggle"
+          title="Edit dashboard layout" aria-label="Edit dashboard layout" aria-pressed="false">
+          <i data-feather="edit-2" class="w-3 h-3"></i>
+        </button>
+      </div>
       <button class="mobile-nav-item" data-tab="proxied" data-route="/proxied">
         <i data-feather="shield" class="w-4 h-4"></i>
         <span>Domains</span>
@@ -2470,13 +2499,20 @@ async function onBuySubscription(ctx, username) {
 
   </div>
 
+  <!-- Shared service picker for the per-domain SERVICE column. A native
+       <select> cannot render favicons, and a menu inside the table would be
+       clipped by the table's scroll container, so this one lives at body level
+       and is positioned over the row that opened it. -->
+  <div id="service-picker-menu" class="proxied-bulk-menu service-picker-popup hidden"
+    role="listbox" aria-label="Assign a service to this domain"></div>
+
   <!-- Custom JavaScript -->
   <script src="/js/app.js"></script>
   <!-- Loaded after app.js on purpose: i18n.js redraws the icons it swaps through
        window.safeFeatherReplace, which app.js defines, and its init() runs on
        DOMContentLoaded — after both files have been evaluated either way. -->
   <script src="/js/i18n.js"></script>
-  <!-- The v2.1 settings panels are ES modules: deferred, strict, and able to
+  <!-- The settings panels are ES modules: deferred, strict, and able to
        read the app.js bridge (window.__hdns) at call time. -->
   <script type="module" src="/js/modules/twofa.js"></script>
 </body>

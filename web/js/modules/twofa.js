@@ -1,4 +1,4 @@
-// Two-factor authentication panel (v2.1) — extracted from app.js as the first
+// Two-factor authentication panel — extracted from app.js as the first
 // ES module of the dashboard (rework Phase 4). Loaded with
 // <script type="module"> after app.js, which stays classic so its pre-paint
 // dependencies keep working. The module reads the shared state it needs off
@@ -22,7 +22,7 @@
   const errorMessage = (r, f) => S().errorMessage(r, f);
 
 // =======================================================
-// v2.1 TWO-FACTOR AUTHENTICATION (settings tab)
+// TWO-FACTOR AUTHENTICATION (settings tab)
 // =======================================================
 
 function initTwoFactorControls() {
@@ -125,7 +125,6 @@ function initTwoFactorControls() {
           return;
         }
         showToast('Two-factor enabled. Please sign in again.', 'success');
-        localStorage.removeItem('hyperdns_token');
         setAuthToken('');
         window.location.reload();
       } catch (err) {
@@ -156,7 +155,6 @@ function initTwoFactorControls() {
           return;
         }
         showToast('Two-factor disabled. Please sign in again.', 'success');
-        localStorage.removeItem('hyperdns_token');
         setAuthToken('');
         window.location.reload();
       } catch (err) {
@@ -169,7 +167,7 @@ function initTwoFactorControls() {
 }
 
 // =======================================================
-// v2.1 SUBSCRIPTION SETTINGS (settings tab, third group)
+// SUBSCRIPTION SETTINGS (settings tab, third group)
 // =======================================================
 
 function initSubscriptionSettings() {

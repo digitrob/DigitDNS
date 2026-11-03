@@ -161,17 +161,17 @@ func TestInlineScriptBlocksAreAccountedFor(t *testing.T) {
 
 			"one is truly necessary, account for it here by name.", inline)
 	}
-	if !strings.Contains(html, "hyperdns_theme") {
+	if !strings.Contains(html, "digitdns_theme") {
 		t.Errorf("no inline script contains %q — the pre-paint restore is gone or changed "+
 
-			"shape; update this test to say what is there now.", "hyperdns_theme")
+			"shape; update this test to say what is there now.", "digitdns_theme")
 	}
 
 	// The restore has to run before any external script: behind them it still sets
 	// the attribute, but a paint can already have happened by then, which is the
 	// flash it exists to prevent. The comparison is against the first <script src=>
 	// tag — the restore's own opening tag necessarily precedes the string inside it.
-	if restore, firstExternal := strings.Index(html, "hyperdns_theme"), strings.Index(html, `<script src=`); restore > firstExternal {
+	if restore, firstExternal := strings.Index(html, "digitdns_theme"), strings.Index(html, `<script src=`); restore > firstExternal {
 		t.Error("the pre-paint theme restore is no longer the first script in the document, so the panel can " +
 
 			"paint in the wrong theme before the restore runs — put it back at the top of <head>.")

@@ -162,6 +162,8 @@ data class RulesUiState(
     val filter: DomainFilter? = null,
     /** The service the list is narrowed to: null = every service, [NO_SERVICE] = unlabelled. */
     val serviceFilter: String? = null,
+    /** Domains ticked for a bulk action. Empty means no selection. */
+    val selectedDomains: Set<String> = emptySet(),
     val isLoading: Boolean = false,
     /** True only for a pull-to-refresh gesture, so the header Reload button never spins the indicator. */
     val isRefreshing: Boolean = false,
@@ -299,6 +301,13 @@ data class RulesUiState(
 
     /** A service's display name, falling back to its id if the two ever disagree. */
     fun serviceName(id: String): String = lists.services[id] ?: id
+
+    /** Drop ticks that the current search/filter/service view no longer shows. */
+    fun withVisibleSelection(): RulesUiState {
+        if (selectedDomains.isEmpty()) return this
+        val visible = rows.map { row -> row.domain }.toSet()
+        return copy(selectedDomains = selectedDomains intersect visible)
+    }
 }
 
 /**
@@ -411,7 +420,14 @@ class RulesViewModel @Inject constructor(
             _state.update { it.copy(isLoading = true, isRefreshing = pull, error = null) }
             try {
                 val lists = repository.load()
-                _state.update { it.copy(lists = lists, isLoading = false, isRefreshing = false) }
+                _state.update {
+                    it.copy(
+                        lists = lists,
+                        isLoading = false,
+                        isRefreshing = false,
+                        selectedDomains = it.selectedDomains.intersect(lists.managedPatterns),
+                    )
+                }
                 // The override dialog's upstream picker is only as fresh as this
                 // snapshot; a resolver added on the dashboard enables new choices.
                 loadResolution()
@@ -425,16 +441,18 @@ class RulesViewModel @Inject constructor(
         }
     }
 
-    fun setSearch(value: String) = _state.update { it.copy(search = value) }
+    fun setSearch(value: String) = _state.update { it.copy(search = value).withVisibleSelection() }
     fun setSort(value: DomainSort) = _state.update { it.copy(sort = value) }
 
     /** Toggle a status chip: tapping the active chip clears it (show all statuses). */
     fun setFilter(value: DomainFilter) = _state.update {
-        it.copy(filter = if (it.filter == value) null else value)
+        it.copy(filter = if (it.filter == value) null else value).withVisibleSelection()
     }
 
     /** Narrow the list to one service. Null shows every service, [NO_SERVICE] the unlabelled. */
-    fun setServiceFilter(value: String?) = _state.update { it.copy(serviceFilter = value) }
+    fun setServiceFilter(value: String?) = _state.update {
+        it.copy(serviceFilter = value).withVisibleSelection()
+    }
 
     /**
      * Put [domain] in [id], or clear its label when [id] is blank. This writes only
@@ -507,6 +525,52 @@ class RulesViewModel @Inject constructor(
     }
 
     fun dismissMessage() = _state.update { it.copy(savedMessage = null) }
+
+    /** Tick or untick one row. Long-press and, while selecting, a row tap call this. */
+    fun toggleSelection(domain: String) = _state.update {
+        val next = if (domain in it.selectedDomains) it.selectedDomains - domain else it.selectedDomains + domain
+        it.copy(selectedDomains = next)
+    }
+
+    /**
+     * The select-all checkbox: tick every visible row, or clear the visible ones
+     * when they are all already ticked. Hidden rows are left alone.
+     */
+    fun toggleSelectAllVisible() = _state.update {
+        val visible = it.rows.map { row -> row.domain }.toSet()
+        val allSelected = visible.isNotEmpty() && visible.all { domain -> domain in it.selectedDomains }
+        it.copy(
+            selectedDomains = if (allSelected) {
+                it.selectedDomains - visible
+            } else {
+                it.selectedDomains + visible
+            },
+        )
+    }
+
+    fun clearSelection() = _state.update { it.copy(selectedDomains = emptySet()) }
+
+    /**
+     * Label every selected domain in one save. An empty [id] clears the label;
+     * routing is never touched. The selection is cleared afterwards.
+     */
+    fun assignServiceToMany(domains: Set<String>, id: String) {
+        if (domains.isEmpty()) return
+        viewModelScope.launch {
+            val lists = _state.value.lists
+            val links = lists.domainServices.toMutableMap()
+            for (domain in domains) {
+                val key = domain.normalizedDomain()
+                if (id.isEmpty()) links.remove(key) else links[key] = id
+            }
+            val name = if (id.isEmpty()) "No service" else lists.services[id] ?: id
+            write(
+                lists.copy(domainServices = links),
+                "Assigned ${domains.size} domain(s) to $name.",
+            )
+            _state.update { it.copy(selectedDomains = emptySet()) }
+        }
+    }
 
     /** Add a proxied domain (bulk paste: one or more names, any separators). */
     fun addDomain(raw: String) {
@@ -642,7 +706,16 @@ class RulesViewModel @Inject constructor(
     }
 
     private suspend fun write(next: RuleLists, message: String? = null) {
-        _state.update { it.copy(lists = next, isSaving = true, error = null) }
+        _state.update {
+            it.copy(
+                lists = next,
+                isSaving = true,
+                error = null,
+                // A removal can take a ticked row away; keep the selection honest
+                // before the save returns.
+                selectedDomains = it.selectedDomains intersect next.managedPatterns,
+            )
+        }
         try {
             val ok = repository.save(next)
             _state.update {

@@ -503,6 +503,11 @@ body::after {
 /* html carries the base colour so there is never a flash of transparent before
    the fixed wash layer paints (and it covers the area under a short page). */
 html {
+  /* The dashboard scrolls on the document. Reserving the gutter means a page
+     that grows past the viewport does not shift everything left by the width
+     of a scrollbar, which read as the whole UI sliding at the top. */
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
   background-color: var(--bg-main);
 }
 
@@ -1015,6 +1020,12 @@ input:checked + .slider:before {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* The table has a minimum width; scroll it rather than squeezing the domain
+     column when the panel is narrow. */
+  overflow-x: auto;
+  /* Reaching the end of the domain list must not start scrolling the page
+     underneath it; the controls above stay put. */
+  overscroll-behavior: contain;
 }
 
 /* The Proxied page fills the viewport the same way the live log does: #main-content
@@ -1086,16 +1097,27 @@ input:checked + .slider:before {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.375rem;
 }
+/* A narrow, fixed sort control: "Added (newest)" still fits, but it no longer
+   pushes the search and bulk buttons onto a second line. */
+.proxied-sort-select { width: 8rem; }
+/* The bulk buttons are compact so the whole toolbar fits one row on a desktop. */
+.proxied-controls .proxied-bulk-btn { padding: 0.375rem 0.5rem; }
 .proxied-search-box {
   position: relative;
-  /* A zero basis, not 12rem: with flex-wrap the browser breaks lines using each
-   * item's *base* size, so a 12rem basis moved the bulk buttons onto their own
-   * line even where the three groups would have fitted after shrinking. The
-   * min-width is the floor that actually decides when the row must wrap. */
-  flex: 1 1 0;
-  min-width: 8rem;
+  /* Take the row's leftover width, so the toolbar ends at the panel edge
+     instead of leaving a blank pocket after Remove. The count slot below is
+     fixed-width, which keeps the search from resizing when "No domains
+     selected" becomes "1 selected". 10rem is the floor before wrapping. */
+  flex: 1 1 12.5rem;
+  width: auto;
+  max-width: none;
+  min-width: 10rem;
+}
+#proxied-selected-count {
+  min-width: 7rem;
+  white-space: nowrap;
 }
 .proxied-bulk-bar {
   min-height: 1.75rem;
@@ -1105,6 +1127,12 @@ input:checked + .slider:before {
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* Below this the SERVICE/ACTIONS columns would eat the domain column: with
+   table-layout:fixed the auto column collapses to a few pixels and the DOMAIN
+   and SERVICE headers overlap. A minimum width makes the scroll container do
+   the work instead of destroying the table. */
+.proxied-table { min-width: 700px; }
+
 .proxied-col-check { width: 2.5rem; }
 /* Fixed compact widths on the right-side columns; the DOMAIN column carries no
  * width, so it absorbs all remaining space and the other columns stay pushed
@@ -1919,10 +1947,27 @@ input:checked + .slider:before {
   gap: 1rem;
   align-items: start;
 }
-@media (min-width: 1024px) {
+/* Two columns only once there is room for the domains table beside them.
+   Between 1024 and 1279 a laptop cannot fit the sidebar, a services column and
+   the fixed ACTION/SERVICE columns; stacking the Services card above the table
+   is better than a table that scrolls its actions off-screen. */
+@media (min-width: 1280px) and (max-width: 1439px) {
+  .services-layout {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+  .services-aside {
+    position: sticky;
+    top: 1rem;
+  }
+  /* Give the domain column room on this narrower band. */
+  .proxied-col-service { width: 8rem; }
+  .proxied-col-actions { width: 14rem; }
+  .proxied-table { min-width: 0; }
+}
+@media (min-width: 1440px) {
   .services-layout {
     /* The services column grows with the viewport instead of staying at one
-       fixed width: 220px at 1024, 20vw through the middle, capped at 340px so
+       fixed width: 220px at 1440, 20vw through the middle, capped at 340px so
        it never crowds the domain table on an ultrawide display. */
     grid-template-columns: clamp(220px, 20vw, 340px) minmax(0, 1fr);
   }
@@ -2004,6 +2049,11 @@ input:checked + .slider:before {
 /* Column boundaries in the header only. The body stays quiet: a full grid of
    rules competes with the data, but the header needs to say where one column
    ends and the next begins. */
+/* The header is sticky inside the scrolling table; the utility sheet gives it
+   an 80% background, which lets the rows show through once they slide under it.
+   The table scope and the solid colour keep it readable. */
+.proxied-table thead { background: rgb(var(--c-slate-950)); }
+
 .proxied-table thead th + th {
   border-left: 1px solid rgba(148, 163, 184, 0.18);
 }
@@ -2021,3 +2071,258 @@ input:checked + .slider:before {
 }
 .service-row.is-active .service-count { color: var(--accent-cyan); }
 
+
+/* Icon-library suggestions under the service icon field. A grid of preview
+   buttons; picking one fills the field with the icon's URL, so the stored value
+   is the same ordinary https icon the rest of the app already renders. */
+.service-icon-results {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 6px;
+}
+.service-icon-choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--c-slate-700));
+  background: rgb(var(--c-slate-950));
+}
+.service-icon-choice:hover {
+  border-color: var(--accent-cyan);
+  background: rgba(34, 211, 238, 0.08);
+}
+.service-icon-choice img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+/* The status filters and the result count share a row: chips on the left, count
+   pinned right. Wrapping keeps the count from shoving the chips off a narrow
+   screen. */
+.domain-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.domain-filter-row #domain-filters { flex: 1 1 auto; }
+.domain-filter-row .proxied-count { margin-left: auto; }
+
+/* Bulk service assignment: a native select like the per-row one, sized for a
+   service name and disabled until something is selected. */
+.proxied-bulk-service-wrap { position: relative; }
+.proxied-bulk-service {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--c-slate-700));
+  background: rgb(var(--c-slate-950));
+  color: rgb(var(--c-slate-300));
+  font-family: var(--font-body);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.proxied-bulk-service:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.proxied-bulk-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 14rem;
+  max-height: 17rem;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, rgb(var(--c-slate-700)));
+  background: rgb(var(--c-slate-950));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.proxied-bulk-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: rgb(var(--c-slate-300));
+  font-family: var(--font-body);
+  font-size: 11px;
+  text-align: left;
+}
+.proxied-bulk-option:hover { background: rgba(148, 163, 184, 0.12); }
+.proxied-bulk-option.is-disabled { opacity: 0.55; cursor: default; }
+.proxied-bulk-option .service-mark svg { width: 16px; height: 16px; }
+
+/* The per-row SERVICE control: a button, because a native select cannot show
+   the service's favicon in its options. The menu is a body-level fixed popup
+   (see .service-picker-popup) so the table's scroll container cannot clip it. */
+.proxied-service-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--c-slate-700));
+  background: rgb(var(--c-slate-950));
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 11px;
+  text-align: left;
+}
+.proxied-service-trigger:hover { border-color: rgba(34, 211, 238, 0.5); }
+.proxied-service-trigger .service-mark {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 9px;
+}
+.proxied-service-trigger .service-mark svg { width: 14px; height: 14px; }
+.proxied-service-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.service-picker-popup {
+  position: fixed;
+  z-index: 60;
+}
+
+/* Dashboard layout editor. The pencil beside "Dashboard" enters edit mode; an
+   invisible cover over each card captures drag gestures (so a button inside the
+   card cannot fire mid-edit), and a corner grip resizes it. */
+.dash-hint {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* The Dashboard nav row hosts the editor toggle as a sibling so the nav button
+   keeps its own click target. */
+.sidebar-nav-row {
+  position: relative;
+}
+.sidebar-nav-row .sidebar-nav-item {
+  padding-inline-end: 46px;
+}
+.dash-edit-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.sidebar-edit-btn {
+  position: absolute;
+  inset-inline-end: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.dash-edit-toggle:hover {
+  color: var(--accent-cyan);
+  background: rgb(var(--c-cyan-400) / 0.12);
+  border-color: rgb(var(--c-cyan-400) / 0.3);
+}
+/* While editing, the pencil is struck through: the same control now leaves the
+   mode instead of entering it. */
+.dash-edit-toggle.is-editing {
+  color: var(--accent-amber);
+  background: rgb(245 158 11 / 0.14);
+  border-color: rgb(245 158 11 / 0.35);
+}
+.dash-edit-toggle.is-editing::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 16%;
+  width: 1.5px;
+  height: 68%;
+  background: currentColor;
+  transform: translateX(-50%) rotate(45deg);
+  pointer-events: none;
+}
+
+/* Phones have no sidebar, so the same toggle is a small badge on the Dashboard
+   tab. The hit area stays 28px even though the icon is 12px. */
+.mobile-nav-slot {
+  position: relative;
+  display: flex;
+  flex: 1 1 0%;
+  min-width: 0;
+}
+.mobile-nav-slot .mobile-nav-item {
+  flex: 1 1 auto;
+}
+.mobile-dash-edit {
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  z-index: 1;
+}
+
+#tab-dashboard [data-dash-card] { position: relative; }
+#tab-dashboard.is-editing [data-dash-card] {
+  outline: 1px dashed rgba(34, 211, 238, 0.6);
+  outline-offset: -1px;
+}
+.dash-edit-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  cursor: grab;
+  touch-action: none;
+  border-radius: inherit;
+}
+.dash-edit-cover:active { cursor: grabbing; }
+.dash-dragging { opacity: 0.55; }
+.dash-resize {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  z-index: 40;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  border: 1px solid rgba(34, 211, 238, 0.55);
+  background: rgba(34, 211, 238, 0.16);
+  color: var(--accent-cyan);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.dash-resize::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+}
+@media (max-width: 1023px) {
+  .dash-resize { display: none; }
+}

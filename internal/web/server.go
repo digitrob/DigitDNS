@@ -769,6 +769,8 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/update/status", ws.requireAuth(ws.handleUpdateStatus))
 
 	// 6. Internal Dashboard Ajax APIs (all authenticated)
+	mux.HandleFunc("/api/icons/search", ws.requireAuth(ws.handleIconSearch))
+	mux.HandleFunc("/api/dashboard/layout", ws.requireAuth(ws.handleDashboardLayout))
 	mux.HandleFunc("/api/diagnostics/run", ws.requireAuth(ws.handleDiagnosticsRun))
 	mux.HandleFunc("/api/diagnostics/targets", ws.requireAuth(ws.handleDiagnosticsTargets))
 	mux.HandleFunc("/api/stats", ws.requireAuth(ws.handleStats))
@@ -1570,6 +1572,10 @@ func (ws *WebServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"version": version.Get(),
 		"access":  ws.loadAccessConfig(),
 		"rules":   ws.loadRulesConfig(),
+		// The dashboard arrangement is install-wide, not browser-local: an
+		// operator who rearranges the cards on one machine should see the same
+		// order on the next.
+		"dashboard_layout": ws.loadDashboardLayout(),
 		// The subscription record is display-only data (no secrets), so it can
 		// ride the same response the settings page already renders from.
 		"subscription": ws.subSettings.Snapshot(),
@@ -1743,6 +1749,18 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	customDirect = toStringSlice(persisted["custom_direct"])
 	if m, ok := persisted["custom_records"].(map[string]string); ok {
 		customRecords = m
+	}
+	// Services are labels, not routing lists, but a partial save must preserve
+	// them exactly like the other maps: without these three the next domain
+	// toggle would write empty service policies and silently delete every label.
+	if m, ok := persisted["services"].(map[string]string); ok {
+		services = m
+	}
+	if m, ok := persisted["domain_services"].(map[string]string); ok {
+		domainServices = m
+	}
+	if m, ok := persisted["service_icons"].(map[string]string); ok {
+		serviceIcons = m
 	}
 	customAdded := map[string]string{}
 	if m, ok := persisted["custom_domain_added"].(map[string]string); ok {

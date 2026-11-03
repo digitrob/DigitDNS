@@ -6,6 +6,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v3.8.0] — A dashboard you can rearrange, and services that stay out of the way
+
+This release is mostly about finding things. The dashboard can be rearranged to
+match the way you actually read it, and the Domains page gained a lightweight
+way to group names without adding another routing concept.
+
+### ✨ Added
+- **Dashboard layout editing.** A pencil sits beside **Dashboard** in the sidebar. Click it to enter edit mode, drag cards into a different order within their section, and pull the bottom-right grip to change width and height. Click the struck-through pencil to leave; the arrangement is saved on the server.
+- **The layout follows you.** The arrangement lives in the install's custom policy store as `dashboard_layout`, is returned by `/api/config`, and is written through `POST /api/dashboard/layout`. It is not tied to one browser's local storage.
+- **Mobile reordering.** On a phone, the sidebar is hidden, so the same toggle appears as a small pencil badge on the **Dashboard** tab. Long-press a card to pick it up and move it; sizes keep the normal stacked layout.
+- **Bulk service assignment.** Select any number of domains and use **Assign service** to label them in one go, or choose **No service** to clear the label. The menu uses the same favicons and letter marks as the Services panel.
+- **Icon search while creating a service.** Type a domain to use its favicon, paste an image URL, or search a word such as `tv`, `film` or `netflix`. The server proxies Iconify searches so the dashboard does not need to open its CSP to the icon host; colourful sets are ranked above monochrome ones, and monochrome icons are tinted to match the panel.
+- **Service filters on the domain table.** The Services sidebar is a real filter: click a service to see only its domains, click **No service** for the unlabelled ones, or click the active service again to clear the filter. The count updates with the search and status chips.
+
+### 🔄 Changed
+- **The Domains toolbar is one row.** Sort, search, selected count, **Assign service**, Pause, Resume and Remove now share the same row on a wide screen. The search field is fixed-width so the buttons do not get pushed around, and the row wraps cleanly on smaller screens.
+- **The Services panel stays put.** It scales with the viewport instead of sitting at a fixed 190 px, and it remains visible while a long domain list scrolls. The page uses the full width of a wide monitor.
+- **The domain list has its own scroll area.** The sticky header stays opaque, so rows no longer show through it, and the page itself does not keep growing as domains are added.
+- **Service icons fall back honestly.** A missing or broken icon becomes the same coloured letter mark the sidebar uses, instead of an empty image box.
+- **Android selection and services.** Long-press starts a selection, the selection bar carries Pause, Resume, Remove and **Assign service**, and the service filter and picker use the same labels and icons as the web panel. Chips stay on one row where the screen allows it.
+- **Legacy browser keys and strings are gone.** The panel no longer reads or writes `hyperdns_token` or `hyperdns_theme`, and the last inherited `HyperI18N` strings and old product-version comments were removed.
+
+### 🐛 Fixed
+- **A partial rules save no longer deletes service labels.** Toggling a domain (or saving one list) used to write empty `services`, `domain_services` and `service_icons` maps back to the database, so every label silently disappeared. Those maps are now loaded from the persisted rules before the partial save is applied, with a regression test covering the case.
+- **Icon search failures do not break the form.** An unavailable icon service leaves the text field usable and the service can still be saved without an icon.
+- **The dashboard chart resizes with its card.** Changing the chart card's span or height triggers the chart's own resize pass instead of leaving the canvas at its old size.
+
+### ⬆️ Upgrading
+
+No database migration and no configuration change. The dashboard layout is created the first time you press the pencil, leave edit mode and the save succeeds. Docker users can pull `ghcr.io/digitrob/digitdns:latest` or `3.8.0`; binary installs replace `digitdns` and restart the service. Android is version 3.8.0 (versionCode 380) and updates independently. Back up `data.db` and `master.key` before any upgrade.
+
+## 🏷️ [v3.7.1] — Use the whole window and keep Services in view
+
+### 🔄 Changed
+- **The Services column grows with the screen.** It now scales from 220 px to 340 px instead of staying at 190 px, and the page gutters are halved with the maximum width removed, so the Domains panels actually use a wide monitor.
+- **Services stays pinned while the domain list scrolls.** The app shell's `overflow-x-hidden` made the shell a vertical scroll container, so `position: sticky` resolved against it and the Services box scrolled away. `overflow-x: clip` hides horizontal overflow without creating a scroller.
+
+## 🏷️ [v3.7.0] — Services: names for domains, not another routing rule
+
+### ✨ Added
+- **Services on the web and Android.** A service is a label a domain can carry, stored as `services`, `domain_services` and `service_icons` beside the other rules. It is purely organisational: proxy, block and direct decisions are untouched.
+- **A Services panel and filter.** Create, rename and delete services; assign one from a row; filter the Domains table by service or by the absence of one.
+- **Icons without a separate icon account.** A bare domain uses its DuckDuckGo favicon, an image URL is used as-is, and an absent or broken image becomes a coloured letter mark.
+- **Android service picker.** The same data appears in the toolbar filter and on each domain row, with **Manage services…** available even when the list is empty.
+
+### 🐛 Fixed
+- **Service favicons render in the panel.** The dashboard CSP now permits the remote images the favicon URLs point at; without it every image was refused and every service fell back to a letter.
+
 ## 🏷️ [v3.6.1] — One login, honest numbers and a readable README
 
 A patch release for the things you notice every day: signing in once, seeing

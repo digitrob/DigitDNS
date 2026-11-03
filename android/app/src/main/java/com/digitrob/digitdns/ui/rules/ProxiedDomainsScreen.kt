@@ -2,14 +2,15 @@ package com.digitrob.digitdns.ui.rules
 
 import com.digitrob.digitdns.R
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -60,6 +62,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogWindowProvider
@@ -113,64 +117,38 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
     // a phone has no room for the panel's two-pane layout.
     var servicePickerDomain by remember { mutableStateOf<String?>(null) }
     var managingServices by remember { mutableStateOf(false) }
+    var bulkAssignOpen by remember { mutableStateOf(false) }
+    val selectedDomains = state.selectedDomains
+    BackHandler(enabled = selectedDomains.isNotEmpty()) { viewModel.clearSelection() }
 
     Scaffold(snackbarHost = { PanelSnackbarHost(snackbar) }, contentWindowInsets = WindowInsets(0)) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             DomainsHeader(viewModel::load)
 
-            PanelRefreshBox(
-                isRefreshing = state.isRefreshing,
-                onRefresh = viewModel::refresh,
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    // 8 dp keeps the rows related without the 12 dp band that used to
-                    // separate cards this short.
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    state.error?.let { message -> item { DomainErrorLine(message) } }
-
-                    item { AddRow(viewModel::addDomain) }
-                    item { SearchBulkRow(state, viewModel::setSearch, viewModel::addDomain) }
-                    item { ServicesSortRow(state, viewModel::setServiceFilter, viewModel::setSort) { managingServices = true } }
-                    item { FilterChips(state.filter, viewModel::setFilter) }
-
-                    if (state.rows.isEmpty() && !state.isLoading) {
-                        item {
-                            Text(
-                                text = emptyListText(state),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 24.dp),
-                            )
-                        }
-                    }
-
-                    items(state.rows, key = { "${it.status}:${it.domain}" }) { row ->
-                        DomainRowItem(
-                            row = row,
-                            onToggle = { viewModel.toggleDomain(row.domain, row.enabled) },
-                            onRemove = { viewModel.removeDomain(row.domain) },
-                            onAction = { action, targets -> viewModel.routeAction(action, targets, row.domain) },
-                            onScopeChange = { scope, previous -> viewModel.changeScope(row.domain, scope, previous) },
-                            patterns = state.lists.managedPatterns,
-                            hasResolution = state.resolution?.profiles?.containsKey(row.domain) == true,
-                            onResolution = { viewModel.loadResolution(); resolutionDomain = row.domain },
-                            serviceLabel = row.serviceId.takeIf { it.isNotEmpty() }?.let(state::serviceName),
-                            onService = { servicePickerDomain = row.domain },
-                        )
-                    }
-
-                    item { PinnedRecordsCard(state.lists.records, viewModel::addRecord, viewModel::removeRecord) }
-
-                    item { Spacer(Modifier.height(16.dp)) }
-                }
-            }
+            DomainsList(
+                state = state,
+                viewModel = viewModel,
+                selectedDomains = selectedDomains,
+                onOpenResolution = { resolutionDomain = it },
+                onOpenService = { servicePickerDomain = it },
+                onOpenBulkAssign = { bulkAssignOpen = true },
+                onOpenManageServices = { managingServices = true },
+            )
         }
     }
 
     ResolutionHost(resolutionDomain, state, viewModel) { resolutionDomain = null }
+
+    BulkAssignHost(
+        open = bulkAssignOpen,
+        domains = selectedDomains,
+        state = state,
+        onApply = { id ->
+            viewModel.assignServiceToMany(selectedDomains, id)
+            bulkAssignOpen = false
+        },
+        onDismiss = { bulkAssignOpen = false },
+    )
 
     ServicePickerHost(
         domain = servicePickerDomain,
@@ -188,6 +166,90 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
         },
     )
 }
+
+
+@Composable
+@Suppress("LongParameterList")
+private fun DomainsList(
+    state: RulesUiState,
+    viewModel: RulesViewModel,
+    selectedDomains: Set<String>,
+    onOpenResolution: (String) -> Unit,
+    onOpenService: (String) -> Unit,
+    onOpenBulkAssign: () -> Unit,
+    onOpenManageServices: () -> Unit,
+) {
+        PanelRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                // 8 dp keeps the rows related without the 12 dp band that used to
+                // separate cards this short.
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                state.error?.let { message -> item { DomainErrorLine(message) } }
+
+                item { AddRow(viewModel::addDomain) }
+                item { SearchBulkRow(state, viewModel::setSearch, viewModel::addDomain) }
+                item {
+                    ServicesSortRow(
+                        state = state,
+                        onServiceFilter = viewModel::setServiceFilter,
+                        onSort = viewModel::setSort,
+                        selectedCount = selectedDomains.size,
+                        onAssignSelected = { onOpenBulkAssign() },
+                        onClearSelection = viewModel::clearSelection,
+                        onManageServices = { onOpenManageServices() },
+                    )
+                }
+                item {
+                    FilterChips(
+                        selected = state.filter,
+                        onSelect = viewModel::setFilter,
+                        allSelected = state.rows.isNotEmpty() &&
+                            state.rows.all { row -> row.domain in selectedDomains },
+                        onToggleAll = viewModel::toggleSelectAllVisible,
+                    )
+                }
+
+                if (state.rows.isEmpty() && !state.isLoading) {
+                    item {
+                        Text(
+                            text = emptyListText(state),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 24.dp),
+                        )
+                    }
+                }
+
+                items(state.rows, key = { "${it.status}:${it.domain}" }) { row ->
+                    DomainRowItem(
+                        row = row,
+                        onToggle = { viewModel.toggleDomain(row.domain, row.enabled) },
+                        onRemove = { viewModel.removeDomain(row.domain) },
+                        onAction = { action, targets -> viewModel.routeAction(action, targets, row.domain) },
+                        onScopeChange = { scope, previous -> viewModel.changeScope(row.domain, scope, previous) },
+                        patterns = state.lists.managedPatterns,
+                        hasResolution = state.resolution?.profiles?.containsKey(row.domain) == true,
+                        onResolution = { viewModel.loadResolution(); onOpenResolution(row.domain) },
+                        serviceLabel = row.serviceId.takeIf { it.isNotEmpty() }?.let(state::serviceName),
+                        onService = { onOpenService(row.domain) },
+                        selected = row.domain in selectedDomains,
+                        selectionMode = selectedDomains.isNotEmpty(),
+                        onLongSelect = { viewModel.toggleSelection(row.domain) },
+                        onToggleSelect = { viewModel.toggleSelection(row.domain) },
+                    )
+                }
+
+                item { PinnedRecordsCard(state.lists.records, viewModel::addRecord, viewModel::removeRecord) }
+
+                item { Spacer(Modifier.height(16.dp)) }
+            }
+        }}
 
 @Composable
 private fun SavedMessageToast(
@@ -688,6 +750,9 @@ private fun ServicesSortRow(
     state: RulesUiState,
     onServiceFilter: (String?) -> Unit,
     onSort: (DomainSort) -> Unit,
+    selectedCount: Int,
+    onAssignSelected: () -> Unit,
+    onClearSelection: () -> Unit,
     onManageServices: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -708,12 +773,34 @@ private fun ServicesSortRow(
             }
             SortDropdown(state.sort, onSort)
         }
-        // Directly above the status chips it describes.
-        Text(
-            text = countText(state),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        // One line either way: the result count normally, the bulk controls while
+        // a selection exists, so the list below never jumps.
+        if (selectedCount > 0) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.domains_selected_count, selectedCount),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onAssignSelected) {
+                    Text(stringResource(R.string.domains_assign_service))
+                }
+                TextButton(onClick = onClearSelection) {
+                    Text(stringResource(R.string.action_clear))
+                }
+            }
+        } else {
+            Text(
+                text = countText(state),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -761,62 +848,49 @@ private fun countText(state: RulesUiState): String {
 }
 
 /** Bulk import and the sort selector share a width so the two row-ends align. */
-private val CompactActionWidth = 150.dp
+internal val CompactActionWidth = 150.dp
 
-/** The sort selector as a dropdown button, placed to the right of the search field. */
 @Composable
-private fun SortDropdown(selected: DomainSort, onSelect: (DomainSort) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        // Same width as Bulk import so the two row-ends line up; the custom padding
-        // is what lets "Added (newest)" fit at that width without clipping.
-        OutlinedButton(
-            onClick = { expanded = true },
-            modifier = Modifier.width(CompactActionWidth),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+private fun FilterChips(
+    selected: DomainFilter?,
+    onSelect: (DomainFilter) -> Unit,
+    allSelected: Boolean,
+    onToggleAll: () -> Unit,
+) {
+    // One row, never wrapping: the tick claims the left edge and the four chips
+    // share the rest. A FlowRow wrapped to a second line on a 360 dp phone, which
+    // pushed the chip band under the list. 36 dp is enough for the four labels;
+    // the checkbox keeps its accessibility label without a visible "All" word.
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        val selectAllLabel = stringResource(R.string.domains_select_all)
+        Checkbox(
+            checked = allSelected,
+            onCheckedChange = { onToggleAll() },
+            modifier = Modifier
+                .size(36.dp)
+                .semantics { contentDescription = selectAllLabel },
+        )
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         ) {
-            Text(stringResource(selected.labelRes), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.domains_sort))
-        }
-        DigitDnsDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DomainSort.entries.forEach { sort ->
-                DropdownMenuItem(
-                    text = { Text(stringResource(sort.labelRes)) },
-                    trailingIcon = {
-                        if (sort == selected) {
-                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        }
-                    },
-                    onClick = {
-                        expanded = false
-                        onSelect(sort)
-                    },
+            DomainFilter.entries.forEach { filter ->
+                FilterChip(
+                    selected = filter == selected,
+                    onClick = { onSelect(filter) },
+                    label = { Text(stringResource(filter.labelRes)) },
                 )
             }
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun FilterChips(selected: DomainFilter?, onSelect: (DomainFilter) -> Unit) {
-    // The row spans the full width and the chips sit centred in it, so the filter
-    // reads as one band across the page rather than a ragged strip on the left.
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        DomainFilter.entries.forEach { filter ->
-            FilterChip(
-                selected = filter == selected,
-                onClick = { onSelect(filter) },
-                label = { Text(stringResource(filter.labelRes)) },
-            )
-        }
-    }
-}
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 @Suppress("LongParameterList")
 private fun DomainRowItem(
@@ -830,6 +904,10 @@ private fun DomainRowItem(
     onResolution: () -> Unit,
     serviceLabel: String?,
     onService: () -> Unit,
+    selected: Boolean,
+    selectionMode: Boolean,
+    onLongSelect: () -> Unit,
+    onToggleSelect: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -846,12 +924,18 @@ private fun DomainRowItem(
                 // Every routing row is the same height as a live-log row, so the two
                 // lists read at the same density. The switch is the tallest content
                 // here (32 dp); the shared floor plus centred content absorbs the rest.
-                modifier = Modifier.fillMaxWidth().heightIn(min = PanelRowDefaults.height),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = PanelRowDefaults.height)
+                    .combinedClickable(
+                        onClick = { if (selectionMode) onToggleSelect() },
+                        onLongClick = onLongSelect,
+                    ),
                 // The Material switch already guarantees a 48 dp touch height; 5 dp
                 // of padding around it lands the card at 58 dp, the live-log height.
                 verticalPadding = 5.dp,
                 contentAlignment = Alignment.CenterStart,
-                highlighted = menuOpen,
+                highlighted = menuOpen || selected,
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
