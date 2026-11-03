@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v4.0.3] — A sharper panel
+
+A dashboard-only patch. No DNS resolution, relay, API, database or configuration
+behaviour changed.
+
+### ✨ Added
+
+- **Live Log refresh control.** A refresh button sits to the left of the search
+  field. It reconnects the SSE stream, reloads the server's recent-query
+  snapshot, keeps the active search/filter/sort, and resumes a paused log.
+  The button spins while connecting, disables itself against stacked reconnects,
+  and falls back to a warning if the snapshot does not arrive.
+- **Shared pause-state helper.** The pause button, its `aria-pressed` state and
+  the refresh path now use one owner instead of duplicating the DOM update.
+
+### 🔄 Changed
+
+- **Dashboard brand mark.** The sidebar and mobile header use the mobile app
+  icon, cropped to remove the outer dark-blue padding and enlarged to 48px on
+  desktop and 36px on mobile.
+- **Compact Settings layout.** The Settings tab is a responsive card grid:
+  two columns at ≥1100px, one below. Wide forms keep a full row, while the
+  simple cards share a row. Padding and section gaps are reduced without hiding
+  fields or status text.
+
+### 🧪 Tests
+
+- Refresh-control placement and Settings-grid markup are pinned by new web
+  tests.
+
 ## 🏷️ [v4.0.2] — A truthful allowlist count
 
 A one-line follow-up to 4.0.1. The agent’s client allowlist can be the literal

@@ -37,7 +37,7 @@ func TestSPADocumentRewritesAssetReferencesToTheAdminPrefix(t *testing.T) {
 
 	// The root-absolute form must be gone from the served document entirely:
 	// no attribute may name an asset at the host root any more.
-	for _, p := range []string{`="/css/`, `="/js/`, `="/fonts/`, `="/swagger/`} {
+	for _, p := range []string{`="/css/`, `="/js/`, `="/fonts/`, `="/swagger/`, `="/img/`} {
 		if strings.Contains(doc, p) {
 			t.Errorf("served index.html still carries %q — a reference the browser resolves against the host root, where the dashboard is not mounted", p)
 		}
@@ -54,6 +54,7 @@ func TestSPADocumentRewritesAssetReferencesToTheAdminPrefix(t *testing.T) {
 		prefix + `/js/app.js`,
 		prefix + `/js/i18n.js`,
 		prefix + `/js/modules/twofa.js`,
+		prefix + `/img/digitdns-app-icon.png`,
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("served index.html is missing %q — the browser would request the asset at the host root and draw a 404", want)

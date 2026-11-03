@@ -268,11 +268,11 @@ func (s *staticServer) lookup(p string) *staticAsset {
 // the panel's own assets. The document was written for the pre-v2.1 root
 // mount; every reference below these prefixes has to be moved under the
 // install's admin namespace or the browser resolves it against the host root,
-// where the dashboard's assets have not been served since v2.1. Only the five
+// where the dashboard's assets have not been served since v2.1. Only the
 // literal tags the document actually carries are rewritten — see
 // TestDashboardDocumentReferencesAssetsUnderTheAdminPrefix.
 var assetPathPrefixes = []string{
-	"/css/", "/js/", "/fonts/", "/swagger/",
+	"/css/", "/js/", "/fonts/", "/swagger/", "/img/",
 }
 
 // prefixDocument rewrites index.html's root-absolute asset references to sit

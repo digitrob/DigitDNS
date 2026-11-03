@@ -1179,6 +1179,32 @@ input:checked + .slider:before {
   }
 }
 
+/* The Settings tab is a card grid, not one long stack. Cards marked
+   .settings-wide keep their full-width form/table geometry; the rest share a
+   row so simple cards do not each consume a screenful. The :not(.hidden) guard
+   is load-bearing: the tab is toggled with .hidden, and an unconditional
+   display:grid here would win the specificity fight and show it at boot. */
+#tab-rules.settings-layout:not(.hidden) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+#tab-rules.settings-layout > * {
+  margin-top: 0;
+}
+#tab-rules.settings-layout .panel-card {
+  padding: 1.1rem 1.25rem;
+}
+@media (min-width: 1100px) {
+  #tab-rules.settings-layout:not(.hidden) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+  #tab-rules.settings-layout > .settings-wide {
+    grid-column: 1 / -1;
+  }
+}
+
 /* The Server Update card stacks its two actions against the end edge. Plain CSS
  * because `items-end` is not in the purged utility sheet. */
 .server-update-actions {
@@ -2412,8 +2438,13 @@ input:checked + .slider:before {
   .dash-resize { display: none; }
 }
 
-/* A per-card refresh spin, shared by the relay-agent card. */
-.agent-icon-btn.is-refreshing svg { animation: dash-spin 0.8s linear infinite; }
+/* Per-control refresh spin, shared by the relay-agent card and the live log. */
+.agent-icon-btn.is-refreshing svg,
+.stream-refresh-btn.is-refreshing svg { animation: dash-spin 0.8s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .agent-icon-btn.is-refreshing svg,
+  .stream-refresh-btn.is-refreshing svg { animation: none; }
+}
 @keyframes dash-spin { to { transform: rotate(360deg); } }
 
 /* The live log's RELAY column: the same flag + name the Domains list uses, but

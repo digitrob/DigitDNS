@@ -770,9 +770,8 @@
     <!-- Sidebar Top: Brand & Live Pulse -->
     <div class="space-y-6">
       <div class="flex items-center gap-3 px-2 py-1">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500/20 to-purple-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-400 shadow-lg shadow-cyan-500/10 flex-shrink-0">
-          <i data-feather="zap" class="w-5 h-5"></i>
-        </div>
+        <img src="/img/digitdns-app-icon.png" alt="" width="48" height="48"
+             class="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/10 flex-shrink-0">
         <div>
           <div id="sidebar-brand" class="flex items-center gap-2">
             <span class="font-extrabold tracking-wider text-base text-white font-heading">DigitDNS</span>
@@ -897,9 +896,8 @@
     <!-- MOBILE TOP HEADER (< 768px) -->
     <header class="md:hidden border-b border-slate-800/80 bg-slate-950/85 backdrop-blur-xl sticky top-0 z-30 px-4 h-14 flex items-center justify-between flex-shrink-0">
       <div class="flex items-center gap-2.5">
-        <div class="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-400">
-          <i data-feather="zap" class="w-4 h-4"></i>
-        </div>
+        <img src="/img/digitdns-app-icon.png" alt="" width="36" height="36"
+             class="w-9 h-9 rounded-lg flex-shrink-0">
         <!-- Stacked, not side by side, and the arithmetic is the reason. These two spans used
              to be inline children of a plain div, which was invisible while the badge showed
              the markup's static placeholder and became a broken header the moment app.js filled
@@ -908,12 +906,12 @@
              68px stack through a 56px header — "DigitDNS" clipped by its own top border on
              every phone.
              Simply forbidding the wrap moves the failure rather than fixing it. At 360px the
-             header has 328px of content width; a nowrap brand row is 32 (mark) + 10 + 69
-             (wordmark) + 6 + 69 (badge) = 186px and the control cluster on the right is 207px,
+             header has 328px of content width; a nowrap brand row is 36 (mark) + 10 + 69
+             (wordmark) + 6 + 69 (badge) = 190px and the control cluster on the right is 207px,
              so the two would collide by 65px and overflow instead. Stacking spends the header's
              spare *height* rather than its scarce width: the block is 69px wide either way,
-             because the version is narrower than the wordmark above it, and 32px tall inside
-             56px. Brand 111 + controls 207 = 318 ≤ 328, with the slack landing in the
+             because the version is narrower than the wordmark above it, and 36px tall inside
+             56px. Brand 115 + controls 207 = 322 ≤ 328, with the slack landing in the
              justify-between gap.
              The pill chrome is gone with it — a bordered badge exists to separate the version
              from a wordmark sitting on the same line, and on its own line the caption reads
@@ -929,9 +927,9 @@
         <!-- Touch targets in this cluster are as wide as they can be and as tall as they should
              be, and those are two different limits.
              Width is capped by arithmetic: at 360px the header has 328px of content, the brand
-             block takes 111px, and the four icon buttons plus their 6px gaps have to live in
+             block takes 115px, and the four icon buttons plus their 6px gaps have to live in
              the rest. At 30px wide each (px-1.5 + a 16px glyph + 1px borders) and four 6px
-             gaps, that is 111 + 120 + 24 = 255 ≤ 328. Each button clears WCAG 2.2 SC 2.5.8
+             gaps, that is 115 + 120 + 24 = 259 ≤ 328. Each button clears WCAG 2.2 SC 2.5.8
              outright (≥24×24), and it clears the spacing clause too: centres sit 36px apart,
              and the 24px exception circles only need 24px of separation.
              Height was free and was being wasted. `p-1.5` made these 30×30 inside a 56px
@@ -1653,6 +1651,11 @@
                otherwise pull it back to the start). -->
           <div class="flex flex-col sm:flex-row flex-wrap items-center justify-between gap-2.5 sm:gap-3 pb-3 sm:pb-4 border-b border-slate-800">
             <div class="flex items-center gap-2 sm:gap-3 w-full sm:w-auto sm:flex-1 sm:min-w-[180px]">
+              <button id="stream-refresh-btn" type="button"
+                class="stream-refresh-btn shrink-0 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center justify-center disabled:opacity-50 disabled:cursor-wait"
+                title="Refresh live log" aria-label="Refresh live log">
+                <i data-feather="refresh-cw" class="w-4 h-4"></i>
+              </button>
               <div class="relative w-full sm:flex-1 sm:min-w-0">
                 <input type="text" id="stream-search" aria-label="Search live queries" placeholder="Search domain or IP..."
                   class="w-full ps-8 pe-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono">
@@ -1685,7 +1688,7 @@
             </div>
 
             <div class="flex items-center gap-2 w-full sm:w-auto sm:ms-auto sm:shrink-0 justify-end">
-              <button id="stream-pause-btn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700 flex items-center gap-1.5 transition">
+              <button id="stream-pause-btn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700 flex items-center gap-1.5 transition" aria-pressed="false">
                 <i data-feather="pause" class="w-3.5 h-3.5"></i> <span>Pause</span>
               </button>
               <button id="stream-clear-btn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700 flex items-center gap-1.5 transition">
@@ -1913,14 +1916,14 @@ async function onBuySubscription(ctx, username) {
       <!-- ============================================== -->
       <!-- TAB 4: CUSTOM RULES, SSL & ACCESS CONTROL -->
       <!-- ============================================== -->
-      <section id="tab-rules" class="tab-content space-y-6 hidden">
+      <section id="tab-rules" class="tab-content space-y-6 hidden settings-layout">
 
         <!-- Server location and Server Update share one row on a wide panel: the
              first is read-only metadata plus a database refresh, the second is the
              same self-updater the sidebar badge reaches. Both are half-width so
              neither dwarfs the other. Plain CSS for the grid, because the purged
              utility sheet cannot grow a new breakpoint class here. -->
-        <div class="settings-pair">
+        <div class="settings-pair settings-wide">
           <!-- Server location: the country the GeoIP database resolves for this
                install's public address, plus the age of that database and a manual
                refresh. The flag is served from this panel's own /flags/ path
@@ -1981,7 +1984,7 @@ async function onBuySubscription(ctx, username) {
         <!-- Two-factor authentication. The secret is shown exactly
              once, at enrollment; after that the server never returns it and the
              page never asks for it. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4" id="twofa-card">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4 settings-wide" id="twofa-card">
           <div class="flex items-center gap-3">
             <div class="p-2 rounded-xl bg-sky-500/20 text-sky-400">
               <i data-feather="smartphone" class="w-5 h-5"></i>
@@ -2080,8 +2083,30 @@ async function onBuySubscription(ctx, username) {
           </p>
         </div>
 
+        <!-- Administrator Credentials -->
+        <div class="glass-panel panel-card p-5 sm:p-6">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-4 sm:justify-between">
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+                <i data-feather="user-check" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="panel-card-title">Administrator Credentials</h3>
+                <p class="text-[11px] text-slate-400">
+                  Dashboard login for <span id="current-admin-name" class="text-amber-300 font-mono">admin</span>.
+                  Changing the password signs out every other session.
+                </p>
+              </div>
+            </div>
+            <button id="open-change-pwd-btn" type="button"
+              class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
+              Change Username / Password
+            </button>
+          </div>
+        </div>
+
         <!-- Subscription surface settings (3x-ui style, third tab group). -->
-        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4 settings-wide">
           <div class="flex items-center gap-3">
             <div class="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
               <i data-feather="share-2" class="w-5 h-5"></i>
@@ -2178,28 +2203,6 @@ async function onBuySubscription(ctx, username) {
           </div>
         </div>
 
-        <!-- Administrator Credentials -->
-        <div class="glass-panel panel-card p-5 sm:p-6">
-          <div class="flex flex-col sm:flex-row sm:items-center gap-4 sm:justify-between">
-            <div class="flex items-center gap-3">
-              <div class="p-2 rounded-xl bg-amber-500/20 text-amber-400">
-                <i data-feather="user-check" class="w-5 h-5"></i>
-              </div>
-              <div>
-                <h3 class="panel-card-title">Administrator Credentials</h3>
-                <p class="text-[11px] text-slate-400">
-                  Dashboard login for <span id="current-admin-name" class="text-amber-300 font-mono">admin</span>.
-                  Changing the password signs out every other session.
-                </p>
-              </div>
-            </div>
-            <button id="open-change-pwd-btn" type="button"
-              class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
-              Change Username / Password
-            </button>
-          </div>
-        </div>
-
         <!-- SSL / TLS Manager for DoH, DoT (Android Private DNS).
              Two domains live here, ordered to match the section's name: the
              DoH/DoT domain comes FIRST (it is what the title promises — the
@@ -2210,7 +2213,7 @@ async function onBuySubscription(ctx, username) {
              re-domained the whole dashboard — the ERR_CERT_COMMON_NAME_INVALID
              field report. The subheadings make each field's blast radius
              readable at a glance instead of inferred from position. -->
-        <div class="glass-panel panel-card p-5 sm:p-6">
+        <div class="glass-panel panel-card p-5 sm:p-6 settings-wide">
           <div class="flex items-center gap-3 mb-3">
             <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
               <i data-feather="lock" class="w-5 h-5"></i>
@@ -2271,7 +2274,7 @@ async function onBuySubscription(ctx, username) {
           <p class="text-[10px] text-slate-500 mt-1">Changing this renames the dashboard itself — every panel link and the admin cert follow it. Not the field for your DoH/DoT hostname.</p>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 settings-wide">
           
           <!-- Custom Blocklist (Sinkhole / Adblock) -->
           <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
@@ -2411,7 +2414,7 @@ async function onBuySubscription(ctx, username) {
 
                 <!-- Session idle window (Phase D): how long a dashboard session may sit
                unused before the daemon revokes it. Applies live on save. -->
-          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-950/80 border border-slate-800">
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-950/80 border border-slate-800 settings-wide">
             <div>
               <div class="text-xs font-bold text-white font-heading flex items-center gap-2">
                 <span>Dashboard Session Idle Timeout</span>
@@ -2433,7 +2436,7 @@ async function onBuySubscription(ctx, username) {
         <!-- About & legal (AGPL-3.0): product identity, licence and upstream
              attribution. Kept in the panel so the notice travels with the app
              instead of living only in the repository. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 space-y-2">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-2 settings-wide">
           <h3 class="panel-card-header">
             <i data-feather="info" class="w-4 h-4 text-cyan-400"></i> About &amp; Legal
           </h3>

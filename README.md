@@ -101,7 +101,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.0.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.0.3/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -160,7 +160,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.0.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.0.3/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -239,7 +239,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | `3.8.0` | A specific immutable release (older) |
 | `4.0.0` | A specific immutable release (older) |
 | `4.0.1` | Agent log-throttling patch (older) |
-| `4.0.2` | Accurate client-list status |
+| `4.0.3` | Dashboard refresh, compact Settings, app-icon brand |
+| `4.0.2` | Accurate client-list status (older) |
 | `edge` | Nightly build from `main` — not for production |
 
 Verify the image:
@@ -257,7 +258,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v4.0.2/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v4.0.3/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```

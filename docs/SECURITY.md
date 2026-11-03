@@ -26,10 +26,9 @@ and how to report a problem.
 
 | Version | Status | Security fixes |
 | :--- | :--- | :--- |
-| `v3.1.0` | Current stable | ✅ Yes |
-| `v3.0.0` | Superseded | ❌ Upgrade first |
-| `v2.8.0-beta` and earlier | Superseded | ❌ Upgrade first |
-| `v2.0.x`–`v2.7.0-beta` | Superseded | ❌ Upgrade first |
+| `v4.0.3` | Current stable | ✅ Yes |
+| `v4.0.2` and earlier 4.0.x | Superseded | ❌ Upgrade first |
+| `v3.x` and earlier | Superseded | ❌ Upgrade first |
 | `v1.x` (upstream HyperDNS) | End of life | ❌ No |
 
 Only the current release line receives fixes. The project does not backport to

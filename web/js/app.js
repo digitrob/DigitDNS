@@ -103,6 +103,9 @@ let streamPendingDropped = [];
 // render call because pushStreamQuery has to consult it to decide where an arriving
 // row belongs, and the sort control only has to assign it and redraw.
 let streamSort = 'time-desc';
+// streamRefreshTimer bounds a manual refresh: the reconnect itself is async and a
+// lost ticket must not leave the button spinning forever.
+let streamRefreshTimer = null;
 
 // streamSortField returns the value one query sorts on, as a string, for the given
 // order. Time is the epoch in milliseconds and latency is milliseconds, both
@@ -4133,6 +4136,7 @@ async function startLiveStream() {
     try {
       const list = JSON.parse(event.data);
       if (!Array.isArray(list)) return;
+      finishStreamRefresh();
       // While paused the view must not change — a reconnect used to repaint the
       // history straight through the pause, which looked like Clear had failed.
       // Buffer the snapshot instead: Resume redraws from it.
@@ -4149,6 +4153,7 @@ async function startLiveStream() {
   // Another dashboard (or this one, after a reconnect) cleared the log. Drop the
   // rows without posting again, or two tabs would clear each other in a loop.
   source.addEventListener('cleared', () => {
+    finishStreamRefresh();
     resetStreamView();
   });
 
@@ -4211,6 +4216,57 @@ function stopLiveStream() {
     try { sseSource.close(); } catch(e) {}
     sseSource = null;
   }
+  finishStreamRefresh();
+}
+
+// setStreamPaused is the single owner of the paused flag and the pause button's
+// label/aria state. The refresh button needs to resume the log before reconnecting,
+// and duplicating that DOM update in two handlers is how the two drift apart.
+function setStreamPaused(paused) {
+  if (isStreamPaused === paused) return;
+  isStreamPaused = paused;
+  const btn = document.getElementById('stream-pause-btn');
+  if (btn) {
+    btn.innerHTML = paused
+      ? '<i data-feather="play" class="w-3.5 h-3.5"></i> <span>Resume</span>'
+      : '<i data-feather="pause" class="w-3.5 h-3.5"></i> <span>Pause</span>';
+    btn.setAttribute('aria-pressed', paused ? 'true' : 'false');
+    safeFeatherReplace();
+  }
+  if (!paused) renderQueryStream();
+}
+
+function setStreamRefreshBusy(busy) {
+  const btn = document.getElementById('stream-refresh-btn');
+  if (!btn) return;
+  btn.disabled = busy;
+  btn.classList.toggle('is-refreshing', busy);
+  btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+}
+
+function finishStreamRefresh() {
+  if (streamRefreshTimer) {
+    clearTimeout(streamRefreshTimer);
+    streamRefreshTimer = null;
+  }
+  setStreamRefreshBusy(false);
+}
+
+// refreshLiveStream reconnects the SSE stream, which makes the server send a fresh
+// history snapshot. It resumes a paused view: a refresh that leaves the table frozen
+// would look like the button did nothing.
+async function refreshLiveStream() {
+  if (!authToken) return;
+  stopLiveStream();
+  setStreamPaused(false);
+  setStreamRefreshBusy(true);
+  await startLiveStream();
+  if (streamRefreshTimer) clearTimeout(streamRefreshTimer);
+  streamRefreshTimer = setTimeout(() => {
+    streamRefreshTimer = null;
+    setStreamRefreshBusy(false);
+    showToast('Live log refresh is taking longer than expected; reconnecting in the background.', 'warning');
+  }, 6000);
 }
 
 function escapeHTML(str) {
@@ -7490,19 +7546,12 @@ function initEventListeners() {
 
   const pauseBtn = document.getElementById('stream-pause-btn');
   if (pauseBtn) {
-    pauseBtn.onclick = (e) => {
-      isStreamPaused = !isStreamPaused;
-      const btn = e.currentTarget;
-      btn.innerHTML = isStreamPaused
-        ? '<i data-feather="play" class="w-3.5 h-3.5"></i> <span>Resume</span>'
-        : '<i data-feather="pause" class="w-3.5 h-3.5"></i> <span>Pause</span>';
-      safeFeatherReplace();
-      // While paused the buffer keeps filling but nothing is inserted, so on resume the
-      // table is behind it by however many queries arrived in between. A redraw from the
-      // buffer is what brings the frozen view level again; the incremental insert that
-      // follows only ever places the newest arrival.
-      if (!isStreamPaused) renderQueryStream();
-    };
+    pauseBtn.onclick = () => setStreamPaused(!isStreamPaused);
+  }
+
+  const refreshBtn = document.getElementById('stream-refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.onclick = () => refreshLiveStream();
   }
 
   const clearBtn = document.getElementById('stream-clear-btn');

@@ -44,7 +44,7 @@ func TestPublicSurfaceSurvivesTheAdminMove(t *testing.T) {
 	for _, path := range []string{
 		"/js/app.js", "/js/i18n.js",
 		"/js/feather.min.js", "/js/chart.umd.min.js", "/css/style.css",
-		"/css/tailwind.purged.css",
+		"/css/tailwind.purged.css", "/img/digitdns-app-icon.png",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		w := httptest.NewRecorder()
