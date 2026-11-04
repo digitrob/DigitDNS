@@ -18,7 +18,7 @@
   "tags": [
     {"name": "meta"}, {"name": "auth"}, {"name": "clients"}, {"name": "policies"},
     {"name": "custom-groups"}, {"name": "agents"}, {"name": "rules"}, {"name": "access"}, {"name": "upstreams"},
-    {"name": "settings"}, {"name": "tls"}, {"name": "stats"}, {"name": "diagnostics"},
+    {"name": "filtering"}, {"name": "settings"}, {"name": "tls"}, {"name": "stats"}, {"name": "diagnostics"},
     {"name": "system"}
   ],
   "components": {
@@ -27,6 +27,86 @@
       "BearerAuth": {"type": "http", "scheme": "bearer", "description": "Master key or a digitdns_session_ token from /auth/login."}
     },
     "responses": {
+      "FilteringSettings": {
+        "type": "object",
+        "properties": {
+          "enabled": {"type": "boolean"},
+          "block_mode": {"type": "string", "enum": ["null_ip", "nxdomain", "refused"]},
+          "block_ttl": {"type": "integer", "minimum": 1, "maximum": 3600},
+          "update_interval_hours": {"type": "integer", "minimum": 1, "maximum": 168},
+          "allowlist": {"type": "array", "items": {"type": "string"}}
+        }
+      },
+      "FilterList": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"}, "name": {"type": "string"}, "url": {"type": "string"},
+          "homepage": {"type": "string"}, "license": {"type": "string"}, "preset_id": {"type": "string"},
+          "enabled": {"type": "boolean"}, "format": {"type": "string"},
+          "last_updated": {"type": "string", "format": "date-time"}, "last_error": {"type": "string"},
+          "rule_count": {"type": "integer"}, "domain_count": {"type": "integer"},
+          "allowed_count": {"type": "integer"}, "skipped": {"type": "integer"}, "bytes": {"type": "integer"},
+          "etag": {"type": "string"}, "last_modified": {"type": "string"}, "source_uploaded": {"type": "boolean"}
+        }
+      },
+      "FilterPreset": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"}, "name": {"type": "string"},
+          "group": {"type": "string", "enum": ["base", "ads", "security", "telemetry", "extras"]},
+          "url": {"type": "string"}, "homepage": {"type": "string"}, "license": {"type": "string"},
+          "description": {"type": "string"}, "warning": {"type": "string"},
+          "recommended": {"type": "boolean"}, "base": {"type": "boolean"}
+        }
+      },
+      "PresetCount": {
+        "type": "object",
+        "properties": {
+          "preset_id": {"type": "string"}, "domain_count": {"type": "integer"},
+          "rule_count": {"type": "integer"}, "bytes": {"type": "integer"},
+          "last_updated": {"type": "string", "format": "date-time"}, "last_error": {"type": "string"},
+          "etag": {"type": "string"}, "last_modified": {"type": "string"}
+        }
+      },
+      "FilteringStatus": {
+        "type": "object",
+        "properties": {
+          "settings": {"$ref": "#/components/schemas/FilteringSettings"},
+          "lists": {"type": "array", "items": {"$ref": "#/components/schemas/FilterList"}},
+          "presets": {"type": "array", "items": {"$ref": "#/components/schemas/FilterPreset"}},
+          "preset_counts": {"type": "array", "items": {"$ref": "#/components/schemas/PresetCount"}},
+          "preset_counts_running": {"type": "boolean"},
+          "total_rules": {"type": "integer"}, "total_domains": {"type": "integer"},
+          "updating": {"type": "array", "items": {"type": "string"}}
+        }
+      },
+      "FilterListAddRequest": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"}, "url": {"type": "string"}, "homepage": {"type": "string"},
+          "content": {"type": "string", "description": "Uploaded hosts/Adblock text, up to 20 MB."}
+        }
+      },
+      "FilterListEnabledRequest": {
+        "type": "object", "required": ["enabled"],
+        "properties": {"enabled": {"type": "boolean"}}
+      },
+      "PresetAddRequest": {
+        "type": "object", "required": ["ids"],
+        "properties": {"ids": {"type": "array", "maxItems": 100, "items": {"type": "string"}}}
+      },
+      "PresetSkip": {
+        "type": "object",
+        "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "reason": {"type": "string"}}
+      },
+      "PresetAddResult": {
+        "type": "object",
+        "properties": {
+          "added": {"type": "array", "items": {"$ref": "#/components/schemas/FilterList"}},
+          "skipped": {"type": "array", "items": {"$ref": "#/components/schemas/PresetSkip"}},
+          "failed": {"type": "array", "items": {"$ref": "#/components/schemas/PresetSkip"}}
+        }
+      },
       "Problem": {"description": "RFC 9457 problem", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
       "Unauthorized": {"description": "Unauthorized", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
       "Forbidden": {"description": "Not exposed to this address", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
@@ -139,7 +219,7 @@
       "StatsSummary": {
         "type": "object",
         "properties": {
-          "range": {"type": "string", "enum": ["24h", "7d", "30d", "90d"]},
+          "range": {"type": "string", "enum": ["1h", "24h", "7d", "30d", "90d"]},
           "from": {"type": "string", "format": "date-time"},
           "to": {"type": "string", "format": "date-time"},
           "queries": {"type": "integer", "format": "int64"},
@@ -171,8 +251,8 @@
       "StatsSeries": {
         "type": "object",
         "properties": {
-          "range": {"type": "string", "enum": ["24h", "7d", "30d", "90d"]},
-          "interval": {"type": "string", "enum": ["hour", "day"]},
+          "range": {"type": "string", "enum": ["1h", "24h", "7d", "30d", "90d"]},
+          "interval": {"type": "string", "enum": ["5m", "hour", "day"]},
           "points": {"type": "array", "items": {"$ref": "#/components/schemas/StatsSeriesPoint"}}
         }
       },
@@ -186,7 +266,7 @@
       "StatsTop": {
         "type": "object",
         "properties": {
-          "range": {"type": "string", "enum": ["24h", "7d", "30d", "90d"]},
+          "range": {"type": "string", "enum": ["1h", "24h", "7d", "30d", "90d"]},
           "dimension": {"type": "string", "enum": ["domain", "blocked_domain", "client", "upstream", "action", "protocol", "qtype", "rcode", "relay_country"]},
           "items": {"type": "array", "items": {"$ref": "#/components/schemas/StatsTopItem"}},
           "other_count": {"type": "integer", "format": "int64"}
@@ -206,7 +286,7 @@
       "StatsExport": {
         "type": "object",
         "properties": {
-          "range": {"type": "string", "enum": ["24h", "7d", "30d", "90d"]},
+          "range": {"type": "string", "enum": ["1h", "24h", "7d", "30d", "90d"]},
           "summary": {"$ref": "#/components/schemas/StatsSummary"},
           "series": {"$ref": "#/components/schemas/StatsSeries"},
           "tops": {"type": "object", "additionalProperties": {"$ref": "#/components/schemas/StatsTop"}}
@@ -320,6 +400,31 @@
     "/api/v3/upstreams/reorder": {
       "post": {"tags": ["upstreams"], "summary": "Reorder the upstream pool", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["order"], "properties": {"order": {"type": "array", "items": {"type": "string"}}}}}}}, "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
     },
+    "/api/v3/filtering": {
+      "get": {"tags": ["filtering"], "summary": "Read ad-blocking status, installed lists and preset catalogue", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FilteringStatus"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"description": "Filtering engine unavailable"}}}
+    },
+    "/api/v3/filtering/settings": {
+      "post": {"tags": ["filtering"], "summary": "Save the ad-blocking policy", "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FilteringSettings"}}}}, "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FilteringStatus"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}}},
+      "put": {"tags": ["filtering"], "summary": "Save the ad-blocking policy", "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FilteringSettings"}}}}, "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FilteringStatus"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/filtering/refresh": {
+      "post": {"tags": ["filtering"], "summary": "Refresh every enabled blocklist", "responses": {"200": {"description": "OK"}, "401": {"$ref": "#/components/responses/Unauthorized"}}}
+    },
+    "/api/v3/filtering/presets": {
+      "get": {"tags": ["filtering"], "summary": "List the curated preset catalogue", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"type": "object", "properties": {"presets": {"type": "array", "items": {"$ref": "#/components/schemas/FilterPreset"}}}}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}},
+      "post": {"tags": ["filtering"], "summary": "Install preset lists by id", "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PresetAddRequest"}}}}, "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PresetAddResult"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/filtering/lists": {
+      "post": {"tags": ["filtering"], "summary": "Add a custom URL subscription or uploaded list", "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FilterListAddRequest"}}}}, "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FilterList"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
+    "/api/v3/filtering/lists/{id}": {
+      "patch": {"tags": ["filtering"], "summary": "Enable or disable a blocklist", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FilterListEnabledRequest"}}}}, "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "404": {"$ref": "#/components/responses/NotFound"}}},
+      "post": {"tags": ["filtering"], "summary": "Enable or disable a blocklist", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FilterListEnabledRequest"}}}}, "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}},
+      "delete": {"tags": ["filtering"], "summary": "Delete a blocklist and its stored rules", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/v3/filtering/lists/{id}/update": {
+      "post": {"tags": ["filtering"], "summary": "Refresh one blocklist in the background", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
     "/api/v3/settings": {
       "get": {"tags": ["settings"], "summary": "Read server settings", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}}},
       "post": {"tags": ["settings"], "summary": "Update server settings", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
@@ -348,16 +453,16 @@
       "get": {"tags": ["stats"], "summary": "Live telemetry", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}}
     },
     "/api/v3/stats/summary": {
-      "get": {"tags": ["stats"], "summary": "Aggregated DNS totals for a range", "parameters": [{"name": "range", "in": "query", "schema": {"type": "string", "enum": ["24h", "7d", "30d", "90d"], "default": "24h"}}], "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StatsSummary"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"$ref": "#/components/responses/Problem"}}}
+      "get": {"tags": ["stats"], "summary": "Aggregated DNS totals for a range", "parameters": [{"name": "range", "in": "query", "schema": {"type": "string", "enum": ["1h", "24h", "7d", "30d", "90d"], "default": "24h"}}], "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StatsSummary"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"$ref": "#/components/responses/Problem"}}}
     },
     "/api/v3/stats/series": {
-      "get": {"tags": ["stats"], "summary": "Aggregated DNS time series", "parameters": [{"name": "range", "in": "query", "schema": {"type": "string", "enum": ["24h", "7d", "30d", "90d"], "default": "24h"}}, {"name": "interval", "in": "query", "schema": {"type": "string", "enum": ["hour", "day"]}}], "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StatsSeries"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"$ref": "#/components/responses/Problem"}}}
+      "get": {"tags": ["stats"], "summary": "Aggregated DNS time series", "parameters": [{"name": "range", "in": "query", "schema": {"type": "string", "enum": ["1h", "24h", "7d", "30d", "90d"], "default": "24h"}}, {"name": "interval", "in": "query", "schema": {"type": "string", "enum": ["5m", "hour", "day"]}}], "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StatsSeries"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"$ref": "#/components/responses/Problem"}}}
     },
     "/api/v3/stats/top": {
-      "get": {"tags": ["stats"], "summary": "Ranked aggregate dimension", "parameters": [{"name": "range", "in": "query", "schema": {"type": "string", "enum": ["24h", "7d", "30d", "90d"], "default": "24h"}}, {"name": "dimension", "in": "query", "required": true, "schema": {"type": "string", "enum": ["domain", "blocked_domain", "client", "upstream", "action", "protocol", "qtype", "rcode", "relay_country"]}}, {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10}}], "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StatsTop"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"$ref": "#/components/responses/Problem"}}}
+      "get": {"tags": ["stats"], "summary": "Ranked aggregate dimension", "parameters": [{"name": "range", "in": "query", "schema": {"type": "string", "enum": ["1h", "24h", "7d", "30d", "90d"], "default": "24h"}}, {"name": "dimension", "in": "query", "required": true, "schema": {"type": "string", "enum": ["domain", "blocked_domain", "client", "upstream", "action", "protocol", "qtype", "rcode", "relay_country"]}}, {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10}}], "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StatsTop"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"$ref": "#/components/responses/Problem"}}}
     },
     "/api/v3/stats/export": {
-      "get": {"tags": ["stats"], "summary": "Download a range as CSV or JSON", "parameters": [{"name": "range", "in": "query", "schema": {"type": "string", "enum": ["24h", "7d", "30d", "90d"], "default": "24h"}}, {"name": "format", "in": "query", "schema": {"type": "string", "enum": ["csv", "json"], "default": "csv"}}], "responses": {"200": {"description": "OK", "content": {"text/csv": {"schema": {"type": "string"}}, "application/json": {"schema": {"$ref": "#/components/schemas/StatsExport"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"$ref": "#/components/responses/Problem"}}}
+      "get": {"tags": ["stats"], "summary": "Download a range as CSV or JSON", "parameters": [{"name": "range", "in": "query", "schema": {"type": "string", "enum": ["1h", "24h", "7d", "30d", "90d"], "default": "24h"}}, {"name": "format", "in": "query", "schema": {"type": "string", "enum": ["csv", "json"], "default": "csv"}}], "responses": {"200": {"description": "OK", "content": {"text/csv": {"schema": {"type": "string"}}, "application/json": {"schema": {"$ref": "#/components/schemas/StatsExport"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"$ref": "#/components/responses/Problem"}}}
     },
     "/api/v3/stats/settings": {
       "get": {"tags": ["stats"], "summary": "Read aggregate history policy", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StatsSettings"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}},

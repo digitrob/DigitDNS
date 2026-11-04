@@ -51,6 +51,7 @@ class StatsModelTest {
 
     @Test
     fun `history range wire values round-trip`() {
+        assertEquals("1h", HistoryRange.fromWire("1h").wire)
         assertEquals("24h", HistoryRange.fromWire("24h").wire)
         assertEquals("90d", HistoryRange.fromWire("90d").wire)
         assertEquals(HistoryRange.LAST_24H, HistoryRange.fromWire("bogus"))

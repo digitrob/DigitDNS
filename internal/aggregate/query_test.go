@@ -138,11 +138,55 @@ func TestDailyQueriesIncludeTodaysHourlyData(t *testing.T) {
 	}
 }
 
+func TestOneHourSeriesUsesFiveMinuteChunks(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 12, 0, 0, time.UTC)
+	a, _ := openTestAggregator(t, &now, Config{FlushInterval: time.Hour, CacheTTL: -1})
+
+	first := time.Date(2026, 11, 4, 12, 1, 0, 0, time.UTC)
+	second := time.Date(2026, 11, 4, 12, 7, 0, 0, time.UTC)
+	a.RecordTotal(first)
+	a.RecordTotal(first)
+	a.RecordTotal(second)
+
+	blocked := testItem(first)
+	blocked.Action = "BLOCK"
+	a.RecordDetail(blocked)
+
+	proxied := testItem(second)
+	proxied.Action = "PROXY"
+	proxied.RelayCountry = "DE"
+	a.RecordDetail(proxied)
+
+	series, err := a.Series(Range1h, Interval5m)
+	if err != nil {
+		t.Fatalf("Series: %v", err)
+	}
+	if len(series.Points) != 3 {
+		t.Fatalf("points = %#v, want the three started slots", series.Points)
+	}
+	want := []struct {
+		start   time.Time
+		queries uint64
+		blocked uint64
+		proxied uint64
+	}{
+		{time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC), 2, 1, 0},
+		{time.Date(2026, 11, 4, 12, 5, 0, 0, time.UTC), 1, 0, 1},
+		{time.Date(2026, 11, 4, 12, 10, 0, 0, time.UTC), 0, 0, 0},
+	}
+	for i, w := range want {
+		got := series.Points[i]
+		if !got.Start.Equal(w.start) || got.Queries != w.queries || got.Blocked != w.blocked || got.Proxied != w.proxied {
+			t.Errorf("point %d = %#v, want %#v", i, got, w)
+		}
+	}
+}
+
 func TestQueryValidation(t *testing.T) {
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 	a, _ := openTestAggregator(t, &now, Config{FlushInterval: time.Hour, CacheTTL: -1})
 
-	if _, err := a.Summary("1h"); !errors.Is(err, ErrInvalidRange) {
+	if _, err := a.Summary("2h"); !errors.Is(err, ErrInvalidRange) {
 		t.Errorf("Summary invalid range = %v", err)
 	}
 	if _, err := a.Series(Range24h, "day"); !errors.Is(err, ErrInvalidInterval) {
@@ -216,5 +260,72 @@ func TestTopOtherCount(t *testing.T) {
 	}
 	if len(top.Items) != 1 || top.Other == 0 {
 		t.Errorf("top/other = %#v", top)
+	}
+}
+
+func TestTopUpstreamsExcludesCachePseudoUpstream(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	a, _ := openTestAggregator(t, &now, Config{FlushInterval: time.Hour, CacheTTL: -1})
+
+	real := testItem(now)
+	real.Upstream = "1.1.1.1:53"
+	a.RecordTotal(now)
+	a.RecordDetail(real)
+
+	cached := testItem(now)
+	cached.Upstream = "cache"
+	cached.Cached = true
+	a.RecordTotal(now)
+	a.RecordDetail(cached)
+
+	top, err := a.Top(Range24h, "upstream", 10)
+	if err != nil {
+		t.Fatalf("Top: %v", err)
+	}
+	if len(top.Items) != 1 || top.Items[0].Value != "1.1.1.1:53" {
+		t.Fatalf("top upstreams = %#v, want only the real resolver", top.Items)
+	}
+}
+
+func TestOneHourRangeUsesCurrentHourBucket(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 37, 0, 0, time.UTC)
+	a, _ := openTestAggregator(t, &now, Config{FlushInterval: time.Hour, CacheTTL: -1})
+
+	item := testItem(now)
+	item.Domain = "hour.example."
+	a.RecordTotal(now)
+	a.RecordDetail(item)
+
+	summary, err := a.Summary(Range1h)
+	if err != nil {
+		t.Fatalf("Summary: %v", err)
+	}
+	if summary.Queries != 1 || summary.Buckets != 1 {
+		t.Errorf("summary = %#v", summary)
+	}
+	if !summary.From.Equal(time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)) {
+		t.Errorf("from = %v, want current hour start", summary.From)
+	}
+	series, err := a.Series(Range1h, Interval5m)
+	if err != nil {
+		t.Fatalf("Series: %v", err)
+	}
+	// 12:37 has started eight five-minute slots (:00 through :35).
+	if series.Interval != Interval5m || len(series.Points) != 8 {
+		t.Fatalf("series = %#v", series)
+	}
+	last := series.Points[len(series.Points)-1]
+	if !last.Start.Equal(time.Date(2026, 11, 4, 12, 35, 0, 0, time.UTC)) || last.Queries != 1 {
+		t.Errorf("last point = %#v, want the 12:35 slot with one query", last)
+	}
+	// Older clients that still send interval=hour get the same five-minute
+	// points instead of a one-point series.
+	legacy, err := a.Series(Range1h, "hour")
+	if err != nil || len(legacy.Points) != 8 {
+		t.Fatalf("legacy hourly series = %#v, %v", legacy, err)
+	}
+	top, err := a.Top(Range1h, "domain", 10)
+	if err != nil || len(top.Items) != 1 || top.Items[0].Value != "hour.example" {
+		t.Fatalf("top = %#v, %v", top, err)
 	}
 }

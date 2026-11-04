@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Layers
@@ -45,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.connect.ConnectScreen
 import com.digitrob.digitdns.ui.rules.AccessScreen
+import com.digitrob.digitdns.ui.rules.AdBlockingScreen
 import com.digitrob.digitdns.ui.rules.GroupsScreen
 import com.digitrob.digitdns.ui.rules.PoliciesScreen
 import com.digitrob.digitdns.ui.rules.UpstreamsScreen
@@ -64,6 +66,7 @@ import com.digitrob.digitdns.ui.rules.UpstreamsScreen
 private enum class SettingsSection(@StringRes val labelRes: Int, val icon: ImageVector) {
     App(R.string.settings_app, Icons.Filled.Tune),
     History(R.string.settings_history, Icons.Filled.BarChart),
+    AdBlocking(R.string.settings_ad_blocking, Icons.Filled.Block),
     Servers(R.string.settings_servers, Icons.Filled.Dns),
     RelayAgents(R.string.settings_relay_agents, Icons.Filled.Speed),
     ConnectGuide(R.string.settings_connect_guide, Icons.Filled.Wifi),
@@ -138,6 +141,7 @@ private fun SettingsSectionContent(
     when (section) {
         SettingsSection.App -> AppSettingsScreen()
         SettingsSection.History -> HistorySettingsScreen()
+        SettingsSection.AdBlocking -> AdBlockingScreen()
         SettingsSection.Servers -> ServersScreen(
             onLoggedOut = onLoggedOut,
             onAddServer = onAddServer,

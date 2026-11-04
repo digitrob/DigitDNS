@@ -1,22 +1,23 @@
+@file:Suppress("TooManyFunctions")
+
 package com.digitrob.digitdns.ui.dashboard
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,7 +27,6 @@ import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,14 +35,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.StatsSeries
 import com.digitrob.digitdns.core.network.StatsSeriesPoint
@@ -68,114 +71,42 @@ import java.util.Locale
  * unavailable state, and is placed by the same DashboardCard layout editor.
  */
 @Composable
-internal fun HistoryRangeCard(
-    range: HistoryRange,
-    updatedAtEpochMs: Long?,
-    isLoading: Boolean,
-    unavailable: Boolean,
-    error: String?,
-    onRangeChange: (HistoryRange) -> Unit,
-) {
-    PanelCard(modifier = Modifier.fillMaxWidth(), bottomPadding = 8.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.history_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                if (isLoading) {
-                    Text(
-                        text = stringResource(R.string.history_loading),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Text(
-                text = stringResource(R.string.history_subtitle),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                HistoryRange.entries.forEach { candidate ->
-                    FilterChip(
-                        selected = candidate == range,
-                        onClick = { onRangeChange(candidate) },
-                        label = { Text(stringResource(candidate.labelRes())) },
-                    )
-                }
-            }
-            val status = when {
-                unavailable -> stringResource(R.string.history_unavailable)
-                error != null -> error
-                updatedAtEpochMs != null -> stringResource(
-                    R.string.history_updated,
-                    DateTimeFormatter.ofPattern("HH:mm:ss")
-                        .withZone(ZoneId.systemDefault())
-                        .format(Instant.ofEpochMilli(updatedAtEpochMs)),
-                )
-                else -> stringResource(R.string.history_waiting)
-            }
-            Text(
-                text = status,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (unavailable || error != null) {
-                    DigitDnsTheme.colors.warning
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
-        }
-    }
-}
-
-@Composable
 internal fun HistorySummaryCard(summary: StatsSummary?, unavailable: Boolean) {
     PanelCard(modifier = Modifier.fillMaxWidth(), bottomPadding = 8.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             HistoryHeader(R.string.history_summary)
             when {
                 unavailable -> HistoryUnavailable()
                 summary == null -> HistoryWaiting()
                 else -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SummaryCell(
+                    // Six metrics in two rows of three: the card stays half the
+                    // height of the old two-column stack and every value gets a
+                    // full third of the width on a 320 dp phone.
+                    val metrics = listOf(
+                        SummaryMetric(
                             label = R.string.history_total_queries,
                             value = formatCount(summary.queries),
                             meta = stringResource(R.string.history_buckets, summary.buckets),
-                            modifier = Modifier.weight(1f),
-                        )
-                        SummaryCell(
+                        ),
+                        SummaryMetric(
                             label = R.string.history_blocked,
                             value = percent(summary.blockedPct),
                             meta = stringResource(R.string.history_queries_value, formatCount(summary.blocked)),
                             color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SummaryCell(
+                        ),
+                        SummaryMetric(
                             label = R.string.history_proxied,
                             value = percent(summary.proxiedPct),
                             meta = stringResource(R.string.history_queries_value, formatCount(summary.proxied)),
                             color = DigitDnsTheme.colors.purple,
-                            modifier = Modifier.weight(1f),
-                        )
-                        SummaryCell(
+                        ),
+                        SummaryMetric(
                             label = R.string.history_cache_hit,
                             value = percent(summary.cacheHitPct),
                             meta = stringResource(R.string.history_hits_value, formatCount(summary.cached)),
                             color = DigitDnsTheme.colors.success,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SummaryCell(
+                        ),
+                        SummaryMetric(
                             label = R.string.history_active_clients,
                             value = formatCount(summary.activeClients),
                             meta = stringResource(
@@ -186,20 +117,38 @@ internal fun HistorySummaryCard(summary: StatsSummary?, unavailable: Boolean) {
                                 },
                             ),
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.weight(1f),
-                        )
-                        SummaryCell(
+                        ),
+                        SummaryMetric(
                             label = R.string.history_avg_latency,
                             value = String.format(Locale.US, "%.1f", summary.latencyAvgMs),
                             meta = stringResource(R.string.history_latency_unit),
-                            modifier = Modifier.weight(1f),
-                        )
+                        ),
+                    )
+                    metrics.chunked(3).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            row.forEach { metric ->
+                                SummaryCell(
+                                    label = metric.label,
+                                    value = metric.value,
+                                    meta = metric.meta,
+                                    color = metric.color,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
 }
+
+private data class SummaryMetric(
+    @StringRes val label: Int,
+    val value: String,
+    val meta: String,
+    val color: Color = Color.Unspecified,
+)
 
 @Composable
 internal fun HistoryChartCard(series: StatsSeries?, unavailable: Boolean) {
@@ -215,6 +164,11 @@ internal fun HistoryChartCard(series: StatsSeries?, unavailable: Boolean) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                !series.points.any { it.queries > 0 } -> Text(
+                    text = stringResource(R.string.history_no_data),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 else -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         HistoryLegend(stringResource(R.string.history_allowed), MaterialTheme.colorScheme.primary)
@@ -224,7 +178,12 @@ internal fun HistoryChartCard(series: StatsSeries?, unavailable: Boolean) {
                     HistoryChart(series.points, colors = colors)
                     val first = series.points.first().start
                     val last = series.points.last().start
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = ChartAxisWidth + ChartAxisGap),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
                         Text(
                             text = historyLabel(first, series.interval),
                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
@@ -398,26 +357,32 @@ private fun SummaryCell(
     value: String,
     meta: String,
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.onSurface,
+    color: Color = Color.Unspecified,
 ) {
-    Column(modifier = modifier) {
+    val valueColor = if (color == Color.Unspecified) MaterialTheme.colorScheme.onSurface else color
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(1.dp)) {
         Text(
             text = stringResource(label).uppercase(),
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 11.sp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.titleLarge.copy(fontFamily = PanelMono, fontWeight = FontWeight.Bold),
-            color = color,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontFamily = PanelMono,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                lineHeight = 20.sp,
+            ),
+            color = valueColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         Text(
             text = meta,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -472,9 +437,6 @@ private fun HistoryLegend(label: String, color: Color) {
 
 @Composable
 private fun HistoryChart(points: List<StatsSeriesPoint>, colors: ExtendedColors) {
-    val allowed = points.map { it.allowed.toDouble() }
-    val blocked = points.map { it.blocked.toDouble() }
-    val proxied = points.map { it.proxied.toDouble() }
     val totals = points.map { (it.allowed + it.blocked + it.proxied).toDouble() }
     val peak = totals.maxOrNull() ?: 0.0
     if (peak <= 0.0) {
@@ -489,56 +451,149 @@ private fun HistoryChart(points: List<StatsSeriesPoint>, colors: ExtendedColors)
     val danger = colors.danger
     val purple = colors.purple
     val border = colors.borderColor
-    Canvas(
+    // Peak, midpoint and zero: three labels fit the 150 dp plot without turning
+    // the axis into a wall of numbers, while still giving every value a scale.
+    val ticks = listOf(peak, peak / 2, 0.0)
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(150.dp)
             .padding(top = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(ChartAxisGap),
     ) {
-        val count = points.size
-        if (count < 2) return@Canvas
-        val stepX = size.width / (count - 1).toFloat()
-        fun yFor(value: Double): Float =
-            size.height - (value / peak * size.height).toFloat()
-
-        fun layer(lower: List<Double>, upper: List<Double>): Path {
-            val path = Path()
-            path.moveTo(0f, yFor(lower[0]))
-            for (i in 1 until count) path.lineTo(i * stepX, yFor(lower[i]))
-            for (i in count - 1 downTo 0) path.lineTo(i * stepX, yFor(upper[i]))
-            path.close()
-            return path
+        Column(
+            modifier = Modifier.width(ChartAxisWidth).fillMaxHeight(),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.End,
+        ) {
+            ticks.forEach { value ->
+                Text(
+                    text = chartAxisLabel(value),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = PanelMono,
+                        fontSize = 9.sp,
+                        lineHeight = 10.sp,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
         }
-
-        val allowedTop = allowed
-        val blockedTop = allowed.indices.map { allowed[it] + blocked[it] }
-        val proxiedTop = blockedTop.indices.map { blockedTop[it] + proxied[it] }
-        val zero = List(count) { 0.0 }
-
-        drawPath(layer(zero, allowedTop), color = primary.copy(alpha = 0.25f))
-        drawPath(layer(allowedTop, blockedTop), color = danger.copy(alpha = 0.28f))
-        drawPath(layer(blockedTop, proxiedTop), color = purple.copy(alpha = 0.28f))
-
-        // Thin top strokes make each layer readable without a legend lookup.
-        fun stroke(values: List<Double>, color: Color) {
-            val path = Path()
-            path.moveTo(0f, yFor(values[0]))
-            for (i in 1 until count) path.lineTo(i * stepX, yFor(values[i]))
-            drawPath(path, color = color, style = Stroke(width = 1.5.dp.toPx()))
+        Canvas(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            if (points.isEmpty()) return@Canvas
+            drawChartGrid(ticks, peak, border)
+            if (points.size == 1) {
+                drawBucketBar(points.first(), peak, primary, danger, purple)
+            } else {
+                drawStackedSeries(points, peak, primary, danger, purple)
+            }
         }
-        stroke(allowedTop, primary)
-        // A zero series would otherwise draw its stroke on top of the previous
-        // layer's line and make an all-allowed window look proxied.
-        if (blocked.any { it > 0 }) stroke(blockedTop, danger)
-        if (proxied.any { it > 0 }) stroke(proxiedTop, purple)
+    }
+}
 
+/** Horizontal scale lines at the axis ticks, drawn under the fills. */
+private fun DrawScope.drawChartGrid(ticks: List<Double>, peak: Double, color: Color) {
+    ticks.forEach { value ->
+        val y = chartY(value, peak, size.height)
         drawLine(
-            color = border,
-            start = Offset(0f, size.height),
-            end = Offset(size.width, size.height),
+            color = color.copy(alpha = 0.45f),
+            start = Offset(0f, y),
+            end = Offset(size.width, y),
             strokeWidth = 1.dp.toPx(),
         )
     }
+}
+
+/** The 1h range is one bucket, so a centered stacked bar replaces the line. */
+private fun DrawScope.drawBucketBar(
+    point: StatsSeriesPoint,
+    peak: Double,
+    primary: Color,
+    danger: Color,
+    purple: Color,
+) {
+    val barWidth = size.width * BUCKET_BAR_WIDTH_FRACTION
+    val left = (size.width - barWidth) / 2f
+    val allowedTop = point.allowed.toDouble()
+    val blockedTop = allowedTop + point.blocked
+    val proxiedTop = blockedTop + point.proxied
+    fun band(lower: Double, upper: Double, color: Color) {
+        val top = chartY(upper, peak, size.height)
+        val bottom = chartY(lower, peak, size.height)
+        drawRect(
+            color = color,
+            topLeft = Offset(left, top),
+            size = Size(barWidth, bottom - top),
+        )
+    }
+    band(0.0, allowedTop, primary.copy(alpha = 0.55f))
+    if (point.blocked > 0) band(allowedTop, blockedTop, danger.copy(alpha = 0.65f))
+    if (point.proxied > 0) band(blockedTop, proxiedTop, purple.copy(alpha = 0.65f))
+}
+
+/** Multi-point stacked bands and their top strokes. */
+private fun DrawScope.drawStackedSeries(
+    points: List<StatsSeriesPoint>,
+    peak: Double,
+    primary: Color,
+    danger: Color,
+    purple: Color,
+) {
+    val count = points.size
+    val stepX = size.width / (count - 1).toFloat()
+    val allowed = points.map { it.allowed.toDouble() }
+    val blocked = points.map { it.blocked.toDouble() }
+    val proxied = points.map { it.proxied.toDouble() }
+    val allowedTop = allowed
+    val blockedTop = allowed.indices.map { allowed[it] + blocked[it] }
+    val proxiedTop = blockedTop.indices.map { blockedTop[it] + proxied[it] }
+    val zero = List(count) { 0.0 }
+
+    fun yFor(value: Double): Float = chartY(value, peak, size.height)
+
+    fun layer(lower: List<Double>, upper: List<Double>): Path {
+        val path = Path()
+        path.moveTo(0f, yFor(lower[0]))
+        for (i in 1 until count) path.lineTo(i * stepX, yFor(lower[i]))
+        for (i in count - 1 downTo 0) path.lineTo(i * stepX, yFor(upper[i]))
+        path.close()
+        return path
+    }
+
+    drawPath(layer(zero, allowedTop), color = primary.copy(alpha = 0.25f))
+    drawPath(layer(allowedTop, blockedTop), color = danger.copy(alpha = 0.28f))
+    drawPath(layer(blockedTop, proxiedTop), color = purple.copy(alpha = 0.28f))
+
+    // Thin top strokes make each layer readable without a legend lookup.
+    fun stroke(values: List<Double>, color: Color) {
+        val path = Path()
+        path.moveTo(0f, yFor(values[0]))
+        for (i in 1 until count) path.lineTo(i * stepX, yFor(values[i]))
+        drawPath(path, color = color, style = Stroke(width = 1.5.dp.toPx()))
+    }
+    stroke(allowedTop, primary)
+    // A zero series would otherwise draw its stroke on top of the previous
+    // layer's line and make an all-allowed window look proxied.
+    if (blocked.any { it > 0 }) stroke(blockedTop, danger)
+    if (proxied.any { it > 0 }) stroke(proxiedTop, purple)
+}
+
+/** Map a value to the plot's vertical coordinate. */
+private fun chartY(value: Double, peak: Double, height: Float): Float =
+    height - (value / peak * height).toFloat()
+
+private val ChartAxisWidth = 34.dp
+private val ChartAxisGap = 6.dp
+
+private const val BUCKET_BAR_WIDTH_FRACTION = 0.18f
+private const val AXIS_KILO = 1_000.0
+private const val AXIS_MEGA = 1_000_000.0
+
+/** Compact axis numbers: full counts to 999, then k/M suffixes. */
+private fun chartAxisLabel(value: Double): String = when {
+    value >= AXIS_MEGA -> String.format(Locale.US, "%.1fM", value / AXIS_MEGA)
+    value >= AXIS_KILO -> String.format(Locale.US, "%.1fk", value / AXIS_KILO)
+    else -> value.toLong().toString()
 }
 
 private val COUNTRY_CODE = Regex("^[A-Z]{2}$")
@@ -564,7 +619,8 @@ private fun historyLabel(iso: String, interval: String): String {
         .format(instant)
 }
 
-private fun HistoryRange.labelRes(): Int = when (this) {
+internal fun HistoryRange.labelRes(): Int = when (this) {
+    HistoryRange.LAST_1H -> R.string.history_range_1h
     HistoryRange.LAST_24H -> R.string.history_range_24h
     HistoryRange.LAST_7D -> R.string.history_range_7d
     HistoryRange.LAST_30D -> R.string.history_range_30d

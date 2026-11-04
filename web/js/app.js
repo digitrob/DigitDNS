@@ -964,6 +964,7 @@ async function bootDashboard() {
   handleRouteFromURL();
   initHistory();
   initStatsSettings();
+  initFiltering();
 }
 
 // =======================================================
@@ -1095,26 +1096,28 @@ function renderTLSCertDetails(cfg) {
 // tests/web/dashboard-layout.test.cjs and must not touch the DOM or window.
 // DASH_LAYOUT_PURE_START
 const DASH_COLS = 12;
-const DASH_ROW_PX = 24;
-const DASH_GRID_GAP = 16;
-const DASH_MAX_ROWS = 80;
+const DASH_ROW_PX = 12;
+const DASH_COL_GAP = 16;
+const DASH_ROW_GAP = 8;
+const DASH_MAX_ROWS = 240;
+const DASH_LAYOUT_VERSION = 3;
 const DASH_CARD_MIN = {
-  qps: { w: 2, h: 3 },
-  cache: { w: 2, h: 3 },
-  sni: { w: 2, h: 3 },
-  cpu: { w: 2, h: 3 },
-  ram: { w: 2, h: 3 },
-  traffic: { w: 2, h: 3 },
-  chart: { w: 6, h: 6 },
-  upstream: { w: 3, h: 6 },
-  latency: { w: 6, h: 5 },
-  'history-chart': { w: 6, h: 6 },
-  'history-top-domains': { w: 3, h: 6 },
-  'history-top-blocked': { w: 3, h: 6 },
-  'history-top-clients': { w: 3, h: 6 },
-  'history-top-upstreams': { w: 3, h: 6 },
-  'history-top-protocols': { w: 3, h: 6 },
-  'history-top-relay': { w: 3, h: 6 },
+  qps: { w: 2, h: 5 },
+  cache: { w: 2, h: 5 },
+  sni: { w: 2, h: 5 },
+  cpu: { w: 2, h: 5 },
+  ram: { w: 2, h: 5 },
+  traffic: { w: 2, h: 5 },
+  chart: { w: 4, h: 10 },
+  upstream: { w: 3, h: 10 },
+  latency: { w: 4, h: 8 },
+  'history-chart': { w: 4, h: 10 },
+  'history-top-domains': { w: 2, h: 8 },
+  'history-top-blocked': { w: 2, h: 8 },
+  'history-top-clients': { w: 2, h: 8 },
+  'history-top-upstreams': { w: 2, h: 8 },
+  'history-top-protocols': { w: 2, h: 8 },
+  'history-top-relay': { w: 2, h: 8 },
 };
 
 function dashInt(value, fallback) {
@@ -1123,7 +1126,7 @@ function dashInt(value, fallback) {
 }
 
 function dashMin(id) {
-  return DASH_CARD_MIN[id] || { w: 2, h: 3 };
+  return DASH_CARD_MIN[id] || { w: 2, h: 5 };
 }
 
 function dashClampCard(card, id) {
@@ -1181,18 +1184,18 @@ function dashDefaultCards(name, ids) {
   const cards = {};
   if (name === 'metrics') {
     ids.forEach((id, i) => {
-      cards[id] = { x: (i * 2) % DASH_COLS, y: Math.floor((i * 2) / DASH_COLS) * 4, w: 2, h: 4 };
+      cards[id] = { x: (i * 2) % DASH_COLS, y: Math.floor((i * 2) / DASH_COLS) * 7, w: 2, h: 7 };
     });
     return cards;
   }
   if (name === 'main') {
     const defaults = {
-      chart: { x: 0, y: 0, w: 8, h: 10 },
-      upstream: { x: 8, y: 0, w: 4, h: 17 },
-      latency: { x: 0, y: 10, w: 8, h: 7 },
+      chart: { x: 0, y: 0, w: 8, h: 19 },
+      upstream: { x: 8, y: 0, w: 4, h: 33 },
+      latency: { x: 0, y: 19, w: 8, h: 13 },
     };
     ids.forEach((id, i) => {
-      cards[id] = defaults[id] || { x: (i * 4) % DASH_COLS, y: 0, w: 4, h: 6 };
+      cards[id] = defaults[id] || { x: (i * 4) % DASH_COLS, y: 0, w: 4, h: 11 };
     });
     return cards;
   }
@@ -1207,36 +1210,66 @@ function dashDefaultCards(name, ids) {
       'history-top-domains', 'history-top-blocked', 'history-top-clients',
       'history-top-upstreams', 'history-top-protocols', 'history-top-relay',
     ];
-    kpis.forEach((id, i) => { cards[id] = { x: i * 2, y: 0, w: 2, h: 4 }; });
-    cards['history-chart'] = { x: 0, y: 4, w: 12, h: 10 };
+    kpis.forEach((id, i) => { cards[id] = { x: i * 2, y: 0, w: 2, h: 7 }; });
+    cards['history-chart'] = { x: 0, y: 7, w: 12, h: 19 };
     tables.forEach((id, i) => {
-      cards[id] = { x: (i % 3) * 4, y: 14 + Math.floor(i / 3) * 6, w: 4, h: 6 };
+      cards[id] = { x: (i % 3) * 4, y: 26 + Math.floor(i / 3) * 11, w: 4, h: 11 };
     });
     ids.forEach((id, i) => {
-      if (!cards[id]) cards[id] = { x: (i * 2) % DASH_COLS, y: 26, w: 2, h: 3 };
+      if (!cards[id]) cards[id] = { x: (i * 2) % DASH_COLS, y: 48, w: 2, h: 5 };
     });
     return cards;
   }
   ids.forEach((id, i) => {
-    cards[id] = { x: (i * 2) % DASH_COLS, y: 0, w: 2, h: 3 };
+    cards[id] = { x: (i * 2) % DASH_COLS, y: 0, w: 2, h: 5 };
   });
   return cards;
 }
 
-// Accepts the old {order, cards:{w,h}} document and the v2 {grids} document.
-// The old format had 6 columns for metrics and 3 for the main area; those are
-// scaled to the 12-column model, and the old 48px height unit becomes 24px.
+// Accepts the v3 {version, grids} document, the v2 document whose y/h are in
+// 24px rows, and the old {order, cards:{w,h}} document. v2 is migrated by
+// doubling y/h; the old format is scaled to the 12-column model and then to the
+// 12px row unit.
 function dashNormalizeLayout(raw, gridIds) {
   const source = raw && typeof raw === 'object' ? raw : {};
-  const v2 = source.version === 2 && source.grids && typeof source.grids === 'object';
-  const out = { version: 2, grids: {} };
-  Object.entries(gridIds).forEach(([name, ids]) => {
+  const version = dashInt(source.version, 0);
+  const v3 = version >= DASH_LAYOUT_VERSION && source.grids && typeof source.grids === 'object';
+  const v2 = version === 2 && source.grids && typeof source.grids === 'object';
+  const out = { version: DASH_LAYOUT_VERSION, grids: {} };
+  // A card can move between dashboard grids. Treat every card named by a saved
+  // group as claimed by that grid; only cards with no saved home fall back to
+  // their original markup grid. Without this, a history card dropped into the
+  // main grid would be re-added to history on the next load.
+  const claimed = new Set();
+  if (v3 || v2) {
+    Object.values(source.grids).forEach((group) => {
+      const saved = group && group.cards && typeof group.cards === 'object' ? group.cards : {};
+      Object.keys(saved).forEach((id) => claimed.add(id));
+    });
+  }
+  Object.entries(gridIds).forEach(([name, markupIds]) => {
+    const group = (v3 || v2) ? (source.grids[name] || {}) : {};
+    const supplied = group.cards && typeof group.cards === 'object' ? group.cards : {};
+    const ids = (v3 || v2)
+      ? Array.from(new Set([...Object.keys(supplied), ...markupIds.filter((id) => !claimed.has(id))]))
+      : markupIds;
     const defaults = dashDefaultCards(name, ids);
     const cards = {};
-    if (v2) {
-      const group = source.grids[name] || {};
-      const supplied = group.cards && typeof group.cards === 'object' ? group.cards : {};
+    if (v3) {
       ids.forEach((id) => { cards[id] = dashClampCard(supplied[id] || defaults[id], id); });
+    } else if (v2) {
+      ids.forEach((id) => {
+        const saved = supplied[id];
+        if (!saved || typeof saved !== 'object') {
+          cards[id] = dashClampCard(defaults[id], id);
+          return;
+        }
+        cards[id] = dashClampCard({
+          ...saved,
+          y: Math.round((40 * dashInt(saved.y, 0)) / 20),
+          h: Math.round((40 * dashInt(saved.h, dashMin(id).h) - 12) / 20),
+        }, id);
+      });
     } else {
       const submitted = Array.isArray(source.order && source.order[name]) ? source.order[name] : [];
       const order = submitted.filter((id, i) => ids.includes(id) && submitted.indexOf(id) === i);
@@ -1249,7 +1282,7 @@ function dashNormalizeLayout(raw, gridIds) {
         const legacy = source.cards && source.cards[id];
         const base = defaults[id];
         let w = legacy && Number.isFinite(Number(legacy.w)) ? dashInt(Number(legacy.w) * scale, base.w) : base.w;
-        let h = legacy && Number.isFinite(Number(legacy.h)) ? dashInt(Number(legacy.h) * 2, base.h) : base.h;
+        let h = legacy && Number.isFinite(Number(legacy.h)) ? dashInt(Number(legacy.h) * 4, base.h) : base.h;
         w = Math.max(dashMin(id).w, Math.min(DASH_COLS, w));
         h = Math.max(dashMin(id).h, Math.min(DASH_MAX_ROWS, h));
         if (x + w > DASH_COLS) {
@@ -1277,11 +1310,43 @@ function dashNormalizeLayout(raw, gridIds) {
       });
     }
     let order = dashSortOrder(cards, ids);
-    dashCompact(cards, order, '');
-    order = dashSortOrder(cards, ids);
+    if (!v3) {
+      dashCompact(cards, order, '');
+      order = dashSortOrder(cards, ids);
+    }
     out.grids[name] = { cards, order };
   });
   return out;
+}
+
+/** True when a candidate rectangle is inside the grid and does not overlap. */
+function dashCardFits(card, cards, ignoreId) {
+  if (!card) return false;
+  if (card.x < 0 || card.y < 0 || card.w < 1 || card.h < 1) return false;
+  if (card.x + card.w > DASH_COLS || card.y + card.h > DASH_MAX_ROWS) return false;
+  return !Object.entries(cards).some(([id, other]) => id !== ignoreId && dashOverlaps(card, other));
+}
+
+/** Resize a card from any edge or corner. dx/dy are cell deltas from the start. */
+function dashResizeRect(cfg, edge, dx, dy) {
+  const min = dashMin(cfg.id);
+  let x = cfg.x;
+  let y = cfg.y;
+  let w = cfg.w;
+  let h = cfg.h;
+  if (edge.includes('e')) w = cfg.w + dx;
+  if (edge.includes('s')) h = cfg.h + dy;
+  if (edge.includes('w')) {
+    x = Math.max(0, Math.min(cfg.x + dx, cfg.x + cfg.w - min.w));
+    w = cfg.x + cfg.w - x;
+  }
+  if (edge.includes('n')) {
+    y = Math.max(0, Math.min(cfg.y + dy, cfg.y + cfg.h - min.h));
+    h = cfg.y + cfg.h - y;
+  }
+  w = Math.max(min.w, Math.min(DASH_COLS - x, w));
+  h = Math.max(min.h, Math.min(DASH_MAX_ROWS - y, h));
+  return { x, y, w, h };
 }
 
 function dashCloneLayout(layout) {
@@ -1289,7 +1354,7 @@ function dashCloneLayout(layout) {
 }
 // DASH_LAYOUT_PURE_END
 
-let dashLayout = { version: 2, grids: {} };
+let dashLayout = { version: DASH_LAYOUT_VERSION, grids: {} };
 let dashOriginalIds = null;
 let dashEditing = false;
 let dashLayoutDirty = false;
@@ -1303,7 +1368,11 @@ function dashCardsOf(grid) {
 }
 
 function dashIsDesktop() {
-  return window.matchMedia('(min-width: 1024px)').matches;
+  // Free placement fixes every grid at twelve columns, and the six KPI cards are
+  // two columns each. Below ~1280px the content column leaves those cards too
+  // narrow for their value/meta rows, so a small laptop keeps the responsive
+  // stacked grids instead of the absolute layout.
+  return window.matchMedia('(min-width: 1280px)').matches;
 }
 
 function dashGridIds() {
@@ -1324,8 +1393,8 @@ function dashOriginalGridIds() {
 function dashGridMetrics(grid) {
   const rect = grid.getBoundingClientRect();
   const style = getComputedStyle(grid);
-  const columnGap = parseFloat(style.columnGap) || DASH_GRID_GAP;
-  const rowGap = parseFloat(style.rowGap) || DASH_GRID_GAP;
+  const columnGap = parseFloat(style.columnGap) || DASH_COL_GAP;
+  const rowGap = parseFloat(style.rowGap) || DASH_ROW_GAP;
   const colWidth = Math.max(1, (grid.clientWidth - columnGap * (DASH_COLS - 1)) / DASH_COLS);
   return { rect, columnGap, rowGap, colWidth };
 }
@@ -1364,45 +1433,6 @@ function dashFlip(before) {
   });
 }
 
-// A saved height is a minimum, not a promise: text and canvases have their own
-// natural height. Grow a card until its own content fits, then compact the grid
-// so the extra rows do not overlap the card below.
-function dashEnsureContentFits() {
-  if (!dashIsDesktop()) return false;
-  let changed = false;
-  dashGridEls().forEach((grid) => {
-    const name = grid.dataset.dashGrid;
-    const group = dashLayout.grids[name];
-    if (!group) return;
-    const cards = dashCardsOf(grid);
-    let grew = false;
-    cards.forEach((card) => {
-      const cfg = group.cards[card.dataset.dashCard];
-      if (!cfg) return;
-      let h = cfg.h;
-      let guard = 0;
-      while (h < DASH_MAX_ROWS - cfg.y && card.scrollHeight > card.clientHeight + 1 && guard++ < DASH_MAX_ROWS) {
-        h += 1;
-        card.style.gridRow = `${cfg.y + 1} / span ${h}`;
-      }
-      if (h !== cfg.h) {
-        cfg.h = h;
-        grew = true;
-        changed = true;
-      }
-    });
-    if (grew) {
-      dashCompact(group.cards, group.order, '');
-      group.order = dashSortOrder(group.cards, Object.keys(group.cards));
-      cards.forEach((card) => {
-        const cfg = group.cards[card.dataset.dashCard];
-        if (cfg) dashApplyCardStyle(card, cfg);
-      });
-    }
-  });
-  return changed;
-}
-
 function applyDashboardLayout(raw, animate) {
   if (!document.getElementById('tab-dashboard')) return;
   if (raw !== undefined) dashLayout = dashNormalizeLayout(raw, dashGridIds());
@@ -1416,15 +1446,18 @@ function applyDashboardLayout(raw, animate) {
     const name = grid.dataset.dashGrid;
     const group = dashLayout.grids[name];
     if (!group) return;
-    const cards = dashCardsOf(grid);
-    const byId = {};
-    cards.forEach((card) => { byId[card.dataset.dashCard] = card; });
-    group.order.forEach((id) => { if (byId[id]) grid.appendChild(byId[id]); });
+    // Pull every card named by the group into this grid. This is what makes a
+    // cross-grid drop persist: the card's DOM parent follows its layout group.
+    const allCards = Array.from(document.querySelectorAll('#tab-dashboard [data-dash-card]'));
+    const cards = group.order
+      .map((id) => allCards.find((card) => card.dataset.dashCard === id))
+      .filter(Boolean);
+    cards.forEach((card) => grid.appendChild(card));
     if (desktop) {
       grid.style.gridTemplateColumns = `repeat(${DASH_COLS}, minmax(0, 1fr))`;
       grid.style.gridAutoRows = `${DASH_ROW_PX}px`;
-      grid.style.columnGap = `${DASH_GRID_GAP}px`;
-      grid.style.rowGap = `${DASH_GRID_GAP}px`;
+      grid.style.columnGap = `${DASH_COL_GAP}px`;
+      grid.style.rowGap = `${DASH_ROW_GAP}px`;
       cards.forEach((card) => {
         const cfg = group.cards[card.dataset.dashCard];
         if (cfg) dashApplyCardStyle(card, cfg);
@@ -1441,7 +1474,6 @@ function applyDashboardLayout(raw, animate) {
       });
     }
   });
-  if (desktop) dashEnsureContentFits();
   if (animate) dashFlip(before);
   else requestAnimationFrame(resizeDashCharts);
 }
@@ -1487,9 +1519,15 @@ function syncDashEditUi() {
     btn.setAttribute('aria-label', label);
   });
   if (bar) bar.classList.toggle('hidden', !dashEditing);
+  document.querySelectorAll('.dash-reset-toggle').forEach((btn) => {
+    btn.classList.toggle('hidden', !dashEditing);
+  });
+  document.querySelectorAll('.sidebar-nav-row, .mobile-nav-slot').forEach((row) => {
+    row.classList.toggle('has-dash-reset', dashEditing);
+  });
   if (hint) {
     hint.textContent = dashIsDesktop()
-      ? 'Drag a card anywhere · resize from the right, bottom or corner · saved when you exit'
+      ? 'Drag a card anywhere · resize from any edge or corner · saved when you exit'
       : 'Long-press a card to reorder it · saved when you exit';
   }
 }
@@ -1497,6 +1535,32 @@ function syncDashEditUi() {
 function clearDashHandles() {
   document.querySelectorAll('.dash-edit-cover, .dash-resize, .dash-placeholder, .dash-drag-ghost').forEach((el) => el.remove());
   document.querySelectorAll('.dash-drag-origin').forEach((el) => el.classList.remove('dash-drag-origin'));
+}
+
+// Pick the dashboard grid whose top is nearest above the pointer. Using the
+// grid's current bounding box would reject the blank area left below a card
+// that was just made smaller, because that area sits outside the grid until a
+// card occupies it. Nearest-top keeps that free space addressable.
+function dashGridAtPoint(x, y) {
+  let best = null;
+  dashGridEls().forEach((grid) => {
+    const rect = grid.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    if (x < rect.left || x > rect.right) return;
+    if (rect.top > y) return;
+    if (!best || rect.top > best.rect.top) best = { grid, rect };
+  });
+  return best ? best.grid : null;
+}
+
+function dashScrollParent(el) {
+  let node = el && el.parentElement;
+  while (node && node !== document.body && node !== document.documentElement) {
+    const style = getComputedStyle(node);
+    if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) return node;
+    node = node.parentElement;
+  }
+  return null;
 }
 
 function beginDashDragMobile(e, card, grid, overlay) {
@@ -1558,10 +1622,14 @@ function beginDashDrag(e, card, grid) {
   if (e.button !== undefined && e.button !== 0) return;
   e.preventDefault();
   const name = grid.dataset.dashGrid;
+  const sourceName = name;
   const id = card.dataset.dashCard;
   const group = dashLayout.grids[name];
   const cfg = group && group.cards[id];
   if (!cfg) return;
+  let activeName = name;
+  let activeGrid = grid;
+  let activeGroup = group;
   const startRect = card.getBoundingClientRect();
   const offsetX = e.clientX - startRect.left;
   const offsetY = e.clientY - startRect.top;
@@ -1577,41 +1645,106 @@ function beginDashDrag(e, card, grid) {
   document.body.append(ghost, placeholder);
   card.classList.add('dash-drag-origin');
   document.body.style.userSelect = 'none';
-  let target = { x: cfg.x, y: cfg.y };
+  let target = { x: cfg.x, y: cfg.y, w: cfg.w, h: cfg.h };
   let moved = false;
-  const move = (ev) => {
-    ev.preventDefault();
-    const left = ev.clientX - offsetX;
-    const top = ev.clientY - offsetY;
+  let lastPointer = { x: e.clientX, y: e.clientY };
+  let dragActive = true;
+  let autoScrollFrame = 0;
+  const scroller = dashScrollParent(grid);
+  // Recompute the drop cell from the current pointer and the grid's current
+  // viewport position. This is called on pointermove *and* on scroll, so a
+  // scrolled page keeps the placeholder under the card instead of freezing it
+  // at the position that was valid before the scroll.
+  const updateFromPointer = () => {
+    const left = lastPointer.x - offsetX;
+    const top = lastPointer.y - offsetY;
     ghost.style.left = `${left}px`;
     ghost.style.top = `${top}px`;
-    const m = dashGridMetrics(grid);
+    // The dashboard is split into several grids (metrics, main, history). A
+    // card may be dropped into any of them; probe the grid under the pointer,
+    // but only commit to it once the candidate cell is actually free.
+    let probeName = activeName;
+    let probeGrid = activeGrid;
+    let probeGroup = activeGroup;
+    const hovered = dashGridAtPoint(lastPointer.x, lastPointer.y);
+    if (hovered) {
+      const hoveredName = hovered.dataset.dashGrid;
+      const hoveredGroup = dashLayout.grids[hoveredName];
+      if (hoveredGroup) {
+        probeName = hoveredName;
+        probeGrid = hovered;
+        probeGroup = hoveredGroup;
+      }
+    }
+    const m = dashGridMetrics(probeGrid);
     const x = Math.max(0, Math.min(DASH_COLS - cfg.w, Math.round((left - m.rect.left) / (m.colWidth + m.columnGap))));
     const y = Math.max(0, Math.min(DASH_MAX_ROWS - cfg.h, Math.round((top - m.rect.top) / (DASH_ROW_PX + m.rowGap))));
-    const draft = dashCloneLayout(dashLayout);
-    const draftGroup = draft.grids[name];
-    if (!draftGroup) return;
-    draftGroup.cards[id] = { ...draftGroup.cards[id], x, y };
-    dashCompact(draftGroup.cards, draftGroup.order, id);
-    target = { x: draftGroup.cards[id].x, y: draftGroup.cards[id].y };
-    moved = moved || target.x !== cfg.x || target.y !== cfg.y;
+    const candidate = { x, y, w: cfg.w, h: cfg.h };
+    // Free placement: the card keeps the exact cell it is dropped on. An
+    // occupied cell is refused, so cards can never overlap and the last valid
+    // position stays under the pointer.
+    if (!dashCardFits(candidate, probeGroup.cards, id)) return;
+    activeName = probeName;
+    activeGrid = probeGrid;
+    activeGroup = probeGroup;
+    target = candidate;
+    moved = moved || activeName !== sourceName || target.x !== cfg.x || target.y !== cfg.y;
     placeholder.style.left = `${m.rect.left + target.x * (m.colWidth + m.columnGap)}px`;
     placeholder.style.top = `${m.rect.top + target.y * (DASH_ROW_PX + m.rowGap)}px`;
     placeholder.style.width = `${cfg.w * m.colWidth + (cfg.w - 1) * m.columnGap}px`;
     placeholder.style.height = `${cfg.h * DASH_ROW_PX + (cfg.h - 1) * m.rowGap}px`;
   };
+  const move = (ev) => {
+    ev.preventDefault();
+    lastPointer = { x: ev.clientX, y: ev.clientY };
+    updateFromPointer();
+  };
+  // Dragging a tall card from the top of a scrolled dashboard to a free cell
+  // near the bottom needs the page to scroll while the pointer sits at the
+  // edge. Without this, the target is reachable only by letting go and losing
+  // the card's drag origin.
+  const onScroll = () => {
+    if (dragActive) updateFromPointer();
+  };
+  if (scroller) scroller.addEventListener('scroll', onScroll, { passive: true });
+  else window.addEventListener('scroll', onScroll, { passive: true });
+  const autoScroll = () => {
+    if (!dragActive) return;
+    const viewTop = scroller ? scroller.getBoundingClientRect().top : 0;
+    const viewBottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
+    const margin = 70;
+    let delta = 0;
+    if (lastPointer.y < viewTop + margin) {
+      delta = -Math.max(6, Math.round((viewTop + margin - lastPointer.y) / 6));
+    } else if (lastPointer.y > viewBottom - margin) {
+      delta = Math.max(6, Math.round((lastPointer.y - (viewBottom - margin)) / 6));
+    }
+    if (delta !== 0) {
+      if (scroller) scroller.scrollTop += delta;
+      else window.scrollBy(0, delta);
+      updateFromPointer();
+    }
+    autoScrollFrame = requestAnimationFrame(autoScroll);
+  };
+  autoScrollFrame = requestAnimationFrame(autoScroll);
   const finish = (cancelled) => {
     cleanup();
     if (cancelled || !moved) return;
-    const current = dashLayout.grids[name];
-    if (!current) return;
-    current.cards[id] = { ...current.cards[id], x: target.x, y: target.y };
-    dashCompact(current.cards, current.order, id);
-    current.order = dashSortOrder(current.cards, Object.keys(current.cards));
+    const source = dashLayout.grids[sourceName];
+    const dest = dashLayout.grids[activeName];
+    if (!source || !dest) return;
+    delete source.cards[id];
+    dest.cards[id] = dashClampCard({ ...cfg, x: target.x, y: target.y }, id);
+    source.order = dashSortOrder(source.cards, Object.keys(source.cards));
+    dest.order = dashSortOrder(dest.cards, Object.keys(dest.cards));
     markDashLayoutDirty();
     applyDashboardLayout(undefined, true);
   };
   const cleanup = () => {
+    dragActive = false;
+    cancelAnimationFrame(autoScrollFrame);
+    if (scroller) scroller.removeEventListener('scroll', onScroll);
+    else window.removeEventListener('scroll', onScroll);
     ghost.remove();
     placeholder.remove();
     card.classList.remove('dash-drag-origin');
@@ -1637,31 +1770,22 @@ function beginDashResize(e, card, grid, edge) {
   if (!cfg) return;
   const startX = e.clientX;
   const startY = e.clientY;
-  const startW = cfg.w;
-  const startH = cfg.h;
-  const min = dashMin(id);
-  let lastW = startW;
-  let lastH = startH;
+  const startCfg = { ...cfg, id };
+  let lastRect = { x: cfg.x, y: cfg.y, w: cfg.w, h: cfg.h };
+  let changed = false;
   const move = (ev) => {
     const m = dashGridMetrics(grid);
-    let w = startW;
-    let h = startH;
-    if (edge === 'e' || edge === 'se') {
-      w = Math.max(min.w, Math.min(DASH_COLS - cfg.x, startW + Math.round((ev.clientX - startX) / (m.colWidth + m.columnGap))));
-    }
-    if (edge === 's' || edge === 'se') {
-      h = Math.max(min.h, Math.min(DASH_MAX_ROWS - cfg.y, startH + Math.round((ev.clientY - startY) / (DASH_ROW_PX + m.rowGap))));
-    }
-    card.style.gridColumn = `${cfg.x + 1} / span ${w}`;
-    // Let the browser lay the new height out before asking whether the content
-    // still fits. If it does not, add rows instead of letting text overlap.
-    card.style.gridRow = `${cfg.y + 1} / span ${h}`;
-    while (h < DASH_MAX_ROWS - cfg.y && card.scrollHeight > card.clientHeight + 1) {
-      h += 1;
-      card.style.gridRow = `${cfg.y + 1} / span ${h}`;
-    }
-    lastW = w;
-    lastH = h;
+    const dx = Math.round((ev.clientX - startX) / (m.colWidth + m.columnGap));
+    const dy = Math.round((ev.clientY - startY) / (DASH_ROW_PX + m.rowGap));
+    const candidate = dashResizeRect(startCfg, edge, dx, dy);
+    // Free placement: stop at the last valid size instead of pushing other
+    // cards around. The chosen height is never auto-grown; content scrolls.
+    if (!dashCardFits(candidate, group.cards, id)) return;
+    lastRect = candidate;
+    changed = changed || candidate.x !== cfg.x || candidate.y !== cfg.y ||
+      candidate.w !== cfg.w || candidate.h !== cfg.h;
+    card.style.gridColumn = `${candidate.x + 1} / span ${candidate.w}`;
+    card.style.gridRow = `${candidate.y + 1} / span ${candidate.h}`;
     resizeDashCharts();
   };
   const finish = () => {
@@ -1669,9 +1793,8 @@ function beginDashResize(e, card, grid, edge) {
     document.removeEventListener('pointerup', finish);
     document.removeEventListener('pointercancel', finish);
     card.style.zIndex = '';
-    if (!group) return;
-    group.cards[id] = { ...group.cards[id], w: lastW, h: lastH };
-    dashCompact(group.cards, group.order, id);
+    if (!group || !changed) return;
+    group.cards[id] = { ...group.cards[id], ...lastRect };
     group.order = dashSortOrder(group.cards, Object.keys(group.cards));
     markDashLayoutDirty();
     applyDashboardLayout(undefined, true);
@@ -1696,12 +1819,22 @@ function setDashEditing(on) {
         overlay.addEventListener('pointerdown', (e) => beginDashDrag(e, card, grid));
         card.appendChild(overlay);
         if (dashIsDesktop()) {
-          ['e', 's', 'se'].forEach((edge) => {
+          const titles = {
+            n: 'Drag to resize top edge',
+            e: 'Drag to resize right edge',
+            s: 'Drag to resize bottom edge',
+            w: 'Drag to resize left edge',
+            ne: 'Drag to resize top-right corner',
+            nw: 'Drag to resize top-left corner',
+            se: 'Drag to resize bottom-right corner',
+            sw: 'Drag to resize bottom-left corner',
+          };
+          Object.entries(titles).forEach(([edge, title]) => {
             const handle = document.createElement('button');
             handle.type = 'button';
             handle.className = `dash-resize dash-resize-${edge}`;
-            handle.title = edge === 'e' ? 'Drag to resize width' : (edge === 's' ? 'Drag to resize height' : 'Drag to resize');
-            handle.setAttribute('aria-label', handle.title);
+            handle.title = title;
+            handle.setAttribute('aria-label', title);
             handle.addEventListener('pointerdown', (e) => beginDashResize(e, card, grid, edge));
             card.appendChild(handle);
           });
@@ -1711,6 +1844,13 @@ function setDashEditing(on) {
   }
   syncDashEditUi();
   if (!on) resizeDashCharts();
+}
+
+function resetDashboardLayout() {
+  dashLayout = dashNormalizeLayout({}, dashOriginalGridIds());
+  markDashLayoutDirty();
+  applyDashboardLayout(undefined, true);
+  showToast('Dashboard layout reset', 'success');
 }
 
 async function toggleDashboardEditing() {
@@ -1735,11 +1875,16 @@ function initDashboardEditor() {
       toggleDashboardEditing();
     });
   });
-  document.getElementById('dash-reset-btn')?.addEventListener('click', () => {
-    dashLayout = dashNormalizeLayout({}, dashOriginalGridIds());
-    markDashLayoutDirty();
-    applyDashboardLayout(undefined, true);
-    showToast('Dashboard layout reset', 'success');
+  [
+    document.getElementById('dash-reset-btn'),
+    document.getElementById('dash-reset-btn-sidebar'),
+    document.getElementById('dash-reset-btn-mobile'),
+  ].filter(Boolean).forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      resetDashboardLayout();
+    });
   });
   window.addEventListener('resize', () => {
     clearTimeout(initDashboardEditor._resizeTimer);
@@ -5230,7 +5375,7 @@ function pushChartData(val) {
 // =======================================================
 // HISTORICAL STATS (90-day aggregates)
 // =======================================================
-const HISTORY_RANGES = ['24h', '7d', '30d', '90d'];
+const HISTORY_RANGES = ['1h', '24h', '7d', '30d', '90d'];
 const HISTORY_TOP_DIMENSIONS = [
   { id: 'history-top-domains', dimension: 'domain', empty: 'No domains in this range.' },
   { id: 'history-top-blocked', dimension: 'blocked_domain', empty: 'No blocked queries in this range.' },
@@ -5392,10 +5537,28 @@ function renderHistoryChart(series) {
   const chart = ensureHistoryChart();
   if (!chart) return;
   const points = Array.isArray(series.points) ? series.points : [];
+  // A single bucket (the 1h range) has no line segment to draw, so the line
+  // datasets would leave the plot empty. Render the same three series as one
+  // stacked bar instead; Chart.js supports a per-dataset type switch.
+  const single = points.length === 1;
   chart.data.labels = points.map((p) => historyLabel(p.start, series.interval));
   chart.data.datasets[0].data = points.map((p) => Math.max(0, (p.queries || 0) - (p.blocked || 0) - (p.proxied || 0)));
   chart.data.datasets[1].data = points.map((p) => p.blocked || 0);
   chart.data.datasets[2].data = points.map((p) => p.proxied || 0);
+  chart.data.datasets.forEach((dataset) => {
+    dataset.type = single ? 'bar' : 'line';
+    dataset.fill = !single;
+    dataset.tension = single ? 0 : 0.3;
+    dataset.pointRadius = single ? 4 : 0;
+    dataset.borderWidth = single ? 1 : 2;
+    dataset.borderSkipped = false;
+    dataset.barPercentage = 0.6;
+    dataset.categoryPercentage = 0.5;
+    dataset.borderRadius = 3;
+  });
+  // With a single category a bar would otherwise sit against the left edge;
+  // offset centers it under the lone 1h tick.
+  chart.options.scales.x.offset = single;
   try {
     chart.update('none');
     chart.resize();
@@ -5536,7 +5699,7 @@ async function loadHistory(force = false) {
   const seq = ++historySeq;
   historyInFlight = true;
   const range = historyRange;
-  const interval = (range === '24h' || range === '7d') ? 'hour' : 'day';
+  const interval = range === '1h' ? '5m' : (range === '24h' || range === '7d') ? 'hour' : 'day';
   const query = `range=${encodeURIComponent(range)}`;
   setHistoryStatus('Loading history…');
   try {
@@ -5597,6 +5760,7 @@ function initHistory() {
   });
   document.getElementById('history-export-csv')?.addEventListener('click', () => exportHistory('csv'));
   document.getElementById('history-export-json')?.addEventListener('click', () => exportHistory('json'));
+  document.getElementById('history-refresh-btn')?.addEventListener('click', () => loadHistory(true));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       if (historyTimer) {
@@ -5707,6 +5871,540 @@ function initStatsSettings() {
   statsSettingsInitialized = true;
   document.getElementById('save-stats-settings-btn')?.addEventListener('click', saveStatsSettings);
   loadStatsSettings();
+}
+
+// ── Ad blocking ───────────────────────────────────────────────────────────────
+// The engine lives in the daemon. This UI only edits policy and list sources;
+// downloads and compilation happen in background goroutines, never in a request
+// or on the DNS path.
+let filteringInitialized = false;
+let filteringPollTimer = null;
+let filteringPresetData = [];
+let filteringPresetCounts = {};
+let filteringInstalledLists = [];
+let filteringUpdating = new Set();
+let filteringAdding = new Set();
+let filteringCounting = false;
+let filteringCountTimer = null;
+
+function setFilteringStatus(message) {
+  const el = document.getElementById('filtering-settings-status');
+  if (el) el.textContent = message || '';
+}
+
+function setFilteringError(message) {
+  const el = document.getElementById('filtering-error');
+  if (!el) return;
+  el.textContent = message || '';
+  el.classList.toggle('hidden', !message);
+}
+
+function filterDate(iso) {
+  if (!iso || String(iso).startsWith('0001')) return 'never';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? 'never' : d.toLocaleString();
+}
+
+async function loadFiltering() {
+  if (!authToken || !document.getElementById('filtering-card')) return;
+  try {
+    const res = await fetch(api('/api/filtering'), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not load ad blocking status'));
+    renderFiltering(await res.json());
+    setFilteringError('');
+  } catch (e) {
+    setFilteringError(e.message || 'Could not load ad blocking status.');
+  }
+}
+
+function renderFiltering(status) {
+  const settings = status.settings || {};
+  const set = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.value = value;
+  };
+  const check = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = !!value;
+  };
+  check('filtering-enabled-input', settings.enabled);
+  set('filtering-mode-select', settings.block_mode || 'null_ip');
+  set('filtering-ttl-input', settings.block_ttl || 10);
+  set('filtering-interval-input', settings.update_interval_hours || 24);
+  set('filtering-allowlist-input', Array.isArray(settings.allowlist) ? settings.allowlist.join('\n') : '');
+
+  const lists = Array.isArray(status.lists) ? status.lists : [];
+  filteringInstalledLists = lists;
+  filteringPresetData = Array.isArray(status.presets) ? status.presets : filteringPresetData;
+  filteringPresetCounts = {};
+  for (const count of (Array.isArray(status.preset_counts) ? status.preset_counts : [])) {
+    if (count && count.preset_id) filteringPresetCounts[count.preset_id] = count;
+  }
+  filteringCounting = !!status.preset_counts_running;
+  filteringUpdating = new Set(Array.isArray(status.updating) ? status.updating : []);
+
+  const enabledCount = lists.filter((l) => l.enabled).length;
+  const totalDomains = typeof status.total_domains === 'number'
+    ? status.total_domains
+    : lists.reduce((sum, l) => sum + (l.domain_count || l.rule_count || 0), 0);
+  const summary = document.getElementById('filtering-summary');
+  if (summary) {
+    summary.textContent = `${historyNumber(totalDomains)} unique domains · ${enabledCount}/${lists.length} active`;
+  }
+  renderFilteringPresets();
+  if (filteringCounting) scheduleFilteringCountPoll();
+}
+
+const FILTERING_PRESET_GROUPS = [
+  ['base', 'General protection'],
+  ['ads', 'Supplementary ads & trackers'],
+  ['security', 'Malware, phishing & scams'],
+  ['telemetry', 'Device & vendor telemetry'],
+  ['extras', 'Optional extras'],
+];
+
+function renderFilteringPresets() {
+  const container = document.getElementById('filtering-presets');
+  if (!container) return;
+
+  const installedByURL = new Map();
+  const installedByPreset = new Map();
+  for (const list of filteringInstalledLists) {
+    if (list.url) installedByURL.set(list.url, list);
+    if (list.preset_id) installedByPreset.set(list.preset_id, list);
+  }
+
+  // Resolve every preset to its installed record in one pass, so the custom
+  // group only contains rows that are not already represented above.
+  const installedForPreset = new Map();
+  const represented = new Set();
+  for (const preset of filteringPresetData) {
+    const list = installedByPreset.get(preset.id) || installedByURL.get(preset.url);
+    if (list) {
+      installedForPreset.set(preset.id, list);
+      if (list.id) represented.add(list.id);
+    }
+  }
+
+  const query = (document.getElementById('filtering-preset-search')?.value || '').trim().toLowerCase();
+  const matches = (values) => !query || values.filter(Boolean).join(' ').toLowerCase().includes(query);
+
+  const allCustom = filteringInstalledLists.filter((list) => !represented.has(list.id));
+
+  // The lists actually in force come first: an operator opening this tab needs
+  // to see what is blocking without scrolling past the whole catalogue. Enabled
+  // rows are then skipped in their own groups so nothing appears twice.
+  const activePresetRows = filteringPresetData
+    .map((preset) => ({ preset, list: installedForPreset.get(preset.id) }))
+    .filter(({ preset, list }) => list?.enabled &&
+      matches([preset.name, preset.description, preset.license, preset.warning, list.name, list.url]))
+    .map(({ preset, list }) => presetRow(preset, list));
+  const activeCustomRows = allCustom
+    .filter((list) => list.enabled && matches([list.name, list.url, list.license]))
+    .map(customListRow);
+  const activeGroup = (activePresetRows.length || activeCustomRows.length)
+    ? `<div class="filtering-preset-group filtering-preset-active"><h5>Active</h5>${activePresetRows.join('')}${activeCustomRows.join('')}</div>`
+    : '';
+
+  const groups = FILTERING_PRESET_GROUPS.map(([key, label]) => {
+    const items = filteringPresetData
+      .filter((p) => p.group === key)
+      .filter((p) => {
+        const list = installedForPreset.get(p.id);
+        if (list?.enabled) return false;
+        return matches([p.name, p.description, p.license, p.warning, list?.name, list?.url]);
+      });
+    if (!items.length) return '';
+    return `<div class="filtering-preset-group"><h5>${escapeHTML(label)}</h5>${items.map((p) => presetRow(p, installedForPreset.get(p.id))).join('')}</div>`;
+  }).join('');
+
+  const customLists = allCustom.filter((list) => !list.enabled && matches([list.name, list.url, list.license]));
+  const customGroup = customLists.length
+    ? `<div class="filtering-preset-group"><h5>Custom lists</h5>${customLists.map(customListRow).join('')}</div>`
+    : '';
+
+  container.innerHTML = activeGroup + groups + customGroup || '<div class="filter-list-empty">No blocklists match that search.</div>';
+
+  const summary = document.getElementById('filtering-preset-summary');
+  if (summary) {
+    summary.textContent = `${filteringPresetData.length} presets · ${installedForPreset.size} installed · ${allCustom.length} custom`;
+  }
+  safeFeatherReplace();
+}
+
+function filteringListMeta(list, updating) {
+  return [
+    `${historyNumber(list.domain_count || list.rule_count || 0)} domains`,
+    `${historyNumber(list.allowed_count || 0)} allow`,
+    `${historyNumber(list.skipped || 0)} skipped`,
+    list.license ? escapeHTML(list.license) : '',
+    updating ? 'updating…' : `updated ${escapeHTML(filterDate(list.last_updated))}`,
+  ].filter(Boolean).join(' · ');
+}
+
+function presetLinks(preset) {
+  const name = preset.name || 'list';
+  const home = preset.homepage
+    ? `<a class="filter-link" href="${escapeHTML(preset.homepage)}" target="_blank" rel="noopener noreferrer" title="Open project homepage" aria-label="Open ${escapeHTML(name)} homepage"><i data-feather="home" class="w-3.5 h-3.5"></i></a>`
+    : '';
+  const file = preset.url
+    ? `<a class="filter-link" href="${escapeHTML(preset.url)}" target="_blank" rel="noopener noreferrer" title="Open the whole list file" aria-label="Open ${escapeHTML(name)} file"><i data-feather="external-link" class="w-3.5 h-3.5"></i></a>`
+    : '';
+  return home + file;
+}
+
+function installedActions(list) {
+  const updating = filteringUpdating.has(list.id);
+  const name = list.name || 'list';
+  const home = list.homepage
+    ? `<a class="filter-link" href="${escapeHTML(list.homepage)}" target="_blank" rel="noopener noreferrer" title="Open list homepage" aria-label="Open ${escapeHTML(name)} homepage"><i data-feather="home" class="w-3.5 h-3.5"></i></a>`
+    : '';
+  const file = list.url
+    ? `<a class="filter-link" href="${escapeHTML(list.url)}" target="_blank" rel="noopener noreferrer" title="Open the whole list file" aria-label="Open ${escapeHTML(name)} file"><i data-feather="external-link" class="w-3.5 h-3.5"></i></a>`
+    : '';
+  return `${home}${file}
+    <button type="button" class="panel-btn panel-btn-neutral" data-filter-update ${updating ? 'disabled' : ''} title="Update now" aria-label="Update ${escapeHTML(name)}">
+      <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i>
+    </button>
+    <button type="button" class="panel-btn panel-btn-danger" data-filter-delete ${updating ? 'disabled' : ''} title="Delete list" aria-label="Delete ${escapeHTML(name)}">
+      <i data-feather="trash-2" class="w-3.5 h-3.5"></i>
+    </button>`;
+}
+
+function presetRow(preset, installedList) {
+  const presetID = preset.id || '';
+  const isInstalled = !!installedList;
+  const updating = isInstalled && filteringUpdating.has(installedList.id);
+  const adding = !isInstalled && filteringAdding.has(presetID);
+  const active = isInstalled && !!installedList.enabled;
+  const badges = [];
+  if (preset.recommended) badges.push('<span class="filtering-preset-badge">RECOMMENDED</span>');
+  if (isInstalled) {
+    const badgeClass = active ? 'filtering-preset-badge is-active' : 'filtering-preset-badge is-off';
+    badges.push(`<span class="${escapeHTML(badgeClass)}">${active ? 'ACTIVE' : 'DISABLED'}</span>`);
+  } else if (adding) {
+    badges.push('<span class="filtering-preset-badge">ADDING…</span>');
+  }
+  const warning = preset.warning ? `<div class="filtering-preset-warning">${escapeHTML(preset.warning)}</div>` : '';
+  const description = preset.description ? `<div class="filtering-preset-desc">${escapeHTML(preset.description)}</div>` : '';
+  const license = !isInstalled && preset.license ? `<div class="filtering-preset-desc">License: ${escapeHTML(preset.license)}</div>` : '';
+  const countEntry = filteringPresetCounts[presetID];
+  let domains = '';
+  if (isInstalled) {
+    // The installed meta line already carries domains, allow/skipped and the
+    // licence; a second "Domains:" line only made the row taller.
+    domains = '';
+  } else if (countEntry && countEntry.domain_count > 0) {
+    domains = `<div class="filtering-preset-desc">Domains: ${historyNumber(countEntry.domain_count)}</div>`;
+  } else if (filteringCounting) {
+    domains = '<div class="filtering-preset-desc">Domains: counting…</div>';
+  } else if (countEntry && countEntry.last_error) {
+    domains = '<div class="filtering-preset-desc">Domains: unavailable</div>';
+  }
+  const meta = isInstalled ? `<div class="filtering-preset-desc">${filteringListMeta(installedList, updating)}</div>` : '';
+  const error = isInstalled && installedList.last_error
+    ? `<div class="filter-list-error">${escapeHTML(installedList.last_error)}</div>`
+    : '';
+  const inputID = `preset-${presetID}`;
+  const rowClass = `${active ? 'is-selected ' : ''}${isInstalled ? 'is-installed' : ''}`.trim();
+  const rowAttrs = isInstalled
+    ? `data-preset-id="${escapeHTML(presetID)}" data-filter-id="${escapeHTML(installedList.id || '')}" data-filter-name="${escapeHTML(installedList.name || preset.name || '')}"`
+    : `data-preset-id="${escapeHTML(presetID)}"`;
+  const inputAttrs = isInstalled ? 'data-filter-toggle' : 'data-preset-add';
+  return `<div class="filtering-preset-row ${escapeHTML(rowClass)}" ${rowAttrs}>
+    <input id="${escapeHTML(inputID)}" type="checkbox" name="${escapeHTML(inputID)}" class="filtering-preset-check"
+      ${inputAttrs} ${active ? 'checked' : ''} ${(updating || adding) ? 'disabled' : ''}>
+    <label class="filtering-preset-main" for="${escapeHTML(inputID)}">
+      <div class="filtering-preset-title">${escapeHTML(preset.name)} ${badges.join(' ')}</div>
+      ${description}
+      ${warning}
+      ${license}
+      ${domains}
+      ${meta}
+      ${error}
+    </label>
+    <div class="filtering-preset-links">${isInstalled ? installedActions(installedList) : presetLinks(preset)}</div>
+  </div>`;
+}
+
+function customListRow(list) {
+  const id = list.id || '';
+  const updating = filteringUpdating.has(id);
+  const active = !!list.enabled;
+  const inputID = `custom-${id}`;
+  const badgeClass = active ? 'filtering-preset-badge is-active' : 'filtering-preset-badge is-off';
+  const badge = `<span class="${escapeHTML(badgeClass)}">${active ? 'ACTIVE' : 'DISABLED'}</span>`;
+  const source = list.url
+    ? `<div class="filter-list-url" title="${escapeHTML(list.url)}">${escapeHTML(list.url)}</div>`
+    : '<div class="filter-list-url">Uploaded file</div>';
+  const error = list.last_error ? `<div class="filter-list-error">${escapeHTML(list.last_error)}</div>` : '';
+  const rowClass = active ? 'is-selected is-installed' : 'is-installed';
+  return `<div class="filtering-preset-row ${escapeHTML(rowClass)}" data-filter-id="${escapeHTML(id)}" data-filter-name="${escapeHTML(list.name || 'Unnamed list')}">
+    <input id="${escapeHTML(inputID)}" type="checkbox" name="${escapeHTML(inputID)}" class="filtering-preset-check"
+      data-filter-toggle ${active ? 'checked' : ''} ${updating ? 'disabled' : ''}>
+    <label class="filtering-preset-main" for="${escapeHTML(inputID)}">
+      <div class="filtering-preset-title">${escapeHTML(list.name || 'Unnamed list')} ${badge}</div>
+      ${source}
+      <div class="filtering-preset-desc">${filteringListMeta(list, updating)}</div>
+      ${error}
+    </label>
+    <div class="filtering-preset-links">${installedActions(list)}</div>
+  </div>`;
+}
+
+function scheduleFilteringRefresh() {
+  if (filteringPollTimer) clearTimeout(filteringPollTimer);
+  filteringPollTimer = setTimeout(() => { loadFiltering(); }, 2500);
+}
+
+function scheduleFilteringCountPoll() {
+  if (filteringCountTimer) return;
+  filteringCountTimer = setTimeout(() => {
+    filteringCountTimer = null;
+    loadFiltering();
+  }, 5000);
+}
+
+async function saveFilteringSettings() {
+  const enabled = document.getElementById('filtering-enabled-input')?.checked;
+  const mode = document.getElementById('filtering-mode-select')?.value;
+  const ttl = Number(document.getElementById('filtering-ttl-input')?.value);
+  const interval = Number(document.getElementById('filtering-interval-input')?.value);
+  const allowlist = (document.getElementById('filtering-allowlist-input')?.value || '')
+    .split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!Number.isInteger(ttl) || ttl < 1 || ttl > 3600) {
+    showToast('Block TTL must be between 1 and 3600 seconds.', 'error');
+    return;
+  }
+  if (!Number.isInteger(interval) || interval < 1 || interval > 168) {
+    showToast('Update interval must be between 1 and 168 hours.', 'error');
+    return;
+  }
+  const btn = document.getElementById('filtering-save-settings-btn');
+  if (btn) btn.disabled = true;
+  setFilteringStatus('Saving…');
+  try {
+    const res = await fetch(api('/api/filtering/settings'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({
+        enabled: !!enabled,
+        block_mode: mode,
+        block_ttl: ttl,
+        update_interval_hours: interval,
+        allowlist,
+      }),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not save ad blocking settings'));
+    renderFiltering(await res.json());
+    setFilteringStatus('Saved.');
+    showToast('Ad blocking settings saved.', 'success');
+  } catch (e) {
+    setFilteringStatus(e.message || 'Could not save ad blocking settings.');
+    showToast(e.message || 'Could not save ad blocking settings.', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function addFilteringList(name, url, content, homepage = '') {
+  if (!url && !content) {
+    showToast('Enter a list URL or choose a file.', 'error');
+    return;
+  }
+  setFilteringError('');
+  try {
+    const res = await fetch(api('/api/filtering/lists'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ name, url, homepage, content }),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not add blocklist'));
+    document.getElementById('filtering-url-input').value = '';
+    document.getElementById('filtering-name-input').value = '';
+    const home = document.getElementById('filtering-homepage-input');
+    if (home) home.value = '';
+    showToast('Blocklist added; compiling in the background.', 'success');
+    scheduleFilteringRefresh();
+  } catch (e) {
+    setFilteringError(e.message || 'Could not add blocklist.');
+    showToast(e.message || 'Could not add blocklist.', 'error');
+  }
+}
+
+async function addFilteringPresets(ids) {
+  if (!ids.length) {
+    showToast('Tick a preset to add it.', 'error');
+    return;
+  }
+  const status = document.getElementById('filtering-preset-status');
+  if (status) status.textContent = 'Adding preset…';
+  for (const id of ids) filteringAdding.add(id);
+  renderFilteringPresets();
+  try {
+    const res = await fetch(api('/api/filtering/presets'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not add presets'));
+    const result = await res.json();
+    const added = Array.isArray(result.added) ? result.added.length : 0;
+    const skipped = Array.isArray(result.skipped) ? result.skipped.length : 0;
+    const failed = Array.isArray(result.failed) ? result.failed : [];
+    const parts = [`${added} added`];
+    if (skipped) parts.push(`${skipped} already installed`);
+    if (failed.length) parts.push(`${failed.length} failed`);
+    if (status) status.textContent = parts.join(' · ');
+    showToast(`Presets: ${parts.join(', ')}.`, failed.length ? 'warning' : 'success');
+    if (failed.length) {
+      setFilteringError(failed.map((f) => `${f.name || f.id}: ${f.reason}`).join('; '));
+    }
+    await loadFiltering();
+    scheduleFilteringRefresh();
+  } catch (e) {
+    if (status) status.textContent = e.message || 'Could not add presets.';
+    showToast(e.message || 'Could not add presets.', 'error');
+    await loadFiltering();
+  } finally {
+    for (const id of ids) filteringAdding.delete(id);
+    renderFilteringPresets();
+  }
+}
+
+async function updateFilteringList(id) {
+  try {
+    const res = await fetch(api(`/api/filtering/lists/${encodeURIComponent(id)}/update`), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not update blocklist'));
+    showToast('Updating blocklist…', 'info');
+    scheduleFilteringRefresh();
+  } catch (e) {
+    showToast(e.message || 'Could not update blocklist.', 'error');
+  }
+}
+
+async function toggleFilteringList(id, enabled) {
+  try {
+    const res = await fetch(api(`/api/filtering/lists/${encodeURIComponent(id)}`), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not change blocklist'));
+    scheduleFilteringRefresh();
+  } catch (e) {
+    showToast(e.message || 'Could not change blocklist.', 'error');
+    loadFiltering();
+  }
+}
+
+async function deleteFilteringList(id, name) {
+  if (!await confirmAction({
+    title: 'Delete blocklist?',
+    message: `Remove “${name}” and its downloaded rules?`,
+    confirmText: 'DELETE',
+    destructive: true,
+  })) return;
+  try {
+    const res = await fetch(api(`/api/filtering/lists/${encodeURIComponent(id)}`), {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not delete blocklist'));
+    showToast('Blocklist deleted.', 'success');
+    scheduleFilteringRefresh();
+  } catch (e) {
+    showToast(e.message || 'Could not delete blocklist.', 'error');
+  }
+}
+
+async function refreshAllFiltering() {
+  try {
+    const res = await fetch(api('/api/filtering/refresh'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not refresh blocklists'));
+    showToast('Refreshing enabled blocklists…', 'info');
+    scheduleFilteringRefresh();
+  } catch (e) {
+    showToast(e.message || 'Could not refresh blocklists.', 'error');
+  }
+}
+
+function initFiltering() {
+  if (filteringInitialized) return;
+  filteringInitialized = true;
+  document.getElementById('filtering-save-settings-btn')?.addEventListener('click', saveFilteringSettings);
+  document.getElementById('filtering-refresh-all-btn')?.addEventListener('click', refreshAllFiltering);
+  document.getElementById('filtering-show-custom-btn')?.addEventListener('click', () => {
+    document.getElementById('filtering-custom-panel')?.classList.toggle('hidden');
+  });
+  document.getElementById('filtering-preset-search')?.addEventListener('input', renderFilteringPresets);
+  document.getElementById('filtering-recommended-base-btn')?.addEventListener('click', () => {
+    addFilteringPresets(['hagezi-pro']);
+  });
+  document.getElementById('filtering-add-url-btn')?.addEventListener('click', () => {
+    addFilteringList(
+      document.getElementById('filtering-name-input')?.value || '',
+      document.getElementById('filtering-url-input')?.value || '',
+      '',
+      document.getElementById('filtering-homepage-input')?.value || '',
+    );
+  });
+  document.getElementById('filtering-file-input')?.addEventListener('change', async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    if (file.size > 16 * 1024 * 1024) {
+      showToast('That file is larger than 16 MB.', 'error');
+      event.target.value = '';
+      return;
+    }
+    try {
+      const content = await file.text();
+      await addFilteringList(
+        document.getElementById('filtering-name-input')?.value || file.name,
+        '',
+        content,
+        document.getElementById('filtering-homepage-input')?.value || '',
+      );
+    } catch (e) {
+      showToast('Could not read that file.', 'error');
+    }
+    event.target.value = '';
+  });
+  const roster = document.getElementById('filtering-presets');
+  roster?.addEventListener('change', (event) => {
+    const input = event.target.closest('[data-preset-add], [data-filter-toggle]');
+    const row = event.target.closest('[data-preset-id], [data-filter-id]');
+    if (!input || !row) return;
+    if (input.hasAttribute('data-filter-toggle')) {
+      toggleFilteringList(row.dataset.filterId, input.checked);
+      return;
+    }
+    // One-click add: ticking an uninstalled preset installs it immediately.
+    if (input.checked) {
+      addFilteringPresets([row.dataset.presetId]);
+    } else {
+      renderFilteringPresets();
+    }
+  });
+  roster?.addEventListener('click', (event) => {
+    const row = event.target.closest('[data-filter-id]');
+    if (!row) return;
+    if (event.target.closest('[data-filter-update]')) {
+      updateFilteringList(row.dataset.filterId);
+      return;
+    }
+    if (event.target.closest('[data-filter-delete]')) {
+      deleteFilteringList(row.dataset.filterId, row.dataset.filterName || 'this list');
+    }
+  });
 }
 
 // =======================================================
@@ -6671,6 +7369,7 @@ function initAgentPage() {
 const tabRoutes = {
   'dashboard': '/home',
   'proxied': '/proxied',
+  'filters': '/filters',
   'agents': '/agents',
   'clients': '/clients',
   'stream': '/logs',
@@ -6685,6 +7384,7 @@ const routeTabs = {
   '/panel': 'dashboard',
   '/login': 'dashboard',
   '/proxied': 'proxied',
+  '/filters': 'filters',
   '/agents': 'agents',
   '/clients': 'clients',
   '/logs': 'stream',
@@ -6740,6 +7440,9 @@ function switchTab(target, updateUrl = true) {
     }
     if (target === 'agents') {
       loadAgents();
+    }
+    if (target === 'filters') {
+      loadFiltering();
     }
     if (target === 'dashboard') {
       loadHistory();

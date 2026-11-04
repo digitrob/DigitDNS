@@ -26,7 +26,8 @@ and how to report a problem.
 
 | Version | Status | Security fixes |
 | :--- | :--- | :--- |
-| `v4.1.0` | Current stable | ✅ Yes |
+| `v5.0.0` | Current stable | ✅ Yes |
+| `v4.1.0` | Superseded | ❌ Upgrade first |
 | `v4.0.2` and earlier 4.0.x | Superseded | ❌ Upgrade first |
 | `v3.x` and earlier | Superseded | ❌ Upgrade first |
 | `v1.x` (upstream HyperDNS) | End of life | ❌ No |

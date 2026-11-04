@@ -12,6 +12,24 @@ import (
 	"github.com/miekg/dns"
 )
 
+const (
+	// The 1h series is drawn from twelve five-minute slices of the current hour.
+	chunkSlots   = 12
+	chunkMinutes = 5
+)
+
+// Chunk is one five-minute slice of the current hour. It carries only the
+// counters the 1h graph needs; the full dimensions stay in the hourly Bucket.
+type Chunk struct {
+	Queries      uint64  `json:"queries,omitempty"`
+	Blocked      uint64  `json:"blocked,omitempty"`
+	Proxied      uint64  `json:"proxied,omitempty"`
+	Cached       uint64  `json:"cached,omitempty"`
+	Failed       uint64  `json:"failed,omitempty"`
+	LatencySumMs float64 `json:"latency_sum_ms,omitempty"`
+	LatencyCount uint64  `json:"latency_count,omitempty"`
+}
+
 // Bucket is one hourly or daily aggregate. Queries is fed by RecordTotal so it
 // counts every query the resolver saw; the remaining fields are fed by
 // RecordDetail from the query-log entry. That split matters: the live log
@@ -44,6 +62,10 @@ type Bucket struct {
 
 	LatencySumMs float64 `json:"latency_sum_ms"`
 	LatencyCount uint64  `json:"latency_count"`
+
+	// Chunks is only populated on the current hour's bucket. The index is the
+	// UTC minute divided by five, so slot 0 covers :00–:04 and slot 11 :55–:59.
+	Chunks [chunkSlots]Chunk `json:"chunks"`
 }
 
 func newBucket() *Bucket {
@@ -235,6 +257,7 @@ func (b *Bucket) clone() *Bucket {
 		Failed:            b.Failed,
 		LatencySumMs:      b.LatencySumMs,
 		LatencyCount:      b.LatencyCount,
+		Chunks:            b.Chunks,
 		TopDomains:        b.TopDomains.clone(),
 		TopClients:        b.TopClients.clone(),
 		TopBlockedDomains: b.TopBlockedDomains.clone(),

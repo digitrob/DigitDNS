@@ -2,7 +2,10 @@ package matcher
 
 import (
 	"fmt"
+	"strings"
 	"testing"
+
+	"digitdns/internal/blocklist"
 )
 
 // Every DNS query that reaches the resolver pays a Match. A clean domain — the
@@ -125,5 +128,38 @@ func BenchmarkGetCustomRecord(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		m.GetCustomRecord("pin.example")
+	}
+}
+
+// BenchmarkMatchWithBlocklistMiss is the cost an ordinary direct query pays when
+// a large list is installed: one exact lookup plus a suffix walk, under the same
+// single RWMutex read the rest of the matcher already uses.
+func BenchmarkMatchWithBlocklistMiss(b *testing.B) {
+	m := NewMatcher()
+	var rules strings.Builder
+	for i := 0; i < 100000; i++ {
+		fmt.Fprintf(&rules, "||ads%d.tracker.example^\n", i)
+	}
+	index, _ := blocklist.Build([]blocklist.Source{{
+		Name: "100k", Enabled: true, Text: rules.String(),
+	}}, nil)
+	m.SetBlockIndex(index)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		m.Match("telemetry.internal.example.org")
+	}
+}
+
+func BenchmarkMatchWithBlocklistHit(b *testing.B) {
+	m := NewMatcher()
+	index, _ := blocklist.Build([]blocklist.Source{{
+		Name: "hit", Enabled: true, Text: "||ads.tracker.example^\n",
+	}}, nil)
+	m.SetBlockIndex(index)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		m.Match("ads.tracker.example")
 	}
 }

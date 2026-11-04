@@ -30,6 +30,7 @@ lint green.
 | UX pass | Swipe-to-delete, scope-aware route menu, bulk import, dropdown filters, Updates folded into About | ✅ |
 | UX pass 2 | Status-filtered Domains, pill-triggered menus, drag-reorder cards/upstreams, Diagnostics inline latency | ✅ |
 | UX pass 3 | Toggleable Domains chips (+ Direct), swipe Undo, pinned header/badge, compact Subscription/REST API, sort direction glyph | ✅ |
+| Ad Blocking | One blocklist roster, preset catalogue with counts, one-click install, enable/disable, trash delete, custom URL/file upload, policy editor | ✅ |
 
 ### Navigation
 
@@ -55,6 +56,10 @@ records, saved servers, diagnostics servers, upstreams) is a right-to-left swipe
 plain red tray — no trash glyph — and a short-window **Undo** on the Domains and Upstreams
 lists. `REST API Gateway` and `Connect Guide` are sections inside **Settings** rather than
 peers of the bar; client detail is a pushed destination reached from the list.
+**Ad Blocking** is a Settings section between **Traffic History** and **Servers**. It
+keeps presets and installed lists in one roster: a tick installs an uninstalled preset
+or enables an installed one, and every installed row has update and trash actions. The
+policy card saves the enable switch, block mode, TTL, interval and allowlist separately.
 
 Screens that carry the live-connection pill (Dashboard, Domains, Live Log, Clients,
 Upstreams, Diagnostics, Subscription, REST API, …) pin a shared `PanelScreenHeader`

@@ -21,7 +21,7 @@ import (
 func historicalStatsProblem(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, aggregate.ErrInvalidRange):
-		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "range must be 24h, 7d, 30d or 90d")
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "range must be 1h, 24h, 7d, 30d or 90d")
 	case errors.Is(err, aggregate.ErrInvalidInterval):
 		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "interval is not valid for this range")
 	case errors.Is(err, aggregate.ErrInvalidDimension):

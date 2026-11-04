@@ -104,6 +104,7 @@ var authoritativeSettingTargets = map[string]func() any{
 	"tls":          func() any { return &TLSSettings{} },
 	"subscription": func() any { return &SubscriptionSettings{} },
 	"stats":        func() any { return &StatsSettings{} },
+	"filtering":    func() any { return &FilteringSettings{} },
 	"auth":         func() any { return &AuthSettings{} },
 	"access": func() any {
 		return &struct {

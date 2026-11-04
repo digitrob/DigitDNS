@@ -75,6 +75,11 @@ type Handler struct {
 	// so the query path reads it without synchronisation.
 	limiter *rateLimiter
 	limited atomic.Uint64
+
+	// blockPolicy supplies the operator's chosen block response. It is read only
+	// for names that already matched a block rule, so a normal query never pays
+	// for it. Nil keeps the historical null-IP answer.
+	blockPolicy func() (mode string, ttl uint32)
 }
 
 func NewHandler(
@@ -116,6 +121,11 @@ func NewHandler(
 // transaction ID or EDNS0 options into the pool. The pool attaches its own ECS
 // option from the configured public address, so a refresh is scoped exactly as a
 // client-driven query is.
+// SetBlockPolicy wires the filter service's response mode into the block path.
+func (h *Handler) SetBlockPolicy(fn func() (mode string, ttl uint32)) {
+	h.blockPolicy = fn
+}
+
 func (h *Handler) refreshUpstream(q dns.Question) (*dns.Msg, error) {
 	m := new(dns.Msg)
 	m.SetQuestion(q.Name, q.Qtype)
@@ -578,10 +588,23 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	case matcher.ActionBlock:
 		m := new(dns.Msg)
 		m.SetReply(r)
-		if q.Qtype == dns.TypeA {
-			rr, _ := dns.NewRR(fmt.Sprintf("%s 60 IN A 0.0.0.0", q.Name))
-			if rr != nil {
-				m.Answer = append(m.Answer, rr)
+		mode, ttl := "null_ip", uint32(10)
+		if h.blockPolicy != nil {
+			mode, ttl = h.blockPolicy()
+		}
+		switch mode {
+		case "nxdomain":
+			m.Rcode = dns.RcodeNameError
+		case "refused":
+			m.Rcode = dns.RcodeRefused
+		default:
+			// Keep the historical null-IP shape: A gets 0.0.0.0, AAAA stays an
+			// empty NOERROR. Existing clients and the guard tests rely on it.
+			if q.Qtype == dns.TypeA {
+				rr, _ := dns.NewRR(fmt.Sprintf("%s %d IN A 0.0.0.0", q.Name, ttl))
+				if rr != nil {
+					m.Answer = append(m.Answer, rr)
+				}
 			}
 		}
 		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "BLOCK", false, "", matchedPattern, q.Qtype, m.Rcode)

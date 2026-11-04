@@ -449,6 +449,7 @@ func main() {
 	sniServer := proxy.NewServer(*sniSettings, serverSettings.BindHost, tlsSettings.Domain, clientService)
 
 	statsService := service.NewStatsService(db, sniServer.GetStats, c.GetStats)
+	filterService := service.NewFilterService(db, m)
 
 	// 90-day aggregates live in their own bbolt file. A failure here must not
 	// stop the resolver: the live log and everything else still work, and the
@@ -483,6 +484,7 @@ func main() {
 	// before the store they might reach for is the order that cannot be wrong.
 	defer c.Close()
 	defer statsService.Close()
+	defer filterService.Close()
 
 	// Custom rule state lives only in the database: the restore lands after every
 	// other source so the operator's dashboard-saved lists win over anything
@@ -511,6 +513,7 @@ func main() {
 		log.Printf("[Main] Warning: could not load relay agents: %v", err)
 	}
 	dnsHandler := dns.NewHandler(clientService, c, m, u, statsService, serverSettings.PublicIP)
+	dnsHandler.SetBlockPolicy(filterService.BlockPolicy)
 	dnsHandler.SetRelayLookup(func(domain string) (string, string, string, string, bool) {
 		target, ok := relayRouter.Lookup(domain)
 		if !ok {
@@ -609,6 +612,8 @@ func main() {
 		webAssets.StaticFS,
 	)
 	webServer.SetSubscriptionSettings(subscriptionSettings)
+	webServer.SetFilterService(filterService)
+	filterService.Start()
 
 	// Server-location flag support: a GeoLite2-format database kept in the data
 	// directory, refreshed in the background. A missing or unreadable file costs

@@ -136,6 +136,17 @@ type V3Backend interface {
 	// answers 401 to that credential.
 	ResolutionSettings() (map[string]any, error)
 	SaveResolution(r *http.Request, body map[string]any) (map[string]any, error)
+
+	// Filtering status, settings and blocklists. These delegate to the dashboard
+	// handlers so the REST view and the Ad Blocking page cannot disagree about a
+	// list's state or a settings save. The list-add request is passed through
+	// untouched so its 20 MB upload limit stays in force.
+	FilteringStatus(r *http.Request) (map[string]any, error)
+	SaveFilteringSettings(r *http.Request) (map[string]any, error)
+	RefreshFiltering(r *http.Request) (map[string]any, error)
+	FilteringPresets(r *http.Request) (map[string]any, error)
+	AddFilteringList(r *http.Request) (map[string]any, error)
+	FilteringListItem(r *http.Request, rest string) (map[string]any, error)
 }
 
 // SetV3Backend attaches the dashboard-coupled backend for the v3 routes. Called
@@ -185,6 +196,14 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/upstreams", a.SecurityMiddlewareV3(a.handleV3Upstreams))
 	mux.HandleFunc("/api/v3/upstreams/stats", a.SecurityMiddlewareV3(a.handleV3UpstreamStats))
 	mux.HandleFunc("/api/v3/upstreams/", a.SecurityMiddlewareV3(a.handleV3UpstreamItem))
+
+	// Ad blocking / blocklists.
+	mux.HandleFunc("/api/v3/filtering", a.SecurityMiddlewareV3(a.handleV3Filtering))
+	mux.HandleFunc("/api/v3/filtering/settings", a.SecurityMiddlewareV3(a.handleV3FilteringSettings))
+	mux.HandleFunc("/api/v3/filtering/refresh", a.SecurityMiddlewareV3(a.handleV3FilteringRefresh))
+	mux.HandleFunc("/api/v3/filtering/presets", a.SecurityMiddlewareV3(a.handleV3FilteringPresets))
+	mux.HandleFunc("/api/v3/filtering/lists", a.SecurityMiddlewareV3(a.handleV3FilteringLists))
+	mux.HandleFunc("/api/v3/filtering/lists/", a.SecurityMiddlewareV3(a.handleV3FilteringListItem))
 
 	// Settings.
 	mux.HandleFunc("/api/v3/settings", a.SecurityMiddlewareV3(a.handleV3Settings))

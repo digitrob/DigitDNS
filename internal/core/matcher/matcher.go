@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"digitdns/internal/blocklist"
 )
 
 type Action int
@@ -164,6 +166,11 @@ type Matcher struct {
 	customBlocked []string
 	customDirect  []string
 	customGroups  []CustomGroup
+
+	// blockIndex is the compiled adblock-list snapshot. It is immutable and
+	// swapped whole by the filter service, so the read path never waits on a
+	// download or a parse.
+	blockIndex *blocklist.Index
 }
 
 // CustomGroup is an operator-defined named policy: a bundle of domains that resolve
@@ -305,6 +312,12 @@ func (m *Matcher) matchDetail(domain string, _ []string) (Action, string, string
 	if name, pattern, ok := m.blocked.lookupPattern(d); ok {
 		return ActionBlock, name, pattern
 	}
+	// List blocks sit below the operator's own rules. A list exception returns
+	// blocked=false here, so it can suppress a list block without overriding an
+	// explicit Custom Block above or a proxy rule below.
+	if blocked, source, pattern := m.blockIndex.Match(d); blocked {
+		return ActionBlock, "Blocklist: " + source, pattern
+	}
 	if name, pattern, ok := m.realtime.lookupPattern(d); ok {
 		return ActionDirect, name, pattern
 	}
@@ -352,6 +365,14 @@ func (m *Matcher) SetCustomRules(customProxied, customBlocked, customDirect []st
 			m.customRecords[d] = ip
 		}
 	}
+}
+
+// SetBlockIndex publishes a compiled blocklist snapshot. The index is immutable;
+// rebuilding happens off the query path and this pointer swap is the only write.
+func (m *Matcher) SetBlockIndex(index *blocklist.Index) {
+	m.mu.Lock()
+	m.blockIndex = index
+	m.mu.Unlock()
 }
 
 // SetCustomGroups replaces the operator's named custom policy groups and reindexes.

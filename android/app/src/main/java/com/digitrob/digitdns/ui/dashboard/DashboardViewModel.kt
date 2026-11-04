@@ -14,6 +14,7 @@ import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.ConnectionStore
 import com.digitrob.digitdns.data.DashboardCard
+import com.digitrob.digitdns.data.HistoryClock
 import com.digitrob.digitdns.data.HistoryRepository
 import com.digitrob.digitdns.data.SettingsRepository
 import com.digitrob.digitdns.data.StatsRepository
@@ -193,6 +194,7 @@ class DashboardViewModel @Inject constructor(
             _state.update { it.copy(history = it.history.copy(isLoading = true, error = null)) }
             try {
                 val snapshot = historyRepository.load(range)
+                val loadedAt = System.currentTimeMillis()
                 _state.update { current ->
                     if (current.history.range != range) {
                         current
@@ -205,11 +207,12 @@ class DashboardViewModel @Inject constructor(
                                 isLoading = false,
                                 unavailable = false,
                                 error = null,
-                                updatedAtEpochMs = System.currentTimeMillis(),
+                                updatedAtEpochMs = loadedAt,
                             ),
                         )
                     }
                 }
+                HistoryClock.markUpdated(loadedAt)
             } catch (e: ApiException) {
                 _state.update { current ->
                     current.copy(

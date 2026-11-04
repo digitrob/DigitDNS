@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+
+	"digitdns/internal/blocklist"
 )
 
 // The matcher decides, for every query the daemon answers, whether the client
@@ -437,5 +439,37 @@ func TestMatchDetailReturnsTheMatchedPattern(t *testing.T) {
 			t.Errorf("MatchDetail(%q) = (%v, %q, %q), want (%v, %q, %q)",
 				c.domain, action, rule, pattern, c.action, c.rule, c.pattern)
 		}
+	}
+}
+
+func TestBlocklistPrecedenceAndExceptions(t *testing.T) {
+	m := NewMatcher()
+	index, _ := blocklist.Build([]blocklist.Source{{
+		Name:    "Test list",
+		Enabled: true,
+		Text:    "||ads.example^\n@@||allowed.example^\n",
+	}}, nil)
+	m.SetBlockIndex(index)
+
+	if action, rule, pattern := m.MatchDetail("ads.example"); action != ActionBlock || rule != "Blocklist: Test list" || pattern != "ads.example" {
+		t.Fatalf("blocklist match = (%v, %q, %q)", action, rule, pattern)
+	}
+	if action, _, _ := m.MatchDetail("sub.ads.example"); action != ActionBlock {
+		t.Fatal("blocklist suffix did not match")
+	}
+	if action, _, _ := m.MatchDetail("allowed.example"); action != ActionDirect {
+		t.Fatal("list exception did not suppress the block")
+	}
+
+	// The operator's own Custom Direct still wins over a list.
+	m.SetCustomRules(nil, nil, []string{"ads.example"}, nil)
+	if action, rule, _ := m.MatchDetail("ads.example"); action != ActionDirect || rule != RuleCustomDirect {
+		t.Fatalf("custom direct did not win: (%v, %q)", action, rule)
+	}
+
+	// A Custom Block wins over a list exception.
+	m.SetCustomRules(nil, []string{"allowed.example"}, nil, nil)
+	if action, rule, _ := m.MatchDetail("allowed.example"); action != ActionBlock || rule != RuleCustomBlock {
+		t.Fatalf("custom block did not win: (%v, %q)", action, rule)
 	}
 }

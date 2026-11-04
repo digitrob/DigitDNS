@@ -5,6 +5,7 @@ package com.digitrob.digitdns.domain.model
  * `range` query parameter, not an enum ordinal or a display label.
  */
 enum class HistoryRange(val wire: String) {
+    LAST_1H("1h"),
     LAST_24H("24h"),
     LAST_7D("7d"),
     LAST_30D("30d"),

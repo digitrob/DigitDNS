@@ -82,7 +82,7 @@ func TestV3HistoricalStatsEndpoints(t *testing.T) {
 		t.Errorf("top = %#v", top)
 	}
 
-	w = v3Request(mux, http.MethodGet, "/api/v3/stats/summary?range=1h", testKey, nil)
+	w = v3Request(mux, http.MethodGet, "/api/v3/stats/summary?range=2h", testKey, nil)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("invalid range = %d, want 400", w.Code)
 	}

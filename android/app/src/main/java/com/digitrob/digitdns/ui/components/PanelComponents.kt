@@ -24,18 +24,27 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.digitrob.digitdns.R
+import com.digitrob.digitdns.data.HistoryClock
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.MetricNumber
 import com.digitrob.digitdns.ui.theme.PanelMono
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /**
  * The pieces the panel's cards are built from — a glass card, a stat tile, a quota
@@ -280,10 +289,44 @@ fun PanelScreenHeader(
         actions()
         Spacer(Modifier.weight(1f))
         if (showBadge) {
-            ConnectionStatusBadge()
+            // The dashboard puts the aggregate clock directly beside the pill; the
+            // other live-backed screens mirror that so switching tabs does not move
+            // the Online badge or its timestamp.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                HistoryClockText()
+                Spacer(Modifier.width(8.dp))
+                ConnectionStatusBadge()
+            }
         }
     }
 }
+
+/**
+ * The last successful aggregate-history refresh, in the same tiny mono style the
+ * dashboard uses. It stays hidden until the dashboard has loaded history once.
+ */
+@Composable
+private fun HistoryClockText() {
+    val updatedAt by HistoryClock.updatedAtEpochMs.collectAsState()
+    val epochMs = updatedAt ?: return
+    Text(
+        text = stringResource(
+            R.string.history_updated,
+            HEADER_CLOCK.format(Instant.ofEpochMilli(epochMs)),
+        ),
+        style = MaterialTheme.typography.labelSmall.copy(
+            fontFamily = PanelMono,
+            fontSize = 8.sp,
+            lineHeight = 10.sp,
+        ),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+private val HEADER_CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss")
+    .withZone(ZoneId.systemDefault())
 
 /**
  * The panel's switch: a labelled toggle row. Shared so every settings screen turns a

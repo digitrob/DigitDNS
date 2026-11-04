@@ -225,7 +225,6 @@ private val dashboardCardLabels = mapOf(
     DashboardCard.TELEMETRY_CHART to R.string.card_telemetry_chart,
     DashboardCard.UPSTREAM_RACERS to R.string.card_upstream_racers,
     DashboardCard.RESOLVER_LATENCY to R.string.card_resolver_latency,
-    DashboardCard.HISTORY_RANGE to R.string.card_history_range,
     DashboardCard.HISTORY_SUMMARY to R.string.card_history_summary,
     DashboardCard.HISTORY_CHART to R.string.card_history_chart,
     DashboardCard.HISTORY_TOP_DOMAINS to R.string.history_top_domains,

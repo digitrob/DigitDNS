@@ -27,6 +27,14 @@ var (
 	bucketAgents = []byte("agents")
 	// bucketAgentTokens holds one-time enrolment tokens, keyed by their hash.
 	bucketAgentTokens = []byte("agent_tokens")
+	// bucketFilterLists holds blocklist metadata; bucketFilterSources holds the
+	// raw downloaded/uploaded text separately so listing stays cheap.
+	bucketFilterLists   = []byte("filter_lists")
+	bucketFilterSources = []byte("filter_sources")
+	// bucketPresetCounts caches domain counts for catalogue entries that are not
+	// installed, so the preset picker can show a number without downloading every
+	// list on each page load.
+	bucketPresetCounts = []byte("preset_counts")
 )
 
 // bucketsInUse is everything a v1.5.0 database actually holds.
@@ -39,7 +47,7 @@ var (
 // daemon does not make; they are dropped rather than carried forward and audited
 // again at every release.
 var (
-	bucketsInUse   = [][]byte{bucketClients, bucketPolicies, bucketSettings, bucketCustomGroups, bucketGroupIcons, bucketAgents, bucketAgentTokens}
+	bucketsInUse   = [][]byte{bucketClients, bucketPolicies, bucketSettings, bucketCustomGroups, bucketGroupIcons, bucketAgents, bucketAgentTokens, bucketFilterLists, bucketFilterSources, bucketPresetCounts}
 	bucketsRetired = [][]byte{bucketLogs, bucketUpstreams}
 )
 

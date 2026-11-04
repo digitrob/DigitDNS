@@ -528,11 +528,14 @@
 
     <!-- Traffic History (aggregate-only; no raw query log) -->
     <string name="history_title">Traffic History</string>
-    <string name="history_subtitle">Aggregated DNS history · no raw queries retained</string>
     <string name="history_loading">Loading…</string>
     <string name="history_waiting">Waiting for history…</string>
+    <string name="history_waiting_short">No history yet</string>
     <string name="history_unavailable">History is disabled on this server.</string>
+    <string name="history_unavailable_short">History off</string>
     <string name="history_updated">Updated %1$s</string>
+    <string name="history_error_short">History error</string>
+    <string name="history_range_1h">1h</string>
     <string name="history_range_24h">24h</string>
     <string name="history_range_7d">7d</string>
     <string name="history_range_30d">30d</string>
@@ -561,11 +564,11 @@
     <string name="history_top_protocols">Protocols</string>
     <string name="history_top_relay">Relay countries</string>
 
-    <string name="card_history_range">History range</string>
     <string name="card_history_summary">History summary</string>
     <string name="card_history_chart">History chart</string>
 
     <string name="settings_history">Traffic History</string>
+    <string name="settings_ad_blocking">Ad Blocking</string>
     <string name="history_settings_title">Traffic History</string>
     <string name="history_settings_help">Aggregate counters only — no raw query log is written to disk. These settings are server-wide and apply after a daemon restart.</string>
     <string name="history_settings_enabled">Keep aggregate history</string>

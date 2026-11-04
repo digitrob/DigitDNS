@@ -6,12 +6,13 @@
 [![Docker](https://img.shields.io/github/actions/workflow/status/digitrob/DigitDNS/docker.yml?branch=main&style=for-the-badge&label=Docker)](https://github.com/digitrob/DigitDNS/actions/workflows/docker.yml)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge&logo=gnu)](LICENSE)
 
-DigitDNS is a self-hosted DNS resolver, a TLS pass-through relay and a
-subscriber panel in one static binary. Point a phone, console, TV or router at
-it and each domain gets one of three answers: resolve normally, refuse, or
-connect through your server. The panel manages rules, subscribers,
-certificates and upstream resolvers; a customer portal and a native Android app
-give subscribers their own view.
+DigitDNS is a self-hosted DNS resolver, a TLS pass-through relay, a DNS sink with
+ad blocking and a subscriber panel in one static binary. One install covers DNS
+resolution, geo-blocking bypass and ad blocking. Point a phone, console, TV or
+router at it and each domain gets one of three answers: resolve normally, refuse
+or answer from the sink, or connect through your server. The panel manages rules,
+subscribers, blocklists, certificates and upstream resolvers; a customer portal
+and a native Android app give subscribers their own view.
 
 It is a fork of [HyperDNS](https://github.com/IzumiRain/HyperDNS) by HyperRAIN,
 maintained by [Digitrob](https://github.com/digitrob). It is free, open source
@@ -19,7 +20,7 @@ maintained by [Digitrob](https://github.com/digitrob). It is free, open source
 dependency. Use it only on servers and networks you are allowed to operate.
 
 <p align="center">
-  <img src="docs/digitdns-dashboard.png" alt="DigitDNS web dashboard" width="100%">
+  <img src="docs/screenshots/v5-web-dashboard.jpg" alt="DigitDNS web dashboard" width="100%">
 </p>
 
 <p align="center">
@@ -35,48 +36,84 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
-## What's new in 4.1
+## What's new in 5.0
 
-### 📊 Traffic History on web and Android
+### 🛡️ Ad blocking engine
 
-DigitDNS can now keep a bounded, aggregate-only DNS history for up to 90 days,
-and show it as a first-class part of the dashboard.
+DigitDNS is now a DNS sink as well as a resolver. Blocked names are answered
+before they reach an upstream, with the policy and list management in the same
+panel.
 
-- **No raw query log on disk.** History lives in a separate `stats.db` and stores
-  counters and bounded top-N tables only — domains, blocked domains, clients,
-  upstreams, actions, protocols, qtypes, rcodes, relay countries, cache hits,
-  failures and latency.
-- **Hourly and daily buckets.** Hourly buckets are kept for 7 days and rolled
-  into daily buckets; daily retention defaults to 90 days and is pruned
-  automatically.
-- **Bounded cardinality.** Defaults are 1,000 domains and 500 clients per bucket;
-  overflow is folded into an `other` count instead of growing without limit.
-- **Exact-feeling client counts with HLL.** Every bucket carries HyperLogLog
-  registers, so “active clients” is not clipped by the top-client table. The
-  card says `HLL distinct`; ranges containing pre-HLL buckets fall back to
-  `top-N approx.`
-- **Client privacy controls.** New aggregates can store an HMAC-SHA256 client
-  identifier instead of the raw address, and individual IPs or account names can
-  be excluded entirely. Existing rows are never rewritten.
-- **Dashboard cards.** Six KPI cards, a stacked Allowed / Blocked / Proxied
-  chart, and top domains, blocked domains, clients, upstreams, protocols and
-  relay countries. Ranges are **24h / 7d / 30d / 90d**.
-- **Part of the layout editor.** History cards drag, resize, hide and persist
-  with the live dashboard cards on web; on Android they participate in the
-  existing card-order and visibility editor.
-- **Readable lists.** Five-row ranked cards on web, tall cards grow to show more
-  entries, headers stay pinned, only the list scrolls, and rows use the same
-  inset tile treatment as the upstream-resolvers card. Relay countries carry
-  their flag and name; client rows show the client’s current account name when
-  one is known, falling back to the IP.
-- **Export.** Download the selected range as CSV or full JSON from the web
-  dashboard.
-- **v3 API.** `stats/summary`, `stats/series`, `stats/top`, `stats/export` and
-  `stats/settings` are documented in OpenAPI, with the same session or master-key
-  auth as the rest of v3.
-- **Android companion 4.1.0.** History cards on the dashboard, range switching,
-  the chart, top lists, relay flags, client names, and a **Settings → Traffic
-  History** screen for retention, top-N, anonymization and client opt-out.
+- **45 curated blocklists** in five groups: General protection, Supplementary ads
+  & trackers, Malware/phishing/scams, Device & vendor telemetry, and Optional
+  extras. Sources include HaGeZi Pro / Light / Pro+ / Ultimate, OISD Big / Small,
+  AdGuard DNS, 1Hosts Xtra / Lite, StevenBlack Unified, Peter Lowe, AdAway,
+  Dan Pollock, URLhaus and Phishing Army.
+- **Install in one click.** A recommended base is marked, each preset shows its
+  description, licence, warning, homepage and complete raw file, and its domain
+  count is scanned in the background before you commit.
+- **Custom lists.** Subscribe to any hosts/Adblock URL, or upload a local file.
+  Downloads are capped at 64 MB, uploads at 16 MB, duplicate URLs are rejected and
+  parsing runs off the DNS hot path.
+- **Policy you control.** Enable/disable blocking, choose `0.0.0.0`, `NXDOMAIN`
+  or `REFUSED`, set the block TTL and update interval, and keep an always-allow
+  list that wins over every blocklist.
+- **Active lists first.** Enabled lists are pinned to the top under an **ACTIVE**
+  heading on web and Android and removed from their catalogue groups, so what is
+  actually blocking is the first thing you see.
+- **Per-list lifecycle.** Toggle without deleting, update one list or all lists,
+  refresh on the configured schedule (default 24 hours, checked every 15
+  minutes), delete, and see unique domains, rules, allow/skipped entries and the
+  last update.
+- **Web and Android UI.** A full **Ad Blocking** tab on web and **Settings → Ad
+  Blocking** on Android, including custom URL and file upload.
+- **API v3.** `/api/v3/filtering` exposes status, settings, presets, list
+  creation, enable/disable, update and delete for automation.
+
+<p align="center">
+  <img src="docs/screenshots/v5-web-adblocking.jpg" alt="DigitDNS ad blocking with active lists pinned first" width="100%">
+</p>
+
+### 📊 Aggregated statistics
+
+- **Five ranges:** 1h, 24h, 7d, 30d and 90d.
+- **1h draws from real five-minute buckets.** The current hour is split into
+  twelve slices, so the chart has 10–12 points as the hour progresses instead of
+  a single dot. 24h/7d read hourly buckets; 30d/90d read daily buckets.
+- **Aggregate-only storage.** `stats.db` keeps counters and bounded top-N tables,
+  never the raw query log. Hourly buckets roll into daily history; retention
+  defaults to 90 days.
+- **Distinct clients with HLL.** HyperLogLog gives an unbounded distinct count;
+  pre-HLL ranges say `top-N approx.`.
+- **Six ranked tables:** domains, blocked domains, clients, upstreams, protocols
+  and relay countries, with client names and relay flags.
+- **Privacy controls.** HMAC-SHA256 client identifiers, per-store salt and an
+  opt-out for up to 500 IPs or account names.
+- **Sticky toolbar and exports.** Refresh on the left, range chips in the middle,
+  CSV/JSON on the far right in the action colour. The row stays pinned while
+  cards scroll underneath.
+- **Every history card moves.** History cards participate in the dashboard layout
+  editor alongside the live cards.
+
+### 🧩 Free dashboard layout
+
+- Cards move anywhere on a **12-column, 12-pixel-row grid**, across the metrics,
+  main and history groups, and resize from any edge or corner.
+- Collision-safe drops, saved v3 layout with automatic migration, and a reset
+  action beside the edit pencil.
+- The six live KPI cards wrap their meta columns, CPU line and traffic readings
+  instead of clipping at narrow widths.
+
+### 📱 Android 5.0.0
+
+- Range chips in the top header beside **Online**, with the aggregate update
+  clock next to them.
+- No timestamp flashing during background polls; the same clock appears in the
+  same place on the other live-backed screens.
+- 1h five-minute chart, numeric chart axis with gridlines, and the six-metric
+  summary in two compact rows of three.
+- Full **Settings → Ad Blocking** screen with the preset catalogue, custom URL
+  and file upload, active-first ordering, green active states and list actions.
 
 ### 🧭 Also in the 4.x line
 
@@ -121,7 +158,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.1.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -180,7 +217,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.1.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -256,7 +293,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `4.1.0` | 90-day traffic history, Android history cards |
+| `5.0.0` | Ad-blocking engine, aggregate stats, free dashboard layout |
+| `4.1.0` | 90-day traffic history, Android history cards (older) |
 | `4.0.3` | Dashboard refresh, compact Settings, app-icon brand (older) |
 | `4.0.2` | Accurate client-list status (older) |
 | `4.0.1` | Agent log-throttling patch (older) |
@@ -279,7 +317,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v4.1.0/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.0.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -447,13 +485,30 @@ CPU, relay connections, bandwidth, latency percentiles and the current upstream
 resolvers.
 
 - **Arrange it yourself.** The pencil beside **Dashboard** in the sidebar turns
-  on edit mode. Drag cards to reorder them inside their section, and pull the
-  corner grip to change width and height. Click the struck-through pencil to
-  leave edit mode; the layout is saved on the server.
+  on edit mode. Drag a card anywhere on the 12-column, 12-pixel-row grid and
+  resize it from any edge or corner. Click the struck-through pencil to leave
+  edit mode; the layout is saved on the server.
 - **The same layout everywhere.** The arrangement is stored install-wide, so it
   is there in the next browser and on the next device.
 - **Phones reorder too.** Long-press a card to pick it up. Sizes stay at the
   normal mobile stacking, because a resized card on a phone is rarely useful.
+
+### Ad blocking
+
+The DNS sink sits in front of upstream resolution and answers blocked names
+directly.
+
+- **Curated and custom lists.** 45 presets plus URL subscriptions and local file
+  uploads in hosts or Adblock format.
+- **Policy.** Enable/disable, `0.0.0.0` / `NXDOMAIN` / `REFUSED`, block TTL,
+  update interval and an always-allow list.
+- **Active first.** Enabled lists are pinned at the top of the web and Android
+  list views and removed from their catalogue groups.
+- **Per-list control.** Toggle, update, refresh all and delete, with unique
+  domain, rule, allow, skipped and last-update counts.
+- **Scheduling.** Lists refresh in the background on the configured interval; the
+  DNS path only reads the compiled snapshot.
+- **API.** Full management through `/api/v3/filtering`.
 
 ### Traffic history
 
@@ -473,9 +528,13 @@ week?” without retaining the queries themselves.
   HMAC-SHA256 keyed by a per-store salt. A per-client opt-out accepts up to 500
   IPs or account names and suppresses the identifier while still counting the
   query in totals.
-- **Dashboard and API.** Range selector, summary, stacked chart and six ranked
-  tables on web and Android; CSV/JSON export on web; `stats/summary`,
-  `stats/series`, `stats/top`, `stats/export` and `stats/settings` in API v3.
+- **Dashboard and API.** Range selector (1h / 24h / 7d / 30d / 90d), summary,
+  stacked chart and six ranked tables on web and Android; CSV/JSON export on web;
+  `stats/summary`, `stats/series`, `stats/top`, `stats/export` and
+  `stats/settings` in API v3.
+- **Five-minute 1h series.** The 1h range is split into twelve five-minute
+  buckets so the graph draws through the hour; 24h and 7d use hourly buckets and
+  30d/90d use daily buckets.
 - **Names, not addresses.** Ranked client rows resolve the stored address to the
   client’s current name through the access index; an unknown or deleted client
   keeps its IP. Relay rows show the country flag and localized name.
@@ -611,7 +670,7 @@ keeps upstream connections alive between queries to cut handshake latency.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v4.1.0`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.0.0`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

@@ -546,3 +546,57 @@ func peerFor(ws *WebServer, r *http.Request) string {
 func (b *v3Backend) PersistUpstreams(list []string) error {
 	return b.ws.PersistUpstreams(list)
 }
+
+// -----------------------------------------------------------------------------
+// Ad blocking / blocklists (delegated)
+// -----------------------------------------------------------------------------
+
+// FilteringStatus mirrors GET /api/filtering: settings, installed lists, the
+// preset catalogue, cached preset counts and the compiled totals. The dashboard
+// handler also kicks off the background catalogue count scan when its cache is
+// stale, so the Android list and the panel show the same numbers.
+func (b *v3Backend) FilteringStatus(r *http.Request) (map[string]any, error) {
+	return b.delegateRequest(r, b.ws.handleFiltering)
+}
+
+func (b *v3Backend) SaveFilteringSettings(r *http.Request) (map[string]any, error) {
+	// The panel handler answers POST only; a v3 PUT is normalised to POST.
+	post := r.Clone(r.Context())
+	post.Method = http.MethodPost
+	return b.delegateRequest(post, b.ws.handleFilteringSettings)
+}
+
+func (b *v3Backend) RefreshFiltering(r *http.Request) (map[string]any, error) {
+	return b.delegateRequest(r, b.ws.handleFilteringRefresh)
+}
+
+func (b *v3Backend) FilteringPresets(r *http.Request) (map[string]any, error) {
+	return b.delegateRequest(r, b.ws.handleFilteringPresets)
+}
+
+func (b *v3Backend) AddFilteringList(r *http.Request) (map[string]any, error) {
+	return b.delegateRequest(r, b.ws.handleFilterLists)
+}
+
+func (b *v3Backend) FilteringListItem(r *http.Request, rest string) (map[string]any, error) {
+	r2 := r.Clone(r.Context())
+	r2.URL.Path = "/api/filtering/lists/" + rest
+	return b.delegateRequest(r2, b.ws.handleFilterListItem)
+}
+
+// delegateRequest runs a dashboard handler on the v3 caller's request and returns
+// its parsed JSON. The request body is not pre-read, which is what lets a large
+// uploaded blocklist reach the handler's own 20 MB limit.
+func (b *v3Backend) delegateRequest(r *http.Request, h http.HandlerFunc) (map[string]any, error) {
+	code, parsed, _, err := call(h, r)
+	if err != nil {
+		return nil, err
+	}
+	if parsed == nil {
+		if code == http.StatusNoContent {
+			return map[string]any{"success": true}, nil
+		}
+		return map[string]any{}, nil
+	}
+	return parsed, nil
+}

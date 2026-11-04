@@ -9,17 +9,21 @@ import (
 )
 
 var (
-	ErrInvalidRange     = errors.New("range must be 24h, 7d, 30d or 90d")
+	ErrInvalidRange     = errors.New("range must be 1h, 24h, 7d, 30d or 90d")
 	ErrInvalidInterval  = errors.New("interval is not valid for this range")
 	ErrInvalidDimension = errors.New("unknown top dimension")
 	ErrInvalidLimit     = errors.New("limit must be between 1 and 100")
 )
 
 const (
+	Range1h  = "1h"
 	Range24h = "24h"
 	Range7d  = "7d"
 	Range30d = "30d"
 	Range90d = "90d"
+
+	// Interval5m is the 1h range's five-minute bucket size.
+	Interval5m = "5m"
 )
 
 type Summary struct {
@@ -117,6 +121,11 @@ func (a *Aggregator) cachePut(key string, value any) {
 func (a *Aggregator) window(window string) (windowSpec, error) {
 	now := a.now().UTC()
 	switch window {
+	case Range1h:
+		// The aggregate stores hourly buckets. "1h" is the bucket for the
+		// current hour (from the top of the hour), not a rolling minute window.
+		end := now.Truncate(time.Hour)
+		return windowSpec{window: window, hourly: true, start: end, end: end, points: 1}, nil
 	case Range24h:
 		end := now.Truncate(time.Hour)
 		return windowSpec{window: window, hourly: true, start: end.Add(-23 * time.Hour), end: end, points: 24}, nil
@@ -140,20 +149,32 @@ func (a *Aggregator) seriesWindow(window, interval string) (windowSpec, error) {
 		return windowSpec{}, err
 	}
 	if interval == "" {
-		if spec.hourly {
+		if window == Range1h {
+			interval = Interval5m
+		} else if spec.hourly {
 			interval = "hour"
 		} else {
 			interval = "day"
 		}
 	}
 	switch interval {
+	case Interval5m:
+		if window != Range1h {
+			return windowSpec{}, ErrInvalidInterval
+		}
+		return spec, nil
 	case "hour":
+		if window == Range1h {
+			// Older clients still ask for the hourly interval on 1h. Serve the
+			// five-minute points anyway so the graph keeps drawing.
+			return spec, nil
+		}
 		if !spec.hourly {
 			return windowSpec{}, ErrInvalidInterval
 		}
 		return spec, nil
 	case "day":
-		if window == Range24h {
+		if window == Range1h || window == Range24h {
 			return windowSpec{}, ErrInvalidInterval
 		}
 		now := a.now().UTC()
@@ -262,6 +283,14 @@ func (a *Aggregator) Series(window, interval string) (Series, error) {
 	if err != nil {
 		return Series{}, err
 	}
+	if window == Range1h {
+		out, err := a.oneHourSeries(spec)
+		if err != nil {
+			return Series{}, err
+		}
+		a.cachePut(key, out)
+		return out, nil
+	}
 	buckets, err := a.buckets(spec)
 	if err != nil {
 		return Series{}, err
@@ -301,7 +330,7 @@ func (a *Aggregator) Top(window, dimension string, limit int) (Top, error) {
 	}
 	key := fmt.Sprintf("top:%s:%s:%d", window, dimension, limit)
 	if v, ok := a.cacheGet(key); ok {
-		return v.(Top), nil
+		return withoutCacheUpstream(v.(Top)), nil
 	}
 	spec, err := a.window(window)
 	if err != nil {
@@ -353,6 +382,15 @@ func (a *Aggregator) Top(window, dimension string, limit int) (Top, error) {
 			return Top{}, ErrInvalidDimension
 		}
 	}
+	if dimension == "upstream" {
+		// Cache hits are logged with the synthetic upstream "cache". They are
+		// not resolver traffic, so the Top Upstreams card must not rank them.
+		for value := range acc {
+			if strings.EqualFold(value, "cache") {
+				delete(acc, value)
+			}
+		}
+	}
 	items := make([]TopItem, 0, len(acc))
 	for value, count := range acc {
 		items = append(items, TopItem{Value: value, Count: count})
@@ -369,9 +407,26 @@ func (a *Aggregator) Top(window, dimension string, limit int) (Top, error) {
 		}
 		items = items[:limit]
 	}
-	out := Top{Range: window, Dimension: dimension, Items: items, Other: other}
+	out := withoutCacheUpstream(Top{Range: window, Dimension: dimension, Items: items, Other: other})
 	a.cachePut(key, out)
 	return out, nil
+}
+
+// withoutCacheUpstream strips the synthetic cache-hit pseudo-upstream from a
+// top-upstreams result. It is applied to both fresh and cached results so an
+// older cached document cannot reintroduce it.
+func withoutCacheUpstream(top Top) Top {
+	if top.Dimension != "upstream" {
+		return top
+	}
+	items := top.Items[:0]
+	for _, item := range top.Items {
+		if !strings.EqualFold(item.Value, "cache") {
+			items = append(items, item)
+		}
+	}
+	top.Items = items
+	return top
 }
 
 func validTopDimension(dimension string) bool {
@@ -380,6 +435,63 @@ func validTopDimension(dimension string) bool {
 		return true
 	}
 	return false
+}
+
+// oneHourSeries splits the current hour into five-minute points. Only the
+// slots that have started are returned, so a young hour shows a short growing
+// line instead of a flat run of future zeros.
+func (a *Aggregator) oneHourSeries(spec windowSpec) (Series, error) {
+	buckets, err := a.buckets(spec)
+	if err != nil {
+		return Series{}, err
+	}
+	out := Series{Range: Range1h, Interval: Interval5m, Points: []SeriesPoint{}}
+	if len(buckets) == 0 || buckets[0].bucket == nil {
+		return out, nil
+	}
+	b := buckets[0].bucket
+	hourStart := buckets[0].start
+	now := a.now().UTC()
+	elapsed := int(now.Sub(hourStart) / (chunkMinutes * time.Minute))
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	if elapsed >= chunkSlots {
+		elapsed = chunkSlots - 1
+	}
+	var recorded uint64
+	for _, chunk := range b.Chunks {
+		recorded += chunk.Queries
+	}
+	// A bucket written before the five-minute slices existed has only the
+	// hourly total. Keep one point rather than showing an hour of zeros.
+	if recorded == 0 && b.Queries > 0 {
+		out.Points = append(out.Points, SeriesPoint{
+			Start:   hourStart,
+			Queries: b.Queries,
+			Blocked: b.Blocked,
+			Proxied: b.Proxied,
+			Cached:  b.Cached,
+			Failed:  b.Failed,
+		})
+		return out, nil
+	}
+	for i := 0; i <= elapsed; i++ {
+		chunk := b.Chunks[i]
+		point := SeriesPoint{
+			Start:   hourStart.Add(time.Duration(i*chunkMinutes) * time.Minute),
+			Queries: chunk.Queries,
+			Blocked: chunk.Blocked,
+			Proxied: chunk.Proxied,
+			Cached:  chunk.Cached,
+			Failed:  chunk.Failed,
+		}
+		if chunk.LatencyCount > 0 {
+			point.LatencyMs = chunk.LatencySumMs / float64(chunk.LatencyCount)
+		}
+		out.Points = append(out.Points, point)
+	}
+	return out, nil
 }
 
 func (a *Aggregator) buckets(spec windowSpec) ([]timedBucket, error) {

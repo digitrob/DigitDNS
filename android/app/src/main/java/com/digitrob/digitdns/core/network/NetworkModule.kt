@@ -173,6 +173,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideFilteringApi(retrofit: Retrofit): FilteringApi = retrofit.create(FilteringApi::class.java)
+
+    @Provides
+    @Singleton
     fun provideSubscriptionApi(retrofit: Retrofit): SubscriptionApi =
         retrofit.create(SubscriptionApi::class.java)
 

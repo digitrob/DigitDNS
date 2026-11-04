@@ -37,6 +37,7 @@ type WebServer struct {
 	db           *database.DB
 	clients      *service.ClientService
 	stats        *service.StatsService
+	filters      *service.FilterService
 	cache        *cache.Cache
 	matcher      *matcher.Matcher
 	customGroups *service.CustomGroupService
@@ -214,6 +215,12 @@ func NewWebServer(
 
 // SetControlState attaches the daemon-owned mutable state shared by the web
 // panel and root-local control plane. Main calls this before any listener starts.
+// SetFilterService attaches the blocklist engine. Nil keeps the filtering API
+// unavailable in the lighter test harnesses.
+func (ws *WebServer) SetFilterService(filters *service.FilterService) {
+	ws.filters = filters
+}
+
 func (ws *WebServer) SetControlState(benchmark *service.BenchmarkRunner, lockouts *service.LoginAttemptTracker) {
 	if ws == nil {
 		return
@@ -814,6 +821,12 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/diagnostics/targets", ws.requireAuth(ws.handleDiagnosticsTargets))
 	mux.HandleFunc("/api/stats", ws.requireAuth(ws.handleStats))
 	mux.HandleFunc("/api/stats/settings", ws.requireAuth(ws.handleStatsSettings))
+	mux.HandleFunc("/api/filtering", ws.requireAuth(ws.handleFiltering))
+	mux.HandleFunc("/api/filtering/settings", ws.requireAuth(ws.handleFilteringSettings))
+	mux.HandleFunc("/api/filtering/refresh", ws.requireAuth(ws.handleFilteringRefresh))
+	mux.HandleFunc("/api/filtering/presets", ws.requireAuth(ws.handleFilteringPresets))
+	mux.HandleFunc("/api/filtering/lists", ws.requireAuth(ws.handleFilterLists))
+	mux.HandleFunc("/api/filtering/lists/", ws.requireAuth(ws.handleFilterListItem))
 	mux.HandleFunc("/api/clients", ws.requireAuth(ws.handleClients))
 	mux.HandleFunc("/api/clients/add", ws.requireAuth(ws.handleClientsAdd))
 	mux.HandleFunc("/api/clients/delete", ws.requireAuth(ws.handleClientsDelete))
@@ -884,6 +897,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 			"/panel":     true,
 			"/home":      true,
 			"/proxied":   true,
+			"/filters":   true,
 			"/clients":   true,
 			"/rules":     true,
 			"/policy":    true,

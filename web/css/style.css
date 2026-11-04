@@ -2247,7 +2247,7 @@ input:checked + .slider:before {
 .sidebar-nav-row .sidebar-nav-item {
   padding-inline-end: 46px;
 }
-.dash-edit-toggle {
+.dash-tool-btn {
   position: relative;
   display: flex;
   align-items: center;
@@ -2268,10 +2268,17 @@ input:checked + .slider:before {
   height: 28px;
   border-radius: 8px;
 }
-.dash-edit-toggle:hover {
+.dash-tool-btn:hover {
   color: var(--accent-cyan);
   background: rgb(var(--c-cyan-400) / 0.12);
   border-color: rgb(var(--c-cyan-400) / 0.3);
+}
+/* The reset control is only present while editing, so it adopts the same amber
+ * treatment as the active pencil instead of looking like a bare icon. */
+.dash-reset-toggle:not(.hidden) {
+  color: var(--accent-amber);
+  background: rgb(245 158 11 / 0.14);
+  border-color: rgb(245 158 11 / 0.35);
 }
 /* While editing, the pencil is struck through: the same control now leaves the
    mode instead of entering it. */
@@ -2459,6 +2466,43 @@ input:checked + .slider:before {
   height: 16px;
   cursor: nwse-resize;
 }
+.dash-resize-n {
+  left: 50%;
+  top: 2px;
+  width: 28px;
+  height: 8px;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+}
+.dash-resize-w {
+  inset-inline-start: 2px;
+  top: 50%;
+  width: 8px;
+  height: 28px;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+}
+.dash-resize-nw {
+  inset-inline-start: 2px;
+  top: 2px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+.dash-resize-ne {
+  inset-inline-end: 2px;
+  top: 2px;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
+}
+.dash-resize-sw {
+  inset-inline-start: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
+}
 .dash-resize-se::before {
   content: "";
   width: 7px;
@@ -2473,6 +2517,42 @@ input:checked + .slider:before {
   height: 28px;
   transform: translateY(-50%);
   cursor: ew-resize;
+}
+/* Reset sits on the same outer edge the pencil normally occupies; the pencil
+ * slides left while editing. */
+.sidebar-reset-btn { inset-inline-end: 8px; }
+.sidebar-nav-row.has-dash-reset .dash-edit-toggle:not(.dash-reset-toggle) { inset-inline-end: 42px; }
+.mobile-dash-reset { inset-inline-end: 4px; }
+.mobile-nav-slot.has-dash-reset .mobile-dash-edit:not(.mobile-dash-reset) { inset-inline-end: 36px; }
+.dash-reset-toggle.hidden { display: none; }
+
+/* Charts fill the card in a custom layout instead of staying at the default
+ * mobile height. Chart.js resizes against the new box on every drag frame. */
+.dash-chart-wrap { contain: layout paint; }
+#tab-dashboard.dash-custom-layout [data-dash-card="chart"],
+#tab-dashboard.dash-custom-layout [data-dash-card="history-chart"] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#tab-dashboard.dash-custom-layout .dash-chart-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto !important;
+}
+#tab-dashboard.dash-custom-layout [data-dash-grid="metrics"] [data-dash-card] {
+  container-type: inline-size;
+}
+#tab-dashboard.dash-custom-layout [data-dash-grid="metrics"] span[id^="stat-"] {
+  font-size: clamp(0.9rem, 9cqw, 1.6rem) !important;
+}
+/* Four latency tiles in a 12-column card: let them fall into 2x2 when the card
+ * is half width instead of squeezing four columns into unreadable cells. */
+#tab-dashboard.dash-custom-layout [data-dash-card="latency"] .latency-grid {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+}
+#tab-dashboard.dash-custom-layout [data-dash-card="latency"] .latency-grid > div {
+  min-width: 0;
 }
 .dash-resize-s {
   bottom: 3px;
@@ -2769,4 +2849,412 @@ input:checked + .slider:before {
 }
 #tab-stream .stream-table thead th {
   background: rgb(var(--c-slate-950));
+}
+
+/* ── Ad-blocking list manager ─────────────────────────────────────────────────
+ * Rows use the same inset tile treatment as upstream resolvers, so a blocklist
+ * and a resolver read as the same kind of object. The grid collapses to one
+ * column before the three inputs become cramped. */
+.filtering-add-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.6fr) minmax(200px, 1.4fr) minmax(160px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .filtering-add-row { grid-template-columns: 1fr; }
+}
+.filtering-refresh-btn {
+  width: max-content;
+  margin-inline-start: auto;
+}
+.filtering-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.filtering-upload-btn:hover { background: var(--hover-veil); }
+.filter-list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgb(var(--c-slate-800));
+  border-radius: 10px;
+  background: rgb(var(--c-slate-950) / 0.7);
+}
+.filter-list-main { min-width: 0; flex: 1 1 auto; }
+.filter-list-name {
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filter-list-url {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filter-list-meta {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  margin-top: 2px;
+}
+.filter-list-error { color: #f59e0b; font-size: 10px; margin-top: 2px; }
+.filter-list-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.filter-list-actions .panel-btn { width: auto; padding: 0 8px; }
+.filter-list-empty {
+  padding: 14px 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* Preset catalogue: the primary way to add a list. Groups are visually
+ * separated; rows use the same inset tile as installed lists. */
+.filtering-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 34rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+.filtering-preset-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.filtering-preset-group h5 {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-heading);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+/* The pinned section is the answer to "what is blocking right now"; give its
+ * heading the same accent as an active row. */
+.filtering-preset-active h5 { color: rgb(var(--c-cyan-400)); }
+.filtering-preset-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgb(var(--c-slate-800));
+  border-radius: 10px;
+  background: rgb(var(--c-slate-950) / 0.7);
+}
+.filtering-preset-row.is-selected {
+  border-color: rgb(var(--c-cyan-500) / 0.65);
+  background: rgb(var(--c-cyan-950) / 0.35);
+}
+.filtering-preset-main { min-width: 0; flex: 1 1 auto; }
+.filtering-preset-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 700;
+}
+.filtering-preset-desc {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+.filtering-preset-warning { color: var(--accent-amber); font-size: 10px; margin-top: 2px; }
+.filtering-preset-links { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; flex-shrink: 0; }
+.filter-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--border-color);
+  color: var(--accent-cyan);
+  background: rgb(var(--c-slate-900) / 0.85);
+}
+.filter-link:hover { background: var(--bg-card-hover); }
+.filtering-preset-check {
+  width: 16px;
+  height: 16px;
+  accent-color: rgb(var(--c-cyan-500));
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.filtering-preset-badge {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--c-cyan-500) / 0.35);
+  color: var(--accent-cyan);
+}
+.filtering-preset-badge.is-off {
+  border-color: rgb(var(--c-amber-500) / 0.4);
+  color: var(--accent-amber);
+}
+.filtering-preset-badge.is-active {
+  border-color: rgb(var(--c-emerald-500) / 0.45);
+  color: var(--accent-green);
+}
+.filtering-preset-row.is-installed {
+  border-color: rgb(var(--c-slate-700) / 0.9);
+  background: rgb(var(--c-slate-900) / 0.65);
+}
+.filtering-custom-toggle { padding-top: 4px; }
+.filtering-custom-panel {
+  padding: 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+  flex-direction: column;
+  gap: 8px;
+}
+.filtering-custom-panel:not(.hidden) { display: flex; }
+
+/* Ad Blocking page: a fixed two-card workspace on desktop. The page itself does
+ * not scroll; only the blocklist roster inside the right card does. The left card
+ * holds the policy, the right card holds list management, so the operator can
+ * change a setting and scan the catalogue without the page moving underneath. */
+#tab-filters:not(.hidden) {
+  height: calc(100vh - 9rem);
+  height: calc(100dvh - 9rem);
+  min-height: 0;
+}
+.filtering-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  height: 100%;
+  min-height: 0;
+}
+.filtering-settings-card,
+.filtering-lists-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 14px;
+}
+.filtering-settings-card { align-self: start; max-height: 100%; overflow-y: auto; }
+.filtering-lists-card { overflow: hidden; }
+.filtering-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.filtering-card-title {
+  margin: 0;
+  color: var(--text-main);
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.filtering-card-help {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+.filtering-summary {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.filtering-list-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.filtering-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-main);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.filtering-settings-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.9fr;
+  gap: 8px;
+}
+.filtering-field {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.filtering-allowlist { display: flex; flex-direction: column; }
+.filtering-settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.filtering-lists-card .filtering-presets {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  gap: 8px;
+}
+.filtering-lists-card .filtering-preset-group { gap: 4px; }
+.filtering-list-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.filtering-license-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.35;
+  flex-shrink: 0;
+}
+.filtering-lists-card .filtering-custom-panel {
+  flex-shrink: 0;
+  max-height: 42%;
+  overflow-y: auto;
+}
+.filtering-lists-card .filtering-add-row {
+  grid-template-columns: 1fr 1fr;
+}
+.filtering-lists-card .filtering-add-row .panel-btn,
+.filtering-lists-card .filtering-add-row .filtering-upload-btn {
+  width: 100%;
+}
+.filtering-preset-row {
+  padding: 7px 9px;
+  gap: 8px;
+}
+.filtering-preset-title { font-size: 11.5px; }
+.filtering-preset-desc { font-size: 9.5px; }
+.filtering-preset-links .filter-link {
+  width: 26px;
+  height: 26px;
+}
+
+@media (max-width: 1023px) {
+  #tab-filters:not(.hidden) { height: auto; }
+  .filtering-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .filtering-settings-card,
+  .filtering-lists-card { overflow: visible; }
+  .filtering-lists-card .filtering-presets { max-height: 60vh; }
+  .filtering-settings-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 640px) {
+  .filtering-settings-grid { grid-template-columns: 1fr; }
+  .filtering-list-head-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .filtering-lists-card .filtering-add-row { grid-template-columns: 1fr; }
+}
+
+/* History controls are dashboard-wide, not section-local: cards can move to
+ * any grid, so the range/export chips stay at the top and never travel with
+ * the history cards. */
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 28px;
+  /* Dashboard-wide controls, deliberately outside every layout grid: the
+   * editor cannot drag or delete them. Sticky keeps the range and refresh
+   * controls reachable while the tall card canvas scrolls underneath. */
+  position: sticky;
+  /* Match the dashboard's top padding. With top: 0 the row first slides up
+   * through that padding before sticking, which reads as a small jump. */
+  top: 1.5rem;
+  z-index: 20;
+  padding: 4px 0 6px;
+  background: var(--bg-main);
+  border-bottom: 1px solid rgb(var(--c-slate-800) / 0.55);
+  margin-top: 0 !important;
+}
+/* Cover the dashboard's top padding above the sticky row; otherwise cards
+ * scrolling underneath remain visible in that gap. */
+.history-toolbar::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: -1.5rem;
+  height: 1.5rem;
+  background: var(--bg-main);
+  pointer-events: none;
+}
+.history-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-inline-start: auto;
+}
+/* Exports are actions, not range selectors. They trail the range group and are
+ * pushed to the row's far right; the green tint separates them from the cyan
+ * selected-range chip. */
+.history-export-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+.history-refresh-btn { white-space: nowrap; }
+.history-export-btn { white-space: nowrap; }
+.history-toolbar-status {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  margin-inline-start: 4px;
+  white-space: nowrap;
+}
+@media (min-width: 640px) {
+  .history-toolbar { top: 2rem; }
+  .history-toolbar::before { top: -2rem; height: 2rem; }
+}
+@media (max-width: 640px) {
+  .history-toolbar { justify-content: flex-start; }
+  .history-toolbar-actions {
+    margin-inline-start: 0;
+    width: 100%;
+    justify-content: flex-start;
+  }
 }

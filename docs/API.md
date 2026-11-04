@@ -179,6 +179,7 @@ curl -s "https://dns.example.com/<admin-path>/api/v3/clients" \
 | Relay agents | `GET/POST /api/v3/agents`, `PUT/DELETE /api/v3/agents/{id}`, `POST …/{id}/{enable,disable,rotate-key,test}`, `GET …/{id}/key` |
 | Rules & access | `GET/POST /api/v3/rules`, `GET/POST /api/v3/access`, `POST /api/v3/access/mode` |
 | Upstreams | `GET/POST /api/v3/upstreams`, `POST /api/v3/upstreams/{benchmark,reorder}` |
+| Ad blocking | `GET /api/v3/filtering`, `POST/PUT /api/v3/filtering/settings`, `POST /api/v3/filtering/refresh`, `GET/POST /api/v3/filtering/presets`, `POST /api/v3/filtering/lists`, `PATCH/POST/DELETE /api/v3/filtering/lists/{id}`, `POST /api/v3/filtering/lists/{id}/update` |
 | Settings | `GET/POST /api/v3/settings`, `…/settings/subscription`, `…/settings/regenerate-api-key`, `…/settings/regenerate-admin-path` |
 | TLS / ACME | `POST /api/v3/tls/issue`, `POST /api/v3/tls/auto-renew`, `GET /api/v3/tls/acme/status` |
 | Stats & stream | `GET /api/v3/stats`, `GET /api/v3/stats/{summary,series,top,export,settings}`, `POST /api/v3/stats/settings`, `GET /api/v3/events/stream` (`?ticket=` accepted) |
@@ -188,22 +189,75 @@ curl -s "https://dns.example.com/<admin-path>/api/v3/clients" \
 
 Managing the diagnostic target list — a dashboard-only operation in v3.1.0 — is now `GET/POST/DELETE /api/v3/diagnostics/targets`; `POST /api/v3/diagnostics/run` runs the same shared probe v2 does.
 
-### Historical aggregate stats (4.1.0)
+### Ad blocking (5.0.0)
+
+The blocklist engine is managed through the same routes the Ad Blocking page
+uses. A status read returns the policy, every installed list, the curated preset
+catalogue and the cached preset domain counts.
+
+```text
+GET    /api/v3/filtering
+POST   /api/v3/filtering/settings      # also PUT
+POST   /api/v3/filtering/refresh
+GET    /api/v3/filtering/presets
+POST   /api/v3/filtering/presets       # {"ids":["hagezi-pro", …]}
+POST   /api/v3/filtering/lists         # {"name","url","homepage","content"}
+PATCH  /api/v3/filtering/lists/{id}    # {"enabled":true|false}
+DELETE /api/v3/filtering/lists/{id}
+POST   /api/v3/filtering/lists/{id}/update
+```
+
+The status document and the Android roster use these fields:
+
+- `settings`: `enabled`, `block_mode` (`null_ip`, `nxdomain`, `refused`),
+  `block_ttl`, `update_interval_hours`, `allowlist`.
+- `lists`: installed lists with `id`, `name`, `url`, `homepage`, `license`,
+  `preset_id`, `enabled`, `domain_count`, `rule_count`, `allowed_count`,
+  `skipped`, `last_updated`, `last_error`.
+- `presets`: the 45-entry catalogue (`id`, `name`, `group`, `url`, `homepage`,
+  `license`, `description`, `warning`, `recommended`, `base`). The server stores
+  URLs only; list bodies are fetched at runtime.
+- `preset_counts`: cached counts for presets that are not installed.
+- `preset_counts_running`: true while the background catalogue scan is active.
+- `total_domains`, `total_rules`, `updating`.
+
+`POST /filtering/lists` accepts either a `url` subscription or a `content`
+upload (hosts, domains-only or Adblock/uBO text, up to 16 MB). Presets are
+installed by ID; `POST /filtering/presets` answers
+`{"added":[…],"skipped":[…],"failed":[…]}`.
+
+```bash
+# Status for the Android roster.
+curl -s "https://dns.example.com/<admin-path>/api/v3/filtering" \
+  -H "X-API-Key: digitdns_live_…"
+
+# Install the recommended base and one security list.
+curl -s -X POST "https://dns.example.com/<admin-path>/api/v3/filtering/presets" \
+  -H "X-API-Key: digitdns_live_…" -H "Content-Type: application/json" \
+  -d '{"ids":["hagezi-pro","urlhaus"]}'
+
+# Disable one list without deleting it.
+curl -s -X PATCH "https://dns.example.com/<admin-path>/api/v3/filtering/lists/<id>" \
+  -H "X-API-Key: digitdns_live_…" -H "Content-Type: application/json" \
+  -d '{"enabled":false}'
+```
+
+### Historical aggregate stats (4.1.0; 1h five-minute buckets since 5.0.0)
 
 These routes read the optional 90-day aggregate store. They return `503` with
 `stats_unavailable` when history is disabled or `stats.db` could not be opened.
 All accept either a dashboard session or the master API key, like the rest of v3.
 
 ```text
-GET  /api/v3/stats/summary?range=24h|7d|30d|90d
-GET  /api/v3/stats/series?range=...&interval=hour|day
+GET  /api/v3/stats/summary?range=1h|24h|7d|30d|90d
+GET  /api/v3/stats/series?range=...&interval=5m|hour|day
 GET  /api/v3/stats/top?range=...&dimension=...&limit=10
 GET  /api/v3/stats/export?range=...&format=csv|json
 GET  /api/v3/stats/settings
 POST /api/v3/stats/settings
 ```
 
-- `24h` and `7d` read hourly buckets; `30d` and `90d` read daily buckets. Today's
+- `1h` reads the current hour in five-minute buckets; `24h` and `7d` read hourly buckets; `30d` and `90d` read daily buckets. Today's
   daily point merges the current day's hourly buckets.
 - `summary.active_clients` is a HyperLogLog distinct-client estimate over the
   range, not a count clipped by the top-client cap. `active_clients_approx` is

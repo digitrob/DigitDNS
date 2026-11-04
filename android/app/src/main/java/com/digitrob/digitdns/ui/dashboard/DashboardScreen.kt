@@ -11,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -30,6 +31,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.animateDpAsState
@@ -74,6 +76,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
@@ -88,8 +91,8 @@ import com.digitrob.digitdns.ui.components.CountryFlag
 import com.digitrob.digitdns.ui.components.MetricCard
 import com.digitrob.digitdns.ui.components.MetricValue
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.ConnectionStatusBadge
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
-import com.digitrob.digitdns.ui.components.PanelScreenHeader
 import com.digitrob.digitdns.ui.components.icon
 import com.digitrob.digitdns.ui.system.ServerSwitcherDialog
 import com.digitrob.digitdns.ui.formatBytes
@@ -102,6 +105,9 @@ import com.digitrob.digitdns.ui.theme.MetricMeta
 import com.digitrob.digitdns.ui.theme.MetricNumber
 import com.digitrob.digitdns.ui.theme.PanelMono
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
 
@@ -127,7 +133,7 @@ fun DashboardScreen(
         state.isLoading && state.stats == null -> LoadingState()
         state.error != null && state.stats == null -> ErrorState(state.error!!)
         else -> Column(modifier = Modifier.fillMaxSize()) {
-            PanelScreenHeader()
+            DashboardTopBar(state.history, viewModel::setHistoryRange)
             // The switcher shares the IP row and is inset by the same 12dp the header's
             // padding gives the connection pill, so its glyph sits directly under the
             // ONLINE badge. It used to be flush with the screen edge, which put it
@@ -195,7 +201,6 @@ fun DashboardScreen(
                     onAddUpstream = viewModel::addUpstream,
                     onRemoveUpstream = viewModel::removeUpstream,
                     onResolutionChange = viewModel::saveResolution,
-                    onHistoryRange = viewModel::setHistoryRange,
                 )
             }
         }
@@ -223,6 +228,110 @@ fun DashboardScreen(
         )
     }
 }
+
+/**
+ * The dashboard's top strip: history range chips on the left, the aggregate's update
+ * clock in the middle and the live-connection pill on the right. The chips used to sit
+ * in their own full-width card, which pushed the first metrics below the fold; folding
+ * them into the header keeps the range one tap away without spending a grid row.
+ *
+ * The chip strip is the only weighted child and it scrolls, so an operator on a very
+ * narrow phone can still reach `90d` while the clock and the ONLINE badge stay pinned.
+ */
+@Composable
+private fun DashboardTopBar(
+    history: HistoryUiState,
+    onRangeChange: (HistoryRange) -> Unit,
+) {
+    val colors = DigitDnsTheme.colors
+    // A background history poll flips isLoading for a moment every ~30 s. Do not
+    // replace the timestamp with "Loading…" for that: it makes the whole row
+    // flash and the range chips jump. Only a first load with no clock yet shows
+    // the loading word.
+    val updated = when {
+        history.isLoading && history.updatedAtEpochMs == null -> stringResource(R.string.history_loading)
+        history.unavailable -> stringResource(R.string.history_unavailable_short)
+        history.error != null -> stringResource(R.string.history_error_short)
+        history.updatedAtEpochMs != null -> stringResource(
+            R.string.history_updated,
+            HISTORY_CLOCK.format(Instant.ofEpochMilli(history.updatedAtEpochMs)),
+        )
+        else -> stringResource(R.string.history_waiting_short)
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            HistoryRange.entries.forEach { candidate ->
+                HistoryRangePill(
+                    label = stringResource(candidate.labelRes()),
+                    selected = candidate == history.range,
+                    onClick = { onRangeChange(candidate) },
+                )
+            }
+        }
+        Text(
+            text = updated,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontFamily = PanelMono,
+                fontSize = 8.sp,
+                lineHeight = 10.sp,
+            ),
+            color = if (history.unavailable || history.error != null) {
+                colors.warning
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        ConnectionStatusBadge()
+    }
+}
+
+/** One compact range pill. Smaller than a Material chip so five fit beside the badge. */
+@Composable
+private fun HistoryRangePill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = DigitDnsTheme.colors
+    val accent = MaterialTheme.colorScheme.primary
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (selected) accent.copy(alpha = 0.16f) else Color.Transparent)
+            .border(
+                width = 1.dp,
+                color = if (selected) accent.copy(alpha = 0.6f) else colors.borderColor,
+                shape = RoundedCornerShape(6.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 10.sp,
+                lineHeight = 12.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            ),
+            color = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+/** Wall-clock stamp for the history header; seconds are enough to show a refresh. */
+private val HISTORY_CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss")
+    .withZone(ZoneId.systemDefault())
 
 /**
  * The install's public address, pinned above the grid. The panel keeps the same box in
@@ -288,6 +397,13 @@ private fun ServerIpBox(
                 text = stringResource(R.string.dashboard_server_address),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // The address row and the switch button are height-matched through
+                // IntrinsicSize.Min. A label that wraps makes the measured intrinsic
+                // height a single line narrower than the rendered one, and the address
+                // then falls outside the row's clip on a 320 dp phone. Keeping the
+                // label to one line keeps the intrinsic and actual heights equal.
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             AddressValue(text = shownText, hidden = hidden, canBlur = canBlur)
         }
@@ -392,7 +508,6 @@ private fun DashboardGrid(
     onAddUpstream: suspend (String) -> String?,
     onRemoveUpstream: suspend (String) -> String?,
     onResolutionChange: (ResolutionSettings) -> Unit,
-    onHistoryRange: (HistoryRange) -> Unit,
 ) {
     // The grid state is hoisted for one reason: the racer card's swipe-to-delete has
     // to know a scroll is in flight, or a diagonal scroll can settle as a swipe and pop
@@ -408,7 +523,7 @@ private fun DashboardGrid(
     ) {
         state.layout.visible.forEach { card ->
             if (card.name.startsWith("HISTORY_")) {
-                historyCard(card, state, onHistoryRange)
+                historyCard(card, state)
             } else {
                 liveCard(
                     card = card,
@@ -473,19 +588,8 @@ private fun LazyGridScope.liveCard(
 private fun LazyGridScope.historyCard(
     card: DashboardCard,
     state: DashboardUiState,
-    onHistoryRange: (HistoryRange) -> Unit,
 ) {
     when (card) {
-        DashboardCard.HISTORY_RANGE -> item(span = { GridItemSpan(maxLineSpan) }) {
-            HistoryRangeCard(
-                range = state.history.range,
-                updatedAtEpochMs = state.history.updatedAtEpochMs,
-                isLoading = state.history.isLoading,
-                unavailable = state.history.unavailable,
-                error = state.history.error,
-                onRangeChange = onHistoryRange,
-            )
-        }
         DashboardCard.HISTORY_SUMMARY -> item(span = { GridItemSpan(maxLineSpan) }) {
             HistorySummaryCard(state.history.summary, state.history.unavailable)
         }

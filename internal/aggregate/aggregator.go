@@ -177,7 +177,10 @@ func (a *Aggregator) Path() string { return a.store.Path() }
 // RecordDetail because the live log samples rate-limit refusals and skips
 // malformed early returns; the total card must still be honest.
 func (a *Aggregator) RecordTotal(at time.Time) {
-	a.withBucket(at, func(b *Bucket) { b.recordTotal() })
+	a.withBucket(at, func(b *Bucket, chunk *Chunk) {
+		b.recordTotal()
+		chunk.Queries++
+	})
 }
 
 // RecordDetail folds the dimensions from one query-log item. It does not
@@ -187,10 +190,21 @@ func (a *Aggregator) RecordDetail(item database.QueryLogItem) {
 	if at.IsZero() {
 		at = a.now()
 	}
-	a.withBucket(at, func(b *Bucket) { b.record(item, a.cfg, a.clientSalt) })
+	a.withBucket(at, func(b *Bucket, chunk *Chunk) {
+		blocked, proxied := b.Blocked, b.Proxied
+		cached, failed := b.Cached, b.Failed
+		latency, latencyCount := b.LatencySumMs, b.LatencyCount
+		b.record(item, a.cfg, a.clientSalt)
+		chunk.Blocked += b.Blocked - blocked
+		chunk.Proxied += b.Proxied - proxied
+		chunk.Cached += b.Cached - cached
+		chunk.Failed += b.Failed - failed
+		chunk.LatencySumMs += b.LatencySumMs - latency
+		chunk.LatencyCount += b.LatencyCount - latencyCount
+	})
 }
 
-func (a *Aggregator) withBucket(at time.Time, fn func(*Bucket)) {
+func (a *Aggregator) withBucket(at time.Time, fn func(*Bucket, *Chunk)) {
 	key := hourKey(at)
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -212,7 +226,16 @@ func (a *Aggregator) withBucket(at time.Time, fn func(*Bucket)) {
 		default:
 		}
 	}
-	fn(a.current)
+	fn(a.current, &a.current.Chunks[chunkSlot(at)])
+}
+
+// chunkSlot maps an instant to its five-minute slice of the UTC hour.
+func chunkSlot(at time.Time) int {
+	slot := at.UTC().Minute() / chunkMinutes
+	if slot < 0 || slot >= chunkSlots {
+		return 0
+	}
+	return slot
 }
 
 func (a *Aggregator) loop() {

@@ -6,6 +6,105 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.0.0] — DNS server, SNI relay and ad blocking in one stack
+
+DigitDNS becomes a complete DNS solution: the resolver and TLS relay are joined
+by a DNS sink with a real blocklist engine and a long-window aggregate history.
+One install covers DNS resolution, geo-blocking bypass and ad blocking.
+
+### ✨ Added
+
+- **Ad-blocking engine.** A DNS sink that answers blocked names before an
+  upstream query, with `0.0.0.0`, `NXDOMAIN` and `REFUSED` response modes,
+  configurable block TTL, update interval and an always-allow list. The
+  allowlist wins over every blocklist.
+- **45 curated blocklist presets** in five groups: General protection,
+  Supplementary ads & trackers, Malware/phishing/scams, Device & vendor
+  telemetry, and Optional extras. Sources include HaGeZi Pro/Light/Pro+/Ultimate,
+  OISD Big/Small, AdGuard DNS, 1Hosts Xtra/Lite, StevenBlack Unified, Peter Lowe,
+  AdAway, Dan Pollock, URLhaus and Phishing Army. Every row carries its
+  description, licence, warning, homepage and raw file link; a recommended base
+  can be installed in one action.
+- **Custom blocklists.** Subscribe to a hosts/Adblock URL or upload a local file.
+  Downloads are capped at 64 MB and uploads at 16 MB, parsed off the DNS hot path
+  and installed atomically. Duplicate URLs are rejected and names are bounded.
+- **Per-list lifecycle.** Enable/disable without deleting, update one list or all
+  lists, delete, view unique domains, rule count, allow/skipped entries and last
+  update, and scan preset sizes in the background before installing.
+- **Active-first lists.** Enabled lists are pinned under an **ACTIVE** heading at
+  the top of the web and Android list views and removed from their catalogue
+  groups, so the lists actually in force are immediately visible.
+- **Web Ad Blocking tab.** Policy card, blocklist roster, search, custom
+  URL/file panel, active counts, refresh and per-list actions.
+- **Android Ad Blocking screen.** The same policy, preset catalogue, custom URL
+  and file upload, active-first ordering, green active states and update/delete
+  actions, under **Settings → Ad Blocking**.
+- **Five-minute 1h statistics.** The current hour is split into twelve real
+  5-minute slices (queries, blocked, proxied, cached, failed and latency). The 1h
+  series returns the started slices, so web and Android draw a line instead of a
+  single point; 24h/7d read hourly buckets and 30d/90d read daily buckets.
+- **v3 filtering API.** Status, settings, presets, list creation, enable/disable,
+  update and delete under `/api/v3/filtering`.
+- **Free dashboard layout.** Cards move anywhere on a 12-column, 12-pixel-row
+  grid, resize from every edge and corner, and can cross the metrics, main and
+  history groups. Layout version 3 migrates the previous document; a reset action
+  sits beside the edit control.
+- **Sticky history toolbar.** Refresh statistics on the left, status, range chips
+  and CSV/JSON export actions on the right; the row stays pinned while cards
+  scroll underneath and is outside every editable grid.
+- **1h range chip** on web and Android, plus a single-bucket bar fallback.
+- **Android header controls.** Range chips and the aggregate update clock sit in
+  the top row beside Online; the same clock appears in the same place on the
+  other live-backed screens.
+- **Numeric history chart axis.** Android’s Queries over time card now draws
+  peak/mid/zero labels and gridlines.
+- **Compact Android summary.** The six aggregate metrics render as two rows of
+  three with tighter type and spacing.
+
+### 🔄 Changed
+
+- **Web export buttons** moved after the range chips to the far right and use the
+  green action tint, separating them from time selection.
+- **Android history range** is a top-header control instead of a dashboard card;
+  the Traffic History card and its “no raw queries retained” subtitle are gone.
+- **Android updated clock** no longer flips to “Loading…” on a background poll,
+  eliminating the flash and the chip-row jump.
+- **Responsive KPI cards.** The six live cards wrap their meta columns, CPU line
+  and traffic readings instead of clipping at narrow widths; the six-across
+  layout is deferred to `2xl`, and free placement starts at 1280 px.
+- **History card layout.** Android summary is three-up; the chart has a real
+  scale; ranked cards and the layout editor keep their existing behaviour.
+- **Docs and OpenAPI** describe the blocklist routes, 5-minute interval and the
+  expanded v3 surface.
+
+### 🛡 Security and privacy
+
+- Blocklist content is fetched at runtime from upstream projects and never
+  bundled; subscriptions and policy live in the encrypted local database.
+- Statistics stay aggregate-only: no raw query log and no replayable DNS payload.
+- Existing client anonymization, per-store HMAC salt and opt-out remain unchanged.
+- List downloads have size caps and are parsed away from the DNS hot path.
+
+### 🧪 Tests
+
+- Blocklist parser and allowlist precedence, filter service lifecycle, preset
+  catalogue and count scanning.
+- Filtering API/session routes and web document controls.
+- Five-minute aggregate chunks and 1h series shape.
+- Android filtering API, roster ordering, view-model state, dashboard header and
+  layout tests.
+- Full Go suite/vet/race, web Node tests, Tailwind purge and Android
+  unit/detekt/lint/build gates.
+
+### ⬆️ Upgrade
+
+No database migration. `stats.db` starts recording 5-minute slices at first
+start; the current hour may only show slices recorded after the restart. Pull
+`ghcr.io/digitrob/digitdns:5.0.0` and `ghcr.io/digitrob/digitdns-agent:5.0.0`,
+then recreate the container.
+
+---
+
 ## 🏷️ [v4.1.0] — Traffic History
 
 The first minor release after 4.0 adds an optional 90-day aggregate history,
