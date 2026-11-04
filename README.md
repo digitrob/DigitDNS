@@ -6,13 +6,17 @@
 [![Docker](https://img.shields.io/github/actions/workflow/status/digitrob/DigitDNS/docker.yml?branch=main&style=for-the-badge&label=Docker)](https://github.com/digitrob/DigitDNS/actions/workflows/docker.yml)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge&logo=gnu)](LICENSE)
 
-DigitDNS is a self-hosted DNS resolver, a TLS pass-through relay, a DNS sink with
-ad blocking and a subscriber panel in one static binary. One install covers DNS
-resolution, geo-blocking bypass and ad blocking. Point a phone, console, TV or
+DigitDNS is a self-hosted SmartDNS resolver, a TLS pass-through relay, a DNS sink
+with ad blocking and a subscriber panel in one static binary. One install covers
+DNS resolution, geo-blocking bypass and ad blocking. Point a phone, console, TV or
 router at it and each domain gets one of three answers: resolve normally, refuse
 or answer from the sink, or connect through your server. The panel manages rules,
 subscribers, blocklists, certificates and upstream resolvers; a customer portal
 and a native Android app give subscribers their own view.
+
+**Looking for a self-hosted DNS server, a Pi-hole or AdGuard Home alternative
+with ad blocking, or an SNI proxy for geo-restricted services?** DigitDNS
+combines all three in one install, one panel and one Android companion.
 
 It is a fork of [HyperDNS](https://github.com/IzumiRain/HyperDNS) by HyperRAIN,
 maintained by [Digitrob](https://github.com/digitrob). It is free, open source
@@ -31,6 +35,7 @@ dependency. Use it only on servers and networks you are allowed to operate.
   <a href="#android-app">📱 Android</a> •
   <a href="#operations">🔧 Operations</a> •
   <a href="#security">🛡️ Security</a> •
+  <a href="#screenshots">📸 Screenshots</a> •
   <a href="#documentation">📚 Docs</a>
 </p>
 
@@ -69,10 +74,6 @@ panel.
   Blocking** on Android, including custom URL and file upload.
 - **API v3.** `/api/v3/filtering` exposes status, settings, presets, list
   creation, enable/disable, update and delete for automation.
-
-<p align="center">
-  <img src="docs/screenshots/v5-web-adblocking.jpg" alt="DigitDNS ad blocking with active lists pinned first" width="100%">
-</p>
 
 ### 📊 Aggregated statistics
 
@@ -123,6 +124,46 @@ panel.
 
 ---
 
+## Screenshots
+
+### Web dashboard
+
+Live metrics, the sticky history toolbar, the 1h range and export actions. Cards
+can be moved and resized freely.
+
+<p align="center">
+  <img src="docs/screenshots/v5-web-dashboard.jpg" alt="DigitDNS web dashboard: live DNS metrics, 1h aggregate and CSV/JSON exports" width="100%">
+</p>
+
+### Web history
+
+The 1h range drawn from five-minute buckets, with the summary, stacked traffic
+chart and ranked tables.
+
+<p align="center">
+  <img src="docs/screenshots/v5-web-history.jpg" alt="DigitDNS web history: 1h five-minute chart, summary and top domains" width="100%">
+</p>
+
+### Web ad blocking
+
+Forty-five curated blocklists, custom URL and file lists, an allowlist, and the
+enabled lists pinned under **ACTIVE** at the top.
+
+<p align="center">
+  <img src="docs/screenshots/v5-web-adblocking.jpg" alt="DigitDNS web ad blocking: active blocklists, presets, policy and allowlist" width="100%">
+</p>
+
+### Android
+
+| Dashboard | History | Ad blocking |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/v5-android-dashboard.png" alt="DigitDNS Android dashboard with range chips and updated clock" width="240"> | <img src="docs/screenshots/v5-android-history.png" alt="DigitDNS Android history summary and five-minute chart" width="240"> | <img src="docs/screenshots/v5-android-adblocking.png" alt="DigitDNS Android ad blocking with active blocklists" width="240"> |
+
+> Screenshots use a test server. The public address and one client name are
+> pixelated.
+
+---
+
 ## Why DigitDNS
 
 - **One binary, no runtime.** DNS, DoT, DoH, the TLS relay, the panel, the REST
@@ -139,6 +180,9 @@ panel.
   Android client area.
 - **Encrypted DNS where it matters.** DoT and DoH for clients; DoT, DoH, DoQ,
   DoH3 and DNSCrypt for upstreams.
+- **A Pi-hole / AdGuard Home alternative with a relay.** Run the 45-preset
+  blocklist engine on its own, or let the same install bypass geo-blocks through
+  SNI relay agents.
 
 **What it is not:** a VPN. Only names you mark as proxied are relayed; all other
 traffic keeps its direct path. It also does not hide your server's IP from the
