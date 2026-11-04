@@ -3624,7 +3624,7 @@ function renderCustomRecords(records) {
   if (!container) return;
   container.innerHTML = '';
   if (!records || Object.keys(records).length === 0) {
-    container.innerHTML = '<div class="text-slate-500 text-xs py-1">No static records yet</div>';
+    container.innerHTML = '<div class="text-slate-500 text-xs py-1">No DNS rewrites yet</div>';
     return;
   }
   for (const [dom, ip] of Object.entries(records)) {
@@ -4510,7 +4510,7 @@ const STREAM_ACTION_BADGES = {
   BLOCK: '<span class="badge badge-block">BLOCK</span>',
   RATELIMIT: '<span class="badge badge-block">RATE LIMITED</span>',
   QUOTA: '<span class="badge badge-block">QUOTA</span>',
-  CUSTOM: '<span class="badge badge-custom">CUSTOM</span>',
+  CUSTOM: '<span class="badge badge-rewrite">Rewrite</span>',
   CACHED: '<span class="badge badge-direct">DIRECT</span>',
   STALE: '<span class="badge badge-cached">STALE</span>',
   DIRECT: '<span class="badge badge-direct">DIRECT</span>',
@@ -4531,6 +4531,18 @@ const PROTO_COLORS = {
 
 function protocolClass(protocol) {
   return PROTO_COLORS[String(protocol || '').toUpperCase()] || 'text-slate-500';
+}
+
+// Wire values are upper-case; the UI uses the conventional mixed-case names.
+function protocolLabel(protocol) {
+  switch (String(protocol || '').toUpperCase()) {
+    case 'DOT': return 'DoT';
+    case 'DOH': return 'DoH';
+    case 'DOQ': return 'DoQ';
+    case 'DOH3': return 'DoH3';
+    case 'DNSCRYPT': return 'DNSCrypt';
+    default: return String(protocol || '').trim();
+  }
 }
 
 // queryRowHTML renders one query into the eight cells of the stream table. Everything that
@@ -4580,11 +4592,12 @@ function queryRowHTML(q) {
   // the tooltip and in the API payload.
   const clientProto = q.protocol || 'UDP';
   const resolutionProto = (q.upstream_protocol || '').trim();
-  const protoStr = resolutionProto || clientProto;
+  const protoWire = resolutionProto || clientProto;
+  const protoStr = protocolLabel(protoWire);
   const protoTitle = resolutionProto
-    ? `Resolution: ${resolutionProto} · Client: ${clientProto}`
-    : `Client: ${clientProto}`;
-  const protoClass = protocolClass(protoStr);
+    ? `Resolution: ${protocolLabel(resolutionProto)} · Client: ${protocolLabel(clientProto)}`
+    : `Client: ${protocolLabel(clientProto)}`;
+  const protoClass = protocolClass(protoWire);
 
   // clientIP is escaped like the domain beside it. It is normally a parsed address,
   // but on DoH it can originate from a forwarding header, and the row is written with
@@ -5521,14 +5534,13 @@ function ensureHistoryChart() {
   return historyChart;
 }
 
-function historyLabel(start, interval) {
+function historyLabel(start, range, interval) {
   const d = new Date(start);
-  if (interval === 'day') {
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (range === '7d') {
+    return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' });
   }
-  if (historyRange === '7d') {
-    return d.toLocaleDateString(undefined, { weekday: 'short' }) + ' ' +
-      d.toLocaleTimeString(undefined, { hour: '2-digit' });
+  if (range === '30d' || range === '90d' || interval === 'day') {
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
@@ -5536,15 +5548,36 @@ function historyLabel(start, interval) {
 function renderHistoryChart(series) {
   const chart = ensureHistoryChart();
   if (!chart) return;
+  const range = series.range || historyRange;
   const points = Array.isArray(series.points) ? series.points : [];
-  // A single bucket (the 1h range) has no line segment to draw, so the line
-  // datasets would leave the plot empty. Render the same three series as one
-  // stacked bar instead; Chart.js supports a per-dataset type switch.
+  // A single bucket has no line segment to draw, so the same three series are
+  // rendered as one stacked bar; Chart.js supports a per-dataset type switch.
   const single = points.length === 1;
-  chart.data.labels = points.map((p) => historyLabel(p.start, series.interval));
-  chart.data.datasets[0].data = points.map((p) => Math.max(0, (p.queries || 0) - (p.blocked || 0) - (p.proxied || 0)));
-  chart.data.datasets[1].data = points.map((p) => p.blocked || 0);
-  chart.data.datasets[2].data = points.map((p) => p.proxied || 0);
+  let labels = points.map((p) => historyLabel(p.start, range, series.interval));
+  let allowed = points.map((p) => Math.max(0, (p.queries || 0) - (p.blocked || 0) - (p.proxied || 0)));
+  let blocked = points.map((p) => p.blocked || 0);
+  let proxied = points.map((p) => p.proxied || 0);
+
+  // The 1h range always spans the full hour. The API returns only the started
+  // five-minute slots, so the rest of the axis is filled here and the datasets
+  // stay null after "now" rather than dropping a misleading line to zero.
+  if (range === '1h' && points.length) {
+    const slots = 12;
+    const startMs = new Date(points[0].start).getTime();
+    if (Number.isFinite(startMs)) {
+      labels = Array.from({ length: slots }, (_, i) =>
+        historyLabel(new Date(startMs + i * 5 * 60 * 1000).toISOString(), range, '5m'));
+      const pad = (values) => values.concat(Array(Math.max(0, slots - values.length)).fill(null));
+      allowed = pad(allowed);
+      blocked = pad(blocked);
+      proxied = pad(proxied);
+    }
+  }
+
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = allowed;
+  chart.data.datasets[1].data = blocked;
+  chart.data.datasets[2].data = proxied;
   chart.data.datasets.forEach((dataset) => {
     dataset.type = single ? 'bar' : 'line';
     dataset.fill = !single;
@@ -5556,9 +5589,10 @@ function renderHistoryChart(series) {
     dataset.categoryPercentage = 0.5;
     dataset.borderRadius = 3;
   });
-  // With a single category a bar would otherwise sit against the left edge;
-  // offset centers it under the lone 1h tick.
-  chart.options.scales.x.offset = single;
+  // Only offset the axis when there really is one category; a padded 1h axis
+  // must keep its first slot at the left edge.
+  chart.options.scales.x.offset = single && labels.length === 1;
+  chart.options.scales.x.ticks.maxTicksLimit = range === '7d' ? 7 : 6;
   try {
     chart.update('none');
     chart.resize();
@@ -5611,13 +5645,21 @@ function renderHistoryTop(id, data, empty, dimension) {
     const count = historyNumber(item.count);
     const width = Math.max(1, Math.round(((item.count || 0) / max) * 100));
     const relay = dimension === 'relay_country';
-    const flag = relay ? countryFlagHTML(value, 'agent-flag relay-flag') : '';
-    const label = relay ? relayCountryLabel(value) : value;
-    const valueMarkup = `${flag}<span class="truncate font-mono text-slate-300" title="${escapeHTML(label)}">${escapeHTML(label)}</span>`;
+    const localRelay = relay && value.toUpperCase() === 'LOCAL';
+    const flagCode = localRelay ? (currentConfig?.server?.country || '') : value;
+    const flag = relay ? countryFlagHTML(flagCode, 'agent-flag relay-flag') : '';
+    const label = relay ? relayCountryLabel(value) : dimension === 'protocol' ? protocolLabel(value) : value;
+    const valueClass = dimension === 'protocol' ? protocolClass(value) : 'text-slate-300';
+    const valueMarkup = `${flag}<span class="truncate font-mono ${escapeHTML(valueClass)}" title="${escapeHTML(label)}">${escapeHTML(label)}</span>`;
+    // Relay rows carry the flag and name, the number of queries proxied
+    // through that relay, and a share bar. The count is labelled for assistive
+    // tech because the card title alone does not make the number self-evident.
+    const countTitle = relay ? 'Queries proxied through this relay' : '';
+    const countMarkup = `<span class="shrink-0 font-mono text-[10px] text-slate-400" title="${escapeHTML(countTitle)}">${count}</span>`;
     return `<div class="history-top-row">
       <div class="flex items-center justify-between gap-2">
         <span class="flex items-center gap-1.5 min-w-0">${valueMarkup}</span>
-        <span class="shrink-0 font-mono text-[10px] text-slate-400">${count}</span>
+        ${countMarkup}
       </div>
       <div class="mt-0.5 h-1 rounded-full bg-slate-800 overflow-hidden"><div class="h-full bg-cyan-500/20" style="width:${width}%"></div></div>
     </div>`;
@@ -8291,7 +8333,7 @@ function initEventListeners() {
     const proxied = target === 'proxied';
     const records = target === 'records';
     const titleEl = document.getElementById('bulk-import-title');
-    if (titleEl) titleEl.textContent = records ? 'Bulk Import Static Records' : proxied ? 'Bulk Import Proxied Domains' : 'Bulk Import Blocked Domains';
+    if (titleEl) titleEl.textContent = records ? 'Bulk Import DNS Rewrites' : proxied ? 'Bulk Import Proxied Domains' : 'Bulk Import Blocked Domains';
     const subtitleEl = document.getElementById('bulk-import-subtitle');
     if (subtitleEl) subtitleEl.textContent = records
       ? 'Each line maps one hostname to one IPv4 or IPv6 address.'
@@ -8299,9 +8341,9 @@ function initEventListeners() {
         ? 'Each name listed will resolve to this server through the SNI proxy.'
         : 'Each name listed will be sinkholed to 0.0.0.0.';
     const applyBtn = document.getElementById('bulk-import-apply-btn');
-    if (applyBtn) applyBtn.textContent = records ? 'Import Records' : proxied ? 'Import Proxied' : 'Import Blocked';
+    if (applyBtn) applyBtn.textContent = records ? 'Import Rewrites' : proxied ? 'Import Proxied' : 'Import Blocked';
     const labelEl = document.getElementById('bulk-import-textarea-label');
-    if (labelEl) labelEl.textContent = records ? 'Records' : 'Domains';
+    if (labelEl) labelEl.textContent = records ? 'Rewrites' : 'Domains';
     const helpEl = document.getElementById('bulk-import-help');
     if (helpEl) {
       helpEl.innerHTML = records
@@ -8493,7 +8535,7 @@ function initEventListeners() {
       if (updated.length) parts.push(`${updated.length} updated`);
       if (unchanged.length) parts.push(`${unchanged.length} unchanged`);
       if (invalid.length) parts.push(`${invalid.length} invalid`);
-      const summary = `Static records: ${parts.join(', ')}.`;
+      const summary = `DNS rewrites: ${parts.join(', ')}.`;
       if (invalid.length) {
         // Keep the modal open so the operator can see the offending lines, but the
         // good ones are already saved.
@@ -8501,7 +8543,7 @@ function initEventListeners() {
         return;
       }
       closeBulkImport();
-      showToast(`Imported ${accepted.length + updated.length} static record(s)`, 'success');
+      showToast(`Imported ${accepted.length + updated.length} DNS rewrite(s)`, 'success');
       return;
     }
 

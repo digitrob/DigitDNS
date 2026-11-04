@@ -6,6 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.0.1] — Dashboard polish, DNS Rewrites and relay clarity
+
+A patch over 5.0.0 with no storage or configuration migration. It unifies the
+dashboard typography, completes the DNS Rewrites workflow on Android, and makes
+the live log and relay statistics easier to read.
+
+### ✨ Added
+
+- **Android bulk import for DNS Rewrites.** Paste a `hostname address` table or
+  choose a file. Supports comments, space/comma/semicolon/`=` separators, strict
+  IPv4 and IPv6 validation, update/unchanged detection and invalid-line counts.
+  Matching hosts are updated instead of duplicated.
+- **Rewrite live-log badge.** A query answered by a DNS Rewrite now carries a
+  **Rewrite** badge in the action slot on web and Android.
+- **Missing card pictograms.** Summary and Queries over time on Android, and the
+  six history KPI cards on web, now carry the same icon language as the rest of
+  the dashboard.
+- **Range-aware Android chart labels.** Four evenly spaced ticks now describe the
+  selected window: times for 1h/24h, weekday/date for 7d, and dates for 30d/90d.
+
+### 🔄 Changed
+
+- **Pinned Records / Custom Static Records → DNS Rewrites** on web and Android.
+  Android's **Pin** action is now **Save**. The `custom_records` API and storage
+  names are unchanged.
+- **Relay Countries → Queries by Relay** on both surfaces. Web shows flag, relay
+  name, query count and share bar; Android shows flag, relay name and count.
+  **Local** uses the installed server's flag. Relay flags are sized to the row.
+- **Unified Android card titles.** All cards use uppercase muted labels at the
+  larger card type size with a 16dp pictogram. The compact KPI tiles keep their
+  height by using a tighter line box.
+- **Protocol display names** are now DoH, DoT, DoQ, DoH3 and DNSCrypt on web and
+  Android; UDP/TCP remain uppercase. Protocol colours are shared between the
+  live log and the Protocols card.
+- **Live Log query count** moved to the top-left of the Updated/Online row in the
+  same 8sp shared style, with a fixed slot so it cannot shift.
+- **1h history charts** now span the full selected hour and leave future space
+  empty; range labels and tick spacing adapt to the selected window.
+- **Thinner domain switches.** Visual track/thumb shrink while the 48dp touch
+  target and row height stay intact.
+
+### 🛠 Fixed
+
+- Domains **Reload** returned to the left after the shared header slot changed.
+- Clients **“+”** returned to the top-left.
+- Live-log query count no longer overlaps or drifts from the Updated/Online row.
+- History **Summary** and **Queries over time** titles now match the other cards.
+- Relay flags no longer crowd the row; the local relay now identifies the
+  server's own country.
+
+### 🧪 Tests
+
+- Android unit tests for DNS Rewrite parsing (separators, comments, IPv4/IPv6,
+  duplicate/invalid lines, update/unchanged counts).
+- Android action-style test for the **Rewrite** label.
+- Full Android unit/detekt/lint/build, web Node tests and Go suite.
+
+---
+
 ## 🏷️ [v5.0.0] — DNS server, SNI relay and ad blocking in one stack
 
 DigitDNS becomes a complete DNS solution: the resolver and TLS relay are joined

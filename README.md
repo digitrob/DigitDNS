@@ -202,7 +202,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.1/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -261,7 +261,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.1/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -337,7 +337,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.0.0` | Ad-blocking engine, aggregate stats, free dashboard layout |
+| `5.0.1` | Dashboard polish, DNS Rewrites, relay labels, unified cards |
+| `5.0.0` | Ad-blocking engine, aggregate stats, free dashboard layout (older) |
 | `4.1.0` | 90-day traffic history, Android history cards (older) |
 | `4.0.3` | Dashboard refresh, compact Settings, app-icon brand (older) |
 | `4.0.2` | Accurate client-list status (older) |
@@ -361,7 +362,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.0.0/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.0.1/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -714,7 +715,7 @@ keeps upstream connections alive between queries to cut handshake latency.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.0.0`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.0.1`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

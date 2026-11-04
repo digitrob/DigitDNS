@@ -18,7 +18,7 @@ fun queryActionStyle(action: String): QueryActionStyle = when (action.uppercase(
     "BLOCK" -> QueryActionStyle("Block", QueryActionTone.Danger)
     "RATELIMIT" -> QueryActionStyle("Rate Limited", QueryActionTone.Danger)
     "QUOTA" -> QueryActionStyle("Quota", QueryActionTone.Danger)
-    "CUSTOM" -> QueryActionStyle("Custom", QueryActionTone.Purple)
+    "CUSTOM" -> QueryActionStyle("Rewrite", QueryActionTone.Purple)
     "CACHED" -> QueryActionStyle("Direct", QueryActionTone.Success)
     "STALE" -> QueryActionStyle("Stale", QueryActionTone.Warning)
     "DIRECT" -> QueryActionStyle("Direct", QueryActionTone.Success)

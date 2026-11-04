@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -280,6 +281,7 @@ fun PanelRefreshBox(
 fun PanelScreenHeader(
     modifier: Modifier = Modifier,
     showBadge: Boolean = true,
+    trailing: @Composable RowScope.() -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
@@ -293,6 +295,7 @@ fun PanelScreenHeader(
             // other live-backed screens mirror that so switching tabs does not move
             // the Online badge or its timestamp.
             Row(verticalAlignment = Alignment.CenterVertically) {
+                trailing()
                 HistoryClockText()
                 Spacer(Modifier.width(8.dp))
                 ConnectionStatusBadge()
@@ -309,11 +312,23 @@ fun PanelScreenHeader(
 private fun HistoryClockText() {
     val updatedAt by HistoryClock.updatedAtEpochMs.collectAsState()
     val epochMs = updatedAt ?: return
-    Text(
+    PanelHeaderMeta(
         text = stringResource(
             R.string.history_updated,
             HEADER_CLOCK.format(Instant.ofEpochMilli(epochMs)),
         ),
+    )
+}
+
+/** The one 8 sp meta line used by the updated clock and the live-log count. */
+@Composable
+internal fun PanelHeaderMeta(
+    text: String,
+    modifier: Modifier = Modifier,
+    textAlign: TextAlign = TextAlign.Start,
+) {
+    Text(
+        text = text,
         style = MaterialTheme.typography.labelSmall.copy(
             fontFamily = PanelMono,
             fontSize = 8.sp,
@@ -322,6 +337,8 @@ private fun HistoryClockText() {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
+        textAlign = textAlign,
+        modifier = modifier,
     )
 }
 

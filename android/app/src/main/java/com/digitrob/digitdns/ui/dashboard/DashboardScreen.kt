@@ -71,7 +71,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -100,7 +99,6 @@ import com.digitrob.digitdns.ui.formatCount
 import com.digitrob.digitdns.ui.formatRate
 import com.digitrob.digitdns.ui.formatUptime
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
-import com.digitrob.digitdns.ui.theme.MetricLabel
 import com.digitrob.digitdns.ui.theme.MetricMeta
 import com.digitrob.digitdns.ui.theme.MetricNumber
 import com.digitrob.digitdns.ui.theme.PanelMono
@@ -597,22 +595,52 @@ private fun LazyGridScope.historyCard(
             HistoryChartCard(state.history.series, state.history.unavailable)
         }
         DashboardCard.HISTORY_TOP_DOMAINS -> item(span = { GridItemSpan(maxLineSpan) }) {
-            HistoryTopCard(TopDimension.DOMAIN, state.history.tops[TopDimension.DOMAIN], state.history.unavailable)
+            HistoryTopCard(
+                dimension = TopDimension.DOMAIN,
+                top = state.history.tops[TopDimension.DOMAIN],
+                unavailable = state.history.unavailable,
+                serverCountry = state.serverCountry,
+            )
         }
         DashboardCard.HISTORY_TOP_BLOCKED -> item(span = { GridItemSpan(maxLineSpan) }) {
-            HistoryTopCard(TopDimension.BLOCKED_DOMAIN, state.history.tops[TopDimension.BLOCKED_DOMAIN], state.history.unavailable)
+            HistoryTopCard(
+                dimension = TopDimension.BLOCKED_DOMAIN,
+                top = state.history.tops[TopDimension.BLOCKED_DOMAIN],
+                unavailable = state.history.unavailable,
+                serverCountry = state.serverCountry,
+            )
         }
         DashboardCard.HISTORY_TOP_CLIENTS -> item(span = { GridItemSpan(maxLineSpan) }) {
-            HistoryTopCard(TopDimension.CLIENT, state.history.tops[TopDimension.CLIENT], state.history.unavailable)
+            HistoryTopCard(
+                dimension = TopDimension.CLIENT,
+                top = state.history.tops[TopDimension.CLIENT],
+                unavailable = state.history.unavailable,
+                serverCountry = state.serverCountry,
+            )
         }
         DashboardCard.HISTORY_TOP_UPSTREAMS -> item(span = { GridItemSpan(maxLineSpan) }) {
-            HistoryTopCard(TopDimension.UPSTREAM, state.history.tops[TopDimension.UPSTREAM], state.history.unavailable)
+            HistoryTopCard(
+                dimension = TopDimension.UPSTREAM,
+                top = state.history.tops[TopDimension.UPSTREAM],
+                unavailable = state.history.unavailable,
+                serverCountry = state.serverCountry,
+            )
         }
         DashboardCard.HISTORY_TOP_PROTOCOLS -> item {
-            HistoryTopCard(TopDimension.PROTOCOL, state.history.tops[TopDimension.PROTOCOL], state.history.unavailable)
+            HistoryTopCard(
+                dimension = TopDimension.PROTOCOL,
+                top = state.history.tops[TopDimension.PROTOCOL],
+                unavailable = state.history.unavailable,
+                serverCountry = state.serverCountry,
+            )
         }
         DashboardCard.HISTORY_TOP_RELAY -> item {
-            HistoryTopCard(TopDimension.RELAY_COUNTRY, state.history.tops[TopDimension.RELAY_COUNTRY], state.history.unavailable)
+            HistoryTopCard(
+                dimension = TopDimension.RELAY_COUNTRY,
+                top = state.history.tops[TopDimension.RELAY_COUNTRY],
+                unavailable = state.history.unavailable,
+                serverCountry = state.serverCountry,
+            )
         }
         else -> Unit
     }
@@ -625,7 +653,7 @@ private fun QueryRateCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
     MetricCard {
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            CardLabel(DashboardCard.QUERY_RATE, R.string.dashboard_query_rate, compact = true)
+            CardLabel(DashboardCard.QUERY_RATE, R.string.dashboard_query_rate)
             MetricValue(
                 text = stats?.let { String.format(Locale.US, "%.1f", it.qps) } ?: "—",
                 color = MaterialTheme.colorScheme.primary,
@@ -665,7 +693,7 @@ private fun RamCacheCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
     MetricCard {
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            CardLabel(DashboardCard.RAM_CACHE, R.string.dashboard_ram_cache, compact = true)
+            CardLabel(DashboardCard.RAM_CACHE, R.string.dashboard_ram_cache)
             MetricValue(
                 text = stats?.let { String.format(Locale.US, "%.1f", it.cacheHitRate) } ?: "—",
                 color = colors.success,
@@ -699,7 +727,7 @@ private fun SniProxyCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
     MetricCard {
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            CardLabel(DashboardCard.SNI_PROXY, R.string.dashboard_sni_proxy, compact = true)
+            CardLabel(DashboardCard.SNI_PROXY, R.string.dashboard_sni_proxy)
             MetricValue(
                 text = formatCount(stats?.activeRelays ?: 0),
                 color = colors.purple,
@@ -731,7 +759,7 @@ private fun CpuUsageCard(stats: LiveStats?) {
     val pct = stats?.cpuUsagePercent ?: 0.0
     MetricCard {
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            CardLabel(DashboardCard.CPU_USAGE, R.string.dashboard_cpu_usage, compact = true)
+            CardLabel(DashboardCard.CPU_USAGE, R.string.dashboard_cpu_usage)
             MetricValue(
                 text = stats?.let { String.format(Locale.US, "%.1f%%", it.cpuUsagePercent) } ?: "—",
                 color = colorForPercent(pct, colors.danger, colors.warning, colors.success),
@@ -750,7 +778,7 @@ private fun RamUsageCard(stats: LiveStats?) {
     val colors = DigitDnsTheme.colors
     MetricCard {
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            CardLabel(DashboardCard.RAM_USAGE, R.string.dashboard_ram_usage, compact = true)
+            CardLabel(DashboardCard.RAM_USAGE, R.string.dashboard_ram_usage)
             MetricValue(
                 text = stats?.let { formatBytes((it.ramUsageMb * 1024 * 1024).toLong()) } ?: "—",
                 color = colors.info,
@@ -769,7 +797,7 @@ private fun RamUsageCard(stats: LiveStats?) {
 private fun LiveTrafficCard(stats: LiveStats?) {
     MetricCard {
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            CardLabel(DashboardCard.LIVE_TRAFFIC, R.string.dashboard_live_traffic, compact = true)
+            CardLabel(DashboardCard.LIVE_TRAFFIC, R.string.dashboard_live_traffic)
             MetricValue(
                 text = stats?.let { formatBytes(it.totalBytesTransferred) } ?: "—",
                 color = MaterialTheme.colorScheme.onSurface,
@@ -792,7 +820,11 @@ private fun TelemetryChartCard(history: List<Double>, stats: LiveStats?) {
     PanelCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CardLabel(DashboardCard.TELEMETRY_CHART, R.string.dashboard_query_rate, modifier = Modifier.weight(1f))
+                DashboardCardTitle(
+                    text = stringResource(R.string.dashboard_query_rate),
+                    icon = DashboardCard.TELEMETRY_CHART.icon,
+                    modifier = Modifier.weight(1f),
+                )
                 Text(
                     text = stats?.let { stringResource(R.string.dashboard_qps_value, it.qps) } ?: "—",
                     style = MaterialTheme.typography.titleMedium.copy(fontFamily = PanelMono),
@@ -851,7 +883,10 @@ private fun ResolverLatencyCard(latency: LatencySnapshot) {
     // millisecond value past the tile and clipped it.
     PanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = 12.dp) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            CardLabel(DashboardCard.RESOLVER_LATENCY, R.string.dashboard_resolver_latency)
+            DashboardCardTitle(
+                text = stringResource(R.string.dashboard_resolver_latency),
+                icon = DashboardCard.RESOLVER_LATENCY.icon,
+            )
             if (!latency.hasData) {
                 Text(
                     text = stringResource(R.string.dashboard_no_observations),
@@ -936,41 +971,18 @@ private fun UptimeFooter(stats: LiveStats?) {
     )
 }
 
-@Composable
-internal fun Label(
-    text: String,
-    modifier: Modifier = Modifier,
-    style: TextStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-) {
-    Text(
-        text = text.uppercase(Locale.US),
-        style = style,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier,
-    )
-}
-
 /** A card header: the panel's per-card icon beside the uppercase label. */
 @Composable
 private fun CardLabel(
     card: DashboardCard,
     @StringRes titleRes: Int,
     modifier: Modifier = Modifier,
-    compact: Boolean = false,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
-        Icon(
-            imageVector = card.icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(CARD_ICON_SIZE),
-        )
-        Spacer(Modifier.width(6.dp))
-        Label(
-            stringResource(titleRes),
-            style = if (compact) MetricLabel else MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-        )
-    }
+    DashboardCardTitle(
+        text = stringResource(titleRes),
+        icon = card.icon,
+        modifier = modifier,
+    )
 }
 
 /** Whether the live stream is currently feeding the live tiles. */
@@ -1014,7 +1026,6 @@ private const val CPU_WARNING_PERCENT = 70.0
  * the grid read as a grid.
  */
 /** The card-icon size every dashboard tile header uses. */
-private val CARD_ICON_SIZE = 14.dp
 
 /** Resolver-latency p50 at/above this reads red — the panel's own threshold. */
 private const val RESOLVER_LATENCY_DANGER_MS = 60.0

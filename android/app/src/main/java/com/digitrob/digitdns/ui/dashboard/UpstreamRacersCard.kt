@@ -365,14 +365,12 @@ private fun ResolutionPicker(
 private fun RacerHeader(isBenchmarking: Boolean, onBenchmark: () -> Unit) {
     val colors = DigitDnsTheme.colors
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            Icons.Filled.Podcasts,
-            contentDescription = null,
+        DashboardCardTitle(
+            text = stringResource(R.string.upstream_resolvers),
+            icon = Icons.Filled.Podcasts,
             tint = colors.warning,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.weight(1f),
         )
-        Spacer(Modifier.width(6.dp))
-        Label(stringResource(R.string.upstream_resolvers), modifier = Modifier.weight(1f))
         // Fixed-height slot so swapping the Benchmark button for its spinner does not
         // change the header row height and make the card jump while a run is in flight.
         Box(

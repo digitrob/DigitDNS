@@ -50,16 +50,20 @@ import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.StatsSeries
 import com.digitrob.digitdns.core.network.StatsSeriesPoint
 import com.digitrob.digitdns.core.network.StatsSummary
+import com.digitrob.digitdns.data.DashboardCard
 import com.digitrob.digitdns.core.network.StatsTop
 import com.digitrob.digitdns.core.network.StatsTopItem
 import com.digitrob.digitdns.domain.model.HistoryRange
 import com.digitrob.digitdns.domain.model.TopDimension
 import com.digitrob.digitdns.ui.components.CountryFlag
+import com.digitrob.digitdns.ui.components.icon
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.formatCount
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.ExtendedColors
 import com.digitrob.digitdns.ui.theme.PanelMono
+import com.digitrob.digitdns.ui.theme.protocolColor
+import com.digitrob.digitdns.ui.theme.protocolLabel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -74,7 +78,7 @@ import java.util.Locale
 internal fun HistorySummaryCard(summary: StatsSummary?, unavailable: Boolean) {
     PanelCard(modifier = Modifier.fillMaxWidth(), bottomPadding = 8.dp) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            HistoryHeader(R.string.history_summary)
+            DashboardCardTitle(stringResource(R.string.history_summary), DashboardCard.HISTORY_SUMMARY.icon)
             when {
                 unavailable -> HistoryUnavailable()
                 summary == null -> HistoryWaiting()
@@ -155,7 +159,7 @@ internal fun HistoryChartCard(series: StatsSeries?, unavailable: Boolean) {
     val colors = DigitDnsTheme.colors
     PanelCard(modifier = Modifier.fillMaxWidth(), bottomPadding = 8.dp) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            HistoryHeader(R.string.history_chart_title)
+            DashboardCardTitle(stringResource(R.string.history_chart_title), DashboardCard.HISTORY_CHART.icon)
             when {
                 unavailable -> HistoryUnavailable()
                 series == null -> HistoryWaiting()
@@ -175,26 +179,8 @@ internal fun HistoryChartCard(series: StatsSeries?, unavailable: Boolean) {
                         HistoryLegend(stringResource(R.string.history_blocked), MaterialTheme.colorScheme.error)
                         HistoryLegend(stringResource(R.string.history_proxied), colors.purple)
                     }
-                    HistoryChart(series.points, colors = colors)
-                    val first = series.points.first().start
-                    val last = series.points.last().start
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = ChartAxisWidth + ChartAxisGap),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = historyLabel(first, series.interval),
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            text = historyLabel(last, series.interval),
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    HistoryChart(series, colors = colors)
+                    HistoryTimeAxis(series)
                 }
             }
         }
@@ -228,6 +214,7 @@ internal fun HistoryTopCard(
     dimension: TopDimension,
     top: StatsTop?,
     unavailable: Boolean,
+    serverCountry: String = "",
 ) {
     val listHeight = dimension.listHeight()
     PanelCard(
@@ -240,22 +227,11 @@ internal fun HistoryTopCard(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = dimension.icon,
-                    contentDescription = null,
-                    tint = dimension.tint(),
-                    modifier = Modifier.size(16.dp),
-                )
-                Box(Modifier.width(6.dp))
-                Text(
-                    text = stringResource(dimension.titleRes()),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            DashboardCardTitle(
+                text = stringResource(dimension.titleRes()),
+                icon = dimension.icon,
+                tint = dimension.tint(),
+            )
             when {
                 unavailable -> HistoryUnavailable()
                 top == null || top.items.isEmpty() -> Text(
@@ -264,7 +240,7 @@ internal fun HistoryTopCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 else -> {
-                    HistoryTopEntries(dimension, top, listHeight)
+                    HistoryTopEntries(dimension, top, listHeight, serverCountry)
                     if (top.otherCount > 0) {
                         Text(
                             text = stringResource(R.string.history_other, formatCount(top.otherCount)),
@@ -279,7 +255,12 @@ internal fun HistoryTopCard(
 }
 
 @Composable
-private fun HistoryTopEntries(dimension: TopDimension, top: StatsTop, listHeight: Dp) {
+private fun HistoryTopEntries(
+    dimension: TopDimension,
+    top: StatsTop,
+    listHeight: Dp,
+    serverCountry: String,
+) {
     // Only the entries move. The header above and the "Other N" footer below
     // stay pinned while this column is swiped.
     Column(
@@ -289,13 +270,18 @@ private fun HistoryTopEntries(dimension: TopDimension, top: StatsTop, listHeight
         verticalArrangement = Arrangement.spacedBy(HistoryTopRowGap),
     ) {
         top.items.forEachIndexed { index, item ->
-            HistoryTopRow(dimension, index, item)
+            HistoryTopRow(dimension, index, item, serverCountry)
         }
     }
 }
 
 @Composable
-private fun HistoryTopRow(dimension: TopDimension, index: Int, item: StatsTopItem) {
+private fun HistoryTopRow(
+    dimension: TopDimension,
+    index: Int,
+    item: StatsTopItem,
+    serverCountry: String,
+) {
     val rowColor = if (index % 2 == 0) {
         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
     } else {
@@ -314,10 +300,16 @@ private fun HistoryTopRow(dimension: TopDimension, index: Int, item: StatsTopIte
             modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (dimension == TopDimension.RELAY_COUNTRY) {
-                RelayCountryValue(item.value)
-            } else {
-                Text(
+            when (dimension) {
+                TopDimension.RELAY_COUNTRY -> RelayCountryValue(item.value, serverCountry)
+                TopDimension.PROTOCOL -> Text(
+                    text = protocolLabel(item.value),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = protocolColor(item.value),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                else -> Text(
                     text = item.value,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -336,10 +328,11 @@ private fun HistoryTopRow(dimension: TopDimension, index: Int, item: StatsTopIte
 }
 
 @Composable
-private fun RelayCountryValue(value: String) {
+private fun RelayCountryValue(value: String, serverCountry: String) {
     val code = value.trim().uppercase(Locale.ROOT)
-    if (COUNTRY_CODE.matches(code) && code != "LOCAL") {
-        CountryFlag(country = code, width = 18.dp, height = 13.dp)
+    val flagCode = if (code == "LOCAL") serverCountry.trim().uppercase(Locale.ROOT) else code
+    if (COUNTRY_CODE.matches(flagCode)) {
+        CountryFlag(country = flagCode, width = 16.dp, height = 12.dp)
         Box(Modifier.width(6.dp))
     }
     Text(
@@ -391,15 +384,6 @@ private fun SummaryCell(
 }
 
 @Composable
-private fun HistoryHeader(@StringRes title: Int) {
-    Text(
-        text = stringResource(title),
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurface,
-    )
-}
-
-@Composable
 private fun HistoryWaiting() {
     Text(
         text = stringResource(R.string.history_waiting),
@@ -436,7 +420,12 @@ private fun HistoryLegend(label: String, color: Color) {
 }
 
 @Composable
-private fun HistoryChart(points: List<StatsSeriesPoint>, colors: ExtendedColors) {
+private fun HistoryChart(series: StatsSeries, colors: ExtendedColors) {
+    val points = series.points
+    // The 1h axis always spans the full hour even though the API only returns the
+    // slots that have started. Future slots stay undrawn, so the line stops at
+    // "now" instead of falling to zero.
+    val slotCount = if (series.range == "1h") HOUR_SLOTS else points.size
     val totals = points.map { (it.allowed + it.blocked + it.proxied).toDouble() }
     val peak = totals.maxOrNull() ?: 0.0
     if (peak <= 0.0) {
@@ -483,9 +472,9 @@ private fun HistoryChart(points: List<StatsSeriesPoint>, colors: ExtendedColors)
             if (points.isEmpty()) return@Canvas
             drawChartGrid(ticks, peak, border)
             if (points.size == 1) {
-                drawBucketBar(points.first(), peak, primary, danger, purple)
+                drawBucketBar(points.first(), peak, primary, danger, purple, slotCount)
             } else {
-                drawStackedSeries(points, peak, primary, danger, purple)
+                drawStackedSeries(points, peak, primary, danger, purple, slotCount)
             }
         }
     }
@@ -511,9 +500,13 @@ private fun DrawScope.drawBucketBar(
     primary: Color,
     danger: Color,
     purple: Color,
+    slotCount: Int,
 ) {
-    val barWidth = size.width * BUCKET_BAR_WIDTH_FRACTION
-    val left = (size.width - barWidth) / 2f
+    // With a full-hour axis the single bar belongs at the first slot, not in the
+    // middle of the empty remainder.
+    val slotWidth = size.width / slotCount.coerceAtLeast(1)
+    val barWidth = if (slotCount > 1) slotWidth * BUCKET_BAR_SLOT_FRACTION else size.width * BUCKET_BAR_WIDTH_FRACTION
+    val left = if (slotCount > 1) (slotWidth - barWidth) / 2f else (size.width - barWidth) / 2f
     val allowedTop = point.allowed.toDouble()
     val blockedTop = allowedTop + point.blocked
     val proxiedTop = blockedTop + point.proxied
@@ -538,9 +531,10 @@ private fun DrawScope.drawStackedSeries(
     primary: Color,
     danger: Color,
     purple: Color,
+    slotCount: Int,
 ) {
     val count = points.size
-    val stepX = size.width / (count - 1).toFloat()
+    val stepX = if (slotCount > 1) size.width / (slotCount - 1).toFloat() else size.width
     val allowed = points.map { it.allowed.toDouble() }
     val blocked = points.map { it.blocked.toDouble() }
     val proxied = points.map { it.proxied.toDouble() }
@@ -586,6 +580,7 @@ private val ChartAxisWidth = 34.dp
 private val ChartAxisGap = 6.dp
 
 private const val BUCKET_BAR_WIDTH_FRACTION = 0.18f
+private const val BUCKET_BAR_SLOT_FRACTION = 0.55f
 private const val AXIS_KILO = 1_000.0
 private const val AXIS_MEGA = 1_000_000.0
 
@@ -611,13 +606,58 @@ private fun relayCountryLabel(value: String): String {
 
 private fun percent(value: Double): String = String.format(Locale.US, "%.1f%%", value)
 
-private fun historyLabel(iso: String, interval: String): String {
+private fun historyLabel(iso: String, range: String, interval: String): String {
     val instant = runCatching { Instant.parse(iso) }.getOrNull() ?: return ""
-    val pattern = if (interval == "day") "MMM d" else "HH:mm"
-    return DateTimeFormatter.ofPattern(pattern)
+    val pattern = when {
+        range == "7d" -> "EEE d"
+        range == "30d" || range == "90d" || interval == "day" -> "MMM d"
+        else -> "HH:mm"
+    }
+    return DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
         .withZone(ZoneId.systemDefault())
         .format(instant)
 }
+
+/** Four evenly spaced labels spanning the selected window, under the plot. */
+@Composable
+private fun HistoryTimeAxis(series: StatsSeries) {
+    val first = series.points.firstOrNull()?.start
+    val start = first?.let { runCatching { Instant.parse(it) }.getOrNull() }
+    val slots = if (series.range == "1h") HOUR_SLOTS else series.points.size
+    if (start == null || slots <= 0) return
+    val step = when {
+        series.range == "1h" -> 5L
+        series.interval == "day" -> 24L * 60L
+        else -> 60L
+    }
+    val tickCount = minOf(4, slots)
+    val indices = (0 until tickCount).map { i -> i * (slots - 1) / (tickCount - 1).coerceAtLeast(1) }.distinct()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = ChartAxisWidth + ChartAxisGap),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        indices.forEach { index ->
+            Text(
+                text = historyLabel(
+                    start.plusSeconds(index * step * 60).toString(),
+                    series.range,
+                    series.interval,
+                ),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = PanelMono,
+                    fontSize = 9.sp,
+                    lineHeight = 10.sp,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+private const val HOUR_SLOTS = 12
 
 internal fun HistoryRange.labelRes(): Int = when (this) {
     HistoryRange.LAST_1H -> R.string.history_range_1h

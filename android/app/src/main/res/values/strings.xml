@@ -200,16 +200,20 @@
     <string name="strategy_best">Best Known</string>
     <string name="domains_transport_excluded">The selected upstream is excluded by this transport and is ignored.</string>
     <string name="domains_fallback">Fallback: Pool Default</string>
-    <string name="domains_pinned_records">Pinned records</string>
-    <string name="domains_pinned_body">Map a hostname straight to an IP, bypassing upstreams.</string>
+    <string name="domains_pinned_records">DNS Rewrites</string>
+    <string name="domains_pinned_body">Map a hostname directly to a fixed IPv4 or IPv6 address.</string>
     <string name="domains_hostname">Hostname</string>
     <string name="domains_ip">IP</string>
-    <string name="domains_pin">Pin</string>
+    <string name="domains_pin">Save</string>
     <string name="domains_remove_named">Remove %1$s?</string>
-    <string name="domains_pinned_removed">The pinned record is removed from the panel.</string>
+    <string name="domains_pinned_removed">The DNS rewrite is removed from the panel.</string>
     <string name="domains_bulk_import">Bulk import</string>
     <string name="domains_bulk_body">One name per line, or separated by commas, semicolons or spaces. Lines starting with # are ignored. A leading *. covers every subdomain.</string>
     <string name="domains_bulk_placeholder">example.com\n*.sub.example.com</string>
+    <string name="domains_rewrites_bulk_title">Bulk import DNS rewrites</string>
+    <string name="domains_rewrites_bulk_help">One record per line as hostname address — separated by spaces, commas, semicolons or =. Lines starting with # are ignored. IPv4 and IPv6 are both accepted.</string>
+    <string name="domains_rewrites_bulk_placeholder">host.example 203.0.113.9\ncdn.example.net, 2001:db8::1</string>
+    <string name="domains_rewrites_nothing">Nothing to import.</string>
     <string name="domains_choose_file">Choose file</string>
     <string name="domains_import">Import</string>
     <string name="domains_search">Search</string>
@@ -562,7 +566,7 @@
     <string name="history_top_clients">Top clients</string>
     <string name="history_top_upstreams">Top upstreams</string>
     <string name="history_top_protocols">Protocols</string>
-    <string name="history_top_relay">Relay countries</string>
+    <string name="history_top_relay">Queries by Relay</string>
 
     <string name="card_history_summary">History summary</string>
     <string name="card_history_chart">History chart</string>

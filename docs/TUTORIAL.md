@@ -27,7 +27,7 @@
 9. [Edit your routing rules](#9-edit-your-routing-rules)
 10. [Watch live traffic](#10-watch-live-traffic)
 11. [Limits, expiry, and day-to-day client management](#11-limits-expiry-and-day-to-day-client-management)
-12. [Advanced rules: custom proxied / blocked / direct / static records](#12-advanced-rules-custom-proxied--blocked--direct--static-records)
+12. [Advanced rules: custom proxied / blocked / direct / DNS rewrites](#12-advanced-rules-custom-proxied--blocked--direct--dns-rewrites)
 13. [The REST API and Swagger](#13-the-rest-api-and-swagger)
 14. [The `digitdns` console: status, flush, stop, start, uninstall](#14-the-digitdns-console-status-flush-stop-start-uninstall)
 15. [Backup and restore](#15-backup-and-restore)
@@ -385,7 +385,7 @@ This build ships **no built-in catalogue** — there are no game presets to togg
 - **Custom Direct** — names forced to resolve normally, overriding a proxy rule for that name.
 - **Custom Records** — static `domain=IP` overrides.
 
-Add names one at a time, or use **Bulk Import** (see [section 12](#12-advanced-rules-custom-proxied--blocked--direct--static-records)) to paste or upload a whole list. The **Custom Static Records** card has its own **Bulk import** button for loading a `hostname address` table at once.
+Add names one at a time, or use **Bulk Import** (see [section 12](#12-advanced-rules-custom-proxied--blocked--direct--dns-rewrites)) to paste or upload a whole list. The **DNS Rewrites** card has its own **Bulk import** button for loading a `hostname address` table at once.
 
 Changes apply to the live engine immediately; after a big change, hit **Flush Cache** (sidebar) or `POST /api/v2/cache/flush` so cached answers do not keep their old routing for the rest of their TTL.
 
@@ -446,7 +446,7 @@ Two behaviours worth knowing:
 
 ---
 
-## 12. Advanced rules: custom proxied / blocked / direct / static records
+## 12. Advanced rules: custom proxied / blocked / direct / DNS rewrites
 
 Under **Settings & SSL → Routing Rules**, these four lists decide routing:
 
@@ -464,7 +464,7 @@ list the API still accepts is inert in this build.
 
 Every list has a **Bulk import** button. The three domain lists take one name per
 line (or comma/semicolon/space separated), with `*.` wildcards and `#` comments.
-The **Custom Static Records** import takes one `hostname address` pair per line,
+The **DNS Rewrites** import takes one `hostname address` pair per line,
 separated by spaces, commas, semicolons or `=`, and accepts both IPv4 and IPv6
 addresses; re-importing a domain updates its address rather than adding a second
 entry. Each import reports how many entries were added, updated, unchanged or

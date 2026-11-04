@@ -770,23 +770,23 @@ class RulesViewModel @Inject constructor(
         }
     }
 
-    /** Replace the pinned-record map, e.g. from a static-record add or remove. */
-    fun saveRecords(records: Map<String, String>) {
+    /** Replace the DNS rewrite map, e.g. from an add, remove or bulk import. */
+    fun saveRecords(records: Map<String, String>, message: String = "DNS rewrites saved.") {
         viewModelScope.launch {
-            write(_state.value.lists.copy(records = records), "Records saved.")
+            write(_state.value.lists.copy(records = records), message)
         }
     }
 
-    /** Pin a hostname to an IP. Both sides must be non-blank; the map is replaced whole. */
+    /** Save a hostname to address rewrite. Both sides must be non-blank. */
     fun addRecord(domain: String, ip: String) {
         val host = normalize(domain)
         val address = ip.trim()
         if (host.isEmpty() || address.isEmpty()) return
         val next = _state.value.lists.records + (host to address)
-        viewModelScope.launch { write(_state.value.lists.copy(records = next), "Pinned $host → $address.") }
+        viewModelScope.launch { write(_state.value.lists.copy(records = next), "Saved $host → $address.") }
     }
 
-    /** Remove a pinned record. */
+    /** Remove a DNS rewrite. */
     fun removeRecord(domain: String) {
         val next = _state.value.lists.records - domain
         viewModelScope.launch { write(_state.value.lists.copy(records = next), "Removed $domain.") }

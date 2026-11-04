@@ -1,6 +1,9 @@
+@file:Suppress("TooManyFunctions")
+
 package com.digitrob.digitdns.ui.rules
 
 import com.digitrob.digitdns.R
+import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -25,6 +28,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -58,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -74,6 +79,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.hilt.navigation.compose.hiltViewModel
+import java.io.ByteArrayOutputStream
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.core.network.ResolutionProfileDto
 import com.digitrob.digitdns.core.network.ResolutionSettings
@@ -105,6 +111,9 @@ import com.digitrob.digitdns.ui.theme.PanelMono
  * the panel's match scope (exact / *.host / *.parent). Reload sits on the left; the live
  * connection badge on the top-right.
  */
+private const val MAX_IMPORT_BYTES = 1 shl 20
+private const val READ_BUFFER_BYTES = 8 * 1024
+
 @Composable
 fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -282,7 +291,14 @@ private fun DomainsList(
                     )
                 }
 
-                item { PinnedRecordsCard(state.lists.records, viewModel::addRecord, viewModel::removeRecord) }
+                item {
+                    DnsRewritesCard(
+                        records = state.lists.records,
+                        onAdd = viewModel::addRecord,
+                        onRemove = viewModel::removeRecord,
+                        onSaveAll = { records, message -> viewModel.saveRecords(records, message) },
+                    )
+                }
 
                 item { Spacer(Modifier.height(16.dp)) }
             }
@@ -599,15 +615,17 @@ private fun DialogPicker(
     }
 }
 
-/** The panel's Custom Static Records: pin a hostname to a fixed IP. */
+/** DNS Rewrites: map a hostname to a fixed IPv4 or IPv6 address. */
 @Composable
-private fun PinnedRecordsCard(
+private fun DnsRewritesCard(
     records: Map<String, String>,
     onAdd: (String, String) -> Unit,
     onRemove: (String) -> Unit,
+    onSaveAll: (Map<String, String>, String) -> Unit,
 ) {
     var domain by remember { mutableStateOf("") }
     var ip by remember { mutableStateOf("") }
+    var bulkOpen by remember { mutableStateOf(false) }
     PanelCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.domains_pinned_records), style = MaterialTheme.typography.titleMedium)
@@ -632,14 +650,27 @@ private fun PinnedRecordsCard(
                     modifier = Modifier.weight(1f),
                 )
             }
-            TextButton(
-                onClick = {
-                    onAdd(domain, ip)
-                    domain = ""
-                    ip = ""
-                },
-                enabled = domain.isNotBlank() && ip.isNotBlank(),
-            ) { Text(stringResource(R.string.domains_pin)) }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = {
+                        onAdd(domain, ip)
+                        domain = ""
+                        ip = ""
+                    },
+                    enabled = domain.isNotBlank() && ip.isNotBlank(),
+                ) { Text(stringResource(R.string.domains_pin)) }
+                OutlinedButton(
+                    onClick = { bulkOpen = true },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.domains_bulk_import), maxLines = 1)
+                }
+            }
             records.forEach { (name, address) ->
                 SwipeToDeleteRow(
                     onDelete = { onRemove(name) },
@@ -657,9 +688,121 @@ private fun PinnedRecordsCard(
             }
         }
     }
+    if (bulkOpen) {
+        BulkRecordsDialog(
+            existing = records,
+            onApply = onSaveAll,
+            onDismiss = { bulkOpen = false },
+        )
+    }
 }
 
-/** A single domain input plus a bulk-import button (paste or file). */
+/** Paste or upload a hostname-address table, matching the web DNS Rewrites importer. */
+@Composable
+private fun BulkRecordsDialog(
+    existing: Map<String, String>,
+    onApply: (Map<String, String>, String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var body by remember { mutableStateOf("") }
+    var status by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val text = readTextCapped(context, uri, MAX_IMPORT_BYTES)
+        if (text == null) {
+            status = "Could not read that file or it is larger than 1 MB."
+        } else {
+            body = text
+            status = ""
+        }
+    }
+    PanelDialog(
+        onDismissRequest = onDismiss,
+        solid = true,
+        title = { Text(stringResource(R.string.domains_rewrites_bulk_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(R.string.domains_rewrites_bulk_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = body,
+                    onValueChange = { body = it; status = "" },
+                    placeholder = { Text(stringResource(R.string.domains_rewrites_bulk_placeholder)) },
+                    modifier = Modifier.fillMaxWidth().height(150.dp),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { picker.launch(arrayOf("text/*", "text/plain", "*/*")) },
+                    ) {
+                        Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.domains_choose_file))
+                    }
+                }
+                if (status.isNotBlank()) {
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if ("invalid" in status) {
+                            DigitDnsTheme.colors.warning
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val result = parseRecordImport(body, existing)
+                    if (result.changed == 0) {
+                        status = if (result.invalid.isEmpty()) {
+                            context.getString(R.string.domains_rewrites_nothing)
+                        } else {
+                            result.summary()
+                        }
+                        return@TextButton
+                    }
+                    onApply(result.merged, result.summary())
+                    if (result.invalid.isEmpty()) onDismiss() else status = result.summary()
+                },
+                enabled = body.isNotBlank(),
+            ) { Text(stringResource(R.string.domains_import)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
+}
+
+private fun readTextCapped(context: Context, uri: Uri, limit: Int): String? {
+    return runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(READ_BUFFER_BYTES)
+            var total = 0
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                total += read
+                if (total > limit) return null
+                out.write(buffer, 0, read)
+            }
+            out.toString(Charsets.UTF_8.name())
+        }
+    }.getOrNull()
+}
+
+/**
+ * The domain with its second line underneath: the service label on the left, then the
+ * wildcard type active for this row (or "exact" when none). The label is tappable and
+ * opens the picker; tapping it never changes routing, only which group the row is in.
+ * Relative to the row, so *.example.com reads as *.host here and *.parent on
+ * api.example.com.
+ */
 @Composable
 private fun AddRow(onAdd: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
@@ -1015,7 +1158,7 @@ private fun DomainRowItem(
                         )
                     }
                     Spacer(Modifier.width(6.dp))
-                    Switch(
+                    CompactSwitch(
                         checked = row.enabled,
                         onCheckedChange = { onToggle() },
                         enabled = canAdjust,
@@ -1044,6 +1187,34 @@ private fun DomainRowItem(
  * Relative to the row, so *.example.com reads as *.host here and *.parent on
  * api.example.com.
  */
+/** A visually thinner switch with the full 48 dp touch target preserved. */
+@Composable
+private fun CompactSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            enabled = enabled,
+            modifier = Modifier.scale(0.78f),
+        )
+    }
+}
+
 @Composable
 private fun DomainNameCell(
     row: DomainRow,

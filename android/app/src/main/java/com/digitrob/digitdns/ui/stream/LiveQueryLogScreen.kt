@@ -13,11 +13,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
@@ -61,12 +63,14 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.draw.clip
 import com.digitrob.digitdns.ui.components.CountryFlag
 import com.digitrob.digitdns.ui.components.PanelDialog
 import java.util.Locale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -76,6 +80,7 @@ import com.digitrob.digitdns.core.notifications.QueryEvent
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.PanelRowDefaults
+import com.digitrob.digitdns.ui.components.PanelHeaderMeta
 import com.digitrob.digitdns.ui.components.PanelScreenHeader
 import com.digitrob.digitdns.ui.components.PanelSnackbarHost
 import com.digitrob.digitdns.ui.components.RouteAction
@@ -84,6 +89,9 @@ import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.components.showPanelToast
 import com.digitrob.digitdns.ui.formatLatency
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
+import com.digitrob.digitdns.ui.theme.PanelMono
+import com.digitrob.digitdns.ui.theme.protocolColor
+import com.digitrob.digitdns.ui.theme.protocolLabel
 
 /**
  * The Live Query Log tab, matching the panel's top-level `Live Query Log`.
@@ -127,7 +135,9 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
 
     Scaffold(snackbarHost = { PanelSnackbarHost(snackbar) }, contentWindowInsets = WindowInsets(0)) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            PanelScreenHeader()
+            PanelScreenHeader(
+                actions = { QueryCountHeader(state.source.size) },
+            )
             LogToolbar(state, viewModel)
             PanelRefreshBox(
                 isRefreshing = state.isRefreshing,
@@ -156,19 +166,27 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun LogToolbar(state: LiveQueryLogUiState, viewModel: LiveQueryLogViewModel) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
-        Text(
-            text = pluralStringResource(R.plurals.stream_query_count, state.source.size, state.source.size),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun QueryCountHeader(count: Int) {
+    // Match the 24 dp height of the Updated/Online cluster so the two baselines
+    // line up, and pin the width so a growing count cannot move the text.
+    Box(
+        modifier = Modifier.width(80.dp).height(24.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        PanelHeaderMeta(
+            text = pluralStringResource(R.plurals.stream_query_count, count, count),
+            modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
 
+@Composable
+private fun LogToolbar(state: LiveQueryLogUiState, viewModel: LiveQueryLogViewModel) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(top = 4.dp),
+                .horizontalScroll(rememberScrollState()),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
@@ -327,7 +345,7 @@ private fun QueryRow(
                         if (resolvedBy.isNotBlank()) {
                             append(" · ")
                             withStyle(SpanStyle(color = protocolTint, fontWeight = FontWeight.SemiBold)) {
-                                append(resolvedBy)
+                                append(protocolLabel(resolvedBy))
                             }
                         }
                         if (event.latencyMs > 0) append(" · ${formatLatency(event.latencyMs)}")
@@ -393,25 +411,6 @@ private fun QueryRow(
     }
 }
 
-/**
- * One colour per resolution transport, matching the web panel's PROTO palette:
- * UDP cyan, TCP blue, DoT green, DoH purple, DoQ amber, DoH3/orange-soft, DNSCrypt
- * blurple. Unknown or blank protocols stay muted.
- */
-@Composable
-private fun protocolColor(protocol: String): Color {
-    val colors = DigitDnsTheme.colors
-    return when (protocol.uppercase()) {
-        "UDP" -> colors.discord
-        "TCP" -> colors.info
-        "DOT" -> colors.success
-        "DOH" -> colors.purple
-        "DOQ" -> colors.warning
-        "DOH3" -> colors.warning.copy(alpha = 0.75f)
-        "DNSCRYPT" -> colors.discord.copy(alpha = 0.75f)
-        else -> colors.textMuted
-    }
-}
 
 /** The read-only relay explanation opened by the small flag in a live-log row. */
 @Composable

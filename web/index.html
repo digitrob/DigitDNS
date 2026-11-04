@@ -1301,32 +1301,32 @@
         <div id="history-section">
           <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4" data-dash-grid="history">
             <div data-dash-card="history-total" class="glass-panel panel-card p-3.5 sm:p-4">
-              <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Total queries</div>
+              <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="bar-chart-2" class="w-3 h-3 text-cyan-400"></i> Total queries</div>
               <div id="history-total" class="text-xl sm:text-2xl font-extrabold font-mono text-white mt-1">—</div>
               <div id="history-total-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">—</div>
             </div>
             <div data-dash-card="history-blocked" class="glass-panel panel-card p-3.5 sm:p-4">
-              <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Blocked</div>
+              <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="slash" class="w-3 h-3 text-red-400"></i> Blocked</div>
               <div id="history-blocked" class="text-xl sm:text-2xl font-extrabold font-mono text-red-300 mt-1">—</div>
               <div id="history-blocked-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">—</div>
             </div>
             <div data-dash-card="history-proxied" class="glass-panel panel-card p-3.5 sm:p-4">
-              <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Proxied</div>
+              <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="share-2" class="w-3 h-3 text-purple-400"></i> Proxied</div>
               <div id="history-proxied" class="text-xl sm:text-2xl font-extrabold font-mono text-purple-300 mt-1">—</div>
               <div id="history-proxied-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">—</div>
             </div>
             <div data-dash-card="history-cache" class="glass-panel panel-card p-3.5 sm:p-4">
-              <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Cache hit</div>
+              <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="database" class="w-3 h-3 text-emerald-400"></i> Cache hit</div>
               <div id="history-cache" class="text-xl sm:text-2xl font-extrabold font-mono text-emerald-300 mt-1">—</div>
               <div id="history-cache-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">—</div>
             </div>
             <div data-dash-card="history-clients" class="glass-panel panel-card p-3.5 sm:p-4">
-              <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Active clients</div>
+              <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="users" class="w-3 h-3 text-cyan-400"></i> Active clients</div>
               <div id="history-clients" class="text-xl sm:text-2xl font-extrabold font-mono text-cyan-300 mt-1">—</div>
               <div id="history-clients-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5" title="Distinct clients from HyperLogLog registers">HLL distinct</div>
             </div>
             <div data-dash-card="history-latency" class="glass-panel panel-card p-3.5 sm:p-4">
-              <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Avg latency (ms)</div>
+              <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="clock" class="w-3 h-3 text-blue-400"></i> Avg latency (ms)</div>
               <div id="history-latency" class="text-xl sm:text-2xl font-extrabold font-mono text-slate-200 mt-1 whitespace-nowrap">—</div>
               <div class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">cache misses</div>
             </div>
@@ -1367,7 +1367,7 @@
               <div id="history-top-protocols" class="history-top-body mt-1.5 text-xs text-slate-500">Waiting for history…</div>
             </div>
             <div data-dash-card="history-top-relay" class="glass-panel panel-card p-4 sm:col-span-1 md:col-span-1 history-top-card">
-              <h3 class="panel-card-header"><i data-feather="map-pin" class="w-4 h-4 text-amber-300"></i> Relay countries</h3>
+              <h3 class="panel-card-header"><i data-feather="map-pin" class="w-4 h-4 text-amber-300"></i> Queries by Relay</h3>
               <div id="history-top-relay" class="history-top-body mt-1.5 text-xs text-slate-500">Waiting for history…</div>
             </div>
           </div>
@@ -2563,20 +2563,20 @@ async function onBuySubscription(ctx, username) {
             <div id="tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">Loading tokens…</div></div>
           </div>
 
-          <!-- Custom DNS A/AAAA Records -->
+          <!-- DNS Rewrites: hostname -> fixed IPv4/IPv6 address -->
           <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
             <div>
               <h3 class="panel-card-header">
-                <i data-feather="map-pin" class="w-4 h-4 text-emerald-400"></i> Custom Static Records
+                <i data-feather="map-pin" class="w-4 h-4 text-emerald-400"></i> DNS Rewrites
               </h3>
-              <p class="text-[11px] text-slate-400 mt-0.5">Map any hostname directly to a custom IP address</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Map any hostname directly to a fixed IPv4 or IPv6 address</p>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <input type="text" id="custom-record-domain" aria-label="Static record hostname" placeholder="hostname.com"
+              <input type="text" id="custom-record-domain" aria-label="DNS rewrite hostname" placeholder="hostname.com"
                 class="panel-field font-mono focus:border-emerald-400">
               <div class="flex gap-2">
-                <input type="text" id="custom-record-ip" aria-label="Static record IP address" placeholder="1.2.3.4"
+                <input type="text" id="custom-record-ip" aria-label="DNS rewrite IP address" placeholder="1.2.3.4"
                   class="panel-field flex-1 min-w-0 font-mono focus:border-emerald-400">
                 <button id="add-custom-record-btn" class="shrink-0 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Save</button>
               </div>
@@ -2593,7 +2593,7 @@ async function onBuySubscription(ctx, username) {
           <!-- Named custom policy groups: operator-defined bundles of
                domains with one action, toggled as a unit and selectable later.
                Sits inside the same 2-column grid as the panels above, so it
-               fills the row beside Custom Static Records instead of spanning
+               fills the row beside DNS Rewrites instead of spanning
                the full width on a row of its own. -->
           <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
             <div class="flex items-center justify-between gap-2">
