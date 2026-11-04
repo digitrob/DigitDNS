@@ -2313,6 +2313,62 @@ input:checked + .slider:before {
   z-index: 1;
 }
 
+#tab-dashboard [data-dash-card].history-top-card {
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 8px !important;
+}
+
+/* The ranked tables keep their header and footer pinned; only this viewport
+   scrolls, so a busy resolver never grows the card or moves its title. */
+.history-top-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.history-top-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 9.125rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  scrollbar-width: thin;
+}
+/* One row, styled like the upstream-resolvers card: the same inset tile and
+   hairline border make the ranked values readable at a glance. */
+.history-top-row {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgb(var(--c-slate-950) / 0.7);
+  border: 1px solid rgb(var(--c-slate-800));
+}
+.history-top-other {
+  padding-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* In the explicit grid a taller card gives its list more room instead of
+   leaving the extra rows empty. */
+#tab-dashboard.dash-custom-layout .history-top-card {
+  display: flex;
+  flex-direction: column;
+}
+#tab-dashboard.dash-custom-layout .history-top-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+#tab-dashboard.dash-custom-layout .history-top-list {
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 #tab-dashboard [data-dash-card] { position: relative; }
 #tab-dashboard.is-editing [data-dash-card] {
   outline: 1px dashed rgba(34, 211, 238, 0.6);

@@ -181,12 +181,61 @@ curl -s "https://dns.example.com/<admin-path>/api/v3/clients" \
 | Upstreams | `GET/POST /api/v3/upstreams`, `POST /api/v3/upstreams/{benchmark,reorder}` |
 | Settings | `GET/POST /api/v3/settings`, `…/settings/subscription`, `…/settings/regenerate-api-key`, `…/settings/regenerate-admin-path` |
 | TLS / ACME | `POST /api/v3/tls/issue`, `POST /api/v3/tls/auto-renew`, `GET /api/v3/tls/acme/status` |
-| Stats & stream | `GET /api/v3/stats`, `GET /api/v3/events/stream` (`?ticket=` accepted) |
+| Stats & stream | `GET /api/v3/stats`, `GET /api/v3/stats/{summary,series,top,export,settings}`, `POST /api/v3/stats/settings`, `GET /api/v3/events/stream` (`?ticket=` accepted) |
 | Diagnostics | `GET/POST/DELETE /api/v3/diagnostics/targets`, `POST /api/v3/diagnostics/run` |
 | Ops | `POST /api/v3/cache/flush`, `GET /api/v3/config`, `POST /api/v3/benchmark`, `GET /api/v3/update/check`, `POST /api/v3/update/apply`, `GET /api/v3/update/status` |
 | Meta | `GET /api/v3/version`, `GET /api/v3/status`, `GET /api/v3/docs`, `GET /api/v3/openapi.json` |
 
 Managing the diagnostic target list — a dashboard-only operation in v3.1.0 — is now `GET/POST/DELETE /api/v3/diagnostics/targets`; `POST /api/v3/diagnostics/run` runs the same shared probe v2 does.
+
+### Historical aggregate stats (4.1.0)
+
+These routes read the optional 90-day aggregate store. They return `503` with
+`stats_unavailable` when history is disabled or `stats.db` could not be opened.
+All accept either a dashboard session or the master API key, like the rest of v3.
+
+```text
+GET  /api/v3/stats/summary?range=24h|7d|30d|90d
+GET  /api/v3/stats/series?range=...&interval=hour|day
+GET  /api/v3/stats/top?range=...&dimension=...&limit=10
+GET  /api/v3/stats/export?range=...&format=csv|json
+GET  /api/v3/stats/settings
+POST /api/v3/stats/settings
+```
+
+- `24h` and `7d` read hourly buckets; `30d` and `90d` read daily buckets. Today's
+  daily point merges the current day's hourly buckets.
+- `summary.active_clients` is a HyperLogLog distinct-client estimate over the
+  range, not a count clipped by the top-client cap. `active_clients_approx` is
+  `true` only when the range includes a bucket written before the registers
+  existed and the value fell back to the bounded top-client union.
+- `dimension` is one of `domain`, `blocked_domain`, `client`, `upstream`,
+  `action`, `protocol`, `qtype`, `rcode`, `relay_country`.
+- `client` rows resolve an aggregated IP to the matching client record's current
+  name; an address with no matching client (or a deleted client) keeps its IP.
+- `limit` is bounded to 1–100.
+- `export` returns a CSV time series or a JSON document containing summary,
+  series and top tables.
+
+```bash
+curl -s "https://dns.example.com/<admin-path>/api/v3/stats/summary?range=7d" \
+  -H "X-API-Key: digitdns_live_…"
+curl -s "https://dns.example.com/<admin-path>/api/v3/stats/top?range=30d&dimension=domain&limit=10" \
+  -H "X-API-Key: digitdns_live_…"
+curl -s -o stats.csv \
+  "https://dns.example.com/<admin-path>/api/v3/stats/export?range=24h&format=csv" \
+  -H "X-API-Key: digitdns_live_…"
+```
+
+The aggregate policy is available at `GET/POST /api/v3/stats/settings`, which
+accepts either credential and is the route the Android companion uses. The
+dashboard's older `/api/stats/settings` remains session-only. Both read and write
+the same record: retention, top-N, client anonymization and the per-client opt-out
+list. Those settings are restart-scoped: the aggregate store is opened once at
+boot with a fixed configuration. `exclude_clients` accepts up to 500 client IPs or
+account names; an excluded client still contributes to totals but no client
+identifier is stored for it. A successful save answers
+`{"success":true,"restart_required":true,"settings":{…}}`.
 
 ### Relay agents (4.0)
 

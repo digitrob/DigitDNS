@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"digitdns/internal/aggregate"
 	"digitdns/internal/bootstrap"
 	"digitdns/internal/control"
 	"digitdns/internal/core/cache"
@@ -448,6 +449,32 @@ func main() {
 	sniServer := proxy.NewServer(*sniSettings, serverSettings.BindHost, tlsSettings.Domain, clientService)
 
 	statsService := service.NewStatsService(db, sniServer.GetStats, c.GetStats)
+
+	// 90-day aggregates live in their own bbolt file. A failure here must not
+	// stop the resolver: the live log and everything else still work, and the
+	// operator gets a clear log line instead of a daemon that will not boot.
+	statsSettings, statsSettingsErr := db.LoadStatsSettings()
+	if statsSettingsErr != nil {
+		log.Printf("[Stats] could not read aggregate settings; using defaults: %v", statsSettingsErr)
+		statsSettings = database.DefaultStatsSettings()
+	}
+	if statsSettings.Enabled {
+		statsCfg := aggregate.DefaultConfig()
+		statsCfg.RetentionDays = statsSettings.RetentionDays
+		statsCfg.TopDomains = statsSettings.TopDomains
+		statsCfg.TopClients = statsSettings.TopClients
+		statsCfg.AnonymizeClients = statsSettings.AnonymizeClients
+		statsCfg.ExcludeClients = statsSettings.ExcludeClients
+		if agg, err := aggregate.Open(filepath.Join(filepath.Dir(dPath), "stats.db"), statsCfg); err != nil {
+			log.Printf("[Stats] 90-day aggregate store disabled: %v", err)
+		} else {
+			statsService.SetAggregator(agg)
+			log.Printf("[Stats] 90-day aggregate store: %s (retention=%dd, top=%d/%d, anonymize=%v)",
+				agg.Path(), statsCfg.RetentionDays, statsCfg.TopDomains, statsCfg.TopClients, statsCfg.AnonymizeClients)
+		}
+	} else {
+		log.Printf("[Stats] 90-day aggregate store disabled by settings")
+	}
 
 	// Both of these own a ticker goroutine, and both shutdown paths below (the TUI's
 	// [0] Exit and the signal handler) leave through a return, so the defers run on

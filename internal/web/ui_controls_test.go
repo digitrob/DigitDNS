@@ -26,6 +26,32 @@ func TestLiveLogRefreshControlPrecedesSearch(t *testing.T) {
 	}
 }
 
+// The historical dashboard block is separate from the live card grid: its ids
+// are the contract between index.html, the v3 history endpoints and app.js. The
+// history cards also opt into the dashboard layout engine through their own
+// data-dash-grid group.
+func TestDashboardHasTrafficHistorySection(t *testing.T) {
+	doc := readAsset(t, "index.html")
+	for _, id := range []string{
+		"history-section", "history-range", "historyChart",
+		"history-total", "history-blocked", "history-proxied",
+		"history-cache", "history-clients", "history-latency",
+		"history-top-domains", "history-top-clients", "history-top-upstreams",
+	} {
+		if !strings.Contains(doc, `id="`+id+`"`) {
+			t.Errorf("index.html is missing history element %q", id)
+		}
+	}
+	if !strings.Contains(doc, `data-dash-grid="history"`) || !strings.Contains(doc, `data-dash-card="history-chart"`) {
+		t.Error("history cards are not part of the dashboard layout editor")
+	}
+	for _, rangeValue := range []string{"24h", "7d", "30d", "90d"} {
+		if !strings.Contains(doc, `data-history-range="`+rangeValue+`"`) {
+			t.Errorf("index.html is missing the %s history range button", rangeValue)
+		}
+	}
+}
+
 // Settings is a compact card grid, with the wide cards opting back into a full
 // row. The class must stay on the section: this test is the guard against a
 // future markup edit that removes the layout without touching the CSS.

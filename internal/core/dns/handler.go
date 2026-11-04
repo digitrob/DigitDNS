@@ -391,6 +391,13 @@ func questionName(r *dns.Msg) string {
 	return strings.TrimSuffix(strings.ToLower(r.Question[0].Name), ".")
 }
 
+func firstQuestionType(r *dns.Msg) uint16 {
+	if r == nil || len(r.Question) == 0 {
+		return 0
+	}
+	return r.Question[0].Qtype
+}
+
 func normalizeProto(p string) string {
 	switch strings.ToLower(strings.TrimSpace(p)) {
 	case "udp", "udp4", "udp6":
@@ -439,7 +446,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		// the amplification this check exists to remove. Sampling keeps the
 		// offending source visible at bounded cost.
 		if n%rateLimitLogSample == 1 {
-			h.logQuery(start, clientIP, "Public", proto, questionName(r), "Rate limit", "RATELIMIT", false, "", "")
+			h.logQuery(start, clientIP, "Public", proto, questionName(r), "Rate limit", "RATELIMIT", false, "", "", firstQuestionType(r), dns.RcodeRefused)
 		}
 		if proto == "UDP" {
 			return nil
@@ -487,7 +494,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		}
 		// The other address family (or a missing public address) is a deliberate
 		// empty NOERROR: the name exists here, that family just has no address.
-		h.logQuery(start, clientIP, "Self", proto, domain, "Self-service", "SELF", false, "", "")
+		h.logQuery(start, clientIP, "Self", proto, domain, "Self-service", "SELF", false, "", "", q.Qtype, m.Rcode)
 		return m
 	}
 
@@ -526,7 +533,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	if activeClient != nil && h.quota != nil && h.quota.QuotaExceeded(activeClient) {
 		m := new(dns.Msg)
 		m.SetRcode(r, dns.RcodeRefused)
-		h.logQuery(start, clientIP, accountName, proto, questionName(r), "Traffic quota exceeded", "QUOTA", false, "", "")
+		h.logQuery(start, clientIP, accountName, proto, questionName(r), "Traffic quota exceeded", "QUOTA", false, "", "", q.Qtype, dns.RcodeRefused)
 		return m
 	}
 
@@ -535,7 +542,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	if q.Qtype == dns.TypeANY {
 		m := new(dns.Msg)
 		m.SetRcode(r, dns.RcodeRefused)
-		h.logQuery(start, clientIP, accountName, proto, domain, "ANY refused", "BLOCK", false, "", "")
+		h.logQuery(start, clientIP, accountName, proto, domain, "ANY refused", "BLOCK", false, "", "", q.Qtype, dns.RcodeRefused)
 		return m
 	}
 
@@ -557,7 +564,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				}
 			}
 			// The other family deliberately gets an empty NOERROR.
-			h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "")
+			h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
 			return m
 		}
 	}
@@ -577,7 +584,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				m.Answer = append(m.Answer, rr)
 			}
 		}
-		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "BLOCK", false, "", matchedPattern)
+		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "BLOCK", false, "", matchedPattern, q.Qtype, m.Rcode)
 		return m
 
 	case matcher.ActionProxy:
@@ -606,7 +613,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				// An agent with no IPv4 must not fall through to the cache or an
 				// upstream answer: that would expose the real host address.
 				action := "PROXY_FAILED"
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, action, false, "", matchedPattern, agentID, agentName, agentCountry)
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, action, false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, dns.RcodeServerFailure)
 				m.SetRcode(r, dns.RcodeServerFailure)
 				return m
 			}
@@ -618,12 +625,12 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				// here means a future regression can never masquerade as a
 				// successful proxy answer again (v2.1.0 B-13 remediation).
 				log.Printf("[DNS] Could not build proxied A record for %s from %q: %v", q.Name, targetIPv4, err)
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, agentID, agentName, agentCountry)
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, dns.RcodeServerFailure)
 				m.SetRcode(r, dns.RcodeServerFailure)
 				return m
 			}
 			m.Answer = append(m.Answer, rr)
-			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, agentID, agentName, agentCountry)
+			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, m.Rcode)
 			return m
 		}
 		if q.Qtype == dns.TypeAAAA {
@@ -636,14 +643,14 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			if targetIPv6 != "" {
 				if rr, err := dns.NewRR(fmt.Sprintf("%s 60 IN AAAA %s", q.Name, targetIPv6)); err == nil {
 					m.Answer = append(m.Answer, rr)
-					h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, agentID, agentName, agentCountry)
+					h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, m.Rcode)
 					return m
 				}
 			}
 			if agentAssigned {
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, agentID, agentName, agentCountry)
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, m.Rcode)
 			} else {
-				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern)
+				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, q.Qtype, m.Rcode)
 			}
 			return m
 		}
@@ -670,7 +677,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				// upstream that has stopped answering, not at a healthy cache.
 				rule, act = "Cached (stale, refreshing)", "STALE"
 			}
-			h.logQuery(start, clientIP, accountName, proto, domain, rule, act, true, "cache", "")
+			h.logQuery(start, clientIP, accountName, proto, domain, rule, act, true, "cache", "", q.Qtype, cachedResp.Rcode)
 			return cachedResp
 		}
 	}
@@ -681,6 +688,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		log.Printf("[DNS] Upstream query error for %s: %v", domain, err)
 		m := new(dns.Msg)
 		m.SetRcode(r, dns.RcodeServerFailure)
+		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "SERVFAIL", false, "", matchedPattern, q.Qtype, dns.RcodeServerFailure)
 		return m
 	}
 
@@ -711,11 +719,11 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		return m
 	}
 
-	h.logQuery(start, clientIP, accountName, proto, domain, ruleName, action.String(), false, upstream, matchedPattern)
+	h.logQuery(start, clientIP, accountName, proto, domain, ruleName, action.String(), false, upstream, matchedPattern, q.Qtype, resp.Rcode)
 	return resp
 }
 
-func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern string) {
+func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern string, qtype uint16, rcode int) {
 	if h.telemetry == nil {
 		return
 	}
@@ -729,6 +737,8 @@ func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, ac
 		Action:           action,
 		LatencyMs:        float64(time.Since(start).Microseconds()) / 1000.0,
 		Cached:           cached,
+		QType:            qtype,
+		Rcode:            rcode,
 		Upstream:         upstreamAddr,
 		UpstreamProtocol: upstream.ProtocolOf(upstreamAddr),
 		MatchedPattern:   matchedPattern,
@@ -737,7 +747,7 @@ func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, ac
 
 // logQueryRelay is logQuery with the agent that answered the proxied name. The
 // local relay path keeps using logQuery, so its payload is unchanged.
-func (h *Handler) logQueryRelay(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern, agentID, agentName, country string) {
+func (h *Handler) logQueryRelay(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern, agentID, agentName, country string, qtype uint16, rcode int) {
 	if h.telemetry == nil {
 		return
 	}
@@ -751,6 +761,8 @@ func (h *Handler) logQueryRelay(start time.Time, ip, account, proto, domain, rul
 		Action:           action,
 		LatencyMs:        float64(time.Since(start).Microseconds()) / 1000.0,
 		Cached:           cached,
+		QType:            qtype,
+		Rcode:            rcode,
 		Upstream:         upstreamAddr,
 		UpstreamProtocol: upstream.ProtocolOf(upstreamAddr),
 		MatchedPattern:   matchedPattern,

@@ -7,15 +7,21 @@ import com.digitrob.digitdns.core.network.LatencySnapshot
 import com.digitrob.digitdns.core.network.LiveStats
 import com.digitrob.digitdns.core.network.ResolutionSaveRequest
 import com.digitrob.digitdns.core.network.ResolutionSettings
+import com.digitrob.digitdns.core.network.StatsSeries
+import com.digitrob.digitdns.core.network.StatsSummary
+import com.digitrob.digitdns.core.network.StatsTop
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.ConnectionStore
 import com.digitrob.digitdns.data.DashboardCard
+import com.digitrob.digitdns.data.HistoryRepository
 import com.digitrob.digitdns.data.SettingsRepository
 import com.digitrob.digitdns.data.StatsRepository
 import com.digitrob.digitdns.data.UpstreamsRepository
 import com.digitrob.digitdns.data.stream.LiveQueryStream
 import com.digitrob.digitdns.data.stream.StreamStatus
+import com.digitrob.digitdns.domain.model.HistoryRange
+import com.digitrob.digitdns.domain.model.TopDimension
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -50,6 +56,22 @@ data class DashboardLayout(
     val visible: List<DashboardCard> get() = order.filterNot { it in disabled }
 }
 
+/** The aggregate-history cards, loaded at most once per range and refreshed slowly. */
+data class HistoryUiState(
+    val range: HistoryRange = HistoryRange.LAST_24H,
+    val summary: StatsSummary? = null,
+    val series: StatsSeries? = null,
+    val tops: Map<TopDimension, StatsTop> = emptyMap(),
+    val isLoading: Boolean = false,
+    /** The server answered 503: history is not available on this install. */
+    val unavailable: Boolean = false,
+    val error: String? = null,
+    val updatedAtEpochMs: Long? = null,
+)
+
+private val DashboardCard.isHistory: Boolean
+    get() = name.startsWith("HISTORY_")
+
 data class DashboardUiState(
     val stats: LiveStats? = null,
     val upstreams: List<UpstreamStat> = emptyList(),
@@ -57,6 +79,7 @@ data class DashboardUiState(
     val qpsHistory: List<Double> = emptyList(),
     val live: LiveWindow = LiveWindow(),
     val layout: DashboardLayout = DashboardLayout(),
+    val history: HistoryUiState = HistoryUiState(),
     /** The install's public address, shown in the dashboard's top box. */
     val serverIp: String = "",
     /** ISO country code for [serverIp], resolved by the server's GeoIP database. */
@@ -88,6 +111,7 @@ data class DashboardUiState(
 class DashboardViewModel @Inject constructor(
     private val statsRepository: StatsRepository,
     private val upstreamsRepository: UpstreamsRepository,
+    private val historyRepository: HistoryRepository,
     private val settingsRepository: SettingsRepository,
     private val liveStream: LiveQueryStream,
     private val appPreferences: AppPreferences,
@@ -98,6 +122,7 @@ class DashboardViewModel @Inject constructor(
     val state: StateFlow<DashboardUiState> = _state.asStateFlow()
 
     private var pollJob: Job? = null
+    private var historyJob: Job? = null
 
     /**
      * Guards [loadServerIp] against a stale landing. Declared before [init] because
@@ -113,6 +138,7 @@ class DashboardViewModel @Inject constructor(
         startPolling()
         observeLiveStream()
         observeServerSwitch(connectionStore)
+        loadHistory()
     }
 
     /**
@@ -127,7 +153,7 @@ class DashboardViewModel @Inject constructor(
             connectionStore.activeId
                 .distinctUntilChanged()
                 .drop(1) // the initial emit is covered by the init-time loadServerIp
-                .collect { if (it != null) loadServerIp() }
+                .collect { if (it != null) { loadServerIp(); loadHistory() } }
         }
     }
 
@@ -136,7 +162,77 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             combine(appPreferences.dashboardOrder, appPreferences.dashboardDisabled) { order, disabled ->
                 DashboardLayout(order = order, disabled = disabled)
-            }.collect { layout -> _state.update { it.copy(layout = layout) } }
+            }.collect { layout ->
+                val hadNoHistory = !_state.value.layout.visible.any { it.isHistory }
+                _state.update { it.copy(layout = layout) }
+                // If the operator re-enables a history card after hiding them all,
+                // fetch a frame without waiting for the next slow poll.
+                if (hadNoHistory && layout.visible.any { it.isHistory } && _state.value.history.summary == null) {
+                    loadHistory(background = true)
+                }
+            }
+        }
+    }
+
+    /** True when at least one history card is switched on in the saved layout. */
+    private fun historyVisible(): Boolean = _state.value.layout.visible.any { it.isHistory }
+
+    /**
+     * Load the selected range's summary, series and ranked tables together.
+     *
+     * Cancelling the previous job on every call keeps a fast range tap from
+     * committing an older range after a newer one. A background poll defers to an
+     * in-flight load rather than restarting it.
+     */
+    private fun loadHistory(background: Boolean = false) {
+        if (!historyVisible()) return
+        if (background && _state.value.history.isLoading) return
+        historyJob?.cancel()
+        val range = _state.value.history.range
+        historyJob = viewModelScope.launch {
+            _state.update { it.copy(history = it.history.copy(isLoading = true, error = null)) }
+            try {
+                val snapshot = historyRepository.load(range)
+                _state.update { current ->
+                    if (current.history.range != range) {
+                        current
+                    } else {
+                        current.copy(
+                            history = current.history.copy(
+                                summary = snapshot.summary,
+                                series = snapshot.series,
+                                tops = snapshot.tops,
+                                isLoading = false,
+                                unavailable = false,
+                                error = null,
+                                updatedAtEpochMs = System.currentTimeMillis(),
+                            ),
+                        )
+                    }
+                }
+            } catch (e: ApiException) {
+                _state.update { current ->
+                    current.copy(
+                        history = if (e.httpStatus == 404 || e.httpStatus == 503) {
+                            current.history.copy(isLoading = false, unavailable = true, error = null)
+                        } else {
+                            current.history.copy(isLoading = false, error = e.userMessage)
+                        },
+                    )
+                }
+            } catch (e: java.io.IOException) {
+                // A dropped poll keeps the last frame; only an explicit refresh
+                // surfaces the transport failure.
+                Timber.d(e, "history load failed")
+                _state.update { current ->
+                    current.copy(
+                        history = current.history.copy(
+                            isLoading = false,
+                            error = if (background) current.history.error else (e.message ?: "Could not reach the server."),
+                        ),
+                    )
+                }
+            }
         }
     }
 
@@ -169,8 +265,13 @@ class DashboardViewModel @Inject constructor(
     private fun startPolling() {
         pollJob?.cancel()
         pollJob = viewModelScope.launch {
+            var tick = 0
             while (isActive) {
                 refreshOnce(background = true)
+                tick++
+                // History changes slowly. Ten live ticks (~30 s) is frequent enough
+                // for a glance without turning every 3 s poll into seven requests.
+                if (tick % HISTORY_EVERY_TICKS == 0) loadHistory(background = true)
                 delay(POLL_INTERVAL_MS)
             }
         }
@@ -182,7 +283,15 @@ class DashboardViewModel @Inject constructor(
             loadServerIp()
             loadResolution()
             refreshOnce(background = false)
+            loadHistory()
         }
+    }
+
+    /** Switch the history window and fetch it, cancelling any in-flight range. */
+    fun setHistoryRange(range: HistoryRange) {
+        if (_state.value.history.range == range) return
+        _state.update { it.copy(history = it.history.copy(range = range)) }
+        loadHistory()
     }
 
     /**
@@ -396,6 +505,7 @@ class DashboardViewModel @Inject constructor(
 
     override fun onCleared() {
         pollJob?.cancel()
+        historyJob?.cancel()
         liveStream.stop()
         super.onCleared()
     }
@@ -403,6 +513,8 @@ class DashboardViewModel @Inject constructor(
     private companion object {
         /** Three seconds: the panel's own dashboard poll cadence. */
         const val POLL_INTERVAL_MS = 3_000L
+        /** Fetch history every tenth live tick (~30 s), not on every tick. */
+        const val HISTORY_EVERY_TICKS = 10
         /** Do not hammer a failing settings endpoint; one retry per ten seconds. */
         const val RESOLUTION_RETRY_MS = 10_000L
         const val QPS_HISTORY_POINTS = 60

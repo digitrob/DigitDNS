@@ -35,34 +35,54 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
-## What's new in 4.0
+## What's new in 4.1
 
-- **Geo relay agents.** Run a small agent on a VPS in another country and send
-  chosen domains out through it. A German viewer can reach a German-only
-  service while the hub, subscribers and certificates stay on your main server.
-  The agent has no panel, no database and no DNS server — it receives an
-  allowlist, relays encrypted TLS byte-for-byte, and reports traffic back.
-- **Relay control where the domains live.** Every proxied domain has a relay
-  chooser on its row. A domain can use **This Server** (the default), inherit a
-  service default, or name an agent directly. Services can carry a default
-  relay too, and a bulk **Egress** action moves a whole selection at once.
-- **A real agent page, not a command-line secret.** Add, edit, disable, delete
-  and test agents from **Settings → Relay Agents** on the web or Android. The
-  card shows the public IP, masked key, country flag, version, last heartbeat,
-  assigned domains and relayed traffic. Test connection opens a real TCP
-  connection to the relay port and shows the ping with the same green / amber /
-  red colours as the upstream resolvers.
-- **Agent keys are manageable.** Create returns the key once, the server keeps
-  an encrypted copy for later copying, and rotation invalidates the old key.
-  The list response never contains a clear key.
-- **Android catches up.** **Settings → Relay Agents** sits beside Servers, with
-  copyable IP and key, rotate, real connection tests and adaptive cards. On the
-  Domains screen the service and relay controls are icon-only on the second
-  line: tap the service mark for the service picker, tap the flag for the relay
-  picker. Nothing moves the gear, status pill or switch.
-- **Published like the hub.** Relay agents ship as Linux amd64 and arm64
-  binaries on the release page and as the multi-arch
-  `ghcr.io/digitrob/digitdns-agent` image.
+### 📊 Traffic History on web and Android
+
+DigitDNS can now keep a bounded, aggregate-only DNS history for up to 90 days,
+and show it as a first-class part of the dashboard.
+
+- **No raw query log on disk.** History lives in a separate `stats.db` and stores
+  counters and bounded top-N tables only — domains, blocked domains, clients,
+  upstreams, actions, protocols, qtypes, rcodes, relay countries, cache hits,
+  failures and latency.
+- **Hourly and daily buckets.** Hourly buckets are kept for 7 days and rolled
+  into daily buckets; daily retention defaults to 90 days and is pruned
+  automatically.
+- **Bounded cardinality.** Defaults are 1,000 domains and 500 clients per bucket;
+  overflow is folded into an `other` count instead of growing without limit.
+- **Exact-feeling client counts with HLL.** Every bucket carries HyperLogLog
+  registers, so “active clients” is not clipped by the top-client table. The
+  card says `HLL distinct`; ranges containing pre-HLL buckets fall back to
+  `top-N approx.`
+- **Client privacy controls.** New aggregates can store an HMAC-SHA256 client
+  identifier instead of the raw address, and individual IPs or account names can
+  be excluded entirely. Existing rows are never rewritten.
+- **Dashboard cards.** Six KPI cards, a stacked Allowed / Blocked / Proxied
+  chart, and top domains, blocked domains, clients, upstreams, protocols and
+  relay countries. Ranges are **24h / 7d / 30d / 90d**.
+- **Part of the layout editor.** History cards drag, resize, hide and persist
+  with the live dashboard cards on web; on Android they participate in the
+  existing card-order and visibility editor.
+- **Readable lists.** Five-row ranked cards on web, tall cards grow to show more
+  entries, headers stay pinned, only the list scrolls, and rows use the same
+  inset tile treatment as the upstream-resolvers card. Relay countries carry
+  their flag and name; client rows show the client’s current account name when
+  one is known, falling back to the IP.
+- **Export.** Download the selected range as CSV or full JSON from the web
+  dashboard.
+- **v3 API.** `stats/summary`, `stats/series`, `stats/top`, `stats/export` and
+  `stats/settings` are documented in OpenAPI, with the same session or master-key
+  auth as the rest of v3.
+- **Android companion 4.1.0.** History cards on the dashboard, range switching,
+  the chart, top lists, relay flags, client names, and a **Settings → Traffic
+  History** screen for retention, top-N, anonymization and client opt-out.
+
+### 🧭 Also in the 4.x line
+
+- **Geo relay agents.** A small agent in another country carries encrypted TLS
+  byte-for-byte, with per-domain and per-service relay choices, a real agent
+  page, manageable keys, connection tests and multi-arch images.
 
 ---
 
@@ -101,7 +121,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.0.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.1.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -160,7 +180,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.0.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v4.1.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -236,11 +256,12 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `3.8.0` | A specific immutable release (older) |
-| `4.0.0` | A specific immutable release (older) |
-| `4.0.1` | Agent log-throttling patch (older) |
-| `4.0.3` | Dashboard refresh, compact Settings, app-icon brand |
+| `4.1.0` | 90-day traffic history, Android history cards |
+| `4.0.3` | Dashboard refresh, compact Settings, app-icon brand (older) |
 | `4.0.2` | Accurate client-list status (older) |
+| `4.0.1` | Agent log-throttling patch (older) |
+| `4.0.0` | Geo relay agents (older) |
+| `3.8.0` | A specific immutable release (older) |
 | `edge` | Nightly build from `main` — not for production |
 
 Verify the image:
@@ -258,7 +279,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v4.0.3/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v4.1.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -434,6 +455,31 @@ resolvers.
 - **Phones reorder too.** Long-press a card to pick it up. Sizes stay at the
   normal mobile stacking, because a resized card on a phone is rarely useful.
 
+### Traffic history
+
+The optional 90-day aggregate store answers “what did this server see last
+week?” without retaining the queries themselves.
+
+- **Aggregate-only storage.** A separate `stats.db` holds counters and bounded
+  top-N tables; the raw query log remains an in-memory ring of 100 entries and
+  is never written to disk.
+- **Retention you control.** 7 days of hourly buckets roll into daily buckets,
+  which default to 90 days. Top-N limits, retention and anonymization are edited
+  under **Settings → Traffic History** and apply after a daemon restart.
+- **Distinct clients with HLL.** HyperLogLog registers give an unbounded distinct
+  count; the UI says `HLL distinct` and only falls back to `top-N approx.` for
+  ranges that contain pre-HLL buckets.
+- **Privacy options.** Client anonymization replaces the identifier with an
+  HMAC-SHA256 keyed by a per-store salt. A per-client opt-out accepts up to 500
+  IPs or account names and suppresses the identifier while still counting the
+  query in totals.
+- **Dashboard and API.** Range selector, summary, stacked chart and six ranked
+  tables on web and Android; CSV/JSON export on web; `stats/summary`,
+  `stats/series`, `stats/top`, `stats/export` and `stats/settings` in API v3.
+- **Names, not addresses.** Ranked client rows resolve the stored address to the
+  client’s current name through the access index; an unknown or deleted client
+  keeps its IP. Relay rows show the country flag and localized name.
+
 ### Proxy relay
 
 Domains marked as proxied resolve to your server. The device opens TLS to the
@@ -565,7 +611,7 @@ keeps upstream connections alive between queries to cut handshake latency.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v4.0.0`) and is side-loaded; it is
+panel. It has its own version line (`android-v4.1.0`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |
@@ -597,6 +643,13 @@ IP and masked key with copy buttons, a rotate-key action, version, last seen,
 assigned domains, traffic and service defaults. **Test connection** opens a real
 TCP connection to the relay port and updates the ping badge. The layout is one
 card wide on a phone and two side by side on a tablet or in landscape.
+
+**Traffic History** is part of the same dashboard: range switching, six KPI
+tiles, the stacked traffic chart, top domains/blocked/clients/upstreams/
+protocols/relay countries, flags and client names. Ranked cards are fixed-height
+with five or three visible rows and internal list scrolling. **Settings →
+Traffic History** edits the server-wide retention, top-N, anonymization and
+client opt-out policy.
 
 The app keeps its own version, so a server update never forces an app update.
 

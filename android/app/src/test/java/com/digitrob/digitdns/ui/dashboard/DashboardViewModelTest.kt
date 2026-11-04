@@ -2,6 +2,8 @@ package com.digitrob.digitdns.ui.dashboard
 
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.ConnectionStore
+import com.digitrob.digitdns.data.HistoryRepository
+import com.digitrob.digitdns.data.HistorySnapshot
 import com.digitrob.digitdns.data.SettingsBundle
 import com.digitrob.digitdns.data.SettingsRepository
 import com.digitrob.digitdns.data.stream.LiveQueryStream
@@ -9,6 +11,8 @@ import com.digitrob.digitdns.data.stream.StreamStatus
 import com.digitrob.digitdns.domain.model.ServerConfig
 import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.LiveStats
+import com.digitrob.digitdns.core.network.StatsSeries
+import com.digitrob.digitdns.core.network.StatsSummary
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -78,10 +82,14 @@ class DashboardViewModelTest {
         val upstreamsRepository = mockk<com.digitrob.digitdns.data.UpstreamsRepository> {
             coEvery { stats() } returns emptyList()
         }
+        val historyRepository = mockk<HistoryRepository> {
+            coEvery { load(any()) } returns HistorySnapshot(StatsSummary(), StatsSeries(), emptyMap())
+        }
 
         val viewModel = DashboardViewModel(
             statsRepository = statsRepository,
             upstreamsRepository = upstreamsRepository,
+            historyRepository = historyRepository,
             settingsRepository = settingsRepository,
             liveStream = liveStream,
             appPreferences = appPreferences,

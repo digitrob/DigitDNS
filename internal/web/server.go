@@ -813,6 +813,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/diagnostics/run", ws.requireAuth(ws.handleDiagnosticsRun))
 	mux.HandleFunc("/api/diagnostics/targets", ws.requireAuth(ws.handleDiagnosticsTargets))
 	mux.HandleFunc("/api/stats", ws.requireAuth(ws.handleStats))
+	mux.HandleFunc("/api/stats/settings", ws.requireAuth(ws.handleStatsSettings))
 	mux.HandleFunc("/api/clients", ws.requireAuth(ws.handleClients))
 	mux.HandleFunc("/api/clients/add", ws.requireAuth(ws.handleClientsAdd))
 	mux.HandleFunc("/api/clients/delete", ws.requireAuth(ws.handleClientsDelete))

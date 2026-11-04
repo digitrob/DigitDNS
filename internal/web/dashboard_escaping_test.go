@@ -54,6 +54,7 @@ var safeAttrInterp = map[string]string{
 	"statusClass":   "a CSS class name computed from a proxied domain's on/off state, in renderProxiedList",
 	"wildcardClass": "a CSS class name computed from whether a wildcard applies, in renderProxiedList",
 	"protoClass":    "a CSS class name from the fixed protocol table, in queryRowHTML",
+	"width":         "a percentage computed from a numeric count in renderHistoryTop, never stored text",
 	"!c.enabled":    "a boolean",
 	"i":             "a loop index in the hour/minute pickers",
 	"d":             "a day number in the datepicker grid",

@@ -26,7 +26,7 @@ and how to report a problem.
 
 | Version | Status | Security fixes |
 | :--- | :--- | :--- |
-| `v4.0.3` | Current stable | ✅ Yes |
+| `v4.1.0` | Current stable | ✅ Yes |
 | `v4.0.2` and earlier 4.0.x | Superseded | ❌ Upgrade first |
 | `v3.x` and earlier | Superseded | ❌ Upgrade first |
 | `v1.x` (upstream HyperDNS) | End of life | ❌ No |
@@ -138,8 +138,10 @@ The reason rule entries are in the clear is that they are not secrets: they are
 the operator's own domain names, and every one of them is already public in DNS.
 Sealing them would cost a decrypt per query on the hot path and protect nothing.
 
-**Query logs are never written to disk in any form.** DNS telemetry lives in
-memory and on the SSE stream only. This is a design constraint, not a setting.
+**Raw query logs are never written to disk in any form.** DNS telemetry lives in
+memory and on the SSE stream only. The optional history feature writes aggregate
+counters and bounded top-N tables to `stats.db`; it does not write query
+payloads, client queries, or a replayable log.
 
 ---
 
@@ -276,6 +278,28 @@ They are the reason several classes of issue are "by design" rather than bugs.
   **Custom Proxied**, so a multi-gigabyte game install rides the relay only when
   an operator puts its CDN there deliberately — see the README for the reasoning.
 
+### Aggregate history
+
+- **No raw query log is written to disk.** The live log remains an in-memory
+  ring of 100 entries. The optional history feature stores only counters and
+  bounded top-N tables in a separate `stats.db`.
+- **Retention is bounded.** Hourly buckets are kept for 7 days and rolled into
+  daily buckets; daily buckets default to 90 days and are pruned automatically.
+- **Cardinality is bounded.** Defaults are 1,000 domains and 500 clients per
+  bucket, with the remainder folded into an `other` counter.
+- **Client identifiers can be anonymized.** When enabled, new records store an
+  HMAC-SHA256 identifier derived from a per-store salt instead of the raw client
+  address. The setting applies to new aggregates; existing rows are unchanged.
+  The salt lives in `stats.db`, so this protects casual disclosure, not an
+  attacker who already has the database.
+- **Individual clients can opt out.** An excluded client (matched by IP or
+  account name) still contributes to query, domain and protocol totals, but its
+  identifier is never written to the top-client table or the distinct-client
+  registers. The list is capped at 500 entries.
+- **The database is private to the daemon.** `stats.db` is created beside
+  `data.db` with mode `0600`; it contains no query payloads, only aggregates.
+  Include it in encrypted backups or treat it as regenerable history.
+
 ---
 
 ## 🚀 Deployment Hardening Checklist
@@ -317,8 +341,10 @@ rather than by a debate.
   your backups by design; keep that backup encrypted.
 - **The SNI relay is not a censorship-resistant transport.** It relays a TLS
   session without terminating it; it does not obscure what the session is.
-- **Query logs are not retained.** There is no disk log to hand over, by design,
-  and no setting that turns one on.
+- **Raw query logs are not retained.** There is no disk log to hand over, by
+  design, and no setting that turns one on. The optional dashboard history is
+  aggregate-only: counters and bounded top-N tables, retained for the configured
+  window in a separate `stats.db`.
 - **The project does not provide a WAF or DDoS mitigation.** Rate limits and
   connection caps bound resource use; volumetric attacks are the hosting
   provider's layer.

@@ -136,6 +136,82 @@
           "max_devices": {"type": "integer"}
         }
       },
+      "StatsSummary": {
+        "type": "object",
+        "properties": {
+          "range": {"type": "string", "enum": ["24h", "7d", "30d", "90d"]},
+          "from": {"type": "string", "format": "date-time"},
+          "to": {"type": "string", "format": "date-time"},
+          "queries": {"type": "integer", "format": "int64"},
+          "blocked": {"type": "integer", "format": "int64"},
+          "proxied": {"type": "integer", "format": "int64"},
+          "cached": {"type": "integer", "format": "int64"},
+          "failed": {"type": "integer", "format": "int64"},
+          "blocked_pct": {"type": "number"},
+          "proxied_pct": {"type": "number"},
+          "cache_hit_pct": {"type": "number"},
+          "active_clients": {"type": "integer"},
+          "active_clients_approx": {"type": "boolean", "description": "True only when the range includes pre-HLL buckets and the count fell back to the bounded top-client union."},
+          "latency_avg_ms": {"type": "number"},
+          "buckets": {"type": "integer"}
+        }
+      },
+      "StatsSeriesPoint": {
+        "type": "object",
+        "properties": {
+          "start": {"type": "string", "format": "date-time"},
+          "queries": {"type": "integer", "format": "int64"},
+          "blocked": {"type": "integer", "format": "int64"},
+          "proxied": {"type": "integer", "format": "int64"},
+          "cached": {"type": "integer", "format": "int64"},
+          "failed": {"type": "integer", "format": "int64"},
+          "latency_ms": {"type": "number"}
+        }
+      },
+      "StatsSeries": {
+        "type": "object",
+        "properties": {
+          "range": {"type": "string", "enum": ["24h", "7d", "30d", "90d"]},
+          "interval": {"type": "string", "enum": ["hour", "day"]},
+          "points": {"type": "array", "items": {"$ref": "#/components/schemas/StatsSeriesPoint"}}
+        }
+      },
+      "StatsTopItem": {
+        "type": "object",
+        "properties": {
+          "value": {"type": "string"},
+          "count": {"type": "integer", "format": "int64"}
+        }
+      },
+      "StatsTop": {
+        "type": "object",
+        "properties": {
+          "range": {"type": "string", "enum": ["24h", "7d", "30d", "90d"]},
+          "dimension": {"type": "string", "enum": ["domain", "blocked_domain", "client", "upstream", "action", "protocol", "qtype", "rcode", "relay_country"]},
+          "items": {"type": "array", "items": {"$ref": "#/components/schemas/StatsTopItem"}},
+          "other_count": {"type": "integer", "format": "int64"}
+        }
+      },
+      "StatsSettings": {
+        "type": "object",
+        "properties": {
+          "enabled": {"type": "boolean"},
+          "retention_days": {"type": "integer", "minimum": 7, "maximum": 365},
+          "top_domains": {"type": "integer", "minimum": 100, "maximum": 10000},
+          "top_clients": {"type": "integer", "minimum": 50, "maximum": 5000},
+          "anonymize_clients": {"type": "boolean"},
+          "exclude_clients": {"type": "array", "nullable": true, "maxItems": 500, "items": {"type": "string", "maxLength": 253}}
+        }
+      },
+      "StatsExport": {
+        "type": "object",
+        "properties": {
+          "range": {"type": "string", "enum": ["24h", "7d", "30d", "90d"]},
+          "summary": {"$ref": "#/components/schemas/StatsSummary"},
+          "series": {"$ref": "#/components/schemas/StatsSeries"},
+          "tops": {"type": "object", "additionalProperties": {"$ref": "#/components/schemas/StatsTop"}}
+        }
+      },
       "GenericObject": {"type": "object", "additionalProperties": true},
       "Items": {
         "type": "object",
@@ -270,6 +346,22 @@
     },
     "/api/v3/stats": {
       "get": {"tags": ["stats"], "summary": "Live telemetry", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GenericObject"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}}
+    },
+    "/api/v3/stats/summary": {
+      "get": {"tags": ["stats"], "summary": "Aggregated DNS totals for a range", "parameters": [{"name": "range", "in": "query", "schema": {"type": "string", "enum": ["24h", "7d", "30d", "90d"], "default": "24h"}}], "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StatsSummary"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"$ref": "#/components/responses/Problem"}}}
+    },
+    "/api/v3/stats/series": {
+      "get": {"tags": ["stats"], "summary": "Aggregated DNS time series", "parameters": [{"name": "range", "in": "query", "schema": {"type": "string", "enum": ["24h", "7d", "30d", "90d"], "default": "24h"}}, {"name": "interval", "in": "query", "schema": {"type": "string", "enum": ["hour", "day"]}}], "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StatsSeries"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"$ref": "#/components/responses/Problem"}}}
+    },
+    "/api/v3/stats/top": {
+      "get": {"tags": ["stats"], "summary": "Ranked aggregate dimension", "parameters": [{"name": "range", "in": "query", "schema": {"type": "string", "enum": ["24h", "7d", "30d", "90d"], "default": "24h"}}, {"name": "dimension", "in": "query", "required": true, "schema": {"type": "string", "enum": ["domain", "blocked_domain", "client", "upstream", "action", "protocol", "qtype", "rcode", "relay_country"]}}, {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10}}], "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StatsTop"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"$ref": "#/components/responses/Problem"}}}
+    },
+    "/api/v3/stats/export": {
+      "get": {"tags": ["stats"], "summary": "Download a range as CSV or JSON", "parameters": [{"name": "range", "in": "query", "schema": {"type": "string", "enum": ["24h", "7d", "30d", "90d"], "default": "24h"}}, {"name": "format", "in": "query", "schema": {"type": "string", "enum": ["csv", "json"], "default": "csv"}}], "responses": {"200": {"description": "OK", "content": {"text/csv": {"schema": {"type": "string"}}, "application/json": {"schema": {"$ref": "#/components/schemas/StatsExport"}}}}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "503": {"$ref": "#/components/responses/Problem"}}}
+    },
+    "/api/v3/stats/settings": {
+      "get": {"tags": ["stats"], "summary": "Read aggregate history policy", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StatsSettings"}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}}},
+      "post": {"tags": ["stats"], "summary": "Save aggregate history policy (restart required)", "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StatsSettings"}}}}, "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "401": {"$ref": "#/components/responses/Unauthorized"}}}
     },
     "/api/v3/events/stream": {
       "get": {"tags": ["stats"], "summary": "Server-Sent Events live log (Bearer or ?ticket=)", "responses": {"200": {"description": "text/event-stream"}, "401": {"$ref": "#/components/responses/Unauthorized"}}}

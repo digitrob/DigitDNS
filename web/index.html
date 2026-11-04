@@ -1242,6 +1242,111 @@
           </div>
         </div>
 
+        <!-- Traffic history: 90-day aggregates, no raw query retention. The cards
+             share the dashboard layout editor, but the section header keeps the
+             range/export controls outside the grid so they never move. -->
+        <div id="history-section" class="space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+            <div>
+              <h2 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2 font-heading">
+                <i data-feather="bar-chart-2" class="w-4 h-4 text-cyan-400"></i> Traffic History
+              </h2>
+              <p id="history-status" class="text-[11px] text-slate-400 mt-1">Aggregated DNS history · no raw queries retained</p>
+            </div>
+            <div class="flex flex-wrap items-center justify-end gap-1.5 shrink-0">
+              <div id="history-range" class="flex items-center gap-1.5" role="group" aria-label="History range">
+                <button type="button" data-history-range="24h" aria-pressed="true"
+                  class="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 transition">24h</button>
+                <button type="button" data-history-range="7d" aria-pressed="false"
+                  class="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 transition">7d</button>
+                <button type="button" data-history-range="30d" aria-pressed="false"
+                  class="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 transition">30d</button>
+                <button type="button" data-history-range="90d" aria-pressed="false"
+                  class="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 transition">90d</button>
+              </div>
+              <button id="history-export-csv" type="button" title="Download the selected range as CSV"
+                class="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 transition">CSV</button>
+              <button id="history-export-json" type="button" title="Download the selected range as JSON"
+                class="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 transition">JSON</button>
+            </div>
+          </div>
+
+          <div id="history-error" class="hidden text-[11px] text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-lg px-3 py-2" role="status"></div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4" data-dash-grid="history">
+            <div data-dash-card="history-total" class="glass-panel panel-card p-3.5 sm:p-4">
+              <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Total queries</div>
+              <div id="history-total" class="text-xl sm:text-2xl font-extrabold font-mono text-white mt-1">—</div>
+              <div id="history-total-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">—</div>
+            </div>
+            <div data-dash-card="history-blocked" class="glass-panel panel-card p-3.5 sm:p-4">
+              <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Blocked</div>
+              <div id="history-blocked" class="text-xl sm:text-2xl font-extrabold font-mono text-red-300 mt-1">—</div>
+              <div id="history-blocked-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">—</div>
+            </div>
+            <div data-dash-card="history-proxied" class="glass-panel panel-card p-3.5 sm:p-4">
+              <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Proxied</div>
+              <div id="history-proxied" class="text-xl sm:text-2xl font-extrabold font-mono text-purple-300 mt-1">—</div>
+              <div id="history-proxied-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">—</div>
+            </div>
+            <div data-dash-card="history-cache" class="glass-panel panel-card p-3.5 sm:p-4">
+              <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Cache hit</div>
+              <div id="history-cache" class="text-xl sm:text-2xl font-extrabold font-mono text-emerald-300 mt-1">—</div>
+              <div id="history-cache-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">—</div>
+            </div>
+            <div data-dash-card="history-clients" class="glass-panel panel-card p-3.5 sm:p-4">
+              <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Active clients</div>
+              <div id="history-clients" class="text-xl sm:text-2xl font-extrabold font-mono text-cyan-300 mt-1">—</div>
+              <div id="history-clients-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5" title="Distinct clients from HyperLogLog registers">HLL distinct</div>
+            </div>
+            <div data-dash-card="history-latency" class="glass-panel panel-card p-3.5 sm:p-4">
+              <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Avg latency (ms)</div>
+              <div id="history-latency" class="text-xl sm:text-2xl font-extrabold font-mono text-slate-200 mt-1 whitespace-nowrap">—</div>
+              <div class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">cache misses</div>
+            </div>
+
+            <div data-dash-card="history-chart" class="glass-panel panel-card p-4 sm:p-5 col-span-2 sm:col-span-3 xl:col-span-6">
+              <div class="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <h3 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2 font-heading">
+                    <i data-feather="activity" class="w-4 h-4 text-cyan-400"></i> Queries over time
+                  </h3>
+                  <p class="text-[11px] text-slate-400">Allowed · blocked · proxied</p>
+                </div>
+                <span id="history-chart-range" class="text-[10px] font-mono text-slate-400 px-2.5 py-0.5 rounded-full bg-slate-800/70 border border-slate-700 whitespace-nowrap">24h</span>
+              </div>
+              <div class="h-48 sm:h-56 w-full relative" style="contain:strict">
+                <canvas id="historyChart"></canvas>
+              </div>
+            </div>
+
+            <div data-dash-card="history-top-domains" class="glass-panel panel-card p-4 sm:col-span-1 md:col-span-1 history-top-card">
+              <h3 class="panel-card-header"><i data-feather="globe" class="w-4 h-4 text-cyan-400"></i> Top domains</h3>
+              <div id="history-top-domains" class="history-top-body mt-1.5 text-xs text-slate-500">Waiting for history…</div>
+            </div>
+            <div data-dash-card="history-top-blocked" class="glass-panel panel-card p-4 sm:col-span-1 md:col-span-1 history-top-card">
+              <h3 class="panel-card-header"><i data-feather="slash" class="w-4 h-4 text-red-400"></i> Top blocked</h3>
+              <div id="history-top-blocked" class="history-top-body mt-1.5 text-xs text-slate-500">Waiting for history…</div>
+            </div>
+            <div data-dash-card="history-top-clients" class="glass-panel panel-card p-4 sm:col-span-1 md:col-span-1 history-top-card">
+              <h3 class="panel-card-header"><i data-feather="users" class="w-4 h-4 text-emerald-400"></i> Top clients</h3>
+              <div id="history-top-clients" class="history-top-body mt-1.5 text-xs text-slate-500">Waiting for history…</div>
+            </div>
+            <div data-dash-card="history-top-upstreams" class="glass-panel panel-card p-4 sm:col-span-1 md:col-span-1 history-top-card">
+              <h3 class="panel-card-header"><i data-feather="radio" class="w-4 h-4 text-sky-400"></i> Top upstreams</h3>
+              <div id="history-top-upstreams" class="history-top-body mt-1.5 text-xs text-slate-500">Waiting for history…</div>
+            </div>
+            <div data-dash-card="history-top-protocols" class="glass-panel panel-card p-4 sm:col-span-1 md:col-span-1 history-top-card">
+              <h3 class="panel-card-header"><i data-feather="share-2" class="w-4 h-4 text-violet-400"></i> Protocols</h3>
+              <div id="history-top-protocols" class="history-top-body mt-1.5 text-xs text-slate-500">Waiting for history…</div>
+            </div>
+            <div data-dash-card="history-top-relay" class="glass-panel panel-card p-4 sm:col-span-1 md:col-span-1 history-top-card">
+              <h3 class="panel-card-header"><i data-feather="map-pin" class="w-4 h-4 text-amber-300"></i> Relay countries</h3>
+              <div id="history-top-relay" class="history-top-body mt-1.5 text-xs text-slate-500">Waiting for history…</div>
+            </div>
+          </div>
+        </div>
+
       </section>
 
       <!-- ============================================== -->
@@ -2410,6 +2515,71 @@ async function onBuySubscription(ctx, username) {
             </div>
           </div>
 
+        </div>
+
+        <!-- Aggregate history policy. The store is opened once at boot, so these
+             values are deliberately restart-scoped rather than pretending to take
+             effect live. -->
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4 settings-wide" id="stats-settings-card">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
+              <i data-feather="bar-chart-2" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h3 class="panel-card-title">Traffic History</h3>
+              <p class="text-[11px] text-slate-400">90-day aggregates only — no raw query log is written to disk.</p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label class="flex items-center gap-2 text-xs text-slate-300">
+              <input type="checkbox" id="stats-enabled-input" class="accent-cyan-500 w-4 h-4">
+              Keep aggregate history
+            </label>
+            <label class="flex items-center gap-2 text-xs text-slate-300">
+              <input type="checkbox" id="stats-anonymize-input" class="accent-cyan-500 w-4 h-4">
+              Anonymize client identifiers
+            </label>
+            <label class="text-[11px] text-slate-400">
+              Retention (days)
+              <input type="number" id="stats-retention-input" min="7" max="365" step="1"
+                class="panel-field mt-1 w-full font-mono" aria-label="Stats retention days">
+            </label>
+            <label class="text-[11px] text-slate-400">
+              Top domains / clients
+              <span class="flex gap-2 mt-1">
+                <input type="number" id="stats-top-domains-input" min="100" max="10000" step="100"
+                  class="panel-field w-full font-mono" aria-label="Top domains limit">
+                <input type="number" id="stats-top-clients-input" min="50" max="5000" step="50"
+                  class="panel-field w-full font-mono" aria-label="Top clients limit">
+              </span>
+            </label>
+          </div>
+
+          <label class="block text-[11px] text-slate-400">
+            Excluded clients (one per line)
+            <textarea id="stats-exclude-clients-input" rows="3" spellcheck="false" autocomplete="off"
+              class="panel-field mt-1 w-full font-mono text-xs"
+              placeholder="192.0.2.10&#10;Alice"
+              aria-label="Clients excluded from aggregate history"></textarea>
+            <span class="block mt-1 text-[10px] text-slate-500">
+              Their queries still count, but no client identifier is stored for them. Match the client IP or account name exactly.
+            </span>
+          </label>
+
+          <p class="text-[10px] text-slate-500">
+            Retention, top-N limits and the opt-out list apply after a daemon restart. Client anonymization affects new aggregates;
+            existing rows in <code class="text-slate-400">stats.db</code> keep the identifiers they were written with.
+            Disabling history stops new writes but leaves the existing database intact.
+          </p>
+
+          <div class="flex items-center gap-3 flex-wrap">
+            <button id="save-stats-settings-btn" type="button"
+              class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition">
+              Save history settings
+            </button>
+            <span id="stats-settings-status" class="text-[11px] text-slate-400"></span>
+          </div>
         </div>
 
                 <!-- Session idle window (Phase D): how long a dashboard session may sit

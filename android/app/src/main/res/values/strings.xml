@@ -525,4 +525,63 @@
     </plurals>
     <string name="diag_not_tested">not tested</string>
     <string name="diag_unreachable">unreachable</string>
+
+    <!-- Traffic History (aggregate-only; no raw query log) -->
+    <string name="history_title">Traffic History</string>
+    <string name="history_subtitle">Aggregated DNS history · no raw queries retained</string>
+    <string name="history_loading">Loading…</string>
+    <string name="history_waiting">Waiting for history…</string>
+    <string name="history_unavailable">History is disabled on this server.</string>
+    <string name="history_updated">Updated %1$s</string>
+    <string name="history_range_24h">24h</string>
+    <string name="history_range_7d">7d</string>
+    <string name="history_range_30d">30d</string>
+    <string name="history_range_90d">90d</string>
+    <string name="history_summary">Summary</string>
+    <string name="history_total_queries">Total queries</string>
+    <string name="history_blocked">Blocked</string>
+    <string name="history_proxied">Proxied</string>
+    <string name="history_cache_hit">Cache hit</string>
+    <string name="history_active_clients">Active clients</string>
+    <string name="history_avg_latency">Avg latency (ms)</string>
+    <string name="history_buckets">%1$d buckets</string>
+    <string name="history_queries_value">%1$s queries</string>
+    <string name="history_hits_value">%1$s hits</string>
+    <string name="history_clients_hll">HLL distinct</string>
+    <string name="history_clients_approx">top-N approx.</string>
+    <string name="history_latency_unit">cache misses</string>
+    <string name="history_chart_title">Queries over time</string>
+    <string name="history_no_data">No data in this range.</string>
+    <string name="history_allowed">Allowed</string>
+    <string name="history_other">Other %1$s</string>
+    <string name="history_top_domains">Top domains</string>
+    <string name="history_top_blocked">Top blocked</string>
+    <string name="history_top_clients">Top clients</string>
+    <string name="history_top_upstreams">Top upstreams</string>
+    <string name="history_top_protocols">Protocols</string>
+    <string name="history_top_relay">Relay countries</string>
+
+    <string name="card_history_range">History range</string>
+    <string name="card_history_summary">History summary</string>
+    <string name="card_history_chart">History chart</string>
+
+    <string name="settings_history">Traffic History</string>
+    <string name="history_settings_title">Traffic History</string>
+    <string name="history_settings_help">Aggregate counters only — no raw query log is written to disk. These settings are server-wide and apply after a daemon restart.</string>
+    <string name="history_settings_enabled">Keep aggregate history</string>
+    <string name="history_settings_anonymize">Anonymize client identifiers</string>
+    <string name="history_settings_retention">Retention (days)</string>
+    <string name="history_settings_top_domains">Top domains</string>
+    <string name="history_settings_top_clients">Top clients</string>
+    <string name="history_settings_exclude">Excluded clients (one per line)</string>
+    <string name="history_settings_exclude_help">Their queries still count, but no client identifier is stored for them. Match the client IP or account name exactly.</string>
+    <string name="history_settings_save">Save history settings</string>
+    <string name="history_settings_saved">Saved. Restart the daemon to apply.</string>
+    <string name="history_settings_restart_note">Retention, top-N limits and the opt-out list apply after a restart. Anonymization affects new aggregates only.</string>
+    <string name="history_settings_unsupported">This server does not expose aggregate history settings.</string>
+    <string name="history_settings_loading">Loading history settings…</string>
+    <string name="history_settings_retention_error">Retention must be between 7 and 365 days.</string>
+    <string name="history_settings_top_domains_error">Top domains must be between 100 and 10,000.</string>
+    <string name="history_settings_top_clients_error">Top clients must be between 50 and 5,000.</string>
+    <string name="history_settings_exclude_error">Excluded clients cannot contain more than 500 entries.</string>
 </resources>

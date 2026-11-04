@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"digitdns/internal/aggregate"
 	"digitdns/internal/database"
 	"digitdns/internal/sysmetrics"
 )
@@ -35,6 +36,11 @@ type StatsService struct {
 	lastBytesRecv uint64
 	recentLogs    []database.QueryLogItem
 	logMu         sync.RWMutex
+	// aggregator is optional: a test harness or a build with stats.db disabled
+	// simply leaves it nil. It is set once during startup, before listeners
+	// accept, but an atomic pointer keeps the read in PushQueryLog safe against
+	// a late close.
+	aggregator    atomic.Pointer[aggregate.Aggregator]
 	sseClients    map[chan string]struct{}
 	sseMu         sync.RWMutex
 	getProxyStats func() (int64, uint64, uint64, uint64)
@@ -117,6 +123,22 @@ func NewStatsService(
 
 func (s *StatsService) RecordQuery() {
 	s.totalQueries.Add(1)
+	if a := s.aggregator.Load(); a != nil {
+		a.RecordTotal(time.Now())
+	}
+}
+
+// SetAggregator attaches the 90-day aggregate store. Call it once during
+// startup, before the DNS listeners are accepting.
+func (s *StatsService) SetAggregator(a *aggregate.Aggregator) {
+	s.aggregator.Store(a)
+}
+
+// Aggregate returns the optional history store. The v3 stats endpoints use it;
+// a nil result means the store could not be opened and the caller should answer
+// 503 rather than pretending the history is empty.
+func (s *StatsService) Aggregate() *aggregate.Aggregator {
+	return s.aggregator.Load()
 }
 
 // SetGuardStatsSource wires in the DNS handler's rate-limiter counters. Called
@@ -149,6 +171,10 @@ func (s *StatsService) PushQueryLog(item database.QueryLogItem) {
 	// moment the query arrived, which is what the latency figure is measured from.
 	if item.Timestamp.IsZero() {
 		item.Timestamp = time.Now()
+	}
+
+	if a := s.aggregator.Load(); a != nil {
+		a.RecordDetail(item)
 	}
 
 	// Fold the reading into the histograms before anything can fail or be dropped:
@@ -435,7 +461,12 @@ func (s *StatsService) telemetryLoop() {
 // request and exits when that request's context is cancelled, so tearing their
 // channels down from here would race with the handler writing to them.
 func (s *StatsService) Close() {
-	s.closeOnce.Do(func() { close(s.stop) })
+	s.closeOnce.Do(func() {
+		if a := s.aggregator.Swap(nil); a != nil {
+			a.Close()
+		}
+		close(s.stop)
+	})
 }
 
 // numCPUFactor caps process CPU%% against the core count (100%% per core).

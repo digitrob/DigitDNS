@@ -46,6 +46,12 @@ window.__hdns = {
 
 let sseSource = null;
 let qpsChart = null;
+let historyChart = null;
+let historyRange = '24h';
+let historyTimer = null;
+let historyInFlight = false;
+let historySeq = 0;
+let historyInitialized = false;
 let currentConfig = null;
 let isStreamPaused = false;
 
@@ -956,6 +962,8 @@ async function bootDashboard() {
   startStatsPolling();
   startLiveStream();
   handleRouteFromURL();
+  initHistory();
+  initStatsSettings();
 }
 
 // =======================================================
@@ -1100,6 +1108,13 @@ const DASH_CARD_MIN = {
   chart: { w: 6, h: 6 },
   upstream: { w: 3, h: 6 },
   latency: { w: 6, h: 5 },
+  'history-chart': { w: 6, h: 6 },
+  'history-top-domains': { w: 3, h: 6 },
+  'history-top-blocked': { w: 3, h: 6 },
+  'history-top-clients': { w: 3, h: 6 },
+  'history-top-upstreams': { w: 3, h: 6 },
+  'history-top-protocols': { w: 3, h: 6 },
+  'history-top-relay': { w: 3, h: 6 },
 };
 
 function dashInt(value, fallback) {
@@ -1178,6 +1193,27 @@ function dashDefaultCards(name, ids) {
     };
     ids.forEach((id, i) => {
       cards[id] = defaults[id] || { x: (i * 4) % DASH_COLS, y: 0, w: 4, h: 6 };
+    });
+    return cards;
+  }
+  if (name === 'history') {
+    // KPI strip, a full-width chart, then the six ranked tables in two rows of
+    // three. These are the defaults; every card can still be moved or resized.
+    const kpis = [
+      'history-total', 'history-blocked', 'history-proxied',
+      'history-cache', 'history-clients', 'history-latency',
+    ];
+    const tables = [
+      'history-top-domains', 'history-top-blocked', 'history-top-clients',
+      'history-top-upstreams', 'history-top-protocols', 'history-top-relay',
+    ];
+    kpis.forEach((id, i) => { cards[id] = { x: i * 2, y: 0, w: 2, h: 4 }; });
+    cards['history-chart'] = { x: 0, y: 4, w: 12, h: 10 };
+    tables.forEach((id, i) => {
+      cards[id] = { x: (i % 3) * 4, y: 14 + Math.floor(i / 3) * 6, w: 4, h: 6 };
+    });
+    ids.forEach((id, i) => {
+      if (!cards[id]) cards[id] = { x: (i * 2) % DASH_COLS, y: 26, w: 2, h: 3 };
     });
     return cards;
   }
@@ -1301,6 +1337,11 @@ function dashApplyCardStyle(card, cfg) {
   card.style.overflow = 'auto';
 }
 
+function resizeDashCharts() {
+  if (qpsChart) qpsChart.resize();
+  if (historyChart) historyChart.resize();
+}
+
 function dashFlip(before) {
   if (!before || !before.size) return;
   requestAnimationFrame(() => {
@@ -1319,7 +1360,7 @@ function dashFlip(before) {
         setTimeout(() => { card.style.transition = ''; }, 220);
       });
     });
-    if (qpsChart) qpsChart.resize();
+    resizeDashCharts();
   });
 }
 
@@ -1402,7 +1443,7 @@ function applyDashboardLayout(raw, animate) {
   });
   if (desktop) dashEnsureContentFits();
   if (animate) dashFlip(before);
-  else requestAnimationFrame(() => { if (qpsChart) qpsChart.resize(); });
+  else requestAnimationFrame(resizeDashCharts);
 }
 
 // Edits stay in memory while the editor is open. The only write happens when
@@ -1621,7 +1662,7 @@ function beginDashResize(e, card, grid, edge) {
     }
     lastW = w;
     lastH = h;
-    if (qpsChart) qpsChart.resize();
+    resizeDashCharts();
   };
   const finish = () => {
     document.removeEventListener('pointermove', move);
@@ -1669,7 +1710,7 @@ function setDashEditing(on) {
     });
   }
   syncDashEditUi();
-  if (!on && qpsChart) qpsChart.resize();
+  if (!on) resizeDashCharts();
 }
 
 async function toggleDashboardEditing() {
@@ -4319,6 +4360,8 @@ function queryMatchesStream(q, f) {
 const STREAM_ACTION_BADGES = {
   PROXY: '<span class="badge badge-proxy">PROXY</span>',
   PROXY_IPV6_SINK: '<span class="badge badge-proxy">PROXY · IPv6 SINK</span>',
+  PROXY_FAILED: '<span class="badge badge-block">PROXY FAILED</span>',
+  SERVFAIL: '<span class="badge badge-block">SERVFAIL</span>',
   BLOCK: '<span class="badge badge-block">BLOCK</span>',
   RATELIMIT: '<span class="badge badge-block">RATE LIMITED</span>',
   QUOTA: '<span class="badge badge-block">QUOTA</span>',
@@ -5096,6 +5139,7 @@ function applyChartTheme() {
 }
 
 document.addEventListener('digitdns:theme', applyChartTheme);
+document.addEventListener('digitdns:theme', applyHistoryChartTheme);
 
 function initChart() {
   try {
@@ -5181,6 +5225,488 @@ function pushChartData(val) {
     d.push(point);
     qpsChart.update('none');
   } catch (e) {}
+}
+
+// =======================================================
+// HISTORICAL STATS (90-day aggregates)
+// =======================================================
+const HISTORY_RANGES = ['24h', '7d', '30d', '90d'];
+const HISTORY_TOP_DIMENSIONS = [
+  { id: 'history-top-domains', dimension: 'domain', empty: 'No domains in this range.' },
+  { id: 'history-top-blocked', dimension: 'blocked_domain', empty: 'No blocked queries in this range.' },
+  { id: 'history-top-clients', dimension: 'client', empty: 'No client history in this range.' },
+  { id: 'history-top-upstreams', dimension: 'upstream', empty: 'No upstream history in this range.' },
+  { id: 'history-top-protocols', dimension: 'protocol', empty: 'No protocol history in this range.' },
+  { id: 'history-top-relay', dimension: 'relay_country', empty: 'No relayed queries in this range.' },
+];
+
+function historyColor(name, fallback) {
+  return 'rgb(' + cssVar(name, fallback) + ')';
+}
+
+function historyFill(name, fallback, alpha) {
+  return 'rgba(' + cssVar(name, fallback).replace(/\s+/g, ',') + ',' + alpha + ')';
+}
+
+function historyPalette() {
+  return {
+    allowed: historyColor('--c-cyan-400', '0 240 255'),
+    allowedFill: historyFill('--c-cyan-400', '0 240 255', 0.18),
+    blocked: historyColor('--c-red-400', '248 113 113'),
+    blockedFill: historyFill('--c-red-400', '248 113 113', 0.18),
+    proxied: historyColor('--c-purple-400', '192 132 252'),
+    proxiedFill: historyFill('--c-purple-400', '192 132 252', 0.18),
+    grid: cssVar('--border-color', 'rgba(255,255,255,0.05)'),
+    tick: 'rgb(' + cssVar('--c-slate-400', '100 116 139') + ')',
+  };
+}
+
+function applyHistoryChartTheme() {
+  if (!historyChart) return;
+  const p = historyPalette();
+  try {
+    const ds = historyChart.data.datasets;
+    ds[0].borderColor = p.allowed;
+    ds[0].backgroundColor = p.allowedFill;
+    ds[1].borderColor = p.blocked;
+    ds[1].backgroundColor = p.blockedFill;
+    ds[2].borderColor = p.proxied;
+    ds[2].backgroundColor = p.proxiedFill;
+    historyChart.options.scales.y.grid.color = p.grid;
+    historyChart.options.scales.y.ticks.color = p.tick;
+    historyChart.options.scales.x.ticks.color = p.tick;
+    if (historyChart.options.plugins.legend.labels) {
+      historyChart.options.plugins.legend.labels.color = p.tick;
+    }
+    historyChart.update('none');
+  } catch (e) { /* a chart that fails to re-colour is still readable */ }
+}
+
+
+function ensureHistoryChart() {
+  if (historyChart) return historyChart;
+  const canvas = document.getElementById('historyChart');
+  if (!canvas || typeof Chart === 'undefined') return null;
+  const p = historyPalette();
+  try {
+    historyChart = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Allowed',
+            data: [],
+            borderColor: p.allowed,
+            backgroundColor: p.allowedFill,
+            borderWidth: 2,
+            fill: true,
+            stack: 'traffic',
+            tension: 0.3,
+            pointRadius: 0,
+          },
+          {
+            label: 'Blocked',
+            data: [],
+            borderColor: p.blocked,
+            backgroundColor: p.blockedFill,
+            borderWidth: 2,
+            fill: true,
+            stack: 'traffic',
+            tension: 0.3,
+            pointRadius: 0,
+          },
+          {
+            label: 'Proxied',
+            data: [],
+            borderColor: p.proxied,
+            backgroundColor: p.proxiedFill,
+            borderWidth: 2,
+            fill: true,
+            stack: 'traffic',
+            tension: 0.3,
+            pointRadius: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            display: true,
+            labels: {
+              color: p.tick,
+              boxWidth: 8,
+              boxHeight: 8,
+              usePointStyle: true,
+              font: { size: 10, family: 'JetBrains Mono' },
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: {
+              color: p.tick,
+              maxTicksLimit: 8,
+              maxRotation: 0,
+              font: { size: 10, family: 'JetBrains Mono' },
+            },
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            grid: { color: p.grid },
+            ticks: {
+              color: p.tick,
+              font: { size: 10, family: 'JetBrains Mono' },
+              callback: (value) => (Number.isInteger(value) ? String(value) : Number(value).toFixed(1)),
+            },
+          },
+        },
+      },
+    });
+  } catch (e) {
+    console.warn('History chart init error:', e);
+    historyChart = null;
+  }
+  return historyChart;
+}
+
+function historyLabel(start, interval) {
+  const d = new Date(start);
+  if (interval === 'day') {
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  if (historyRange === '7d') {
+    return d.toLocaleDateString(undefined, { weekday: 'short' }) + ' ' +
+      d.toLocaleTimeString(undefined, { hour: '2-digit' });
+  }
+  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+function renderHistoryChart(series) {
+  const chart = ensureHistoryChart();
+  if (!chart) return;
+  const points = Array.isArray(series.points) ? series.points : [];
+  chart.data.labels = points.map((p) => historyLabel(p.start, series.interval));
+  chart.data.datasets[0].data = points.map((p) => Math.max(0, (p.queries || 0) - (p.blocked || 0) - (p.proxied || 0)));
+  chart.data.datasets[1].data = points.map((p) => p.blocked || 0);
+  chart.data.datasets[2].data = points.map((p) => p.proxied || 0);
+  try {
+    chart.update('none');
+    chart.resize();
+  } catch (e) {}
+}
+
+function historyNumber(value) {
+  return (typeof value === 'number' && isFinite(value)) ? value.toLocaleString() : '—';
+}
+
+function historyPercent(value) {
+  return (typeof value === 'number' && isFinite(value)) ? `${value.toFixed(1)}%` : '—';
+}
+
+function renderHistorySummary(summary) {
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  set('history-total', historyNumber(summary.queries));
+  set('history-total-sub', `${historyNumber(summary.buckets)} buckets`);
+  set('history-blocked', historyPercent(summary.blocked_pct));
+  set('history-blocked-sub', `${historyNumber(summary.blocked)} queries`);
+  set('history-proxied', historyPercent(summary.proxied_pct));
+  set('history-proxied-sub', `${historyNumber(summary.proxied)} queries`);
+  set('history-cache', historyPercent(summary.cache_hit_pct));
+  set('history-cache-sub', `${historyNumber(summary.cached)} hits`);
+  set('history-clients', historyNumber(summary.active_clients));
+  const clientsSub = document.getElementById('history-clients-sub');
+  if (clientsSub) {
+    clientsSub.textContent = summary.active_clients_approx ? 'top-N approx.' : 'HLL distinct';
+  }
+  set('history-latency', typeof summary.latency_avg_ms === 'number'
+    ? summary.latency_avg_ms.toFixed(1) : '—');
+}
+
+function renderHistoryTop(id, data, empty, dimension) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const previousList = el.querySelector('.history-top-list');
+  const scrollTop = previousList ? previousList.scrollTop : 0;
+  const items = Array.isArray(data.items) ? data.items : [];
+  if (!items.length) {
+    el.innerHTML = `<div class="history-top-list"><div class="py-2 text-slate-500">${escapeHTML(empty)}</div></div>`;
+    return;
+  }
+  const max = Math.max(...items.map((item) => item.count || 0), 1);
+  const rows = items.map((item) => {
+    const value = String(item.value || 'unknown');
+    const count = historyNumber(item.count);
+    const width = Math.max(1, Math.round(((item.count || 0) / max) * 100));
+    const relay = dimension === 'relay_country';
+    const flag = relay ? countryFlagHTML(value, 'agent-flag relay-flag') : '';
+    const label = relay ? relayCountryLabel(value) : value;
+    const valueMarkup = `${flag}<span class="truncate font-mono text-slate-300" title="${escapeHTML(label)}">${escapeHTML(label)}</span>`;
+    return `<div class="history-top-row">
+      <div class="flex items-center justify-between gap-2">
+        <span class="flex items-center gap-1.5 min-w-0">${valueMarkup}</span>
+        <span class="shrink-0 font-mono text-[10px] text-slate-400">${count}</span>
+      </div>
+      <div class="mt-0.5 h-1 rounded-full bg-slate-800 overflow-hidden"><div class="h-full bg-cyan-500/20" style="width:${width}%"></div></div>
+    </div>`;
+  }).join('');
+  const other = data.other_count
+    ? `<div class="history-top-other">Other: ${historyNumber(data.other_count)}</div>`
+    : '';
+  el.innerHTML = `<div class="history-top-list">${rows}</div>${other}`;
+  // A 30 s refresh must not yank an operator back to the top of a list they
+  // were reading; only the entry viewport scrolls.
+  const nextList = el.querySelector('.history-top-list');
+  if (nextList) nextList.scrollTop = scrollTop;
+}
+
+function relayCountryLabel(value) {
+  const code = String(value || '').toUpperCase();
+  if (code === 'LOCAL') return 'Local';
+  return countryName(code) || code || 'unknown';
+}
+
+function setHistoryError(message) {
+  const el = document.getElementById('history-error');
+  if (!el) return;
+  el.textContent = message || '';
+  el.classList.toggle('hidden', !message);
+}
+
+function setHistoryStatus(message) {
+  const el = document.getElementById('history-status');
+  if (el) el.textContent = message;
+}
+
+function setHistoryRange(range) {
+  if (!HISTORY_RANGES.includes(range)) return;
+  historyRange = range;
+  document.querySelectorAll('[data-history-range]').forEach((btn) => {
+    const active = btn.dataset.historyRange === range;
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    btn.className = active
+      ? 'px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 transition'
+      : 'px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 transition';
+  });
+  const badge = document.getElementById('history-chart-range');
+  if (badge) badge.textContent = range;
+  loadHistory(true);
+}
+
+function scheduleHistoryRefresh() {
+  if (historyTimer) {
+    clearTimeout(historyTimer);
+    historyTimer = null;
+  }
+  if (!authToken || activeDashTab !== 'dashboard' || document.visibilityState === 'hidden') return;
+  historyTimer = setTimeout(() => {
+    historyTimer = null;
+    loadHistory(true);
+  }, 60000);
+}
+
+async function historyFetch(path) {
+  const res = await fetch(api(path), {
+    headers: { 'Authorization': `Bearer ${authToken}` },
+  });
+  if (res.status === 401) {
+    showLoginModal();
+    throw new Error('Session expired');
+  }
+  if (!res.ok) {
+    const err = new Error(await errorMessage(res, 'Could not load traffic history'));
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+async function loadHistory(force = false) {
+  if (!authToken || activeDashTab !== 'dashboard' || document.visibilityState === 'hidden') return;
+  if (historyInFlight && !force) return;
+  const seq = ++historySeq;
+  historyInFlight = true;
+  const range = historyRange;
+  const interval = (range === '24h' || range === '7d') ? 'hour' : 'day';
+  const query = `range=${encodeURIComponent(range)}`;
+  setHistoryStatus('Loading history…');
+  try {
+    const requests = [
+      historyFetch(`/api/v3/stats/summary?${query}`),
+      historyFetch(`/api/v3/stats/series?${query}&interval=${interval}`),
+      ...HISTORY_TOP_DIMENSIONS.map((entry) =>
+        historyFetch(`/api/v3/stats/top?${query}&dimension=${encodeURIComponent(entry.dimension)}&limit=10`)),
+    ];
+    const [summary, series, ...tops] = await Promise.all(requests);
+    if (seq !== historySeq) return;
+    renderHistorySummary(summary);
+    renderHistoryChart(series);
+    HISTORY_TOP_DIMENSIONS.forEach((entry, i) => renderHistoryTop(entry.id, tops[i], entry.empty, entry.dimension));
+    setHistoryError('');
+    setHistoryStatus(`Updated ${new Date().toLocaleTimeString()} · ${range} aggregate`);
+    scheduleHistoryRefresh();
+  } catch (e) {
+    if (seq !== historySeq) return;
+    setHistoryError(e.status === 503
+      ? 'Historical stats are unavailable on this instance.'
+      : (e.message || 'Could not load traffic history.'));
+    setHistoryStatus('History refresh failed');
+    scheduleHistoryRefresh();
+  } finally {
+    if (seq === historySeq) historyInFlight = false;
+  }
+}
+
+async function exportHistory(format) {
+  if (!authToken) return;
+  const selected = format === 'json' ? 'json' : 'csv';
+  try {
+    const res = await fetch(api(`/api/v3/stats/export?range=${encodeURIComponent(historyRange)}&format=${selected}`), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not export history'));
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `digitdns-stats-${historyRange}.${selected}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(`History exported as ${selected.toUpperCase()}.`, 'success');
+  } catch (e) {
+    showToast(e.message || 'Could not export history.', 'error');
+  }
+}
+
+function initHistory() {
+  if (historyInitialized) return;
+  historyInitialized = true;
+  document.querySelectorAll('[data-history-range]').forEach((btn) => {
+    btn.addEventListener('click', () => setHistoryRange(btn.dataset.historyRange));
+  });
+  document.getElementById('history-export-csv')?.addEventListener('click', () => exportHistory('csv'));
+  document.getElementById('history-export-json')?.addEventListener('click', () => exportHistory('json'));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      if (historyTimer) {
+        clearTimeout(historyTimer);
+        historyTimer = null;
+      }
+      return;
+    }
+    if (activeDashTab === 'dashboard') loadHistory();
+  });
+  loadHistory();
+}
+
+let statsSettingsInitialized = false;
+
+function setStatsSettingsStatus(message) {
+  const el = document.getElementById('stats-settings-status');
+  if (el) el.textContent = message || '';
+}
+
+async function loadStatsSettings() {
+  if (!authToken) return;
+  try {
+    const res = await fetch(api('/api/stats/settings'), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not load history settings'));
+    const settings = await res.json();
+    const set = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.value = value;
+    };
+    const check = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.checked = !!value;
+    };
+    check('stats-enabled-input', settings.enabled);
+    check('stats-anonymize-input', settings.anonymize_clients);
+    set('stats-retention-input', settings.retention_days);
+    set('stats-top-domains-input', settings.top_domains);
+    set('stats-top-clients-input', settings.top_clients);
+    const excluded = Array.isArray(settings.exclude_clients) ? settings.exclude_clients.join('\n') : '';
+    set('stats-exclude-clients-input', excluded);
+    setStatsSettingsStatus('Restart required after changing these values.');
+  } catch (e) {
+    setStatsSettingsStatus(e.message || 'Could not load history settings.');
+  }
+}
+
+async function saveStatsSettings() {
+  const enabled = document.getElementById('stats-enabled-input')?.checked;
+  const anonymize = document.getElementById('stats-anonymize-input')?.checked;
+  const retention = Number(document.getElementById('stats-retention-input')?.value);
+  const topDomains = Number(document.getElementById('stats-top-domains-input')?.value);
+  const topClients = Number(document.getElementById('stats-top-clients-input')?.value);
+  const excludeClients = (document.getElementById('stats-exclude-clients-input')?.value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!Number.isInteger(retention) || retention < 7 || retention > 365) {
+    showToast('Retention must be between 7 and 365 days.', 'error');
+    return;
+  }
+  if (!Number.isInteger(topDomains) || topDomains < 100 || topDomains > 10000) {
+    showToast('Top domains must be between 100 and 10,000.', 'error');
+    return;
+  }
+  if (!Number.isInteger(topClients) || topClients < 50 || topClients > 5000) {
+    showToast('Top clients must be between 50 and 5,000.', 'error');
+    return;
+  }
+  if (excludeClients.length > 500) {
+    showToast('Excluded clients cannot contain more than 500 entries.', 'error');
+    return;
+  }
+  const btn = document.getElementById('save-stats-settings-btn');
+  if (btn) btn.disabled = true;
+  setStatsSettingsStatus('Saving…');
+  try {
+    const res = await fetch(api('/api/stats/settings'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        enabled,
+        retention_days: retention,
+        top_domains: topDomains,
+        top_clients: topClients,
+        anonymize_clients: anonymize,
+        exclude_clients: excludeClients,
+      }),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not save history settings'));
+    setStatsSettingsStatus('Saved. Restart the daemon to apply.');
+    showToast('History settings saved. Restart required.', 'success');
+  } catch (e) {
+    setStatsSettingsStatus(e.message || 'Could not save history settings.');
+    showToast(e.message || 'Could not save history settings.', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function initStatsSettings() {
+  if (statsSettingsInitialized) return;
+  statsSettingsInitialized = true;
+  document.getElementById('save-stats-settings-btn')?.addEventListener('click', saveStatsSettings);
+  loadStatsSettings();
 }
 
 // =======================================================
@@ -6214,6 +6740,13 @@ function switchTab(target, updateUrl = true) {
     }
     if (target === 'agents') {
       loadAgents();
+    }
+    if (target === 'dashboard') {
+      loadHistory();
+      requestAnimationFrame(() => { if (historyChart) historyChart.resize(); });
+    } else if (historyTimer) {
+      clearTimeout(historyTimer);
+      historyTimer = null;
     }
   }
 

@@ -3,10 +3,16 @@ package com.digitrob.digitdns.ui.components
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Podcasts
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -32,4 +38,13 @@ val DashboardCard.icon: ImageVector
         DashboardCard.TELEMETRY_CHART -> Icons.AutoMirrored.Filled.ShowChart
         DashboardCard.UPSTREAM_RACERS -> Icons.Filled.Podcasts
         DashboardCard.RESOLVER_LATENCY -> Icons.Filled.Timeline
+        DashboardCard.HISTORY_RANGE -> Icons.Filled.DateRange
+        DashboardCard.HISTORY_SUMMARY -> Icons.Filled.BarChart
+        DashboardCard.HISTORY_CHART -> Icons.AutoMirrored.Filled.ShowChart
+        DashboardCard.HISTORY_TOP_DOMAINS -> Icons.Filled.Public
+        DashboardCard.HISTORY_TOP_BLOCKED -> Icons.Filled.Block
+        DashboardCard.HISTORY_TOP_CLIENTS -> Icons.Filled.People
+        DashboardCard.HISTORY_TOP_UPSTREAMS -> Icons.Filled.Podcasts
+        DashboardCard.HISTORY_TOP_PROTOCOLS -> Icons.Filled.Share
+        DashboardCard.HISTORY_TOP_RELAY -> Icons.Filled.Dns
     }

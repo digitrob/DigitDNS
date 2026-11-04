@@ -215,18 +215,29 @@ private fun DashboardCardRow(
     }
 }
 
+private val dashboardCardLabels = mapOf(
+    DashboardCard.QUERY_RATE to R.string.card_query_rate,
+    DashboardCard.RAM_CACHE to R.string.card_ram_cache,
+    DashboardCard.SNI_PROXY to R.string.card_sni_proxy,
+    DashboardCard.CPU_USAGE to R.string.card_cpu_usage,
+    DashboardCard.RAM_USAGE to R.string.card_ram_usage,
+    DashboardCard.LIVE_TRAFFIC to R.string.card_live_traffic,
+    DashboardCard.TELEMETRY_CHART to R.string.card_telemetry_chart,
+    DashboardCard.UPSTREAM_RACERS to R.string.card_upstream_racers,
+    DashboardCard.RESOLVER_LATENCY to R.string.card_resolver_latency,
+    DashboardCard.HISTORY_RANGE to R.string.card_history_range,
+    DashboardCard.HISTORY_SUMMARY to R.string.card_history_summary,
+    DashboardCard.HISTORY_CHART to R.string.card_history_chart,
+    DashboardCard.HISTORY_TOP_DOMAINS to R.string.history_top_domains,
+    DashboardCard.HISTORY_TOP_BLOCKED to R.string.history_top_blocked,
+    DashboardCard.HISTORY_TOP_CLIENTS to R.string.history_top_clients,
+    DashboardCard.HISTORY_TOP_UPSTREAMS to R.string.history_top_upstreams,
+    DashboardCard.HISTORY_TOP_PROTOCOLS to R.string.history_top_protocols,
+    DashboardCard.HISTORY_TOP_RELAY to R.string.history_top_relay,
+)
+
 @StringRes
-private fun DashboardCard.labelRes(): Int = when (this) {
-    DashboardCard.QUERY_RATE -> R.string.card_query_rate
-    DashboardCard.RAM_CACHE -> R.string.card_ram_cache
-    DashboardCard.SNI_PROXY -> R.string.card_sni_proxy
-    DashboardCard.CPU_USAGE -> R.string.card_cpu_usage
-    DashboardCard.RAM_USAGE -> R.string.card_ram_usage
-    DashboardCard.LIVE_TRAFFIC -> R.string.card_live_traffic
-    DashboardCard.TELEMETRY_CHART -> R.string.card_telemetry_chart
-    DashboardCard.UPSTREAM_RACERS -> R.string.card_upstream_racers
-    DashboardCard.RESOLVER_LATENCY -> R.string.card_resolver_latency
-}
+private fun DashboardCard.labelRes(): Int = dashboardCardLabels.getValue(this)
 
 @StringRes
 private fun ThemeMode.labelRes(): Int = when (this) {

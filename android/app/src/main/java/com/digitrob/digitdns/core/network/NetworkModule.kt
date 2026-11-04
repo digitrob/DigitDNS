@@ -137,6 +137,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideHistoryApi(retrofit: Retrofit): HistoryApi = retrofit.create(HistoryApi::class.java)
+
+    @Provides
+    @Singleton
     fun provideConfigApi(retrofit: Retrofit): ConfigApi = retrofit.create(ConfigApi::class.java)
 
     @Provides

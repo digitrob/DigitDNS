@@ -758,9 +758,19 @@ func TestV3_OpenAPIServed(t *testing.T) {
 		t.Errorf("openapi spec missing version key")
 	}
 	paths, _ := spec["paths"].(map[string]any)
-	for _, want := range []string{"/api/v3/auth/login", "/api/v3/clients", "/api/v3/settings", "/api/v3/tls/issue"} {
+	for _, want := range []string{
+		"/api/v3/auth/login", "/api/v3/clients", "/api/v3/settings", "/api/v3/tls/issue",
+		"/api/v3/stats/summary", "/api/v3/stats/series", "/api/v3/stats/top", "/api/v3/stats/export",
+		"/api/v3/stats/settings",
+	} {
 		if _, ok := paths[want]; !ok {
 			t.Errorf("openapi spec missing path %s", want)
+		}
+	}
+	schemas, _ := spec["components"].(map[string]any)["schemas"].(map[string]any)
+	for _, want := range []string{"StatsSummary", "StatsSeries", "StatsTop", "StatsExport", "StatsSettings"} {
+		if _, ok := schemas[want]; !ok {
+			t.Errorf("openapi spec missing schema %s", want)
 		}
 	}
 }

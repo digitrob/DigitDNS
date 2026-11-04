@@ -79,3 +79,34 @@ test('the main defaults preserve the chart / latency / racer arrangement', () =>
   assert.deepEqual(layout.grids.main.cards.latency, { x: 0, y: 10, w: 8, h: 7 });
   assert.deepEqual(layout.grids.main.cards.upstream, { x: 8, y: 0, w: 4, h: 17 });
 });
+
+test('history cards get an aligned KPI row, a wide chart and ranked tables', () => {
+  const run = fixture();
+  const history = [
+    'history-total', 'history-blocked', 'history-proxied',
+    'history-cache', 'history-clients', 'history-latency',
+    'history-chart', 'history-top-domains', 'history-top-blocked',
+    'history-top-clients', 'history-top-upstreams', 'history-top-protocols',
+    'history-top-relay',
+  ];
+  const layout = JSON.parse(JSON.stringify(run(
+    `dashNormalizeLayout({}, { metrics: [], main: [], history: ${JSON.stringify(history)} })`,
+  )));
+  assert.deepEqual(layout.grids.history.cards['history-total'], { x: 0, y: 0, w: 2, h: 4 });
+  assert.deepEqual(layout.grids.history.cards['history-latency'], { x: 10, y: 0, w: 2, h: 4 });
+  assert.deepEqual(layout.grids.history.cards['history-chart'], { x: 0, y: 4, w: 12, h: 10 });
+  assert.deepEqual(layout.grids.history.cards['history-top-domains'], { x: 0, y: 14, w: 4, h: 6 });
+  assert.deepEqual(layout.grids.history.cards['history-top-relay'], { x: 8, y: 20, w: 4, h: 6 });
+});
+
+test('history chart and tables keep their minimum sizes', () => {
+  const run = fixture();
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(run(`dashClampCard({ x: 0, y: 0, w: 1, h: 1 }, 'history-chart')`))),
+    { x: 0, y: 0, w: 6, h: 6 },
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(run(`dashClampCard({ w: 1, h: 1 }, 'history-top-clients')`))),
+    { x: 0, y: 0, w: 3, h: 6 },
+  );
+});

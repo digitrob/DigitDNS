@@ -6,6 +6,97 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v4.1.0] — Traffic History
+
+The first minor release after 4.0 adds an optional 90-day aggregate history,
+with dashboard cards on web and Android, privacy controls and a v3 API. DNS
+resolution, relay forwarding, certificates and subscriber accounting keep their
+existing behaviour.
+
+### ✨ Added
+
+- **Aggregate history store.** A separate `stats.db` keeps hourly and daily
+  counters and bounded top-N tables — never the raw query log. Buckets cover
+  queries, blocked/proxied/cached/failed totals, action, protocol, upstream,
+  qtype, rcode, relay country, latency and six ranked dimensions.
+- **Retention and rollups.** Hourly buckets are kept for 7 days and rolled into
+  daily buckets; daily history defaults to 90 days and is pruned automatically.
+- **Bounded cardinality.** Top-N defaults are 1,000 domains and 500 clients per
+  bucket, with overflow counted as `other` rather than growing without limit.
+- **HyperLogLog distinct clients.** Every bucket stores 256 registers, merged
+  across buckets, so “active clients” is not clipped by the top-N table.
+  Pre-HLL ranges report `top-N approx.` instead of pretending precision.
+- **Client privacy controls.** Optional HMAC-SHA256 client identifiers, keyed by
+  a per-store salt, plus a per-client opt-out for up to 500 IPs or account
+  names. An excluded client still contributes to totals but no identifier is
+  retained. Existing aggregates are never rewritten.
+- **Traffic History dashboard.** Six KPI cards, a stacked Allowed / Blocked /
+  Proxied chart, and ranked top domains, blocked domains, clients, upstreams,
+  protocols and relay countries. Ranges: 24h, 7d, 30d, 90d.
+- **Layout-editor integration.** History cards drag, resize, hide, reorder and
+  persist with the live dashboard. On Android they participate in the existing
+  card order/visibility editor.
+- **CSV and JSON export.** Download the selected range as a CSV time series or a
+  full JSON document from the web dashboard.
+- **v3 history API.** `GET /api/v3/stats/{summary,series,top,export}` plus
+  `GET/POST /api/v3/stats/settings`, all documented in OpenAPI and reachable
+  with either a dashboard session or the master API key.
+- **Android 4.1.0 companion.** Range selector, summary, chart, ranked tables,
+  relay flags, client names and a **Settings → Traffic History** screen for
+  retention, top-N, anonymization and client opt-out.
+- **Client names in ranked rows.** The top-client dimension resolves a stored IP
+  to the matching client record’s current name at response time; unknown or
+  deleted clients keep the IP. JSON export gets the same treatment.
+- **Relay flags.** Relay-country rows show the bundled flag and localized
+  country name on web and Android.
+
+### 🔄 Changed
+
+- **Ranked history cards use their space.** Web cards pin the header and
+  `Other N` footer, scroll only the entry list, and grow the list viewport when
+  the card is resized taller. Default card height shows five entries.
+- **Web row treatment matches upstream resolvers.** History rows use the same
+  inset `slate-950/70` tile and `slate-800` border, so lists read as one panel.
+- **Android card geometry.** Ranked tables are full-width except Protocols and
+  Relay countries, which share one half-width row. Top domains, blocked domains
+  and upstreams show five rows; clients, protocols and relay countries show
+  three. Only the entry list scrolls; every card has a fixed height and tighter
+  bottom padding.
+- **Settings and API docs** now describe the aggregate policy, retention,
+  privacy limits and the new v3 routes.
+
+### 🛡 Security and privacy
+
+- `stats.db` is created beside `data.db` with mode `0600` and contains only
+  aggregates.
+- No raw query, client query or replayable log is written to disk.
+- Client anonymization uses a per-store salt kept inside `stats.db`; it protects
+  casual disclosure, not an attacker who already has the database.
+- Per-client opt-out matches both source address and account name, so either
+  identifier suppresses the client key.
+
+### 🧪 Tests
+
+- Aggregate store, rollups, pruning, HLL merge/estimate, anonymization, opt-out,
+  flush-race, query API, v3 handlers, export and OpenAPI coverage.
+- Web history markup, refresh/range/export, layout integration, escaping and
+  fixed-card list behaviour.
+- Android DTO/API mapping, client-name fallback, history state and layout
+  defaults, plus full unit, detekt and lint runs.
+
+### ⬆️ Upgrading
+
+- **Docker:** pull `ghcr.io/digitrob/digitdns:4.1.0` and recreate the container.
+  Keep `/app/data` and `/app/certs`. `stats.db` is created automatically on
+  first start and begins collecting from that moment.
+- **Binary/installer:** replace the binary or rerun the installer, then restart.
+  Existing `data.db`, `master.key` and configuration are untouched.
+- **Android:** install `android-v4.1.0` APKs from the v4.1.0 release page.
+- **History settings:** retention, top-N, anonymization and opt-out are
+  restart-scoped; saving tells you a restart is required.
+
+---
+
 ## 🏷️ [v4.0.3] — A sharper panel
 
 A dashboard-only patch. No DNS resolution, relay, API, database or configuration

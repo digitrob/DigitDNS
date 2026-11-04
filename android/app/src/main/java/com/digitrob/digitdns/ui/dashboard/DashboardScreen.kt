@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package com.digitrob.digitdns.ui.dashboard
 
 import android.os.Build
@@ -25,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
@@ -79,6 +82,8 @@ import com.digitrob.digitdns.core.network.LiveStats
 import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.data.DashboardCard
+import com.digitrob.digitdns.domain.model.HistoryRange
+import com.digitrob.digitdns.domain.model.TopDimension
 import com.digitrob.digitdns.ui.components.CountryFlag
 import com.digitrob.digitdns.ui.components.MetricCard
 import com.digitrob.digitdns.ui.components.MetricValue
@@ -190,6 +195,7 @@ fun DashboardScreen(
                     onAddUpstream = viewModel::addUpstream,
                     onRemoveUpstream = viewModel::removeUpstream,
                     onResolutionChange = viewModel::saveResolution,
+                    onHistoryRange = viewModel::setHistoryRange,
                 )
             }
         }
@@ -386,6 +392,7 @@ private fun DashboardGrid(
     onAddUpstream: suspend (String) -> String?,
     onRemoveUpstream: suspend (String) -> String?,
     onResolutionChange: (ResolutionSettings) -> Unit,
+    onHistoryRange: (HistoryRange) -> Unit,
 ) {
     // The grid state is hoisted for one reason: the racer card's swipe-to-delete has
     // to know a scroll is in flight, or a diagonal scroll can settle as a swipe and pop
@@ -400,39 +407,110 @@ private fun DashboardGrid(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         state.layout.visible.forEach { card ->
-            when (card) {
-                DashboardCard.QUERY_RATE -> item { QueryRateCard(state.stats) }
-                DashboardCard.RAM_CACHE -> item { RamCacheCard(state.stats) }
-                DashboardCard.SNI_PROXY -> item { SniProxyCard(state.stats) }
-                DashboardCard.CPU_USAGE -> item { CpuUsageCard(state.stats) }
-                DashboardCard.RAM_USAGE -> item { RamUsageCard(state.stats) }
-                DashboardCard.LIVE_TRAFFIC -> item { LiveTrafficCard(state.stats) }
-                DashboardCard.TELEMETRY_CHART -> item(span = { GridItemSpan(maxLineSpan) }) {
-                    TelemetryChartCard(state.qpsHistory, state.stats)
-                }
-                DashboardCard.UPSTREAM_RACERS -> item(span = { GridItemSpan(maxLineSpan) }) {
-                    UpstreamRacersCard(
-                        upstreams = state.upstreams,
-                        isBenchmarking = state.isBenchmarking,
-                        onBenchmark = onBenchmark,
-                        onAdd = onAddUpstream,
-                        onRemove = onRemoveUpstream,
-                        swipeEnabled = !gridState.isScrollInProgress,
-                        resolutionControls = ResolutionControls(
-                            settings = state.resolution,
-                            onChange = onResolutionChange,
-                        ),
-                    )
-                }
-                DashboardCard.RESOLVER_LATENCY -> item(span = { GridItemSpan(maxLineSpan) }) {
-                    ResolverLatencyCard(state.latency)
-                }
+            if (card.name.startsWith("HISTORY_")) {
+                historyCard(card, state, onHistoryRange)
+            } else {
+                liveCard(
+                    card = card,
+                    state = state,
+                    swipeEnabled = !gridState.isScrollInProgress,
+                    onBenchmark = onBenchmark,
+                    onAddUpstream = onAddUpstream,
+                    onRemoveUpstream = onRemoveUpstream,
+                    onResolutionChange = onResolutionChange,
+                )
             }
         }
 
         item(span = { GridItemSpan(maxLineSpan) }) {
             UptimeFooter(state.stats)
         }
+    }
+}
+
+/** The original live tiles, one branch per card. */
+private fun LazyGridScope.liveCard(
+    card: DashboardCard,
+    state: DashboardUiState,
+    swipeEnabled: Boolean,
+    onBenchmark: () -> Unit,
+    onAddUpstream: suspend (String) -> String?,
+    onRemoveUpstream: suspend (String) -> String?,
+    onResolutionChange: (ResolutionSettings) -> Unit,
+) {
+    when (card) {
+        DashboardCard.QUERY_RATE -> item { QueryRateCard(state.stats) }
+        DashboardCard.RAM_CACHE -> item { RamCacheCard(state.stats) }
+        DashboardCard.SNI_PROXY -> item { SniProxyCard(state.stats) }
+        DashboardCard.CPU_USAGE -> item { CpuUsageCard(state.stats) }
+        DashboardCard.RAM_USAGE -> item { RamUsageCard(state.stats) }
+        DashboardCard.LIVE_TRAFFIC -> item { LiveTrafficCard(state.stats) }
+        DashboardCard.TELEMETRY_CHART -> item(span = { GridItemSpan(maxLineSpan) }) {
+            TelemetryChartCard(state.qpsHistory, state.stats)
+        }
+        DashboardCard.UPSTREAM_RACERS -> item(span = { GridItemSpan(maxLineSpan) }) {
+            UpstreamRacersCard(
+                upstreams = state.upstreams,
+                isBenchmarking = state.isBenchmarking,
+                onBenchmark = onBenchmark,
+                onAdd = onAddUpstream,
+                onRemove = onRemoveUpstream,
+                swipeEnabled = swipeEnabled,
+                resolutionControls = ResolutionControls(
+                    settings = state.resolution,
+                    onChange = onResolutionChange,
+                ),
+            )
+        }
+        DashboardCard.RESOLVER_LATENCY -> item(span = { GridItemSpan(maxLineSpan) }) {
+            ResolverLatencyCard(state.latency)
+        }
+        else -> Unit
+    }
+}
+
+/** The aggregate-history cards; they share the same layout order as the live tiles. */
+private fun LazyGridScope.historyCard(
+    card: DashboardCard,
+    state: DashboardUiState,
+    onHistoryRange: (HistoryRange) -> Unit,
+) {
+    when (card) {
+        DashboardCard.HISTORY_RANGE -> item(span = { GridItemSpan(maxLineSpan) }) {
+            HistoryRangeCard(
+                range = state.history.range,
+                updatedAtEpochMs = state.history.updatedAtEpochMs,
+                isLoading = state.history.isLoading,
+                unavailable = state.history.unavailable,
+                error = state.history.error,
+                onRangeChange = onHistoryRange,
+            )
+        }
+        DashboardCard.HISTORY_SUMMARY -> item(span = { GridItemSpan(maxLineSpan) }) {
+            HistorySummaryCard(state.history.summary, state.history.unavailable)
+        }
+        DashboardCard.HISTORY_CHART -> item(span = { GridItemSpan(maxLineSpan) }) {
+            HistoryChartCard(state.history.series, state.history.unavailable)
+        }
+        DashboardCard.HISTORY_TOP_DOMAINS -> item(span = { GridItemSpan(maxLineSpan) }) {
+            HistoryTopCard(TopDimension.DOMAIN, state.history.tops[TopDimension.DOMAIN], state.history.unavailable)
+        }
+        DashboardCard.HISTORY_TOP_BLOCKED -> item(span = { GridItemSpan(maxLineSpan) }) {
+            HistoryTopCard(TopDimension.BLOCKED_DOMAIN, state.history.tops[TopDimension.BLOCKED_DOMAIN], state.history.unavailable)
+        }
+        DashboardCard.HISTORY_TOP_CLIENTS -> item(span = { GridItemSpan(maxLineSpan) }) {
+            HistoryTopCard(TopDimension.CLIENT, state.history.tops[TopDimension.CLIENT], state.history.unavailable)
+        }
+        DashboardCard.HISTORY_TOP_UPSTREAMS -> item(span = { GridItemSpan(maxLineSpan) }) {
+            HistoryTopCard(TopDimension.UPSTREAM, state.history.tops[TopDimension.UPSTREAM], state.history.unavailable)
+        }
+        DashboardCard.HISTORY_TOP_PROTOCOLS -> item {
+            HistoryTopCard(TopDimension.PROTOCOL, state.history.tops[TopDimension.PROTOCOL], state.history.unavailable)
+        }
+        DashboardCard.HISTORY_TOP_RELAY -> item {
+            HistoryTopCard(TopDimension.RELAY_COUNTRY, state.history.tops[TopDimension.RELAY_COUNTRY], state.history.unavailable)
+        }
+        else -> Unit
     }
 }
 

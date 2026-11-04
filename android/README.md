@@ -26,6 +26,7 @@ lint green.
 | 5 | SSE local notifications, `android-v*` signed APK release | ✅ |
 | Rework | 5-tab shell, multi-server, shared live stream, Live Query Log, theme | ✅ |
 | Parity | Dashboard card grid + per-upstream stats, Domains list, session auto-refresh, Connect Guide | ✅ |
+| History | 90-day aggregate cards (summary, chart, top-N), server policy screen, HLL client count, per-client opt-out | ✅ |
 | UX pass | Swipe-to-delete, scope-aware route menu, bulk import, dropdown filters, Updates folded into About | ✅ |
 | UX pass 2 | Status-filtered Domains, pill-triggered menus, drag-reorder cards/upstreams, Diagnostics inline latency | ✅ |
 | UX pass 3 | Toggleable Domains chips (+ Direct), swipe Undo, pinned header/badge, compact Subscription/REST API, sort direction glyph | ✅ |
@@ -146,6 +147,20 @@ app/src/main/java/com/digitrob/digitdns/
   ui/theme/                 Colour/Type/Theme ported from web/css/style.css
   ui/<screen>/              one package per panel tab
 ```
+
+### Traffic History
+
+The dashboard also renders the server's 90-day aggregate store as cards: a range
+selector, a summary grid, a stacked allowed/blocked/proxied chart, and six ranked
+tables. They are ordinary `DashboardCard` entries, so the same drag-reorder and
+hide/show editor in **Settings → App** arranges them. History refreshes on entry,
+on pull-to-refresh, on a range change and every ~30 s; it never rides the 3 s live
+telemetry poll. `Settings → Traffic History` edits the server-wide policy (enabled,
+retention, top-N, anonymization and excluded clients) through
+`GET/POST /api/v3/stats/settings` and reports that a daemon restart is required.
+The distinct-client number is the server's HyperLogLog estimate; the card says
+`HLL distinct`, or `top-N approx.` when a range includes pre-HLL buckets. No raw
+query log ever reaches the phone.
 
 ### Multiple servers
 

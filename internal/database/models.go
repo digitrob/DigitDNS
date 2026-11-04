@@ -89,6 +89,11 @@ type QueryLogItem struct {
 	Action      string    `json:"action"`       // "PROXY", "DIRECT", "BLOCK"
 	LatencyMs   float64   `json:"latency_ms"`
 	Cached      bool      `json:"cached"`
+	// QType and Rcode are the DNS question type and response code. They are
+	// omitted when zero so existing live-log consumers keep their shape; the
+	// aggregate stats reader treats zero as UNKNOWN/NOERROR.
+	QType uint16 `json:"qtype,omitempty"`
+	Rcode int    `json:"rcode,omitempty"`
 	// Upstream is the resolver that produced the answer: empty for a blocked,
 	// proxied or locally-answered name, "cache" for a RAM hit, and the racer's
 	// winning address otherwise. Omitted from JSON when empty so existing

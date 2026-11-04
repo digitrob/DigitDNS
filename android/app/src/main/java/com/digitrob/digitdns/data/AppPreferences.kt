@@ -34,6 +34,15 @@ enum class DashboardCard {
     LIVE_TRAFFIC,
     TELEMETRY_CHART,
     RESOLVER_LATENCY,
+    HISTORY_RANGE,
+    HISTORY_SUMMARY,
+    HISTORY_CHART,
+    HISTORY_TOP_DOMAINS,
+    HISTORY_TOP_BLOCKED,
+    HISTORY_TOP_CLIENTS,
+    HISTORY_TOP_UPSTREAMS,
+    HISTORY_TOP_PROTOCOLS,
+    HISTORY_TOP_RELAY,
     ;
 
     /** Whether the card is shown by default on a fresh install. */

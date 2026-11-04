@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Layers
@@ -62,6 +63,7 @@ import com.digitrob.digitdns.ui.rules.UpstreamsScreen
  */
 private enum class SettingsSection(@StringRes val labelRes: Int, val icon: ImageVector) {
     App(R.string.settings_app, Icons.Filled.Tune),
+    History(R.string.settings_history, Icons.Filled.BarChart),
     Servers(R.string.settings_servers, Icons.Filled.Dns),
     RelayAgents(R.string.settings_relay_agents, Icons.Filled.Speed),
     ConnectGuide(R.string.settings_connect_guide, Icons.Filled.Wifi),
@@ -135,6 +137,7 @@ private fun SettingsSectionContent(
 ) {
     when (section) {
         SettingsSection.App -> AppSettingsScreen()
+        SettingsSection.History -> HistorySettingsScreen()
         SettingsSection.Servers -> ServersScreen(
             onLoggedOut = onLoggedOut,
             onAddServer = onAddServer,

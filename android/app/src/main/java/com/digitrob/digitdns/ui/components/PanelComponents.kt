@@ -61,10 +61,12 @@ import com.digitrob.digitdns.ui.theme.PanelMono
  * keep the glass treatment.
  */
 @Composable
+@Suppress("LongParameterList")
 fun PanelCard(
     modifier: Modifier = Modifier,
     contentPadding: Dp = 16.dp,
     verticalPadding: Dp = contentPadding,
+    bottomPadding: Dp = verticalPadding,
     highlighted: Boolean = false,
     contentAlignment: Alignment = Alignment.TopStart,
     solid: Boolean = false,
@@ -77,7 +79,7 @@ fun PanelCard(
             .clip(RoundedCornerShape(12.dp))
             .background(if (solid) MaterialTheme.colorScheme.surface else colors.bgCard)
             .border(1.dp, border, RoundedCornerShape(12.dp))
-            .padding(horizontal = contentPadding, vertical = verticalPadding),
+            .padding(start = contentPadding, end = contentPadding, top = verticalPadding, bottom = bottomPadding),
         contentAlignment = contentAlignment,
     ) {
         content()
