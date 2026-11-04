@@ -174,13 +174,13 @@ Web ad blocking — active lists pinned first, 45 presets, policy and allowlist:
 Android — range chips and updated clock in the top header:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.0/docs/screenshots/v5-android-dashboard.png" alt="DigitDNS Android dashboard header" width="320">
+  <img src="https://github.com/digitrob/DigitDNS/releases/download/v5.0.0/v5-android-dashboard.png" alt="DigitDNS Android dashboard header" width="320">
 </p>
 
 Android — compact three-column summary and the 1h chart with a numeric axis:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.0/docs/screenshots/v5-android-history.png" alt="DigitDNS Android history summary and chart" width="320">
+  <img src="https://github.com/digitrob/DigitDNS/releases/download/v5.0.0/v5-android-history.png" alt="DigitDNS Android history summary and chart" width="320">
 </p>
 
 Android — ad blocking with active lists first:
