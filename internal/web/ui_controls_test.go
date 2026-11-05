@@ -104,3 +104,32 @@ func TestFiltersPageHasAdBlockingCard(t *testing.T) {
 		}
 	}
 }
+
+// The agent creation box must let the operator copy the entire docker run
+// command; the button belongs beside the command, not off in the key row.
+func TestAgentDockerCommandHasCopyButton(t *testing.T) {
+	doc := readAsset(t, "index.html")
+	command := strings.Index(doc, `id="agent-token-command"`)
+	button := strings.Index(doc, `id="copy-agent-command-btn"`)
+	if command < 0 || button < 0 {
+		t.Fatalf("agent command copy control is missing: command=%d button=%d", command, button)
+	}
+	if button < command {
+		t.Error("the command copy button is before the command it copies")
+	}
+	if !strings.Contains(doc[button:button+260], `aria-label="Copy Docker run command"`) {
+		t.Error("the command copy button has no accessible label")
+	}
+	for _, platform := range []string{"auto", "amd64", "arm64"} {
+		if !strings.Contains(doc, `data-agent-platform="`+platform+`"`) {
+			t.Errorf("index.html is missing the %s agent platform button", platform)
+		}
+	}
+	app := readAsset(t, "js/app.js")
+	if !strings.Contains(app, `getElementById('copy-agent-command-btn')`) {
+		t.Error("app.js does not wire the agent command copy button")
+	}
+	if !strings.Contains(app, `--pull always`) || !strings.Contains(app, `--platform linux/`) {
+		t.Error("the generated agent command must always pull and expose the platform selector")
+	}
+}

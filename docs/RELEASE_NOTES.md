@@ -1,57 +1,52 @@
-# DigitDNS v5.0.2 — Allowed-only Top domains and polish fixes
+# DigitDNS v5.0.3 — Multi-arch agent setup, made copyable
 
-A small, compatibility-safe patch over **5.0.1**. No database migration and no
-configuration changes; upgrade in place.
+A small patch over **5.0.2**. No database migration, no configuration changes.
 
-## 📊 Top domains vs Top blocked
+## 🛰️ Relay-agent image
 
-- **Blocked names no longer appear in Top domains.** They are counted only in
-  **Top blocked**.
-- The correction runs at read time, so existing 24h/7d/30d/90d buckets are fixed
-  immediately — no need to delete `stats.db` or wait for old data to age out.
-- `Other` is clamped so the subtraction cannot underflow.
-- The ranked entries are exact. Both underlying tables are bounded top-N, so the
-  evicted tail is approximate; this is documented in the API notes.
+- Confirmed the published `ghcr.io/digitrob/digitdns-agent` image is
+  multi-arch: **linux/amd64** and **linux/arm64**.
+- Added a Docker CI gate that inspects the pushed agent image index and fails
+  unless both platforms are present.
+- No Dockerfile change was needed; the image already cross-compiles via
+  `TARGETOS/TARGETARCH`.
 
-## 📱 Android
+## 📋 Agent creation box
 
-- **Bulk import for DNS Rewrites** now reads and parses files off the UI thread,
-  with localized “Reading…”, “Importing…” and file-error messages.
-- The bulk-import summary is localized and shows added/updated/unchanged/invalid
-  counts.
-- The compact pause/resume switch exposes one accessible switch control instead
-  of a wrapper plus an inner switch.
-- **Queries by Relay** wraps to two lines on 320dp phones instead of truncating;
-  its row height matches the adjacent Protocols card.
-- Locale-safe uppercase handling for card headings, protocol names, summary
-  labels and action filters (Turkish `i` no longer becomes `İ`).
-- Search normalization in Clients, Live Log and Ad Blocking uses `Locale.ROOT`.
+- Added an **Auto / amd64 / arm64** selector for the generated `docker run`
+  command.
+  - **Auto** lets Docker choose the host architecture.
+  - **amd64** adds `--platform linux/amd64`.
+  - **arm64** adds `--platform linux/arm64` for Raspberry Pi and ARM VPS hosts.
+- Generated commands now include **`--pull always`**, so a cached amd64
+  `latest` cannot be reused on an ARM host.
+- Added a **copy icon** beside the Docker command; it copies exactly the
+  generated command including the selected platform.
+- The agent-key copy button now uses the shared clipboard helper with its
+  fallback path.
+- Added a hint: Auto follows the host; choose arm64 on ARM.
 
-## 🪵 Live Log
+## 🧪 Tests
 
-- **Rewrite** queries now appear under the **Direct** filter, matching their
-  local-override behaviour.
-- The Rewrite badge, query count placement and card titles keep their 5.0.1
-  appearance.
-
-## 🧹 Cleanup
-
-- Removed a real-looking test host and subscription token from the Android test
-  fixture.
-- Added an aggregate regression test for the blocked-domain tail clamp.
-- Release workflow now sets a descriptive release title automatically.
-- README screenshots refreshed for the current dashboard, Queries by Relay and
-  DNS Rewrites UI.
+- Web UI regression test covers the copy-command button, platform selector and
+  the `--pull always` / `--platform linux/` command contract.
+- Docker workflow YAML validation; web Node tests and Go web tests pass.
 
 ## ⬆️ Upgrade
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.0.2
-docker pull ghcr.io/digitrob/digitdns-agent:5.0.2
+docker pull ghcr.io/digitrob/digitdns:5.0.3
+docker pull ghcr.io/digitrob/digitdns-agent:5.0.3
 ```
 
-Recreate the container as usual. Android APKs are attached as
-`android-v5.0.2` (arm64-v8a, armeabi-v7a, x86_64 and universal).
+For an ARM agent host:
+
+```bash
+docker pull --platform linux/arm64 ghcr.io/digitrob/digitdns-agent:5.0.3
+```
+
+Android APKs are attached as `android-v5.0.3` (arm64-v8a, armeabi-v7a, x86_64
+and universal).
 
 ## 📦 Assets
 
@@ -61,5 +56,4 @@ Recreate the container as usual. Android APKs are attached as
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-Screenshots: [README gallery](https://github.com/digitrob/DigitDNS#screenshots).
-Full changes: [docs/CHANGELOG.md](https://github.com/digitrob/DigitDNS/blob/v5.0.2/docs/CHANGELOG.md).
+Full changes: [docs/CHANGELOG.md](https://github.com/digitrob/DigitDNS/blob/v5.0.3/docs/CHANGELOG.md).

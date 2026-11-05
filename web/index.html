@@ -1785,7 +1785,21 @@
                 <i data-feather="copy" class="w-3.5 h-3.5"></i>
               </button>
             </div>
-            <pre id="agent-token-command" class="agent-command"></pre>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <div id="agent-platform" class="agent-platform-group" role="group" aria-label="Agent CPU architecture">
+                <button type="button" data-agent-platform="auto" aria-pressed="true" class="agent-platform-btn is-active">Auto</button>
+                <button type="button" data-agent-platform="amd64" aria-pressed="false" class="agent-platform-btn">amd64</button>
+                <button type="button" data-agent-platform="arm64" aria-pressed="false" class="agent-platform-btn">arm64</button>
+              </div>
+              <span class="text-[10px] text-slate-500">Auto follows the host; pick arm64 for Raspberry Pi / ARM VPS.</span>
+            </div>
+            <div class="agent-command-row">
+              <pre id="agent-token-command" class="agent-command"></pre>
+              <button id="copy-agent-command-btn" type="button" class="agent-icon-btn shrink-0"
+                title="Copy Docker run command" aria-label="Copy Docker run command">
+                <i data-feather="copy" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
             <p class="text-[10px] text-slate-500">No agent domain or certificate is needed for the relay itself. The agent's own admin page is optional and local to the box.</p>
           </div>
 

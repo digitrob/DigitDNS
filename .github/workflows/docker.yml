@@ -179,6 +179,16 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
+      - name: Verify the agent image is amd64 + arm64
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          image="ghcr.io/${OWNER,,}/digitdns-agent@${DIGEST}"
+          docker buildx imagetools inspect "$image" | tee /tmp/agent-index.txt
+          grep -q 'linux/amd64' /tmp/agent-index.txt
+          grep -q 'linux/arm64' /tmp/agent-index.txt
+
       - name: Sign the image
         env:
           DIGEST: ${{ steps.build.outputs.digest }}

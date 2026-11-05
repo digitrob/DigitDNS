@@ -7250,18 +7250,42 @@ async function saveAgentForm() {
   }
 }
 
-function showAgentKey(key, name) {
+let agentPlatformChoice = 'auto';
+
+function renderAgentCommand() {
+  const key = document.getElementById('agent-token-value')?.textContent || '';
   const hub = window.location.origin + ADMIN_BASE;
+  const platform = agentPlatformChoice === 'auto' ? '' : `  --platform linux/${agentPlatformChoice}`;
+  const command = document.getElementById('agent-token-command');
+  if (!command) return;
+  const continuation = ' ' + String.fromCharCode(92) + '\n';
+  command.textContent = [
+    'docker run -d --name digitdns-agent --pull always',
+    platform,
+    '  --network host --restart unless-stopped',
+    '  -v /opt/digitdns-agent:/data',
+    '  ghcr.io/digitrob/digitdns-agent:latest',
+    "  -hub '" + hub + "'",
+    "  -key '" + key + "'",
+    '  -listen :80,:443',
+    '  -state /data/agent-state.json',
+  ].filter(Boolean).join(continuation);
+}
+
+function setAgentPlatform(platform) {
+  agentPlatformChoice = ['amd64', 'arm64'].includes(platform) ? platform : 'auto';
+  document.querySelectorAll('[data-agent-platform]').forEach((btn) => {
+    const active = btn.dataset.agentPlatform === agentPlatformChoice;
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    btn.classList.toggle('is-active', active);
+  });
+  renderAgentCommand();
+}
+
+function showAgentKey(key, name) {
   const label = name ? ` for ${name}` : '';
   document.getElementById('agent-token-value').textContent = key;
-  document.getElementById('agent-token-command').textContent =
-    'docker run -d --name digitdns-agent --network host --restart unless-stopped \\\n' +
-    '  -v /opt/digitdns-agent:/data \\\n' +
-    '  ghcr.io/digitrob/digitdns-agent:latest \\\n' +
-    "  -hub '" + hub + "' \\\n" +
-    "  -key '" + key + "' \\\n" +
-    '  -listen :80,:443 \\\n' +
-    '  -state /data/agent-state.json';
+  setAgentPlatform('auto');
   document.getElementById('agent-token-box').classList.remove('hidden');
   const box = document.getElementById('agent-token-box');
   const title = box && box.querySelector('p');
@@ -7390,8 +7414,14 @@ function initAgentPage() {
   document.getElementById('agent-country')?.addEventListener('change', updateAgentCountryFlag);
   document.getElementById('copy-agent-token-btn')?.addEventListener('click', () => {
     const value = document.getElementById('agent-token-value')?.textContent || '';
-    navigator.clipboard?.writeText(value);
-    showToast('Key copied.', 'success');
+    copyClipboard(value, 'Key copied.');
+  });
+  document.getElementById('copy-agent-command-btn')?.addEventListener('click', () => {
+    const value = document.getElementById('agent-token-command')?.textContent || '';
+    copyClipboard(value, 'Docker run command copied.');
+  });
+  document.querySelectorAll('[data-agent-platform]').forEach((btn) => {
+    btn.addEventListener('click', () => setAgentPlatform(btn.dataset.agentPlatform));
   });
   document.getElementById('agents-list')?.addEventListener('click', (e) => {
     const refresh = e.target.closest('[data-agent-refresh]');

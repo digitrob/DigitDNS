@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.0.3] — Multi-arch agent setup, made copyable
+
+### ✨ Added
+
+- **Agent architecture selector.** The agent creation box offers Auto, amd64 and
+  arm64. The generated `docker run` adds `--platform linux/amd64` or
+  `--platform linux/arm64` when a specific architecture is selected.
+- **`--pull always`** in the generated agent command, so a cached amd64
+  `latest` cannot be reused on an ARM host.
+- **Copy button for the Docker run command**, matching the existing copy-key
+  control.
+- **Docker CI manifest gate** asserting that the published agent index contains
+  both `linux/amd64` and `linux/arm64`.
+
+### 🔄 Changed
+
+- Agent-key copying now uses the shared clipboard helper and its fallback.
+- Android companion version bumped to 5.0.3 (no functional Android changes).
+
+### 🧪 Tests
+
+- Web regression test for the platform selector, copy button and
+  `--pull always`/`--platform` command contract.
+- Web Node tests, Go web tests and Docker workflow validation.
+
+---
+
 ## 🏷️ [v5.0.2] — Allowed-only Top domains and polish fixes
 
 ### 🛠 Fixed
