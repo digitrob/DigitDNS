@@ -284,6 +284,51 @@
     'Segoe UI Mono', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 }
 
+/* Grey theme. Same roles as dark, but the slate ramp is neutral zinc rather than
+ * the blue-tinted default. Only the properties the dark block hardcodes need a
+ * value here; everything else references --c-slate-* and follows automatically. */
+[data-theme="grey"] {
+  --c-slate-950: 9 9 11;
+  --c-slate-900: 24 24 27;
+  --c-slate-800: 39 39 42;
+  --c-slate-700: 63 63 70;
+  --c-slate-600: 82 82 91;
+  /* 500 is the 9-12px metadata tier and must clear 4.5:1 on --c-slate-800.
+     Tailwind's zinc-500 does not, so this is one step lighter. */
+  --c-slate-500: 145 145 154;
+  --c-slate-400: 161 161 170;
+  --c-slate-300: 212 212 216;
+  --c-slate-200: 228 228 231;
+  --c-slate-100: 244 244 245;
+  --c-slate-50: 250 250 250;
+
+  /* Graphite is monochrome: the accent ramp is neutral, so text-cyan-*,
+     bg-cyan-*, border-cyan-* and the chart line all resolve to slate. */
+  --c-cyan-500: 113 113 122;
+  --c-cyan-400: 161 161 170;
+  --c-cyan-300: 212 212 216;
+  --c-cyan-200: 228 228 231;
+  --c-cyan-950: 39 39 42;
+  --accent-cyan: rgb(var(--c-slate-200));
+
+  --bg-card: rgba(39, 39, 42, 0.78);
+  --bg-card-hover: rgba(45, 45, 48, 0.92);
+  --border-color: rgba(161, 161, 170, 0.18);
+  --border-glow: rgba(255, 255, 255, 0.22);
+  --page-glow-cyan: rgba(255, 255, 255, 0.04);
+  --page-glow-purple: rgba(255, 255, 255, 0.03);
+  --page-glow-green: rgba(255, 255, 255, 0.02);
+  --page-wash-from: rgba(24, 24, 27, 0.6);
+  --page-wash-to: rgba(24, 24, 27, 0.95);
+  --card-shadow: 0 10px 35px 0 rgba(0, 0, 0, 0.55);
+  --card-shadow-hover: 0 12px 40px 0 rgba(0, 0, 0, 0.5);
+  --knob-bg: #d4d4d8;
+  --code-bg: #0f0f10;
+  --code-bg-hover: #171719;
+  --scroll-thumb: rgba(161, 161, 170, 0.3);
+  --scroll-track: rgba(24, 24, 27, 0.8);
+}
+
 /* Light theme. Same roles, inverted ramp — see the note above the dark block.
  *
  * The page is not pure white. #f7f9fc keeps a hint of the slate identity, and it stops
@@ -1923,6 +1968,85 @@ input:checked + .slider:before {
   background: rgb(var(--c-slate-800) / 0.95);
 }
 
+/* Grey theme buttons. The cyan fill is the one accent that reads as a different
+   theme inside the neutral panel, so primary and soft actions become slate
+   controls here. Cyan stays on icons, links and the chart, where it is an accent
+   rather than a large surface. */
+[data-theme="grey"] .panel-btn-primary {
+  background: rgb(var(--c-slate-200));
+  color: rgb(var(--c-slate-950));
+}
+
+[data-theme="grey"] .panel-btn-primary:hover:not(:disabled) {
+  background: rgb(var(--c-slate-100));
+}
+
+[data-theme="grey"] .panel-btn-soft {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: rgb(var(--c-slate-200));
+}
+
+[data-theme="grey"] .panel-btn-soft:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="grey"] .panel-btn-ghost {
+  color: rgb(var(--c-slate-200));
+}
+
+[data-theme="grey"] .panel-btn-ghost:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Tailwind-composed primary buttons: gradients and solid cyan fills in the
+   markup, which carry no semantic class. */
+[data-theme="grey"] button[class*="from-cyan-500"],
+[data-theme="grey"] button[class*="from-cyan-600"],
+[data-theme="grey"] a[class*="from-cyan-500"],
+[data-theme="grey"] a[class*="from-cyan-600"] {
+  background-image: none;
+  background-color: rgb(var(--c-slate-200));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  color: rgb(var(--c-slate-950));
+}
+
+[data-theme="grey"] button[class*="from-cyan-500"]:hover,
+[data-theme="grey"] button[class*="from-cyan-600"]:hover,
+[data-theme="grey"] a[class*="from-cyan-500"]:hover,
+[data-theme="grey"] a[class*="from-cyan-600"]:hover {
+  background-color: rgb(var(--c-slate-100));
+}
+
+[data-theme="grey"] button[class~="bg-cyan-500"],
+[data-theme="grey"] button[class~="bg-cyan-600"],
+[data-theme="grey"] a[class~="bg-cyan-500"],
+[data-theme="grey"] a[class~="bg-cyan-600"] {
+  background-color: rgb(var(--c-slate-200));
+  color: rgb(var(--c-slate-950));
+}
+
+[data-theme="grey"] button[class~="bg-cyan-500"]:hover,
+[data-theme="grey"] button[class~="bg-cyan-600"]:hover,
+[data-theme="grey"] a[class~="bg-cyan-500"]:hover,
+[data-theme="grey"] a[class~="bg-cyan-600"]:hover {
+  background-color: rgb(var(--c-slate-100));
+}
+
+/* Soft cyan pills and icon buttons: keep the shape, drop the hue. */
+[data-theme="grey"] button[class*="bg-cyan-500/"],
+[data-theme="grey"] a[class*="bg-cyan-500/"] {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: rgb(var(--c-slate-200));
+}
+
+[data-theme="grey"] button[class*="bg-cyan-500/"]:hover,
+[data-theme="grey"] a[class*="bg-cyan-500/"]:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
 /* Layout hook only: the resolution grid sizes the select, the surface comes
    from .panel-field-sm. min-width:0 is what lets the text column shrink
    instead of forcing the grid wider than its card. */
@@ -3297,4 +3421,173 @@ input:checked + .slider:before {
     width: 100%;
     justify-content: flex-start;
   }
+}
+
+/* Grey theme: the neutral chrome has no cyan edges. Cyan stays on icons,
+   links and the chart line; it does not paint the active navigation item or
+   the card borders, top-edge glow and hover shadow. */
+[data-theme="grey"] .sidebar-nav-item.active {
+  color: rgb(var(--c-slate-200)) !important;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.02)) !important;
+  border-inline-start-color: rgb(var(--c-slate-400)) !important;
+  box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="grey"] .sidebar-nav-item.active svg,
+[data-theme="grey"] .sidebar-nav-item.active i {
+  color: rgb(var(--c-slate-200));
+  filter: none;
+}
+
+[data-theme="grey"] .mobile-nav-item.active {
+  color: rgb(var(--c-slate-200));
+}
+
+[data-theme="grey"] .mobile-nav-item.active svg,
+[data-theme="grey"] .mobile-nav-item.active i {
+  filter: none;
+}
+
+[data-theme="grey"] .glass-panel::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.10), transparent);
+}
+
+[data-theme="grey"] .glass-panel:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* Tailwind-composed cyan borders and glows are mostly icon tiles, active
+   pills and card edges. Neutralise them as surfaces; semantic red, amber,
+   green and purple states are untouched. */
+[data-theme="grey"] [class*="border-cyan-"] {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+[data-theme="grey"] [class*="shadow-cyan-"] {
+  box-shadow: none;
+}
+
+/* The sidebar/app mark is a bitmap, so it cannot inherit the neutral accent.
+   Desaturate it in Graphite and lift it slightly against the dark surface. */
+[data-theme="grey"] img[src*="digitdns-app-icon"] {
+  filter: grayscale(1) brightness(1.15);
+}
+
+/* Selected controls. With the accent neutral, selection has to be carried by
+   a strong fill and, for rows, a border - not by hue alone. */
+[data-theme="grey"] [data-history-range][aria-pressed="true"],
+[data-theme="grey"] .domain-filter-chip.is-active,
+[data-theme="grey"] .panel-chip.is-active,
+[data-theme="grey"] .api-bind-opt.is-active,
+[data-theme="grey"] .api-snippet-tab.is-active,
+[data-theme="grey"] .stream-action-scope.is-active,
+[data-theme="grey"] .agent-platform-btn.is-active {
+  background: rgb(var(--c-slate-200));
+  border-color: rgb(var(--c-slate-200));
+  color: rgb(var(--c-slate-950));
+}
+
+[data-theme="grey"] [data-history-range][aria-pressed="true"]:hover,
+[data-theme="grey"] .domain-filter-chip.is-active:hover,
+[data-theme="grey"] .panel-chip.is-active:hover,
+[data-theme="grey"] .api-bind-opt.is-active:hover,
+[data-theme="grey"] .api-snippet-tab.is-active:hover,
+[data-theme="grey"] .stream-action-scope.is-active:hover,
+[data-theme="grey"] .agent-platform-btn.is-active:hover {
+  background: rgb(var(--c-slate-100));
+  border-color: rgb(var(--c-slate-100));
+}
+
+/* A selected service row is a surface, not a button; keep it quieter than the
+   chips so the list stays readable. */
+[data-theme="grey"] .service-row.is-active {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 2px 0 0 rgb(var(--c-slate-400));
+}
+
+[data-theme="grey"] .service-row.is-active .service-mark,
+[data-theme="grey"] .service-row.is-active .service-name,
+[data-theme="grey"] .service-row.is-active .service-count {
+  color: rgb(var(--c-slate-200));
+}
+
+[data-theme="grey"] .badge-proxy {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: none;
+  color: rgb(var(--c-slate-200));
+}
+
+/* Form values are content, not links. */
+[data-theme="grey"] input[class*="text-cyan-"],
+[data-theme="grey"] select[class*="text-cyan-"],
+[data-theme="grey"] textarea[class*="text-cyan-"] {
+  color: rgb(var(--c-slate-100));
+}
+
+/* WCAG 1.4.11: control boundaries need 3:1 against the field surface. */
+[data-theme="grey"] input[class*="bg-slate-950"],
+[data-theme="grey"] select[class*="bg-slate-950"],
+[data-theme="grey"] textarea[class*="bg-slate-950"],
+[data-theme="grey"] .panel-field {
+  border-color: rgb(var(--c-slate-500));
+}
+
+[data-theme="grey"] input[type="checkbox"],
+[data-theme="grey"] input[type="radio"] {
+  accent-color: rgb(var(--c-slate-500));
+}
+
+[data-theme="grey"] ::selection {
+  background: rgb(var(--c-slate-200));
+  color: rgb(var(--c-slate-950));
+}
+
+[data-theme="grey"] .skip-link {
+  border-color: rgb(var(--c-slate-200));
+}
+
+/* Links lose their colour cue when the accent is neutral; the underline is the
+   non-colour affordance WCAG 1.4.1 asks for. Buttons keep their shape. */
+[data-theme="grey"] a[class*="text-cyan-"] {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Decorative blue and purple are category colour, not status. In Graphite they
+   become neutral; green, amber and red keep their semantic meaning. */
+[data-theme="grey"] button[class*="bg-sky-600"],
+[data-theme="grey"] button[class*="bg-fuchsia-600"] {
+  background-color: rgb(var(--c-slate-200));
+  color: rgb(var(--c-slate-950));
+}
+
+[data-theme="grey"] button[class*="bg-sky-600"]:hover,
+[data-theme="grey"] button[class*="bg-fuchsia-600"]:hover {
+  background-color: rgb(var(--c-slate-100));
+}
+
+[data-theme="grey"] [class*="bg-sky-"],
+[data-theme="grey"] [class*="bg-fuchsia-"],
+[data-theme="grey"] [class*="bg-purple-"] {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="grey"] [class*="text-sky-"],
+[data-theme="grey"] [class*="text-fuchsia-"],
+[data-theme="grey"] [class*="text-purple-"] {
+  color: rgb(var(--c-slate-300));
+}
+
+[data-theme="grey"] [class*="border-sky-"],
+[data-theme="grey"] [class*="border-fuchsia-"],
+[data-theme="grey"] [class*="border-purple-"] {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* The theme cycle's hover is a neutral highlight in Graphite; the amber hover
+   belongs to the original dark theme. */
+[data-theme="grey"] [data-theme-toggle]:hover {
+  color: rgb(var(--c-slate-200));
 }

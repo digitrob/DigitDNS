@@ -125,4 +125,38 @@ internal object PanelColors {
     val AccentPurpleLight = Color(0xFF621F98)
     val AccentRedLight = Color(0xFF8C1C1C)
     val AccentAmberLight = Color(0xFF92400E)
+
+    // --- Grey theme (web/css/style.css [data-theme="grey"]) ---
+
+    val Slate950Grey = Color(0xFF09090B)
+    val Slate900Grey = Color(0xFF18181B)
+    val Slate800Grey = Color(0xFF27272A)
+    val Slate700Grey = Color(0xFF3F3F46)
+    val Slate600Grey = Color(0xFF52525B)
+    val Slate500Grey = Color(0xFF91919A)
+    val Slate400Grey = Color(0xFFA1A1AA)
+    val Slate300Grey = Color(0xFFD4D4D8)
+    val Slate200Grey = Color(0xFFE4E4E7)
+    val Slate100Grey = Color(0xFFF4F4F5)
+    val Slate50Grey = Color(0xFFFAFAFA)
+
+    // The cyan ramp becomes neutral, matching the web theme. 500 is the control
+    // fill (switches/checkboxes); 400 is the former info accent.
+    val Cyan500Grey = Color(0xFF71717A)
+    val Cyan400Grey = Color(0xFFA1A1AA)
+    val Cyan300Grey = Color(0xFFD4D4D8)
+    val Cyan200Grey = Color(0xFFE4E4E7)
+    val Cyan950Grey = Color(0xFF27272A)
+
+    val BgCardGrey = Color(0xC727272A) // rgba(39, 39, 42, 0.78)
+    val BgCardHoverGrey = Color(0xEB2D2D30) // rgba(45, 45, 48, 0.92)
+    val BgTileGrey = Color(0xB309090B) // slate-950/70
+    val BorderColorGrey = Color(0x2EA1A1AA) // rgba(161, 161, 170, 0.18)
+    val BorderGlowGrey = Color(0x38FFFFFF) // rgba(255, 255, 255, 0.22)
+    val AccentGreenGrey = Color(0xFF10B981)
+    // DoH still needs a distinct protocol colour. Lavender reads well on graphite
+    // without bringing cyan back.
+    val AccentPurpleGrey = Color(0xFFC4B5FD)
+    val AccentRedGrey = Color(0xFFFF4655)
+    val AccentAmberGrey = Color(0xFFF59E0B)
 }

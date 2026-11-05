@@ -85,16 +85,49 @@ private val LightScheme = lightColorScheme(
     inverseOnSurface = P.Slate900Light,
 )
 
+/** Graphite: neutral surfaces, light-grey primary actions, semantic green/amber/red. */
+private val GreyScheme = darkColorScheme(
+    primary = P.Slate200Grey,
+    onPrimary = P.Slate950Grey,
+    primaryContainer = P.Slate800Grey,
+    onPrimaryContainer = P.Slate100Grey,
+    secondary = P.Slate400Grey,
+    onSecondary = P.Slate950Grey,
+    secondaryContainer = P.Slate700Grey,
+    onSecondaryContainer = P.Slate100Grey,
+    tertiary = P.AccentGreenGrey,
+    onTertiary = P.Slate950Grey,
+    error = P.Red500Dark,
+    onError = P.Slate950Grey,
+    errorContainer = P.Red900Dark,
+    onErrorContainer = P.Red300Dark,
+    background = P.Slate900Grey,
+    onBackground = P.Slate50Grey,
+    surface = P.Slate800Grey,
+    onSurface = P.Slate50Grey,
+    surfaceVariant = P.Slate700Grey,
+    onSurfaceVariant = P.Slate400Grey,
+    outline = P.Slate500Grey,
+    outlineVariant = P.Slate700Grey,
+    inverseSurface = P.Slate100Grey,
+    inverseOnSurface = P.Slate900Grey,
+)
+
 /** Whether the app is currently rendering the light scheme. */
 val LocalIsLightTheme = staticCompositionLocalOf { false }
 
 @Composable
 fun DigitDnsTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    greyTheme: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val scheme = if (darkTheme) DarkScheme else LightScheme
-    val extended = digitDnsExtendedColors(darkTheme)
+    val scheme = when {
+        greyTheme -> GreyScheme
+        darkTheme -> DarkScheme
+        else -> LightScheme
+    }
+    val extended = digitDnsExtendedColors(darkTheme, greyTheme)
 
     CompositionLocalProvider(
         LocalExtendedColors provides extended,

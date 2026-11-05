@@ -89,10 +89,13 @@ class MainActivity : ComponentActivity() {
             )
             val darkTheme = when (themeMode) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
-                ThemeMode.DARK -> true
+                ThemeMode.DARK, ThemeMode.GREY -> true
                 ThemeMode.LIGHT -> false
             }
-            DigitDnsTheme(darkTheme = darkTheme) {
+            DigitDnsTheme(
+                darkTheme = darkTheme,
+                greyTheme = themeMode == ThemeMode.GREY,
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,

@@ -12,6 +12,7 @@ import com.digitrob.digitdns.data.LoginResult
 import com.digitrob.digitdns.data.SubscriberRepository
 import com.digitrob.digitdns.data.SubscriberResult
 import com.digitrob.digitdns.data.SubscriberSession
+import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.domain.model.SubscriberLink
 import com.digitrob.digitdns.domain.model.Connection
 import com.digitrob.digitdns.domain.model.CredentialMode
@@ -34,6 +35,7 @@ enum class LoginRole { ADMIN, SUBSCRIBER }
 /** Everything the login screen renders. */
 data class LoginUiState(
     val role: LoginRole = LoginRole.ADMIN,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val host: String = "",
     val port: String = "443",
     val adminPath: String = "",
@@ -114,6 +116,14 @@ class LoginViewModel @Inject constructor(
     private val _state = MutableStateFlow(LoginUiState())
     val state: StateFlow<LoginUiState> = _state.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            appPreferences.themeMode.collect { mode ->
+                _state.update { it.copy(themeMode = mode) }
+            }
+        }
+    }
+
     /** Set while a subscriber link is waiting for its certificate to be trusted. */
     private var trustSubscriberHost: String? = null
 
@@ -162,6 +172,11 @@ class LoginViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /** Persist the quick-cycle choice; MainActivity observes the same flow. */
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { appPreferences.setThemeMode(mode) }
     }
 
     fun onHostChange(value: String) = _state.update { it.copy(host = value.trim(), error = null) }

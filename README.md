@@ -41,12 +41,19 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
-## What's new in 5.0
+## What's new in 5.1
 
-The 5.0.1–5.0.4 patch line adds DNS Rewrites bulk import, the Queries by Relay
-card, unified uppercase card headings, allowed-only Top domains, live-log/locale
-fixes, a multi-arch agent setup selector with copyable Docker command, and real
-arm64 hub/agent images. See the latest release notes for details.
+**Graphite** is a neutral third theme for the web panel and the Android app,
+alongside the existing Dark and Light modes. One theme button cycles
+Dark → Grey → Light, the choice is stored, and the selected theme carries
+through login and restarts. The release also removes the cyan highlights from
+buttons, chips, selected states and card edges, and replaces the launcher icon
+with a grey mark.
+
+The 5.0.1–5.0.4 patch line remains included: DNS Rewrites bulk import, Queries
+by Relay, unified uppercase card headings, allowed-only Top domains, live-log
+and locale fixes, the multi-arch agent setup selector, and real arm64 hub/agent
+images. See the latest release notes for details.
 
 ### 🛡️ Ad blocking engine
 
@@ -164,8 +171,22 @@ enabled lists pinned under **ACTIVE** at the top.
 | :---: | :---: | :---: |
 | <img src="docs/screenshots/v5-android-dashboard.png" alt="DigitDNS Android dashboard with range chips and updated clock" width="240"> | <img src="docs/screenshots/v5-android-history.png" alt="DigitDNS Android history summary and five-minute chart" width="240"> | <img src="docs/screenshots/v5-android-adblocking.png" alt="DigitDNS Android ad blocking with active blocklists" width="240"> |
 
-> Screenshots use a test server. The public address and one client name are
-> pixelated.
+### Graphite theme
+
+The neutral third theme, shared by the web panel and the Android app. One
+three-state button cycles **Dark → Grey → Light** and stores the choice, so the
+theme chosen on the login screen survives sign-in and app restarts.
+
+<p align="center">
+  <img src="docs/screenshots/v51-web-graphite.jpg" alt="DigitDNS web dashboard in the Graphite theme" width="100%">
+</p>
+
+| Android login | Android dashboard | Android theme settings |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/v51-android-graphite-login.png" alt="DigitDNS Android login in the Graphite theme with the theme switch" width="240"> | <img src="docs/screenshots/v51-android-graphite-dashboard.png" alt="DigitDNS Android dashboard in the Graphite theme" width="240"> | <img src="docs/screenshots/v51-android-graphite-settings.png" alt="DigitDNS Android theme settings with Follow system, Dark, Grey and Light" width="240"> |
+
+> Screenshots use a test server. The public address is replaced with a
+> documentation address or pixelated; no client names are shown.
 
 ---
 
@@ -207,7 +228,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.4/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.1.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -266,7 +287,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.4/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.1.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -342,7 +363,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.0.4` | Real arm64 hub/agent images and arm64 execution CI gate |
+| `5.1.0` | Graphite theme for web and Android, neutral controls, grey app icon |
+| `5.0.4` | Real arm64 hub/agent images and arm64 execution CI gate (older) |
 | `5.0.3` | Multi-arch agent selector, copyable Docker command, arm64 CI gate (older) |
 | `5.0.2` | Allowed-only Top domains, locale-safe UI, Rewrite filter and import polish (older) |
 | `5.0.1` | Dashboard polish, DNS Rewrites, relay labels, unified cards (older) |
@@ -370,7 +392,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.0.4/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.1.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -723,7 +745,7 @@ keeps upstream connections alive between queries to cut handshake latency.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.0.4`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.1.0`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

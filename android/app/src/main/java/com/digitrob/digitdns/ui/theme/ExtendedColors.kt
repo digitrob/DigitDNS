@@ -34,8 +34,24 @@ data class ExtendedColors(
     val discord: Color,
 )
 
-internal fun digitDnsExtendedColors(dark: Boolean): ExtendedColors = if (dark) {
-    ExtendedColors(
+internal fun digitDnsExtendedColors(dark: Boolean, grey: Boolean = false): ExtendedColors = when {
+    grey -> ExtendedColors(
+        bgMain = PanelColors.Slate900Grey,
+        bgCard = PanelColors.BgCardGrey,
+        bgCardHover = PanelColors.BgCardHoverGrey,
+        bgTile = PanelColors.BgTileGrey,
+        borderColor = PanelColors.BorderColorGrey,
+        borderGlow = PanelColors.BorderGlowGrey,
+        textMain = PanelColors.Slate50Grey,
+        textMuted = PanelColors.Slate400Grey,
+        success = PanelColors.AccentGreenGrey,
+        warning = PanelColors.AccentAmberGrey,
+        danger = PanelColors.AccentRedGrey,
+        info = PanelColors.Cyan400Grey,
+        purple = PanelColors.AccentPurpleGrey,
+        discord = PanelColors.AccentDiscord,
+    )
+    dark -> ExtendedColors(
         bgMain = PanelColors.Slate900Dark,
         bgCard = PanelColors.BgCardDark,
         bgCardHover = PanelColors.BgCardHoverDark,
@@ -51,8 +67,7 @@ internal fun digitDnsExtendedColors(dark: Boolean): ExtendedColors = if (dark) {
         purple = PanelColors.AccentPurpleDark,
         discord = PanelColors.AccentDiscord,
     )
-} else {
-    ExtendedColors(
+    else -> ExtendedColors(
         bgMain = PanelColors.Slate900Light,
         bgCard = PanelColors.BgCardLight,
         bgCardHover = PanelColors.BgCardHoverLight,

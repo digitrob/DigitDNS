@@ -239,7 +239,9 @@
     <string name="card_drag_reorder">Drag to reorder %1$s</string>
     <string name="theme_system">Follow system</string>
     <string name="theme_dark">Dark</string>
+    <string name="theme_grey">Grey</string>
     <string name="theme_light">Light</string>
+    <string name="theme_switch">Theme: %1$s — switch to %2$s</string>
     <string name="domains_count">%1$d domains</string>
     <string name="domains_select_all">Select all domains</string>
     <string name="domains_select_all_short">All</string>
@@ -287,7 +289,7 @@
     <string name="transport_encrypted">Encrypted Only (DoT · DoH · DoQ)</string>
     <string name="transport_regular">Regular DNS (UDP · TCP)</string>
     <string name="settings_theme">Theme</string>
-    <string name="settings_theme_help">Follow system matches the rest of the phone. Dark and Light pin the app regardless of the OS setting.</string>
+    <string name="settings_theme_help">Follow system matches the rest of the phone. Dark, Grey and Light pin the app regardless of the OS setting.</string>
     <string name="settings_dashboard_cards">Dashboard cards</string>
     <string name="settings_dashboard_cards_help">Choose which cards the dashboard shows, and their order. Long-press a handle to drag a card.</string>
     <string name="settings_reset_layout">Reset layout</string>
@@ -351,6 +353,7 @@
     <string name="subscriber_appearance">Appearance</string>
     <string name="subscriber_theme_system">System</string>
     <string name="subscriber_theme_dark">Dark</string>
+    <string name="subscriber_theme_grey">Grey</string>
     <string name="subscriber_theme_light">Light</string>
     <string name="subscriber_account_card">Account</string>
     <string name="subscriber_account_body">Signing out keeps the link saved on this device. Forgetting removes the link, the secret and this server\'s certificate pin.</string>

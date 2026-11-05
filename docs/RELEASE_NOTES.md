@@ -1,88 +1,64 @@
-# DigitDNS v5.0.4 — Real arm64 hub and agent images
+# DigitDNS v5.1.0 — Graphite theme for web and Android
 
-**Important patch.** The arm64 image labels in **5.0.3 and earlier** contained
-x86-64 binaries. On an ARM host that produced:
+**A theme release.** 5.1.0 adds **Graphite**, a neutral third theme for the web
+panel and the Android app, alongside Dark and Light. One button cycles
+**Dark → Grey → Light**; the choice is stored locally, survives reloads, and
+carries through the login screen, sign-in and app restarts.
 
-```text
-exec /usr/local/bin/digitdns-agent: exec format error
-```
+This is a drop-in upgrade. There are no schema, API or configuration changes.
 
-5.0.4 rebuilds both `digitdns` and `digitdns-agent` correctly for
-`linux/amd64` and `linux/arm64`.
+## Web panel
 
-## Root cause
+- **Graphite theme** in the sidebar theme button. The icon shows the current
+  theme: moon, half-filled circle or sun.
+- **Neutral selected states** for filter chips, range controls, API tabs,
+  service rows, live-log scopes and the agent architecture selector.
+- **No cyan on large surfaces.** Primary buttons use a light-grey fill with
+  dark text; soft and ghost buttons are neutral; card top edges, hover borders
+  and shadows are grey.
+- **Cyan remains only as a small accent** on icons, links, the chart line and
+  focus rings.
+- **Login screen and standalone login** follow Grey and Light consistently,
+  including field borders, placeholders and focus rings.
+- **Accessibility fixes**: stronger field boundaries, neutral selection, and
+  underlines on links that no longer rely on a colour cue.
 
-Both Dockerfiles used:
+## Android companion
 
-```dockerfile
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
-```
+- **Grey theme** in **Settings → Theme**, next to Follow system, Dark and Light.
+  The four chips wrap on narrow screens.
+- **Theme button on the login screen** cycles Dark → Grey → Light. The choice is
+  persisted through `AppPreferences`, so it survives sign-in, process death and
+  relaunch.
+- **Grey launcher icon** and a matching grey in-app shield mark.
+- **No cyan highlights** in buttons, chips, switches, checkboxes, selected role
+  segments, card borders or progress indicators.
+- Semantic green, amber and red stay; DoH uses a soft lavender accent so
+  protocol chips remain distinguishable.
 
-The explicit `amd64` default overrode BuildKit's per-platform `TARGETARCH`, so
-even the arm64 manifest layer was compiled for amd64. The final Alpine stage was
-arm64, but the copied Go binary was not.
+## Screenshots
 
-### Fix
+The README screenshots section now includes the Graphite web dashboard and the
+Android login, dashboard and theme settings. Public addresses are replaced with
+documentation addresses or pixelated; no client names are shown.
 
-- Builder stage now runs on `$BUILDPLATFORM`.
-- `TARGETOS`/`TARGETARCH` are redeclared without defaults.
-- The Go build uses the BuildKit values, with host fallbacks for plain builds.
-
-## CI now executes arm64 images
-
-The Docker workflow no longer trusts manifest labels alone. After publishing it
-runs both images under QEMU:
-
-```bash
-docker run --rm --platform linux/arm64 --entrypoint /app/digitdns <image> -version
-docker run --rm --platform linux/arm64 --entrypoint /usr/local/bin/digitdns-agent <image> -version
-```
-
-A wrong-architecture binary fails the image build instead of reaching a release.
-
-## Upgrading an ARM agent
-
-Remove the old cached image and container, then pull the fixed tag:
-
-```bash
-docker rm -f digitdns-agent 2>/dev/null || true
-docker image rm ghcr.io/digitrob/digitdns-agent:latest 2>/dev/null || true
-
-docker pull --platform linux/arm64 ghcr.io/digitrob/digitdns-agent:5.0.4
-docker run -d --name digitdns-agent \
-  --platform linux/arm64 \
-  --pull always \
-  --network host --restart unless-stopped \
-  -v /opt/digitdns-agent:/data \
-  ghcr.io/digitrob/digitdns-agent:5.0.4 \
-  -hub 'https://<your-panel>/<admin-path>' \
-  -key '<agent-key>' \
-  -listen :80,:443 \
-  -state /data/agent-state.json
-```
-
-Verify:
+## Upgrade
 
 ```bash
-docker exec digitdns-agent /usr/local/bin/digitdns-agent -version
-docker image inspect ghcr.io/digitrob/digitdns-agent:5.0.4 \
-  --format '{{.Os}}/{{.Architecture}}'
+docker pull ghcr.io/digitrob/digitdns:latest
+docker pull ghcr.io/digitrob/digitdns-agent:latest
 ```
 
-The hub image is fixed the same way.
-
-## ⬆️ General upgrade
+If you pin a version:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.0.4
-docker pull ghcr.io/digitrob/digitdns-agent:5.0.4
+docker pull ghcr.io/digitrob/digitdns:5.1.0
+docker pull ghcr.io/digitrob/digitdns-agent:5.1.0
 ```
 
-Android APKs are attached as `android-v5.0.4` (arm64-v8a, armeabi-v7a, x86_64
-and universal).
+The in-panel self-updater and the one-line installer use the same release.
 
-## 📦 Assets
+## Assets
 
 - `digitdns-linux-amd64`, `digitdns-linux-arm64`
 - `digitdns-agent-linux-amd64`, `digitdns-agent-linux-arm64`
@@ -90,4 +66,6 @@ and universal).
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-Full changes: [docs/CHANGELOG.md](https://github.com/digitrob/DigitDNS/blob/v5.0.4/docs/CHANGELOG.md).
+Android APKs are attached to this release from the `android-v5.1.0` tag.
+
+Full changes: [docs/CHANGELOG.md](https://github.com/digitrob/DigitDNS/blob/v5.1.0/docs/CHANGELOG.md).

@@ -4,6 +4,8 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,10 +51,11 @@ import com.digitrob.digitdns.ui.components.PanelCard
  * App-level settings: the theme choice, the dashboard card layout, and a pointer to the
  * per-server actions.
  *
- * The theme is a three-way choice (System / Dark / Light) rather than a switch: the
- * panel is dark by default, but a phone user expects the app to follow the system
+ * The theme is a four-way choice (System / Dark / Grey / Light) rather than a switch:
+ * the panel is dark by default, but a phone user expects the app to follow the system
  * until told otherwise, and a plain on/off switch cannot express "follow the system".
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppSettingsScreen(viewModel: AppSettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -67,7 +70,10 @@ fun AppSettingsScreen(viewModel: AppSettingsViewModel = hiltViewModel()) {
         PanelCard(modifier = Modifier.fillMaxWidth()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.settings_theme), style = MaterialTheme.typography.titleMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     ThemeMode.entries.forEach { mode ->
                         FilterChip(
                             selected = state.themeMode == mode,
@@ -242,5 +248,6 @@ private fun DashboardCard.labelRes(): Int = dashboardCardLabels.getValue(this)
 private fun ThemeMode.labelRes(): Int = when (this) {
     ThemeMode.SYSTEM -> R.string.theme_system
     ThemeMode.DARK -> R.string.theme_dark
+    ThemeMode.GREY -> R.string.theme_grey
     ThemeMode.LIGHT -> R.string.theme_light
 }

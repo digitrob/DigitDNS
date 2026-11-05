@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -147,10 +149,14 @@ private fun SubscriptionCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AppearanceCard(state: SubscriberUiState, viewModel: SubscriberViewModel) {
     SubscriberCard(verticalPadding = 10.dp, title = stringResource(R.string.subscriber_appearance), icon = Icons.Filled.Palette) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             ThemeMode.entries.forEach { mode ->
                 FilterChip(
                     selected = state.themeMode == mode,
@@ -160,6 +166,7 @@ private fun AppearanceCard(state: SubscriberUiState, viewModel: SubscriberViewMo
                             when (mode) {
                                 ThemeMode.SYSTEM -> stringResource(R.string.subscriber_theme_system)
                                 ThemeMode.DARK -> stringResource(R.string.subscriber_theme_dark)
+                                ThemeMode.GREY -> stringResource(R.string.subscriber_theme_grey)
                                 ThemeMode.LIGHT -> stringResource(R.string.subscriber_theme_light)
                             },
                         )

@@ -32,12 +32,12 @@
     (function () {
       try {
         var t = localStorage.getItem('digitdns_theme');
-        if (t !== 'light' && t !== 'dark') {
+        if (t !== 'light' && t !== 'dark' && t !== 'grey') {
           t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
         }
         var h = document.documentElement;
         h.setAttribute('data-theme', t);
-        h.classList.toggle('dark', t === 'dark');
+        h.classList.toggle('dark', t !== 'light');
       } catch (e) { /* private mode: the markup's own defaults stand */ }
     })();
   </script>

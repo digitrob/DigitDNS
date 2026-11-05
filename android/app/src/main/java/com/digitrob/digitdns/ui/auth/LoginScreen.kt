@@ -1,7 +1,9 @@
 package com.digitrob.digitdns.ui.auth
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,12 +26,16 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Contrast
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -55,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
+import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.domain.model.CredentialMode
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.components.PanelDialog
@@ -79,6 +86,7 @@ fun LoginScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val extended = DigitDnsTheme.colors
+    val systemDark = isSystemInDarkTheme()
 
     // Prepare the form once: prefill from the active install, unless this is the
     // "Add server" entry point, which wants a blank profile.
@@ -118,7 +126,11 @@ fun LoginScreen(
             onCancel?.let { cancel -> CancelAddServerRow(onLeave = viewModel::cancelAddServer, onCancel = cancel) }
 
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                LoginHeader()
+                LoginHeader(
+                    themeMode = state.themeMode,
+                    systemDark = systemDark,
+                    onCycleTheme = { viewModel.setThemeMode(state.themeMode.next(systemDark)) },
+                )
             }
 
             // Also on the add-server screen: a subscriber may be signing in from that
@@ -202,8 +214,22 @@ private fun CancelAddServerRow(onLeave: () -> Unit, onCancel: () -> Unit) {
 }
 
 @Composable
-private fun LoginHeader() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun LoginHeader(
+    themeMode: ThemeMode,
+    systemDark: Boolean,
+    onCycleTheme: () -> Unit,
+) {
+    val effective = themeMode.effective(systemDark)
+    val next = themeMode.next(systemDark)
+    val description = stringResource(
+        R.string.theme_switch,
+        stringResource(effective.labelRes()),
+        stringResource(next.labelRes()),
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Icon(
             imageVector = Icons.Filled.Shield,
             contentDescription = null,
@@ -215,12 +241,33 @@ private fun LoginHeader() {
             style = MaterialTheme.typography.displaySmall,
             color = MaterialTheme.colorScheme.primary,
         )
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick = onCycleTheme) {
+            Icon(
+                imageVector = when (effective) {
+                    ThemeMode.DARK -> Icons.Filled.DarkMode
+                    ThemeMode.GREY -> Icons.Filled.Contrast
+                    ThemeMode.LIGHT -> Icons.Filled.LightMode
+                    ThemeMode.SYSTEM -> Icons.Filled.DarkMode
+                },
+                contentDescription = description,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
     Text(
         text = stringResource(R.string.login_subtitle),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+@StringRes
+private fun ThemeMode.labelRes(): Int = when (this) {
+    ThemeMode.SYSTEM -> R.string.theme_system
+    ThemeMode.DARK -> R.string.theme_dark
+    ThemeMode.GREY -> R.string.theme_grey
+    ThemeMode.LIGHT -> R.string.theme_light
 }
 
 /**

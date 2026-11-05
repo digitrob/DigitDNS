@@ -86,15 +86,29 @@ enum class AppMode {
     }
 }
 
-/** The three ways the app can decide between its dark and light schemes. */
+/** The four ways the app can decide between its dark, graphite and light schemes. */
 enum class ThemeMode {
     /** Follow the OS setting. The default, so the app matches the rest of the phone. */
     SYSTEM,
 
     DARK,
 
+    /** Neutral graphite: a dark theme without the blue cast. */
+    GREY,
+
     LIGHT,
     ;
+
+    /** Resolve [SYSTEM] against the phone's current setting. */
+    fun effective(systemDark: Boolean): ThemeMode =
+        if (this == SYSTEM) (if (systemDark) DARK else LIGHT) else this
+
+    /** The login quick-cycle: dark -> grey -> light -> dark, starting from the visible theme. */
+    fun next(systemDark: Boolean): ThemeMode = when (effective(systemDark)) {
+        SYSTEM, DARK -> GREY
+        GREY -> LIGHT
+        LIGHT -> DARK
+    }
 
     companion object {
         /** Parse a stored value, falling back to [SYSTEM] for anything unrecognised. */

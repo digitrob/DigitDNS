@@ -6,6 +6,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.1.0] — Graphite theme for web and Android
+
+### ✨ Added
+
+- **Graphite**, a neutral third theme for the web panel and Android app. The
+  theme button cycles Dark → Grey → Light and shows the current state with a
+  moon, half-filled circle or sun.
+- **Theme persistence across login and restarts.** The Android login screen has
+  the same three-state control as the web panel; the selected theme is stored in
+  `AppPreferences` and survives sign-in, process death and relaunch.
+- **Grey launcher icon** and grey in-app shield mark.
+- **README Graphite screenshots** for the web dashboard and Android login,
+  dashboard and theme settings. Public addresses are sanitised.
+
+### 🎨 Changed
+
+- Web selected states are neutral: range chips, filter chips, API bind options,
+  snippet tabs, service rows, live-log scopes and the agent architecture
+  selector no longer use cyan fills.
+- Web primary buttons use a light-grey fill with dark text; soft, ghost and
+  icon buttons are neutral. Card top edges, hover borders and shadows are grey.
+- Web cyan remains only as a small accent on icons, links, the chart line and
+  focus rings.
+- Web login and standalone login follow Grey and Light consistently, including
+  form borders, placeholders and focus rings.
+- Android Material 3 scheme adds Graphite surfaces, neutral primary/secondary
+  roles and grey controls while keeping semantic green/amber/red.
+- Android DoH uses a soft lavender accent instead of purple or cyan.
+- Android theme card grows to Follow system / Dark / Grey / Light and wraps
+  cleanly with `FlowRow`.
+
+### 🛠 Fixed
+
+- Web field boundaries raised for 3:1 contrast; login placeholders and focus
+  rings corrected.
+- Links that lost their colour cue are underlined in Graphite.
+- The web pre-paint script and theme state machine accept the third theme.
+- The Android login header keeps its layout while gaining a 48dp theme button.
+
+### 🧪 Tests
+
+- Existing web theme, icon and CSP regression tests continue to pass.
+- Android `ThemeMode` parsing, system resolution and cycle unit tests.
+- Existing Android and server suites unchanged.
+
+---
+
 ## 🏷️ [v5.0.4] — Real arm64 hub and agent images
 
 ### 🛠 Fixed
