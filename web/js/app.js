@@ -7256,6 +7256,11 @@ function renderAgentCommand() {
   const key = document.getElementById('agent-token-value')?.textContent || '';
   const hub = window.location.origin + ADMIN_BASE;
   const platform = agentPlatformChoice === 'auto' ? '' : `  --platform linux/${agentPlatformChoice}`;
+  // Prefer the exact running release over a moving tag. A stale local
+  // `latest` was the original arm64 failure; the pinned tag makes the image
+  // explicit while `--pull always` still fetches it.
+  const agentVersion = String(currentConfig?.version?.version || '').replace(/^v/, '').trim();
+  const image = 'ghcr.io/digitrob/digitdns-agent' + (agentVersion ? `:${agentVersion}` : ':latest');
   const command = document.getElementById('agent-token-command');
   if (!command) return;
   const continuation = ' ' + String.fromCharCode(92) + '\n';
@@ -7264,12 +7269,42 @@ function renderAgentCommand() {
     platform,
     '  --network host --restart unless-stopped',
     '  -v /opt/digitdns-agent:/data',
-    '  ghcr.io/digitrob/digitdns-agent:latest',
+    `  ${image}`,
     "  -hub '" + hub + "'",
     "  -key '" + key + "'",
     '  -listen :80,:443',
     '  -state /data/agent-state.json',
   ].filter(Boolean).join(continuation);
+  renderAgentCompose(image, platform, hub, key);
+}
+
+function renderAgentCompose(image, platform, hub, key) {
+  const compose = document.getElementById('agent-compose');
+  if (!compose) return;
+  const q = (value) => JSON.stringify(String(value));
+  const lines = [
+    'services:',
+    '  digitdns-agent:',
+    `    image: ${image}`,
+    '    container_name: digitdns-agent',
+  ];
+  if (platform) lines.push(`    platform: linux/${agentPlatformChoice}`);
+  lines.push(
+    '    network_mode: host',
+    '    restart: unless-stopped',
+    '    volumes:',
+    '      - /opt/digitdns-agent:/data',
+    '    command:',
+    '      - "-hub"',
+    `      - ${q(hub)}`,
+    '      - "-key"',
+    `      - ${q(key)}`,
+    '      - "-listen"',
+    `      - ${q(':80,:443')}`,
+    '      - "-state"',
+    `      - ${q('/data/agent-state.json')}`,
+  );
+  compose.textContent = lines.join('\n');
 }
 
 function setAgentPlatform(platform) {
@@ -7419,6 +7454,10 @@ function initAgentPage() {
   document.getElementById('copy-agent-command-btn')?.addEventListener('click', () => {
     const value = document.getElementById('agent-token-command')?.textContent || '';
     copyClipboard(value, 'Docker run command copied.');
+  });
+  document.getElementById('copy-agent-compose-btn')?.addEventListener('click', () => {
+    const value = document.getElementById('agent-compose')?.textContent || '';
+    copyClipboard(value, 'Portainer stack copied.');
   });
   document.querySelectorAll('[data-agent-platform]').forEach((btn) => {
     btn.addEventListener('click', () => setAgentPlatform(btn.dataset.agentPlatform));

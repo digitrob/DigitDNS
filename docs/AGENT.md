@@ -120,7 +120,55 @@ docker run -d --name digitdns-agent --network host --restart unless-stopped \
   container recreation. Back up `/opt/digitdns-agent`.
 
 The image is multi-arch (`linux/amd64`, `linux/arm64`) and cosign-signed with
-the same keyless identity as the hub image.
+the same keyless identity as the hub image. The agent creation box pins the
+generated command to the running panel version and adds `--pull always`; choose
+`arm64` there for a Raspberry Pi or ARM VPS.
+
+### Registry connectivity
+
+If `docker pull`/`docker run` fails with `EOF` while contacting `ghcr.io`, the
+image is usually fine and the host cannot complete the registry request:
+
+```bash
+uname -m
+getent ahosts ghcr.io
+curl -4 -v --max-time 15 https://ghcr.io/v2/
+curl -6 -v --max-time 15 https://ghcr.io/v2/
+sudo systemctl restart docker
+```
+
+Check broken IPv6 first if `-4` works and `-6` fails, then DNS/MTU/proxy
+configuration. Every arm64 release also publishes a ready-to-load image, so GHCR is not needed
+on the agent host:
+
+```bash
+curl -fL -o /tmp/agent-image.tar.gz \
+  https://github.com/digitrob/DigitDNS/releases/download/v5.0.4/digitdns-agent-5.0.4-linux-arm64-image.tar.gz
+gunzip -c /tmp/agent-image.tar.gz | docker load
+docker tag ghcr.io/digitrob/digitdns-agent:5.0.4 ghcr.io/digitrob/digitdns-agent:latest
+```
+
+As an offline fallback from another machine, save the image and load it on the
+agent host:
+
+```bash
+# on a connected machine
+docker pull --platform linux/arm64 ghcr.io/digitrob/digitdns-agent:5.0.4
+docker save ghcr.io/digitrob/digitdns-agent:5.0.4 | gzip > agent-arm64.tar.gz
+scp agent-arm64.tar.gz admin@agent-host:/tmp/
+
+# on the agent host
+gunzip -c /tmp/agent-arm64.tar.gz | docker load
+docker run -d --name digitdns-agent --pull never --network host \
+  --restart unless-stopped -v /opt/digitdns-agent:/data \
+  ghcr.io/digitrob/digitdns-agent:5.0.4 \
+  -hub 'https://panel.example.com:8080/ADMIN_PATH' \
+  -key 'AGENT_ID:SECRET' -listen :80,:443 \
+  -state /data/agent-state.json
+```
+
+The release also ships `digitdns-agent-linux-arm64` if Docker cannot be used at
+all.
 
 Verify it:
 
@@ -129,6 +177,38 @@ cosign verify ghcr.io/digitrob/digitdns-agent:latest \
   --certificate-identity-regexp 'https://github.com/digitrob/DigitDNS/.github/workflows/docker.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+### Portainer / Docker Compose
+
+The agent creation box also generates a stack for Portainer. Use **Stacks → Add
+stack → Web editor**, paste the generated YAML and deploy it. The generated
+snippet uses the same pinned image and architecture selector as the Docker
+command:
+
+```yaml
+services:
+  digitdns-agent:
+    image: ghcr.io/digitrob/digitdns-agent:5.0.4
+    container_name: digitdns-agent
+    platform: linux/arm64
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /opt/digitdns-agent:/data
+    command:
+      - "-hub"
+      - "https://panel.example.com:8080/ADMIN_PATH"
+      - "-key"
+      - "AGENT_ID:SECRET"
+      - "-listen"
+      - ":80,:443"
+      - "-state"
+      - "/data/agent-state.json"
+```
+
+Choose `arm64` for a Raspberry Pi / ARM VPS; omit `platform` for Auto. The key
+is quoted because it contains a colon. `/opt/digitdns-agent` remains the state
+volume.
 
 ### Binary + systemd
 

@@ -1793,6 +1793,7 @@
               </div>
               <span class="text-[10px] text-slate-500">Auto follows the host; pick arm64 for Raspberry Pi / ARM VPS.</span>
             </div>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Docker run</p>
             <div class="agent-command-row">
               <pre id="agent-token-command" class="agent-command"></pre>
               <button id="copy-agent-command-btn" type="button" class="agent-icon-btn shrink-0"
@@ -1800,6 +1801,15 @@
                 <i data-feather="copy" class="w-3.5 h-3.5"></i>
               </button>
             </div>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Portainer stack (docker compose)</p>
+            <div class="agent-command-row">
+              <pre id="agent-compose" class="agent-command"></pre>
+              <button id="copy-agent-compose-btn" type="button" class="agent-icon-btn shrink-0"
+                title="Copy Portainer stack" aria-label="Copy Portainer stack">
+                <i data-feather="copy" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+            <p class="text-[10px] text-slate-500">Portainer → Stacks → Add stack → Web editor → paste → Deploy the stack. The architecture selector applies to both commands.</p>
             <p class="text-[10px] text-slate-500">No agent domain or certificate is needed for the relay itself. The agent's own admin page is optional and local to the box.</p>
           </div>
 
