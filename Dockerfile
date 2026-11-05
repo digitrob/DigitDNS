@@ -6,7 +6,7 @@
 # The tag floats inside the 1.26 series on purpose: go.mod asks for 1.26.4, and
 # when the image happens to carry an older patch the default GOTOOLCHAIN=auto
 # fetches the one the module names rather than refusing to build it.
-FROM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 WORKDIR /src
 
@@ -32,11 +32,11 @@ COPY . .
 # CGO off, instead of emulating the whole compiler through QEMU. The defaults keep
 # a plain `docker build` working on the host's own architecture. The build cache
 # mount keeps compiled packages between runs, which is where most of the time goes.
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
+ARG TARGETOS
+ARG TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/digitdns ./cmd/digitdns
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-$(go env GOARCH)} go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/digitdns ./cmd/digitdns
 
 # ------------------------------------------------------------------------------
 # Final Runtime Stage

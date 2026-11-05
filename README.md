@@ -43,10 +43,10 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ## What's new in 5.0
 
-The 5.0.1–5.0.3 patch line adds DNS Rewrites bulk import, the Queries by Relay
+The 5.0.1–5.0.4 patch line adds DNS Rewrites bulk import, the Queries by Relay
 card, unified uppercase card headings, allowed-only Top domains, live-log/locale
-fixes and a multi-arch agent setup selector with copyable Docker command. See the
-latest release notes for details.
+fixes, a multi-arch agent setup selector with copyable Docker command, and real
+arm64 hub/agent images. See the latest release notes for details.
 
 ### 🛡️ Ad blocking engine
 
@@ -207,7 +207,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.4/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -266,7 +266,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.4/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -342,7 +342,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.0.3` | Multi-arch agent selector, copyable Docker command, arm64 CI gate |
+| `5.0.4` | Real arm64 hub/agent images and arm64 execution CI gate |
+| `5.0.3` | Multi-arch agent selector, copyable Docker command, arm64 CI gate (older) |
 | `5.0.2` | Allowed-only Top domains, locale-safe UI, Rewrite filter and import polish (older) |
 | `5.0.1` | Dashboard polish, DNS Rewrites, relay labels, unified cards (older) |
 | `5.0.0` | Ad-blocking engine, aggregate stats, free dashboard layout (older) |
@@ -369,7 +370,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.0.3/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.0.4/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -722,7 +723,7 @@ keeps upstream connections alive between queries to cut handshake latency.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.0.3`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.0.4`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

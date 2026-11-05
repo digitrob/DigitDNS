@@ -3,7 +3,7 @@
 # Relay agent image. It is deliberately separate from the hub image: the agent
 # has no database, no panel and no DNS server, and its attack surface should not
 # grow because the hub gained a feature.
-FROM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 WORKDIR /src
 
@@ -14,11 +14,11 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
 
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
+ARG TARGETOS
+ARG TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-$(go env GOARCH)} \
     go build -trimpath -buildvcs=false -ldflags="-s -w" \
     -o /out/digitdns-agent ./cmd/digitdns-agent
 

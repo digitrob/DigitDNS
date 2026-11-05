@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.0.4] — Real arm64 hub and agent images
+
+### 🛠 Fixed
+
+- **arm64 images contained amd64 binaries.** `ARG TARGETARCH=amd64` overrode
+  BuildKit's per-platform value, so `linux/arm64` layers failed with
+  `exec format error`. Both `Dockerfile` and `Dockerfile.agent` now run the
+  builder on `$BUILDPLATFORM` and consume `TARGETOS`/`TARGETARCH` without
+  overriding them.
+- **CI executes both arm64 images under QEMU** after publishing. A manifest can
+  claim arm64 while the binary is x86-64; the new smoke test fails the build
+  instead of shipping it.
+
+### 🔐 Upgrade note
+
+5.0.3 and earlier ARM images are unusable. Remove the cached image/container and
+pull the fixed 5.0.4 tag or `latest` with `--pull always`.
+
+### 🧪 Tests
+
+- Docker workflow YAML validation and real `linux/arm64` `-version` execution
+  for both hub and agent images.
+- Go/web/Android gates unchanged.
+
+---
+
 ## 🏷️ [v5.0.3] — Multi-arch agent setup, made copyable
 
 ### ✨ Added
