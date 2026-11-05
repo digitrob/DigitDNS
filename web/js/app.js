@@ -7256,11 +7256,9 @@ function renderAgentCommand() {
   const key = document.getElementById('agent-token-value')?.textContent || '';
   const hub = window.location.origin + ADMIN_BASE;
   const platform = agentPlatformChoice === 'auto' ? '' : `  --platform linux/${agentPlatformChoice}`;
-  // Prefer the exact running release over a moving tag. A stale local
-  // `latest` was the original arm64 failure; the pinned tag makes the image
-  // explicit while `--pull always` still fetches it.
-  const agentVersion = String(currentConfig?.version?.version || '').replace(/^v/, '').trim();
-  const image = 'ghcr.io/digitrob/digitdns-agent' + (agentVersion ? `:${agentVersion}` : ':latest');
+  // Always track the published agent image; both the Docker run command and
+  // the Compose stack force a fresh pull so a stale local tag cannot win.
+  const image = 'ghcr.io/digitrob/digitdns-agent:latest';
   const command = document.getElementById('agent-token-command');
   if (!command) return;
   const continuation = ' ' + String.fromCharCode(92) + '\n';
@@ -7286,6 +7284,7 @@ function renderAgentCompose(image, platform, hub, key) {
     'services:',
     '  digitdns-agent:',
     `    image: ${image}`,
+    '    pull_policy: always',
     '    container_name: digitdns-agent',
   ];
   if (platform) lines.push(`    platform: linux/${agentPlatformChoice}`);

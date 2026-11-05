@@ -120,9 +120,9 @@ docker run -d --name digitdns-agent --network host --restart unless-stopped \
   container recreation. Back up `/opt/digitdns-agent`.
 
 The image is multi-arch (`linux/amd64`, `linux/arm64`) and cosign-signed with
-the same keyless identity as the hub image. The agent creation box pins the
-generated command to the running panel version and adds `--pull always`; choose
-`arm64` there for a Raspberry Pi or ARM VPS.
+the same keyless identity as the hub image. The agent creation box always tracks the
+`latest` image and adds `--pull always` / `pull_policy: always`; choose `arm64`
+there for a Raspberry Pi or ARM VPS.
 
 ### Registry connectivity
 
@@ -188,7 +188,8 @@ command:
 ```yaml
 services:
   digitdns-agent:
-    image: ghcr.io/digitrob/digitdns-agent:5.0.4
+    image: ghcr.io/digitrob/digitdns-agent:latest
+    pull_policy: always
     container_name: digitdns-agent
     platform: linux/arm64
     network_mode: host

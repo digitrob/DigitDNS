@@ -132,8 +132,11 @@ func TestAgentDockerCommandHasCopyButton(t *testing.T) {
 	if !strings.Contains(app, `--pull always`) || !strings.Contains(app, `--platform linux/`) {
 		t.Error("the generated agent command must always pull and expose the platform selector")
 	}
-	if !strings.Contains(app, `currentConfig?.version?.version`) {
-		t.Error("the generated agent command should pin the running release tag")
+	if !strings.Contains(app, `ghcr.io/digitrob/digitdns-agent:latest`) {
+		t.Error("the generated agent commands should use the latest image tag")
+	}
+	if !strings.Contains(app, `pull_policy: always`) {
+		t.Error("the Portainer stack should force a fresh pull")
 	}
 	if !strings.Contains(doc, `id="agent-compose"`) || !strings.Contains(doc, `id="copy-agent-compose-btn"`) {
 		t.Error("the agent box has no Portainer Compose block or copy control")
