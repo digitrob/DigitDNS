@@ -217,21 +217,30 @@ internal fun HistoryTopCard(
     serverCountry: String = "",
 ) {
     val listHeight = dimension.listHeight()
+    // The relay title is long enough to need two lines on a 320 dp phone; give
+    // that row (and Protocols beside it) a matching header slot so the two cards
+    // stay level instead of one growing past the other.
+    val wrappedHeader = dimension == TopDimension.PROTOCOL || dimension == TopDimension.RELAY_COUNTRY
     PanelCard(
         modifier = Modifier
             .fillMaxWidth()
-            .height(HistoryTopCardBaseHeight + listHeight),
+            .height(HistoryTopCardBaseHeight + listHeight + if (wrappedHeader) 16.dp else 0.dp),
         bottomPadding = 8.dp,
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            DashboardCardTitle(
-                text = stringResource(dimension.titleRes()),
-                icon = dimension.icon,
-                tint = dimension.tint(),
-            )
+            if (dimension == TopDimension.RELAY_COUNTRY) {
+                RelayTitle(dimension.icon, dimension.tint())
+            } else {
+                DashboardCardTitle(
+                    text = stringResource(dimension.titleRes()),
+                    icon = dimension.icon,
+                    tint = dimension.tint(),
+                    modifier = if (wrappedHeader) Modifier.height(32.dp) else Modifier,
+                )
+            }
             when {
                 unavailable -> HistoryUnavailable()
                 top == null || top.items.isEmpty() -> Text(
@@ -249,6 +258,36 @@ internal fun HistoryTopCard(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Two lines, because "Queries by Relay" does not fit beside the icon at 320 dp. */
+@Composable
+private fun RelayTitle(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: androidx.compose.ui.graphics.Color) {
+    Row(
+        modifier = Modifier.height(32.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(16.dp),
+        )
+        Box(Modifier.width(6.dp))
+        Column {
+            listOf(R.string.history_top_relay_line1, R.string.history_top_relay_line2).forEach { line ->
+                Text(
+                    text = stringResource(line).uppercase(Locale.US),
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.Medium,
+                        lineHeight = 16.sp,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
             }
         }
     }
@@ -355,7 +394,7 @@ private fun SummaryCell(
     val valueColor = if (color == Color.Unspecified) MaterialTheme.colorScheme.onSurface else color
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(1.dp)) {
         Text(
-            text = stringResource(label).uppercase(),
+            text = stringResource(label).uppercase(Locale.US),
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 11.sp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

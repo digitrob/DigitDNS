@@ -4,6 +4,7 @@ package com.digitrob.digitdns.ui.rules
 
 import java.net.Inet6Address
 import java.net.InetAddress
+import java.util.Locale
 
 /** The three outcomes of importing one DNS rewrite table. */
 data class RecordImportResult(
@@ -49,7 +50,7 @@ fun parseRecordImport(text: String, existing: Map<String, String>): RecordImport
             invalid += line
             return@forEach
         }
-        val domain = parts[0].trim().lowercase().trimEnd('.')
+        val domain = parts[0].trim().lowercase(Locale.ROOT).trimEnd('.')
         val address = parts[1].trim()
         if (!RECORD_HOST.matches(domain) || !isIPAddress(address) || !seen.add(domain)) {
             invalid += line

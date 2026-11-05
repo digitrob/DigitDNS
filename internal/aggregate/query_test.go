@@ -77,13 +77,18 @@ func TestSummarySeriesAndTopMergeCurrentHour(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Top: %v", err)
 	}
-	if len(top.Items) != 4 {
+	if len(top.Items) != 3 {
 		t.Errorf("domain top = %#v", top.Items)
 	}
-	// All four domains are tied at one; the tie-break is by value, so the order
-	// is deterministic rather than map-random.
-	if top.Items[0].Value != "ads.example" || top.Items[0].Count != 1 {
+	// Blocked names belong only to Top blocked, and the three remaining domains
+	// are tied at one; the tie-break is by value.
+	if top.Items[0].Value != "current.example" || top.Items[0].Count != 1 {
 		t.Errorf("domain top order = %#v", top.Items)
+	}
+	for _, item := range top.Items {
+		if item.Value == "ads.example" {
+			t.Errorf("blocked domain leaked into top domains: %#v", top.Items)
+		}
 	}
 	foundCurrent := false
 	for _, item := range top.Items {
@@ -179,6 +184,72 @@ func TestOneHourSeriesUsesFiveMinuteChunks(t *testing.T) {
 		if !got.Start.Equal(w.start) || got.Queries != w.queries || got.Blocked != w.blocked || got.Proxied != w.proxied {
 			t.Errorf("point %d = %#v, want %#v", i, got, w)
 		}
+	}
+}
+
+func TestTopDomainsExcludeBlockedCounts(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	a, _ := openTestAggregator(t, &now, Config{FlushInterval: time.Hour, CacheTTL: -1})
+
+	record := func(domain, action string, times int) {
+		for i := 0; i < times; i++ {
+			item := testItem(now)
+			item.Domain = domain
+			item.Action = action
+			a.RecordTotal(now)
+			a.RecordDetail(item)
+		}
+	}
+	record("mixed.example.", "DIRECT", 2)
+	record("mixed.example.", "BLOCK", 3)
+	record("blocked-only.example.", "BLOCK", 2)
+	record("allowed-only.example.", "DIRECT", 1)
+
+	top, err := a.Top(Range24h, "domain", 10)
+	if err != nil {
+		t.Fatalf("Top domain: %v", err)
+	}
+	got := make(map[string]uint64, len(top.Items))
+	for _, item := range top.Items {
+		got[item.Value] = item.Count
+	}
+	if got["mixed.example"] != 2 || got["allowed-only.example"] != 1 {
+		t.Errorf("top domains = %#v, want allowed-only counts", top.Items)
+	}
+	if _, ok := got["blocked-only.example"]; ok {
+		t.Errorf("blocked-only domain leaked into top domains: %#v", top.Items)
+	}
+
+	blocked, err := a.Top(Range24h, "blocked_domain", 10)
+	if err != nil {
+		t.Fatalf("Top blocked: %v", err)
+	}
+	blockedCounts := make(map[string]uint64, len(blocked.Items))
+	for _, item := range blocked.Items {
+		blockedCounts[item.Value] = item.Count
+	}
+	if blockedCounts["mixed.example"] != 3 || blockedCounts["blocked-only.example"] != 2 {
+		t.Errorf("top blocked = %#v", blocked.Items)
+	}
+}
+
+func TestTopDomainsBlockedTailIsClamped(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	a, _ := openTestAggregator(t, &now, Config{FlushInterval: time.Hour, CacheTTL: -1})
+	// Deliberately inconsistent tail totals: blocked Other is larger than the
+	// domain Other. The subtraction must clamp instead of underflowing.
+	if err := a.store.writeHour(hourKey(now), &Bucket{
+		TopDomains:        Counts{Items: map[string]uint64{}, Other: 1},
+		TopBlockedDomains: Counts{Items: map[string]uint64{}, Other: 5},
+	}); err != nil {
+		t.Fatalf("writeHour: %v", err)
+	}
+	top, err := a.Top(Range24h, "domain", 10)
+	if err != nil {
+		t.Fatalf("Top: %v", err)
+	}
+	if len(top.Items) != 0 || top.Other != 0 {
+		t.Errorf("top = %#v, want an empty clamped result", top)
 	}
 }
 

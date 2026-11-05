@@ -1,6 +1,7 @@
 package com.digitrob.digitdns.domain.model
 
 import java.net.URI
+import java.util.Locale
 
 /**
  * The subscriber portal link a customer pastes into the app.
@@ -51,7 +52,7 @@ data class SubscriberLink(
             if (value.isEmpty()) return null
             if (!value.contains("://")) value = "https://$value"
             val uri = runCatching { URI(value) }.getOrNull() ?: return null
-            val scheme = uri.scheme?.lowercase() ?: return null
+            val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return null
             if (scheme != "http" && scheme != "https") return null
             val authority = uri.rawAuthority?.takeIf { it.isNotBlank() } ?: return null
             val path = uri.path ?: return null

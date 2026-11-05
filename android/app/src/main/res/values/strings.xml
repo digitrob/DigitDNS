@@ -214,6 +214,10 @@
     <string name="domains_rewrites_bulk_help">One record per line as hostname address — separated by spaces, commas, semicolons or =. Lines starting with # are ignored. IPv4 and IPv6 are both accepted.</string>
     <string name="domains_rewrites_bulk_placeholder">host.example 203.0.113.9\ncdn.example.net, 2001:db8::1</string>
     <string name="domains_rewrites_nothing">Nothing to import.</string>
+    <string name="domains_rewrites_file_error">Could not read that file or it is larger than 1 MB.</string>
+    <string name="domains_rewrites_reading">Reading file…</string>
+    <string name="domains_rewrites_importing">Importing…</string>
+    <string name="domains_rewrites_summary">DNS rewrites: %1$d added, %2$d updated, %3$d unchanged, %4$d invalid.</string>
     <string name="domains_choose_file">Choose file</string>
     <string name="domains_import">Import</string>
     <string name="domains_search">Search</string>
@@ -567,6 +571,8 @@
     <string name="history_top_upstreams">Top upstreams</string>
     <string name="history_top_protocols">Protocols</string>
     <string name="history_top_relay">Queries by Relay</string>
+    <string name="history_top_relay_line1">Queries by</string>
+    <string name="history_top_relay_line2">Relay</string>
 
     <string name="card_history_summary">History summary</string>
     <string name="card_history_chart">History chart</string>

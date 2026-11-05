@@ -100,6 +100,10 @@ import com.digitrob.digitdns.ui.components.SwipeToDeleteRow
 import com.digitrob.digitdns.ui.components.showPanelToast
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The Domains tab: the proxy routing list, sized for a phone.
@@ -699,6 +703,7 @@ private fun DnsRewritesCard(
 
 /** Paste or upload a hostname-address table, matching the web DNS Rewrites importer. */
 @Composable
+@Suppress("LongMethod")
 private fun BulkRecordsDialog(
     existing: Map<String, String>,
     onApply: (Map<String, String>, String) -> Unit,
@@ -706,15 +711,25 @@ private fun BulkRecordsDialog(
 ) {
     var body by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
+    var statusError by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val text = readTextCapped(context, uri, MAX_IMPORT_BYTES)
-        if (text == null) {
-            status = "Could not read that file or it is larger than 1 MB."
-        } else {
-            body = text
-            status = ""
+        scope.launch {
+            busy = true
+            status = context.getString(R.string.domains_rewrites_reading)
+            statusError = false
+            val text = withContext(Dispatchers.IO) { readTextCapped(context, uri, MAX_IMPORT_BYTES) }
+            if (text == null) {
+                status = context.getString(R.string.domains_rewrites_file_error)
+                statusError = true
+            } else {
+                body = text
+                status = ""
+            }
+            busy = false
         }
     }
     PanelDialog(
@@ -730,13 +745,14 @@ private fun BulkRecordsDialog(
                 )
                 OutlinedTextField(
                     value = body,
-                    onValueChange = { body = it; status = "" },
+                    onValueChange = { body = it; status = ""; statusError = false },
                     placeholder = { Text(stringResource(R.string.domains_rewrites_bulk_placeholder)) },
                     modifier = Modifier.fillMaxWidth().height(150.dp),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { picker.launch(arrayOf("text/*", "text/plain", "*/*")) },
+                        enabled = !busy,
                     ) {
                         Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
@@ -747,7 +763,7 @@ private fun BulkRecordsDialog(
                     Text(
                         text = status,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if ("invalid" in status) {
+                        color = if (statusError) {
                             DigitDnsTheme.colors.warning
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -759,22 +775,47 @@ private fun BulkRecordsDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    val result = parseRecordImport(body, existing)
-                    if (result.changed == 0) {
-                        status = if (result.invalid.isEmpty()) {
-                            context.getString(R.string.domains_rewrites_nothing)
-                        } else {
-                            result.summary()
+                    if (busy) return@TextButton
+                    scope.launch {
+                        busy = true
+                        status = context.getString(R.string.domains_rewrites_importing)
+                        statusError = false
+                        val result = withContext(Dispatchers.Default) { parseRecordImport(body, existing) }
+                        val summary = context.getString(
+                            R.string.domains_rewrites_summary,
+                            result.added,
+                            result.updated,
+                            result.unchanged,
+                            result.invalid.size,
+                        )
+                        if (result.changed == 0) {
+                            status = if (result.invalid.isEmpty()) {
+                                context.getString(R.string.domains_rewrites_nothing)
+                            } else {
+                                summary
+                            }
+                            statusError = result.invalid.isNotEmpty()
+                            busy = false
+                            return@launch
                         }
-                        return@TextButton
+                        onApply(result.merged, summary)
+                        if (result.invalid.isEmpty()) {
+                            onDismiss()
+                        } else {
+                            status = summary
+                            statusError = true
+                        }
+                        busy = false
                     }
-                    onApply(result.merged, result.summary())
-                    if (result.invalid.isEmpty()) onDismiss() else status = result.summary()
                 },
-                enabled = body.isNotBlank(),
+                enabled = body.isNotBlank() && !busy,
             ) { Text(stringResource(R.string.domains_import)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        },
     )
 }
 
@@ -1210,7 +1251,7 @@ private fun CompactSwitch(
             checked = checked,
             onCheckedChange = null,
             enabled = enabled,
-            modifier = Modifier.scale(0.78f),
+            modifier = Modifier.scale(0.78f).clearAndSetSemantics {},
         )
     }
 }

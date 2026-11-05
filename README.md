@@ -43,6 +43,10 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ## What's new in 5.0
 
+The 5.0.1–5.0.2 patch line adds DNS Rewrites bulk import, the Queries by Relay
+card, unified uppercase card headings, allowed-only Top domains and a set of
+live-log/locale/accessibility fixes. See the latest release notes for details.
+
 ### 🛡️ Ad blocking engine
 
 DigitDNS is now a DNS sink as well as a resolver. Blocked names are answered
@@ -202,7 +206,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.2/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -261,7 +265,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.0.2/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -337,7 +341,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.0.1` | Dashboard polish, DNS Rewrites, relay labels, unified cards |
+| `5.0.2` | Allowed-only Top domains, locale-safe UI, Rewrite filter and import polish |
+| `5.0.1` | Dashboard polish, DNS Rewrites, relay labels, unified cards (older) |
 | `5.0.0` | Ad-blocking engine, aggregate stats, free dashboard layout (older) |
 | `4.1.0` | 90-day traffic history, Android history cards (older) |
 | `4.0.3` | Dashboard refresh, compact Settings, app-icon brand (older) |
@@ -362,7 +367,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.0.1/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.0.2/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -715,7 +720,7 @@ keeps upstream connections alive between queries to cut handshake latency.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.0.1`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.0.2`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

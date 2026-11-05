@@ -257,7 +257,10 @@ GET  /api/v3/stats/settings
 POST /api/v3/stats/settings
 ```
 
-- `1h` reads the current hour in five-minute buckets; `24h` and `7d` read hourly buckets; `30d` and `90d` read daily buckets. Today's
+- `1h` reads the current hour in five-minute buckets; `24h` and `7d` read hourly buckets; `30d` and `90d` read daily buckets.
+- `stats/top?dimension=domain` returns allowed-only counts: blocked queries appear
+  in `blocked_domain`, not `domain`. Both tables are bounded top-N, so the
+  ranked entries are exact and the evicted `other` tail is approximate. Today's
   daily point merges the current day's hourly buckets.
 - `summary.active_clients` is a HyperLogLog distinct-client estimate over the
   range, not a count clipped by the top-client cap. `active_clients_approx` is

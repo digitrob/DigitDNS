@@ -20,6 +20,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.io.IOException
 import javax.inject.Inject
+import java.util.Locale
 
 data class ClientsUiState(
     val clients: List<Client> = emptyList(),
@@ -44,11 +45,11 @@ data class ClientsUiState(
         get() = if (query.isBlank()) {
             clients
         } else {
-            val needle = query.trim().lowercase()
+            val needle = query.trim().lowercase(Locale.ROOT)
             clients.filter { client ->
-                client.name.lowercase().contains(needle) ||
-                    client.id.lowercase().contains(needle) ||
-                    client.allowedIps.any { it.lowercase().contains(needle) }
+                client.name.lowercase(Locale.ROOT).contains(needle) ||
+                    client.id.lowercase(Locale.ROOT).contains(needle) ||
+                    client.allowedIps.any { it.lowercase(Locale.ROOT).contains(needle) }
             }
         }
 }

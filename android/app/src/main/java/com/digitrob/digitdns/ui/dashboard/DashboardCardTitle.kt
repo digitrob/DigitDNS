@@ -2,6 +2,7 @@ package com.digitrob.digitdns.ui.dashboard
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
@@ -16,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.util.Locale
 
 /**
  * The one name row used by every dashboard card: a 16 dp glyph and an uppercase
@@ -28,8 +30,9 @@ internal fun DashboardCardTitle(
     icon: ImageVector,
     modifier: Modifier = Modifier,
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    maxLines: Int = 1,
 ) {
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Icon(
             imageVector = icon,
             contentDescription = null,
@@ -38,14 +41,15 @@ internal fun DashboardCardTitle(
         )
         Spacer(Modifier.width(6.dp))
         Text(
-            text = text.uppercase(),
+            text = text.uppercase(Locale.US),
             style = MaterialTheme.typography.titleSmall.copy(
                 fontWeight = FontWeight.Medium,
                 lineHeight = 16.sp,
             ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
+            maxLines = maxLines,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
     }
 }

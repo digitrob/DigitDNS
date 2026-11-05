@@ -9,12 +9,12 @@ class SubscriberLinkTest {
 
     @Test
     fun `parses a full portal link`() {
-        val link = SubscriberLink.parse("https://norwich-vps.duckdns.org:27586/sub/7f37c16a4e4bbd41")!!
-        assertEquals("https://norwich-vps.duckdns.org:27586", link.origin)
-        assertEquals("7f37c16a4e4bbd41", link.token)
-        assertEquals("norwich-vps.duckdns.org", link.host)
-        assertEquals("https://norwich-vps.duckdns.org:27586/api/sub/7f37c16a4e4bbd41", link.statusUrl)
-        assertEquals("https://norwich-vps.duckdns.org:27586/ip/7f37c16a4e4bbd41", link.registerUrl)
+        val link = SubscriberLink.parse("https://dns.example.com:27586/sub/abcdef0123456789")!!
+        assertEquals("https://dns.example.com:27586", link.origin)
+        assertEquals("abcdef0123456789", link.token)
+        assertEquals("dns.example.com", link.host)
+        assertEquals("https://dns.example.com:27586/api/sub/abcdef0123456789", link.statusUrl)
+        assertEquals("https://dns.example.com:27586/ip/abcdef0123456789", link.registerUrl)
     }
 
     @Test
@@ -41,8 +41,8 @@ class SubscriberLinkTest {
 
     @Test
     fun `masks the token for display`() {
-        val link = SubscriberLink.parse("https://dns.example.com/sub/7f37c16a4e4bbd41")!!
-        assertEquals("7f37c1…bd41", link.maskedToken)
-        assertEquals("https://dns.example.com/sub/7f37c1…bd41", link.maskedPortalUrl)
+        val link = SubscriberLink.parse("https://dns.example.com/sub/abcdef0123456789")!!
+        assertEquals("abcdef…6789", link.maskedToken)
+        assertEquals("https://dns.example.com/sub/abcdef…6789", link.maskedPortalUrl)
     }
 }

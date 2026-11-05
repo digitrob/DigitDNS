@@ -22,6 +22,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.IOException
 import javax.inject.Inject
+import java.util.Locale
 
 /** One preset row, merged with its installed record when it is active. */
 data class PresetRow(
@@ -453,7 +454,7 @@ internal fun buildGroups(
         .filter { it.url.isNotBlank() }
         .associateBy { it.url }
     val counts = status.presetCounts.associateBy { it.presetId }
-    val query = search.trim().lowercase()
+    val query = search.trim().lowercase(Locale.ROOT)
     val matches = { preset: FilterPresetDto, list: FilterListDto? ->
         query.isEmpty() || listOfNotNull(
             preset.name,
@@ -462,7 +463,7 @@ internal fun buildGroups(
             preset.warning,
             list?.name,
             list?.url,
-        ).any { it.lowercase().contains(query) }
+        ).any { it.lowercase(Locale.ROOT).contains(query) }
     }
     return GROUP_ORDER.mapNotNull { (key, title) ->
         val rows = status.presets
@@ -490,11 +491,11 @@ internal fun buildCustomLists(status: FilteringStatusDto, search: String): List<
     val represented = buildGroups(status, emptySet(), "").flatMap { group ->
         group.rows.mapNotNull { it.installed?.id }
     }.toSet()
-    val query = search.trim().lowercase()
+    val query = search.trim().lowercase(Locale.ROOT)
     return status.lists
         .filter { it.id !in represented }
         .filter {
             query.isEmpty() || listOf(it.name, it.url, it.license)
-                .any { value -> value.lowercase().contains(query) }
+                .any { value -> value.lowercase(Locale.ROOT).contains(query) }
         }
 }

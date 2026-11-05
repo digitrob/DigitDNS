@@ -341,7 +341,9 @@ func (a *Aggregator) Top(window, dimension string, limit int) (Top, error) {
 		return Top{}, err
 	}
 	acc := make(map[string]uint64)
+	blockedDomains := make(map[string]uint64)
 	other := uint64(0)
+	var blockedOther uint64
 	addCounts := func(c Counts) {
 		for k, n := range c.Items {
 			acc[k] += n
@@ -360,6 +362,10 @@ func (a *Aggregator) Top(window, dimension string, limit int) (Top, error) {
 		switch dimension {
 		case "domain":
 			addCounts(tb.bucket.TopDomains)
+			for k, n := range tb.bucket.TopBlockedDomains.Items {
+				blockedDomains[k] += n
+			}
+			blockedOther += tb.bucket.TopBlockedDomains.Other
 		case "blocked_domain":
 			addCounts(tb.bucket.TopBlockedDomains)
 		case "client":
@@ -380,6 +386,29 @@ func (a *Aggregator) Top(window, dimension string, limit int) (Top, error) {
 			// Unreachable after validTopDimension; kept for the next dimension
 			// added to the switch above.
 			return Top{}, ErrInvalidDimension
+		}
+	}
+	if dimension == "domain" {
+		// A blocked name is stored in both maps so historical buckets can be
+		// corrected without a migration. Top domains must show only the
+		// queries that were not blocked; Top blocked keeps its own map.
+		// Both maps are bounded top-N tables, so this is exact for ranked
+		// entries and approximate for the evicted tail; Other is clamped.
+		for value, blocked := range blockedDomains {
+			current, ok := acc[value]
+			if !ok {
+				continue
+			}
+			if blocked >= current {
+				delete(acc, value)
+			} else {
+				acc[value] = current - blocked
+			}
+		}
+		if blockedOther >= other {
+			other = 0
+		} else {
+			other -= blockedOther
 		}
 	}
 	if dimension == "upstream" {

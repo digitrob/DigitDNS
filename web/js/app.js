@@ -4482,6 +4482,9 @@ function queryMatchesStream(q, f) {
   if (f.action !== 'ALL') {
     if (f.action === 'CACHED') {
       if (!q.cached) return false;
+    } else if (f.action === 'DIRECT') {
+      // DNS Rewrite answers are local overrides, so they belong in the Direct view.
+      if (q.action !== 'DIRECT' && q.action !== 'CUSTOM') return false;
     } else if (q.action !== f.action) {
       return false;
     }

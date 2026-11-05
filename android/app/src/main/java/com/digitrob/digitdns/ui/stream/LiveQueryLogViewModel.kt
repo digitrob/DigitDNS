@@ -19,6 +19,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import timber.log.Timber
 import javax.inject.Inject
+import java.util.Locale
 
 /** The action filter the log chip/dropdown selects. */
 enum class ActionFilter { All, Proxy, Direct, Block }
@@ -51,10 +52,10 @@ data class LiveQueryLogUiState(
     /** The rows after search + action filter + sort, ready to render. */
     val visible: List<QueryEvent>
         get() {
-            val needle = search.trim().lowercase()
+            val needle = search.trim().lowercase(Locale.ROOT)
             val filtered = source.asSequence()
                 .filter { matchesAction(it) }
-                .filter { needle.isEmpty() || it.domain.lowercase().contains(needle) }
+                .filter { needle.isEmpty() || it.domain.lowercase(Locale.ROOT).contains(needle) }
                 .toList()
             return if (sort == LogSort.Newest) filtered else filtered.asReversed()
         }

@@ -78,8 +78,8 @@ func TestV3HistoricalStatsEndpoints(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &top); err != nil {
 		t.Fatalf("top JSON: %v", err)
 	}
-	if top.Dimension != "domain" || len(top.Items) != 2 {
-		t.Errorf("top = %#v", top)
+	if top.Dimension != "domain" || len(top.Items) != 1 || top.Items[0].Value != "history.example" {
+		t.Errorf("top = %#v, want only the non-blocked domain", top)
 	}
 
 	w = v3Request(mux, http.MethodGet, "/api/v3/stats/summary?range=2h", testKey, nil)

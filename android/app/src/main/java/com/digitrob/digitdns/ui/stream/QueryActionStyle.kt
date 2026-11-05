@@ -1,5 +1,7 @@
 package com.digitrob.digitdns.ui.stream
 
+import java.util.Locale
+
 /** The colour family an action badge belongs to; the composable maps it to theme colours. */
 enum class QueryActionTone { Info, Danger, Success, Warning, Purple, Muted }
 
@@ -11,7 +13,7 @@ data class QueryActionStyle(val label: String, val tone: QueryActionTone)
  * PROXY_IPV6_SINK used to render as "Proxy_ipv6_sink" in a neutral badge, and the
  * same missing table also hid it from the Proxy filter.
  */
-fun queryActionStyle(action: String): QueryActionStyle = when (action.uppercase()) {
+fun queryActionStyle(action: String): QueryActionStyle = when (action.uppercase(Locale.ROOT)) {
     "PROXY" -> QueryActionStyle("Proxy", QueryActionTone.Info)
     "PROXY_IPV6_SINK" -> QueryActionStyle("Proxy IPv6 Sink", QueryActionTone.Info)
     "PROXY_FAILED" -> QueryActionStyle("Proxy Failed", QueryActionTone.Danger)
@@ -29,7 +31,7 @@ fun queryActionStyle(action: String): QueryActionStyle = when (action.uppercase(
             .split('_')
             .filter { it.isNotBlank() }
             .joinToString(" ") { word ->
-                word.lowercase().replaceFirstChar { it.uppercase() }
+                word.lowercase(Locale.ROOT).replaceFirstChar { it.uppercase(Locale.ROOT) }
             }
             .ifBlank { "—" },
         tone = QueryActionTone.Muted,
@@ -40,7 +42,7 @@ fun queryActionStyle(action: String): QueryActionStyle = when (action.uppercase(
 fun actionMatchesFilter(action: String, filter: ActionFilter): Boolean = when (filter) {
     ActionFilter.All -> true
     // PROXY, PROXY_IPV6_SINK and PROXY_FAILED are all proxy outcomes.
-    ActionFilter.Proxy -> action.uppercase().startsWith("PROXY")
-    ActionFilter.Direct -> action.uppercase() in setOf("DIRECT", "CACHED", "STALE")
-    ActionFilter.Block -> action.uppercase() in setOf("BLOCK", "RATELIMIT", "QUOTA")
+    ActionFilter.Proxy -> action.uppercase(Locale.ROOT).startsWith("PROXY")
+    ActionFilter.Direct -> action.uppercase(Locale.ROOT) in setOf("DIRECT", "CACHED", "STALE", "CUSTOM")
+    ActionFilter.Block -> action.uppercase(Locale.ROOT) in setOf("BLOCK", "RATELIMIT", "QUOTA")
 }

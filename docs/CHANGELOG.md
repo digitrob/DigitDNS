@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.0.2] — Allowed-only Top domains and polish fixes
+
+### 🛠 Fixed
+
+- **Blocked names no longer count in Top domains.** The `domain` Top query
+  subtracts each bucket's `TopBlockedDomains` count, so old and new ranges show
+  allowed-only counts immediately. Domains that were only blocked disappear from
+  the card; `Other` is clamped against underflow.
+- **Rewrite queries appear under the Direct filter** on web and Android.
+- **Locale-safe casing** for card headings, protocols, summary labels, action
+  filters and search normalization.
+- **320dp Queries by Relay title** wraps cleanly instead of truncating.
+
+### 🔄 Changed
+
+- Android DNS Rewrite bulk import reads and parses files off the UI thread and
+  uses localized status/summary strings.
+- Compact domain switch clears the inner switch semantics so TalkBack sees one
+  control.
+- README screenshots refreshed for the current dashboard and card names.
+- Release workflow sets a descriptive release title automatically.
+
+### 🔐 Security and cleanup
+
+- The public test fixture no longer contains a realistic host/subscription token.
+- Added a tail-clamp regression test for blocked-domain subtraction.
+
+### 🧪 Tests
+
+- Aggregate mixed allowed/blocked, blocked-only and tail-clamp cases.
+- Android unit/detekt/lint/build, web Node tests and the full Go suite.
+
+---
+
 ## 🏷️ [v5.0.1] — Dashboard polish, DNS Rewrites and relay clarity
 
 A patch over 5.0.0 with no storage or configuration migration. It unifies the
