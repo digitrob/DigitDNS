@@ -136,11 +136,10 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
     // when the user is already at the top so reading older rows is not hijacked.
     // scrollToItem rather than animateScrollToItem: a new query every few hundred
     // milliseconds must not start (and supersede) a scroll animation each time.
-    LaunchedEffect(state.buffer.size) {
-        if (!state.paused && state.buffer.isNotEmpty() &&
-            listState.firstVisibleItemIndex == 0 &&
-            listState.firstVisibleItemScrollOffset == 0
-        ) {
+    val atTop = listState.firstVisibleItemIndex == 0 &&
+        listState.firstVisibleItemScrollOffset == 0
+    LaunchedEffect(state.buffer.size, atTop) {
+        if (!state.paused && state.buffer.isNotEmpty() && atTop) {
             listState.scrollToItem(0)
         }
     }

@@ -128,10 +128,7 @@ fun DashboardScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showServerSwitcher by remember { mutableStateOf(false) }
 
-    LifecycleResumeEffect(Unit) {
-        viewModel.onResume()
-        onPauseOrDispose { viewModel.onPause() }
-    }
+    DashboardLifecycle(viewModel)
 
     when {
         state.isLoading && state.stats == null -> LoadingState()
@@ -230,6 +227,19 @@ fun DashboardScreen(
                 viewModel.refresh()
             },
         )
+    }
+}
+
+/**
+ * Start and stop the dashboard's live work with the screen lifecycle. Kept out of
+ * [DashboardScreen] itself so its composition stays under the project's method-length
+ * budget as the screen grows.
+ */
+@Composable
+private fun DashboardLifecycle(viewModel: DashboardViewModel) {
+    LifecycleResumeEffect(Unit) {
+        viewModel.onResume()
+        onPauseOrDispose { viewModel.onPause() }
     }
 }
 
