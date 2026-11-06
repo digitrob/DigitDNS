@@ -33,6 +33,32 @@ type cacheEntry struct {
 	origTTL  uint32
 }
 
+// QueryOptions is the parts of a request that change what a cached answer may
+// contain. DNSSEC records are only meaningful when the client asked for them
+// (DO), and a client that asked for checking to be disabled (CD) must not be
+// served an entry produced under the opposite policy. EDNS presence matters too:
+// a cached OPT record must never be handed to a client that sent no OPT of its
+// own (RFC 6891 §6.1.1).
+type QueryOptions struct {
+	EDNS bool
+	DO   bool
+	CD   bool
+}
+
+func (o QueryOptions) flags() byte {
+	var b byte
+	if o.EDNS {
+		b |= 1 << 0
+	}
+	if o.DO {
+		b |= 1 << 1
+	}
+	if o.CD {
+		b |= 1 << 2
+	}
+	return b
+}
+
 type cacheShard struct {
 	mu      sync.RWMutex
 	entries map[string]*cacheEntry
@@ -125,26 +151,33 @@ func (c *Cache) getShard(key string) *cacheShard {
 //
 // Type and class are written as their raw 16-bit values rather than looked up in
 // dns.TypeToString/dns.ClassToString: two map lookups per query bought nothing
-// but a human-readable key that nothing ever reads. They go in front of the name,
-// not after it, so the four fixed-width bytes can never be confused with part of
-// a name and two different (name, type, class) triples can never derive the same
-// key. strings.ToLower returns the original string untouched when there is no
-// uppercase to fold. The scratch array is sized for the 255-byte DNS name limit
-// plus the four prefix bytes, so on the lookup path — where the key is not
-// retained — it stays on the stack.
+// but a human-readable key that nothing ever reads. The one-byte flags field
+// carries EDNS/DO/CD so a signed answer is never served to a client that did not
+// ask for signatures, and an unchecked answer is never served to a validating
+// client. They go in front of the name, not after it, so the fixed-width prefix
+// can never be confused with part of a name and two different option sets can
+// never derive the same key. strings.ToLower returns the original string
+// untouched when there is no uppercase to fold. The scratch array is sized for
+// the 255-byte DNS name limit plus the five prefix bytes, so on the lookup path —
+// where the key is not retained — it stays on the stack.
 func (c *Cache) cacheKey(q dns.Question) string {
+	return c.cacheKeyFor(q, QueryOptions{})
+}
+
+func (c *Cache) cacheKeyFor(q dns.Question, opts QueryOptions) string {
 	name := strings.ToLower(q.Name)
 
-	var scratch [maxNameLen + 4]byte
+	var scratch [maxNameLen + 5]byte
 	var buf []byte
 	if len(name) <= maxNameLen {
 		buf = scratch[:0]
 	} else {
-		buf = make([]byte, 0, len(name)+4)
+		buf = make([]byte, 0, len(name)+5)
 	}
 
 	buf = binary.BigEndian.AppendUint16(buf, q.Qtype)
 	buf = binary.BigEndian.AppendUint16(buf, q.Qclass)
+	buf = append(buf, opts.flags())
 	buf = append(buf, name...)
 	return string(buf)
 }
@@ -155,7 +188,16 @@ func (c *Cache) cacheKey(q dns.Question) string {
 // spot. The resolver uses Lookup instead, which will serve an expired entry for a
 // short grace window while a replacement is fetched — see prefetch.go.
 func (c *Cache) Get(q dns.Question) *dns.Msg {
-	key := c.cacheKey(q)
+	return c.get(q, QueryOptions{}, false)
+}
+
+// GetWithOptions is Get for a request whose EDNS/DO/CD flags are significant.
+func (c *Cache) GetWithOptions(q dns.Question, opts QueryOptions) *dns.Msg {
+	return c.get(q, opts, true)
+}
+
+func (c *Cache) get(q dns.Question, opts QueryOptions, normalize bool) *dns.Msg {
+	key := c.cacheKeyFor(q, opts)
 	shard := c.getShard(key)
 
 	shard.mu.RLock()
@@ -185,12 +227,26 @@ func (c *Cache) Get(q dns.Question) *dns.Msg {
 	adjustRRs(resp.Answer, elapsed)
 	adjustRRs(resp.Ns, elapsed)
 	adjustRRs(resp.Extra, elapsed)
+	if normalize {
+		applyQueryOptions(resp, q, opts)
+	}
 
 	return resp
 }
 
-// Put caches a DNS message
+// Put caches a DNS message with the default EDNS/DO/CD options. Callers that
+// serve real client traffic should use PutWithOptions so signature-bearing and
+// checking-disabled answers get their own keys.
 func (c *Cache) Put(q dns.Question, msg *dns.Msg) {
+	c.put(q, msg, QueryOptions{}, false)
+}
+
+// PutWithOptions stores a message under the request options that produced it.
+func (c *Cache) PutWithOptions(q dns.Question, msg *dns.Msg, opts QueryOptions) {
+	c.put(q, msg, opts, true)
+}
+
+func (c *Cache) put(q dns.Question, msg *dns.Msg, opts QueryOptions, normalize bool) {
 	if msg == nil || len(msg.Question) == 0 {
 		return
 	}
@@ -207,15 +263,34 @@ func (c *Cache) Put(q dns.Question, msg *dns.Msg) {
 	// Clamp into the configured [minTTL, maxTTL] window.
 	minTTL = min(max(minTTL, c.minTTL), c.maxTTL)
 
-	key := c.cacheKey(q)
+	now := time.Now()
+	// A DNSSEC signature's validity is a harder ceiling than the operator's
+	// min_ttl. Extending a signed entry past its RRSIG expiration would let the
+	// cache keep advertising AD for data it can no longer authenticate.
+	sigTTL, signed := nearestSignatureTTL(msg, now)
+	if signed {
+		if sigTTL == 0 {
+			return // already expired; validation would have rejected it
+		}
+		if sigTTL < minTTL {
+			minTTL = sigTTL
+		}
+	}
+
+	key := c.cacheKeyFor(q, opts)
 	shard := c.getShard(key)
 
 	// Copy before clamping: the caller's message is the one being sent to the
 	// client, and Put must not rewrite it as a side effect.
 	stored := msg.Copy()
 	c.ClampTTLs(stored)
+	if signed {
+		capTTLs(stored, sigTTL)
+	}
+	if normalize {
+		normalizeStoredOptions(stored, q, opts)
+	}
 
-	now := time.Now()
 	entry := &cacheEntry{
 		msg:      stored,
 		cachedAt: now,
@@ -352,6 +427,47 @@ func (c *Cache) getMinTTL(msg *dns.Msg) uint32 {
 	return minTTL
 }
 
+// nearestSignatureTTL returns the smallest remaining lifetime among the RRSIGs
+// in msg, using RFC 1982 serial arithmetic. signed reports whether any RRSIG
+// was present; a zero ttl with signed true means a signature has already
+// expired and the message must not be cached.
+func nearestSignatureTTL(msg *dns.Msg, now time.Time) (ttl uint32, signed bool) {
+	nowUnix := uint32(now.Unix())
+	for _, section := range [][]dns.RR{msg.Answer, msg.Ns, msg.Extra} {
+		for _, rr := range section {
+			sig, ok := rr.(*dns.RRSIG)
+			if !ok {
+				continue
+			}
+			signed = true
+			remaining := sig.Expiration - nowUnix
+			if int32(remaining) <= 0 {
+				return 0, true
+			}
+			if ttl == 0 || remaining < ttl {
+				ttl = remaining
+			}
+		}
+	}
+	return ttl, signed
+}
+
+// capTTLs lowers every non-OPT record's TTL to maxTTL. Unlike ClampTTLs this
+// never raises a short TTL, which is what a signature lifetime cap needs.
+func capTTLs(msg *dns.Msg, maxTTL uint32) {
+	for _, section := range [][]dns.RR{msg.Answer, msg.Ns, msg.Extra} {
+		for _, rr := range section {
+			h := rr.Header()
+			if h.Rrtype == dns.TypeOPT {
+				continue
+			}
+			if h.Ttl > maxTTL {
+				h.Ttl = maxTTL
+			}
+		}
+	}
+}
+
 func adjustRRs(rrs []dns.RR, elapsed uint32) {
 	for _, rr := range rrs {
 		h := rr.Header()
@@ -364,6 +480,104 @@ func adjustRRs(rrs []dns.RR, elapsed uint32) {
 			h.Ttl = 1
 		}
 	}
+}
+
+// applyQueryOptions normalises a cached message to the request that is reading
+// it. The cache key already keeps DO/CD/EDNS variants apart; this also makes the
+// response flags honest if an upstream echoed something different.
+func applyQueryOptions(msg *dns.Msg, q dns.Question, opts QueryOptions) {
+	if msg == nil {
+		return
+	}
+	msg.CheckingDisabled = opts.CD
+	if opts.CD {
+		// CD asks the resolver not to validate. Never carry an authenticated
+		// marker from an entry that was produced under a checking-disabled query.
+		msg.AuthenticatedData = false
+	}
+	if !opts.EDNS {
+		// RFC 6891 §6.1.1: a reply may not introduce an OPT record the query did
+		// not carry. This matters when ECS or a DO query populated the entry.
+		msg.Extra = removeOPT(msg.Extra)
+	} else if opt := msg.IsEdns0(); opt != nil && !opts.DO {
+		// A DO=0 entry is stored from a DO=1 upstream query, so the OPT bit has
+		// to be cleared here or every later DO=0 hit would claim DO.
+		opt.SetDo(false)
+	}
+	if !opts.DO {
+		stripDNSSECRecords(msg, q.Qtype)
+	}
+}
+
+// normalizeStoredOptions keeps a cache entry consistent with the request that
+// produced it before it is stored. In particular, a DO=0 entry must not retain
+// signatures or denial records that a validating upstream volunteered.
+func normalizeStoredOptions(msg *dns.Msg, q dns.Question, opts QueryOptions) {
+	if msg == nil {
+		return
+	}
+	msg.CheckingDisabled = opts.CD
+	if opts.CD {
+		msg.AuthenticatedData = false
+	}
+	if !opts.EDNS {
+		msg.Extra = removeOPT(msg.Extra)
+	} else if opt := msg.IsEdns0(); opt != nil && !opts.DO {
+		opt.SetDo(false)
+	}
+	if !opts.DO {
+		stripDNSSECRecords(msg, q.Qtype)
+	}
+}
+
+// stripDNSSECRecords removes records that only exist to carry DNSSEC proof:
+// signatures, NSEC and NSEC3. A client that explicitly asked for one of those
+// types keeps it.
+func stripDNSSECRecords(msg *dns.Msg, qtype uint16) {
+	if msg == nil {
+		return
+	}
+	if qtype != dns.TypeRRSIG {
+		msg.Answer = stripRRType(msg.Answer, dns.TypeRRSIG)
+		msg.Ns = stripRRType(msg.Ns, dns.TypeRRSIG)
+		msg.Extra = stripRRType(msg.Extra, dns.TypeRRSIG)
+	}
+	if qtype != dns.TypeNSEC {
+		msg.Answer = stripRRType(msg.Answer, dns.TypeNSEC)
+		msg.Ns = stripRRType(msg.Ns, dns.TypeNSEC)
+		msg.Extra = stripRRType(msg.Extra, dns.TypeNSEC)
+	}
+	if qtype != dns.TypeNSEC3 {
+		msg.Answer = stripRRType(msg.Answer, dns.TypeNSEC3)
+		msg.Ns = stripRRType(msg.Ns, dns.TypeNSEC3)
+		msg.Extra = stripRRType(msg.Extra, dns.TypeNSEC3)
+	}
+}
+
+func removeOPT(rrs []dns.RR) []dns.RR {
+	if len(rrs) == 0 {
+		return rrs
+	}
+	out := rrs[:0]
+	for _, rr := range rrs {
+		if rr.Header().Rrtype != dns.TypeOPT {
+			out = append(out, rr)
+		}
+	}
+	return out
+}
+
+func stripRRType(rrs []dns.RR, rrtype uint16) []dns.RR {
+	if len(rrs) == 0 {
+		return rrs
+	}
+	out := rrs[:0]
+	for _, rr := range rrs {
+		if rr.Header().Rrtype != rrtype {
+			out = append(out, rr)
+		}
+	}
+	return out
 }
 
 func (c *Cache) Flush() {

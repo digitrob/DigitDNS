@@ -6,6 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.2.0] — DNSSEC validation and panel/app controls
+
+**A feature release.** Full DNSSEC validation in the hub, a Settings card and
+v3 API for its policy, and a dedicated DNSSEC section in the Android app. The
+feature is opt-in and startup-scoped; existing installs keep their current
+behaviour until it is enabled and the daemon restarts.
+
+### 🛡️ DNSSEC validation
+
+- Walks the DS/DNSKEY chain from the built-in IANA root KSKs (`20326`, `38696`)
+  through every zone cut and verifies answer RRSIGs.
+- Validates NXDOMAIN and NODATA with NSEC and NSEC3 proofs, including wildcard
+  expansion and NSEC3 opt-out.
+- Sets `AD` only on answers validated locally. Bogus answers return `SERVFAIL`
+  with EDE 6; `CD=1` bypasses validation and clears `AD`; unsigned delegations
+  are served without `AD`.
+- DNSSEC-aware cache keys separate EDNS, DO and CD variants. DO=0 entries cannot
+  leak RRSIG/NSEC/NSEC3 records, refresh preserves the entry's flags, and cached
+  TTLs cannot outlive the nearest RRSIG expiration.
+- Root trust anchors are built in; custom DS/DNSKEY anchors are validated at
+  save time. `dnssec_validation` and `dnssec_trust_anchors` are startup-only.
+- Added negative/positive validation tests, tampering tests, forged-SOA
+  downgrade tests, wildcard tests, cache isolation and signature-lifetime tests.
+
+### 🖥️ Web panel
+
+- New **Settings → DNSSEC Validation** card above **Traffic History**.
+- Shows the running state separately from the saved policy, with a clear
+  restart-required banner.
+- Enable/disable, trust-anchor editor, built-in anchor viewer and save-time
+  validation.
+- New authenticated `/api/settings/dnssec` route and v3
+  `/api/v3/settings/dnssec` route for Android and API-key clients.
+- Added web handler tests for round-trip saves, invalid/non-root anchors,
+  pasted multi-line anchors, and preservation of unrelated DNS settings.
+
+### 📱 Android
+
+- New **DNSSEC** Settings section immediately before **Traffic History**.
+- The card waits for the saved policy before drawing, so the switch opens in its
+  real position and the status never flips from `OFF` to `RUNNING`.
+- Trust-anchor editor, expandable built-in anchors, restart-required notice and
+  save progress.
+- `RUNNING`/`OFF` now uses the shared bordered `StatusBadge` style.
+- Compact layout fits the Settings area without scrolling, even with the
+  built-in anchors expanded.
+- Added API, ViewModel and UI-state tests.
+
+### 🧪 Verification
+
+- Full Go suite, `go vet`, cache/DNS/DNSSEC race tests and web tests pass.
+- Android `assembleDebug`, unit tests and detekt pass.
+- Live verification: signed names carry `AD`, unsigned names do not, bogus
+  names return `SERVFAIL`, `+cd` bypasses validation, and signed NXDOMAIN
+  carries `AD`.
+
 ## 🏷️ [v5.1.4] — Cleaner Top Domains and Docker Hub
 
 ### 🎨 Changed

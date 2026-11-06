@@ -360,7 +360,7 @@ func TestAUDPReplyIsCappedAt4096HoweverMuchTheClientAdvertises(t *testing.T) {
 			"Truncate fits it whole and drops nothing — raise the record count in bulkAnswer's "+
 			"caller until the compressed length exceeds the ceiling too", n)
 	}
-	c.Put(q, seed)
+	c.PutWithOptions(q, seed, cache.QueryOptions{EDNS: true})
 
 	req := new(dns.Msg)
 	req.SetQuestion(name, dns.TypeA)

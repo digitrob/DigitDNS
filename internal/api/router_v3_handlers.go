@@ -1157,6 +1157,39 @@ func (a *API) handleV3Resolution(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleV3DnssecSettings mirrors the dashboard's startup-only DNSSEC policy.
+// The Android client authenticates with the master API key, which the panel's
+// session-only gate rejects, so the route lives on the v3 router.
+func (a *API) handleV3DnssecSettings(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		resp, err := a.v3Backend.DnssecSettings()
+		if err != nil {
+			writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	case http.MethodPost, http.MethodPut:
+		body, ok := v3Body(r)
+		if !ok {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			return
+		}
+		resp, err := a.v3Backend.SaveDnssecSettings(r, body)
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
+	}
+}
+
 func (a *API) handleV3Subscription(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
 		v3BackendUnavailable(w, r)

@@ -41,7 +41,39 @@ interface SettingsApi {
 
     @POST("settings/resolution")
     suspend fun saveResolution(@Body body: ResolutionSaveRequest): ResolutionSettings
+
+    @GET("settings/dnssec")
+    suspend fun getDnssec(): DnssecSettings
+
+    @POST("settings/dnssec")
+    suspend fun saveDnssec(@Body body: DnssecSettingsSave): DnssecSettings
 }
+
+/**
+ * The startup-only DNSSEC policy. `default_anchors` is the built-in IANA root KSK
+ * list the server would use when `trust_anchors` is empty; `running` is what the
+ * daemon installed at boot, which can differ from `enabled` until a restart.
+ */
+@Serializable
+data class DnssecSettings(
+    val enabled: Boolean = false,
+    @SerialName("trust_anchors") val trustAnchors: List<String> = emptyList(),
+    @SerialName("default_anchors") val defaultAnchors: List<String> = emptyList(),
+    val running: Boolean = false,
+    @SerialName("restart_required") val restartRequired: Boolean = false,
+)
+
+/**
+ * The save body deliberately has no defaults. kotlinx.serialization omits
+ * default-valued properties, and an omitted `enabled` or `trust_anchors` would
+ * silently mean "leave the built-in anchors" on the server. Every field is
+ * therefore always emitted, including an empty anchor list.
+ */
+@Serializable
+data class DnssecSettingsSave(
+    val enabled: Boolean,
+    @SerialName("trust_anchors") val trustAnchors: List<String>,
+)
 
 /**
  * One per-domain resolution override. Absent fields inherit the global default:

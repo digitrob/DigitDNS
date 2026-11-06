@@ -513,6 +513,18 @@ func main() {
 		log.Printf("[Main] Warning: could not load relay agents: %v", err)
 	}
 	dnsHandler := dns.NewHandler(clientService, c, m, u, statsService, serverSettings.PublicIP)
+	// DNSSEC validation is opt-in and startup-only. With it off, the upstream's
+	// AD bit is passed through exactly as before; with it on, only an answer this
+	// hub validated itself can carry AD.
+	if dnsSettings.DNSSECValidation {
+		if err := dnsHandler.EnableDNSSEC(dnsSettings.DNSSECTrustAnchors); err != nil {
+			log.Printf("[DNS] DNSSEC validation disabled: %v", err)
+		} else {
+			log.Printf("[DNS] DNSSEC validation enabled (root trust anchors, NSEC/NSEC3 denial)")
+		}
+	} else {
+		log.Printf("[DNS] DNSSEC validation: off (upstream AD is passed through)")
+	}
 	dnsHandler.SetBlockPolicy(filterService.BlockPolicy)
 	dnsHandler.SetRelayLookup(func(domain string) (string, string, string, string, bool) {
 		target, ok := relayRouter.Lookup(domain)
@@ -612,6 +624,9 @@ func main() {
 		webAssets.StaticFS,
 	)
 	webServer.SetSubscriptionSettings(subscriptionSettings)
+	// The DNSSEC card compares this startup snapshot with the saved record to
+	// report whether a restart is pending. It is set before listeners start.
+	webServer.SetDNSSECStatus(dnsHandler.DNSSECEnabled(), dnsSettings.DNSSECTrustAnchors)
 	webServer.SetFilterService(filterService)
 	filterService.Start()
 

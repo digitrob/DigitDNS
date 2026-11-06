@@ -135,6 +135,13 @@ type WebServer struct {
 	// one of the two entries or write a half-updated "dns" record.
 	dnsMu sync.Mutex
 
+	// dnssecActive is what this process actually installed at startup, and
+	// dnssecAnchors is the anchor list it was built from. The settings card
+	// compares them with the saved record to tell the operator whether a restart
+	// is still pending; both are startup-only, so writes happen before listeners.
+	dnssecActive  atomic.Bool
+	dnssecAnchors atomic.Pointer[[]string]
+
 	// static holds the embedded dashboard, hashed and pre-compressed. Preparing it
 	// costs one pass over every asset, so it is built on first use and reused: the
 	// files came out of the binary and cannot change while the process runs, and
@@ -236,6 +243,19 @@ func (ws *WebServer) SetControlState(benchmark *service.BenchmarkRunner, lockout
 // SetSubscriptionSettings attaches the subscription record after construction.
 // It exists for the test harness, which builds servers without a database
 // record; main passes it in through the same call.
+// SetDNSSECStatus records what the running process actually installed. The
+// DNSSEC settings card compares this snapshot with the saved record so it can
+// say "restart required" instead of implying a live toggle. Call it during
+// startup, before the web listener begins accepting requests.
+func (ws *WebServer) SetDNSSECStatus(active bool, anchors []string) {
+	if ws == nil {
+		return
+	}
+	ws.dnssecActive.Store(active)
+	copied := append([]string(nil), anchors...)
+	ws.dnssecAnchors.Store(&copied)
+}
+
 func (ws *WebServer) SetSubscriptionSettings(s *database.SubscriptionSettings) {
 	ws.subSettings = s
 }
@@ -854,6 +874,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/benchmark", ws.requireAuth(ws.handleBenchmark))
 	mux.HandleFunc("/api/upstreams/add", ws.requireAuth(ws.handleUpstreamsAdd))
 	mux.HandleFunc("/api/settings/resolution", ws.requireAuth(ws.handleResolutionSettings))
+	mux.HandleFunc("/api/settings/dnssec", ws.requireAuth(ws.handleDNSSECSettings))
 	mux.HandleFunc("/api/upstreams/delete", ws.requireAuth(ws.handleUpstreamsDelete))
 	mux.HandleFunc("/api/tls/issue", ws.requireAuth(ws.handleTLSSettings))
 	mux.HandleFunc("/api/tls/auto-renew", ws.requireAuth(ws.handleTLSAutoRenew))

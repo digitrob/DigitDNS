@@ -51,18 +51,30 @@ const (
 	prefetchFraction = 10
 )
 
-// RefreshFunc re-resolves one question. The cache calls it from a background
-// goroutine and stores whatever comes back through the normal Put path, so a
-// refreshed answer is held to the same rcode and TTL policy as a client-driven
-// one.
-type RefreshFunc func(q dns.Question) (*dns.Msg, error)
+// RefreshFunc re-resolves one question under the same EDNS/DO/CD options that
+// produced its cache entry. The cache calls it from a background goroutine and
+// stores whatever comes back through the normal Put path, so a refreshed answer
+// is held to the same rcode and TTL policy as a client-driven one.
+type RefreshFunc func(q dns.Question, opts QueryOptions) (*dns.Msg, error)
 
-// SetRefresher installs the function the cache uses to renew entries. Until one
-// is set, Lookup behaves exactly like Get: with nothing to replace a stale entry,
-// serving one would only hand out an answer that never improves.
+// SetRefresher installs a refresher that does not need the request options. The
+// resolver should use SetRefresherWithOptions so a DO=1 entry is refreshed with
+// DO=1 and keeps its signatures.
 //
-// Call it during startup, before any listener is accepting.
-func (c *Cache) SetRefresher(f RefreshFunc) {
+// Call either during startup, before any listener is accepting.
+func (c *Cache) SetRefresher(f func(q dns.Question) (*dns.Msg, error)) {
+	if f == nil {
+		c.refresh.Store(nil)
+		return
+	}
+	wrapped := RefreshFunc(func(q dns.Question, _ QueryOptions) (*dns.Msg, error) {
+		return f(q)
+	})
+	c.refresh.Store(&wrapped)
+}
+
+// SetRefresherWithOptions installs an options-aware refresher.
+func (c *Cache) SetRefresherWithOptions(f RefreshFunc) {
 	if f == nil {
 		c.refresh.Store(nil)
 		return
@@ -99,7 +111,18 @@ func (c *Cache) StaleWindow() time.Duration {
 // different facts about the resolver, even though they are the same experience
 // for the client.
 func (c *Cache) Lookup(q dns.Question) (*dns.Msg, bool) {
-	key := c.cacheKey(q)
+	return c.lookup(q, QueryOptions{}, false)
+}
+
+// LookupWithOptions is Lookup for a request whose EDNS/DO/CD flags are
+// significant. The cache key keeps those variants apart, and the returned
+// message is normalised to the request.
+func (c *Cache) LookupWithOptions(q dns.Question, opts QueryOptions) (*dns.Msg, bool) {
+	return c.lookup(q, opts, true)
+}
+
+func (c *Cache) lookup(q dns.Question, opts QueryOptions, normalize bool) (*dns.Msg, bool) {
+	key := c.cacheKeyFor(q, opts)
 	shard := c.getShard(key)
 	now := time.Now()
 
@@ -150,16 +173,22 @@ func (c *Cache) Lookup(q dns.Question) (*dns.Msg, bool) {
 	if expired {
 		c.staleServed.Add(1)
 		setTTLs(resp, staleAnswerTTL)
-		c.startRefresh(q, key, refresh)
+		if normalize {
+			applyQueryOptions(resp, q, opts)
+		}
+		c.startRefresh(q, key, opts, refresh)
 		return resp, true
 	}
 
 	adjustRRs(resp.Answer, elapsed)
 	adjustRRs(resp.Ns, elapsed)
 	adjustRRs(resp.Extra, elapsed)
+	if normalize {
+		applyQueryOptions(resp, q, opts)
+	}
 
 	if refresh != nil {
-		c.startRefresh(q, key, refresh)
+		c.startRefresh(q, key, opts, refresh)
 	}
 	return resp, false
 }
@@ -212,7 +241,7 @@ func (c *Cache) reclaimExpired(shard *cacheShard, key string, now time.Time) {
 // burst of identical upstream queries: the first caller claims the key and every
 // other caller for the duration is served from the entry and skips, so at most one
 // upstream query per name is ever outstanding.
-func (c *Cache) startRefresh(q dns.Question, key string, refresh RefreshFunc) bool {
+func (c *Cache) startRefresh(q dns.Question, key string, opts QueryOptions, refresh RefreshFunc) bool {
 	c.flightMu.Lock()
 	if _, busy := c.inflight[key]; busy {
 		c.flightMu.Unlock()
@@ -232,11 +261,11 @@ func (c *Cache) startRefresh(q dns.Question, key string, refresh RefreshFunc) bo
 	}
 
 	c.refreshes.Add(1)
-	go c.runRefresh(q, key, refresh)
+	go c.runRefresh(q, key, opts, refresh)
 	return true
 }
 
-func (c *Cache) runRefresh(q dns.Question, key string, refresh RefreshFunc) {
+func (c *Cache) runRefresh(q dns.Question, key string, opts QueryOptions, refresh RefreshFunc) {
 	// The generation this refresh was born into (v2.1.0 B-14 remediation).
 	gen := c.generation.Load()
 	defer func() {
@@ -252,7 +281,7 @@ func (c *Cache) runRefresh(q dns.Question, key string, refresh RefreshFunc) {
 		}
 	}()
 
-	resp, err := refresh(q)
+	resp, err := refresh(q, opts)
 	if err != nil || resp == nil {
 		c.refreshFailed.Add(1)
 		return
@@ -266,7 +295,7 @@ func (c *Cache) runRefresh(q dns.Question, key string, refresh RefreshFunc) {
 	// Put applies the same rcode and TTL policy a client-driven answer gets, so a
 	// SERVFAIL refresh stores nothing and the stale entry goes on being served
 	// until its window closes — which is the resilience serve-stale exists for.
-	c.Put(q, resp)
+	c.PutWithOptions(q, resp, opts)
 }
 
 func (c *Cache) releaseFlight(key string) {

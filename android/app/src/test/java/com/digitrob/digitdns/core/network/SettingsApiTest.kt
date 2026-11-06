@@ -95,6 +95,41 @@ class SettingsApiTest {
     }
 
     @Test
+    fun dnssecReadMapsSnakeCaseAnchorsAndRunningState() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"enabled":true,"trust_anchors":[". 172800 IN DS 20326 8 2 ABCD"],"default_anchors":[". 172800 IN DS 38696 8 2 EFGH"],"running":false,"restart_required":true}""",
+            ),
+        )
+
+        val settings = repo.loadDnssec()
+
+        assertEquals(true, settings.enabled)
+        assertEquals(listOf(". 172800 IN DS 20326 8 2 ABCD"), settings.trustAnchors)
+        assertEquals(listOf(". 172800 IN DS 38696 8 2 EFGH"), settings.defaultAnchors)
+        assertEquals(false, settings.running)
+        assertEquals(true, settings.restartRequired)
+        assertEquals("/settings/dnssec", server.takeRequest().path)
+    }
+
+    @Test
+    fun dnssecSaveAlwaysEmitsEnabledAndAnchors() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"enabled":false,"trust_anchors":[],"default_anchors":[],"running":true,"restart_required":true}""",
+            ),
+        )
+
+        val saved = repo.saveDnssec(enabled = false, trustAnchors = emptyList())
+
+        val recorded = server.takeRequest()
+        assertEquals("POST", recorded.method)
+        assertEquals("/settings/dnssec", recorded.path)
+        assertEquals("""{"enabled":false,"trust_anchors":[]}""", recorded.body.readUtf8())
+        assertEquals(true, saved.restartRequired)
+    }
+
+    @Test
     fun regenerateApiKeyPostsPasswordAndReturnsTheKey() = runTest {
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"success":true,"api_key":"fresh"}"""))
 

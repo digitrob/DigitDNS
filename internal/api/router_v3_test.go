@@ -22,6 +22,8 @@ type fakeV3Backend struct {
 	persisted       [][]string
 	resolution      map[string]any
 	savedResolution map[string]any
+	dnssec          map[string]any
+	savedDnssec     map[string]any
 }
 
 func (f *fakeV3Backend) Login(r *http.Request, username, password, code string) (string, bool, error) {
@@ -46,6 +48,18 @@ func (f *fakeV3Backend) ResolutionSettings() (map[string]any, error) {
 func (f *fakeV3Backend) SaveResolution(r *http.Request, body map[string]any) (map[string]any, error) {
 	f.savedResolution = body
 	return f.resolution, nil
+}
+
+func (f *fakeV3Backend) DnssecSettings() (map[string]any, error) {
+	if f.dnssec == nil {
+		return map[string]any{"enabled": false}, nil
+	}
+	return f.dnssec, nil
+}
+
+func (f *fakeV3Backend) SaveDnssecSettings(r *http.Request, body map[string]any) (map[string]any, error) {
+	f.savedDnssec = body
+	return f.dnssec, nil
 }
 func (f *fakeV3Backend) AuthSnapshot() map[string]any { return map[string]any{"totp_enabled": false} }
 func (f *fakeV3Backend) Setup2FA(r *http.Request, u, p string) (map[string]any, error) {
@@ -672,6 +686,43 @@ func TestV3_ResolutionSettingsAcceptsAPIKey(t *testing.T) {
 	}
 	if backend.savedResolution["transport"] != "regular" {
 		t.Fatalf("save body transport = %v, want regular", backend.savedResolution["transport"])
+	}
+}
+
+// The Android settings screen reads the same DNSSEC policy as the panel card.
+// It authenticates with the master API key, so the v3 route must accept it.
+func TestV3_DnssecSettingsAcceptsAPIKey(t *testing.T) {
+	apiInst, _, _, cleanup := setupTestAPI(t)
+	defer cleanup()
+	backend := &fakeV3Backend{dnssec: map[string]any{
+		"enabled":          true,
+		"trust_anchors":    []string{},
+		"default_anchors":  []string{". 172800 IN DS 20326 8 2 E06D"},
+		"running":          true,
+		"restart_required": false,
+	}}
+	apiInst.SetV3Backend(backend)
+	mux := http.NewServeMux()
+	apiInst.RegisterRoutes(mux)
+	key := "digitdns_live_testkey123"
+
+	w := v3Request(mux, http.MethodGet, "/api/v3/settings/dnssec", key, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET dnssec = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var got map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &got)
+	if got["enabled"] != true || got["running"] != true {
+		t.Fatalf("GET dnssec = %v, want enabled and running", got)
+	}
+
+	w = v3Request(mux, http.MethodPost, "/api/v3/settings/dnssec", key,
+		map[string]any{"enabled": true, "trust_anchors": []string{". 172800 IN DS 38696 8 2 ABCD"}})
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST dnssec = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if backend.savedDnssec["enabled"] != true {
+		t.Fatalf("save body enabled = %v, want true", backend.savedDnssec["enabled"])
 	}
 }
 

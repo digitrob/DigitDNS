@@ -1,6 +1,8 @@
 package dns
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"math"
 	"net"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"digitdns/internal/core/cache"
+	"digitdns/internal/core/dnssec"
 	"digitdns/internal/core/matcher"
 	"digitdns/internal/core/upstream"
 	"digitdns/internal/database"
@@ -84,6 +87,11 @@ type Handler struct {
 	// for names that already matched a block rule, so a normal query never pays
 	// for it. Nil keeps the historical null-IP answer.
 	blockPolicy func() (mode string, ttl uint32)
+
+	// validator is installed during startup by EnableDNSSEC. While it is nil the
+	// resolver behaves exactly as before: upstream AD is passed through and no
+	// chain is walked.
+	validator ResponseValidator
 }
 
 func NewHandler(
@@ -113,31 +121,74 @@ func NewHandler(
 	// actually using is then refreshed in the background before it expires,
 	// instead of costing whoever asks next a full upstream round trip.
 	if c != nil && u != nil {
-		c.SetRefresher(h.refreshUpstream)
+		c.SetRefresherWithOptions(h.refreshUpstream)
 	}
 	return h
 }
 
-// refreshUpstream re-resolves one question for the cache's background refresh.
-//
-// It builds a fresh query rather than replaying a client's: the stored question is
-// all the cache knows, and a refresh must not carry some earlier client's
-// transaction ID or EDNS0 options into the pool. The pool attaches its own ECS
-// option from the configured public address, so a refresh is scoped exactly as a
-// client-driven query is.
 // SetBlockPolicy wires the filter service's response mode into the block path.
 func (h *Handler) SetBlockPolicy(fn func() (mode string, ttl uint32)) {
 	h.blockPolicy = fn
 }
 
-func (h *Handler) refreshUpstream(q dns.Question) (*dns.Msg, error) {
+// refreshUpstream re-resolves one question for the cache's background refresh.
+//
+// It builds a fresh query rather than replaying a client's: the stored question
+// and its EDNS/DO/CD policy are all the cache knows, and a refresh must not carry
+// some earlier client's transaction ID or unrelated EDNS0 options into the pool.
+// DO and CD are the exception: a DO=1 entry must be refreshed with DO=1 or the
+// replacement would lose the signatures the entry promised, and a CD=1 entry
+// must stay checking-disabled. The pool attaches its own ECS option from the
+// configured public address, so a refresh is scoped exactly as a client-driven
+// query is.
+func (h *Handler) refreshUpstream(q dns.Question, opts cache.QueryOptions) (*dns.Msg, error) {
 	m := new(dns.Msg)
 	m.SetQuestion(q.Name, q.Qtype)
 	m.Question[0].Qclass = q.Qclass
 	m.RecursionDesired = true
+	m.CheckingDisabled = opts.CD
 
-	resp, _, _, err := h.upstreams.Exchange(m)
-	return resp, err
+	validating := h.validator != nil && !opts.CD
+	if opts.EDNS || validating {
+		m.SetEdns0(dns.DefaultMsgSize, opts.DO || validating)
+	}
+
+	domain := strings.TrimSuffix(strings.ToLower(dns.Fqdn(q.Name)), ".")
+	resp, _, _, err := h.upstreams.ExchangeFor(m, domain)
+	if err != nil || resp == nil {
+		return resp, err
+	}
+	if h.validator == nil {
+		return resp, nil
+	}
+
+	resp.AuthenticatedData = false
+	if !validating {
+		return resp, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), dnssecValidationTimeout)
+	defer cancel()
+	result := h.validator.Validate(ctx, q, resp)
+	switch result.Status {
+	case dnssec.Secure:
+		resp.AuthenticatedData = true
+	case dnssec.Bogus:
+		// A refresh that could not validate must not replace a good entry with
+		// unauthenticated data. The stale answer keeps being served until the
+		// zone recovers or the grace window closes.
+		log.Printf("[DNSSEC] Bogus refresh for %s/%s: %s", q.Name, dns.TypeToString[q.Qtype], result.Reason)
+		return nil, fmt.Errorf("DNSSEC bogus: %s", result.Reason)
+	}
+	return resp, nil
+}
+
+func cacheOptions(r *dns.Msg) cache.QueryOptions {
+	opt := r.IsEdns0()
+	return cache.QueryOptions{
+		EDNS: opt != nil,
+		DO:   opt != nil && opt.Do(),
+		CD:   r.CheckingDisabled,
+	}
 }
 
 // SetRateLimit replaces the per-source query limit. A value of zero or less turns
@@ -741,8 +792,9 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	// TTL, while it is refreshed behind the scenes, and an entry approaching expiry
 	// is refreshed early. Either way nobody waits on an upstream for a name the
 	// resolver already knows.
+	cacheOpts := cacheOptions(r)
 	if h.cache != nil {
-		if cachedResp, stale := h.cache.Lookup(q); cachedResp != nil {
+		if cachedResp, stale := h.cache.LookupWithOptions(q, cacheOpts); cachedResp != nil {
 			cachedResp.Id = r.Id
 			cachedResp.Question = r.Question
 			cachedResp.RecursionDesired = r.RecursionDesired
@@ -759,13 +811,38 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	}
 
 	// 6. Query Upstream Resolver Pool (Fastest Racing)
-	resp, _, upstream, err := h.upstreams.ExchangeFor(r, domain)
+	//
+	// With validation on, ask upstream for DNSSEC records even when the client
+	// did not. A DO=0 client still gets the protection; the signatures are
+	// stripped again after validation.
+	validating := h.validator != nil && !cacheOpts.CD
+	upstreamQuery := r
+	if validating {
+		upstreamQuery = r.Copy()
+		ensureDNSSECRequest(upstreamQuery)
+	}
+	resp, _, upstream, err := h.upstreams.ExchangeFor(upstreamQuery, domain)
 	if err != nil {
 		log.Printf("[DNS] Upstream query error for %s: %v", domain, err)
 		m := new(dns.Msg)
 		m.SetRcode(r, dns.RcodeServerFailure)
 		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "SERVFAIL", false, "", matchedPattern, q.Qtype, dns.RcodeServerFailure)
 		return m
+	}
+
+	// DNSSEC: clear any AD the upstream volunteered, then set it only when the
+	// chain of trust and the answer's signatures verify here. A truncated
+	// answer cannot be validated; it is left for the transport retry path.
+	if h.validator != nil && resp != nil {
+		if !validating || resp.Truncated {
+			resp.AuthenticatedData = false
+		} else if result := h.validateUpstream(q, resp); result.Status == dnssec.Bogus {
+			m := new(dns.Msg)
+			m.SetRcode(r, dns.RcodeServerFailure)
+			attachBogusEDE(m, r)
+			h.logQuery(start, clientIP, accountName, proto, domain, "DNSSEC Bogus", "BOGUS", false, "", matchedPattern, q.Qtype, dns.RcodeServerFailure)
+			return m
+		}
 	}
 
 	// Cache successful and authoritative-negative answers. NXDOMAIN was
@@ -776,11 +853,19 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	// a connection transport is a protocol violation. The racer now refuses to
 	// hand one back as a winner; this gate is the second fence.
 	if h.cache != nil && resp != nil && !resp.Truncated && (resp.Rcode == dns.RcodeSuccess || resp.Rcode == dns.RcodeNameError) {
-		h.cache.Put(q, resp)
+		h.cache.PutWithOptions(q, resp, cacheOpts)
 		// The cached copy is clamped to the configured TTL window; clamp the
 		// answer this client gets too, so the first requester is not the one
 		// client told to hold the record for longer than the cache will.
 		h.cache.ClampTTLs(resp)
+	}
+
+	// Validation forced DO=1 upstream. Put the client's own EDNS/DO view back
+	// before the answer leaves, including removing the OPT record entirely from
+	// a reply to a client that never sent one.
+	if h.validator != nil {
+		capDNSSECLifetime(resp)
+		normalizeForClient(resp, cacheOpts, q.Qtype)
 	}
 
 	// A stream client (TCP/DoT/DoH) must never receive TC=1 (RFC 7766 §4.2.2):

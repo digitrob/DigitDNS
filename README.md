@@ -41,6 +41,22 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.2
+
+**DNSSEC validation is now built into the hub, the panel and the Android app.**
+The resolver walks the DS/DNSKEY chain from the IANA root anchors, verifies
+answer signatures and NSEC/NSEC3 denial proofs, sets `AD` only on answers it
+validated itself, and answers `SERVFAIL` for bogus zones. `+cd` bypasses
+validation. The feature is opt-in and startup-scoped: enable it in
+**Settings → DNSSEC Validation** (web or Android), then restart the daemon.
+The same release adds the v3 DNSSEC settings route, a compact Android card that
+opens with the real saved state, shared status-pill styling, and DNSSEC-aware
+cache keys so DO=0 clients never receive signature or denial records.
+
+The 5.1 line remains included: Graphite theme, reverse-DNS filtering in Top
+Domains, Docker Hub mirrors, faster web/Android boot paths and the previous
+performance work. See the latest release notes for details.
+
 ## What's new in 5.1
 
 **Graphite** is a neutral third theme for the web panel and the Android app,
@@ -206,6 +222,9 @@ theme chosen on the login screen survives sign-in and app restarts.
   Android client area.
 - **Encrypted DNS where it matters.** DoT and DoH for clients; DoT, DoH, DoQ,
   DoH3 and DNSCrypt for upstreams.
+- **DNSSEC validation when you want it.** Optional chain-of-trust validation
+  with built-in root anchors, NSEC/NSEC3 denial proofs, `AD` on validated answers
+  and `SERVFAIL` for bogus zones.
 - **A Pi-hole / AdGuard Home alternative with a relay.** Run the 45-preset
   blocklist engine on its own, or let the same install bypass geo-blocks through
   SNI relay agents.
@@ -228,7 +247,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.1.4/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -287,7 +306,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.1.4/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -370,7 +389,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.1.4` | Reverse DNS excluded from Top Domains; Docker Hub mirror published (latest) |
+| `5.2.0` | DNSSEC validation, Settings card, v3 API and Android DNSSEC section (latest) |
+| `5.1.4` | Reverse DNS excluded from Top Domains; Docker Hub mirror published (older) |
 | `5.1.3` | Faster web route boot and Android startup, lifecycle and live-log batching (older) |
 | `5.1.2` | Backend performance: telemetry fast path, compiled policy indexes, typed DNS answers (older) |
 | `5.1.1` | Sky-blue Proxy status in Graphite for web and Android, grey favicon (older) |
@@ -411,7 +431,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.1.4/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -727,6 +747,36 @@ Android, the same surface natively:
 Client DoT/DoH need a valid certificate, so they require a domain. The server
 keeps upstream connections alive between queries to cut handshake latency.
 
+### DNSSEC validation
+
+DigitDNS can validate the DNSSEC chain of trust itself instead of trusting an
+upstream resolver's `AD` bit. Validation is opt-in and startup-scoped.
+
+- **Root to answer.** Walks DS/DNSKEY records from the built-in IANA root KSKs
+  (`20326`, `38696`) through each delegation, then verifies the answer RRSIGs.
+- **Positive and negative answers.** Verifies NXDOMAIN and NODATA with NSEC or
+  NSEC3 proofs, including wildcard expansion and NSEC3 opt-out spans.
+- **Honest AD.** `AD` is set only on answers this server validated. Bogus zones
+  return `SERVFAIL` with Extended DNS Error 6. `CD=1` bypasses validation and
+  clears `AD`; unsigned delegations are served normally without `AD`.
+- **Cache-safe.** Cache entries separate EDNS/DO/CD, DO=0 clients never receive
+  RRSIG/NSEC/NSEC3 material, background refresh keeps the entry's flags, and
+  TTLs cannot outlive the nearest RRSIG expiration.
+- **Panel and Android controls.** **Settings → DNSSEC Validation** on both
+  surfaces: enable/disable, trust-anchor editor, built-in root anchors and a
+  restart-required notice when saved policy differs from the running process.
+- **API.** `GET/POST /api/settings/dnssec` for the panel and
+  `GET/POST /api/v3/settings/dnssec` for Android and API-key clients.
+
+```json
+"dnssec_validation": true,
+"dnssec_trust_anchors": []
+```
+
+An empty `dnssec_trust_anchors` list uses the built-in root KSKs. Custom entries
+are DS or DNSKEY records for `.` and are validated before saving. Enabling or
+changing the policy takes effect after a daemon restart; the default is `false`.
+
 ### Upstream resolvers and policy
 
 - Plain UDP/TCP, DoT, DoH, DoQ, DoH3 and DNSCrypt upstreams, benchmarked live
@@ -764,7 +814,7 @@ keeps upstream connections alive between queries to cut handshake latency.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.1.4`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.2.0`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

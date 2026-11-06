@@ -26,6 +26,8 @@
     "cache_min_ttl": 60,
     "cache_max_ttl": 86400,
     "serve_stale_seconds": 30,
+    "dnssec_validation": false,
+    "dnssec_trust_anchors": [],
     "query_timeout": 2000000000,
     "fastest_racing": true,
     "ecs_client_ip": ""

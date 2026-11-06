@@ -433,6 +433,10 @@
       "get": {"tags": ["settings"], "summary": "Read subscriber-surface settings", "responses": {"200": {"description": "OK"}}},
       "post": {"tags": ["settings"], "summary": "Save subscriber-surface settings", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
     },
+    "/api/v3/settings/dnssec": {
+      "get": {"tags": ["settings"], "summary": "Read the DNSSEC validation policy and trust anchors", "responses": {"200": {"description": "OK"}}},
+      "post": {"tags": ["settings"], "summary": "Save the startup-only DNSSEC policy", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}}}
+    },
     "/api/v3/settings/regenerate-api-key": {
       "get": {"tags": ["settings"], "summary": "Read the master API key", "responses": {"200": {"description": "OK"}, "401": {"$ref": "#/components/responses/Unauthorized"}}},
       "post": {"tags": ["settings"], "summary": "Rotate the master API key (current_password + code)", "responses": {"200": {"description": "OK"}, "400": {"$ref": "#/components/responses/BadRequest"}, "403": {"$ref": "#/components/responses/Forbidden"}}}

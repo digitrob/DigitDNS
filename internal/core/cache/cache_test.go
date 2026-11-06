@@ -162,7 +162,7 @@ func TestKeyHandlesOversizeName(t *testing.T) {
 	q := dns.Question{Name: long, Qtype: dns.TypeA, Qclass: dns.ClassINET}
 
 	key := c.cacheKey(q)
-	if want := len(long) + 4; len(key) != want {
+	if want := len(long) + 5; len(key) != want {
 		t.Fatalf("key length = %d, want %d", len(key), want)
 	}
 	if shard := c.getShard(key); shard == nil {

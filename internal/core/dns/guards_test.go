@@ -247,7 +247,7 @@ func TestServeLeavesALargeAnswerWholeWhenTheClientCanTakeIt(t *testing.T) {
 
 	const name = "roomy.internal.test."
 	q := dns.Question{Name: name, Qtype: dns.TypeA, Qclass: dns.ClassINET}
-	c.Put(q, bulkAnswer(t, name, 120))
+	c.PutWithOptions(q, bulkAnswer(t, name, 120), cache.QueryOptions{EDNS: true})
 
 	// The same records, to a client that advertised a 4096-byte buffer. Clipping this
 	// one would cost a round trip on every large answer for no reason.

@@ -1,5 +1,7 @@
 package com.digitrob.digitdns.data
 
+import com.digitrob.digitdns.core.network.DnssecSettings
+import com.digitrob.digitdns.core.network.DnssecSettingsSave
 import com.digitrob.digitdns.core.network.SettingsApi
 import com.digitrob.digitdns.core.network.SettingsSaveRequest
 import com.digitrob.digitdns.core.network.RegenerateApiKeyRequest
@@ -74,4 +76,11 @@ class SettingsRepository @Inject constructor(
     /** Save the resolution settings and hand back the server's canonical answer. */
     suspend fun saveResolution(request: ResolutionSaveRequest): ResolutionSettings =
         api.saveResolution(request)
+
+    /** The saved DNSSEC policy, the built-in anchors and the running state. */
+    suspend fun loadDnssec(): DnssecSettings = api.getDnssec()
+
+    /** Save the startup-only DNSSEC policy and hand back the server's answer. */
+    suspend fun saveDnssec(enabled: Boolean, trustAnchors: List<String>): DnssecSettings =
+        api.saveDnssec(DnssecSettingsSave(enabled = enabled, trustAnchors = trustAnchors))
 }

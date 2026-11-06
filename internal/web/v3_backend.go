@@ -256,6 +256,23 @@ func (b *v3Backend) SaveResolution(r *http.Request, body map[string]any) (map[st
 	return b.delegateBody(post, body, b.ws.handleResolutionSettings)
 }
 
+// DnssecSettings is the dashboard's DNSSEC policy view. The Android client uses
+// the v3 route because its credential can be the master API key.
+func (b *v3Backend) DnssecSettings() (map[string]any, error) {
+	rec := httptest.NewRecorder()
+	b.ws.handleDNSSECSettings(rec, httptest.NewRequest(http.MethodGet, "/api/settings/dnssec", nil))
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	return out, nil
+}
+
+func (b *v3Backend) SaveDnssecSettings(r *http.Request, body map[string]any) (map[string]any, error) {
+	// The panel handler answers GET/POST; a v3 PUT is normalised to POST.
+	post := r.Clone(r.Context())
+	post.Method = http.MethodPost
+	return b.delegateBody(post, body, b.ws.handleDNSSECSettings)
+}
+
 func (b *v3Backend) RegenerateAPIKey(r *http.Request, currentPassword, code string) (map[string]any, error) {
 	return b.delegateBody(r, map[string]any{"current_password": currentPassword, "code": code}, b.ws.handleRegenerateAPIKey)
 }

@@ -1032,6 +1032,7 @@ async function loadConfig() {
     currentConfig = cfgData;
     renderConfig(currentConfig);
     loadResolutionSettings();
+    loadDNSSECSettings();
     loadAgents();
     // Raised after the config lands so the modal can prefill the real username
     // rather than the markup's placeholder.
@@ -2713,6 +2714,115 @@ let resolutionSettings = {
 };
 
 let resolutionLoading = false;
+
+// The DNSSEC card in Settings mirrors /api/settings/dnssec. The endpoint is
+// startup-only: saving writes the "dns" record, and restart_required tells the
+// operator that the running validator still uses the previous policy.
+let dnssecSettings = {
+  loaded: false,
+  enabled: false,
+  trust_anchors: [],
+  default_anchors: [],
+  running: false,
+  restart_required: false
+};
+let dnssecLoading = false;
+
+function normalizeDNSSECSettings(settings) {
+  const out = settings || {};
+  out.loaded = true;
+  out.enabled = !!out.enabled;
+  out.trust_anchors = Array.isArray(out.trust_anchors) ? out.trust_anchors : [];
+  out.default_anchors = Array.isArray(out.default_anchors) ? out.default_anchors : [];
+  out.running = !!out.running;
+  out.restart_required = !!out.restart_required;
+  return out;
+}
+
+async function loadDNSSECSettings() {
+  if (dnssecLoading) return;
+  dnssecLoading = true;
+  try {
+    const res = await fetch(api('/api/settings/dnssec'), {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (!res.ok) return;
+    dnssecSettings = normalizeDNSSECSettings(await res.json());
+    syncDNSSECControls();
+  } catch (e) { /* keep the markup defaults; the Save button still works */ }
+  finally { dnssecLoading = false; }
+}
+
+function syncDNSSECControls() {
+  const enabled = document.getElementById('dnssec-enabled-input');
+  if (enabled) enabled.checked = dnssecSettings.enabled;
+
+  const anchors = document.getElementById('dnssec-anchors-input');
+  if (anchors && document.activeElement !== anchors) {
+    anchors.value = (dnssecSettings.trust_anchors || []).join('\n');
+  }
+
+  const defaults = document.getElementById('dnssec-default-anchors');
+  if (defaults) defaults.textContent = (dnssecSettings.default_anchors || []).join('\n');
+
+  // The badge reflects the RUNNING policy, not the saved checkbox: after a save
+  // the two differ until the engine restarts, and that is the whole point of
+  // the restart note below it.
+  const badge = document.getElementById('dnssec-status-badge');
+  if (badge) {
+    const running = dnssecSettings.running;
+    badge.textContent = running ? 'RUNNING' : 'OFF';
+    badge.classList.toggle('bg-emerald-500/20', running);
+    badge.classList.toggle('text-emerald-300', running);
+    badge.classList.toggle('border-emerald-500/30', running);
+    badge.classList.toggle('bg-slate-800/70', !running);
+    badge.classList.toggle('text-slate-400', !running);
+    badge.classList.toggle('border-slate-700', !running);
+  }
+
+  const note = document.getElementById('dnssec-restart-note');
+  if (note) note.classList.toggle('hidden', !dnssecSettings.restart_required);
+
+  const status = document.getElementById('dnssec-save-status');
+  if (status) {
+    status.textContent = dnssecSettings.restart_required ? 'Saved — restart required.' : '';
+  }
+}
+
+async function saveDNSSECSettings() {
+  const enabled = document.getElementById('dnssec-enabled-input');
+  const anchors = document.getElementById('dnssec-anchors-input');
+  const status = document.getElementById('dnssec-save-status');
+  const payload = {
+    enabled: !!(enabled && enabled.checked),
+    trust_anchors: (anchors ? anchors.value : '')
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+  };
+  if (status) status.textContent = 'Saving…';
+  try {
+    const res = await fetch(api('/api/settings/dnssec'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      if (status) status.textContent = '';
+      showToast(await errorMessage(res, 'Could not save the DNSSEC settings'), 'error');
+      return;
+    }
+    dnssecSettings = normalizeDNSSECSettings(await res.json());
+    syncDNSSECControls();
+    if (status) status.textContent = dnssecSettings.restart_required ? 'Saved — restart required.' : 'Saved.';
+    showToast(dnssecSettings.restart_required
+      ? 'DNSSEC settings saved — restart to apply'
+      : 'DNSSEC settings saved', 'success');
+  } catch (e) {
+    if (status) status.textContent = '';
+    showToast('Could not save the DNSSEC settings', 'error');
+  }
+}
 
 async function loadResolutionSettings() {
   if (resolutionLoading) return;
@@ -7565,6 +7675,11 @@ function switchTab(target, updateUrl = true, loadData = true) {
       if (target === 'filters') {
         loadFiltering();
       }
+      if (target === 'rules') {
+        // Refresh the saved-vs-running comparison every time Settings opens,
+        // so a restart performed elsewhere in the panel clears the pending note.
+        loadDNSSECSettings();
+      }
       if (target === 'dashboard') {
         loadHistory();
         requestAnimationFrame(() => { if (historyChart) historyChart.resize(); });
@@ -8444,6 +8559,7 @@ function initEventListeners() {
   }
 
   document.getElementById('geoip-update-btn')?.addEventListener('click', updateGeoipDatabase);
+  document.getElementById('save-dnssec-btn')?.addEventListener('click', saveDNSSECSettings);
   document.getElementById('resolution-transport')?.addEventListener('change', (e) => {
     saveResolutionSettings({ transport: e.target.value }, 'Resolution defaults saved');
   });

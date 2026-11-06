@@ -221,6 +221,18 @@ type DNSSettings struct {
 	// stored 0 means an operator turned the feature off rather than "never set".
 	ServeStaleSeconds uint32 `json:"serve_stale_seconds"`
 
+	// DNSSECValidation turns on full chain validation in the hub. False keeps the
+	// historical behaviour (the upstream's AD bit is passed through); true makes
+	// this server walk DS/DNSKEY to the root, verify answer signatures and NSEC/
+	// NSEC3 denial proofs, set AD only on validated data, and answer SERVFAIL for
+	// a bogus zone. It is read once at startup, so a change needs a restart.
+	DNSSECValidation bool `json:"dnssec_validation"`
+
+	// DNSSECTrustAnchors overrides the built-in IANA root trust anchors. Each
+	// entry is a DS or DNSKEY record in zone-file form. Empty uses the built-in
+	// anchors, which is what almost every deployment should do.
+	DNSSECTrustAnchors []string `json:"dnssec_trust_anchors,omitempty"`
+
 	// Transport is the global transport choice: "any", "encrypted"
 	// (DoT/DoH/DoQ/DoH3/DNSCrypt) or "regular" (plain UDP/TCP). A per-domain
 	// profile can override it. Empty means "any".

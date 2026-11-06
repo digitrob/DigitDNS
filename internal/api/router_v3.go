@@ -137,6 +137,12 @@ type V3Backend interface {
 	ResolutionSettings() (map[string]any, error)
 	SaveResolution(r *http.Request, body map[string]any) (map[string]any, error)
 
+	// DnssecSettings and SaveDnssecSettings mirror the dashboard's startup-only
+	// DNSSEC policy and trust-anchor list. Like resolution, they are mounted on
+	// v3 because the companion app may authenticate with the master API key.
+	DnssecSettings() (map[string]any, error)
+	SaveDnssecSettings(r *http.Request, body map[string]any) (map[string]any, error)
+
 	// Filtering status, settings and blocklists. These delegate to the dashboard
 	// handlers so the REST view and the Ad Blocking page cannot disagree about a
 	// list's state or a settings save. The list-add request is passed through
@@ -208,6 +214,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	// Settings.
 	mux.HandleFunc("/api/v3/settings", a.SecurityMiddlewareV3(a.handleV3Settings))
 	mux.HandleFunc("/api/v3/settings/resolution", a.SecurityMiddlewareV3(a.handleV3Resolution))
+	mux.HandleFunc("/api/v3/settings/dnssec", a.SecurityMiddlewareV3(a.handleV3DnssecSettings))
 	mux.HandleFunc("/api/v3/settings/subscription", a.SecurityMiddlewareV3(a.handleV3Subscription))
 	mux.HandleFunc("/api/v3/settings/regenerate-api-key", a.SecurityMiddlewareV3(a.handleV3RegenerateAPIKey))
 	mux.HandleFunc("/api/v3/settings/regenerate-admin-path", a.SecurityMiddlewareV3(a.handleV3RegenerateAdminPath))

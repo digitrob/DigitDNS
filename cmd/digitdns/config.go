@@ -88,6 +88,9 @@ type fileConfig struct {
 		// Pointer, like every other key here, so that an explicit 0 turns
 		// serve-stale off while an absent key keeps the built-in default.
 		ServeStaleSeconds *uint32 `json:"serve_stale_seconds"`
+		// DNSSECValidation is startup-only; the hub has no live toggle.
+		DNSSECValidation   *bool     `json:"dnssec_validation"`
+		DNSSECTrustAnchors *[]string `json:"dnssec_trust_anchors"`
 	} `json:"dns"`
 	SNIProxy       *sniProxyFile `json:"sniproxy"`
 	SNIProxyLegacy *sniProxyFile `json:"sni_proxy"`
@@ -181,6 +184,12 @@ func applyConfigFile(path string, server *database.ServerSettings, dns *database
 		}
 		if d.ServeStaleSeconds != nil {
 			dns.ServeStaleSeconds = *d.ServeStaleSeconds
+		}
+		if d.DNSSECValidation != nil {
+			dns.DNSSECValidation = *d.DNSSECValidation
+		}
+		if d.DNSSECTrustAnchors != nil {
+			dns.DNSSECTrustAnchors = *d.DNSSECTrustAnchors
 		}
 	}
 
