@@ -41,6 +41,31 @@
       } catch (e) { /* private mode: the markup's own defaults stand */ }
     })();
   </script>
+  <!-- Route is resolved here, before the stylesheet paints the dashboard shell, so a
+       reload of /clients or /logs does not show Dashboard first and then swap tabs
+       after the API calls. The map mirrors routeTabs in app.js; dashboard_ids_test.go
+       keeps the two in step. The attribute is also updated by switchTab afterwards. -->
+  <script>
+    (function () {
+      try {
+        var p = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+        var admin = (p.match(/^\/[0-9a-f]{16}(?=\/|$)/) || [''])[0];
+        var route = p;
+        if (admin && (p === admin + '/dash' || p.indexOf(admin + '/dash/') === 0)) {
+          route = p.slice((admin + '/dash').length) || '/home';
+        }
+        var routes = {
+          '/home': 'dashboard', '/dashboard': 'dashboard', '/panel': 'dashboard',
+          '/login': 'dashboard', '/proxied': 'proxied', '/filters': 'filters',
+          '/agents': 'agents', '/clients': 'clients', '/logs': 'stream',
+          '/stream': 'stream', '/api': 'api', '/settings': 'rules',
+          '/guide': 'connect', '/connect': 'connect'
+        };
+        document.documentElement.classList.add('boot-pending');
+        document.documentElement.setAttribute('data-boot-tab', routes[route] || 'dashboard');
+      } catch (e) { /* the markup's dashboard default stands */ }
+    })();
+  </script>
   <!-- Purged, committed Tailwind stylesheet: the Play CDN JIT engine and
        its 397 KB + 'unsafe-eval' cost are gone. The utility set was compiled
        ahead of time by tools/tailwind.config.js (dev machine only — the output

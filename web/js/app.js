@@ -429,6 +429,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Before checkAuthAndBoot, which unhides the login overlay synchronously: the observers
   // inside have to be watching already or they miss the modal that is up first.
   initModalA11y();
+  // Select the tab from the URL before the first API call. The pre-paint script already
+  // stopped the wrong tab from painting; this applies the real classes and nav state so
+  // bootDashboard can load only the tab that is actually on screen.
+  handleRouteFromURL(false);
   checkAuthAndBoot();
   // Filled after checkAuthAndBoot: opening the overlay runs the focus trap, which
   // would otherwise land the cursor on the theme toggle and override the password
@@ -958,10 +962,12 @@ async function bootDashboard() {
   }
   const authed = await loadConfig();
   if (!authed) return; // 401 -> login modal is already shown
-  await loadClients();
+  // Load only the tab the URL asked for. Clients, agents, filtering and history
+  // have their own loaders and are reached from switchTab; fetching the whole
+  // client list here used to delay the first usable screen on every reload.
+  handleRouteFromURL(true);
   startStatsPolling();
   startLiveStream();
-  handleRouteFromURL();
   initHistory();
   initStatsSettings();
   initFiltering();
@@ -996,34 +1002,34 @@ async function loadConfig() {
     return false;
   }
   try {
-    const res = await fetch(api('/api/auth/me'), {
-      headers: { 'Authorization': `Bearer ${authToken}` }
-    });
+    // Two independent reads: the account probe supplies the weak-password flag, the
+    // config supplies everything the shell renders. They used to run one after the
+    // other, adding a full round trip to every boot; now they share one.
+    const [meRes, cfgRes] = await Promise.all([
+      fetch(api('/api/auth/me'), {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      }),
+      fetch(api('/api/config'), {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      }),
+    ]);
 
-    if (res.status === 401) {
+    if (meRes.status === 401 || cfgRes.status === 401) {
       showLoginModal();
       return false;
     }
-    if (!res.ok) {
-      showToast(await errorMessage(res, 'Could not read the account state.'), 'error');
-      return false;
-    }
-
-    const meData = await res.json();
-    const weak = !!(meData.password_weak || meData.is_default_password);
-
-    const cfgRes = await fetch(api('/api/config'), {
-      headers: { 'Authorization': `Bearer ${authToken}` }
-    });
-    if (cfgRes.status === 401) {
-      showLoginModal();
+    if (!meRes.ok) {
+      showToast(await errorMessage(meRes, 'Could not read the account state.'), 'error');
       return false;
     }
     if (!cfgRes.ok) {
       showToast(await errorMessage(cfgRes, 'Could not load the configuration.'), 'error');
       return false;
     }
-    currentConfig = await cfgRes.json();
+
+    const [meData, cfgData] = await Promise.all([meRes.json(), cfgRes.json()]);
+    const weak = !!(meData.password_weak || meData.is_default_password);
+    currentConfig = cfgData;
     renderConfig(currentConfig);
     loadResolutionSettings();
     loadAgents();
@@ -7508,8 +7514,9 @@ const routeTabs = {
   '/connect': 'connect'
 };
 
-function switchTab(target, updateUrl = true) {
+function switchTab(target, updateUrl = true, loadData = true) {
   activeDashTab = target;
+  document.documentElement?.setAttribute('data-boot-tab', target);
   document.querySelectorAll('.sidebar-nav-item, .nav-tab, .agent-nav-link').forEach(t => {
     if (t.dataset.tab === target) {
       t.classList.add('active');
@@ -7532,37 +7539,39 @@ function switchTab(target, updateUrl = true) {
   const targetEl = document.getElementById(`tab-${target}`);
   if (targetEl) {
     targetEl.classList.remove('hidden');
-    if (target === 'clients') {
-      loadClients();
-    }
-    // Returning to the Logs view repaints the stream from the buffer: the
-    // per-query DOM work was skipped while another tab was showing (see
-    // pushStreamQuery), so this is where the queued history becomes rows.
-    if (target === 'stream') {
-      renderQueryStream();
-    }
-    // The Proxied list fills as the region scrolls, but a panel that was hidden
-    // while it rendered has no height to measure against, so the first batch is
-    // topped up once the tab is actually on screen.
-    if (target === 'proxied') {
-      proxiedFillViewport();
-      requestAnimationFrame(sizeProxiedScroll);
-      // Agents enrol and go offline outside this tab, so refresh the cache
-      // before the relay column is read.
-      loadAgents();
-    }
-    if (target === 'agents') {
-      loadAgents();
-    }
-    if (target === 'filters') {
-      loadFiltering();
-    }
-    if (target === 'dashboard') {
-      loadHistory();
-      requestAnimationFrame(() => { if (historyChart) historyChart.resize(); });
-    } else if (historyTimer) {
-      clearTimeout(historyTimer);
-      historyTimer = null;
+    if (loadData) {
+      if (target === 'clients') {
+        loadClients();
+      }
+      // Returning to the Logs view repaints the stream from the buffer: the
+      // per-query DOM work was skipped while another tab was showing (see
+      // pushStreamQuery), so this is where the queued history becomes rows.
+      if (target === 'stream') {
+        renderQueryStream();
+      }
+      // The Proxied list fills as the region scrolls, but a panel that was hidden
+      // while it rendered has no height to measure against, so the first batch is
+      // topped up once the tab is actually on screen.
+      if (target === 'proxied') {
+        proxiedFillViewport();
+        requestAnimationFrame(sizeProxiedScroll);
+        // Agents enrol and go offline outside this tab, so refresh the cache
+        // before the relay column is read.
+        loadAgents();
+      }
+      if (target === 'agents') {
+        loadAgents();
+      }
+      if (target === 'filters') {
+        loadFiltering();
+      }
+      if (target === 'dashboard') {
+        loadHistory();
+        requestAnimationFrame(() => { if (historyChart) historyChart.resize(); });
+      } else if (historyTimer) {
+        clearTimeout(historyTimer);
+        historyTimer = null;
+      }
     }
   }
 
@@ -7577,9 +7586,10 @@ function switchTab(target, updateUrl = true) {
   }
 
   safeFeatherReplace();
+  document.documentElement?.classList.remove('boot-pending');
 }
 
-function handleRouteFromURL() {
+function handleRouteFromURL(loadData = true) {
   // The admin prefix and the /dash mount point are stripped before the table is
   // consulted, so the same keys work whatever path the install was given. A path
   // that matches nothing falls back to the dashboard, which is the older
@@ -7590,7 +7600,7 @@ function handleRouteFromURL() {
     : stripped;
   const path = withoutBase || '/home';
   const targetTab = routeTabs[path] || 'dashboard';
-  switchTab(targetTab, false);
+  switchTab(targetTab, false, loadData);
 }
 
 window.addEventListener('popstate', () => {

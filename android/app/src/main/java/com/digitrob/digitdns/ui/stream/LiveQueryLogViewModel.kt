@@ -10,6 +10,7 @@ import com.digitrob.digitdns.data.stream.StreamStatus
 import com.digitrob.digitdns.domain.model.RuleList
 import com.digitrob.digitdns.ui.components.RouteAction
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -87,38 +88,61 @@ class LiveQueryLogViewModel @Inject constructor(
     private val _state = MutableStateFlow(LiveQueryLogUiState())
     val state: StateFlow<LiveQueryLogUiState> = _state.asStateFlow()
 
+    private var queriesJob: Job? = null
+    private var statusJob: Job? = null
+
     init {
-        liveStream.start()
-        viewModelScope.launch {
-            while (isActive) {
-                try {
-                    liveStream.queries.collect { queries ->
-                        _state.update { it.copy(buffer = queries) }
-                    }
-                } catch (e: Exception) {
-                    Timber.w(e, "live query collect failed; retrying")
-                    delay(COLLECT_RETRY_DELAY_MS)
-                }
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                try {
-                    liveStream.status.collect { status ->
-                        _state.update { it.copy(status = status) }
-                    }
-                } catch (e: Exception) {
-                    Timber.w(e, "live status collect failed; retrying")
-                    delay(COLLECT_RETRY_DELAY_MS)
-                }
-            }
-        }
         // The quick-action menu preselects the scope a name is already routed with.
         // Best-effort: a failure leaves the menu on Exact, and the action still works.
         viewModelScope.launch {
             runCatching { rulesRepository.load() }
                 .onSuccess { lists -> _state.update { it.copy(patterns = lists.managedPatterns) } }
         }
+    }
+
+    /**
+     * The tab stays in the navigation back stack, so `onCleared` never fires while the
+     * operator moves between tabs. Holding the shared stream reference and collecting
+     * its buffer there would keep the socket and the log state alive off screen.
+     */
+    fun onResume() {
+        liveStream.start()
+        if (queriesJob?.isActive != true) {
+            queriesJob = viewModelScope.launch {
+                while (isActive) {
+                    try {
+                        liveStream.queries.collect { queries ->
+                            _state.update { it.copy(buffer = queries) }
+                        }
+                    } catch (e: Exception) {
+                        Timber.w(e, "live query collect failed; retrying")
+                        delay(COLLECT_RETRY_DELAY_MS)
+                    }
+                }
+            }
+        }
+        if (statusJob?.isActive != true) {
+            statusJob = viewModelScope.launch {
+                while (isActive) {
+                    try {
+                        liveStream.status.collect { status ->
+                            _state.update { it.copy(status = status) }
+                        }
+                    } catch (e: Exception) {
+                        Timber.w(e, "live status collect failed; retrying")
+                        delay(COLLECT_RETRY_DELAY_MS)
+                    }
+                }
+            }
+        }
+    }
+
+    fun onPause() {
+        queriesJob?.cancel()
+        queriesJob = null
+        statusJob?.cancel()
+        statusJob = null
+        liveStream.stop()
     }
 
     fun onSearchChange(value: String) = _state.update { it.copy(search = value) }
@@ -229,7 +253,7 @@ class LiveQueryLogViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        liveStream.stop()
+        onPause()
         super.onCleared()
     }
 

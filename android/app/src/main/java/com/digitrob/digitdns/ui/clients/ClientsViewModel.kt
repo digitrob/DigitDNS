@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import java.io.IOException
 import javax.inject.Inject
@@ -91,25 +93,32 @@ class ClientsViewModel @Inject constructor(
                 )
             }
             try {
-                val snapshot = clientsRepository.listAll()
-                // The links are a convenience, not the list: a config call that fails
-                // (an older daemon, a transient 502) must not hide every client. The
-                // install's own origin/address are the documented fallback.
-                val config = runCatching { configRepository.config() }.getOrNull()
-                val connection = runCatching { connectionStore.active() }.getOrNull()
-                val origin = config?.subscriptionOrigin?.takeIf { it.isNotBlank() }
-                    ?: connection?.publicOrigin.orEmpty()
-                val dnsAddress = config?.server?.publicIp
-                    ?.takeIf { it.isNotBlank() && it != "127.0.0.1" && it != "0.0.0.0" }
-                    ?: connection?.host.orEmpty()
-                _state.update {
-                    it.copy(
-                        clients = snapshot.clients,
-                        allowAll = snapshot.allowAll,
-                        origin = origin,
-                        dnsAddress = dnsAddress,
-                        error = null,
-                    )
+                coroutineScope {
+                    // The links are a convenience, not the list. Fetch them alongside
+                    // the list and paint the clients as soon as that first call lands;
+                    // waiting for config made every open a two-round-trip screen.
+                    val configDeferred = async { runCatching { configRepository.config() }.getOrNull() }
+                    val connectionDeferred = async { runCatching { connectionStore.active() }.getOrNull() }
+                    val snapshot = clientsRepository.listAll()
+                    _state.update {
+                        it.copy(
+                            clients = snapshot.clients,
+                            allowAll = snapshot.allowAll,
+                            isLoading = false,
+                            isRefreshing = false,
+                            error = null,
+                        )
+                    }
+                    val config = configDeferred.await()
+                    val connection = connectionDeferred.await()
+                    val origin = config?.subscriptionOrigin?.takeIf { it.isNotBlank() }
+                        ?: connection?.publicOrigin.orEmpty()
+                    val dnsAddress = config?.server?.publicIp
+                        ?.takeIf { it.isNotBlank() && it != "127.0.0.1" && it != "0.0.0.0" }
+                        ?: connection?.host.orEmpty()
+                    _state.update {
+                        it.copy(origin = origin, dnsAddress = dnsAddress)
+                    }
                 }
             } catch (e: ApiException) {
                 _state.update { it.copy(error = e.userMessage) }

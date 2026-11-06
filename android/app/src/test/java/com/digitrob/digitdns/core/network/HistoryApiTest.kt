@@ -77,7 +77,7 @@ class HistoryApiTest {
             assertTrue("unexpected path $path", path.startsWith("/stats/"))
             assertTrue("missing range in $path", path.contains("range=7d"))
             if (path.startsWith("/stats/top")) {
-                assertTrue("top limit is not 10 in $path", path.contains("limit=10"))
+                assertTrue("top limit is not 5 in $path", path.contains("limit=5"))
             }
         }
         assertTrue(snapshot.tops.containsKey(TopDimension.CLIENT))

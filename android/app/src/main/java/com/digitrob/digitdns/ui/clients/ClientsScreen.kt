@@ -111,9 +111,11 @@ fun ClientsScreen(
         scope.launch { snackbar.showPanelToast("$label copied.") }
     }
 
-    // Refetch whenever the list comes back into view.
+    // Refetch whenever the list comes back into view. The first resume follows the
+    // ViewModel's own init refresh; running both would issue the same two calls twice.
+    var firstResume by remember { mutableStateOf(true) }
     LifecycleResumeEffect(Unit) {
-        viewModel.refresh()
+        if (firstResume) firstResume = false else viewModel.refresh()
         onPauseOrDispose { }
     }
 
@@ -480,6 +482,7 @@ private fun ClientList(
     onDelete: (Client) -> Unit,
     onCopy: (String, String) -> Unit,
 ) {
+    val filtered = remember(state.clients, state.query) { state.filtered }
     Column(modifier = Modifier.fillMaxSize()) {
         state.error?.takeIf { state.clients.isNotEmpty() }?.let { message ->
             Text(
@@ -496,7 +499,7 @@ private fun ClientList(
             state.error != null && state.clients.isEmpty() -> CenterBox {
                 Text(state.error!!, color = DigitDnsTheme.colors.danger)
             }
-            state.filtered.isEmpty() -> CenterBox {
+            filtered.isEmpty() -> CenterBox {
                 Text(
                     text = if (state.query.isBlank()) "No clients yet." else "Nothing matches \"${state.query}\".",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -507,7 +510,7 @@ private fun ClientList(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(state.filtered, key = { it.id }) { client ->
+                items(filtered, key = { it.id }) { client ->
                     SwipeToDeleteRow(
                         onDelete = { onDelete(client) },
                         confirmTitle = "Delete client?",

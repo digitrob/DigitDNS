@@ -65,7 +65,7 @@ class HistoryRepository @Inject constructor(
     }
 
     private companion object {
-        const val TOP_LIMIT = 10
+        const val TOP_LIMIT = 5
     }
 }
 

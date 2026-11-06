@@ -1258,6 +1258,57 @@ input:checked + .slider:before {
   }
 }
 
+/* Until app.js has applied the route, the markup's static Dashboard nav is still
+   .active. Neutralise that highlight rather than painting the wrong tab as selected;
+   switchTab removes boot-pending in the same turn it marks the real tab. */
+html.boot-pending .sidebar-nav-item.active,
+html.boot-pending .mobile-nav-item.active {
+  color: inherit !important;
+  background: transparent !important;
+  border-inline-start-color: transparent !important;
+  box-shadow: none;
+}
+html.boot-pending .sidebar-nav-item.active svg,
+html.boot-pending .sidebar-nav-item.active i,
+html.boot-pending .mobile-nav-item.active svg,
+html.boot-pending .mobile-nav-item.active i {
+  color: inherit;
+  filter: none;
+}
+
+/* The route is resolved in an inline head script before first paint. Until app.js
+   applies the same tab, only that tab is rendered; without this the dashboard's
+   default-visible section is what a reload of /clients or /logs paints first. The
+   selector is deliberately below the settings-layout rules: #tab-rules needs its
+   grid display restored here, not a plain block. */
+html[data-boot-tab] .tab-content {
+  display: none;
+}
+html[data-boot-tab="dashboard"] #tab-dashboard,
+html[data-boot-tab="proxied"] #tab-proxied,
+html[data-boot-tab="filters"] #tab-filters,
+html[data-boot-tab="agents"] #tab-agents,
+html[data-boot-tab="clients"] #tab-clients,
+html[data-boot-tab="stream"] #tab-stream,
+html[data-boot-tab="api"] #tab-api,
+html[data-boot-tab="connect"] #tab-connect {
+  display: block;
+}
+html[data-boot-tab="rules"] #tab-rules.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+@media (min-width: 1100px) {
+  html[data-boot-tab="rules"] #tab-rules.settings-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+  html[data-boot-tab="rules"] #tab-rules.settings-layout > .settings-wide {
+    grid-column: 1 / -1;
+  }
+}
+
 /* The Server Update card stacks its two actions against the end edge. Plain CSS
  * because `items-end` is not in the purged utility sheet. */
 .server-update-actions {

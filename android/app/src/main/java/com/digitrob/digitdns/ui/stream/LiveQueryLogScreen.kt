@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.notifications.QueryEvent
@@ -113,17 +114,34 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
 
+    LifecycleResumeEffect(Unit) {
+        viewModel.onResume()
+        onPauseOrDispose { viewModel.onPause() }
+    }
+
     LaunchedEffect(state.refreshTick) {
         if (state.refreshTick > 0) {
-            listState.animateScrollToItem(0)
+            listState.scrollToItem(0)
         }
+    }
+
+    // The stream buffer changes up to four times a second. Filtering and sorting it
+    // once per relevant state change keeps the lazy list from rebuilding the same
+    // sequence on every read during composition.
+    val visible = remember(state.source, state.actionFilter, state.search, state.sort) {
+        state.visible
     }
 
     // Live feed: keep the list pinned to the top as new entries arrive, but only
     // when the user is already at the top so reading older rows is not hijacked.
+    // scrollToItem rather than animateScrollToItem: a new query every few hundred
+    // milliseconds must not start (and supersede) a scroll animation each time.
     LaunchedEffect(state.buffer.size) {
-        if (!state.paused && !listState.isScrollInProgress && state.buffer.isNotEmpty()) {
-            listState.animateScrollToItem(0)
+        if (!state.paused && state.buffer.isNotEmpty() &&
+            listState.firstVisibleItemIndex == 0 &&
+            listState.firstVisibleItemScrollOffset == 0
+        ) {
+            listState.scrollToItem(0)
         }
     }
 
@@ -145,11 +163,11 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
 
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (state.visible.isEmpty()) {
+                if (visible.isEmpty()) {
                     EmptyState(state)
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
-                        items(state.visible, key = { it.id }, contentType = { 0 }) { event ->
+                        items(visible, key = { it.id }, contentType = { 0 }) { event ->
                             QueryRow(
                                 event = event,
                                 onAction = { action, targets ->

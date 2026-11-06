@@ -225,6 +225,12 @@ private fun DomainsList(
     onOpenRelay: (String) -> Unit,
     onOpenManageServices: () -> Unit,
 ) {
+        // RulesUiState.rows rebuilds and sorts every rule on each read. The list
+        // reads it several times per composition; compute it once per relevant
+        // change instead of re-scanning the whole domain set for each access.
+        val rows = remember(state.lists, state.search, state.sort, state.filter, state.serviceFilter) {
+            state.rows
+        }
         PanelRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = viewModel::refresh,
@@ -256,13 +262,13 @@ private fun DomainsList(
                     FilterChips(
                         selected = state.filter,
                         onSelect = viewModel::setFilter,
-                        allSelected = state.rows.isNotEmpty() &&
-                            state.rows.all { row -> row.domain in selectedDomains },
+                        allSelected = rows.isNotEmpty() &&
+                            rows.all { row -> row.domain in selectedDomains },
                         onToggleAll = viewModel::toggleSelectAllVisible,
                     )
                 }
 
-                if (state.rows.isEmpty() && !state.isLoading) {
+                if (rows.isEmpty() && !state.isLoading) {
                     item {
                         Text(
                             text = emptyListText(state),
@@ -273,7 +279,7 @@ private fun DomainsList(
                     }
                 }
 
-                items(state.rows, key = { "${it.status}:${it.domain}" }) { row ->
+                items(rows, key = { "${it.status}:${it.domain}" }) { row ->
                     DomainRowItem(
                         row = row,
                         onToggle = { viewModel.toggleDomain(row.domain, row.enabled) },

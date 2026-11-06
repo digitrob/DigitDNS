@@ -124,6 +124,7 @@ class DashboardViewModel @Inject constructor(
 
     private var pollJob: Job? = null
     private var historyJob: Job? = null
+    private var liveJob: Job? = null
 
     /**
      * Guards [loadServerIp] against a stale landing. Declared before [init] because
@@ -136,10 +137,29 @@ class DashboardViewModel @Inject constructor(
         observeLayout()
         loadServerIp()
         loadResolution()
+        observeServerSwitch(connectionStore)
+    }
+
+    /**
+     * Start the live work only while the dashboard is actually on screen. The tab
+     * destinations are kept in the navigation back stack, so `onCleared` is not a
+     * reliable stop: without this the 3 s poll and the SSE reference kept running
+     * (and drawing) while the operator was on another tab.
+     */
+    fun onResume() {
         startPolling()
         observeLiveStream()
-        observeServerSwitch(connectionStore)
         loadHistory()
+    }
+
+    fun onPause() {
+        pollJob?.cancel()
+        pollJob = null
+        historyJob?.cancel()
+        historyJob = null
+        liveJob?.cancel()
+        liveJob = null
+        liveStream.stop()
     }
 
     /**
@@ -245,22 +265,25 @@ class DashboardViewModel @Inject constructor(
      * stream itself self-throttles, so this is the 1 Hz cadence the panel shows.
      */
     private fun observeLiveStream() {
+        if (liveJob?.isActive == true) return
         liveStream.start()
-        viewModelScope.launch {
-            liveStream.queries.collect { queries ->
-                _state.update {
-                    it.copy(
-                        live = it.live.copy(
-                            recentQueries = queries.size,
-                            blocked = queries.count { q -> q.action.equals("BLOCK", ignoreCase = true) },
-                        ),
-                    )
+        liveJob = viewModelScope.launch {
+            launch {
+                liveStream.queries.collect { queries ->
+                    _state.update {
+                        it.copy(
+                            live = it.live.copy(
+                                recentQueries = queries.size,
+                                blocked = queries.count { q -> q.action.equals("BLOCK", ignoreCase = true) },
+                            ),
+                        )
+                    }
                 }
             }
-        }
-        viewModelScope.launch {
-            liveStream.status.collect { status ->
-                _state.update { it.copy(live = it.live.copy(status = status)) }
+            launch {
+                liveStream.status.collect { status ->
+                    _state.update { it.copy(live = it.live.copy(status = status)) }
+                }
             }
         }
     }
@@ -507,9 +530,7 @@ class DashboardViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        pollJob?.cancel()
-        historyJob?.cancel()
-        liveStream.stop()
+        onPause()
         super.onCleared()
     }
 

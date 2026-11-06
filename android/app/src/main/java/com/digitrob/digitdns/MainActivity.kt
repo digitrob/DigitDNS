@@ -53,7 +53,10 @@ import com.digitrob.digitdns.ui.subscriber.SubscriberScreen
 import com.digitrob.digitdns.ui.system.SettingsHubScreen
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -107,16 +110,24 @@ class MainActivity : ComponentActivity() {
                     var ready by remember { mutableStateOf(false) }
                     var startSubscriber by remember { mutableStateOf(false) }
                     LaunchedEffect(Unit) {
-                        authRepository.migrateLegacyIfNeeded()
-                        authRepository.loadActiveCredential()
-                        // Re-mint a lapsed session from the saved pair before the first
-                        // screen fires its calls, so a backgrounded-then-reopened app
-                        // does not come back to a wall of "Unauthorized" banners.
-                        runCatching { authRepository.ensureSession() }
-                        startSubscriber = appPreferences.appMode.first() == AppMode.SUBSCRIBER &&
-                            appPreferences.subscriberActive.first() &&
-                            subscriberSession.currentLink() != null
+                        // DataStore and the Keystore-backed secret store do disk and
+                        // crypto work; none of it belongs on the frame that draws the
+                        // first screen.
+                        startSubscriber = withContext(Dispatchers.IO) {
+                            authRepository.migrateLegacyIfNeeded()
+                            authRepository.loadActiveCredential()
+                            appPreferences.appMode.first() == AppMode.SUBSCRIBER &&
+                                appPreferences.subscriberActive.first() &&
+                                subscriberSession.currentLink() != null
+                        }
                         ready = true
+                        // Re-mint a lapsed session after the shell is on screen. The
+                        // retry interceptor already turns a 401 into the same refresh,
+                        // so blocking navigation on this round trip only delayed the
+                        // first usable frame (especially with saved credentials).
+                        launch(Dispatchers.IO) {
+                            runCatching { authRepository.ensureSession() }
+                        }
                     }
                     if (ready) {
                         // A subscriber session wins over the admin shortcut: it was the

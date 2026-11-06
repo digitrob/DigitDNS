@@ -97,7 +97,7 @@ func TestConfigLoadRefusesToRenderAResponseItDidNotCheck(t *testing.T) {
 	body := functionBody(t, readAsset(t, "js/app.js"), "loadConfig")
 
 	for _, want := range []struct{ src, why string }{
-		{"if (!res.ok) {", "a non-401 failure on /api/auth/me has to stop the load. " +
+		{"if (!meRes.ok) {", "a non-401 failure on /api/auth/me has to stop the load. " +
 			"meData.password_weak is undefined in an error body, so the forced credential-change " +
 			"modal was skipped whenever its own probe broke — a gate opening because the check " +
 			"for it failed"},

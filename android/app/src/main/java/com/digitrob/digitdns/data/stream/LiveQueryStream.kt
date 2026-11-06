@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import okhttp3.sse.EventSource
 import timber.log.Timber
 import java.io.IOException
+import java.util.ArrayDeque
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -81,6 +82,17 @@ class LiveQueryStream @Inject constructor(
     /** The recent query log, newest first, capped at [BUFFER_LIMIT]. */
     val queries: StateFlow<List<QueryEvent>> = _queries.asStateFlow()
 
+    // The socket can deliver hundreds of frames a second. Replacing the whole UI list
+    // for every frame allocated a new 200-entry list and woke every collector at wire
+    // speed; this ring is published at most [UI_PUBLISH_INTERVAL_MS] so Compose sees
+    // four coherent frames a second. Notification listeners still see every event
+    // immediately in [publish].
+    private val bufferLock = Any()
+    private val bufferedQueries = ArrayDeque<QueryEvent>(BUFFER_LIMIT)
+    private var bufferDirty = false
+    private var bufferGeneration = 0L
+    private var flushJob: Job? = null
+
     private val _status = MutableStateFlow(StreamStatus.IDLE)
     val status: StateFlow<StreamStatus> = _status.asStateFlow()
 
@@ -115,6 +127,13 @@ class LiveQueryStream @Inject constructor(
 
     /** Drop the buffered queries — the log's "clear". Does not touch the socket. */
     fun clearBuffer() {
+        synchronized(bufferLock) {
+            bufferGeneration++
+            flushJob?.cancel()
+            flushJob = null
+            bufferedQueries.clear()
+            bufferDirty = false
+        }
         _queries.value = emptyList()
     }
 
@@ -330,12 +349,53 @@ class LiveQueryStream @Inject constructor(
 
     /** The history snapshot seeds the buffer, newest first, without notifying. */
     private fun seed(events: List<QueryEvent>) {
-        _queries.value = events.asReversed().take(BUFFER_LIMIT)
+        val seeded = events.asReversed().take(BUFFER_LIMIT)
+        synchronized(bufferLock) {
+            bufferGeneration++
+            flushJob?.cancel()
+            flushJob = null
+            bufferedQueries.clear()
+            seeded.forEach { bufferedQueries.addLast(it) }
+            bufferDirty = false
+        }
+        _queries.value = seeded
     }
 
     private fun publish(event: QueryEvent) {
-        _queries.value = (listOf(event) + _queries.value).take(BUFFER_LIMIT)
+        synchronized(bufferLock) {
+            bufferedQueries.addFirst(event)
+            while (bufferedQueries.size > BUFFER_LIMIT) bufferedQueries.removeLast()
+            bufferDirty = true
+        }
         queryListeners.forEach { runCatching { it(event) } }
+        scheduleFlush()
+    }
+
+    /**
+     * Coalesce UI updates. The first event starts a short window; further events join
+     * the same snapshot. The generation check keeps a publish that was already in
+     * flight from overwriting a clear or a fresh history seed.
+     */
+    private fun scheduleFlush() {
+        synchronized(bufferLock) {
+            if (flushJob?.isActive == true) return
+            flushJob = scope.launch {
+                delay(UI_PUBLISH_INTERVAL_MS)
+                val snapshot: List<QueryEvent>
+                val generation: Long
+                synchronized(bufferLock) {
+                    bufferDirty = false
+                    generation = bufferGeneration
+                    snapshot = bufferedQueries.toList()
+                }
+                synchronized(bufferLock) {
+                    if (generation == bufferGeneration) _queries.value = snapshot
+                    flushJob = null
+                    if (!bufferDirty) return@launch
+                }
+                scheduleFlush()
+            }
+        }
     }
 
     private fun teardown() {
@@ -364,5 +424,8 @@ class LiveQueryStream @Inject constructor(
 
         /** A stalled credential retries slowly: no point storming a refused session. */
         const val AUTH_BACKOFF_MS = 60_000L
+
+        /** UI coalescing window: enough to batch a burst, short enough to feel live. */
+        const val UI_PUBLISH_INTERVAL_MS = 250L
     }
 }

@@ -133,11 +133,12 @@ func TestUnsafeEvalIsTiedToTheJITEngine(t *testing.T) {
 // told from an inline one. </script> does not match: the "/" comes before "script".
 var scriptOpenRe = regexp.MustCompile(`<script(\s[^>]*)?>`)
 
-// Exactly one inline <script> block remains in index.html, and it is inline for a
+// Two inline <script> blocks remain in index.html, and both are inline for a
 // reason an external file cannot satisfy: the theme/language restore in <head>,
-// which has to run before the first paint. Moving it to a file makes it a second
-// round trip, and the flash of the wrong theme that would open every page load is
-// the whole thing it exists to prevent.
+// which has to run before the first paint, and the route hint beside it, which
+// selects the correct tab before the dashboard shell can paint. Moving either to
+// a file makes it a second round trip and reintroduces exactly the flash it
+// exists to prevent.
 //
 // The second block that used to be here — the tailwind.config the JIT engine
 // read out of the document — died with the JIT engine itself (v2.1): the utility
@@ -154,17 +155,18 @@ func TestInlineScriptBlocksAreAccountedFor(t *testing.T) {
 		}
 	}
 
-	if inline != 1 {
-		t.Errorf("index.html has %d inline <script> block(s), want 1 (the pre-paint theme "+
-
-			"restore).\nEvery inline block is a reason 'unsafe-inline' cannot be dropped; if a new "+
-
-			"one is truly necessary, account for it here by name.", inline)
+	if inline != 2 {
+		t.Errorf("index.html has %d inline <script> block(s), want 2 (the pre-paint theme "+
+			"restore and the pre-paint route hint).\nEvery inline block is a reason "+
+			"'unsafe-inline' cannot be dropped; if a new one is truly necessary, account "+
+			"for it here by name.", inline)
 	}
 	if !strings.Contains(html, "digitdns_theme") {
 		t.Errorf("no inline script contains %q — the pre-paint restore is gone or changed "+
-
 			"shape; update this test to say what is there now.", "digitdns_theme")
+	}
+	if !strings.Contains(html, "data-boot-tab") {
+		t.Error("the pre-paint route hint is gone; a reload of /clients would paint the dashboard first")
 	}
 
 	// The restore has to run before any external script: behind them it still sets

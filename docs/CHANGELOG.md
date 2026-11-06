@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.1.3] — Faster route boot and Android UI
+
+### ⚡ Web
+
+- **Pre-paint tab selection.** A reload of `/clients`, `/logs` or `/settings`
+  no longer paints Dashboard first. An inline head script sets the boot tab
+  from the URL and CSS renders only that tab until `app.js` applies it.
+- **Boot no longer waits on the client list.** `bootDashboard` loads only the
+  active tab; the client list loads when Clients is opened.
+- **Parallel boot probes.** `/api/auth/me` and `/api/config` now run together
+  instead of one after the other.
+- **Correct tab survives a config failure** instead of falling back to
+  Dashboard.
+- The static Dashboard nav highlight is neutralised during boot, so a reload
+  does not briefly mark the wrong tab as active.
+
+### 📱 Android
+
+- **Startup work moved off the main thread.** DataStore and Keystore reads run
+  on `Dispatchers.IO`.
+- **Navigation no longer blocks on a session refresh.** The shell appears from
+  cached credentials; `ensureSession()` runs in the background and the 401
+  retry path covers a lapsed session.
+- **Live Query Log batching.** `LiveQueryStream` publishes UI snapshots at most
+  four times a second instead of rebuilding a 200-item list for every SSE
+  query. Notification listeners still see every event immediately.
+- **Lifecycle-aware polling and streams.** Dashboard stats/history polls and
+  the shared live-stream reference stop when their tab is not visible.
+- **Lighter list recomposition.** Domain rows, filtered clients and visible
+  live-log rows are computed once per relevant state change instead of on
+  every read.
+- **Live-log scrolling** no longer starts an animation for every new query.
+- **Clients appear after the list call**, with config/link data filling in
+  concurrently. The duplicate first refresh is gone.
+- History top tables request the five rows the phone renders.
+
+### 🧪 Tests
+
+- Added a web test that keeps the pre-paint route map and `routeTabs` in sync.
+- Updated CSP and config-loading regression tests for the second inline script
+  and parallel boot probes.
+- Server suite, web tests and Android unit tests pass.
+
+---
+
 ## 🏷️ [v5.1.2] — Backend performance for the resolver and live log
 
 ### ⚡ Performance
