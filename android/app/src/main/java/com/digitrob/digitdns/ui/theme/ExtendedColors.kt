@@ -30,6 +30,7 @@ data class ExtendedColors(
     val warning: Color,
     val danger: Color,
     val info: Color,
+    val proxy: Color,
     val purple: Color,
     val discord: Color,
 )
@@ -48,6 +49,7 @@ internal fun digitDnsExtendedColors(dark: Boolean, grey: Boolean = false): Exten
         warning = PanelColors.AccentAmberGrey,
         danger = PanelColors.AccentRedGrey,
         info = PanelColors.Cyan400Grey,
+        proxy = PanelColors.AccentProxyGrey,
         purple = PanelColors.AccentPurpleGrey,
         discord = PanelColors.AccentDiscord,
     )
@@ -64,6 +66,7 @@ internal fun digitDnsExtendedColors(dark: Boolean, grey: Boolean = false): Exten
         warning = PanelColors.AccentAmberDark,
         danger = PanelColors.AccentRedDark,
         info = PanelColors.Cyan400Dark,
+        proxy = PanelColors.Cyan300Dark,
         purple = PanelColors.AccentPurpleDark,
         discord = PanelColors.AccentDiscord,
     )
@@ -80,6 +83,7 @@ internal fun digitDnsExtendedColors(dark: Boolean, grey: Boolean = false): Exten
         warning = PanelColors.AccentAmberLight,
         danger = PanelColors.AccentRedLight,
         info = PanelColors.Cyan400Light,
+        proxy = PanelColors.Cyan300Light,
         purple = PanelColors.AccentPurpleLight,
         discord = PanelColors.AccentDiscord,
     )

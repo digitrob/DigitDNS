@@ -746,6 +746,13 @@ body::before {
   border: 1px solid rgba(245, 158, 11, 0.4);
 }
 
+/* Proxy is the one route whose label is coloured in the domain list. The class is
+   semantic rather than a Tailwind text colour so the grey theme can give it the
+   sky-blue route accent without lightening every cyan-300 in the panel. */
+.proxy-status-text {
+  color: rgb(var(--c-cyan-300));
+}
+
 /* .badge-proxy is the one chip whose text is not an --accent-* hex: it borrows
    --accent-cyan, which is cyan-400 because that is the right cyan for a border or a glow.
    On the light page cyan-400 is the hover step of the primary buttons, half a step
@@ -3512,10 +3519,26 @@ input:checked + .slider:before {
   color: rgb(var(--c-slate-200));
 }
 
+/* Proxy is the only route that keeps a colour in Graphite: sky blue reads as
+   "carried elsewhere" without pulling the neon cyan back into the panel. Direct
+   stays green, Blocked red and Paused grey, so the route is still obvious at a
+   glance. No glow — the grey theme is matte. */
 [data-theme="grey"] .badge-proxy {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.35);
+  box-shadow: none;
+  color: #7dd3fc;
+}
+
+[data-theme="grey"] .proxy-status-text {
+  color: #7dd3fc;
+}
+
+/* The whitelist-mode chip borrows .badge-proxy for its shape, not its meaning.
+   It is access policy, not a route, so it stays neutral in Graphite. */
+[data-theme="grey"] .badge-proxy.badge-whitelist {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.22);
-  box-shadow: none;
   color: rgb(var(--c-slate-200));
 }
 

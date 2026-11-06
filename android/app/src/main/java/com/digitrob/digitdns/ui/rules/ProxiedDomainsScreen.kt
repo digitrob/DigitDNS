@@ -1360,7 +1360,7 @@ private fun DomainGearButton(
 private fun DomainStatusPill(status: DomainStatus, onClick: () -> Unit) {
     val colors = DigitDnsTheme.colors
     val color = when (status) {
-        DomainStatus.PROXY -> colors.info
+        DomainStatus.PROXY -> colors.proxy
         DomainStatus.BLOCKED -> colors.danger
         DomainStatus.PAUSED -> colors.textMuted
         DomainStatus.DIRECT -> colors.success

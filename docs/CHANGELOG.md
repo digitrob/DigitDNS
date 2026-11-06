@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.1.1] — Sky-blue Proxy status and grey favicon
+
+### 🎨 Changed
+
+- **Graphite keeps one route colour.** Proxy status is now sky blue
+  (`#7DD3FC`) on the web Live Log, the Proxied Domains list and the Android
+  Live Query Log and Domains screens. Direct stays green, Blocked red and
+  Paused grey/amber; the rest of the panel remains monochrome.
+- Proxy domains use a semantic `.proxy-status-text` class on the web instead of
+  the shared `text-cyan-300` utility, so the accent does not spread to other
+  cyan text.
+- Android adds a dedicated `ExtendedColors.proxy` token and a
+  `QueryActionTone.Proxy`; informational `info` accents stay neutral in
+  Graphite.
+- The whitelist-mode chip keeps its neutral Graphite treatment even though it
+  shares the `.badge-proxy` shape.
+
+### 🛠 Fixed
+
+- The web favicon is now the grey shield in the dashboard and standalone login
+  documents, matching the Graphite launcher icon.
+
+### 🧪 Tests
+
+- Added a colour-token test that pins the Graphite Proxy blue and the neutral
+  `info` token.
+- Existing web and Android suites continue to pass.
+
+---
+
 ## 🏷️ [v5.1.0] — Graphite theme for web and Android
 
 ### ✨ Added

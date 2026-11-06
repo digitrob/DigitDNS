@@ -2227,7 +2227,7 @@ const DOMAIN_STATUS_PRECEDENCE = { paused: 0, proxy: 1, blocked: 2, direct: 3 };
 // Matches Android's DomainStatus enum order for the STATUS sort.
 const DOMAIN_STATUS_RANK = { proxy: 0, blocked: 1, paused: 2, direct: 3 };
 const DOMAIN_STATUS_META = {
-  proxy: { label: 'PROXY', badge: 'badge-proxy', domainClass: 'text-cyan-300' },
+  proxy: { label: 'PROXY', badge: 'badge-proxy', domainClass: 'proxy-status-text' },
   paused: { label: 'PAUSED', badge: 'badge-unknown', domainClass: 'text-slate-400' },
   blocked: { label: 'BLOCKED', badge: 'badge-block', domainClass: 'text-red-300' },
   direct: { label: 'DIRECT', badge: 'badge-direct', domainClass: 'text-emerald-300' },
@@ -9315,7 +9315,7 @@ function renderClientsView(data) {
   // <i> never survives as an empty element.
   if (isWhitelistEnforced) {
     if (modeBadge) {
-      modeBadge.className = 'badge badge-proxy inline-flex items-center gap-1';
+      modeBadge.className = 'badge badge-proxy badge-whitelist inline-flex items-center gap-1';
       modeBadge.innerHTML = '<i data-feather="lock" class="w-3 h-3"></i> WHITELIST ENFORCED';
     }
     if (modeText) {

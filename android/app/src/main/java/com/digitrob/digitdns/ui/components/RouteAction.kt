@@ -21,7 +21,7 @@ enum class RouteAction(val label: String, val icon: ImageVector) {
     /** Proxy reads cyan, Block red, Direct green — matching the web badge colours. */
     @Composable
     fun color(): Color = when (this) {
-        Proxy -> DigitDnsTheme.colors.info
+        Proxy -> DigitDnsTheme.colors.proxy
         Block -> DigitDnsTheme.colors.danger
         Direct -> DigitDnsTheme.colors.success
         Remove -> DigitDnsTheme.colors.danger

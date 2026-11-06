@@ -157,6 +157,9 @@ internal object PanelColors {
     // DoH still needs a distinct protocol colour. Lavender reads well on graphite
     // without bringing cyan back.
     val AccentPurpleGrey = Color(0xFFC4B5FD)
+    // Proxy is the one route that keeps a colour in Graphite. Sky blue separates
+    // it from green Direct, red Blocked and grey Paused without neon.
+    val AccentProxyGrey = Color(0xFF7DD3FC)
     val AccentRedGrey = Color(0xFFFF4655)
     val AccentAmberGrey = Color(0xFFF59E0B)
 }

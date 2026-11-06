@@ -3,7 +3,7 @@ package com.digitrob.digitdns.ui.stream
 import java.util.Locale
 
 /** The colour family an action badge belongs to; the composable maps it to theme colours. */
-enum class QueryActionTone { Info, Danger, Success, Warning, Purple, Muted }
+enum class QueryActionTone { Info, Proxy, Danger, Success, Warning, Purple, Muted }
 
 /** The operator-facing label and tone for one raw server action. */
 data class QueryActionStyle(val label: String, val tone: QueryActionTone)
@@ -14,8 +14,8 @@ data class QueryActionStyle(val label: String, val tone: QueryActionTone)
  * same missing table also hid it from the Proxy filter.
  */
 fun queryActionStyle(action: String): QueryActionStyle = when (action.uppercase(Locale.ROOT)) {
-    "PROXY" -> QueryActionStyle("Proxy", QueryActionTone.Info)
-    "PROXY_IPV6_SINK" -> QueryActionStyle("Proxy IPv6 Sink", QueryActionTone.Info)
+    "PROXY" -> QueryActionStyle("Proxy", QueryActionTone.Proxy)
+    "PROXY_IPV6_SINK" -> QueryActionStyle("Proxy IPv6 Sink", QueryActionTone.Proxy)
     "PROXY_FAILED" -> QueryActionStyle("Proxy Failed", QueryActionTone.Danger)
     "BLOCK" -> QueryActionStyle("Block", QueryActionTone.Danger)
     "RATELIMIT" -> QueryActionStyle("Rate Limited", QueryActionTone.Danger)

@@ -463,6 +463,7 @@ private fun ActionBadge(action: String, onClick: () -> Unit, enabled: Boolean) {
     val style = queryActionStyle(action)
     val color: Color = when (style.tone) {
         QueryActionTone.Info -> colors.info
+        QueryActionTone.Proxy -> colors.proxy
         QueryActionTone.Danger -> colors.danger
         QueryActionTone.Success -> colors.success
         QueryActionTone.Warning -> colors.warning

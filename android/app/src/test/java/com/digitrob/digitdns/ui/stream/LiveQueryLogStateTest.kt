@@ -87,7 +87,7 @@ class LiveQueryLogStateTest {
     fun ipv6SinkHasAFriendlyLabelAndProxyTone() {
         val style = queryActionStyle("PROXY_IPV6_SINK")
         assertEquals("Proxy IPv6 Sink", style.label)
-        assertEquals(QueryActionTone.Info, style.tone)
+        assertEquals(QueryActionTone.Proxy, style.tone)
     }
 
     @Test

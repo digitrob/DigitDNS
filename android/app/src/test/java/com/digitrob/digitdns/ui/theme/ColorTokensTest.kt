@@ -48,4 +48,13 @@ class ColorTokensTest {
         // The Discord blurple is brand-fixed and must be identical in both themes.
         assertEquals(dark.discord, light.discord)
     }
+
+    @Test
+    fun graphiteKeepsProxyBlueAndInfoNeutral() {
+        // Graphite is monochrome except for the route accent: Proxy stays sky blue
+        // while the informational accent that shares its old token stays grey.
+        val grey = digitDnsExtendedColors(dark = true, grey = true)
+        assertEquals(Color(0xFF7DD3FC), grey.proxy)
+        assertEquals(PanelColors.Cyan400Grey, grey.info)
+    }
 }
