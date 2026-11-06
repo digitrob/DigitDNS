@@ -116,7 +116,7 @@ func (b *Bucket) record(item database.QueryLogItem, cfg Config, clientSalt []byt
 	b.ByAction[action]++
 
 	blocked := action == "BLOCK"
-	proxied := action == "PROXY" || action == "PROXY_IPV6_SINK"
+	proxied := action == "PROXY" || action == "PROXY_IPV6_SINK" || action == "PROXY_HTTPS_SINK"
 	// Policy refusals are not resolver failures. A sinkhole is blocked, a
 	// rate-limit/quota refusal is its own action, and only SERVFAIL/FORMERR-like
 	// answers (including PROXY_FAILED) land in the failure counter.

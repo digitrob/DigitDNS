@@ -130,6 +130,32 @@ class SettingsApiTest {
     }
 
     @Test
+    fun proxyLeakReadAndSaveUseTheLiveRoute() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody("""{"enabled":true,"recommended":true}"""),
+        )
+
+        val settings = repo.loadProxyLeak()
+
+        assertEquals(true, settings.enabled)
+        assertEquals(true, settings.recommended)
+        assertEquals("/settings/proxy-leak", server.takeRequest().path)
+
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody("""{"enabled":false,"recommended":true}"""),
+        )
+
+        val saved = repo.saveProxyLeak(enabled = false)
+
+        val recorded = server.takeRequest()
+        assertEquals("POST", recorded.method)
+        assertEquals("/settings/proxy-leak", recorded.path)
+        assertEquals("""{"enabled":false}""", recorded.body.readUtf8())
+        assertEquals(false, saved.enabled)
+        assertEquals(true, saved.recommended)
+    }
+
+    @Test
     fun regenerateApiKeyPostsPasswordAndReturnsTheKey() = runTest {
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"success":true,"api_key":"fresh"}"""))
 

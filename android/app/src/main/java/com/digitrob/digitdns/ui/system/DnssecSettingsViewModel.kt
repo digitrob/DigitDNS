@@ -25,7 +25,10 @@ data class DnssecSettingsUiState(
     val restartRequired: Boolean = false,
     /** False until the saved policy has been read once; the card is not drawn before this. */
     val loaded: Boolean = false,
+    /** True only for the first load, before the card exists. */
     val isLoading: Boolean = false,
+    /** True for a pull-to-refresh after the card is already on screen. */
+    val isRefreshing: Boolean = false,
     val isSaving: Boolean = false,
     val unsupported: Boolean = false,
     val saved: Boolean = false,
@@ -45,29 +48,65 @@ class DnssecSettingsViewModel @Inject constructor(
     private val _state = MutableStateFlow(DnssecSettingsUiState())
     val state: StateFlow<DnssecSettingsUiState> = _state.asStateFlow()
 
+    /**
+     * Invalidates an in-flight load when a save starts. Without this, a refresh
+     * that began before the save could land afterwards and repaint the card with
+     * the policy the server held before the save.
+     */
+    private var loadGeneration = 0
+
     init {
         load()
     }
 
     fun load() {
+        val refresh = _state.value.loaded
+        val generation = ++loadGeneration
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null, saved = false) }
+            _state.update {
+                if (refresh) {
+                    // A pull-to-refresh must not touch the Save button's enabled
+                    // state or clear the saved-status line: that made the button
+                    // flash grey and back on every refresh.
+                    it.copy(isRefreshing = true, error = null)
+                } else {
+                    it.copy(isLoading = true, isRefreshing = false, error = null, saved = false)
+                }
+            }
             try {
                 val settings = repository.loadDnssec()
+                if (generation != loadGeneration) return@launch
                 _state.update {
-                    it.apply(settings).copy(isLoading = false, unsupported = false, loaded = true)
+                    it.apply(settings).copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        unsupported = false,
+                        loaded = true,
+                    )
                 }
             } catch (e: ApiException) {
+                if (generation != loadGeneration) return@launch
                 _state.update {
                     if (e.httpStatus == HTTP_NOT_FOUND || e.httpStatus == HTTP_UNAVAILABLE) {
-                        it.copy(isLoading = false, unsupported = true, loaded = true, error = null)
+                        it.copy(
+                            isLoading = false,
+                            isRefreshing = false,
+                            unsupported = true,
+                            loaded = true,
+                            error = null,
+                        )
                     } else {
-                        it.copy(isLoading = false, error = e.userMessage)
+                        it.copy(isLoading = false, isRefreshing = false, error = e.userMessage)
                     }
                 }
             } catch (e: IOException) {
+                if (generation != loadGeneration) return@launch
                 _state.update {
-                    it.copy(isLoading = false, error = e.message ?: "Could not load DNSSEC settings.")
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        error = e.message ?: "Could not load DNSSEC settings.",
+                    )
                 }
             }
         }
@@ -87,8 +126,13 @@ class DnssecSettingsViewModel @Inject constructor(
             .split('\n')
             .map { it.trim() }
             .filter { it.isNotEmpty() }
+        // A save supersedes any refresh already in flight; its response is stale
+        // relative to the policy being written.
+        loadGeneration++
         viewModelScope.launch {
-            _state.update { it.copy(isSaving = true, error = null, saved = false) }
+            _state.update {
+                it.copy(isSaving = true, isRefreshing = false, error = null, saved = false)
+            }
             try {
                 val settings = repository.saveDnssec(enabled = s.enabled, trustAnchors = anchors)
                 _state.update {

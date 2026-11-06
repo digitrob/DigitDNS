@@ -163,6 +163,9 @@ func main() {
 		// hiccup, short enough that nobody connects to an address that moved a
 		// minute ago.
 		ServeStaleSeconds: 30,
+		// Withhold HTTPS/SVCB for proxied names so clients cannot discover QUIC
+		// or origin address hints. Recommended on; the dashboard can opt out.
+		ProxyLeakProtection: true,
 	}
 
 	sniSettings := &database.SNIProxySettings{
@@ -525,6 +528,7 @@ func main() {
 	} else {
 		log.Printf("[DNS] DNSSEC validation: off (upstream AD is passed through)")
 	}
+	dnsHandler.SetProxyLeakProtection(dnsSettings.ProxyLeakProtection)
 	dnsHandler.SetBlockPolicy(filterService.BlockPolicy)
 	dnsHandler.SetRelayLookup(func(domain string) (string, string, string, string, bool) {
 		target, ok := relayRouter.Lookup(domain)
@@ -627,6 +631,7 @@ func main() {
 	// The DNSSEC card compares this startup snapshot with the saved record to
 	// report whether a restart is pending. It is set before listeners start.
 	webServer.SetDNSSECStatus(dnsHandler.DNSSECEnabled(), dnsSettings.DNSSECTrustAnchors)
+	webServer.SetProxyLeakProtectionSetter(dnsHandler.SetProxyLeakProtection)
 	webServer.SetFilterService(filterService)
 	filterService.Start()
 

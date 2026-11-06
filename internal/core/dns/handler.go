@@ -83,6 +83,10 @@ type Handler struct {
 	limiter *rateLimiter
 	limited atomic.Uint64
 
+	// proxyLeakProtection withholds HTTPS/SVCB answers for proxied names. It is
+	// atomic because the dashboard applies the setting live.
+	proxyLeakProtection atomic.Bool
+
 	// blockPolicy supplies the operator's chosen block response. It is read only
 	// for names that already matched a block rule, so a normal query never pays
 	// for it. Nil keeps the historical null-IP answer.
@@ -111,6 +115,9 @@ func NewHandler(
 		limiter:   newRateLimiter(defaultRateLimitQPS),
 	}
 	h.SetPublicIP(publicIP)
+	// Recommended default: proxied names must not advertise QUIC or origin
+	// address hints. main and the settings record can turn it off explicitly.
+	h.proxyLeakProtection.Store(true)
 	if q, ok := access.(QuotaEnforcer); ok {
 		h.quota = q
 	}
@@ -124,6 +131,13 @@ func NewHandler(
 		c.SetRefresherWithOptions(h.refreshUpstream)
 	}
 	return h
+}
+
+// SetProxyLeakProtection chooses whether proxied names withhold HTTPS/SVCB
+// answers. It is safe to call while serving: the query path reads the value
+// atomically, and the dashboard applies the saved policy live.
+func (h *Handler) SetProxyLeakProtection(enabled bool) {
+	h.proxyLeakProtection.Store(enabled)
 }
 
 // SetBlockPolicy wires the filter service's response mode into the block path.
@@ -778,6 +792,22 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, m.Rcode)
 			} else {
 				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, q.Qtype, m.Rcode)
+			}
+			return m
+		}
+		if (q.Qtype == dns.TypeHTTPS || q.Qtype == dns.TypeSVCB) && h.proxyLeakProtection.Load() {
+			// HTTPS/SVCB can carry two things that bypass an SNI relay:
+			// an h3 ALPN entry (QUIC/UDP 443) and ipv4hint/ipv6hint with the
+			// origin's real addresses. Letting the upstream answer through would
+			// leak both, even when A/AAAA are proxied. An empty NOERROR makes the
+			// client fall back to the proxied A/AAAA answer and TCP TLS.
+			m := new(dns.Msg)
+			m.SetReply(r)
+			m.AuthenticatedData = false
+			if agentAssigned {
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_HTTPS_SINK", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, m.Rcode)
+			} else {
+				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_HTTPS_SINK", false, "", matchedPattern, q.Qtype, m.Rcode)
 			}
 			return m
 		}

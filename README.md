@@ -247,7 +247,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.1/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -306,7 +306,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.1/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -389,7 +389,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.2.0` | DNSSEC validation, Settings card, v3 API and Android DNSSEC section (latest) |
+| `5.2.1` | Proxy leak protection for proxied HTTPS/SVCB, live panel/Android control, login and refresh UI fixes (latest) |
+| `5.2.0` | DNSSEC validation, Settings card, v3 API and Android DNSSEC section (older) |
 | `5.1.4` | Reverse DNS excluded from Top Domains; Docker Hub mirror published (older) |
 | `5.1.3` | Faster web route boot and Android startup, lifecycle and live-log batching (older) |
 | `5.1.2` | Backend performance: telemetry fast path, compiled policy indexes, typed DNS answers (older) |
@@ -431,7 +432,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.2.0/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.1/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -777,6 +778,27 @@ An empty `dnssec_trust_anchors` list uses the built-in root KSKs. Custom entries
 are DS or DNSKEY records for `.` and are validated before saving. Enabling or
 changing the policy takes effect after a daemon restart; the default is `false`.
 
+### Proxy leak protection
+
+A proxied name must not advertise QUIC or the origin's real addresses. An
+`HTTPS`/`SVCB` answer can carry an `h3` ALPN and `ipv4hint`/`ipv6hint` records;
+either one lets a browser bypass the SNI relay. For names routed through
+**Proxy**, the hub answers `HTTPS` and `SVCB` locally with `NOERROR`, no answers,
+no `AD` and no cache entry. Direct names keep their normal records, and blocked
+names already return the block response for every query type.
+
+- **Live and on by default.** The `proxy_leak_protection` setting applies to the
+  running resolver immediately; turning it off is an explicit opt-out.
+- **Panel and Android controls.** **Settings → Proxy Leak Protection** on the
+  web, and **Settings → DNSSEC/Proxy Leak** on Android. Disabling asks for
+  confirmation and keeps the warning visible while protection is off.
+- **API.** `GET/POST /api/settings/proxy-leak` for the panel and
+  `GET/POST /api/v3/settings/proxy-leak` for Android and API-key clients.
+
+```json
+"proxy_leak_protection": true
+```
+
 ### Upstream resolvers and policy
 
 - Plain UDP/TCP, DoT, DoH, DoQ, DoH3 and DNSCrypt upstreams, benchmarked live
@@ -814,7 +836,7 @@ changing the policy takes effect after a daemon restart; the default is `false`.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.2.0`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.2.1`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

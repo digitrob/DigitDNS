@@ -233,6 +233,13 @@ type DNSSettings struct {
 	// anchors, which is what almost every deployment should do.
 	DNSSECTrustAnchors []string `json:"dnssec_trust_anchors,omitempty"`
 
+	// ProxyLeakProtection withholds HTTPS and SVCB answers for proxied names.
+	// Those records can advertise QUIC and the origin's real IPv4/IPv6 hints,
+	// letting a browser bypass the SNI relay. It is enabled by default; a record
+	// written before this field existed decodes with the built-in true default
+	// when the daemon loads it, so only an explicit false disables the guard.
+	ProxyLeakProtection bool `json:"proxy_leak_protection"`
+
 	// Transport is the global transport choice: "any", "encrypted"
 	// (DoT/DoH/DoQ/DoH3/DNSCrypt) or "regular" (plain UDP/TCP). A per-domain
 	// profile can override it. Empty means "any".

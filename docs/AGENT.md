@@ -145,9 +145,9 @@ on the agent host:
 
 ```bash
 curl -fL -o /tmp/agent-image.tar.gz \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.2.0/digitdns-agent-5.2.0-linux-arm64-image.tar.gz
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.1/digitdns-agent-5.2.1-linux-arm64-image.tar.gz
 gunzip -c /tmp/agent-image.tar.gz | docker load
-docker tag ghcr.io/digitrob/digitdns-agent:5.2.0 ghcr.io/digitrob/digitdns-agent:latest
+docker tag ghcr.io/digitrob/digitdns-agent:5.2.1 ghcr.io/digitrob/digitdns-agent:latest
 ```
 
 As an offline fallback from another machine, save the image and load it on the
@@ -155,15 +155,15 @@ agent host:
 
 ```bash
 # on a connected machine
-docker pull --platform linux/arm64 ghcr.io/digitrob/digitdns-agent:5.2.0
-docker save ghcr.io/digitrob/digitdns-agent:5.2.0 | gzip > agent-arm64.tar.gz
+docker pull --platform linux/arm64 ghcr.io/digitrob/digitdns-agent:5.2.1
+docker save ghcr.io/digitrob/digitdns-agent:5.2.1 | gzip > agent-arm64.tar.gz
 scp agent-arm64.tar.gz admin@agent-host:/tmp/
 
 # on the agent host
 gunzip -c /tmp/agent-arm64.tar.gz | docker load
 docker run -d --name digitdns-agent --pull never --network host \
   --restart unless-stopped -v /opt/digitdns-agent:/data \
-  ghcr.io/digitrob/digitdns-agent:5.2.0 \
+  ghcr.io/digitrob/digitdns-agent:5.2.1 \
   -hub 'https://panel.example.com:8080/ADMIN_PATH' \
   -key 'AGENT_ID:SECRET' -listen :80,:443 \
   -state /data/agent-state.json

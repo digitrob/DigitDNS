@@ -793,6 +793,14 @@ body::before {
   height: 0;
 }
 
+/* Server-backed switches start hidden in the markup and are revealed only after
+ * their saved value has been applied. Suppress the knob/track transition while
+ * they are hidden, so revealing the final state cannot replay an OFF→ON slide. */
+.boot-hide .slider,
+.boot-hide .slider:before {
+  transition: none;
+}
+
 .slider {
   position: absolute;
   cursor: pointer;

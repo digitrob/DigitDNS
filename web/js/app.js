@@ -521,11 +521,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rememberBox && rememberBox.checked) saveRememberedLogin(u, p);
         else forgetRememberedLogin();
         hideLoginModal();
-        bootDashboard();
-
-        if (data.password_weak || data.is_default_password) {
-          showChangePwdModal();
-        }
+        // Reload the document instead of booting the dashboard in place. If this
+        // tab was opened before a server update, its markup is the old build and
+        // bootDashboard() would only refresh the data, leaving the stale UI on
+        // screen until a manual refresh. A reload revalidates index.html and the
+        // asset bundle, so the operator lands on the UI that matches the server.
+        // The weak-password nag is re-evaluated by loadConfig() after the reload.
+        window.location.reload();
       } catch (err) {
         if (errDiv) {
           errDiv.innerText = 'Server connection failed';
@@ -1033,6 +1035,7 @@ async function loadConfig() {
     renderConfig(currentConfig);
     loadResolutionSettings();
     loadDNSSECSettings();
+    loadProxyLeakSettings();
     loadAgents();
     // Raised after the config lands so the modal can prefill the real username
     // rather than the markup's placeholder.
@@ -2750,7 +2753,24 @@ async function loadDNSSECSettings() {
     dnssecSettings = normalizeDNSSECSettings(await res.json());
     syncDNSSECControls();
   } catch (e) { /* keep the markup defaults; the Save button still works */ }
-  finally { dnssecLoading = false; }
+  finally {
+    dnssecLoading = false;
+    // A failed read must not leave the card without controls; fall back to the
+    // markup's OFF state rather than an invisible switch.
+    if (!dnssecSettings.loaded) revealDNSSECControls();
+  }
+}
+
+// The DNSSEC controls start hidden in the markup: the switch is unchecked until
+// the saved policy arrives, and revealing it before then made it animate from
+// OFF to its real position on every refresh. Hiding the wrapper keeps its space
+// reserved, so the card does not jump, and the switch is only shown once it
+// already carries the actual state.
+function revealDNSSECControls() {
+  const controls = document.getElementById('dnssec-controls');
+  if (!controls) return;
+  controls.style.visibility = 'visible';
+  controls.classList.remove('boot-hide');
 }
 
 function syncDNSSECControls() {
@@ -2787,6 +2807,8 @@ function syncDNSSECControls() {
   if (status) {
     status.textContent = dnssecSettings.restart_required ? 'Saved — restart required.' : '';
   }
+
+  revealDNSSECControls();
 }
 
 async function saveDNSSECSettings() {
@@ -2821,6 +2843,91 @@ async function saveDNSSECSettings() {
   } catch (e) {
     if (status) status.textContent = '';
     showToast('Could not save the DNSSEC settings', 'error');
+  }
+}
+
+// Proxy Leak Protection is a live, global policy: proxied names withhold
+// HTTPS/SVCB so browsers cannot discover QUIC or origin address hints. The
+// guard is recommended on, so the switch starts checked and a confirmation is
+// required before turning it off.
+let proxyLeakSettings = { loaded: false, enabled: true, recommended: true };
+let proxyLeakLoading = false;
+
+async function loadProxyLeakSettings() {
+  if (proxyLeakLoading) return;
+  proxyLeakLoading = true;
+  try {
+    const res = await fetch(api('/api/settings/proxy-leak'), {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    proxyLeakSettings = {
+      loaded: true,
+      enabled: data.enabled !== false,
+      recommended: data.recommended !== false
+    };
+    syncProxyLeakControls();
+  } catch (e) { /* keep the recommended default */ }
+  finally {
+    proxyLeakLoading = false;
+    // Same flicker rule as DNSSEC: show the controls only once they carry the
+    // server's value. A failed read falls back to the recommended ON default.
+    if (!proxyLeakSettings.loaded) revealProxyLeakControls();
+  }
+}
+
+function revealProxyLeakControls() {
+  const controls = document.getElementById('proxy-leak-controls');
+  if (!controls) return;
+  controls.style.visibility = 'visible';
+  controls.classList.remove('boot-hide');
+}
+
+function syncProxyLeakControls() {
+  const input = document.getElementById('proxy-leak-enabled-input');
+  if (input) input.checked = proxyLeakSettings.enabled;
+
+  const badge = document.getElementById('proxy-leak-badge');
+  if (badge) {
+    badge.textContent = proxyLeakSettings.enabled ? 'ACTIVE' : 'OFF';
+    badge.classList.toggle('bg-emerald-500/20', proxyLeakSettings.enabled);
+    badge.classList.toggle('text-emerald-300', proxyLeakSettings.enabled);
+    badge.classList.toggle('border-emerald-500/30', proxyLeakSettings.enabled);
+    badge.classList.toggle('bg-slate-800/70', !proxyLeakSettings.enabled);
+    badge.classList.toggle('text-slate-400', !proxyLeakSettings.enabled);
+    badge.classList.toggle('border-slate-700', !proxyLeakSettings.enabled);
+  }
+
+  const offNote = document.getElementById('proxy-leak-off-note');
+  if (offNote) offNote.classList.toggle('hidden', proxyLeakSettings.enabled);
+
+  revealProxyLeakControls();
+}
+
+async function saveProxyLeakSettings(enabled, message) {
+  try {
+    const res = await fetch(api('/api/settings/proxy-leak'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ enabled })
+    });
+    if (!res.ok) {
+      showToast(await errorMessage(res, 'Could not save proxy leak protection'), 'error');
+      return false;
+    }
+    const data = await res.json();
+    proxyLeakSettings = {
+      loaded: true,
+      enabled: data.enabled === true,
+      recommended: data.recommended !== false
+    };
+    syncProxyLeakControls();
+    if (message) showToast(message, enabled ? 'success' : 'warning');
+    return true;
+  } catch (e) {
+    showToast('Could not save proxy leak protection', 'error');
+    return false;
   }
 }
 
@@ -4591,6 +4698,16 @@ function streamFilterState() {
   };
 }
 
+// The live log and the aggregate counters treat the IPv6 sink and the HTTPS/SVCB
+// sink as proxy outcomes: the client's route was Proxy even though the answer
+// was synthesized locally. One predicate keeps the filter, the relay cell and
+// the counters from disagreeing about the same query.
+function isProxyAction(action) {
+  return action === 'PROXY' ||
+    action === 'PROXY_IPV6_SINK' ||
+    action === 'PROXY_HTTPS_SINK';
+}
+
 // queryMatchesStream decides whether one query belongs in the current view. CACHED is handled
 // apart from the others because it is not an action — it is a flag that can accompany any of
 // them, so comparing it against q.action would match nothing.
@@ -4601,6 +4718,9 @@ function queryMatchesStream(q, f) {
     } else if (f.action === 'DIRECT') {
       // DNS Rewrite answers are local overrides, so they belong in the Direct view.
       if (q.action !== 'DIRECT' && q.action !== 'CUSTOM') return false;
+    } else if (f.action === 'PROXY') {
+      // The two sink actions are proxy routes whose answer was answered locally.
+      if (!isProxyAction(q.action)) return false;
     } else if (q.action !== f.action) {
       return false;
     }
@@ -4624,6 +4744,7 @@ function queryMatchesStream(q, f) {
 const STREAM_ACTION_BADGES = {
   PROXY: '<span class="badge badge-proxy">PROXY</span>',
   PROXY_IPV6_SINK: '<span class="badge badge-proxy">PROXY · IPv6 SINK</span>',
+  PROXY_HTTPS_SINK: '<span class="badge badge-proxy">PROXY · QUIC FALLBACK</span>',
   PROXY_FAILED: '<span class="badge badge-block">PROXY FAILED</span>',
   SERVFAIL: '<span class="badge badge-block">SERVFAIL</span>',
   BLOCK: '<span class="badge badge-block">BLOCK</span>',
@@ -4678,18 +4799,20 @@ function queryRowHTML(q) {
 
   const action = q.action || 'DIRECT';
   // Relay is the route's exit, not part of the PROXY badge. It gets its own
-  // display-only column, matching the Domains table; editing stays there.
-  const relayName = action === 'PROXY'
+  // display-only column, matching the Domains table; editing stays there. The
+  // two sink actions also left through the proxy, so they keep the same exit.
+  const proxied = isProxyAction(action);
+  const relayName = proxied
     ? String(q.relay_agent_name || 'This Server').trim()
     : '';
-  const relayCountry = action === 'PROXY'
+  const relayCountry = proxied
     ? String(q.relay_country || (currentConfig?.server?.country || '')).trim()
     : '';
   const relayFlag = relayCountry && flagURL(relayCountry)
     ? `<img class="agent-flag agent-flag-sm" src="${escapeHTML(flagURL(relayCountry))}" alt="${escapeHTML(countryName(relayCountry))}" title="${escapeHTML(countryName(relayCountry))}">`
     : '';
   const relayTitle = relayCountry ? `${relayName} · ${countryName(relayCountry)}` : relayName;
-  const relayCell = action === 'PROXY'
+  const relayCell = proxied
     ? `<span class="stream-relay" title="Relay: ${escapeHTML(relayTitle)}">${relayFlag}<span>${escapeHTML(relayName)}</span></span>`
     : '<span class="text-slate-600">—</span>';
   const actBadgeInner = STREAM_ACTION_BADGES[action]
@@ -7679,6 +7802,7 @@ function switchTab(target, updateUrl = true, loadData = true) {
         // Refresh the saved-vs-running comparison every time Settings opens,
         // so a restart performed elsewhere in the panel clears the pending note.
         loadDNSSECSettings();
+        loadProxyLeakSettings();
       }
       if (target === 'dashboard') {
         loadHistory();
@@ -8560,6 +8684,27 @@ function initEventListeners() {
 
   document.getElementById('geoip-update-btn')?.addEventListener('click', updateGeoipDatabase);
   document.getElementById('save-dnssec-btn')?.addEventListener('click', saveDNSSECSettings);
+  document.getElementById('proxy-leak-enabled-input')?.addEventListener('change', async (e) => {
+    const want = e.target.checked;
+    if (!want) {
+      const ok = await confirmAction({
+        destructive: true,
+        title: 'Turn off proxy leak protection?',
+        hint: 'PROXIED DOMAINS MAY BYPASS THE RELAY',
+        message: 'Browsers can discover QUIC and the origin’s real IPv4/IPv6 addresses through HTTPS/SVCB. Only turn this off if you know what you are doing.',
+        confirmText: 'TURN OFF',
+      });
+      if (!ok) {
+        e.target.checked = true;
+        return;
+      }
+    }
+    const saved = await saveProxyLeakSettings(
+      want,
+      want ? 'Proxy leak protection enabled' : 'Proxy leak protection disabled'
+    );
+    if (!saved) e.target.checked = !want;
+  });
   document.getElementById('resolution-transport')?.addEventListener('change', (e) => {
     saveResolutionSettings({ transport: e.target.value }, 'Resolution defaults saved');
   });

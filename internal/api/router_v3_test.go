@@ -24,6 +24,8 @@ type fakeV3Backend struct {
 	savedResolution map[string]any
 	dnssec          map[string]any
 	savedDnssec     map[string]any
+	proxyLeak       map[string]any
+	savedProxyLeak  map[string]any
 }
 
 func (f *fakeV3Backend) Login(r *http.Request, username, password, code string) (string, bool, error) {
@@ -60,6 +62,18 @@ func (f *fakeV3Backend) DnssecSettings() (map[string]any, error) {
 func (f *fakeV3Backend) SaveDnssecSettings(r *http.Request, body map[string]any) (map[string]any, error) {
 	f.savedDnssec = body
 	return f.dnssec, nil
+}
+
+func (f *fakeV3Backend) ProxyLeakSettings() (map[string]any, error) {
+	if f.proxyLeak == nil {
+		return map[string]any{"enabled": true, "recommended": true}, nil
+	}
+	return f.proxyLeak, nil
+}
+
+func (f *fakeV3Backend) SaveProxyLeakSettings(r *http.Request, body map[string]any) (map[string]any, error) {
+	f.savedProxyLeak = body
+	return f.proxyLeak, nil
 }
 func (f *fakeV3Backend) AuthSnapshot() map[string]any { return map[string]any{"totp_enabled": false} }
 func (f *fakeV3Backend) Setup2FA(r *http.Request, u, p string) (map[string]any, error) {
@@ -723,6 +737,40 @@ func TestV3_DnssecSettingsAcceptsAPIKey(t *testing.T) {
 	}
 	if backend.savedDnssec["enabled"] != true {
 		t.Fatalf("save body enabled = %v, want true", backend.savedDnssec["enabled"])
+	}
+}
+
+// The Android DNSSEC/Proxy Leak page toggles the live guard through the same
+// v3 credential path as the DNSSEC card.
+func TestV3_ProxyLeakSettingsAcceptsAPIKey(t *testing.T) {
+	apiInst, _, _, cleanup := setupTestAPI(t)
+	defer cleanup()
+	backend := &fakeV3Backend{proxyLeak: map[string]any{
+		"enabled":     true,
+		"recommended": true,
+	}}
+	apiInst.SetV3Backend(backend)
+	mux := http.NewServeMux()
+	apiInst.RegisterRoutes(mux)
+	key := "digitdns_live_testkey123"
+
+	w := v3Request(mux, http.MethodGet, "/api/v3/settings/proxy-leak", key, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET proxy-leak = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var got map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &got)
+	if got["enabled"] != true || got["recommended"] != true {
+		t.Fatalf("GET proxy-leak = %v, want enabled and recommended", got)
+	}
+
+	w = v3Request(mux, http.MethodPost, "/api/v3/settings/proxy-leak", key,
+		map[string]any{"enabled": false})
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST proxy-leak = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if backend.savedProxyLeak["enabled"] != false {
+		t.Fatalf("save body enabled = %v, want false", backend.savedProxyLeak["enabled"])
 	}
 }
 

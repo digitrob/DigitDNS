@@ -27,6 +27,7 @@
     "serve_stale_seconds": 30,
     "dnssec_validation": false,
     "dnssec_trust_anchors": [],
+    "proxy_leak_protection": true,
     "query_timeout": 2000000000,
     "fastest_racing": true,
     "ecs_client_ip": ""

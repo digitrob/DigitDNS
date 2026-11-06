@@ -385,7 +385,10 @@
             else forgetRemembered();
             // Store the session under the canonical key the dashboard reads.
             try { localStorage.setItem('digitdns_token', body.token); } catch (e2) { /* private mode */ }
-            window.location.replace(BASE + '/dash/home');
+            // The query makes this a fresh navigation rather than a back/forward
+            // cache restore of a dashboard document loaded before a server
+            // update. The SPA routes on the path only, so it is harmless.
+            window.location.replace(BASE + '/dash/home?login=' + Date.now());
           });
         }).catch(function () {
           showError(MSG.net);

@@ -91,6 +91,9 @@ type fileConfig struct {
 		// DNSSECValidation is startup-only; the hub has no live toggle.
 		DNSSECValidation   *bool     `json:"dnssec_validation"`
 		DNSSECTrustAnchors *[]string `json:"dnssec_trust_anchors"`
+		// ProxyLeakProtection is live; false is accepted but is an explicit
+		// opt-out from the proxy leak guard.
+		ProxyLeakProtection *bool `json:"proxy_leak_protection"`
 	} `json:"dns"`
 	SNIProxy       *sniProxyFile `json:"sniproxy"`
 	SNIProxyLegacy *sniProxyFile `json:"sni_proxy"`
@@ -190,6 +193,9 @@ func applyConfigFile(path string, server *database.ServerSettings, dns *database
 		}
 		if d.DNSSECTrustAnchors != nil {
 			dns.DNSSECTrustAnchors = *d.DNSSECTrustAnchors
+		}
+		if d.ProxyLeakProtection != nil {
+			dns.ProxyLeakProtection = *d.ProxyLeakProtection
 		}
 	}
 

@@ -142,6 +142,11 @@ type WebServer struct {
 	dnssecActive  atomic.Bool
 	dnssecAnchors atomic.Pointer[[]string]
 
+	// proxyLeakSetter applies a proxy leak-protection change to the running
+	// resolver. Installed during startup; nil leaves the card read-only in the
+	// lighter test harnesses.
+	proxyLeakSetter func(bool)
+
 	// static holds the embedded dashboard, hashed and pre-compressed. Preparing it
 	// costs one pass over every asset, so it is built on first use and reused: the
 	// files came out of the binary and cannot change while the process runs, and
@@ -254,6 +259,15 @@ func (ws *WebServer) SetDNSSECStatus(active bool, anchors []string) {
 	ws.dnssecActive.Store(active)
 	copied := append([]string(nil), anchors...)
 	ws.dnssecAnchors.Store(&copied)
+}
+
+// SetProxyLeakProtectionSetter installs the live-resolver hook used by the
+// Proxy Leak Protection card. Call it during startup.
+func (ws *WebServer) SetProxyLeakProtectionSetter(fn func(bool)) {
+	if ws == nil {
+		return
+	}
+	ws.proxyLeakSetter = fn
 }
 
 func (ws *WebServer) SetSubscriptionSettings(s *database.SubscriptionSettings) {
@@ -875,6 +889,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/upstreams/add", ws.requireAuth(ws.handleUpstreamsAdd))
 	mux.HandleFunc("/api/settings/resolution", ws.requireAuth(ws.handleResolutionSettings))
 	mux.HandleFunc("/api/settings/dnssec", ws.requireAuth(ws.handleDNSSECSettings))
+	mux.HandleFunc("/api/settings/proxy-leak", ws.requireAuth(ws.handleProxyLeakSettings))
 	mux.HandleFunc("/api/upstreams/delete", ws.requireAuth(ws.handleUpstreamsDelete))
 	mux.HandleFunc("/api/tls/issue", ws.requireAuth(ws.handleTLSSettings))
 	mux.HandleFunc("/api/tls/auto-renew", ws.requireAuth(ws.handleTLSAutoRenew))

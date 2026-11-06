@@ -2707,11 +2707,70 @@ async function onBuySubscription(ctx, username) {
 
         </div>
 
+        <!-- The two DNS policy cards share a row on wide panels and stack on
+             mobile. The built-in root anchors are always visible inside a fixed
+             height block, so the DNSSEC card never grows when it is opened. -->
+        <div class="settings-pair settings-wide">
+        <!-- Proxy leak protection. Proxied names must never advertise QUIC or
+             origin address hints through HTTPS/SVCB: those records would let a
+             browser skip the SNI relay. The guard is automatic and has no
+             policy switch. -->
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4" id="proxy-leak-card">
+          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div class="flex items-start gap-3">
+              <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
+                <i data-feather="shield-off" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="panel-card-title">Proxy Leak Protection</h3>
+                <p class="text-[11px] text-slate-400">
+                  Proxied names never advertise QUIC or the origin's real addresses.
+                  HTTPS and SVCB answers are withheld so clients use the proxied A/AAAA records over TCP.
+                </p>
+              </div>
+            </div>
+            <div id="proxy-leak-controls" class="boot-hide flex items-center gap-3 shrink-0 self-end sm:self-start" style="visibility:hidden">
+              <span id="proxy-leak-badge" class="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">ACTIVE</span>
+              <label class="switch" title="Toggle proxy leak protection">
+                <input type="checkbox" id="proxy-leak-enabled-input" checked aria-label="Enable proxy leak protection">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
+              <div class="text-[9px] font-bold uppercase tracking-wider text-slate-400">HTTPS / SVCB</div>
+              <div class="text-[11px] text-cyan-300 font-mono mt-0.5">withheld</div>
+            </div>
+            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
+              <div class="text-[9px] font-bold uppercase tracking-wider text-slate-400">h3 / QUIC</div>
+              <div class="text-[11px] text-cyan-300 font-mono mt-0.5">not advertised</div>
+            </div>
+            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
+              <div class="text-[9px] font-bold uppercase tracking-wider text-slate-400">IPv4 / IPv6 hint</div>
+              <div class="text-[11px] text-cyan-300 font-mono mt-0.5">removed</div>
+            </div>
+          </div>
+
+          <p class="text-[10px] text-slate-500">
+            Applies live to every domain routed through <span class="font-mono text-slate-400">Proxy</span>.
+            Direct-routed names keep their normal HTTPS/SVCB records.
+          </p>
+          <p id="proxy-leak-off-note" class="hidden rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+            Protection is off. Proxied names may advertise QUIC and real IPv4/IPv6 hints, allowing clients to bypass the relay.
+          </p>
+          <p class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+            Recommended: keep this enabled. Turning it off lets proxied names advertise QUIC and origin IPv4/IPv6 hints,
+            which can bypass the relay. Only change this if you know what you are doing.
+          </p>
+        </div>
+
         <!-- DNSSEC validation. Startup-only by design: the validator is built
              before the listeners start, so this card persists the policy and
              says a restart is pending instead of pretending the toggle is live.
              An empty anchor list means the built-in IANA root KSKs. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4 settings-wide" id="dnssec-card">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4" id="dnssec-card">
           <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
             <div class="flex items-start gap-3">
               <div class="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
@@ -2725,7 +2784,7 @@ async function onBuySubscription(ctx, username) {
                 </p>
               </div>
             </div>
-            <div class="flex items-center gap-3 shrink-0 self-end sm:self-start">
+            <div id="dnssec-controls" class="boot-hide flex items-center gap-3 shrink-0 self-end sm:self-start" style="visibility:hidden">
               <span id="dnssec-status-badge" class="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800/70 text-slate-400 border border-slate-700">OFF</span>
               <label class="switch" title="Enable DNSSEC validation">
                 <input type="checkbox" id="dnssec-enabled-input" aria-label="Enable DNSSEC validation">
@@ -2746,10 +2805,8 @@ async function onBuySubscription(ctx, username) {
               Empty uses the built-in IANA root anchors. Custom anchors must name the root
               (<code class="text-cyan-400">.</code>) and are validated before saving.
             </p>
-            <details class="text-[11px] text-slate-400">
-              <summary class="cursor-pointer select-none text-slate-400 hover:text-slate-200">Show built-in root anchors</summary>
-              <pre id="dnssec-default-anchors" class="mt-2 p-3 rounded-lg bg-slate-950/70 border border-slate-800 font-mono text-[10px] text-slate-400 whitespace-pre-wrap break-all"></pre>
-            </details>
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mt-1">Built-in IANA root anchors</p>
+            <pre id="dnssec-default-anchors" class="mt-1 h-28 overflow-y-auto p-3 rounded-lg bg-slate-950/70 border border-slate-800 font-mono text-[10px] text-slate-400 whitespace-pre-wrap break-all"></pre>
           </div>
 
           <div class="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -2764,6 +2821,7 @@ async function onBuySubscription(ctx, username) {
             Saved settings differ from the running engine. Restart DigitDNS to apply the new DNSSEC policy.
           </p>
           <p class="text-[10px] text-slate-500">Changes are startup-only and take effect after a restart.</p>
+        </div>
         </div>
 
         <!-- Aggregate history policy. The store is opened once at boot, so these

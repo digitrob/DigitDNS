@@ -6,11 +6,13 @@ import com.digitrob.digitdns.data.SettingsRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -84,6 +86,29 @@ class DnssecSettingsViewModelTest {
         }
         assertTrue(viewModel.state.value.saved)
         assertTrue(viewModel.state.value.restartRequired)
+    }
+
+    @Test
+    fun aPullToRefreshDoesNotUseTheInitialLoadingFlag() = runTest(dispatcher) {
+        coEvery { repository.loadDnssec() } returns DnssecSettings(enabled = true)
+
+        val viewModel = DnssecSettingsViewModel(repository)
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.loaded)
+
+        val gate = CompletableDeferred<DnssecSettings>()
+        coEvery { repository.loadDnssec() } coAnswers { gate.await() }
+        viewModel.load()
+        runCurrent()
+
+        val during = viewModel.state.value
+        assertTrue(during.isRefreshing)
+        assertFalse("a refresh must not disable the Save button via isLoading", during.isLoading)
+
+        gate.complete(DnssecSettings(enabled = true))
+        advanceUntilIdle()
+        assertFalse(viewModel.state.value.isRefreshing)
+        assertFalse(viewModel.state.value.isLoading)
     }
 
     @Test

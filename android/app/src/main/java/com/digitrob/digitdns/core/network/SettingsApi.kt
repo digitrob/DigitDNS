@@ -47,6 +47,12 @@ interface SettingsApi {
 
     @POST("settings/dnssec")
     suspend fun saveDnssec(@Body body: DnssecSettingsSave): DnssecSettings
+
+    @GET("settings/proxy-leak")
+    suspend fun getProxyLeak(): ProxyLeakSettings
+
+    @POST("settings/proxy-leak")
+    suspend fun saveProxyLeak(@Body body: ProxyLeakSettingsSave): ProxyLeakSettings
 }
 
 /**
@@ -73,6 +79,21 @@ data class DnssecSettings(
 data class DnssecSettingsSave(
     val enabled: Boolean,
     @SerialName("trust_anchors") val trustAnchors: List<String>,
+)
+
+/**
+ * The live proxy leak guard. `recommended` is always true on current servers:
+ * the UI keeps the warning visible even after an operator turns the guard off.
+ */
+@Serializable
+data class ProxyLeakSettings(
+    val enabled: Boolean = true,
+    val recommended: Boolean = true,
+)
+
+@Serializable
+data class ProxyLeakSettingsSave(
+    val enabled: Boolean,
 )
 
 /**

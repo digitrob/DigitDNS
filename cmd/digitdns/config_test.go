@@ -44,17 +44,18 @@ func defaults() (*database.ServerSettings, *database.DNSSettings, *database.SNIP
 		APIBind:       "127.0.0.1",
 	}
 	dns := &database.DNSSettings{
-		Enabled:           true,
-		Port:              53,
-		DoTPort:           853,
-		DoHPort:           8443,
-		Upstreams:         []string{"1.1.1.1:53"},
-		CacheSize:         20000,
-		CacheMinTTL:       60,
-		CacheMaxTTL:       86400,
-		QueryTimeout:      2 * time.Second,
-		FastestRacing:     true,
-		ServeStaleSeconds: 30,
+		Enabled:             true,
+		Port:                53,
+		DoTPort:             853,
+		DoHPort:             8443,
+		Upstreams:           []string{"1.1.1.1:53"},
+		CacheSize:           20000,
+		CacheMinTTL:         60,
+		CacheMaxTTL:         86400,
+		QueryTimeout:        2 * time.Second,
+		FastestRacing:       true,
+		ServeStaleSeconds:   30,
+		ProxyLeakProtection: true,
 	}
 	sni := &database.SNIProxySettings{
 		Enabled:             true,
@@ -150,6 +151,30 @@ func TestConfigServeStaleValueApplied(t *testing.T) {
 
 	if dns.ServeStaleSeconds != 120 {
 		t.Errorf("serve_stale_seconds = %d, want 120", dns.ServeStaleSeconds)
+	}
+}
+
+// The proxy leak guard is recommended on. A file that predates the key must
+// leave the default in place rather than decoding it as false.
+func TestConfigProxyLeakProtectionDefaultsOn(t *testing.T) {
+	path := writeConfig(t, `{"dns": {"port": 5353}}`)
+
+	server, dns, sni, tls := defaults()
+	applyConfigFile(path, server, dns, sni, tls)
+
+	if !dns.ProxyLeakProtection {
+		t.Error("proxy_leak_protection = false, want the default true")
+	}
+}
+
+func TestConfigProxyLeakProtectionCanBeDisabled(t *testing.T) {
+	path := writeConfig(t, `{"dns": {"proxy_leak_protection": false}}`)
+
+	server, dns, sni, tls := defaults()
+	applyConfigFile(path, server, dns, sni, tls)
+
+	if dns.ProxyLeakProtection {
+		t.Error("proxy_leak_protection = true, want the explicit false")
 	}
 }
 

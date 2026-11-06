@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.2.1] — Proxy leak protection
+
+### 🛡️ Proxy leak protection
+
+- Proxied names no longer receive upstream `HTTPS`/`SVCB` answers. The hub
+  answers `NOERROR` with no answers, no `AD` and no cache entry, so clients
+  cannot discover HTTP/3 or the origin's real IPv4/IPv6 hints and bypass the
+  SNI relay.
+- Direct names keep normal `HTTPS`/`SVCB`; blocked names already return the
+  block response for every query type.
+- New live `proxy_leak_protection` setting, default `true`; changing it applies
+  without a restart, and turning it off requires an explicit confirmation.
+- Added handler, cache, direct, blocked and live-disable tests.
+
+### 🖥️ Web panel
+
+- New **Settings → Proxy Leak Protection** card beside **DNSSEC Validation**.
+- The DNSSEC card sits in a two-column row on wide panels, stacks on mobile,
+  and keeps its built-in root anchors permanently visible in a fixed-height
+  block.
+- The DNSSEC and proxy switches stay hidden until their saved state has loaded,
+  so a refresh no longer animates them from a default position.
+- New authenticated `/api/settings/proxy-leak` route and v3
+  `/api/v3/settings/proxy-leak` route for Android and API-key clients.
+- A successful sign-in now reloads the document instead of reusing the old
+  markup, so an updated panel is visible immediately and the standalone login
+  redirect bypasses the back/forward cache.
+- Live-log `PROXY · QUIC FALLBACK` rows are treated as proxied queries: the
+  **PROXY** filter, the RELAY column and aggregate proxied totals now include
+  them.
+
+### 📱 Android
+
+- Renamed the **DNSSEC** Settings section to **DNSSEC/Proxy Leak** and added the
+  **Proxy Leak Protection** card below the DNSSEC card.
+- Proxy protection is live: the switch saves immediately, shows `ACTIVE`/`OFF`,
+  and asks for confirmation before disabling.
+- Both cards fit the Settings area without scrolling on a standard phone.
+- Pull-to-refresh no longer disables the **Save DNSSEC settings** button or
+  clears the saved-status line; refresh and first-load states are separate.
+- Added API, ViewModel, repository and routing tests for the live proxy guard.
+
 ## 🏷️ [v5.2.0] — DNSSEC validation and panel/app controls
 
 **A feature release.** Full DNSSEC validation in the hub, a Settings card and

@@ -143,6 +143,12 @@ type V3Backend interface {
 	DnssecSettings() (map[string]any, error)
 	SaveDnssecSettings(r *http.Request, body map[string]any) (map[string]any, error)
 
+	// ProxyLeakSettings and SaveProxyLeakSettings mirror the dashboard's live
+	// proxy leak guard. The companion app may authenticate with the master API
+	// key, so these live on v3 for the same reason as the DNSSEC pair.
+	ProxyLeakSettings() (map[string]any, error)
+	SaveProxyLeakSettings(r *http.Request, body map[string]any) (map[string]any, error)
+
 	// Filtering status, settings and blocklists. These delegate to the dashboard
 	// handlers so the REST view and the Ad Blocking page cannot disagree about a
 	// list's state or a settings save. The list-add request is passed through
@@ -215,6 +221,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/settings", a.SecurityMiddlewareV3(a.handleV3Settings))
 	mux.HandleFunc("/api/v3/settings/resolution", a.SecurityMiddlewareV3(a.handleV3Resolution))
 	mux.HandleFunc("/api/v3/settings/dnssec", a.SecurityMiddlewareV3(a.handleV3DnssecSettings))
+	mux.HandleFunc("/api/v3/settings/proxy-leak", a.SecurityMiddlewareV3(a.handleV3ProxyLeakSettings))
 	mux.HandleFunc("/api/v3/settings/subscription", a.SecurityMiddlewareV3(a.handleV3Subscription))
 	mux.HandleFunc("/api/v3/settings/regenerate-api-key", a.SecurityMiddlewareV3(a.handleV3RegenerateAPIKey))
 	mux.HandleFunc("/api/v3/settings/regenerate-admin-path", a.SecurityMiddlewareV3(a.handleV3RegenerateAdminPath))

@@ -580,7 +580,7 @@
     <string name="card_history_summary">History summary</string>
     <string name="card_history_chart">History chart</string>
 
-    <string name="settings_dnssec">DNSSEC</string>
+    <string name="settings_dnssec">DNSSEC/Proxy Leak</string>
     <string name="settings_history">Traffic History</string>
     <string name="settings_ad_blocking">Ad Blocking</string>
     <string name="history_settings_title">Traffic History</string>
@@ -612,6 +612,7 @@
     <string name="dnssec_settings_anchors_help">Empty = built-in root KSKs. One root record per line.</string>
     <string name="dnssec_settings_defaults_show">Show built-in root anchors</string>
     <string name="dnssec_settings_defaults_hide">Hide built-in root anchors</string>
+    <string name="dnssec_settings_builtin">Built-in anchors</string>
     <string name="dnssec_settings_save">Save DNSSEC settings</string>
     <string name="dnssec_settings_saved">Saved.</string>
     <string name="dnssec_settings_saved_restart">Saved. Restart to apply.</string>
@@ -619,4 +620,24 @@
     <string name="dnssec_settings_restart_pending">Restart required to apply the saved policy.</string>
     <string name="dnssec_settings_unsupported">This server does not expose DNSSEC settings.</string>
     <string name="dnssec_settings_loading">Loading DNSSEC settings…</string>
+
+    <!-- Proxy leak protection. Live and server-wide; the switch saves immediately. -->
+    <string name="proxy_leak_settings_title">Proxy Leak Protection</string>
+    <string name="proxy_leak_settings_help">Withhold HTTPS and SVCB answers for proxied names so clients cannot discover QUIC or the origin\'s real addresses.</string>
+    <string name="proxy_leak_settings_enabled">Enable proxy leak protection</string>
+    <string name="proxy_leak_settings_status_on">ACTIVE</string>
+    <string name="proxy_leak_settings_status_off">OFF</string>
+    <string name="proxy_leak_settings_https">HTTPS / SVCB</string>
+    <string name="proxy_leak_settings_https_value">withheld</string>
+    <string name="proxy_leak_settings_h3">h3 / QUIC</string>
+    <string name="proxy_leak_settings_h3_value">not advertised</string>
+    <string name="proxy_leak_settings_hints">IPv4 / IPv6</string>
+    <string name="proxy_leak_settings_hints_value">hint removed</string>
+    <string name="proxy_leak_settings_warning">Recommended: keep this enabled. Turning it off lets proxied names advertise QUIC and origin IPv4/IPv6 hints, which can bypass the relay. Only change this if you know what you are doing.</string>
+    <string name="proxy_leak_settings_off_note">Protection is off. Proxied names may advertise QUIC and real IPv4/IPv6 hints, allowing clients to bypass the relay.</string>
+    <string name="proxy_leak_settings_disable_title">Turn off proxy leak protection?</string>
+    <string name="proxy_leak_settings_disable_message">Proxied domains may bypass the relay: browsers can discover QUIC and the origin\'s real IPv4/IPv6 addresses through HTTPS/SVCB. Only turn this off if you know what you are doing.</string>
+    <string name="proxy_leak_settings_disable_confirm">TURN OFF</string>
+    <string name="proxy_leak_settings_unsupported">This server does not expose proxy leak protection settings.</string>
+    <string name="proxy_leak_settings_loading">Loading proxy leak protection…</string>
 </resources>

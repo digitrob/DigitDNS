@@ -1,62 +1,51 @@
-# DigitDNS v5.2.0 — DNSSEC validation, panel and Android controls
+# DigitDNS v5.2.1 — proxy leak protection and refresh reliability
 
-**A feature release.** 5.2.0 adds full DNSSEC validation to the resolver, a
-Settings card and v3 API for managing it, and a dedicated DNSSEC section in the
-Android companion. It is opt-in and startup-scoped: an existing install keeps
-its current behaviour until `dnssec_validation` is enabled and the daemon
-restarts.
+**A patch release.** 5.2.1 closes the `HTTPS`/`SVCB` leak on proxied domains,
+adds a live Proxy Leak Protection control to the web panel and Android app, and
+fixes several refresh and live-log issues found while rolling it out.
 
-There are no database schema changes and no breaking API changes.
+There are no database schema changes and no breaking API changes. The new
+`proxy_leak_protection` setting defaults to `true`; existing proxied domains
+start withholding `HTTPS`/`SVCB` answers after the upgrade.
 
-## DNSSEC validation
+## Proxy leak protection
 
-- **Full chain-of-trust validation.** The hub walks from the built-in IANA root
-  KSKs (`20326`, `38696`) through DS and DNSKEY records at each zone cut, then
-  verifies the answer's RRSIGs.
-- **Authenticated denial of existence.** NXDOMAIN and NODATA are checked with
-  NSEC or NSEC3 proofs, including wildcard answers and NSEC3 opt-out spans.
-- **Honest status bits.** `AD` is set only on answers this hub validated itself.
-  Bogus answers return `SERVFAIL` with Extended DNS Error 6 (`DNSSEC Bogus`).
-  `CD=1` bypasses validation and never claims `AD`. Unsigned delegations are
-  served normally without `AD`.
-- **Cache correctness.** Cache keys separate EDNS, DO and CD variants; DO=0
-  responses never leak RRSIG, NSEC or NSEC3 records; background refresh keeps
-  the entry's flags; cached TTLs are capped at the nearest RRSIG expiration.
-- **Trust anchors.** Empty `dnssec_trust_anchors` uses the built-in root KSKs.
-  Custom DS or DNSKEY anchors are validated before saving. The policy and
-  anchors are startup-only and require a daemon restart.
-
-## Configuration
-
-```json
-"dnssec_validation": true,
-"dnssec_trust_anchors": []
-```
-
-`dnssec_validation` defaults to `false`. Existing installs keep passing the
-upstream `AD` bit through until validation is enabled.
+- Proxied names no longer receive upstream `HTTPS`/`SVCB` answers. The hub
+  answers `NOERROR` with no answers, no `AD` and no cache entry, so clients
+  cannot discover HTTP/3 or the origin's real IPv4/IPv6 hints and bypass the
+  SNI relay.
+- Direct names keep their normal `HTTPS`/`SVCB` records; blocked names already
+  return the block response for every query type.
+- New live `proxy_leak_protection` setting, default `true`. Changing it applies
+  to the running resolver without a restart. Turning it off requires an
+  explicit confirmation.
+- New authenticated routes:
+  - `GET/POST /api/settings/proxy-leak`
+  - `GET/POST /api/v3/settings/proxy-leak` for Android and API-key clients.
 
 ## Web panel
 
-- **Settings → DNSSEC Validation**, placed directly above **Traffic History**.
-- Enable or disable validation, edit root trust anchors, inspect the built-in
-  anchors, and see the difference between saved and running policy.
-- A restart-required banner appears when the saved record differs from the
-  running engine. Saving is deliberately not a live toggle.
-- New authenticated routes:
-  - `GET/POST /api/settings/dnssec`
-  - `GET/POST /api/v3/settings/dnssec` for the Android client and API-key
-    integrations.
+- **Settings → Proxy Leak Protection** now sits beside **DNSSEC Validation**.
+  The two cards share a responsive row, stack on mobile, and the built-in root
+  anchors stay visible in a fixed-height block.
+- The DNSSEC and proxy switches stay hidden until their saved state arrives, so
+  a page refresh no longer animates them from a default position.
+- Signing in now reloads the dashboard document instead of reusing old markup.
+  An upgraded panel shows the new UI, settings and data immediately; the
+  standalone login redirect also bypasses the back/forward cache.
+- Live-log `PROXY · QUIC FALLBACK` rows are treated as proxied queries: the
+  **PROXY** filter, RELAY column and aggregate proxied totals now include them.
 
 ## Android companion
 
-- **DNSSEC** section in Settings, immediately before **Traffic History**.
-- The card opens with the saved state already loaded; the switch does not flip
-  from a default value and the status pill does not change after opening.
-- Trust-anchor editor, expandable built-in root anchors, restart-required
-  notice, and the shared bordered status-badge style used elsewhere in the app.
-- Compact layout: the card fits the Settings area without scrolling even with
-  the built-in anchors expanded.
+- The Settings section is now **DNSSEC/Proxy Leak**.
+- New **Proxy Leak Protection** card below the DNSSEC card, with `ACTIVE`/`OFF`
+  status, a live switch, a confirmation before disabling, warning/off notes and
+  compact `HTTPS/SVCB`, `h3/QUIC` and `IPv4/IPv6` fact tiles.
+- Both cards fit the Settings area without scrolling on a standard phone.
+- Pull-to-refresh no longer disables the **Save DNSSEC settings** button or
+  clears the saved-status line.
+- Added API, ViewModel, repository and routing tests for the live proxy guard.
 
 ## Upgrade
 
@@ -77,17 +66,16 @@ docker pull robmeister/digitdns-agent:latest
 Pinned versions:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.2.0
-docker pull robmeister/digitdns:5.2.0
+docker pull ghcr.io/digitrob/digitdns:5.2.1
+docker pull robmeister/digitdns:5.2.1
 ```
 
 ## Assets
 
 - `digitdns-linux-amd64`, `digitdns-linux-arm64`
 - `digitdns-agent-linux-amd64`, `digitdns-agent-linux-arm64`
-- `digitdns-agent-5.2.0-linux-arm64-image.tar.gz`
 - `digitdns-offline-bundle.tar.gz`, `digitdns-offline-bundle.zip`
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-Android APKs are attached to this release from the `android-v5.2.0` tag.
+The Android APKs are attached to this release from the `android-v5.2.1` tag.

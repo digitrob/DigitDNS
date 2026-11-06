@@ -142,7 +142,7 @@ private fun SettingsSectionContent(
 ) {
     when (section) {
         SettingsSection.App -> AppSettingsScreen()
-        SettingsSection.Dnssec -> DnssecSettingsScreen()
+        SettingsSection.Dnssec -> DnssecProxySettingsScreen()
         SettingsSection.History -> HistorySettingsScreen()
         SettingsSection.AdBlocking -> AdBlockingScreen()
         SettingsSection.Servers -> ServersScreen(

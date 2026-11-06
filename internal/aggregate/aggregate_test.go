@@ -40,6 +40,39 @@ func openTestAggregator(t *testing.T, now *time.Time, cfg Config) (*Aggregator, 
 	return a, path
 }
 
+// The HTTPS/SVCB sink is a proxied route answered locally, so it must count in
+// the proxied total and in the relay-country breakdown like PROXY_IPV6_SINK.
+func TestProxyHTTPSinkCountsAsProxied(t *testing.T) {
+	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	cfg := Config{FlushInterval: time.Hour, TopDomains: 10, TopClients: 10}
+	a, _ := openTestAggregator(t, &now, cfg)
+
+	item := testItem(now)
+	item.Domain = "chat.example."
+	item.Action = "PROXY_HTTPS_SINK"
+	item.RelayCountry = "DE"
+	a.RecordTotal(now)
+	a.RecordDetail(item)
+
+	a.flush()
+	b, err := a.store.readHour(hourKey(now))
+	if err != nil {
+		t.Fatalf("read hour: %v", err)
+	}
+	if b == nil {
+		t.Fatal("hour bucket was not written")
+	}
+	if b.Proxied != 1 {
+		t.Errorf("Proxied = %d, want 1", b.Proxied)
+	}
+	if b.ByRelayCountry["DE"] != 1 {
+		t.Errorf("ByRelayCountry = %#v, want DE=1", b.ByRelayCountry)
+	}
+	if b.ByAction["PROXY_HTTPS_SINK"] != 1 {
+		t.Errorf("ByAction = %#v, want PROXY_HTTPS_SINK=1", b.ByAction)
+	}
+}
+
 func TestRecordDetailBuildsBoundedTotalsAndTopLists(t *testing.T) {
 	now := time.Date(2026, 11, 4, 10, 15, 0, 0, time.UTC)
 	cfg := Config{FlushInterval: time.Hour, TopDomains: 3, TopClients: 2}
