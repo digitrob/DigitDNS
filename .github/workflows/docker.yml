@@ -1,7 +1,7 @@
 name: Docker
 
-# Builds the multi-arch container image and publishes it to GitHub Container
-# Registry. Three triggers, three jobs' worth of meaning:
+# Builds the multi-arch container images and publishes them to GitHub Container
+# Registry and Docker Hub. Three triggers, three jobs' worth of meaning:
 #
 #   - push to `main`        -> :edge   (tracks the default branch)
 #   - push of a `v*` tag      -> :X.Y.Z + :vX.Y.Z, and :latest on a stable
@@ -17,7 +17,8 @@ name: Docker
 #
 # Every push is signed with keyless cosign (Sigstore/OIDC — no long-lived key
 # in the repository). The public half of identity is this workflow file; the
-# verify command is documented in README.md.
+# verify command is documented in README.md. GHCR stays the primary registry;
+# Docker Hub is a mirror under the namespace in vars.DOCKERHUB_NAMESPACE.
 
 on:
   push:
@@ -48,6 +49,8 @@ jobs:
   build:
     name: Build & publish multi-arch image
     runs-on: ubuntu-latest
+    env:
+      DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || 'robmeister' }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -68,6 +71,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       # Tag and label rules. `latest=auto` (the default flavour) adds :latest
       # only for a non-prerelease semver tag, so a "-beta" cut can never take
       # the stable badge — the same rule the binary release workflow applies.
@@ -75,7 +85,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/digitdns
+          images: |
+            ghcr.io/${{ github.repository_owner }}/digitdns
+            docker.io/${{ env.DOCKERHUB_NAMESPACE }}/digitdns
           tags: |
             # branch push -> edge
             type=raw,value=edge,enable=${{ (github.event_name == 'push' && github.ref_type == 'branch') || (github.ref_type == 'tag' && contains(github.ref_name, 'beta')) }}
@@ -105,13 +117,17 @@ jobs:
           cache-to: type=gha,mode=max
 
 
-      - name: Verify the hub image runs on arm64
+      - name: Verify the hub image runs on arm64 from both registries
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           OWNER: ${{ github.repository_owner }}
         run: |
-          image="ghcr.io/${OWNER,,}/digitdns@${DIGEST}"
-          docker run --rm --platform linux/arm64 --entrypoint /app/digitdns "$image" -version
+          for image in \
+            "ghcr.io/${OWNER,,}/digitdns@${DIGEST}" \
+            "docker.io/${DOCKERHUB_NAMESPACE}/digitdns@${DIGEST}"
+          do
+            docker run --rm --platform linux/arm64 --entrypoint /app/digitdns "$image" -version
+          done
 
       # Keyless (OIDC) signature over the image digest. No private key lives in
       # the repository or in an Actions secret — Sigstore's transparency log
@@ -127,8 +143,10 @@ jobs:
         # ${OWNER,,} lowercases the owner: GHCR requires lowercase image names
         # and a fork under a mixed-case org would otherwise fail to sign.
         run: |
-          image="ghcr.io/${OWNER,,}/digitdns"
-          cosign sign --yes "${image}@${DIGEST}"
+          ghcr="ghcr.io/${OWNER,,}/digitdns"
+          hub="docker.io/${DOCKERHUB_NAMESPACE}/digitdns"
+          cosign sign --yes "${ghcr}@${DIGEST}"
+          cosign sign --yes "${hub}@${DIGEST}"
 
   # The relay agent is a separate image built from the same repository and the
   # same tag push. It is intentionally smaller than the hub: no database, no
@@ -137,6 +155,8 @@ jobs:
   agent:
     name: Build & publish relay-agent image
     runs-on: ubuntu-latest
+    env:
+      DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || 'robmeister' }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -154,11 +174,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/digitdns-agent
+          images: |
+            ghcr.io/${{ github.repository_owner }}/digitdns-agent
+            docker.io/${{ env.DOCKERHUB_NAMESPACE }}/digitdns-agent
           tags: |
             type=raw,value=edge,enable=${{ (github.event_name == 'push' && github.ref_type == 'branch') || (github.ref_type == 'tag' && contains(github.ref_name, 'beta')) }}
             type=semver,pattern={{version}}
@@ -188,28 +217,38 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
-      - name: Verify the agent image is amd64 + arm64
+      - name: Verify the agent image is amd64 + arm64 on both registries
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           OWNER: ${{ github.repository_owner }}
         run: |
-          image="ghcr.io/${OWNER,,}/digitdns-agent@${DIGEST}"
-          docker buildx imagetools inspect "$image" | tee /tmp/agent-index.txt
-          grep -q 'linux/amd64' /tmp/agent-index.txt
-          grep -q 'linux/arm64' /tmp/agent-index.txt
+          for image in \
+            "ghcr.io/${OWNER,,}/digitdns-agent@${DIGEST}" \
+            "docker.io/${DOCKERHUB_NAMESPACE}/digitdns-agent@${DIGEST}"
+          do
+            docker buildx imagetools inspect "$image" | tee /tmp/agent-index.txt
+            grep -q 'linux/amd64' /tmp/agent-index.txt
+            grep -q 'linux/arm64' /tmp/agent-index.txt
+          done
 
-      - name: Verify the agent image runs on arm64
+      - name: Verify the agent image runs on arm64 from both registries
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           OWNER: ${{ github.repository_owner }}
         run: |
-          image="ghcr.io/${OWNER,,}/digitdns-agent@${DIGEST}"
-          docker run --rm --platform linux/arm64 --entrypoint /usr/local/bin/digitdns-agent "$image" -version
+          for image in \
+            "ghcr.io/${OWNER,,}/digitdns-agent@${DIGEST}" \
+            "docker.io/${DOCKERHUB_NAMESPACE}/digitdns-agent@${DIGEST}"
+          do
+            docker run --rm --platform linux/arm64 --entrypoint /usr/local/bin/digitdns-agent "$image" -version
+          done
 
       - name: Sign the image
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           OWNER: ${{ github.repository_owner }}
         run: |
-          image="ghcr.io/${OWNER,,}/digitdns-agent"
-          cosign sign --yes "${image}@${DIGEST}"
+          ghcr="ghcr.io/${OWNER,,}/digitdns-agent"
+          hub="docker.io/${DOCKERHUB_NAMESPACE}/digitdns-agent"
+          cosign sign --yes "${ghcr}@${DIGEST}"
+          cosign sign --yes "${hub}@${DIGEST}"

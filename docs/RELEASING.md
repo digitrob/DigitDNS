@@ -62,8 +62,10 @@ points at the server release.
 
 The same `vX.Y.Z` tag also builds two multi-arch container images:
 `ghcr.io/digitrob/digitdns` (hub) and `ghcr.io/digitrob/digitdns-agent`
-(relay agent). Both are signed with keyless cosign and use the same tag rules —
-`latest` and the version tags on a stable cut, `edge` on `main`.
+(relay agent), mirrored to Docker Hub as `robmeister/digitdns` and
+`robmeister/digitdns-agent`. All four references are signed with keyless
+cosign and use the same tag rules — `latest` and the version tags on a stable
+cut, `edge` on `main`.
 
 ## Where this repository stands
 

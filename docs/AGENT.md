@@ -94,6 +94,8 @@ not change routing by itself.
 
 ```bash
 docker pull ghcr.io/digitrob/digitdns-agent:latest
+# Docker Hub mirror:
+# docker pull robmeister/digitdns-agent:latest
 
 mkdir -p /opt/digitdns-agent
 

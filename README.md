@@ -319,12 +319,16 @@ for the first certificate issuance.
 
 ### 2. Docker
 
-Images are published for amd64 and arm64 and signed with cosign. The hub is
-`ghcr.io/digitrob/digitdns`; the optional relay agent is
-`ghcr.io/digitrob/digitdns-agent` (see [Relay agent](#6-relay-agent-optional)).
+Images are published for amd64 and arm64 and signed with cosign. The primary
+registry is GHCR: `ghcr.io/digitrob/digitdns` (hub) and
+`ghcr.io/digitrob/digitdns-agent` (optional relay agent, see
+[Relay agent](#6-relay-agent-optional)). Docker Hub mirrors the same tags at
+`robmeister/digitdns` and `robmeister/digitdns-agent`.
 
 ```bash
 docker pull ghcr.io/digitrob/digitdns:latest
+# Docker Hub mirror:
+# docker pull robmeister/digitdns:latest
 
 mkdir -p data certs
 docker run -d --name digitdns --network host \
@@ -350,6 +354,9 @@ services:
     ulimits:
       nofile: { soft: 65535, hard: 65535 }
 ```
+
+Set `image: robmeister/digitdns:latest` instead if you prefer the Docker Hub
+mirror.
 
 ```bash
 mkdir -p data certs && docker compose up -d
@@ -384,6 +391,14 @@ Verify the image:
 
 ```bash
 cosign verify ghcr.io/digitrob/digitdns:latest \
+  --certificate-identity-regexp 'https://github.com/digitrob/DigitDNS/.github/workflows/docker.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The Docker Hub mirror carries the same signature and digest:
+
+```bash
+cosign verify docker.io/robmeister/digitdns:latest \
   --certificate-identity-regexp 'https://github.com/digitrob/DigitDNS/.github/workflows/docker.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
@@ -804,12 +819,14 @@ The app keeps its own version, so a server update never forces an app update.
 
 - **Panel:** Settings → Server Update checks for a signed release and installs
   it with a backup and restart.
-- **Docker:** `docker pull ghcr.io/digitrob/digitdns:latest && docker compose up -d`.
+- **Docker:** `docker pull ghcr.io/digitrob/digitdns:latest && docker compose up -d`
+  (or `docker pull robmeister/digitdns:latest` for the Docker Hub mirror).
 - **Binary:** replace `/opt/digitdns/digitdns`, then `systemctl restart digitdns`.
 - **Installer:** rerun it; the existing install is archived first.
 - **Relay agents:** pull the new `ghcr.io/digitrob/digitdns-agent` image (or
-  replace the binary) and restart. `/data/agent-state.json` survives; it holds
-  the agent key and last catalogue.
+  `robmeister/digitdns-agent` from Docker Hub, or replace the binary) and
+  restart. `/data/agent-state.json` survives; it holds the agent key and last
+  catalogue.
 
 Back up before any upgrade. Database and config format changes are handled
 automatically, but `master.key` must travel with `data.db`.
