@@ -92,6 +92,25 @@ func TestRelayRouterPlainPatternCoversSubdomains(t *testing.T) {
 	}
 }
 
+func TestRelayRouterWildcardBeatsPlainParentAtTheSameLevel(t *testing.T) {
+	r := NewRelayRouter()
+	r.SetAgents([]database.Agent{
+		relayAgent("de", "Frankfurt", "DE", "203.0.113.10"),
+		relayAgent("us", "New York", "US", "198.51.100.20"),
+	})
+	r.SetAssignments(map[string]string{
+		"example.com":         "de",
+		"*.media.example.com": "us",
+	}, nil, nil)
+
+	if target, ok := r.Lookup("cdn.media.example.com"); !ok || target.AgentID != "us" {
+		t.Fatalf("wildcard child = %#v, %v", target, ok)
+	}
+	if target, ok := r.Lookup("www.example.com"); !ok || target.AgentID != "de" {
+		t.Fatalf("plain parent suffix = %#v, %v", target, ok)
+	}
+}
+
 func TestRelayRouterSkipsOfflineAndDisabledAgents(t *testing.T) {
 	now := time.Now()
 	r := NewRelayRouter()

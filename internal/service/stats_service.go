@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"runtime"
 	"runtime/metrics"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,25 +18,31 @@ import (
 )
 
 type StatsService struct {
-	db            *database.DB
-	startedAt     time.Time
-	totalQueries  atomic.Uint64
-	logCounter    atomic.Uint64
-	telemetryMu   sync.Mutex // guards qps window, speeds & cached runtime metrics
-	qpsWindow     [10]uint64
-	qpsIndex      int
-	qpsRate       float64
-	cachedRAMMB   float64
-	cachedSysMB   float64
-	cachedCPUPct  float64
-	numGoroutines int
-	numCPU        int
-	speedInKBps   float64
-	speedOutKBps  float64
-	lastBytesSent uint64
-	lastBytesRecv uint64
-	recentLogs    []database.QueryLogItem
-	logMu         sync.RWMutex
+	db             *database.DB
+	startedAt      time.Time
+	totalQueries   atomic.Uint64
+	logCounter     atomic.Uint64
+	telemetryMu    sync.Mutex // guards qps window, speeds & cached runtime metrics
+	qpsWindow      [10]uint64
+	qpsIndex       int
+	qpsRate        float64
+	cachedRAMMB    float64
+	cachedSysMB    float64
+	cachedCPUPct   float64
+	numGoroutines  int
+	numCPU         int
+	speedInKBps    float64
+	speedOutKBps   float64
+	lastBytesSent  uint64
+	lastBytesRecv  uint64
+	recentLogs     []database.QueryLogItem
+	recentLogHead  int
+	recentLogCount int
+	logMu          sync.RWMutex
+	// sseSubscribers counts open live-log streams. It is read on the query path
+	// to skip JSON encoding and fan-out when no dashboard is watching; the map
+	// itself is only consulted when the count says there is someone to send to.
+	sseSubscribers atomic.Int64
 	// aggregator is optional: a test harness or a build with stats.db disabled
 	// simply leaves it nil. It is set once during startup, before listeners
 	// accept, but an atomic pointer keeps the read in PushQueryLog safe against
@@ -101,6 +108,15 @@ const recentLogsCap = 100
 // no longer holds.
 const recentLogsClearFrame = "event: cleared\ndata: {}\n\n"
 
+// Live-log batching: a busy resolver can produce more query frames than a browser
+// or a socket write can comfortably absorb one at a time. Collecting a short
+// window's worth and flushing them in one write cuts syscall and flush overhead
+// without making the log feel less live — 20 ms is below the eye's notice.
+const (
+	sseBatchWindow    = 20 * time.Millisecond
+	sseBatchMaxFrames = 64
+)
+
 func NewStatsService(
 	db *database.DB,
 	proxyStats func() (int64, uint64, uint64, uint64),
@@ -109,7 +125,7 @@ func NewStatsService(
 	s := &StatsService{
 		db:            db,
 		startedAt:     time.Now(),
-		recentLogs:    make([]database.QueryLogItem, 0, recentLogsCap),
+		recentLogs:    make([]database.QueryLogItem, recentLogsCap),
 		sseClients:    make(map[chan string]struct{}),
 		getProxyStats: proxyStats,
 		getCacheStats: cacheStats,
@@ -186,11 +202,27 @@ func (s *StatsService) PushQueryLog(item database.QueryLogItem) {
 	}
 
 	s.logMu.Lock()
-	if len(s.recentLogs) >= recentLogsCap {
-		s.recentLogs = s.recentLogs[1:]
+	if s.recentLogCount < recentLogsCap {
+		idx := s.recentLogHead + s.recentLogCount
+		if idx >= recentLogsCap {
+			idx -= recentLogsCap
+		}
+		s.recentLogs[idx] = item
+		s.recentLogCount++
+	} else {
+		s.recentLogs[s.recentLogHead] = item
+		s.recentLogHead++
+		if s.recentLogHead >= recentLogsCap {
+			s.recentLogHead = 0
+		}
 	}
-	s.recentLogs = append(s.recentLogs, item)
 	s.logMu.Unlock()
+
+	// Nobody is watching the live log: the histogram and aggregate above still
+	// need the item, but encoding it and walking the SSE map would be pure waste.
+	if s.sseSubscribers.Load() == 0 {
+		return
+	}
 
 	// Broadcast to SSE clients non-blocking. The event frame is marshalled
 	// ONCE here (v2.2.0 perf): the per-subscriber loop used to hand the struct
@@ -221,7 +253,11 @@ func (s *StatsService) PushQueryLog(item database.QueryLogItem) {
 // table refilled with the "cleared" queries.
 func (s *StatsService) ClearRecentLogs() {
 	s.logMu.Lock()
-	s.recentLogs = s.recentLogs[:0]
+	for i := range s.recentLogs {
+		s.recentLogs[i] = database.QueryLogItem{}
+	}
+	s.recentLogHead = 0
+	s.recentLogCount = 0
 	s.logMu.Unlock()
 
 	s.sseMu.RLock()
@@ -237,8 +273,14 @@ func (s *StatsService) ClearRecentLogs() {
 func (s *StatsService) GetRecentLogs() []database.QueryLogItem {
 	s.logMu.RLock()
 	defer s.logMu.RUnlock()
-	res := make([]database.QueryLogItem, len(s.recentLogs))
-	copy(res, s.recentLogs)
+	res := make([]database.QueryLogItem, s.recentLogCount)
+	for i := 0; i < s.recentLogCount; i++ {
+		idx := s.recentLogHead + i
+		if idx >= recentLogsCap {
+			idx -= recentLogsCap
+		}
+		res[i] = s.recentLogs[idx]
+	}
 	return res
 }
 
@@ -672,11 +714,13 @@ func (s *StatsService) ServeSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.sseClients[ch] = struct{}{}
+	s.sseSubscribers.Add(1)
 	s.sseMu.Unlock()
 
 	defer func() {
 		s.sseMu.Lock()
 		delete(s.sseClients, ch)
+		s.sseSubscribers.Add(-1)
 		s.sseMu.Unlock()
 		close(ch)
 	}()
@@ -736,7 +780,31 @@ func (s *StatsService) ServeSSE(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case frame := <-ch:
-			if !writeFrame(frame) {
+			// Collect a short burst into one write. The first frame starts the
+			// window; every following frame that arrives before it closes joins
+			// the same write. A per-frame Fprint+Flush was the cheap shape at one
+			// dashboard and a poor one at a few hundred queries per second.
+			var batch strings.Builder
+			batch.WriteString(frame)
+			frames := 1
+			timer := time.NewTimer(sseBatchWindow)
+		collect:
+			for frames < sseBatchMaxFrames {
+				select {
+				case next := <-ch:
+					batch.WriteString(next)
+					frames++
+				case <-timer.C:
+					break collect
+				}
+			}
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			if !writeFrame(batch.String()) {
 				return
 			}
 		}

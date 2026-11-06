@@ -47,6 +47,48 @@ func TestMatchWildcardDoesNotCoverApex(t *testing.T) {
 	}
 }
 
+// The compiled index moves policy lookup off the query path's linear scan. It
+// must select exactly what the original Match did, including the exact-versus-
+// wildcard precedence and the rule that a plain profile is exact-only.
+func TestCompiledProfileIndexMatchesLinearLookup(t *testing.T) {
+	profiles := map[string]Profile{
+		"example.com":              {Strategy: StrategyFastest},
+		"*.example.com":            {Upstream: "tls://dns.google:853"},
+		"*.api.example.com":        {Transport: TransportEncrypted},
+		"deep.api.example.com":     {Strategy: StrategyHedged},
+		"*.game.net":               {Transport: TransportRegular},
+		"  *.Media.Example.COM.  ": {Upstream: "https://dns.example/dns-query"},
+	}
+	idx := CompileProfiles(profiles)
+
+	for _, domain := range []string{
+		"example.com",
+		"EXAMPLE.COM.",
+		"api.example.com",
+		"x.api.example.com",
+		"deep.api.example.com",
+		"game.net",
+		"cdn.game.net",
+		"media.example.com",
+		"cdn.media.example.com",
+		"other.net",
+		"",
+	} {
+		want, wantOK := Match(profiles, domain)
+		got, gotOK := idx.Match(domain)
+		if got != want || gotOK != wantOK {
+			t.Errorf("Match(%q) = (%+v, %v), compiled = (%+v, %v)", domain, want, wantOK, got, gotOK)
+		}
+	}
+}
+
+func TestNilProfileIndexIsSafe(t *testing.T) {
+	var idx *ProfileIndex
+	if p, ok := idx.Match("example.com"); ok {
+		t.Fatalf("nil index matched: %+v", p)
+	}
+}
+
 func TestEncryptedClassifiesTransports(t *testing.T) {
 	for _, u := range []string{"tls://dns.google:853", "https://dns.google/dns-query", "quic://dns.adguard.com:853", "h3://dns.google/dns-query", "sdns://abc"} {
 		if !Encrypted(u) {

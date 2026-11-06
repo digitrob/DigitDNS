@@ -219,6 +219,75 @@ func lookup(profiles map[string]Profile, domain string) (Profile, bool) {
 	return Profile{}, false
 }
 
+// ProfileIndex is the compiled form of a profile map. Compiling once when the
+// policy is installed turns the resolver's per-query lookup from a scan over
+// every configured pattern into an exact map hit plus a label walk, which is the
+// difference between O(profiles) and O(labels) on every query.
+type ProfileIndex struct {
+	exact    map[string]Profile
+	wildcard map[string]Profile
+}
+
+// CompileProfiles builds an immutable lookup index. The returned pointer must not
+// be mutated; callers replace it wholesale when the policy changes.
+func CompileProfiles(profiles map[string]Profile) *ProfileIndex {
+	idx := &ProfileIndex{}
+	if len(profiles) == 0 {
+		return idx
+	}
+	idx.exact = make(map[string]Profile, len(profiles))
+	idx.wildcard = make(map[string]Profile)
+	for pattern, p := range profiles {
+		trimmed := strings.TrimSpace(pattern)
+		wild := strings.HasPrefix(trimmed, "*.")
+		base := Domain(trimmed)
+		if base == "" {
+			continue
+		}
+		if wild {
+			idx.wildcard[base] = p
+		} else {
+			idx.exact[base] = p
+		}
+	}
+	return idx
+}
+
+// Match finds the most specific profile for domain. An exact key wins, then the
+// longest wildcard suffix. A nil index behaves as "no profiles", which keeps
+// pools built before a policy is installed and test doubles safe.
+func (idx *ProfileIndex) Match(domain string) (Profile, bool) {
+	if idx == nil {
+		return Profile{}, false
+	}
+	d := Domain(domain)
+	if d == "" {
+		return Profile{}, false
+	}
+	if p, ok := idx.exact[d]; ok {
+		return p, true
+	}
+	if len(idx.wildcard) == 0 {
+		return Profile{}, false
+	}
+	// Walk parents from most specific to least. The first wildcard hit is the
+	// longest suffix, so it is the profile the old scan selected.
+	for i := 0; i < len(d); {
+		dot := strings.IndexByte(d[i:], '.')
+		if dot < 0 {
+			break
+		}
+		i += dot + 1
+		if i >= len(d) {
+			break
+		}
+		if p, ok := idx.wildcard[d[i:]]; ok {
+			return p, true
+		}
+	}
+	return Profile{}, false
+}
+
 // ValidUpstreamKey reports whether a non-empty pinned upstream parses as one of
 // the resolver URL forms. It is deliberately permissive: the pool's normaliser
 // is the authority, and this only rejects obvious junk before it is stored.

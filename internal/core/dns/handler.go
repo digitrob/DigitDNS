@@ -1,7 +1,6 @@
 package dns
 
 import (
-	"fmt"
 	"log"
 	"math"
 	"net"
@@ -55,6 +54,11 @@ type Handler struct {
 	telemetry  TelemetrySink
 	publicIP   string
 	publicIPv6 string
+	// Parsed forms of the two addresses above. They are built when the operator
+	// sets the address and reused for every self-name and proxied answer, so the
+	// query path never re-parses the same literal.
+	publicIPv4     net.IP
+	publicIPv6Addr net.IP
 	// relayLookup resolves a proxied name to a geo agent's public address. It is
 	// nil on installs without agents, so the local relay path is unchanged.
 	relayLookup RelayLookup
@@ -96,9 +100,9 @@ func NewHandler(
 		matcher:   m,
 		upstreams: u,
 		telemetry: t,
-		publicIP:  publicIP,
 		limiter:   newRateLimiter(defaultRateLimitQPS),
 	}
+	h.SetPublicIP(publicIP)
 	if q, ok := access.(QuotaEnforcer); ok {
 		h.quota = q
 	}
@@ -171,10 +175,12 @@ func (h *Handler) SetPublicIP(ip string) {
 		if parsed := net.ParseIP(strings.TrimSpace(ip)); parsed == nil || parsed.To4() == nil {
 			log.Printf("[DNS] Warning: public IP %q is not a usable IPv4 address; proxied A records will answer SERVFAIL until it is fixed in Settings or -public-ip", ip)
 			h.publicIP = ""
+			h.publicIPv4 = nil
 			return
 		}
 	}
 	h.publicIP = strings.TrimSpace(ip)
+	h.publicIPv4 = net.ParseIP(h.publicIP).To4()
 }
 
 // SetPublicIPv6 installs the address proxied AAAA answers point at (v2.5). Only
@@ -190,10 +196,16 @@ func (h *Handler) SetPublicIPv6(ip string) {
 		if parsed == nil || parsed.To4() != nil {
 			log.Printf("[DNS] Warning: public IPv6 %q is not a usable IPv6 address; proxied AAAA stays sunk (IPv4 forced)", ip)
 			h.publicIPv6 = ""
+			h.publicIPv6Addr = nil
 			return
 		}
 	}
 	h.publicIPv6 = ip
+	if ip == "" {
+		h.publicIPv6Addr = nil
+		return
+	}
+	h.publicIPv6Addr = net.ParseIP(ip).To16()
 }
 
 // SetRelayLookup installs the geo-agent resolver. Call during startup only; the
@@ -377,6 +389,38 @@ func keepaliveUnits(d time.Duration) uint16 {
 	return uint16(min(units, math.MaxUint16))
 }
 
+// makeARecord builds an A answer without going through the textual RR parser.
+// The numeric paths (proxy, blocked, custom, self-name) used to format and parse
+// a DNS record per query; the typed struct is the same wire answer with no
+// allocation for the presentation form and no parser on the hot path.
+func makeARecord(name string, ttl uint32, ip net.IP) *dns.A {
+	v4 := ip.To4()
+	if v4 == nil {
+		return nil
+	}
+	return &dns.A{
+		Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: ttl},
+		A:   v4,
+	}
+}
+
+// makeAAAARecord is the AAAA twin. A v4-mapped address is refused rather than
+// widened: the caller has already decided this is the AAAA path, and answering
+// it with an IPv4 address would be the wrong record.
+func makeAAAARecord(name string, ttl uint32, ip net.IP) *dns.AAAA {
+	if ip.To4() != nil {
+		return nil
+	}
+	v6 := ip.To16()
+	if v6 == nil {
+		return nil
+	}
+	return &dns.AAAA{
+		Hdr:  dns.RR_Header{Name: name, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: ttl},
+		AAAA: v6,
+	}
+}
+
 // udpSize is the largest UDP payload this client will accept: its EDNS0
 // advertised buffer, or the RFC 1035 512-byte floor when the query carries no
 // OPT record. Clamped to 4096 so an absurd advertisement cannot be used to
@@ -493,12 +537,12 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	if (q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA) && h.isSelfName(domain) {
 		m := new(dns.Msg)
 		m.SetReply(r)
-		if q.Qtype == dns.TypeA && h.publicIP != "" {
-			if rr, err := dns.NewRR(fmt.Sprintf("%s 60 IN A %s", q.Name, h.publicIP)); err == nil {
+		if q.Qtype == dns.TypeA && h.publicIPv4 != nil {
+			if rr := makeARecord(q.Name, 60, h.publicIPv4); rr != nil {
 				m.Answer = append(m.Answer, rr)
 			}
-		} else if q.Qtype == dns.TypeAAAA && h.publicIPv6 != "" {
-			if rr, err := dns.NewRR(fmt.Sprintf("%s 60 IN AAAA %s", q.Name, h.publicIPv6)); err == nil {
+		} else if q.Qtype == dns.TypeAAAA && h.publicIPv6Addr != nil {
+			if rr := makeAAAARecord(q.Name, 60, h.publicIPv6Addr); rr != nil {
 				m.Answer = append(m.Answer, rr)
 			}
 		}
@@ -565,11 +609,11 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			m.SetReply(r)
 			isV4 := ip.To4() != nil
 			if isV4 && q.Qtype == dns.TypeA {
-				if rr, err := dns.NewRR(fmt.Sprintf("%s 60 IN A %s", q.Name, ip.String())); err == nil {
+				if rr := makeARecord(q.Name, 60, ip); rr != nil {
 					m.Answer = append(m.Answer, rr)
 				}
 			} else if !isV4 && q.Qtype == dns.TypeAAAA {
-				if rr, err := dns.NewRR(fmt.Sprintf("%s 60 IN AAAA %s", q.Name, ip.String())); err == nil {
+				if rr := makeAAAARecord(q.Name, 60, ip); rr != nil {
 					m.Answer = append(m.Answer, rr)
 				}
 			}
@@ -601,10 +645,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			// Keep the historical null-IP shape: A gets 0.0.0.0, AAAA stays an
 			// empty NOERROR. Existing clients and the guard tests rely on it.
 			if q.Qtype == dns.TypeA {
-				rr, _ := dns.NewRR(fmt.Sprintf("%s %d IN A 0.0.0.0", q.Name, ttl))
-				if rr != nil {
-					m.Answer = append(m.Answer, rr)
-				}
+				m.Answer = append(m.Answer, makeARecord(q.Name, ttl, net.IPv4zero))
 			}
 		}
 		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "BLOCK", false, "", matchedPattern, q.Qtype, m.Rcode)
@@ -642,12 +683,20 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			}
 			m := new(dns.Msg)
 			m.SetReply(r)
-			rr, err := dns.NewRR(fmt.Sprintf("%s 60 IN A %s", q.Name, targetIPv4))
-			if err != nil {
-				// Unreachable while SetPublicIP validates, but a distinct action
-				// here means a future regression can never masquerade as a
-				// successful proxy answer again (v2.1.0 B-13 remediation).
-				log.Printf("[DNS] Could not build proxied A record for %s from %q: %v", q.Name, targetIPv4, err)
+			// The local relay answers with the already-parsed operator address;
+			// an agent target is parsed here once per query because it travels as
+			// a string through the relay router.
+			targetIP := h.publicIPv4
+			if agentAssigned {
+				targetIP = net.ParseIP(targetIPv4)
+			}
+			rr := makeARecord(q.Name, 60, targetIP)
+			if rr == nil {
+				// Unreachable while SetPublicIP validates and the relay router
+				// only publishes parsed addresses, but a distinct action here
+				// means a future regression can never masquerade as a successful
+				// proxy answer again (v2.1.0 B-13 remediation).
+				log.Printf("[DNS] Could not build proxied A record for %s from %q", q.Name, targetIPv4)
 				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, dns.RcodeServerFailure)
 				m.SetRcode(r, dns.RcodeServerFailure)
 				return m
@@ -664,7 +713,11 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			m := new(dns.Msg)
 			m.SetReply(r)
 			if targetIPv6 != "" {
-				if rr, err := dns.NewRR(fmt.Sprintf("%s 60 IN AAAA %s", q.Name, targetIPv6)); err == nil {
+				targetIP := h.publicIPv6Addr
+				if targetIP == nil {
+					targetIP = net.ParseIP(targetIPv6)
+				}
+				if rr := makeAAAARecord(q.Name, 60, targetIP); rr != nil {
 					m.Answer = append(m.Answer, rr)
 					h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, m.Rcode)
 					return m

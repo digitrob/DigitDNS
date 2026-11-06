@@ -2088,11 +2088,17 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 			allowed[n] = true
 		}
 	}
-	if ws.pruneResolutionProfiles(allowed) {
+	profilesChanged := ws.pruneResolutionProfiles(allowed)
+	if profilesChanged {
 		ws.applyResolutionPolicy()
-	}
-	if ws.cache != nil {
-		ws.cache.Flush()
+		// Only a resolution-profile change makes cached answers stale: the
+		// matcher and custom-record checks run before the cache, so a plain
+		// direct/proxy/block edit cannot be bypassed by an existing entry.
+		// Flushing on every save used to cold-start the whole cache after a
+		// one-domain edit.
+		if ws.cache != nil {
+			ws.cache.Flush()
+		}
 	}
 	ws.refreshRelayAssignments(domainAgents, serviceAgents, domainServices)
 

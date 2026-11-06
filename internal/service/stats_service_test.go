@@ -1,7 +1,10 @@
 package service
 
 import (
+	"fmt"
 	"testing"
+
+	"digitdns/internal/database"
 )
 
 // The rate limiter answers a flood with silence, so its counters are the only
@@ -124,5 +127,31 @@ func TestProxyRelayAndGuardStatsAreIndependent(t *testing.T) {
 	if st.RelaysRefused != 91 || st.RelaysUnreadable != 7 {
 		t.Errorf("drops = (%d refused, %d unreadable), want (91, 7)",
 			st.RelaysRefused, st.RelaysUnreadable)
+	}
+}
+
+// The ring is read back by every new SSE subscriber, so its order and its wrap
+// are part of the live-log contract. The old slice-shift implementation kept the
+// newest hundred but reallocated the window periodically; this pins the
+// replacement's chronological output across more than one full wrap.
+func TestRecentLogsRingKeepsNewestEntriesInOrder(t *testing.T) {
+	s := NewStatsService(nil, nil, nil)
+	defer s.Close()
+
+	const extra = 7
+	total := recentLogsCap + extra
+	for i := 0; i < total; i++ {
+		s.PushQueryLog(database.QueryLogItem{Domain: fmt.Sprintf("q-%d.example", i)})
+	}
+
+	logs := s.GetRecentLogs()
+	if len(logs) != recentLogsCap {
+		t.Fatalf("len(GetRecentLogs()) = %d, want %d", len(logs), recentLogsCap)
+	}
+	if got, want := logs[0].Domain, fmt.Sprintf("q-%d.example", extra); got != want {
+		t.Errorf("oldest retained = %q, want %q", got, want)
+	}
+	if got, want := logs[len(logs)-1].Domain, fmt.Sprintf("q-%d.example", total-1); got != want {
+		t.Errorf("newest retained = %q, want %q", got, want)
 	}
 }

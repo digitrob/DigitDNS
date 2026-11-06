@@ -41,6 +41,10 @@ type UpstreamPool struct {
 	// like the list itself, so a settings save takes effect on the next query
 	// without a restart.
 	policy Policy
+	// profileIndex is the compiled form of policy.Profiles. It is rebuilt by
+	// SetPolicy and read on the query path, so the hot path never scans every
+	// configured pattern.
+	profileIndex *resolution.ProfileIndex
 }
 
 // Policy is the resolution policy installed by the settings layer.
@@ -522,6 +526,7 @@ func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.
 	timeout := p.timeout
 	ecs := p.ecsClientIP
 	policy := p.policy
+	profileIndex := p.profileIndex
 	p.mu.RUnlock()
 
 	if len(upstreams) == 0 {
@@ -534,7 +539,7 @@ func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.
 		p.attachECS(queryMsg, ecs)
 	}
 
-	profile, hasProfile := resolution.Match(policy.Profiles, domain)
+	profile, hasProfile := profileIndex.Match(domain)
 	effectiveTransport := policy.Transport
 	if hasProfile {
 		effectiveTransport = profile.TransportFor(policy.Transport)
@@ -1268,8 +1273,10 @@ func (p *UpstreamPool) SetPolicy(policy Policy) {
 		copied[k] = v
 	}
 	policy.Profiles = copied
+	index := resolution.CompileProfiles(copied)
 	p.mu.Lock()
 	p.policy = policy
+	p.profileIndex = index
 	p.mu.Unlock()
 }
 

@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.1.2] — Backend performance for the resolver and live log
+
+### ⚡ Performance
+
+- **Telemetry fast path.** `StatsService` no longer JSON-encodes and fans out
+  every query when no live-log subscriber is connected. The 100-entry history
+  is now a fixed ring instead of a slice that periodically reallocated and
+  copied the whole window.
+- **Batched live-log writes.** SSE frames are collected for 20 ms or 64 frames
+  and written with one flush, instead of one write and one flush per query.
+- **Typed DNS answers.** Proxy A/AAAA, blocked null-IP, custom-record and
+  self-name answers no longer go through `fmt.Sprintf` plus `dns.NewRR` on every
+  query. Public addresses and relay agent IPv4s are parsed when configuration
+  changes and reused.
+- **Compiled policy indexes.** Per-domain resolution profiles are compiled when
+  the upstream policy is installed, and relay assignments are indexed by host
+  and wildcard when they are saved. Per-query lookup is O(labels) instead of
+  O(profiles) or O(assignments).
+- **Narrower cache invalidation.** Saving a Direct/Proxy/Block rule no longer
+  flushes the whole DNS cache. The cache is flushed only when a resolution
+  profile actually changes, because the matcher runs before the cache.
+
+### 📊 Measured locally
+
+- Proxy handler answer: ~3.9 µs / 25 allocs → ~0.6 µs / 5 allocs.
+- Blocked handler answer: ~3.6 µs / 24 allocs → ~0.5 µs / 5 allocs.
+- Cache-hit handler path: ~2.1 µs / 11 allocs → ~0.65 µs / 7 allocs.
+- Profile lookup with 200 profiles: ~41.8 µs → ~0.1 µs.
+- A-record construction: ~1.77 µs / 15 allocs → ~39 ns / 1 alloc.
+
+Loopback UDP throughput is limited by the local network stack, so end-to-end
+QPS moved only a few percent; the handler CPU and allocation reductions are the
+durable gain.
+
+### 🧪 Tests
+
+- Added benchmarks for handler paths, typed A records and compiled profile
+  lookup.
+- Added tests for ring-buffer order, compiled profile equivalence, relay
+  wildcard precedence, and cache survival across a rule-only save.
+- Full server suite, race detector for service/web, and vet pass.
+
+---
+
 ## 🏷️ [v5.1.1] — Sky-blue Proxy status and grey favicon
 
 ### 🎨 Changed

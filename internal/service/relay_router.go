@@ -26,21 +26,97 @@ type RelayTarget struct {
 type RelayRouter struct {
 	mu sync.RWMutex
 
-	agents         map[string]database.Agent
-	domainAgents   map[string]string
+	agents map[string]database.Agent
+	// agentIPv4 holds the parsed, canonical IPv4 for each agent. It is built with
+	// the agent snapshot so the query path never re-parses the same literal.
+	agentIPv4      map[string]string
+	domainAgents   assignmentIndex
 	serviceAgents  map[string]string
-	domainServices map[string]string
+	domainServices assignmentIndex
 
 	onlineFor time.Duration
 	now       func() time.Time
 }
 
+// assignmentIndex is a compiled relay assignment map. A plain pattern covers the
+// host and its subdomains; a "*.base" pattern covers strict subdomains only. The
+// old lookup scanned every entry and normalised each pattern on every query; this
+// turns it into one map hit plus a label walk.
+type assignmentIndex struct {
+	plain    map[string]string
+	wildcard map[string]string
+}
+
+func newAssignmentIndex() assignmentIndex {
+	return assignmentIndex{
+		plain:    make(map[string]string),
+		wildcard: make(map[string]string),
+	}
+}
+
+func compileAssignments(in map[string]string) assignmentIndex {
+	idx := newAssignmentIndex()
+	for pattern, value := range in {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		p := normalizeRelayDomain(pattern)
+		if p == "" {
+			continue
+		}
+		if strings.HasPrefix(p, "*.") {
+			base := strings.TrimPrefix(p, "*.")
+			if base != "" {
+				idx.wildcard[base] = value
+			}
+			continue
+		}
+		idx.plain[p] = value
+	}
+	return idx
+}
+
+// lookup returns the most specific assignment for domain. A plain host match
+// wins; otherwise the label walk finds the longest wildcard, and at one parent a
+// wildcard is more specific than a plain suffix.
+func (idx *assignmentIndex) lookup(domain string) string {
+	if domain == "" {
+		return ""
+	}
+	if value, ok := idx.plain[domain]; ok {
+		return value
+	}
+	if len(idx.plain) == 0 && len(idx.wildcard) == 0 {
+		return ""
+	}
+	for i := 0; i < len(domain); {
+		dot := strings.IndexByte(domain[i:], '.')
+		if dot < 0 {
+			break
+		}
+		i += dot + 1
+		if i >= len(domain) {
+			break
+		}
+		parent := domain[i:]
+		if value, ok := idx.wildcard[parent]; ok {
+			return value
+		}
+		if value, ok := idx.plain[parent]; ok {
+			return value
+		}
+	}
+	return ""
+}
+
 func NewRelayRouter() *RelayRouter {
 	return &RelayRouter{
 		agents:         map[string]database.Agent{},
-		domainAgents:   map[string]string{},
+		agentIPv4:      map[string]string{},
+		domainAgents:   newAssignmentIndex(),
 		serviceAgents:  map[string]string{},
-		domainServices: map[string]string{},
+		domainServices: newAssignmentIndex(),
 		onlineFor:      2 * time.Minute,
 		now:            time.Now,
 	}
@@ -50,32 +126,36 @@ func NewRelayRouter() *RelayRouter {
 // heartbeat, enable/disable and delete.
 func (r *RelayRouter) SetAgents(agents []database.Agent) {
 	next := make(map[string]database.Agent, len(agents))
+	ipv4 := make(map[string]string, len(agents))
 	for _, a := range agents {
 		next[a.ID] = a
+		if ip := net.ParseIP(strings.TrimSpace(a.PublicIP)); ip != nil && ip.To4() != nil {
+			ipv4[a.ID] = ip.String()
+		}
 	}
 	r.mu.Lock()
 	r.agents = next
+	r.agentIPv4 = ipv4
 	r.mu.Unlock()
 }
 
 // SetAssignments replaces the domain and service maps that decide where a query
 // exits. A nil or empty map is a valid "everything local" state.
 func (r *RelayRouter) SetAssignments(domainAgents, serviceAgents, domainServices map[string]string) {
-	copyMap := func(in map[string]string) map[string]string {
-		out := make(map[string]string, len(in))
-		for k, v := range in {
-			k = normalizeRelayDomain(k)
-			v = strings.TrimSpace(v)
-			if k != "" && v != "" {
-				out[k] = v
-			}
+	serviceCopy := make(map[string]string, len(serviceAgents))
+	for k, v := range serviceAgents {
+		k = normalizeRelayDomain(k)
+		v = strings.TrimSpace(v)
+		if k != "" && v != "" {
+			serviceCopy[k] = v
 		}
-		return out
 	}
+	domainIndex := compileAssignments(domainAgents)
+	serviceIndex := compileAssignments(domainServices)
 	r.mu.Lock()
-	r.domainAgents = copyMap(domainAgents)
-	r.serviceAgents = copyMap(serviceAgents)
-	r.domainServices = copyMap(domainServices)
+	r.domainAgents = domainIndex
+	r.serviceAgents = serviceCopy
+	r.domainServices = serviceIndex
 	r.mu.Unlock()
 }
 
@@ -131,27 +211,25 @@ func (r *RelayRouter) Lookup(domain string) (RelayTarget, bool) {
 	}
 
 	r.mu.RLock()
-	agentID := matchAssignment(r.domainAgents, d)
+	agentID := r.domainAgents.lookup(d)
 	// "__inherit__" is a UI convenience written only while clearing a
 	// per-domain override; it means "use the service default".
 	if agentID == "__inherit__" {
 		agentID = ""
 	}
 	if agentID == "" {
-		if serviceID := matchAssignment(r.domainServices, d); serviceID != "" {
+		if serviceID := r.domainServices.lookup(d); serviceID != "" {
 			agentID = r.serviceAgents[serviceID]
 		}
 	}
 	agent, ok := r.agents[agentID]
+	ipv4 := r.agentIPv4[agentID]
 	r.mu.RUnlock()
 
 	if !ok || !r.healthy(agent) {
 		return RelayTarget{}, false
 	}
-	target := RelayTarget{AgentID: agent.ID, Name: agent.Name, Country: agent.Country}
-	if ip := net.ParseIP(strings.TrimSpace(agent.PublicIP)); ip != nil && ip.To4() != nil {
-		target.IPv4 = ip.String()
-	}
+	target := RelayTarget{AgentID: agent.ID, Name: agent.Name, Country: agent.Country, IPv4: ipv4}
 	if target.IPv4 == "" {
 		return RelayTarget{}, false
 	}
@@ -163,46 +241,6 @@ func (r *RelayRouter) healthy(a database.Agent) bool {
 		return false
 	}
 	return r.now().Sub(a.LastSeen) <= r.onlineFor
-}
-
-// matchAssignment returns the most specific matching pattern's value. Patterns
-// are stored without the trailing dot; "*.example.com" matches subdomains only,
-// while "example.com" matches the host and its subdomains, exactly like the
-// matcher's plain-rule index.
-func matchAssignment(assignments map[string]string, domain string) string {
-	best, bestScore := "", -1
-	for pattern, value := range assignments {
-		if value == "" {
-			continue
-		}
-		matches, score := assignmentMatch(pattern, domain)
-		if !matches || score <= bestScore {
-			continue
-		}
-		best, bestScore = value, score
-	}
-	return best
-}
-
-func assignmentMatch(pattern, domain string) (bool, int) {
-	p := normalizeRelayDomain(pattern)
-	if p == "" {
-		return false, 0
-	}
-	if strings.HasPrefix(p, "*.") {
-		base := strings.TrimPrefix(p, "*.")
-		if base != "" && strings.HasSuffix(domain, "."+base) {
-			return true, len(base) + 1
-		}
-		return false, 0
-	}
-	if domain == p {
-		return true, len(p) + 1000
-	}
-	if strings.HasSuffix(domain, "."+p) {
-		return true, len(p)
-	}
-	return false, 0
 }
 
 func normalizeRelayDomain(d string) string {
