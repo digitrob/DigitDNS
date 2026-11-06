@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.1.4] — Cleaner Top Domains and Docker Hub
+
+### 🎨 Changed
+
+- **Reverse DNS is excluded from Top Domains and Top Blocked Domains.**
+  Names under `in-addr.arpa` and `ip6.arpa` no longer bury real domains in the
+  ranked tables. They still count toward total queries, blocked/cached/failure
+  counters, `ByQType` and the live query log, so PTR volume remains visible on
+  the qtype card.
+- Existing aggregate buckets are filtered on read, so historical reverse-DNS
+  rows disappear immediately instead of waiting for the 90-day retention
+  window.
+- **Docker Hub mirror.** Both the hub and relay-agent images are now published
+  to `robmeister/digitdns` and `robmeister/digitdns-agent` alongside GHCR,
+  with the same tags, multi-arch manifests and cosign signatures.
+
+### 🧪 Tests
+
+- Added coverage for IPv4/IPv6 reverse names, blocked reverse names,
+  suffix-boundary false positives, and legacy buckets containing reverse rows.
+- Full server suite, `go vet` and the aggregate race test pass.
+
+---
+
 ## 🏷️ [v5.1.3] — Faster route boot and Android UI
 
 ### ⚡ Web

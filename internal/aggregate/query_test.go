@@ -233,6 +233,110 @@ func TestTopDomainsExcludeBlockedCounts(t *testing.T) {
 	}
 }
 
+func TestReverseDNSStayOutOfRankedDomainTables(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	a, _ := openTestAggregator(t, &now, Config{
+		FlushInterval: time.Hour,
+		TopDomains:    10,
+		TopClients:    10,
+		CacheTTL:      -1,
+	})
+
+	record := func(domain, action string, qtype uint16) {
+		item := testItem(now)
+		item.Domain = domain
+		item.Action = action
+		item.QType = qtype
+		a.RecordTotal(now)
+		a.RecordDetail(item)
+	}
+	record("9.63.90.77.in-addr.arpa.", "DIRECT", dns.TypePTR)
+	record("x.ip6.arpa.", "DIRECT", dns.TypePTR)
+	record("9.63.90.77.in-addr.arpa.", "BLOCK", dns.TypePTR)
+	record("name.in-addr.arpa.example.", "DIRECT", dns.TypeA)
+	record("blocked.example.", "BLOCK", dns.TypeA)
+
+	a.flush()
+	b, err := a.store.readHour(hourKey(now))
+	if err != nil || b == nil {
+		t.Fatalf("read hour = %#v, %v", b, err)
+	}
+	if b.Queries != 5 {
+		t.Errorf("Queries = %d, want 5 — reverse names must still count", b.Queries)
+	}
+	if b.ByQType["PTR"] != 3 {
+		t.Errorf("ByQType[PTR] = %d, want 3 — PTR volume must stay visible", b.ByQType["PTR"])
+	}
+	if _, ok := b.TopDomains.Items["9.63.90.77.in-addr.arpa"]; ok {
+		t.Errorf("reverse DNS reached TopDomains: %#v", b.TopDomains)
+	}
+	if _, ok := b.TopBlockedDomains.Items["9.63.90.77.in-addr.arpa"]; ok {
+		t.Errorf("reverse DNS reached TopBlockedDomains: %#v", b.TopBlockedDomains)
+	}
+	if b.TopDomains.Items["name.in-addr.arpa.example"] != 1 {
+		t.Errorf("a normal name containing in-addr.arpa was filtered: %#v", b.TopDomains)
+	}
+
+	top, err := a.Top(Range24h, "domain", 10)
+	if err != nil {
+		t.Fatalf("Top domain: %v", err)
+	}
+	if len(top.Items) != 1 || top.Items[0].Value != "name.in-addr.arpa.example" {
+		t.Errorf("Top domain = %#v, want only the normal name", top.Items)
+	}
+
+	blockedTop, err := a.Top(Range24h, "blocked_domain", 10)
+	if err != nil {
+		t.Fatalf("Top blocked: %v", err)
+	}
+	if len(blockedTop.Items) != 1 || blockedTop.Items[0].Value != "blocked.example" {
+		t.Errorf("Top blocked = %#v, want only the normal blocked name", blockedTop.Items)
+	}
+}
+
+// Buckets written before the write-side filter existed still hold reverse names.
+// The read path has to hide those immediately rather than waiting for retention.
+func TestLegacyReverseDNSIsFilteredFromTop(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	a, _ := openTestAggregator(t, &now, Config{
+		FlushInterval: time.Hour,
+		TopDomains:    10,
+		TopClients:    10,
+		CacheTTL:      -1,
+	})
+
+	a.current.TopDomains.add("9.63.90.77.in-addr.arpa", 5, 10)
+	a.current.TopDomains.add("legacy.example", 2, 10)
+	a.current.TopBlockedDomains.add("x.ip6.arpa", 3, 10)
+	a.current.TopBlockedDomains.add("legacy-blocked.example", 1, 10)
+
+	top, err := a.Top(Range24h, "domain", 10)
+	if err != nil {
+		t.Fatalf("Top domain: %v", err)
+	}
+	for _, item := range top.Items {
+		if item.Value == "9.63.90.77.in-addr.arpa" {
+			t.Errorf("legacy reverse name surfaced in Top domain: %#v", top.Items)
+		}
+	}
+	if len(top.Items) != 1 || top.Items[0].Value != "legacy.example" {
+		t.Errorf("Top domain = %#v, want legacy.example", top.Items)
+	}
+
+	blockedTop, err := a.Top(Range24h, "blocked_domain", 10)
+	if err != nil {
+		t.Fatalf("Top blocked: %v", err)
+	}
+	for _, item := range blockedTop.Items {
+		if item.Value == "x.ip6.arpa" {
+			t.Errorf("legacy reverse name surfaced in Top blocked: %#v", blockedTop.Items)
+		}
+	}
+	if len(blockedTop.Items) != 1 || blockedTop.Items[0].Value != "legacy-blocked.example" {
+		t.Errorf("Top blocked = %#v, want legacy-blocked.example", blockedTop.Items)
+	}
+}
+
 func TestTopDomainsBlockedTailIsClamped(t *testing.T) {
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 	a, _ := openTestAggregator(t, &now, Config{FlushInterval: time.Hour, CacheTTL: -1})

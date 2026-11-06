@@ -1,44 +1,29 @@
-# DigitDNS v5.1.3 — Faster page boot and Android UI
+# DigitDNS v5.1.4 — Cleaner Top Domains and Docker Hub
 
-**A frontend responsiveness release.** 5.1.3 removes the dashboard flash when a
-non-dashboard route is reloaded, reduces the work the Android app does while a
-tab is off screen, and batches the live query feed so high traffic cannot
-overwhelm Compose.
+**A maintenance release.** 5.1.4 removes reverse-DNS noise from the ranked
+domain tables and publishes the container images to Docker Hub alongside GHCR.
 
 There are no schema, API or configuration changes.
 
-## Web panel
+## Top Domains
 
-- **The reloaded tab is the first tab painted.** A pre-paint route hint and CSS
-  select the tab from the URL before `app.js` runs, so reloading `/clients` or
-  `/logs` no longer shows Dashboard and then swaps.
-- **Only the active tab loads at boot.** The Proxied, Clients, Agents, Filters,
-  Live Log and Settings data is fetched when that tab is selected.
-- **Parallel boot probes.** `/api/auth/me` and `/api/config` now run together,
-  saving one round trip.
-- **Config failures keep the requested tab** instead of falling back to
-  Dashboard.
-- The Dashboard nav highlight is neutralised during boot, so the wrong tab is
-  never briefly marked active.
+- `in-addr.arpa` and `ip6.arpa` names are excluded from **Top Domains** and
+  **Top Blocked Domains**.
+- Reverse names still count toward total queries, blocked/cached/failure
+  counters, **ByQType** and the live query log, so PTR volume remains visible on
+  the qtype card.
+- Existing `stats.db` buckets are filtered on read, so historical reverse rows
+  disappear immediately rather than waiting for retention.
 
-## Android companion
+## Container registries
 
-- **Faster cold-start path.** Credential migration, DataStore reads and
-  Keystore-backed secret reads run off the main thread.
-- **No navigation block on session refresh.** The shell opens from cached
-  credentials; an optimistic session refresh runs in the background.
-- **Lifecycle-aware work.** Dashboard polling, history refresh and the shared
-  live-query stream stop when the tab is not visible.
-- **Live log batching.** UI snapshots are published at most four times per
-  second instead of rebuilding the 200-entry buffer for every query. Alerts
-  still receive every event immediately.
-- **Less list recomposition.** Domain rows, filtered clients and visible log
-  rows are computed once per relevant state change.
-- **Smoother live log scrolling.** A new query no longer starts a scroll
-  animation when the reader is away from the top.
-- **Clients render sooner.** The list paints as soon as the client call
-  returns; link origin and public address fill in concurrently.
-- History top tables now request the five rows the phone displays.
+The hub and relay-agent images are now published to both registries with the
+same tags, multi-arch manifests and cosign signatures:
+
+- `ghcr.io/digitrob/digitdns`
+- `ghcr.io/digitrob/digitdns-agent`
+- `robmeister/digitdns`
+- `robmeister/digitdns-agent`
 
 ## Upgrade
 
@@ -47,11 +32,18 @@ docker pull ghcr.io/digitrob/digitdns:latest
 docker pull ghcr.io/digitrob/digitdns-agent:latest
 ```
 
-If you pin a version:
+Docker Hub mirror:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.1.3
-docker pull ghcr.io/digitrob/digitdns-agent:5.1.3
+docker pull robmeister/digitdns:latest
+docker pull robmeister/digitdns-agent:latest
+```
+
+Pinned versions:
+
+```bash
+docker pull ghcr.io/digitrob/digitdns:5.1.4
+docker pull robmeister/digitdns:5.1.4
 ```
 
 The in-panel self-updater and the one-line installer use the same release.
@@ -64,4 +56,4 @@ The in-panel self-updater and the one-line installer use the same release.
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-Android APKs are attached to this release from the `android-v5.1.3` tag.
+Android APKs are attached to this release from the `android-v5.1.4` tag.

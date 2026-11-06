@@ -159,9 +159,11 @@ func (b *Bucket) record(item database.QueryLogItem, cfg Config, clientSalt []byt
 	b.ByRcode[rcode]++
 
 	domain := normalizeKey(item.Domain)
-	b.TopDomains.add(domain, 1, cfg.TopDomains)
-	if blocked {
-		b.TopBlockedDomains.add(domain, 1, cfg.TopDomains)
+	if !isReverseDNSName(domain) {
+		b.TopDomains.add(domain, 1, cfg.TopDomains)
+		if blocked {
+			b.TopBlockedDomains.add(domain, 1, cfg.TopDomains)
+		}
 	}
 
 	rawIP := strings.TrimSpace(item.ClientIP)
@@ -311,6 +313,18 @@ func normalizeKey(s string) string {
 		return "unknown"
 	}
 	return s
+}
+
+// isReverseDNSName reports whether name belongs to the IPv4 or IPv6 reverse DNS
+// tree. PTR lookups are infrastructure chatter — a busy resolver can produce
+// thousands of 77.90.63.9.in-addr.arpa names — and they bury the domains an
+// operator actually wants to see. They still count toward Queries and ByQType;
+// only the ranked domain tables skip them.
+func isReverseDNSName(name string) bool {
+	return name == "in-addr.arpa" ||
+		strings.HasSuffix(name, ".in-addr.arpa") ||
+		name == "ip6.arpa" ||
+		strings.HasSuffix(name, ".ip6.arpa")
 }
 
 func qtypeName(qtype uint16) string {

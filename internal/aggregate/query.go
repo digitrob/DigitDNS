@@ -350,6 +350,18 @@ func (a *Aggregator) Top(window, dimension string, limit int) (Top, error) {
 		}
 		other += c.Other
 	}
+	// Ranked domain tables skip the reverse DNS tree. Historical buckets still
+	// contain those names until retention drops them, so filtering here makes
+	// the correction visible immediately instead of after a stats.db migration.
+	addDomainCounts := func(c Counts) {
+		for k, n := range c.Items {
+			if isReverseDNSName(k) {
+				continue
+			}
+			acc[k] += n
+		}
+		other += c.Other
+	}
 	addMap := func(m map[string]uint64) {
 		for k, n := range m {
 			acc[k] += n
@@ -361,13 +373,16 @@ func (a *Aggregator) Top(window, dimension string, limit int) (Top, error) {
 		}
 		switch dimension {
 		case "domain":
-			addCounts(tb.bucket.TopDomains)
+			addDomainCounts(tb.bucket.TopDomains)
 			for k, n := range tb.bucket.TopBlockedDomains.Items {
+				if isReverseDNSName(k) {
+					continue
+				}
 				blockedDomains[k] += n
 			}
 			blockedOther += tb.bucket.TopBlockedDomains.Other
 		case "blocked_domain":
-			addCounts(tb.bucket.TopBlockedDomains)
+			addDomainCounts(tb.bucket.TopBlockedDomains)
 		case "client":
 			addCounts(tb.bucket.TopClients)
 		case "upstream":

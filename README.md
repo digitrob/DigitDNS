@@ -228,7 +228,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.1.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.1.4/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -287,7 +287,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.1.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.1.4/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -370,7 +370,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.1.3` | Faster web route boot and Android startup, lifecycle and live-log batching (latest) |
+| `5.1.4` | Reverse DNS excluded from Top Domains; Docker Hub mirror published (latest) |
+| `5.1.3` | Faster web route boot and Android startup, lifecycle and live-log batching (older) |
 | `5.1.2` | Backend performance: telemetry fast path, compiled policy indexes, typed DNS answers (older) |
 | `5.1.1` | Sky-blue Proxy status in Graphite for web and Android, grey favicon (older) |
 | `5.1.0` | Graphite theme for web and Android, neutral controls, grey app icon (older) |
@@ -410,7 +411,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.1.3/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.1.4/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -763,7 +764,7 @@ keeps upstream connections alive between queries to cut handshake latency.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.1.3`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.1.4`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |
