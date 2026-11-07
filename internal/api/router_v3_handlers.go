@@ -1614,3 +1614,24 @@ func backendProblemStatus(err error) int {
 		return http.StatusBadRequest
 	}
 }
+
+// handleV3UpdateMode lets a client choose the container update method. The
+// dashboard handler owns the container-only gate and the persistence; a systemd
+// install answers 400.
+func (a *API) handleV3UpdateMode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	resp, err := a.v3Backend.UpdateMode(r)
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}

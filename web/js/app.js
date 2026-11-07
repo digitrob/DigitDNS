@@ -9239,6 +9239,9 @@ function initEventListeners() {
   });
   document.getElementById('server-update-check-btn')?.addEventListener('click', checkServerUpdate);
   document.getElementById('server-update-apply-btn')?.addEventListener('click', applyServerUpdate);
+  document.querySelectorAll('input[name="server-update-mode"]').forEach((el) => {
+    el.addEventListener('change', () => setContainerUpdateMode(el.value));
+  });
 
   document.getElementById('bulk-proxied-btn')?.addEventListener('click', () => openBulkImport('proxied'));
   document.getElementById('bulk-blocked-btn')?.addEventListener('click', () => openBulkImport('blocked'));
@@ -11830,7 +11833,9 @@ function serverUpdateMetaText(st) {
   if (st.update_available && !st.supported) {
     return st.note || 'This install cannot apply it from the app.';
   }
-  if (st.update_available) return 'Applying an update restarts the service.';
+  if (st.update_available && st.supported) {
+    return st.note || 'Applying an update restarts the service.';
+  }
   return 'Checked just now · data is preserved and backed up.';
 }
 
@@ -11853,6 +11858,64 @@ function renderServerUpdate(st) {
     const message = st && st.error ? String(st.error) : '';
     errEl.textContent = message;
     errEl.classList.toggle('hidden', !message);
+  }
+
+  // Container-only controls. The block is absent on a systemd install, where
+  // there is nothing to choose.
+  const modeBox = document.getElementById('server-update-mode');
+  if (modeBox) modeBox.classList.toggle('hidden', !(st && st.container));
+  const mode = (st && st.update_mode) || 'image';
+  document.querySelectorAll('input[name="server-update-mode"]').forEach((el) => {
+    el.checked = el.value === mode;
+    el.disabled = !(st && st.container);
+  });
+  const hint = document.getElementById('server-update-mode-hint');
+  if (hint) {
+    hint.textContent = mode === 'binary'
+      ? 'Temporary: a recreate restores the image binary; the image tag and digest stay unchanged.'
+      : 'The panel refuses the in-container swap and shows the pull/recreate command.';
+  }
+  const temp = document.getElementById('server-update-temp');
+  if (temp) {
+    const active = !!(st && st.container && st.container_swap_active);
+    temp.classList.toggle('hidden', !active);
+    if (active) {
+      const image = st.container_image_version || 'the image';
+      temp.textContent = `Temporary binary update active — a container recreate restores v${image}.`;
+    }
+  }
+}
+
+// setContainerUpdateMode persists the container-only choice and reflects it in
+// the card without another GitHub round trip. The server is the source of truth
+// on the next "Check for updates".
+async function setContainerUpdateMode(mode) {
+  if (!mode) return;
+  try {
+    const res = await fetch(api('/api/update/mode'), {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ mode }),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not save the update method.'));
+    const note = mode === 'binary'
+      ? 'Temporary binary update: this replaces the binary inside the container. A container recreate restores the image\'s binary; the image is not updated.'
+      : 'This install runs in a container. Update the image instead: docker compose pull && docker compose up -d';
+    renderServerUpdate({
+      ...(serverUpdateState || {}),
+      update_mode: mode,
+      supported: mode === 'binary',
+      note,
+      error: '',
+    });
+  } catch (e) {
+    renderServerUpdate({
+      ...(serverUpdateState || {}),
+      error: e.message || 'Could not save the update method.',
+    });
   }
 }
 

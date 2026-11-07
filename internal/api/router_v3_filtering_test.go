@@ -93,3 +93,29 @@ func TestV3_FilterTestRoute(t *testing.T) {
 		t.Fatalf("POST filter test = %d, want 405", w.Code)
 	}
 }
+
+// The container update method is exposed on v3 so the Android app can set it
+// with the master key. The fake answers image/container; the real gate lives in
+// the dashboard handler.
+func TestV3_UpdateModeRoute(t *testing.T) {
+	apiInst, _, _, cleanup := setupTestAPI(t)
+	defer cleanup()
+	apiInst.SetV3Backend(&fakeV3Backend{})
+	mux := http.NewServeMux()
+	apiInst.RegisterRoutes(mux)
+	const key = "digitdns_live_testkey123"
+
+	w := v3Request(mux, http.MethodPost, "/api/v3/update/mode", key, map[string]any{"mode": "binary"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("update mode = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var out map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	if out["mode"] != "image" || out["container"] != true {
+		t.Fatalf("update mode body = %v", out)
+	}
+
+	if w := v3Request(mux, http.MethodGet, "/api/v3/update/mode", key, nil); w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET update mode = %d, want 405", w.Code)
+	}
+}

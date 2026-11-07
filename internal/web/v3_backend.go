@@ -550,6 +550,10 @@ func (b *v3Backend) UpdateApply(r *http.Request) (map[string]any, error) {
 	return out, nil
 }
 
+func (b *v3Backend) UpdateMode(r *http.Request) (map[string]any, error) {
+	return b.delegateRequest(r, b.ws.handleUpdateMode)
+}
+
 func (b *v3Backend) UpdateStatus() map[string]any {
 	rec := httptest.NewRecorder()
 	b.ws.handleUpdateStatus(rec, httptest.NewRequest(http.MethodGet, "/api/update/status", nil))

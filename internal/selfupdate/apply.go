@@ -124,6 +124,9 @@ func (u *Updater) apply(ctx context.Context) error {
 	if err := u.swapBinary(tmpPath, gotSum); err != nil {
 		return err
 	}
+	// Record that this container is now running a swapped binary. The next
+	// process start reads this marker; a new container ID (recreate) discards it.
+	u.recordContainerSwap(tag)
 
 	// 5. Ask the daemon to restart onto the new binary.
 	u.setProgress("restart", "Update installed — restarting…", 100)

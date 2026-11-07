@@ -1,6 +1,7 @@
 package com.digitrob.digitdns.data
 
 import com.digitrob.digitdns.core.network.SystemApi
+import com.digitrob.digitdns.core.network.UpdateModeRequest
 import com.digitrob.digitdns.domain.model.UpdateProgressView
 import com.digitrob.digitdns.domain.model.UpdateStatus
 import javax.inject.Inject
@@ -47,6 +48,9 @@ class SystemRepository @Inject constructor(
     suspend fun applyUpdate(): Boolean = api.applyUpdate().started
 
     suspend fun updateProgress(): UpdateProgressView = UpdateProgressView.from(api.updateStatus())
+
+    /** Persist the container-only update method and return the mode in force. */
+    suspend fun setUpdateMode(mode: String): String = api.setUpdateMode(UpdateModeRequest(mode)).mode
 
     /** Flush the resolver cache. Returns the server's acknowledgement flag. */
     suspend fun flushCache(): Boolean = api.flushCache().flushed

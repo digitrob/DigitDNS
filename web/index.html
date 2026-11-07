@@ -2317,6 +2317,30 @@ async function onBuySubscription(ctx, username) {
               </div>
             </div>
             <p id="server-update-error" class="text-[11px] text-red-400 hidden"></p>
+
+            <!-- Container-only update method. On a systemd install this block
+                 stays hidden: there is one update path there, the signed binary,
+                 and no choice to make. -->
+            <div id="server-update-mode" class="hidden pt-3 border-t border-slate-800 space-y-2">
+              <p class="text-[11px] font-semibold text-slate-300">Container update method</p>
+              <label class="flex items-start gap-2 text-[11px] text-slate-300">
+                <input type="radio" name="server-update-mode" value="image" class="mt-0.5">
+                <span>
+                  <span class="font-semibold">Pull image (recommended)</span>
+                  <span class="block text-slate-500">Updates the real deployment. The panel shows the compose command.</span>
+                </span>
+              </label>
+              <label class="flex items-start gap-2 text-[11px] text-slate-300">
+                <input type="radio" name="server-update-mode" value="binary" class="mt-0.5">
+                <span>
+                  <span class="font-semibold">Patch binary in this container (temporary)</span>
+                  <span class="block text-slate-500">A container recreate restores the image's binary; the image is not updated.</span>
+                </span>
+              </label>
+              <p id="server-update-mode-hint" class="text-[10px] text-slate-500 font-mono"></p>
+              <p id="server-update-command" class="text-[10px] text-slate-500 font-mono">docker compose pull &amp;&amp; docker compose up -d</p>
+            </div>
+            <p id="server-update-temp" class="hidden text-[11px] text-amber-300"></p>
           </div>
         </div>
 

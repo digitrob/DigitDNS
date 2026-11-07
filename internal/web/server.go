@@ -879,6 +879,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/update/check", ws.requireAuth(ws.handleUpdateCheck))
 	mux.HandleFunc("/api/update/apply", ws.requireAuth(ws.handleUpdateApply))
 	mux.HandleFunc("/api/update/status", ws.requireAuth(ws.handleUpdateStatus))
+	mux.HandleFunc("/api/update/mode", ws.requireAuth(ws.handleUpdateMode))
 
 	// Prometheus scrape surface. The master REST key (or a live dashboard
 	// session) may read it; unlike the dashboard routes, the API key is accepted

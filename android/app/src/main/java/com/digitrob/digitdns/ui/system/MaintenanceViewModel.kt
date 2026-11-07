@@ -146,6 +146,24 @@ class MaintenanceViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Persist the container update method, then refresh the check so `supported`
+     * and the note come from the server rather than a local guess.
+     */
+    fun selectUpdateMode(mode: String) {
+        viewModelScope.launch {
+            try {
+                repository.setUpdateMode(mode)
+                _state.update { it.copy(message = "Update method saved.") }
+                checkForUpdate()
+            } catch (e: ApiException) {
+                _state.update { it.copy(error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update { it.copy(error = e.message ?: "Could not save the update method.") }
+            }
+        }
+    }
+
     fun applyUpdate() {
         viewModelScope.launch {
             _state.update { it.copy(applying = true, error = null) }

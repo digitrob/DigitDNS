@@ -923,6 +923,10 @@ func (f *fakeV3Backend) SaveFilteringSettings(r *http.Request) (map[string]any, 
 func (f *fakeV3Backend) RefreshFiltering(r *http.Request) (map[string]any, error) {
 	return map[string]any{"success": true}, nil
 }
+func (f *fakeV3Backend) UpdateMode(r *http.Request) (map[string]any, error) {
+	return map[string]any{"mode": "image", "container": true}, nil
+}
+
 func (f *fakeV3Backend) FilterTest(r *http.Request) (map[string]any, error) {
 	return map[string]any{"domain": "example.com", "action": "DIRECT"}, nil
 }

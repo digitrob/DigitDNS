@@ -2,6 +2,7 @@ package com.digitrob.digitdns.core.network
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 
@@ -29,6 +30,10 @@ interface SystemApi {
 
     @GET("update/status")
     suspend fun updateStatus(): UpdateProgress
+
+    /** Container installs only; a systemd install answers 400. */
+    @POST("update/mode")
+    suspend fun setUpdateMode(@Body body: UpdateModeRequest): UpdateModeResponse
 
     @POST("cache/flush")
     suspend fun flushCache(): CacheFlushResponse
@@ -75,6 +80,23 @@ data class UpdateCheck(
     val note: String = "",
     /** Set only when the check itself failed; the response is still a 200. */
     val error: String = "",
+    /** True when the daemon runs in Docker/Podman; the mode selector applies. */
+    val container: Boolean = false,
+    /** "image" or "binary" on a container install. */
+    @SerialName("update_mode") val updateMode: String = "",
+    /** True while a binary was swapped into the running container. */
+    @SerialName("container_swap_active") val containerSwapActive: Boolean = false,
+    /** The version a container recreate would restore. */
+    @SerialName("container_image_version") val containerImageVersion: String = "",
+)
+
+@Serializable
+data class UpdateModeRequest(val mode: String)
+
+@Serializable
+data class UpdateModeResponse(
+    val mode: String = "",
+    val container: Boolean = false,
 )
 
 @Serializable

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"digitdns/internal/version"
 )
 
 // compareSemver decides whether the dashboard offers an update, so a wrong
@@ -95,5 +97,60 @@ func TestProgressClearsStaleRunning(t *testing.T) {
 	u2 := &Updater{progress: Progress{Running: true, Phase: "download", StartedAt: time.Now()}}
 	if live := u2.Progress(); !live.Running || live.Phase != "download" {
 		t.Fatalf("live apply was modified: %+v", live)
+	}
+}
+
+// The container update method is a container-only opt-in. The default must stay
+// "image", and the setter must be inert outside a container.
+func TestContainerUpdateModeDefaultsToImage(t *testing.T) {
+	t.Setenv("DIGITDNS_CONTAINER", "1")
+	u := New("digitdns", nil, t.TempDir())
+	if !u.InContainer() {
+		t.Fatal("container marker was not detected")
+	}
+	if got := u.ContainerUpdateMode(); got != "image" {
+		t.Fatalf("default mode = %q, want image", got)
+	}
+	u.SetContainerUpdateMode("binary")
+	if got := u.ContainerUpdateMode(); got != "binary" {
+		t.Fatalf("after opting in, mode = %q, want binary", got)
+	}
+	u.SetContainerUpdateMode("image")
+	if got := u.ContainerUpdateMode(); got != "image" {
+		t.Fatalf("after opting out, mode = %q, want image", got)
+	}
+}
+
+// The marker must report a live swap, keep reporting it across a process
+// restart in the same container, and clear it when a recreate changes the
+// container identity.
+func TestContainerMarkerTracksSwapAndResetsOnRecreate(t *testing.T) {
+	t.Setenv("DIGITDNS_CONTAINER", "1")
+	dir := t.TempDir()
+	running := version.Get().Version
+
+	u := New("digitdns", nil, dir)
+	u.recordContainerSwap(running)
+	if !u.swapActive.Load() {
+		t.Fatal("a recorded swap is not active")
+	}
+
+	// A restart in the same container: still the swapped binary.
+	u2 := New("digitdns", nil, dir)
+	if !u2.swapActive.Load() {
+		t.Fatal("swap was not restored from the marker")
+	}
+	if u2.imageVersion != running {
+		t.Fatalf("image version = %q, want %q", u2.imageVersion, running)
+	}
+
+	// A recreate gives the container a new ID; the image's binary is back.
+	u2.containerID = "another-container"
+	u2.reconcileContainerMarker()
+	if u2.swapActive.Load() {
+		t.Fatal("swap stayed active after a container recreate")
+	}
+	if u2.imageVersion != running {
+		t.Fatalf("after recreate, image version = %q, want %q", u2.imageVersion, running)
 	}
 }

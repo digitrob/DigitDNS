@@ -68,8 +68,8 @@ fun AboutScreen(viewModel: MaintenanceViewModel = hiltViewModel()) {
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 PanelCard(modifier = Modifier.fillMaxWidth()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -82,11 +82,14 @@ fun AboutScreen(viewModel: MaintenanceViewModel = hiltViewModel()) {
                     }
                 }
 
+                // The update controls come before the read-only system and
+                // location cards: they are the reason this page is opened, and on
+                // a short display they must be usable without scrolling.
+                UpdateCard(state, viewModel)
+
                 state.summary?.let { SystemCard(it) }
 
                 GeoipCard(state, viewModel)
-
-                UpdateCard(state, viewModel)
 
                 PanelCard(modifier = Modifier.fillMaxWidth()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

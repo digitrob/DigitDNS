@@ -1,36 +1,35 @@
-# DigitDNS v5.2.11 — faster panel, Prometheus metrics and a rule tester
+# DigitDNS v5.2.12 — choose how a container updates
 
-**The panel gets faster.** Asset URLs carry a content fingerprint
-(`/js/app.js?v=…`), and a matching request is now served with
-`Cache-Control: public, max-age=31536000, immutable`. Repeat visits stop
-revalidating every script, stylesheet and font. The dashboard document and any
-stale fingerprint still revalidate, so an upgrade is never pinned to an old
-bundle. The dashboard also polls `/api/stats` once a second only while the
-Dashboard tab is open, and every five seconds elsewhere.
+**Docker installs can now pick the update method** in **Settings → Server Update**.
 
-**Two operator tools.**
+- **Pull image (recommended)** — the default. The panel refuses the
+  in-container swap and shows the command that updates the real deployment:
 
-- **Prometheus metrics** — `GET /api/metrics`, guarded by the master REST key (or
-  a dashboard session), serves the standard text format: build info, query
-  totals and QPS, cache entries/hits/misses, refresh counters, relay traffic,
-  CPU/RAM, goroutines and latency quantiles. Labels stay bounded: no domains,
-  client addresses or account names.
-- **Rule tester** — `GET /api/filter/test?domain=…` (and the v3 equivalent)
-  answers what the live matcher would do with a name, including the matching
-  list and whether an exact entry or a parent wildcard applied. It is read-only
-  and has a card in the web Ad Blocking tab and the Android Ad Blocking screen.
+  ```bash
+  docker compose pull && docker compose up -d
+  ```
 
-**Security.** The CSP no longer allows `script-src 'unsafe-inline'`. The two
-dashboard inline boot scripts, and the login script whose admin namespace is
-spliced in per install, are authorised by SHA-256 hashes. An injected `<script>`
-is refused even if it reaches the markup.
+- **Patch binary in this container (temporary)** — re-enables the in-panel swap.
+  The release binary is still downloaded, its SHA-256 checked against the signed
+  `checksums.txt`, the data files backed up, and the daemon restarted. The
+  difference is honest and visible: the image tag and digest do **not** change,
+  and a container recreate restores the image's binary.
 
-**Android.** Ordinary API calls have a 20-second read timeout again; only the SSE
-client disables it, so a stalled stats call can no longer hang a coroutine. The
-upstream resolver rows no longer show the amber `transport … · policy … · last: …`
-line — the status dot and latency colour remain.
+The choice is container-only. On a systemd install the selector is hidden, the
+API rejects a change, and the updater ignores any stale value; the signed binary
+path is unchanged.
 
-No database migration. No resolver or relay behaviour changes.
+**A badge tells the truth.** Beside the pre-update backups the daemon records the
+container ID, the image's version and the swapped version. While a swapped binary
+is running, the card shows **“Temporary binary update active — a container
+recreate restores vX”**. A recreate changes the container ID, so the marker is
+cleared and the card returns to the image state.
+
+**Android** gets the same selector on the About page (container installs only),
+the temporary badge, and a compact layout with the update controls first, so
+they fit on one screen without scrolling.
+
+No database migration. No resolver, relay or agent behaviour changes.
 
 ## Upgrade
 
@@ -44,28 +43,25 @@ docker compose up -d
 Pinned versions:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.2.11
-docker pull ghcr.io/digitrob/digitdns-agent:5.2.11
-docker pull robmeister/digitdns:5.2.11
-docker pull robmeister/digitdns-agent:5.2.11
+docker pull ghcr.io/digitrob/digitdns:5.2.12
+docker pull ghcr.io/digitrob/digitdns-agent:5.2.12
+docker pull robmeister/digitdns:5.2.12
+docker pull robmeister/digitdns-agent:5.2.12
 ```
 
 systemd:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.11/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.12/scripts/install.sh | sudo bash
 ```
-
-The container in-app updater still reports `supported:false` and tells the
-operator to pull and recreate; systemd installs keep the verified binary update.
 
 ## Assets
 
 - `digitdns-linux-amd64`, `digitdns-linux-arm64`
 - `digitdns-agent-linux-amd64`, `digitdns-agent-linux-arm64`
-- `digitdns-agent-5.2.11-linux-arm64-image.tar.gz` and `.sha256`
+- `digitdns-agent-5.2.12-linux-arm64-image.tar.gz` and `.sha256`
 - `digitdns-offline-bundle.tar.gz`, `digitdns-offline-bundle.zip`
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-The Android APKs are attached to this release from the `android-v5.2.11` tag.
+The Android APKs are attached to this release from the `android-v5.2.12` tag.

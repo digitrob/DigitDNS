@@ -13,6 +13,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -105,7 +106,63 @@ internal fun UpdateCard(state: MaintenanceUiState, viewModel: MaintenanceViewMod
                     }
                 }
             }
+            if (update?.container == true) {
+                UpdateModeRow(update, viewModel)
+            }
             state.progress?.let { UpdateProgress(it) }
+        }
+    }
+}
+
+
+
+/**
+ * Container-only update method. Kept as one chip row plus at most two short lines
+ * so the About page still fits on a phone without scrolling. Systemd installs
+ * never render it.
+ */
+@Composable
+private fun UpdateModeRow(update: UpdateStatus, viewModel: MaintenanceViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                "Container update",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            FilterChip(
+                selected = update.updateMode != "binary",
+                onClick = { viewModel.selectUpdateMode("image") },
+                label = { Text("Pull image") },
+            )
+            FilterChip(
+                selected = update.updateMode == "binary",
+                onClick = { viewModel.selectUpdateMode("binary") },
+                label = { Text("Patch binary") },
+            )
+        }
+        if (update.updateMode == "binary") {
+            Text(
+                "Temporary: a recreate restores the image's binary; the image is not updated.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (update.swapActive) {
+            Text(
+                "Temporary binary update active — a recreate restores v" +
+                    update.imageVersion.ifBlank { "the image" } + ".",
+                style = MaterialTheme.typography.bodySmall,
+                color = DigitDnsTheme.colors.warning,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

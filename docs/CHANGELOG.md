@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.2.12] — container update method is now a choice
+
+- Docker installs get **Settings → Server Update → Container update method**:
+  - **Pull image (recommended)** keeps the previous behaviour: `supported:false`,
+    no in-app swap, and the compose pull/recreate command.
+  - **Patch binary in this container (temporary)** re-enables the in-container
+    swap. Signature verification, checksum, backup and the restart watchdog are
+    unchanged. The image is not updated.
+- The choice is stored in its own encrypted `update` settings record and applied
+  at startup. It is container-only: on systemd the selector is hidden, the API
+  rejects a change, and the updater ignores any stale value.
+- A marker beside the backups records the container ID, the image version and
+  the swapped version. The panel shows **“Temporary binary update active — a
+  container recreate restores vX”** while the swapped binary runs, and clears it
+  when a recreate changes the container ID.
+- `POST /api/update/mode` (web session) and `POST /api/v3/update/mode` (master
+  key) set the method.
+- Android: the About page shows the same selector (admin-wide, container-only),
+  the temporary badge, and the update card first. The page was compacted so the
+  update controls fit without scrolling on a phone; the informational cards
+  follow.
+- No database migration. No resolver, relay or agent behaviour changes.
+
 ## 🏷️ [v5.2.11] — faster panel, Prometheus metrics and a rule tester
 
 - Asset URLs now carry a content fingerprint (`/js/app.js?v=…`). A matching

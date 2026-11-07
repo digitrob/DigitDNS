@@ -53,6 +53,14 @@ The same release adds the v3 DNSSEC settings route, a compact Android card that
 opens with the real saved state, shared status-pill styling, and DNSSEC-aware
 cache keys so DO=0 clients never receive signature or denial records.
 
+**5.2.12 makes container updates a choice.** Docker installs can now pick the
+update method in **Settings → Server Update**: *Pull image* (the default) keeps
+the truthful compose pull/recreate path, while *Patch binary* re-enables the
+in-container swap with signature verification, a persistent warning and a badge
+that tells you when a recreate will restore the image's binary. The same
+selector is available in the Android app, and the About page now fits the update
+controls on one screen without scrolling.
+
 **5.2.11 makes the panel and the phone faster and adds two operator tools.**
 Assets are now served from content-versioned URLs with a one-year immutable
 cache, so repeat visits stop revalidating every script and stylesheet. The
@@ -326,7 +334,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.11/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.12/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -385,7 +393,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.11/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.12/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -468,7 +476,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.2.11` | Immutable asset caching, tab-aware stats polling, CSP script hashes, Prometheus metrics, rule tester on web and Android (latest) |
+| `5.2.12` | Container update method selector (web + Android), temporary-swap marker and badge, compact Android update page (latest) |
+| `5.2.11` | Immutable asset caching, tab-aware stats polling, CSP script hashes, Prometheus metrics, rule tester on web and Android (older) |
 | `5.2.10` | Update modal reaches a terminal state and the status endpoint heals a stale Running flag (older) |
 | `5.2.9` | Docker updater refuses binary swap and shows the image pull/recreate command; stale apply lock fixed (older) |
 | `5.2.8` | Web live log REST fallback, clearer empty state, fixed Pause/Resume toolbar and exact/suffix filter log (older) |
@@ -521,7 +530,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.2.11/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.12/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -949,7 +958,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.2.11`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.2.12`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

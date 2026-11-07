@@ -31,10 +31,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"digitdns/internal/version"
@@ -128,8 +130,22 @@ type Status struct {
 	Codename        string `json:"codename,omitempty"`
 	Channel         string `json:"channel,omitempty"`
 	UpdateAvailable bool   `json:"update_available"`
-	Supported       bool   `json:"supported"` // false when auto-apply cannot run here (non-Linux)
+	Supported       bool   `json:"supported"` // false when auto-apply cannot run here (non-Linux or image-mode container)
 	Note            string `json:"note,omitempty"`
+
+	// Container reports whether this process runs in Docker/Podman. The panel
+	// uses it to decide whether the update-method selector applies at all.
+	Container bool `json:"container,omitempty"`
+	// UpdateMode is "image" or "binary" on a container install, and empty
+	// elsewhere. It reflects the operator's saved choice, not whether a swap is
+	// currently live.
+	UpdateMode string `json:"update_mode,omitempty"`
+	// ContainerSwapActive is true when the running binary was swapped into this
+	// container after it started. A recreate restores ContainerImageVersion.
+	ContainerSwapActive bool `json:"container_swap_active,omitempty"`
+	// ContainerImageVersion is the version the container started with, which is
+	// what a recreate would restore.
+	ContainerImageVersion string `json:"container_image_version,omitempty"`
 }
 
 // Progress is the live state of an in-flight apply, polled by the modal.
@@ -188,6 +204,16 @@ type Updater struct {
 	container bool     // true inside Docker/Podman; binary swap is not the deployed artefact
 	client    *http.Client
 
+	// Container update state. containerBinary is the operator's opt-in to the
+	// in-container swap; it is only honored when container is true. The marker
+	// lets the panel tell "running a temporary swapped binary" from "running the
+	// image's binary", which a recreate silently switches back to.
+	containerBinary atomic.Bool
+	swapActive      atomic.Bool
+	containerID     string
+	imageVersion    string
+	markerPath      string
+
 	mu       sync.Mutex
 	progress Progress
 }
@@ -195,7 +221,7 @@ type Updater struct {
 // New builds an Updater. binPath is the running binary to replace; dataPaths are
 // the files copied into backupDir before any swap.
 func New(binPath string, dataPaths []string, backupDir string) *Updater {
-	return &Updater{
+	u := &Updater{
 		binPath:   binPath,
 		dataPaths: dataPaths,
 		backupDir: backupDir,
@@ -212,6 +238,12 @@ func New(binPath string, dataPaths []string, backupDir string) *Updater {
 			},
 		},
 	}
+	if u.container {
+		u.containerID, _ = os.Hostname()
+		u.markerPath = filepath.Join(backupDir, "container-swap.json")
+		u.reconcileContainerMarker()
+	}
+	return u
 }
 
 // Progress returns a copy of the current apply state. A Running flag that has
@@ -255,15 +287,25 @@ func (u *Updater) fail(err error) {
 // update" answer is not an error.
 func (u *Updater) Check(ctx context.Context) (Status, error) {
 	cur := version.Get()
-	st := Status{Current: cur.Version}
+	st := Status{Current: cur.Version, Container: u.container}
+	if u.container {
+		st.UpdateMode = u.ContainerUpdateMode()
+		st.ContainerSwapActive = u.swapActive.Load()
+		st.ContainerImageVersion = u.imageVersion
+	}
 	switch {
 	case runtime.GOOS != "linux":
 		st.Note = "Automatic update is available on Linux/systemd installs only."
-	case u.container:
+	case u.container && !u.containerBinary.Load():
 		// The binary-swap updater would replace the container's writable-layer
 		// binary, not the image the operator actually deploys. Refuse it and
 		// give the command that does update the deployment.
 		st.Note = "This install runs in a container. Update the image instead: docker compose pull && docker compose up -d"
+	case u.container:
+		// The operator opted into the temporary path explicitly. Never present it
+		// as an image update: a recreate restores the image's binary.
+		st.Supported = true
+		st.Note = "Temporary binary update: this replaces the binary inside the container. A container recreate restores the image's binary; the image is not updated."
 	default:
 		st.Supported = true
 	}
@@ -348,7 +390,7 @@ func (u *Updater) StartApply() error {
 	if runtime.GOOS != "linux" {
 		return fmt.Errorf("automatic update runs on Linux/systemd installs only")
 	}
-	if u.container {
+	if u.container && !u.containerBinary.Load() {
 		return fmt.Errorf("this install runs in a container; update the image instead: docker compose pull && docker compose up -d")
 	}
 	u.mu.Lock()

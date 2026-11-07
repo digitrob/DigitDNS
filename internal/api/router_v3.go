@@ -120,6 +120,7 @@ type V3Backend interface {
 	UpdateCheck(r *http.Request) (map[string]any, error)
 	UpdateApply(r *http.Request) (map[string]any, error)
 	UpdateStatus() map[string]any
+	UpdateMode(r *http.Request) (map[string]any, error)
 
 	// Benchmark kick-off.
 	Benchmark() (map[string]any, error)
@@ -256,6 +257,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/update/check", a.SecurityMiddlewareV3(a.handleV3UpdateCheck))
 	mux.HandleFunc("/api/v3/update/apply", a.SecurityMiddlewareV3(a.handleV3UpdateApply))
 	mux.HandleFunc("/api/v3/update/status", a.SecurityMiddlewareV3(a.handleV3UpdateStatus))
+	mux.HandleFunc("/api/v3/update/mode", a.SecurityMiddlewareV3(a.handleV3UpdateMode))
 
 	// Docs.
 	mux.HandleFunc("/api/v3/docs", a.BindGateDocs(a.handleDocsV3))

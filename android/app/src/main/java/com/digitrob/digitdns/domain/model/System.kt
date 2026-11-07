@@ -141,6 +141,10 @@ data class UpdateStatus(
     val supported: Boolean,
     val note: String,
     val error: String,
+    val container: Boolean = false,
+    val updateMode: String = "image",
+    val swapActive: Boolean = false,
+    val imageVersion: String = "",
 ) {
     /** Whether the "Apply" action makes sense: an update exists and can be applied here. */
     val canApply: Boolean get() = updateAvailable && supported && error.isBlank()
@@ -153,6 +157,10 @@ data class UpdateStatus(
             supported = dto.supported,
             note = dto.note,
             error = dto.error,
+            container = dto.container,
+            updateMode = dto.updateMode,
+            swapActive = dto.containerSwapActive,
+            imageVersion = dto.containerImageVersion,
         )
     }
 }
