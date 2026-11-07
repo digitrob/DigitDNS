@@ -85,6 +85,13 @@ type WebServer struct {
 	// dashboard for a second. The payload is identical for all of them, and the
 	// dashboard polls it every couple of seconds.
 	statsCache *httpx.ResponseCache
+	// Agent control-plane revision and long-poll broadcaster. Every catalogue
+	// response carries the revision as its ETag; a config change bumps it and
+	// wakes the agents waiting on the broadcaster.
+	agentRev         atomic.Uint64
+	agentNotify      *agentConfigNotifier
+	agentCatRequests atomic.Uint64
+	agentCatNotMod   atomic.Uint64
 
 	// kdfGate bounds how many password verifications run at once. Verification is
 	// deliberately expensive and reachable without authentication, so without a
@@ -217,7 +224,11 @@ func NewWebServer(
 		kdfGate:     make(chan struct{}, kdfConcurrency()),
 		totpReplay:  newTOTPReplayGuard(),
 		statsCache:  httpx.NewResponseCache(time.Second, 2),
+		agentNotify: newAgentConfigNotifier(),
 	}
+	// A random starting point, not zero: after a hub restart an agent must not
+	// match an ETag it held from before the restart and skip a changed catalogue.
+	ws.agentRev.Store(uint64(time.Now().UnixNano()))
 	ws.loginLimiter = service.NewLoginAttemptTracker()
 	ws.benchmark = service.NewBenchmarkRunner(func() {
 		if ws.upstreams != nil {
@@ -347,10 +358,13 @@ func (ws *WebServer) refreshRelayAssignments(domainAgents, serviceAgents, domain
 		ws.relayRouter.SetAgents(agents)
 	}
 	ws.relayRouter.SetAssignments(domainAgents, serviceAgents, domainServices)
+	ws.agentConfigChanged()
 }
 
-// refreshRelayAgents refreshes only the agent snapshot after a heartbeat,
-// enable/disable, enrolment or delete. Assignments did not change.
+// refreshRelayAgents refreshes only the agent snapshot after enable/disable,
+// enrolment or delete. Assignments did not change. It notifies catalogue
+// waiters; the heartbeat path updates one agent instead so a routine beat does
+// not wake every agent.
 func (ws *WebServer) refreshRelayAgents() {
 	if ws.relayRouter == nil {
 		return
@@ -358,6 +372,7 @@ func (ws *WebServer) refreshRelayAgents() {
 	if agents, err := ws.db.ListAgents(); err == nil {
 		ws.relayRouter.SetAgents(agents)
 	}
+	ws.agentConfigChanged()
 }
 
 // serverSettingsView is the shape of ServerSettings that leaves the process.
@@ -885,15 +900,15 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/filtering/presets", ws.requireAuth(ws.handleFilteringPresets))
 	mux.HandleFunc("/api/filtering/lists", ws.requireAuth(ws.handleFilterLists))
 	mux.HandleFunc("/api/filtering/lists/", ws.requireAuth(ws.handleFilterListItem))
-	mux.HandleFunc("/api/clients", ws.requireAuth(ws.handleClients))
-	mux.HandleFunc("/api/clients/add", ws.requireAuth(ws.handleClientsAdd))
-	mux.HandleFunc("/api/clients/delete", ws.requireAuth(ws.handleClientsDelete))
-	mux.HandleFunc("/api/clients/add_ip", ws.requireAuth(ws.handleClientsAddIP))
-	mux.HandleFunc("/api/clients/remove_ip", ws.requireAuth(ws.handleClientsRemoveIP))
-	mux.HandleFunc("/api/clients/renew", ws.requireAuth(ws.handleClientsRenew))
-	mux.HandleFunc("/api/clients/toggle", ws.requireAuth(ws.handleClientsToggle))
+	mux.HandleFunc("/api/clients", ws.requireAuth(ws.agentMutation(ws.handleClients)))
+	mux.HandleFunc("/api/clients/add", ws.requireAuth(ws.agentMutation(ws.handleClientsAdd)))
+	mux.HandleFunc("/api/clients/delete", ws.requireAuth(ws.agentMutation(ws.handleClientsDelete)))
+	mux.HandleFunc("/api/clients/add_ip", ws.requireAuth(ws.agentMutation(ws.handleClientsAddIP)))
+	mux.HandleFunc("/api/clients/remove_ip", ws.requireAuth(ws.agentMutation(ws.handleClientsRemoveIP)))
+	mux.HandleFunc("/api/clients/renew", ws.requireAuth(ws.agentMutation(ws.handleClientsRenew)))
+	mux.HandleFunc("/api/clients/toggle", ws.requireAuth(ws.agentMutation(ws.handleClientsToggle)))
 	mux.HandleFunc("/api/access/mode", ws.requireAuth(ws.handleAccessMode))
-	mux.HandleFunc("/api/clients/", ws.requireAuth(ws.handleClientAction))
+	mux.HandleFunc("/api/clients/", ws.requireAuth(ws.agentMutation(ws.handleClientAction)))
 	mux.HandleFunc("/api/policies", ws.requireAuth(ws.handlePolicies))
 	mux.HandleFunc("/api/custom-groups", ws.requireAuth(ws.handleCustomGroups))
 	mux.HandleFunc("/api/custom-groups/", ws.requireAuth(ws.handleCustomGroupByID))
@@ -1813,6 +1828,7 @@ func (ws *WebServer) handleConfigAccess(w http.ResponseWriter, r *http.Request) 
 		if gate, ok := ws.dohHandler.(interface{ SetDoHTokens([]string) }); ok {
 			gate.SetDoHTokens(acc.DoHTokens)
 		}
+		ws.agentConfigChanged()
 		_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
 	default:
 		httpx.WriteMethodNotAllowed(w, "GET, POST")
@@ -2216,6 +2232,14 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 		"uptime_sec":     st.UptimeSec,
 		"rate_limited":   st.RateLimited,
 		"rate_limit_qps": st.RateLimitQPS,
+		"panics_total":   st.PanicsTotal,
+
+		// Agent control-plane health. Catalogue 304s are the expected steady
+		// state; a rising request count with no 304s means agents keep seeing a
+		// changed revision (or an old hub).
+		"agent_catalogue_requests":     ws.agentCatRequests.Load(),
+		"agent_catalogue_not_modified": ws.agentCatNotMod.Load(),
+		"agent_config_revision":        ws.agentRevision(),
 
 		// Machine-wide load (internal/sysmetrics): the whole server's CPU and
 		// RAM, as opposed to the daemon-process figures above. Negative values
@@ -2243,6 +2267,7 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 		"relays_refused_quota":      st.RelaysRefusedQuota,
 		"relays_refused_table_full": st.RelaysRefusedTableFull,
 		"relays_refused_resolve":    st.RelaysRefusedResolve,
+		"relays_refused_flood":      st.RelaysRefusedFlood,
 
 		// Query service time. latency covers everything the resolver answered;
 		// latency_uncached drops the cache hits, which is the only one of the two
@@ -2259,6 +2284,10 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	const contentType = "application/json"
 	ws.statsCache.Set("web/stats", buf.Bytes(), contentType)
+	if entry, ok := ws.statsCache.Get("web/stats"); ok {
+		httpx.WriteCached(w, r, entry)
+		return
+	}
 	httpx.WriteCached(w, r, httpx.CachedResponse{Body: buf.Bytes(), ContentType: contentType})
 }
 
@@ -2841,6 +2870,7 @@ func (ws *WebServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 			ws.ipv6Setter(finalProxyIPv6Enabled, finalPublicIPv6)
 		}
 		if finalProxyIPv6Enabled != current.ProxyIPv6Enabled || finalPublicIPv6 != current.PublicIPv6 {
+			ws.agentConfigChanged()
 			log.Printf("[Web] Proxy IPv6 policy: enabled=%t public_ipv6=%q", finalProxyIPv6Enabled, finalPublicIPv6)
 		}
 		if req.SessionIdleMinutes != nil && ws.sessions != nil {

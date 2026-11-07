@@ -151,9 +151,9 @@ on the agent host:
 
 ```bash
 curl -fL -o /tmp/agent-image.tar.gz \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.2.5/digitdns-agent-5.2.5-linux-arm64-image.tar.gz
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.6/digitdns-agent-5.2.6-linux-arm64-image.tar.gz
 gunzip -c /tmp/agent-image.tar.gz | docker load
-docker tag ghcr.io/digitrob/digitdns-agent:5.2.5 ghcr.io/digitrob/digitdns-agent:latest
+docker tag ghcr.io/digitrob/digitdns-agent:5.2.6 ghcr.io/digitrob/digitdns-agent:latest
 ```
 
 As an offline fallback from another machine, save the image and load it on the
@@ -161,15 +161,15 @@ agent host:
 
 ```bash
 # on a connected machine
-docker pull --platform linux/arm64 ghcr.io/digitrob/digitdns-agent:5.2.5
-docker save ghcr.io/digitrob/digitdns-agent:5.2.5 | gzip > agent-arm64.tar.gz
+docker pull --platform linux/arm64 ghcr.io/digitrob/digitdns-agent:5.2.6
+docker save ghcr.io/digitrob/digitdns-agent:5.2.6 | gzip > agent-arm64.tar.gz
 scp agent-arm64.tar.gz admin@agent-host:/tmp/
 
 # on the agent host
 gunzip -c /tmp/agent-arm64.tar.gz | docker load
 docker run -d --name digitdns-agent --pull never --network host \
   --restart unless-stopped -v /opt/digitdns-agent:/data \
-  ghcr.io/digitrob/digitdns-agent:5.2.5 \
+  ghcr.io/digitrob/digitdns-agent:5.2.6 \
   -hub 'https://panel.example.com:8080/ADMIN_PATH' \
   -key 'AGENT_ID:SECRET' -listen :80,:443 \
   -state /data/agent-state.json
@@ -226,7 +226,7 @@ Download the matching binary from the release page:
 ```bash
 # amd64
 curl -fL -o /usr/local/bin/digitdns-agent \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.2.5/digitdns-agent-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.6/digitdns-agent-linux-amd64
 chmod +x /usr/local/bin/digitdns-agent
 
 # arm64: use digitdns-agent-linux-arm64 instead
@@ -295,13 +295,14 @@ On the hub card:
 In the agent log:
 
 ```
-[agent] v5.2.5-stable · country DE · IPv6 on · public IPv6 2001:db8::2 · listening :80,:443 · dialling http :80 / https :443
+[agent] v5.2.6-stable · country DE · IPv6 on · public IPv6 2001:db8::2 · listening :80,:443 · dialling http :80 / https :443
 [agent] 2 hosts allowed · 3 client entries · private guard blocked
 ```
 
 `0 hosts allowed` or `0 client entries` means the catalogue is empty. Assign a
-domain or a service default to the agent, then wait up to 60 seconds for the
-next sync.
+domain or a service default to the agent; the change normally arrives in under a
+second through the catalogue long-poll, with a five-minute full sync as the
+safety net.
 
 ---
 
@@ -410,7 +411,7 @@ production; the hub's catalogue is the authority.
 | :--- | :--- |
 | Card stays offline | Agent can reach `-hub` over HTTPS; the admin path is included; the key matches; the hub's firewall allows it. |
 | `401` in the agent log | Key is wrong, rotated or disabled. Copy the current key and restart. |
-| Empty host allowlist | No active proxied domain or service default points at this agent. Assign one and wait 60 s. |
+| Empty host allowlist | No active proxied domain or service default points at this agent. Assign one; it normally arrives in under a second. |
 | Empty client allowlist | Hub is in whitelist mode with no registered clients; add clients or use the intended access mode. |
 | Test connection fails | Advertised port is unreachable. Check TCP 80/443, host firewall and that `-listen` is not behind NAT. |
 | Relay works but card is stale | Heartbeat path only; check outbound HTTPS and the hub clock. |

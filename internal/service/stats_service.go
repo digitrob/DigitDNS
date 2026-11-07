@@ -14,6 +14,7 @@ import (
 
 	"digitdns/internal/aggregate"
 	"digitdns/internal/database"
+	"digitdns/internal/safego"
 	"digitdns/internal/sysmetrics"
 )
 
@@ -193,6 +194,7 @@ type ProxyGuardStats struct {
 	Quota         uint64
 	TableFull     uint64
 	ResolveFailed uint64
+	Flood         uint64
 }
 
 // SetProxyGuardDetailSource wires in the reason breakdown. Call it once during
@@ -572,6 +574,11 @@ type LiveStatsResponse struct {
 	RateLimited  uint64 `json:"rate_limited"`
 	RateLimitQPS int    `json:"rate_limit_qps"`
 
+	// PanicsTotal is the number of panics recovered at a request boundary since
+	// start. A non-zero value means the daemon stayed up after a bug that would
+	// otherwise have killed it; the stack is in the log.
+	PanicsTotal uint64 `json:"panics_total"`
+
 	// Machine-wide figures (internal/sysmetrics): the whole server's CPU and
 	// RAM, as opposed to the process-only numbers above — the operator reads
 	// these as "how loaded is my box". Negative values mean the platform
@@ -612,6 +619,7 @@ type LiveStatsResponse struct {
 	RelaysRefusedQuota     uint64 `json:"relays_refused_quota"`
 	RelaysRefusedTableFull uint64 `json:"relays_refused_table_full"`
 	RelaysRefusedResolve   uint64 `json:"relays_refused_resolve"`
+	RelaysRefusedFlood     uint64 `json:"relays_refused_flood"`
 
 	// Latency is the service-time distribution of every query; LatencyUncached is
 	// the same restricted to the ones the cache did not answer, which is where an
@@ -702,6 +710,7 @@ func (s *StatsService) GetLiveStats() LiveStatsResponse {
 		UptimeSec:    int64(time.Since(s.startedAt).Seconds()),
 		RateLimited:  rateLimited,
 		RateLimitQPS: rateLimitQPS,
+		PanicsTotal:  safego.Count(),
 
 		StaleServed:    staleServed,
 		RefreshStarted: refreshStarted,
@@ -716,6 +725,7 @@ func (s *StatsService) GetLiveStats() LiveStatsResponse {
 		RelaysRefusedQuota:     proxyDrops.Quota,
 		RelaysRefusedTableFull: proxyDrops.TableFull,
 		RelaysRefusedResolve:   proxyDrops.ResolveFailed,
+		RelaysRefusedFlood:     proxyDrops.Flood,
 
 		Latency:         s.latencyAll.snapshot(),
 		LatencyUncached: s.latencyResolve.snapshot(),

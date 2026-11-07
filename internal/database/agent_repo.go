@@ -38,10 +38,15 @@ type Agent struct {
 	Enabled     bool      `json:"enabled"`
 	CreatedAt   time.Time `json:"created_at"`
 	LastSeen    time.Time `json:"last_seen"`
-	PingMs      float64   `json:"ping_ms,omitempty"`
-	PingAt      time.Time `json:"ping_at,omitempty"`
-	BytesIn     uint64    `json:"bytes_in"`
-	BytesOut    uint64    `json:"bytes_out"`
+	// CatalogueRevision is the ETag the agent last applied. CatalogueSyncedAt
+	// is when that revision changed, so the panel can say "pending sync" without
+	// guessing from the heartbeat alone.
+	CatalogueRevision string    `json:"catalogue_revision,omitempty"`
+	CatalogueSyncedAt time.Time `json:"catalogue_synced_at,omitempty"`
+	PingMs            float64   `json:"ping_ms,omitempty"`
+	PingAt            time.Time `json:"ping_at,omitempty"`
+	BytesIn           uint64    `json:"bytes_in"`
+	BytesOut          uint64    `json:"bytes_out"`
 
 	// secretHash is the SHA-256 of the key. Stored separately from the JSON so a
 	// list response can never carry it. The encrypted clear copy under key/<id>
@@ -339,7 +344,7 @@ func (db *DB) AuthenticateAgent(id, secret string) (Agent, error) {
 }
 
 // TouchAgent records a heartbeat: version, last-seen and traffic totals.
-func (db *DB) TouchAgent(id, version, publicIP, publicIPv6 string, relayPort int, bytesIn, bytesOut uint64) error {
+func (db *DB) TouchAgent(id, version, publicIP, publicIPv6 string, relayPort int, bytesIn, bytesOut uint64, catalogueRevision string) error {
 	return db.updateAgent(id, func(a *Agent) {
 		a.Version = version
 		if ip := net.ParseIP(strings.TrimSpace(publicIP)); ip != nil && ip.To4() != nil {
@@ -356,6 +361,10 @@ func (db *DB) TouchAgent(id, version, publicIP, publicIPv6 string, relayPort int
 		a.LastSeen = time.Now().UTC()
 		a.BytesIn = bytesIn
 		a.BytesOut = bytesOut
+		if revision := strings.TrimSpace(catalogueRevision); revision != "" && revision != a.CatalogueRevision {
+			a.CatalogueRevision = revision
+			a.CatalogueSyncedAt = a.LastSeen
+		}
 	})
 }
 

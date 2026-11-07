@@ -171,6 +171,10 @@ func (a *API) handleV3StatsHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	const contentType = "application/json"
 	a.historyCache.Set(cacheKey, buf.Bytes(), contentType)
+	if entry, ok := a.historyCache.Get(cacheKey); ok {
+		httpx.WriteCached(w, r, entry)
+		return
+	}
 	httpx.WriteCached(w, r, httpx.CachedResponse{Body: buf.Bytes(), ContentType: contentType})
 }
 

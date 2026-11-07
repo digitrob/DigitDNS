@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"os"
@@ -151,13 +152,26 @@ func main() {
 	}
 
 	if hub != nil && state.Key != "" {
-		if cat, err := hub.Fetch(state.Key); err != nil {
+		// An ETag with no cached catalogue (an old or hand-edited state file)
+		// would make the hub answer 304 and leave the agent with an empty
+		// allowlist. Force one full fetch in that case.
+		if state.CatalogueETag != "" && len(state.Hosts) == 0 && len(state.Clients) == 0 {
+			state.CatalogueETag = ""
+		}
+		cat, etag, notModified, err := hub.FetchConditional(context.Background(), state.Key, state.CatalogueETag, 0)
+		switch {
+		case err != nil:
 			// A hub outage must not stop playback: keep the cached list and say so.
 			log.Printf("[agent] catalogue fetch failed (%v) - serving the cached list", err)
-		} else {
+		case notModified:
+			log.Printf("[agent] catalogue unchanged at %s", state.CatalogueETag)
+		default:
 			state.Hosts = cat.Hosts
 			state.Clients = cat.Clients
 			state.SyncedAt = time.Now().UTC()
+			if etag != "" {
+				state.CatalogueETag = etag
+			}
 			if cat.Country != "" {
 				state.Country = cat.Country
 			}
@@ -253,6 +267,68 @@ func main() {
 		log.Fatalf("[agent] %v", err)
 	}
 
+	// Catalogue control plane. One long-poll is in flight at a time; the main
+	// loop owns every write to state/cfg, so the fetch goroutine only carries a
+	// request in and a result out. A 304 costs no catalogue computation on the
+	// hub and no apply work here.
+	type catalogueRequest struct {
+		etag string
+		wait time.Duration
+	}
+	type catalogueResult struct {
+		cat         agent.Catalogue
+		etag        string
+		notModified bool
+		err         error
+	}
+	var (
+		syncReq    chan catalogueRequest
+		syncRes    chan catalogueResult
+		syncCtx    context.Context
+		cancelSync context.CancelFunc
+	)
+	if hub != nil && state.Key != "" {
+		syncCtx, cancelSync = context.WithCancel(context.Background())
+		syncReq = make(chan catalogueRequest, 1)
+		syncRes = make(chan catalogueResult, 1)
+		go func() {
+			for req := range syncReq {
+				cat, etag, notModified, err := hub.FetchConditional(syncCtx, state.Key, req.etag, req.wait)
+				select {
+				case syncRes <- catalogueResult{cat: cat, etag: etag, notModified: notModified, err: err}:
+				case <-syncCtx.Done():
+					return
+				}
+			}
+		}()
+		defer func() {
+			cancelSync()
+			close(syncReq)
+		}()
+	}
+
+	applyCatalogue := func(cat agent.Catalogue, etag string) {
+		// Applied in place rather than rebuilding the server: a resync must not
+		// drop connections that are mid-stream.
+		srv.UpdateAllowlists(cat.Hosts, cat.Clients)
+		state.Hosts, state.Clients = cat.Hosts, cat.Clients
+		state.SyncedAt = time.Now().UTC()
+		if etag != "" {
+			state.CatalogueETag = etag
+		}
+		if cat.Country != "" {
+			state.Country = cat.Country
+		}
+		if cat.IPv6Enabled != nil {
+			applyIPv6Policy(*cat.IPv6Enabled)
+		}
+		if err := agent.SaveState(*statePath, state); err != nil {
+			log.Printf("[agent] could not write state: %v", err)
+		}
+		log.Printf("[agent] catalogue resynced: %d hosts, %d clients · IPv6 %s · %s",
+			len(cat.Hosts), len(cat.Clients), onOff(cfg.IPv6Enabled), orDash(state.CatalogueETag))
+	}
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
@@ -261,10 +337,18 @@ func main() {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
-	syncTicker := time.NewTicker(60 * time.Second)
-	defer syncTicker.Stop()
-	beatTicker := time.NewTicker(30 * time.Second)
-	defer beatTicker.Stop()
+	var syncTimer *time.Timer
+	var syncTick <-chan time.Time
+	if syncReq != nil {
+		syncTimer = time.NewTimer(0)
+		syncTick = syncTimer.C
+		defer syncTimer.Stop()
+	}
+	beatTimer := time.NewTimer(jitteredInterval(agentHeartbeatBase, 0))
+	defer beatTimer.Stop()
+	syncFailures, heartbeatFailures := 0, 0
+	syncInFlight := false
+	lastFullSync := time.Now()
 
 	for {
 		select {
@@ -276,51 +360,111 @@ func main() {
 		case <-ticker.C:
 			logSummary(srv)
 
-		case <-beatTicker.C:
-			if hub == nil || state.Key == "" {
+		case <-beatTimer.C:
+			if hub != nil && state.Key != "" {
+				in, out := srv.Counters().Totals()
+				publicIPv6 := ""
+				if cfg.IPv6Enabled {
+					publicIPv6 = cfg.PublicIPv6
+				}
+				hb, err := hub.Heartbeat(state.Key, version.Display(), advertisedPort(cfg.Listen), in, out, publicIPv6, state.CatalogueETag)
+				if err != nil {
+					// Logged, never fatal: a hub that is down cannot be allowed to
+					// stop a relay that is working.
+					heartbeatFailures++
+					log.Printf("[agent] heartbeat failed: %v", err)
+				} else {
+					heartbeatFailures = 0
+					if hb.IPv6Enabled != nil {
+						applyIPv6Policy(*hb.IPv6Enabled)
+					}
+					// If the long-poll dropped during a change, the heartbeat is
+					// the fallback that notices the agent is behind.
+					if hb.ConfigRevision != "" && hb.ConfigRevision != state.CatalogueETag && !syncInFlight && syncTimer != nil {
+						syncTimer.Reset(0)
+					}
+					_, _, _, _ = srv.Stats()
+				}
+			}
+			beatTimer.Reset(jitteredInterval(agentHeartbeatBase, heartbeatFailures))
+
+		case <-syncTick:
+			if syncInFlight {
 				continue
 			}
-			in, out := srv.Counters().Totals()
-			publicIPv6 := ""
-			if cfg.IPv6Enabled {
-				publicIPv6 = cfg.PublicIPv6
+			req := catalogueRequest{etag: state.CatalogueETag, wait: 25 * time.Second}
+			// A full fetch every five minutes catches a hub-side change whose
+			// notifier was missed; the normal path is ETag/304.
+			if time.Since(lastFullSync) >= 5*time.Minute {
+				req.etag = ""
+				lastFullSync = time.Now()
 			}
-			hb, err := hub.Heartbeat(state.Key, version.Display(), advertisedPort(cfg.Listen), in, out, publicIPv6)
-			if err != nil {
-				// Logged, never fatal: a hub that is down cannot be allowed to
-				// stop a relay that is working.
-				log.Printf("[agent] heartbeat failed: %v", err)
-			} else {
-				if hb.IPv6Enabled != nil {
-					applyIPv6Policy(*hb.IPv6Enabled)
+			syncInFlight = true
+			select {
+			case syncReq <- req:
+			default:
+				// The worker is still busy despite syncInFlight; retry shortly.
+				syncInFlight = false
+				if syncTimer != nil {
+					syncTimer.Reset(time.Second)
 				}
-				_, _, _, _ = srv.Stats()
 			}
 
-		case <-syncTicker.C:
-			if hub == nil || state.Key == "" {
+		case res := <-syncRes:
+			syncInFlight = false
+			if res.err != nil {
+				syncFailures++
+				log.Printf("[agent] catalogue resync failed (%v) - keeping the current list", res.err)
+				if syncTimer != nil {
+					syncTimer.Reset(jitteredInterval(agentSyncBase, syncFailures))
+				}
 				continue
 			}
-			cat, err := hub.Fetch(state.Key)
-			if err != nil {
-				log.Printf("[agent] catalogue resync failed (%v) - keeping the current list", err)
-				continue
+			syncFailures = 0
+			if !res.notModified {
+				applyCatalogue(res.cat, res.etag)
 			}
-			// Applied in place rather than rebuilding the server: a resync must
-			// not drop connections that are mid-stream.
-			srv.UpdateAllowlists(cat.Hosts, cat.Clients)
-			state.Hosts, state.Clients = cat.Hosts, cat.Clients
-			state.SyncedAt = time.Now().UTC()
-			if cat.IPv6Enabled != nil {
-				applyIPv6Policy(*cat.IPv6Enabled)
+			// An old hub has no ETag: fall back to the periodic pull rather than
+			// re-fetching the same document in a hot loop.
+			if res.etag == "" {
+				if syncTimer != nil {
+					syncTimer.Reset(jitteredInterval(agentSyncBase, 0))
+				}
+			} else if syncTimer != nil {
+				syncTimer.Reset(0)
 			}
-			if err := agent.SaveState(*statePath, state); err != nil {
-				log.Printf("[agent] could not write state: %v", err)
-			}
-			log.Printf("[agent] catalogue resynced: %d hosts, %d clients · IPv6 %s",
-				len(cat.Hosts), len(cat.Clients), onOff(cfg.IPv6Enabled))
 		}
 	}
+}
+
+const (
+	agentHeartbeatBase  = 30 * time.Second
+	agentSyncBase       = 60 * time.Second
+	agentSyncMaxBackoff = 5 * time.Minute
+	agentSyncMaxShift   = 6
+)
+
+// jitteredInterval spreads heartbeats and catalogue pulls by ±20%, and backs
+// off exponentially after a failure. Without the jitter, every agent that was
+// running when the hub restarted reconnects on the same tick and the control
+// plane sees a self-inflicted stampede.
+func jitteredInterval(base time.Duration, failures int) time.Duration {
+	d := base
+	if failures > 0 {
+		shift := failures
+		if shift > agentSyncMaxShift {
+			shift = agentSyncMaxShift
+		}
+		d = base << shift
+		if d > agentSyncMaxBackoff {
+			d = agentSyncMaxBackoff
+		}
+	}
+	spread := d / 5
+	if spread <= 0 {
+		return d
+	}
+	return d - spread + rand.N(2*spread+1)
 }
 
 // detectPublicIPv6 asks an IPv6-only echo endpoint for this host's address. The

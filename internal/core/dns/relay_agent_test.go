@@ -43,6 +43,9 @@ func TestProxiedAAnswerUsesRelayAgent(t *testing.T) {
 	if !ok || a.A.String() != "203.0.113.10" {
 		t.Fatalf("answer = %v, want the agent address", resp.Answer[0])
 	}
+	if a.Hdr.Ttl != agentProxyAnswerTTL {
+		t.Fatalf("TTL = %d, want %d for an agent-backed answer", a.Hdr.Ttl, agentProxyAnswerTTL)
+	}
 }
 
 func TestAgentWithoutIPv6SinksAAAA(t *testing.T) {
@@ -62,6 +65,9 @@ func TestProxiedAAAAAnswerUsesRelayAgentIPv6(t *testing.T) {
 	aaaa, ok := resp.Answer[0].(*dns.AAAA)
 	if !ok || aaaa.AAAA.String() != "2001:db8::10" {
 		t.Fatalf("answer = %v, want 2001:db8::10", resp.Answer[0])
+	}
+	if aaaa.Hdr.Ttl != agentProxyAnswerTTL {
+		t.Fatalf("AAAA TTL = %d, want %d", aaaa.Hdr.Ttl, agentProxyAnswerTTL)
 	}
 }
 

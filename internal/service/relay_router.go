@@ -115,6 +115,14 @@ func (idx *assignmentIndex) lookup(domain string) string {
 	return ""
 }
 
+const (
+	// AgentOnlineFor is how recently an agent must have heartbeated to be used
+	// in DNS. Three 30-second beats plus jitter: long enough to ride out one
+	// delayed beat, short enough that a dead agent stops receiving new clients
+	// before a two-minute outage.
+	AgentOnlineFor = 90 * time.Second
+)
+
 func NewRelayRouter() *RelayRouter {
 	return &RelayRouter{
 		agents:         map[string]database.Agent{},
@@ -123,7 +131,7 @@ func NewRelayRouter() *RelayRouter {
 		domainAgents:   newAssignmentIndex(),
 		serviceAgents:  map[string]string{},
 		domainServices: newAssignmentIndex(),
-		onlineFor:      2 * time.Minute,
+		onlineFor:      AgentOnlineFor,
 		now:            time.Now,
 	}
 }
@@ -149,6 +157,34 @@ func (r *RelayRouter) SetAgents(agents []database.Agent) {
 	r.agents = next
 	r.agentIPv4 = ipv4
 	r.agentIPv6 = ipv6
+	r.mu.Unlock()
+}
+
+// UpdateAgent replaces one agent's live snapshot without rebuilding the whole
+// map. The heartbeat path calls it once per beat; a full SetAgents reload is
+// reserved for enrolment, deletion and enable/disable.
+func (r *RelayRouter) UpdateAgent(a database.Agent) {
+	var ipv4, ipv6 net.IP
+	if ip := net.ParseIP(strings.TrimSpace(a.PublicIP)).To4(); ip != nil {
+		ipv4 = ip
+	}
+	if a.IPv6Enabled {
+		if ip, ok := netutil.ParsePublicIPv6(a.PublicIPv6); ok {
+			ipv6 = ip
+		}
+	}
+	r.mu.Lock()
+	r.agents[a.ID] = a
+	if ipv4 != nil {
+		r.agentIPv4[a.ID] = ipv4
+	} else {
+		delete(r.agentIPv4, a.ID)
+	}
+	if ipv6 != nil {
+		r.agentIPv6[a.ID] = ipv6
+	} else {
+		delete(r.agentIPv6, a.ID)
+	}
 	r.mu.Unlock()
 }
 

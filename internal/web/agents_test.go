@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // createAgent exercises the panel flow: one POST returns the record and the
@@ -137,7 +138,7 @@ func TestAgentConnectionTestRecordsPing(t *testing.T) {
 	}
 	defer ln.Close()
 	port, _ := strconv.Atoi(strings.Split(ln.Addr().String(), ":")[1])
-	if err := ws.db.TouchAgent(agentID, "1.0.0", "127.0.0.1", "", port, 0, 0); err != nil {
+	if err := ws.db.TouchAgent(agentID, "1.0.0", "127.0.0.1", "", port, 0, 0, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -296,6 +297,93 @@ func newAgentWebServer(t *testing.T) *WebServer {
 	ws, _, cleanup := setupTestWebServer(t)
 	t.Cleanup(cleanup)
 	return ws
+}
+
+func TestAgentCatalogueETagAndLongPoll(t *testing.T) {
+	ws := newAgentWebServer(t)
+	_, key := createAgent(t, ws, "DE", "DE-1")
+	auth := map[string]string{agentKeyHeader: key}
+
+	rec := doJSON(t, ws.handleAgentCatalogue, http.MethodGet, "/agent/catalogue", "", auth)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("catalogue: %d %s", rec.Code, rec.Body.String())
+	}
+	etag := rec.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("catalogue carried no ETag")
+	}
+
+	rec = doJSON(t, ws.handleAgentCatalogue, http.MethodGet, "/agent/catalogue", "",
+		map[string]string{agentKeyHeader: key, "If-None-Match": etag})
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("conditional catalogue = %d, want 304", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("304 carried %d body bytes", rec.Body.Len())
+	}
+
+	// A long-poll parked on the current revision must wake when config changes.
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- doJSON(t, ws.handleAgentCatalogue, http.MethodGet, "/agent/catalogue?wait=2", "",
+			map[string]string{agentKeyHeader: key, "If-None-Match": etag})
+	}()
+	time.Sleep(50 * time.Millisecond)
+	ws.agentConfigChanged()
+
+	select {
+	case rec = <-done:
+		if rec.Code != http.StatusOK {
+			t.Fatalf("long-poll woke with %d, want 200", rec.Code)
+		}
+		if next := rec.Header().Get("ETag"); next == "" || next == etag {
+			t.Fatalf("long-poll ETag = %q, want a changed revision", next)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("long-poll did not wake on a config change")
+	}
+}
+
+func TestAgentListComputesOnlineAndSync(t *testing.T) {
+	ws := newAgentWebServer(t)
+	_, key := createAgent(t, ws, "DE", "DE-1")
+
+	rec := doJSON(t, ws.handleAgentHeartbeat, http.MethodPost, "/agent/heartbeat",
+		`{"version":"5.2.6","relay_port":443,"bytes_in":1,"bytes_out":2,"catalogue_revision":"v123"}`, map[string]string{agentKeyHeader: key})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("heartbeat: %d %s", rec.Code, rec.Body.String())
+	}
+	var hb struct {
+		ConfigRevision string `json:"config_revision"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &hb)
+	if hb.ConfigRevision == "" {
+		t.Fatal("heartbeat reply carried no config revision")
+	}
+
+	rec = doJSON(t, ws.handleAgents, http.MethodGet, "/api/agents", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("agents: %d %s", rec.Code, rec.Body.String())
+	}
+	var list struct {
+		Agents []struct {
+			Online            bool   `json:"online"`
+			CatalogueRevision string `json:"catalogue_revision"`
+			SyncAgeSeconds    int64  `json:"sync_age_seconds"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Agents) != 1 || !list.Agents[0].Online {
+		t.Fatalf("agent list = %+v, want one online agent", list.Agents)
+	}
+	if list.Agents[0].CatalogueRevision != "v123" {
+		t.Fatalf("catalogue revision = %q", list.Agents[0].CatalogueRevision)
+	}
+	if list.Agents[0].SyncAgeSeconds < 0 {
+		t.Fatalf("sync age = %d", list.Agents[0].SyncAgeSeconds)
+	}
 }
 
 func doJSON(t *testing.T, h http.HandlerFunc, method, path, body string, headers map[string]string) *httptest.ResponseRecorder {

@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"context"
+	"net"
 	"reflect"
 	"testing"
 	"time"
@@ -61,4 +63,66 @@ func TestRefusalLogKeysAreIndependent(t *testing.T) {
 	if ok, _ := rl.allow("ip|one"); ok {
 		t.Fatal("repeated first key was not suppressed")
 	}
+}
+
+func TestTargetDNSCacheHonoursTTLAndCopies(t *testing.T) {
+	s := NewServer(Config{})
+	ip := net.ParseIP("203.0.113.9")
+	s.storeIPs("example.test", []net.IP{ip})
+
+	got, ok := s.cachedIPs("example.test")
+	if !ok || len(got) != 1 || !got[0].Equal(ip) {
+		t.Fatalf("cache hit = %v, %v", got, ok)
+	}
+	got[0][len(got[0])-1] ^= 0xff
+	again, _ := s.cachedIPs("example.test")
+	if !again[0].Equal(ip) {
+		t.Fatal("caller mutation reached the cached slice")
+	}
+
+	s.dnsMu.Lock()
+	entry := s.dnsCache["example.test"]
+	entry.expires = time.Now().Add(-time.Second)
+	s.dnsCache["example.test"] = entry
+	s.dnsMu.Unlock()
+	if _, ok := s.cachedIPs("example.test"); ok {
+		t.Fatal("expired cache entry was served")
+	}
+}
+
+func TestAgentMalformedPenaltyBox(t *testing.T) {
+	s := NewServer(Config{})
+	now := time.Now()
+	const ip = "198.51.100.10"
+	for i := 0; i < malformedThreshold; i++ {
+		s.noteMalformed(ip, now)
+	}
+	if !s.sourceBlocked(ip, now.Add(time.Second)) {
+		t.Fatal("source was not blocked after the threshold")
+	}
+	if s.sourceBlocked("198.51.100.11", now.Add(time.Second)) {
+		t.Fatal("unrelated source was blocked")
+	}
+	if s.sourceBlocked(ip, now.Add(floodCooldown+time.Second)) {
+		t.Fatal("cooldown did not expire")
+	}
+}
+
+func TestDialVettedFallsBackToReachableAddress(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+	// 127.0.0.2 is loopback but nothing is listening on that port, so the first
+	// address refuses and the second must win.
+	addrs := []net.IP{net.ParseIP("127.0.0.2"), net.ParseIP("127.0.0.1")}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, err := dialVetted(ctx, addrs, port)
+	if err != nil {
+		t.Fatalf("dialVetted: %v", err)
+	}
+	_ = conn.Close()
 }

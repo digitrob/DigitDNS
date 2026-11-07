@@ -53,6 +53,14 @@ The same release adds the v3 DNSSEC settings route, a compact Android card that
 opens with the real saved state, shared status-pill styling, and DNSSEC-aware
 cache keys so DO=0 clients never receive signature or denial records.
 
+**5.2.6 hardens the request paths and makes the hub→agent control plane responsive.**
+DNS, relay and upstream panics are contained instead of killing the daemon; the
+upstream breaker has a half-open state, cached JSON is gzip-negotiated, and the
+live query stream only opens on the Log tab. Agents long-poll the catalogue with
+ETag/304, so rule and client changes normally arrive in under a second, the online
+window is 90 seconds, and the agent relay caches target DNS, dials addresses in
+parallel and tunes TCP. Malformed proxy probes now enter a per-source penalty box.
+
 **5.2.5 makes the upstream health figures trustworthy and speeds up the hot paths.**
 Latency is now the median of real transport round trips rather than goroutine
 wall time, startup probes are counted separately, and the health dot follows the
@@ -280,7 +288,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.5/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.6/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -339,7 +347,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.5/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.6/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -422,7 +430,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.2.5` | Trustworthy upstream metrics, SNI relay splice and shared stats caches (latest) |
+| `5.2.6` | Panic containment, half-open upstream breaker, gzip JSON, hub↔agent long-poll and agent relay tuning (latest) |
+| `5.2.5` | Trustworthy upstream metrics, SNI relay splice and shared stats caches (older) |
 | `5.2.4` | SNI Refused counts actionable refusals only; malformed scanner probes are reported separately (older) |
 | `5.2.3` | Faster resolver and panel, Hedged upstreams, DoT/DoQ reuse, one-request history, SNI drop reasons and upstream circuit breaker (older) |
 | `5.2.2` | Optional IPv6 for proxied names and relay agents, Web/Android IPv6 controls, silent re-auth and compact Android cards (older) |
@@ -469,7 +478,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.2.5/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.6/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -897,7 +906,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.2.5`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.2.6`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

@@ -970,7 +970,9 @@ async function bootDashboard() {
   // client list here used to delay the first usable screen on every reload.
   handleRouteFromURL(true);
   startStatsPolling();
-  startLiveStream();
+  // The live stream is opened by switchTab only while the Live Log tab is on
+  // screen. Keeping it open on Home made every dashboard parse every query the
+  // resolver answered — pure CPU and battery for a screen nobody was reading.
   initHistory();
   initStatsSettings();
   initFiltering();
@@ -4082,8 +4084,14 @@ function startStatsPolling() {
     if (document.visibilityState === 'hidden') {
       clearTimeout(statsPollTimer);
       statsPollTimer = null;
+      // A hidden Live Log does not need the firehose; reconnect on return and
+      // let the server's history event refill the table.
+      if (activeDashTab === 'stream') stopLiveStream();
+      stopAgentPolling();
       return;
     }
+    if (activeDashTab === 'stream') startLiveStream();
+    if (activeDashTab === 'agents') startAgentPolling();
     if (statsPollTimer === null) pollStatsOnce();
     // Returning to a visible page while the stream tab is showing: the SSE
     // buffer kept growing hidden (per-query DOM work is skipped then — see
@@ -4365,9 +4373,10 @@ function renderProxyDrops(data) {
   const quota = data.relays_refused_quota || 0;
   const tableFull = data.relays_refused_table_full || 0;
   const resolveFailed = data.relays_refused_resolve || 0;
+  const flood = data.relays_refused_flood || 0;
   const unreadable = data.relays_unreadable || 0;
 
-  const breakdown = `Refused ${refused.toLocaleString()}: blocked ${blocked.toLocaleString()}, self ${selfDial.toLocaleString()}, quota ${quota.toLocaleString()}, table full ${tableFull.toLocaleString()}, resolve failed ${resolveFailed.toLocaleString()} · malformed probes ${malformed.toLocaleString()} (not counted)`;
+  const breakdown = `Refused ${refused.toLocaleString()}: blocked ${blocked.toLocaleString()}, self ${selfDial.toLocaleString()}, quota ${quota.toLocaleString()}, table full ${tableFull.toLocaleString()}, resolve failed ${resolveFailed.toLocaleString()}, flood ${flood.toLocaleString()} · malformed probes ${malformed.toLocaleString()} (not counted)`;
 
   if (refusedEl) {
     refusedEl.textContent = refused.toLocaleString();
@@ -4557,7 +4566,8 @@ function renderUpstreams(upstreams) {
       latTitle += ` · p95 ${Number(u.latency_p95_ms).toFixed(1)} ms`;
     }
     const errorParts = [];
-    if (u.circuit_open) errorParts.push('circuit open — retrying soon');
+    if (u.circuit_state === 'half-open') errorParts.push('half-open — probing one request');
+    else if (u.circuit_open) errorParts.push('circuit open — retrying soon');
     if (recentSamples > 0) {
       errorParts.push(`recent errors ${Math.round(recentRate * 100)}% of ${recentSamples}`);
     }
@@ -4629,6 +4639,9 @@ function renderUpstreams(upstreams) {
 // LIVE QUERY STREAM (SSE)
 // =======================================================
 async function startLiveStream() {
+  // Already connected (or connecting): switching to the tab again must not
+  // tear down and re-mint a ticket.
+  if (sseSource && sseSource.readyState !== EventSource.CLOSED) return;
   if (sseBackoffTimer) {
     clearTimeout(sseBackoffTimer);
     sseBackoffTimer = null;
@@ -7233,6 +7246,10 @@ function initServices() {
 // assigned directly, or inherit a service's default. The agent itself has no
 // certificate in this design: it reads SNI and forwards the encrypted stream.
 let agentsCache = [];
+// The agent cards carry live online/last-seen/sync state, so the tab refreshes
+// them on a slow beat while it is visible. It is not a 1 Hz dashboard poll: the
+// data changes at heartbeat speed.
+let agentPollTimer = null;
 // The agent whose inline edit form is open, so its card can stay highlighted.
 let agentEditingId = '';
 let agentCountrySelectReady = false;
@@ -7244,7 +7261,22 @@ const AGENT_COUNTRY_CODES = `ad ae af ag ai al am ao aq ar as at au aw ax az ba 
 
 function agentIsOnline(a) {
   if (!a || !a.enabled || !a.last_seen || String(a.last_seen).startsWith('0001')) return false;
-  return Date.now() - new Date(a.last_seen).getTime() < 120000;
+  // The server computes this with the same 90 s window the DNS router uses.
+  // Fall back to the old value only for an older hub.
+  if (typeof a.online === 'boolean') return a.online;
+  return Date.now() - new Date(a.last_seen).getTime() < 90000;
+}
+
+// agentSyncLabel turns the server's applied-revision age into the short string
+// shown on the card. A missing revision means the agent has not reported one
+// (older build) — not that it is broken.
+function agentSyncLabel(a) {
+  if (!a || !a.catalogue_revision) return '—';
+  const age = Number(a.sync_age_seconds);
+  if (!Number.isFinite(age) || age < 0) return '—';  if (age < 5) return 'just now';
+  if (age < 60) return `${Math.floor(age)}s ago`;
+  if (age < 3600) return `${Math.floor(age / 60)}m ago`;
+  return `${Math.floor(age / 3600)}h ago`;
 }
 
 function agentRelativeAge(iso) {
@@ -7365,6 +7397,23 @@ async function loadAgents() {
     if (currentConfig && document.getElementById('custom-proxied-rows')) renderProxiedList();
   } catch (e) {
     if (list) list.innerHTML = `<p class="text-xs text-red-400 py-2">Could not load agents: ${escapeHTML(e.message)}</p>`;
+  }
+}
+
+function startAgentPolling() {
+  if (agentPollTimer) return;
+  agentPollTimer = setInterval(() => {
+    if (activeDashTab !== 'agents' || document.visibilityState === 'hidden' || !authToken) return;
+    // A card being edited owns its inputs until the operator saves or cancels.
+    if (agentEditingId) return;
+    loadAgents();
+  }, 10000);
+}
+
+function stopAgentPolling() {
+  if (agentPollTimer) {
+    clearInterval(agentPollTimer);
+    agentPollTimer = null;
   }
 }
 
@@ -7522,6 +7571,7 @@ function renderAgents() {
             <div class="agent-card-side">
               <div class="agent-side-stat"><span>Version</span><strong title="${escapeHTML(a.version || '—')}">${escapeHTML(a.version || '—')}</strong></div>
               <div class="agent-side-stat"><span>Last Seen</span><strong>${escapeHTML(agentRelativeAge(a.last_seen))}</strong></div>
+              <div class="agent-side-stat"><span>Applied</span><strong title="${escapeHTML(a.catalogue_revision ? 'Applied ' + a.catalogue_revision + ' · ' + agentRelativeAge(a.catalogue_synced_at) : 'No revision reported yet')}">${escapeHTML(agentSyncLabel(a))}</strong></div>
               <div class="agent-side-stat is-domains"><span>Domains</span><strong>${assigned}</strong></div>
             </div>
           </div>
@@ -8004,6 +8054,15 @@ function switchTab(target, updateUrl = true, loadData = true) {
   if (targetEl) {
     targetEl.classList.remove('hidden');
     if (loadData) {
+      // The live query stream is a per-query firehose. Keep it open only while
+      // the Live Log is the visible tab; every other tab uses the 1 Hz stats
+      // poll. On a busy resolver this removes thousands of JSON parses a second
+      // from the browser and the matching marshals from the daemon.
+      if (target === 'stream') {
+        startLiveStream();
+      } else {
+        stopLiveStream();
+      }
       if (target === 'clients') {
         loadClients();
       }
@@ -8027,6 +8086,9 @@ function switchTab(target, updateUrl = true, loadData = true) {
       }
       if (target === 'agents') {
         loadAgents();
+        startAgentPolling();
+      } else {
+        stopAgentPolling();
       }
       if (target === 'filters') {
         loadFiltering();

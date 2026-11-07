@@ -958,6 +958,63 @@ func TestPolicyResponseIsReachableForHealth(t *testing.T) {
 	}
 }
 
+func TestCircuitBreakerHalfOpenAllowsOneProbe(t *testing.T) {
+	const addr = "192.0.2.1:53"
+	p := newTestPool(t, []string{addr}, time.Second, false, "")
+
+	for i := 0; i < circuitFailureThreshold; i++ {
+		p.recordStat(addr, time.Millisecond, statTransportError, "timeout", false)
+	}
+	if s := statFor(t, p, addr); !s.CircuitOpen || s.CircuitState != "open" {
+		t.Fatalf("circuit = open:%v state:%q, want open", s.CircuitOpen, s.CircuitState)
+	}
+
+	// Expire the cooldown without waiting for the jittered timer.
+	p.stats[addr].openUntil.Store(time.Now().Add(-time.Second).UnixNano())
+
+	if !p.upstreamAvailable(addr, time.Now()) {
+		t.Fatal("half-open did not release the first probe")
+	}
+	if p.upstreamAvailable(addr, time.Now()) {
+		t.Fatal("a second concurrent query also received the half-open probe")
+	}
+	if s := statFor(t, p, addr); s.CircuitState != "half-open" {
+		t.Fatalf("state = %q, want half-open", s.CircuitState)
+	}
+
+	// A successful probe closes the circuit and resets the streak.
+	p.recordStat(addr, 10*time.Millisecond, statSuccess, "", false)
+	s := statFor(t, p, addr)
+	if s.CircuitOpen || s.CircuitState != "closed" || s.ConsecutiveFailures != 0 {
+		t.Fatalf("after successful probe: open=%v state=%q failures=%d", s.CircuitOpen, s.CircuitState, s.ConsecutiveFailures)
+	}
+	if !p.upstreamAvailable(addr, time.Now()) {
+		t.Fatal("closed circuit still skipped the resolver")
+	}
+}
+
+func TestCircuitBreakerHalfOpenFailureReopens(t *testing.T) {
+	const addr = "192.0.2.1:53"
+	p := newTestPool(t, []string{addr}, time.Second, false, "")
+
+	for i := 0; i < circuitFailureThreshold; i++ {
+		p.recordStat(addr, time.Millisecond, statTransportError, "timeout", false)
+	}
+	p.stats[addr].openUntil.Store(time.Now().Add(-time.Second).UnixNano())
+	if !p.upstreamAvailable(addr, time.Now()) {
+		t.Fatal("half-open did not release the probe")
+	}
+
+	p.recordStat(addr, 50*time.Millisecond, statTransportError, "timeout", false)
+	s := statFor(t, p, addr)
+	if !s.CircuitOpen || s.CircuitState != "open" {
+		t.Fatalf("after failed probe: open=%v state=%q, want open", s.CircuitOpen, s.CircuitState)
+	}
+	if p.upstreamAvailable(addr, time.Now()) {
+		t.Fatal("a failed probe left the circuit available")
+	}
+}
+
 // TestExchangeTimesOutWithinBudget — a silent upstream must not hold a client past
 // the configured deadline, and the whole sequential walk shares that one budget.
 func TestExchangeTimesOutWithinBudget(t *testing.T) {
@@ -1390,7 +1447,7 @@ func TestBestKnownFallsThroughOnFailure(t *testing.T) {
 }
 
 func TestHedgedStartsTheNextAfterDelay(t *testing.T) {
-	slowFirst := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.31", delay: 250 * time.Millisecond}), nil)
+	slowFirst := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.31", delay: 500 * time.Millisecond}), nil)
 	fastSecond := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.32", delay: 5 * time.Millisecond}), nil)
 
 	p := newTestPool(t, []string{slowFirst.addr, fastSecond.addr}, 2*time.Second, false, "")
@@ -1412,7 +1469,7 @@ func TestHedgedStartsTheNextAfterDelay(t *testing.T) {
 	if addr != fastSecond.addr {
 		t.Fatalf("winning upstream = %s, want %s", addr, fastSecond.addr)
 	}
-	if elapsed >= 150*time.Millisecond {
+	if elapsed >= 300*time.Millisecond {
 		t.Fatalf("hedged result took %v; it waited for the slow first resolver", elapsed)
 	}
 }

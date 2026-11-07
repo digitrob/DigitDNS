@@ -450,6 +450,31 @@ func TestCopyIdleKeepsMeteredPathBuffered(t *testing.T) {
 	}
 }
 
+func TestMalformedPenaltyBox(t *testing.T) {
+	s := NewServer(database.SNIProxySettings{}, "127.0.0.1", "", nil)
+	now := time.Now()
+	const ip = "198.51.100.10"
+
+	for i := 0; i < malformedThreshold-1; i++ {
+		s.noteMalformed(ip, now)
+	}
+	if s.sourceBlocked(ip, now.Add(time.Second)) {
+		t.Fatal("source blocked before the threshold")
+	}
+
+	s.noteMalformed(ip, now)
+	if !s.sourceBlocked(ip, now.Add(time.Second)) {
+		t.Fatal("source not blocked after the threshold")
+	}
+	if s.sourceBlocked("198.51.100.11", now.Add(time.Second)) {
+		t.Fatal("an unrelated source was blocked")
+	}
+
+	if s.sourceBlocked(ip, now.Add(floodCooldown+time.Second)) {
+		t.Fatal("cooldown did not expire")
+	}
+}
+
 func newTCPPair(t *testing.T) (client, server *net.TCPConn) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

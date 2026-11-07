@@ -13,6 +13,7 @@ import (
 	"digitdns/internal/database"
 	"digitdns/internal/httpx"
 	"digitdns/internal/netutil"
+	"digitdns/internal/service"
 )
 
 // Geo agent endpoints.
@@ -27,6 +28,27 @@ import (
 
 const agentKeyHeader = "X-Agent-Key"
 
+// agentView is the panel shape of an agent: the stored record plus the two
+// fields that are derived from time. Computing them here keeps the dashboard's
+// online threshold in step with the DNS router's.
+type agentView struct {
+	database.Agent
+	Online         bool  `json:"online"`
+	SyncAgeSeconds int64 `json:"sync_age_seconds"`
+}
+
+func (ws *WebServer) agentView(a database.Agent) agentView {
+	view := agentView{Agent: a}
+	view.Online = a.Enabled && !a.LastSeen.IsZero() && time.Since(a.LastSeen) <= service.AgentOnlineFor
+	if !a.CatalogueSyncedAt.IsZero() {
+		view.SyncAgeSeconds = int64(time.Since(a.CatalogueSyncedAt).Seconds())
+		if view.SyncAgeSeconds < 0 {
+			view.SyncAgeSeconds = 0
+		}
+	}
+	return view
+}
+
 // handleAgents is the panel collection endpoint: GET lists, POST mints a
 // one-time enrolment token.
 func (ws *WebServer) handleAgents(w http.ResponseWriter, r *http.Request) {
@@ -37,11 +59,16 @@ func (ws *WebServer) handleAgents(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		if agents == nil {
-			agents = []database.Agent{}
+		views := make([]agentView, len(agents))
+		for i, a := range agents {
+			views[i] = ws.agentView(a)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"agents": agents})
+		body, err := json.Marshal(map[string]any{"agents": views})
+		if err != nil {
+			httpx.WriteJSONError(w, http.StatusInternalServerError, "could not encode agents")
+			return
+		}
+		httpx.WriteJSONBytes(w, r, http.StatusOK, body, "application/json")
 
 	case http.MethodPost:
 		var req struct {
@@ -329,11 +356,12 @@ func (ws *WebServer) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request
 	}
 
 	var req struct {
-		Version    string `json:"version"`
-		RelayPort  int    `json:"relay_port"`
-		BytesIn    uint64 `json:"bytes_in"`
-		BytesOut   uint64 `json:"bytes_out"`
-		PublicIPv6 string `json:"public_ipv6"`
+		Version           string `json:"version"`
+		RelayPort         int    `json:"relay_port"`
+		BytesIn           uint64 `json:"bytes_in"`
+		BytesOut          uint64 `json:"bytes_out"`
+		PublicIPv6        string `json:"public_ipv6"`
+		CatalogueRevision string `json:"catalogue_revision"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody)).Decode(&req); err != nil {
 		httpx.WriteJSONError(w, http.StatusBadRequest, "the request body could not be read as JSON")
@@ -345,14 +373,22 @@ func (ws *WebServer) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request
 	if publicIPv6 == "" {
 		publicIPv6 = clientIP(r)
 	}
-	if err := ws.db.TouchAgent(agent.ID, req.Version, clientIP(r), publicIPv6, req.RelayPort, req.BytesIn, req.BytesOut); err != nil {
+	if err := ws.db.TouchAgent(agent.ID, req.Version, clientIP(r), publicIPv6, req.RelayPort, req.BytesIn, req.BytesOut, req.CatalogueRevision); err != nil {
 		httpx.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ws.refreshRelayAgents()
+	// Update just this agent in the live router. Reloading every agent on every
+	// heartbeat was O(agents) DB reads and map rebuilds per beat; the next DNS
+	// answer still sees this agent's new address and liveness.
+	if ws.relayRouter != nil {
+		if updated, err := ws.db.GetAgent(agent.ID); err == nil {
+			ws.relayRouter.UpdateAgent(updated)
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"ipv6_enabled": ws.agentIPv6Effective(agent),
+		"ipv6_enabled":    ws.agentIPv6Effective(agent),
+		"config_revision": ws.agentRevision(),
 	})
 }
 
@@ -370,7 +406,76 @@ func (ws *WebServer) handleAgentCatalogue(w http.ResponseWriter, r *http.Request
 		httpx.WriteJSONError(w, http.StatusUnauthorized, "agent key is not valid")
 		return
 	}
+	ws.agentCatRequests.Add(1)
 
+	etag := ws.agentRevision()
+	ifNone := strings.TrimSpace(r.Header.Get("If-None-Match"))
+	wait := 0
+	if ifNone != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("wait"))); err == nil {
+			wait = n
+		}
+		if wait > 25 {
+			wait = 25
+		}
+		if wait < 0 {
+			wait = 0
+		}
+	}
+	deadline := time.Now().Add(time.Duration(wait) * time.Second)
+
+	for {
+		if ifNone != etag {
+			// Re-read the agent: its country or IPv6 policy may have changed
+			// while this request was parked in the long-poll.
+			fresh, err := ws.db.GetAgent(agent.ID)
+			if err != nil {
+				httpx.WriteJSONError(w, http.StatusUnauthorized, "agent key is not valid")
+				return
+			}
+			cat, err := ws.buildAgentCatalogue(fresh)
+			if err != nil {
+				httpx.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			body, err := json.Marshal(cat)
+			if err != nil {
+				httpx.WriteJSONError(w, http.StatusInternalServerError, "could not encode catalogue")
+				return
+			}
+			w.Header().Set("ETag", etag)
+			w.Header().Set("Cache-Control", "no-cache")
+			httpx.WriteJSONBytes(w, r, http.StatusOK, body, "application/json")
+			return
+		}
+
+		remaining := time.Until(deadline)
+		if wait == 0 || remaining <= 0 {
+			ws.agentCatNotMod.Add(1)
+			w.Header().Set("ETag", etag)
+			w.Header().Set("Cache-Control", "no-cache")
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		// A 10-second safety tick means a missed notification delays a change by
+		// seconds rather than until the next scheduled sync. The revision check
+		// itself is a single atomic load.
+		tick := remaining
+		if tick > 10*time.Second {
+			tick = 10 * time.Second
+		}
+		ws.agentNotify.wait(r.Context(), tick)
+		if r.Context().Err() != nil {
+			return
+		}
+		etag = ws.agentRevision()
+	}
+}
+
+// buildAgentCatalogue computes the allowlists and policy for one agent. It is
+// deliberately separate from the HTTP handler so the ETag/304 fast path can
+// avoid this work entirely.
+func (ws *WebServer) buildAgentCatalogue(agent database.Agent) (agentCatalogue, error) {
 	rules := ws.loadRulesConfig()
 	domainAgents, _ := rules["domain_agents"].(map[string]string)
 	serviceAgents, _ := rules["service_agents"].(map[string]string)
@@ -430,19 +535,16 @@ func (ws *WebServer) handleAgentCatalogue(w http.ResponseWriter, r *http.Request
 
 	clients, err := ws.panelClientIPs()
 	if err != nil {
-		httpx.WriteJSONError(w, http.StatusInternalServerError, err.Error())
-		return
+		return agentCatalogue{}, err
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(agentCatalogue{
+	return agentCatalogue{
 		AgentID:     agent.ID,
 		Country:     agent.Country,
 		Hosts:       hosts,
 		Clients:     clients,
 		SyncedAt:    time.Now().UTC().Format(time.RFC3339),
 		IPv6Enabled: ws.agentIPv6Effective(agent),
-	})
+	}, nil
 }
 
 // handleAgentTest performs the operator-facing connection test: a TCP connect

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -74,17 +75,71 @@ type Catalogue struct {
 }
 
 // HeartbeatState is the hub's reply to a heartbeat: the effective IPv6 policy
-// for this agent. Pointer for the same old-hub compatibility reason.
+// for this agent, plus the current config revision so an agent whose long-poll
+// dropped can notice it is behind without waiting for the next full sync.
 type HeartbeatState struct {
-	IPv6Enabled *bool `json:"ipv6_enabled"`
+	IPv6Enabled    *bool  `json:"ipv6_enabled"`
+	ConfigRevision string `json:"config_revision"`
 }
 
 // Fetch pulls the allowlists. A 401 is reported as ErrHubRejected so the caller
-// can stop retrying with a key that will never work.
+// can stop retrying with a key that will never work. It is the unconditional
+// form used by tests and old callers; the agent loop uses FetchConditional.
 func (h *Hub) Fetch(key string) (Catalogue, error) {
+	cat, _, _, err := h.FetchConditional(context.Background(), key, "", 0)
+	return cat, err
+}
+
+// FetchConditional performs a catalogue request with an ETag and an optional
+// long-poll wait. It returns the catalogue, the response ETag, and whether the
+// hub answered 304 (in which case the caller's cached copy is still current).
+//
+// A wait longer than zero needs its own client timeout: the shared client's 15 s
+// deadline is shorter than the poll itself.
+func (h *Hub) FetchConditional(ctx context.Context, key, etag string, wait time.Duration) (Catalogue, string, bool, error) {
+	path := "/agent/catalogue"
+	if wait > 0 {
+		path += fmt.Sprintf("?wait=%d", int(wait/time.Second))
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.BaseURL+path, nil)
+	if err != nil {
+		return Catalogue{}, "", false, err
+	}
+	req.Header.Set("X-Agent-Key", key)
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
+
+	client := h.HTTP
+	if wait > 0 {
+		clone := *h.HTTP
+		clone.Timeout = wait + 10*time.Second
+		client = &clone
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return Catalogue{}, "", false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotModified {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		if next := resp.Header.Get("ETag"); next != "" {
+			etag = next
+		}
+		return Catalogue{}, etag, true, nil
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return Catalogue{}, "", false, ErrHubRejected
+	}
+	if resp.StatusCode >= 300 {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return Catalogue{}, "", false, fmt.Errorf("hub %s: %s", req.URL.Path, bytes.TrimSpace(msg))
+	}
 	var out Catalogue
-	if err := h.get("/agent/catalogue", key, &out); err != nil {
-		return Catalogue{}, err
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return Catalogue{}, "", false, err
 	}
 	if out.Hosts == nil {
 		out.Hosts = []string{}
@@ -92,19 +147,20 @@ func (h *Hub) Fetch(key string) (Catalogue, error) {
 	if out.Clients == nil {
 		out.Clients = []string{}
 	}
-	return out, nil
+	return out, resp.Header.Get("ETag"), false, nil
 }
 
 // Heartbeat reports liveness, traffic totals and the agent's public IPv6, and
 // returns the hub's effective IPv6 policy. An empty publicIPv6 tells the hub
 // nothing new; it must not erase an operator's manual value.
-func (h *Hub) Heartbeat(key, version string, relayPort int, in, out uint64, publicIPv6 string) (HeartbeatState, error) {
+func (h *Hub) Heartbeat(key, version string, relayPort int, in, out uint64, publicIPv6, catalogueRevision string) (HeartbeatState, error) {
 	body := map[string]any{
-		"version":     version,
-		"relay_port":  relayPort,
-		"bytes_in":    in,
-		"bytes_out":   out,
-		"public_ipv6": publicIPv6,
+		"version":            version,
+		"relay_port":         relayPort,
+		"bytes_in":           in,
+		"bytes_out":          out,
+		"public_ipv6":        publicIPv6,
+		"catalogue_revision": catalogueRevision,
 	}
 	var state HeartbeatState
 	if err := h.post("/agent/heartbeat", key, body, &state); err != nil {
@@ -169,6 +225,9 @@ type State struct {
 	Hosts    []string  `json:"hosts"`
 	Clients  []string  `json:"clients"`
 	SyncedAt time.Time `json:"synced_at"`
+	// CatalogueETag is the hub revision this catalogue was fetched at. A restart
+	// can revalidate instead of downloading the same allowlists again.
+	CatalogueETag string `json:"catalogue_etag,omitempty"`
 	// IPv6Enabled caches the last effective hub policy. A hub outage must not
 	// make an agent that the operator switched off start listening on IPv6
 	// again; a zero value from an old state file therefore means IPv4-only.

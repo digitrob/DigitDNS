@@ -16,6 +16,7 @@ import (
 	"digitdns/internal/core/upstream"
 	"digitdns/internal/database"
 	"digitdns/internal/netutil"
+	"digitdns/internal/safego"
 	"github.com/miekg/dns"
 )
 
@@ -330,6 +331,15 @@ func (h *Handler) TotalQueries() uint64 {
 	return h.totalQueries.Load()
 }
 
+// Proxy answer TTLs. The hub's own egress is stable, so it can be cached for a
+// minute. A geo agent is a remote box that can disappear: a shorter TTL lets a
+// client move to a healthy egress without waiting out the two-minute liveness
+// window plus a full minute of resolver cache.
+const (
+	localProxyAnswerTTL uint32 = 60
+	agentProxyAnswerTTL uint32 = 30
+)
+
 func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	h.serve(w, r, "")
 }
@@ -345,6 +355,25 @@ func (h *Handler) ServeWithProto(proto string) dns.Handler {
 }
 
 func (h *Handler) serve(w dns.ResponseWriter, r *dns.Msg, proto string) {
+	// One malformed message must cost one SERVFAIL, not the whole resolver.
+	// net/http recovers per request; the DNS server does not, and a panic in
+	// this goroutine terminates the process.
+	defer func() {
+		if rec := recover(); rec != nil {
+			safego.Handle("dns.ServeDNS", rec)
+			if w == nil || r == nil {
+				return
+			}
+			// Best effort: a writer that panics on the failure reply must not
+			// turn the containment into a second panic.
+			func() {
+				defer func() { _ = recover() }()
+				fail := new(dns.Msg)
+				fail.SetRcode(r, dns.RcodeServerFailure)
+				_ = w.WriteMsg(fail)
+			}()
+		}
+	}()
 	clientIP, _, _ := net.SplitHostPort(w.RemoteAddr().String())
 	if clientIP == "" {
 		clientIP = w.RemoteAddr().String()
@@ -774,9 +803,13 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			}
 			m := new(dns.Msg)
 			m.SetReply(r)
+			ttl := localProxyAnswerTTL
+			if agentAssigned {
+				ttl = agentProxyAnswerTTL
+			}
 			// The relay router publishes already-parsed addresses, so the query
 			// path neither re-parses the same literal nor allocates for it.
-			rr := makeARecord(q.Name, 60, targetIPv4)
+			rr := makeARecord(q.Name, ttl, targetIPv4)
 			if rr == nil {
 				// Unreachable while SetPublicIP validates and the relay router
 				// only publishes parsed addresses, but a distinct action here
@@ -799,7 +832,11 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			m := new(dns.Msg)
 			m.SetReply(r)
 			if len(targetIPv6) != 0 {
-				if rr := makeAAAARecord(q.Name, 60, targetIPv6); rr != nil {
+				ttl := localProxyAnswerTTL
+				if agentAssigned {
+					ttl = agentProxyAnswerTTL
+				}
+				if rr := makeAAAARecord(q.Name, ttl, targetIPv6); rr != nil {
 					m.Answer = append(m.Answer, rr)
 					h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, m.Rcode)
 					return m

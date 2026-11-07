@@ -561,6 +561,10 @@ func (a *API) handleV2Stats(w http.ResponseWriter, r *http.Request) {
 	}
 	const contentType = "application/json"
 	a.statsCache.Set("v2/stats", buf.Bytes(), contentType)
+	if entry, ok := a.statsCache.Get("v2/stats"); ok {
+		httpx.WriteCached(w, r, entry)
+		return
+	}
 	httpx.WriteCached(w, r, httpx.CachedResponse{Body: buf.Bytes(), ContentType: contentType})
 }
 

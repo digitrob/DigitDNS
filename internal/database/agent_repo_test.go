@@ -126,7 +126,7 @@ func TestAgentListTouchDisableDelete(t *testing.T) {
 		t.Fatalf("enrol: %v", err)
 	}
 
-	if err := db.TouchAgent(agent.ID, "1.0.1", "91.0.0.1", "2001:db8::5", 443, 100, 200); err != nil {
+	if err := db.TouchAgent(agent.ID, "1.0.1", "91.0.0.1", "2001:db8::5", 443, 100, 200, ""); err != nil {
 		t.Fatalf("touch: %v", err)
 	}
 	got, err := db.GetAgent(agent.ID)

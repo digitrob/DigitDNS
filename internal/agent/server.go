@@ -13,15 +13,29 @@ import (
 	"time"
 
 	"digitdns/internal/core/proxy"
+	"digitdns/internal/safego"
 )
 
 const (
 	// handshakeTimeout bounds how long a client may take to say what it wants.
 	// Without it a half-open connection holds a goroutine and a slot for free.
-	handshakeTimeout = 10 * time.Second
+	handshakeTimeout = 5 * time.Second
 	// idleTimeout closes a relay whose two directions have both gone quiet.
 	idleTimeout      = 2 * time.Minute
 	handshakeBufSize = 16 * 1024
+	// maxConcurrentRelays caps the public agent the same way the hub's SNI proxy
+	// caps itself. Without a ceiling, a connection flood is a file-descriptor
+	// exhaustion primitive against a box an operator does not control.
+	maxConcurrentRelays = 2048
+	// Target DNS cache. Agents relay to a small set of hosts; resolving each one
+	// on every connection was a system-resolver round trip on the setup path.
+	dnsCacheTTL = 60 * time.Second
+	dnsCacheMax = 1024
+	// Malformed-probe penalty box, mirroring the hub's.
+	malformedWindow    = time.Minute
+	malformedThreshold = 8
+	floodCooldown      = time.Minute
+	floodMapLimit      = 10000
 )
 
 // ErrNoDestination is returned when the opening bytes name no host — not TLS,
@@ -87,6 +101,27 @@ type Server struct {
 	// from the host allowlist makes the summary honest.
 	refusedIP atomic.Uint64
 	refusals  *refusalLog
+	// slots bounds concurrent relays.
+	slots chan struct{}
+	// dnsMu guards the target-host cache. It is deliberately small and bounded:
+	// a public agent may be asked to relay any name in its allowlist.
+	dnsMu    sync.Mutex
+	dnsCache map[string]dnsCacheEntry
+	// guardMu guards the per-source malformed-probe penalty box.
+	guardMu        sync.Mutex
+	guard          map[string]*sourcePenalty
+	guardLastSweep time.Time
+}
+
+type dnsCacheEntry struct {
+	ips     []net.IP
+	expires time.Time
+}
+
+type sourcePenalty struct {
+	malformed    int
+	windowStart  time.Time
+	blockedUntil time.Time
 }
 
 // NewServer builds a relay from a config.
@@ -103,6 +138,9 @@ func NewServer(cfg Config) *Server {
 		clients:  NewClientList(cfg.Clients),
 		counters: NewCounters(),
 		refusals: newRefusalLog(time.Minute, time.Now),
+		slots:    make(chan struct{}, maxConcurrentRelays),
+		dnsCache: make(map[string]dnsCacheEntry),
+		guard:    make(map[string]*sourcePenalty),
 	}
 }
 
@@ -301,6 +339,72 @@ func (s *Server) logRefusal(key, format string, args ...any) {
 	log.Printf(format, args...)
 }
 
+func (s *Server) sourceBlocked(ip string, now time.Time) bool {
+	s.guardMu.Lock()
+	defer s.guardMu.Unlock()
+	g := s.guard[ip]
+	if g == nil {
+		return false
+	}
+	if now.Before(g.blockedUntil) {
+		return true
+	}
+	if !g.blockedUntil.IsZero() {
+		g.blockedUntil = time.Time{}
+		g.malformed = 0
+		g.windowStart = now
+	}
+	return false
+}
+
+func (s *Server) noteMalformed(ip string, now time.Time) {
+	s.guardMu.Lock()
+	defer s.guardMu.Unlock()
+	if s.guard == nil {
+		s.guard = make(map[string]*sourcePenalty)
+	}
+	g := s.guard[ip]
+	if g == nil {
+		g = &sourcePenalty{windowStart: now}
+		s.guard[ip] = g
+	}
+	if now.Sub(g.windowStart) > malformedWindow {
+		g.malformed = 0
+		g.windowStart = now
+	}
+	g.malformed++
+	if g.malformed >= malformedThreshold {
+		g.blockedUntil = now.Add(floodCooldown)
+		g.malformed = 0
+		log.Printf("[agent] blocking %s for %s after repeated malformed handshakes", ip, floodCooldown)
+	}
+	if now.Sub(s.guardLastSweep) < malformedWindow {
+		return
+	}
+	s.guardLastSweep = now
+	for key, entry := range s.guard {
+		if now.Sub(entry.windowStart) > 2*malformedWindow && now.After(entry.blockedUntil) {
+			delete(s.guard, key)
+		}
+	}
+	for key := range s.guard {
+		if len(s.guard) <= floodMapLimit {
+			break
+		}
+		delete(s.guard, key)
+	}
+}
+
+// handshakeBufPool reuses the 16 KiB opening-message buffer. A public agent
+// sees a steady stream of new connections, and allocating that per connection
+// was pure GC pressure on the relay itself.
+var handshakeBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, handshakeBufSize)
+		return &b
+	},
+}
+
 func (s *Server) acceptLoop(ln net.Listener) {
 	for {
 		conn, err := ln.Accept()
@@ -313,9 +417,16 @@ func (s *Server) acceptLoop(ln net.Listener) {
 
 func (s *Server) handle(clientConn net.Conn) {
 	defer clientConn.Close()
+	defer safego.Recover("agent.handle")
+	tuneTCP(clientConn)
 
 	remoteIP, _, _ := net.SplitHostPort(clientConn.RemoteAddr().String())
 	ip := net.ParseIP(remoteIP)
+
+	if s.sourceBlocked(remoteIP, time.Now()) {
+		s.refused.Add(1)
+		return
+	}
 
 	// The client check comes first, before a byte is read or a slot is taken: a
 	// stranger who found the address costs one ParseIP and a close.
@@ -325,9 +436,21 @@ func (s *Server) handle(clientConn net.Conn) {
 		return
 	}
 
-	buf := make([]byte, handshakeBufSize)
+	// Bound the public relay before paying for a handshake read.
+	select {
+	case s.slots <- struct{}{}:
+		defer func() { <-s.slots }()
+	default:
+		s.refused.Add(1)
+		return
+	}
+
+	bufPtr := handshakeBufPool.Get().(*[]byte)
+	defer handshakeBufPool.Put(bufPtr)
+	buf := *bufPtr
 	n, err := readHandshake(clientConn, buf)
 	if err != nil || n == 0 {
+		s.noteMalformed(remoteIP, time.Now())
 		s.logRefusal("handshake|"+remoteIP, "[agent] %s: no handshake (%d bytes, %v)", remoteIP, n, err)
 		return
 	}
@@ -335,6 +458,7 @@ func (s *Server) handle(clientConn net.Conn) {
 	host, isTLS, err := destination(buf[:n])
 	if err != nil {
 		s.nohost.Add(1)
+		s.noteMalformed(remoteIP, time.Now())
 		s.logRefusal("nohost|"+remoteIP, "[agent] %s: no readable destination in %d bytes (%v)", remoteIP, n, err)
 		return
 	}
@@ -390,8 +514,16 @@ func (s *Server) handle(clientConn net.Conn) {
 
 	started := time.Now()
 	done := make(chan struct{}, 2)
-	go func() { _, _ = io.Copy(targetConn, up); done <- struct{}{} }()
-	go func() { _, _ = io.Copy(clientConn, down); done <- struct{}{} }()
+	go func() {
+		defer func() { done <- struct{}{} }()
+		defer safego.Recover("agent.relay.send")
+		_, _ = io.Copy(targetConn, up)
+	}()
+	go func() {
+		defer func() { done <- struct{}{} }()
+		defer safego.Recover("agent.relay.recv")
+		_, _ = io.Copy(clientConn, down)
+	}()
 
 	select {
 	case <-done:
@@ -414,43 +546,165 @@ func (s *Server) handle(clientConn net.Conn) {
 // rebinding, or simply an internal hostname in the list) cannot turn the agent
 // into an SSRF pivot.
 func (s *Server) dial(host string, isTLS bool) (net.Conn, error) {
-	ctx := &net.Dialer{Timeout: 10 * time.Second}
 	port := s.cfg.HTTPPort
 	if isTLS {
 		port = s.cfg.HTTPSPort
 	}
 
 	if s.cfg.AllowPrivate {
-		return ctx.Dial("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
+		conn, err := (&net.Dialer{Timeout: 10 * time.Second}).Dial("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
+		if err == nil {
+			tuneTCP(conn)
+		}
+		return conn, err
 	}
 
-	// A context is required here: LookupIPAddr dereferences it, so a nil one
-	// panics the whole process on the first relay rather than failing the
-	// connection.
-	lookupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	addrs, err := s.resolveHost(host)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	return dialVetted(ctx, addrs, port)
+}
 
-	addrs, err := net.DefaultResolver.LookupIPAddr(lookupCtx, host)
+// resolveHost resolves a target name through the small cache. Every result is
+// checked for private addresses before it is used or cached.
+func (s *Server) resolveHost(host string) ([]net.IP, error) {
+	if ips, ok := s.cachedIPs(host); ok {
+		return ips, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		return nil, fmt.Errorf("resolve %s: %w", host, err)
 	}
+	out := make([]net.IP, 0, len(addrs))
 	for _, addr := range addrs {
 		if isPrivate(addr.IP) {
 			return nil, fmt.Errorf("%s resolves to a private address", host)
 		}
+		out = append(out, addr.IP)
 	}
-	var lastErr error
-	for _, addr := range addrs {
-		conn, err := ctx.Dial("tcp", net.JoinHostPort(addr.IP.String(), fmt.Sprint(port)))
-		if err == nil {
-			return conn, nil
+	if len(out) == 0 {
+		return nil, fmt.Errorf("resolve %s: no addresses", host)
+	}
+	s.storeIPs(host, out)
+	return out, nil
+}
+
+func (s *Server) cachedIPs(host string) ([]net.IP, bool) {
+	s.dnsMu.Lock()
+	defer s.dnsMu.Unlock()
+	entry, ok := s.dnsCache[host]
+	if !ok {
+		return nil, false
+	}
+	if time.Now().After(entry.expires) {
+		delete(s.dnsCache, host)
+		return nil, false
+	}
+	out := make([]net.IP, len(entry.ips))
+	for i, ip := range entry.ips {
+		out[i] = append(net.IP(nil), ip...)
+	}
+	return out, true
+}
+
+func (s *Server) storeIPs(host string, ips []net.IP) {
+	s.dnsMu.Lock()
+	defer s.dnsMu.Unlock()
+	if len(s.dnsCache) >= dnsCacheMax {
+		now := time.Now()
+		for key, entry := range s.dnsCache {
+			if now.After(entry.expires) {
+				delete(s.dnsCache, key)
+			}
 		}
-		lastErr = err
+		for key := range s.dnsCache {
+			if len(s.dnsCache) < dnsCacheMax {
+				break
+			}
+			delete(s.dnsCache, key)
+		}
 	}
-	if lastErr == nil {
-		lastErr = errors.New("no addresses")
+	copied := make([]net.IP, len(ips))
+	for i, ip := range ips {
+		copied[i] = append(net.IP(nil), ip...)
 	}
-	return nil, lastErr
+	s.dnsCache[host] = dnsCacheEntry{ips: copied, expires: time.Now().Add(dnsCacheTTL)}
+}
+
+// dialVetted races the vetted addresses with a short stagger. Trying them
+// strictly in resolver order meant an unreachable first address could hold the
+// client for the full 10-second dial timeout before the second was even tried.
+func dialVetted(ctx context.Context, addrs []net.IP, port int) (net.Conn, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type result struct {
+		conn net.Conn
+		err  error
+	}
+	ch := make(chan result, len(addrs))
+	for i, ip := range addrs {
+		go func(index int, addr net.IP) {
+			if index > 0 {
+				select {
+				case <-time.After(time.Duration(index) * 200 * time.Millisecond):
+				case <-ctx.Done():
+					return
+				}
+			}
+			dialer := &net.Dialer{Timeout: 3 * time.Second}
+			conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(addr.String(), fmt.Sprint(port)))
+			if err != nil {
+				select {
+				case ch <- result{err: err}:
+				case <-ctx.Done():
+				}
+				return
+			}
+			tuneTCP(conn)
+			select {
+			case ch <- result{conn: conn}:
+			case <-ctx.Done():
+				_ = conn.Close()
+			}
+		}(i, ip)
+	}
+
+	var firstErr error
+	for range addrs {
+		select {
+		case res := <-ch:
+			if res.err == nil {
+				cancel()
+				return res.conn, nil
+			}
+			if firstErr == nil {
+				firstErr = res.err
+			}
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if firstErr == nil {
+		firstErr = errors.New("no addresses")
+	}
+	return nil, firstErr
+}
+
+// tuneTCP removes Nagle's algorithm from both sides of a relay. A TLS
+// ClientHello or an HTTP request is a small write, and Nagle plus delayed ACK
+// can add tens of milliseconds to the very handshake the client is waiting on.
+func tuneTCP(conn net.Conn) {
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetNoDelay(true)
+		_ = tc.SetKeepAlive(true)
+		_ = tc.SetKeepAlivePeriod(30 * time.Second)
+	}
 }
 
 func isPrivate(ip net.IP) bool {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"digitdns/internal/database"
+	"digitdns/internal/safego"
 )
 
 const (
@@ -51,6 +52,13 @@ const (
 	// balancer's TCP health check, which connects and says nothing — fill the log,
 	// so the event is sampled instead of dropped or reported in full.
 	unreadableLogSample = 64
+	// Malformed-probe penalty box. Eight bad handshakes in a minute is far
+	// above anything a real client produces, and dropping that source for a
+	// minute stops a scanner before it can park relay slots in handshake reads.
+	malformedWindow    = time.Minute
+	malformedThreshold = 8
+	floodCooldown      = time.Minute
+	floodMapLimit      = 10000
 )
 
 var (
@@ -130,9 +138,15 @@ type Server struct {
 	refusedQuota     atomic.Uint64
 	refusedTableFull atomic.Uint64
 	refusedResolve   atomic.Uint64
-	listeners        []net.Listener
-	mu               sync.Mutex
-	cancel           context.CancelFunc
+	refusedFlood     atomic.Uint64
+	// floodMu guards flood, the per-source malformed-probe penalty box. It is
+	// separate from mu, which guards listener lifecycle.
+	floodMu        sync.Mutex
+	flood          map[string]*sourceGuard
+	floodLastSweep time.Time
+	listeners      []net.Listener
+	mu             sync.Mutex
+	cancel         context.CancelFunc
 
 	guard *targetGuard
 	// slots is a counting semaphore: a relay takes one for its lifetime.
@@ -158,11 +172,87 @@ func NewServer(
 		access:   access,
 		guard:    newTargetGuard(),
 		slots:    make(chan struct{}, maxConcurrentRelays),
+		flood:    make(map[string]*sourceGuard),
 	}
 	if m, ok := access.(TrafficMeter); ok {
 		s.meter = m
 	}
 	return s
+}
+
+// sourceGuard is the per-source malformed-probe state. It is deliberately
+// tiny: a scanner is identified by behaviour, not by an account.
+type sourceGuard struct {
+	malformed    int
+	windowStart  time.Time
+	blockedUntil time.Time
+}
+
+// sourceBlocked reports whether a source is in its penalty cooldown. It also
+// expires the cooldown so the next connection is treated normally.
+func (s *Server) sourceBlocked(ip string, now time.Time) bool {
+	s.floodMu.Lock()
+	defer s.floodMu.Unlock()
+	g := s.flood[ip]
+	if g == nil {
+		return false
+	}
+	if now.Before(g.blockedUntil) {
+		return true
+	}
+	if !g.blockedUntil.IsZero() {
+		// The cooldown has expired: start the next window clean.
+		g.blockedUntil = time.Time{}
+		g.malformed = 0
+		g.windowStart = now
+	}
+	return false
+}
+
+// noteMalformed records one malformed handshake from a source. The source is
+// blocked after malformedThreshold within malformedWindow; a single scanner
+// hitting a public port must not be able to consume the relay table by opening
+// one slow handshake after another.
+func (s *Server) noteMalformed(ip string, now time.Time) {
+	s.floodMu.Lock()
+	defer s.floodMu.Unlock()
+	if s.flood == nil {
+		s.flood = make(map[string]*sourceGuard)
+	}
+	g := s.flood[ip]
+	if g == nil {
+		g = &sourceGuard{windowStart: now}
+		s.flood[ip] = g
+	}
+	if now.Sub(g.windowStart) > malformedWindow {
+		g.malformed = 0
+		g.windowStart = now
+	}
+	g.malformed++
+	if g.malformed >= malformedThreshold {
+		g.blockedUntil = now.Add(floodCooldown)
+		g.malformed = 0
+		log.Printf("[SNI Proxy] Blocking %s for %s after repeated malformed probes", ip, floodCooldown)
+	}
+
+	// Sweep rarely, not on every probe: expired entries would otherwise be a
+	// slow memory leak on a public port. The hard cap protects against a
+	// spoofed-source flood rotating through addresses.
+	if now.Sub(s.floodLastSweep) < malformedWindow {
+		return
+	}
+	s.floodLastSweep = now
+	for key, entry := range s.flood {
+		if now.Sub(entry.windowStart) > 2*malformedWindow && now.After(entry.blockedUntil) {
+			delete(s.flood, key)
+		}
+	}
+	for key := range s.flood {
+		if len(s.flood) <= floodMapLimit {
+			break
+		}
+		delete(s.flood, key)
+	}
 }
 
 // idleTimeout is the per-direction inactivity deadline for a relay.
@@ -300,6 +390,17 @@ func readHandshake(conn net.Conn, buf []byte, isTLS bool) (int, error) {
 // on any other port cannot be proxied by this daemon at all.
 func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTLS bool, listenPort int) {
 	defer clientConn.Close()
+	defer safego.Recover("sni.handleConnection")
+
+	clientIP, _, _ := net.SplitHostPort(clientConn.RemoteAddr().String())
+	// A source that has produced repeated malformed handshakes is dropped before
+	// it can consume a handshake read or a relay slot. This is a penalty box,
+	// not a rate limit: a source that behaves normally never enters it.
+	if s.sourceBlocked(clientIP, time.Now()) {
+		s.refused.Add(1)
+		s.refusedFlood.Add(1)
+		return
+	}
 
 	tuneTCP(clientConn)
 
@@ -341,7 +442,6 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 	// IsIPAllowed reports true for everyone — because a recognised account still
 	// has to be metered and quota-checked. An unknown source in that mode gets a
 	// nil client and is relayed unmetered, which is what allow_all means.
-	clientIP, _, _ := net.SplitHostPort(clientConn.RemoteAddr().String())
 	var client *database.Client
 	if s.access != nil {
 		c, allowed := s.access.IsIPAllowed(clientIP)
@@ -417,6 +517,7 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 				"a name resolving here whose traffic is not %s cannot be relayed",
 				listenPort, clientIP, describeProto(isTLS), openingBytes(buf[:n]), describeProto(isTLS))
 		}
+		s.noteMalformed(clientIP, time.Now())
 		return
 	}
 
@@ -433,6 +534,7 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 			// Scanner noise, not a relay decision. Keep it visible in the detail
 			// counter but do not make the Refused total climb.
 			s.refusedMalformed.Add(1)
+			s.noteMalformed(clientIP, time.Now())
 		case errors.Is(err, ErrTargetBlocked):
 			s.refused.Add(1)
 			s.refusedBlocked.Add(1)
@@ -532,6 +634,10 @@ func (s *Server) relay(clientConn, targetConn net.Conn, idle time.Duration, repo
 
 	go func() {
 		defer wg.Done()
+		// Half-close even when the copy panics: the peer must see EOF rather
+		// than a connection that is only closed when the other direction ends.
+		defer closeWrite(targetConn)
+		defer safego.Recover("sni.relay.send")
 		// A metered relay needs the userspace buffer; the unmetered splice path
 		// does not, so do not reserve 64 KiB per direction for nothing.
 		var buf []byte
@@ -541,11 +647,12 @@ func (s *Server) relay(clientConn, targetConn net.Conn, idle time.Duration, repo
 			buf = *b
 		}
 		s.bytesSent.Add(copyIdle(targetConn, clientConn, buf, idle, report))
-		closeWrite(targetConn)
 	}()
 
 	go func() {
 		defer wg.Done()
+		defer closeWrite(clientConn)
+		defer safego.Recover("sni.relay.recv")
 		var buf []byte
 		if report != nil {
 			b := relayBufPool.Get().(*[]byte)
@@ -553,7 +660,6 @@ func (s *Server) relay(clientConn, targetConn net.Conn, idle time.Duration, repo
 			buf = *b
 		}
 		s.bytesRecv.Add(copyIdle(clientConn, targetConn, buf, idle, report))
-		closeWrite(clientConn)
 	}()
 
 	wg.Wait()
@@ -734,8 +840,8 @@ func (s *Server) GuardStats() (refused, unreadable uint64) {
 }
 
 // GuardStatsDetail is GuardStats plus the refusal reasons. Blocked, Self, Quota,
-// TableFull and ResolveFailed sum to Refused. Malformed is separate scanner noise
-// and is deliberately not part of Refused.
+// TableFull, ResolveFailed and Flood sum to Refused. Malformed is separate
+// scanner noise and is deliberately not part of Refused.
 type GuardStatsDetail struct {
 	Refused       uint64
 	Unreadable    uint64
@@ -745,6 +851,7 @@ type GuardStatsDetail struct {
 	Quota         uint64
 	TableFull     uint64
 	ResolveFailed uint64
+	Flood         uint64
 }
 
 func (s *Server) GuardStatsDetail() GuardStatsDetail {
@@ -757,5 +864,6 @@ func (s *Server) GuardStatsDetail() GuardStatsDetail {
 		Quota:         s.refusedQuota.Load(),
 		TableFull:     s.refusedTableFull.Load(),
 		ResolveFailed: s.refusedResolve.Load(),
+		Flood:         s.refusedFlood.Load(),
 	}
 }

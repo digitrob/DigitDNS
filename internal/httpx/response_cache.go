@@ -1,15 +1,26 @@
 package httpx
 
 import (
+	"bytes"
+	"compress/gzip"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
-// CachedResponse is one encoded JSON document.
+// gzipMinBytes is the point at which compression pays for itself. The cached
+// stats document is ~6 KB and the history document ~5 KB, so both are well over
+// the line; a small error body is not.
+const gzipMinBytes = 512
+
+// CachedResponse is one encoded JSON document. GzipBody is the same document
+// compressed once when the entry is stored, so a cache hit costs no compression
+// work even when several dashboards poll at different times.
 type CachedResponse struct {
 	Body        []byte
+	GzipBody    []byte
 	ContentType string
 	Expires     time.Time
 }
@@ -90,22 +101,97 @@ func (c *ResponseCache) Set(key string, body []byte, contentType string) {
 	// slice after Set would corrupt every later response.
 	copied := make([]byte, len(body))
 	copy(copied, body)
-	c.entries[key] = CachedResponse{
+	entry := CachedResponse{
 		Body:        copied,
 		ContentType: contentType,
 		Expires:     now.Add(c.ttl),
 	}
+	if len(copied) >= gzipMinBytes {
+		entry.GzipBody = gzipBytes(copied)
+	}
+	c.entries[key] = entry
 }
 
-// WriteCached serves an encoded response, honouring HEAD without writing a body.
+func gzipBytes(body []byte) []byte {
+	var buf bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		return nil
+	}
+	if _, err := zw.Write(body); err != nil {
+		return nil
+	}
+	if err := zw.Close(); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
+
+func acceptsGzip(header string) bool {
+	for _, part := range strings.Split(header, ",") {
+		fields := strings.Split(part, ";")
+		if !strings.EqualFold(strings.TrimSpace(fields[0]), "gzip") {
+			continue
+		}
+		q := 1.0
+		for _, param := range fields[1:] {
+			param = strings.TrimSpace(param)
+			if strings.HasPrefix(param, "q=") {
+				if v, err := strconv.ParseFloat(strings.TrimPrefix(param, "q="), 64); err == nil {
+					q = v
+				}
+			}
+		}
+		if q > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// WriteCached serves an encoded response, honouring HEAD without writing a body
+// and negotiating gzip when the cached entry has a compressed representation.
 func WriteCached(w http.ResponseWriter, r *http.Request, entry CachedResponse) {
+	body := entry.Body
+	if entry.GzipBody != nil {
+		// The same URL has two representations; shared caches must key on the
+		// request's encoding.
+		w.Header().Set("Vary", "Accept-Encoding")
+		if acceptsGzip(r.Header.Get("Accept-Encoding")) {
+			body = entry.GzipBody
+			w.Header().Set("Content-Encoding", "gzip")
+		}
+	}
 	if entry.ContentType != "" {
 		w.Header().Set("Content-Type", entry.ContentType)
 	}
-	w.Header().Set("Content-Length", strconv.Itoa(len(entry.Body)))
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	if r.Method == http.MethodHead {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	_, _ = w.Write(entry.Body)
+	_, _ = w.Write(body)
+}
+
+// WriteJSONBytes writes one encoded JSON document with the same gzip negotiation
+// as the cached endpoints. The caller owns the ETag/304 logic.
+func WriteJSONBytes(w http.ResponseWriter, r *http.Request, status int, body []byte, contentType string) {
+	if len(body) >= gzipMinBytes {
+		w.Header().Set("Vary", "Accept-Encoding")
+		if acceptsGzip(r.Header.Get("Accept-Encoding")) {
+			if zipped := gzipBytes(body); zipped != nil {
+				body = zipped
+				w.Header().Set("Content-Encoding", "gzip")
+			}
+		}
+	}
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(status)
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = w.Write(body)
 }

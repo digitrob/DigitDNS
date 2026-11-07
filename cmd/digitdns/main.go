@@ -626,6 +626,7 @@ func main() {
 			Quota:         d.Quota,
 			TableFull:     d.TableFull,
 			ResolveFailed: d.ResolveFailed,
+			Flood:         d.Flood,
 		}
 	})
 

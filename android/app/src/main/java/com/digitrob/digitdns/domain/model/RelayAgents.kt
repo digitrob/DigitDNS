@@ -26,6 +26,8 @@ data class RelayAgentInfo(
     val pingAt: String,
     val bytesIn: Long,
     val bytesOut: Long,
+    /** Server-computed online state; null on an older hub. */
+    val online: Boolean? = null,
     /** The agent's globally routable IPv6; blank until an enabled agent reports one. */
     val publicIpv6: String = "",
     /** The per-agent opt-in. The global Proxy IPv6 switch must also be on. */
@@ -38,11 +40,11 @@ data class RelayAgentInfo(
         get() = pingMs > 0 && pingAt.isNotBlank() && !pingAt.startsWith("0001")
 
     fun isOnline(now: Instant = Instant.now()): Boolean =
-        enabled &&
+        online ?: (enabled &&
             lastSeen.isNotBlank() &&
             !lastSeen.startsWith("0001") &&
             runCatching { Instant.parse(lastSeen) }.getOrNull()
-                ?.isAfter(now.minusSeconds(ONLINE_WINDOW_SECONDS)) == true
+                ?.isAfter(now.minusSeconds(ONLINE_WINDOW_SECONDS)) == true)
 
     /** Relay bytes in both directions, in the panel's binary units. */
     val trafficLabel: String
@@ -60,7 +62,7 @@ data class RelayAgentInfo(
         }
 
     companion object {
-        private const val ONLINE_WINDOW_SECONDS = 120L
+        private const val ONLINE_WINDOW_SECONDS = 90L
 
         fun from(dto: AgentDto): RelayAgentInfo = RelayAgentInfo(
             id = dto.id,
@@ -76,6 +78,7 @@ data class RelayAgentInfo(
             pingAt = dto.pingAt,
             bytesIn = dto.bytesIn,
             bytesOut = dto.bytesOut,
+            online = dto.online,
             publicIpv6 = dto.publicIpv6,
             ipv6Enabled = dto.ipv6Enabled,
         )

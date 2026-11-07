@@ -1,12 +1,14 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestHubEnrolFetchHeartbeat(t *testing.T) {
@@ -84,14 +86,14 @@ func TestHubEnrolFetchHeartbeat(t *testing.T) {
 		t.Fatalf("key was not sent: %q", gotKey)
 	}
 
-	hb, err := hub.Heartbeat(enr.Key, "1.0.0", 443, 1, 2, "2001:db8::5")
+	hb, err := hub.Heartbeat(enr.Key, "1.0.0", 443, 1, 2, "2001:db8::5", "")
 	if err != nil {
 		t.Fatalf("heartbeat: %v", err)
 	}
 	if hb.IPv6Enabled == nil || !*hb.IPv6Enabled {
 		t.Fatalf("heartbeat IPv6 policy = %v, want true", hb.IPv6Enabled)
 	}
-	if _, err := hub.Heartbeat("id01:wrong", "1.0.0", 443, 1, 2, "2001:db8::5"); !errors.Is(err, ErrHubRejected) {
+	if _, err := hub.Heartbeat("id01:wrong", "1.0.0", 443, 1, 2, "2001:db8::5", ""); !errors.Is(err, ErrHubRejected) {
 		t.Fatalf("wrong key should be rejected, got %v", err)
 	}
 
@@ -122,5 +124,58 @@ func TestStateRoundTrip(t *testing.T) {
 	}
 	if got.Key != want.Key || got.Country != want.Country || len(got.Hosts) != 1 || got.IPv6Enabled != want.IPv6Enabled {
 		t.Fatalf("state did not round-trip: %+v", got)
+	}
+}
+
+func TestFetchConditionalUsesETagAndWait(t *testing.T) {
+	var waitSeen string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/agent/catalogue", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Agent-Key") != "id01:secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		waitSeen = r.URL.Query().Get("wait")
+		if r.Header.Get("If-None-Match") == `"rev1"` {
+			w.Header().Set("ETag", `"rev1"`)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"rev1"`)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"country": "DE",
+			"hosts":   []string{"api.ard.de"},
+			"clients": []string{"any"},
+		})
+	})
+	mux.HandleFunc("/agent/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ipv6_enabled":    true,
+			"config_revision": `"rev1"`,
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	hub := NewHub(srv.URL)
+
+	cat, etag, notModified, err := hub.FetchConditional(context.Background(), "id01:secret", "", 0)
+	if err != nil || notModified || etag != `"rev1"` || len(cat.Hosts) != 1 {
+		t.Fatalf("initial fetch = %+v, etag=%q, notModified=%v, err=%v", cat, etag, notModified, err)
+	}
+
+	_, etag, notModified, err = hub.FetchConditional(context.Background(), "id01:secret", etag, time.Second)
+	if err != nil || !notModified || etag != `"rev1"` {
+		t.Fatalf("conditional fetch = etag=%q, notModified=%v, err=%v", etag, notModified, err)
+	}
+	if waitSeen != "1" {
+		t.Fatalf("wait query = %q, want 1", waitSeen)
+	}
+
+	hb, err := hub.Heartbeat("id01:secret", "1.0.0", 443, 0, 0, "", etag)
+	if err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	if hb.ConfigRevision != `"rev1"` {
+		t.Fatalf("config revision = %q", hb.ConfigRevision)
 	}
 }

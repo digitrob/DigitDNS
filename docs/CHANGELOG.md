@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.2.6] — reliability boundaries and responsive agent control
+
+- **Panics are contained at request boundaries.** The DNS handler, SNI and agent
+  connection handlers, and upstream exchanges recover, log the stack and count
+  `panics_total` instead of terminating the daemon. The DNS handler still answers
+  SERVFAIL for the affected query.
+- **The circuit breaker has a half-open state.** After the cooldown, exactly one
+  probe is allowed; concurrent queries keep skipping the resolver until that probe
+  reports. Recovery is jittered and exposed as `circuit_state`
+  (`closed`/`open`/`half-open`).
+- **Agent heartbeat and catalogue sync are jittered and backed off.** A hub restart
+  no longer makes every agent reconnect on the same tick.
+- **Cached JSON is gzip-negotiated.** `/api/stats`, `/api/v3/stats` and the combined
+  history document compress once per cache fill; the dashboard stats payload drops
+  from ~6 KB to under 1 KB on the wire.
+- **The live query stream is opened only while the Live Log tab is visible.** Home
+  uses the 1 Hz stats poll and no longer parses every query event.
+- **Malformed-probe penalty box.** A source that produces repeated malformed
+  handshakes is dropped for a minute before a handshake read or relay slot is spent;
+  the drops appear as `relays_refused_flood`.
+- **Hub↔agent control plane.** Catalogue responses carry an `ETag`; unchanged
+  allowlists answer `304` without recomputing hosts or clients, and the payload is
+  gzip-negotiated. Agents long-poll the catalogue with a 25-second wait, so a rule
+  or client change reaches them in under a second instead of at the next 60-second
+  sync, with a five-minute full fetch as a safety net.
+- **Agent liveness and sync state.** The online window is 90 seconds (was two
+  minutes), computed server-side and reused by the dashboard. Agent heartbeats
+  carry the applied catalogue revision, the panel shows its age, and the agents
+  tab refreshes every 10 seconds while visible.
+- **Agent relay path.** Target hosts use a bounded 60-second DNS cache, multiple
+  addresses are dialled with a 200 ms stagger instead of a 10-second wait on the
+  first, both sockets get `TCP_NODELAY`/keepalive, and the listener has a 2,048
+  connection cap, a 5-second handshake timeout and the malformed-probe penalty box.
+- **Faster agent failover.** Proxied answers now use a 30-second TTL (the hub's own
+  egress keeps 60), so a dead agent leaves client caches sooner.
+
 ## 🏷️ [v5.2.5] — trustworthy upstream metrics, faster relay and stats
 
 **Upstream metrics.** The resolver now records the transport round trip returned

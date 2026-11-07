@@ -6,10 +6,12 @@ import (
 	"context"
 	"crypto/tls"
 	"digitdns/internal/core/resolution"
+	"digitdns/internal/safego"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/url"
@@ -360,6 +362,10 @@ type upstreamStatInternal struct {
 	// openUntil is UnixNano, or 0 while the circuit is closed. Atomic so the
 	// query path can skip an open resolver without taking the per-stat mutex.
 	openUntil atomic.Int64
+	// probeUntil is a lease on the single half-open probe. It stops every
+	// concurrent query from hitting a resolver at the moment its cooldown
+	// expires; a canceled probe releases it when the lease runs out.
+	probeUntil atomic.Int64
 }
 
 // observeLatency appends a successful live round trip to the rolling window.
@@ -434,7 +440,17 @@ func (st *upstreamStatInternal) latencyPercentiles() (p50, p95, avg time.Duratio
 const (
 	circuitFailureThreshold = 5
 	circuitCooldown         = 30 * time.Second
+	// circuitJitter spreads the recovery of several upstreams that failed
+	// together, so a network blip does not make them all probe on the same tick.
+	circuitJitter = 5 * time.Second
+	// circuitProbeLease bounds a half-open probe that is canceled before it can
+	// record an outcome. After this long another query may try.
+	circuitProbeLease = 10 * time.Second
 )
+
+func circuitOpenFor() time.Duration {
+	return circuitCooldown + rand.N(circuitJitter)
+}
 
 // statOutcome separates a resolver that answered from one that could not be
 // reached. REFUSED/SERVFAIL are answers even when they are filtered responses.
@@ -675,6 +691,9 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 
 	now := time.Now()
 	stat.lastUpdated = now
+	// Any outcome releases the half-open lease: the probe has finished one way
+	// or the other.
+	stat.probeUntil.Store(0)
 	switch outcome {
 	case statSuccess:
 		if probe {
@@ -695,6 +714,7 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 		stat.consecutiveFailures = 0
 		if stat.openUntil.Swap(0) != 0 {
 			p.openCircuits.Add(-1)
+			log.Printf("[Upstream] Circuit closed for %s after a successful probe", addr)
 		}
 	case statPolicyRcode:
 		// The resolver answered. A filtered REFUSED is worth showing, but it is
@@ -712,6 +732,7 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 		stat.consecutiveFailures = 0
 		if stat.openUntil.Swap(0) != 0 {
 			p.openCircuits.Add(-1)
+			log.Printf("[Upstream] Circuit closed for %s after a policy response", addr)
 		}
 		stat.lastError = reason
 		stat.lastErrorAt = now
@@ -730,12 +751,17 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 		stat.lastError = reason
 		stat.lastErrorAt = now
 		if stat.consecutiveFailures >= circuitFailureThreshold {
-			wasOpen := stat.openUntil.Load() != 0
-			stat.openUntil.Store(now.Add(circuitCooldown).UnixNano())
-			if !wasOpen {
+			oldUntil := stat.openUntil.Load()
+			wasOpen := oldUntil != 0
+			halfOpen := wasOpen && now.UnixNano() >= oldUntil
+			stat.openUntil.Store(now.Add(circuitOpenFor()).UnixNano())
+			switch {
+			case !wasOpen:
 				p.openCircuits.Add(1)
 				log.Printf("[Upstream] Circuit open for %s after %d consecutive failures: %s",
 					addr, stat.consecutiveFailures, reason)
+			case halfOpen:
+				log.Printf("[Upstream] Circuit re-opened for %s after a failed probe: %s", addr, reason)
 			}
 		}
 	}
@@ -753,7 +779,24 @@ func (p *UpstreamPool) upstreamAvailable(addr string, now time.Time) bool {
 		return true
 	}
 	until := stat.openUntil.Load()
-	return until == 0 || now.UnixNano() >= until
+	if until == 0 {
+		return true
+	}
+	nowNs := now.UnixNano()
+	if nowNs < until {
+		return false
+	}
+	// The cooldown has expired: allow exactly one half-open probe. A query that
+	// claims the lease is the only one that will reach the resolver; the rest
+	// keep skipping it until the probe records an outcome. A probe canceled by a
+	// race winner is released when its lease expires.
+	if lease := stat.probeUntil.Load(); lease != 0 {
+		if nowNs < lease {
+			return false
+		}
+		stat.probeUntil.CompareAndSwap(lease, 0)
+	}
+	return stat.probeUntil.CompareAndSwap(0, now.Add(circuitProbeLease).UnixNano())
 }
 
 // availableCandidates drops resolvers whose breaker is open. If every candidate
@@ -800,12 +843,13 @@ func (p *UpstreamPool) BenchmarkAll() {
 		wg.Add(1)
 		go func(addr string) {
 			defer wg.Done()
+			defer safego.Recover("upstream.benchmark")
 			// Probe through the same per-scheme path a real query takes. Probing
 			// everything over UDP:53 used to send a DoT/DoH upstream's probe to a
 			// port that is not even listening, so it scored as broken.
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
-			resp, rtt, err := p.queryOne(ctx, m, addr)
+			resp, rtt, err := p.safeQueryOne(ctx, m, addr)
 			outcome, reason := classifyStat(resp, err)
 			// probe=true: this is a benchmark, not client traffic.
 			p.recordStat(addr, rtt, outcome, reason, true)
@@ -1056,7 +1100,8 @@ func (p *UpstreamPool) exchangeHedged(req *dns.Msg, upstreams []string, timeout 
 
 	start := func(addr string) {
 		go func() {
-			resp, rtt, err := p.queryOne(ctx, req, addr)
+			defer safego.Recover("upstream.hedged")
+			resp, rtt, err := p.safeQueryOne(ctx, req, addr)
 			// A canceled loser is not a resolver failure; a real error is.
 			if err == nil || !errors.Is(err, context.Canceled) {
 				outcome, reason := classifyStat(resp, err)
@@ -1384,6 +1429,23 @@ func (p *UpstreamPool) queryOne(ctx context.Context, req *dns.Msg, addr string) 
 // non-200, an unreadable body, or a body that will not unpack is an upstream
 // failure like any other. The caller has already set q.Id = 0. client is the
 // HTTP/2 client for "https://" or the HTTP/3 client for "h3://".
+// safeQueryOne is queryOne behind a panic boundary. The racing and hedged paths
+// run each exchange in its own goroutine; without this, a panic anywhere in a
+// transport or in message parsing would terminate the daemon instead of failing
+// one query. A panic is reported as a transport error so the caller records it
+// and tries the next candidate.
+func (p *UpstreamPool) safeQueryOne(ctx context.Context, req *dns.Msg, addr string) (resp *dns.Msg, rtt time.Duration, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			safego.Handle("upstream.query", rec)
+			resp = nil
+			rtt = 0
+			err = fmt.Errorf("upstream %s panicked: %v", addr, rec)
+		}
+	}()
+	return p.queryOne(ctx, req, addr)
+}
+
 func (p *UpstreamPool) exchangeDoH(ctx context.Context, client *http.Client, q *dns.Msg, rawURL string) (*dns.Msg, time.Duration, error) {
 	packed, err := q.Pack()
 	if err != nil {
@@ -1437,7 +1499,8 @@ func (p *UpstreamPool) exchangeRacing(req *dns.Msg, upstreams []string, timeout 
 
 	for _, u := range upstreams {
 		go func(addr string) {
-			resp, rtt, err := p.queryOne(ctx, req, addr)
+			defer safego.Recover("upstream.racing")
+			resp, rtt, err := p.safeQueryOne(ctx, req, addr)
 
 			// A query abandoned because another upstream already answered is not
 			// an upstream failure. Recording it added an error to every healthy
@@ -1523,7 +1586,7 @@ func (p *UpstreamPool) exchangeSequential(req *dns.Msg, upstreams []string, time
 		if i > 0 && ctx.Err() != nil {
 			break
 		}
-		resp, rtt, err := p.queryOne(ctx, req, u)
+		resp, rtt, err := p.safeQueryOne(ctx, req, u)
 		outcome, reason := classifyStat(resp, err)
 		ok := outcome == statSuccess
 		p.recordStat(u, rtt, outcome, reason, false)
@@ -1574,8 +1637,12 @@ type UpstreamStat struct {
 	RecentErrorRate     float64 `json:"recent_error_rate"`
 	ConsecutiveFailures uint32  `json:"consecutive_failures"`
 	CircuitOpen         bool    `json:"circuit_open"`
-	LastError           string  `json:"last_error,omitempty"`
-	LastErrorAt         string  `json:"last_error_at,omitempty"`
+	// CircuitState is closed, open, or half-open. half-open means the cooldown
+	// has expired and exactly one probe is allowed; it is not a healthy state
+	// yet, but it is no longer being skipped.
+	CircuitState string `json:"circuit_state"`
+	LastError    string `json:"last_error,omitempty"`
+	LastErrorAt  string `json:"last_error_at,omitempty"`
 	// Probe counters are the startup/explicit benchmark, kept apart from live
 	// traffic so a single bad probe does not make the card look broken.
 	ProbeHits   uint64  `json:"probe_hits"`
@@ -1651,7 +1718,7 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 	for _, addr := range addrs {
 		// No seeded latency. An upstream that has never answered is honestly
 		// unmeasured; the dashboard renders "—", not a fake 12 ms.
-		s := UpstreamStat{Address: addr}
+		s := UpstreamStat{Address: addr, CircuitState: "closed"}
 		if raw, ok := stats[addr]; ok {
 			s.Hits = raw.hits
 			s.Errors = raw.errors
@@ -1659,6 +1726,14 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 			s.PolicyErrors = raw.policyErrors
 			s.ConsecutiveFailures = raw.consecutiveFailures
 			s.CircuitOpen = raw.openUntil != 0 && now.UnixNano() < raw.openUntil
+			switch {
+			case raw.openUntil == 0:
+				s.CircuitState = "closed"
+			case now.UnixNano() < raw.openUntil:
+				s.CircuitState = "open"
+			default:
+				s.CircuitState = "half-open"
+			}
 			s.LastError = raw.lastError
 			if !raw.lastErrorAt.IsZero() {
 				s.LastErrorAt = raw.lastErrorAt.UTC().Format(time.RFC3339)

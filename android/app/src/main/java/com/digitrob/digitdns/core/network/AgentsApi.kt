@@ -60,6 +60,8 @@ data class AgentDto(
     val enabled: Boolean = false,
     @SerialName("created_at") val createdAt: String = "",
     @SerialName("last_seen") val lastSeen: String = "",
+    /** Server-computed with the same 90 s window the DNS router uses. */
+    val online: Boolean? = null,
     @SerialName("ping_ms") val pingMs: Double = 0.0,
     @SerialName("ping_at") val pingAt: String = "",
     @SerialName("bytes_in") val bytesIn: Long = 0,
