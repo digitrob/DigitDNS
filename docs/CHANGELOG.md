@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.2.7] — web live log stays connected
+
+- The browser live-log stream is opened once at dashboard boot and kept alive
+  while the page is visible, including while the operator browses in another tab
+  or another panel screen. The earlier per-tab gating dropped queries whenever
+  the Log tab was not focused.
+- Query rows are still buffered while the Log tab is hidden; returning to it
+  repaints from the buffer without a reconnect.
+- A 401 from the stats poll or the SSE ticket now raises the login prompt instead
+  of leaving stale tiles and a dead stream after a daemon restart wipes the
+  in-memory web session.
+- Stream startup is single-flight and generation-guarded, so a visibility change,
+  refresh or sign-out cannot leave two EventSources or an orphaned stream.
+
 ## 🏷️ [v5.2.6] — reliability boundaries and responsive agent control
 
 - **Panics are contained at request boundaries.** The DNS handler, SNI and agent

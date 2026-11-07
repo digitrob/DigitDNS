@@ -91,6 +91,13 @@ class LiveQueryLogStateTest {
     }
 
     @Test
+    fun httpsSinkHasAFriendlyLabelAndProxyTone() {
+        val style = queryActionStyle("PROXY_HTTPS_SINK")
+        assertEquals("Proxy HTTPS Sink", style.label)
+        assertEquals(QueryActionTone.Proxy, style.tone)
+    }
+
+    @Test
     fun unknownActionDropsUnderscores() {
         assertEquals("Future Action", queryActionStyle("FUTURE_ACTION").label)
         assertEquals(QueryActionTone.Muted, queryActionStyle("FUTURE_ACTION").tone)
@@ -103,9 +110,10 @@ class LiveQueryLogStateTest {
             event(2, "b", "PROXY_IPV6_SINK"),
             event(3, "c", "PROXY_FAILED"),
             event(4, "d", "DIRECT"),
+            event(5, "e", "PROXY_HTTPS_SINK"),
         )
         val state = LiveQueryLogUiState(buffer = events, actionFilter = ActionFilter.Proxy)
-        assertEquals(listOf(1L, 2L, 3L), state.visible.map { it.id })
+        assertEquals(listOf(1L, 2L, 3L, 5L), state.visible.map { it.id })
     }
 
     @Test

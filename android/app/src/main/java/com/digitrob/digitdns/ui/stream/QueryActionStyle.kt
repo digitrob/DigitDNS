@@ -16,6 +16,7 @@ data class QueryActionStyle(val label: String, val tone: QueryActionTone)
 fun queryActionStyle(action: String): QueryActionStyle = when (action.uppercase(Locale.ROOT)) {
     "PROXY" -> QueryActionStyle("Proxy", QueryActionTone.Proxy)
     "PROXY_IPV6_SINK" -> QueryActionStyle("Proxy IPv6 Sink", QueryActionTone.Proxy)
+    "PROXY_HTTPS_SINK" -> QueryActionStyle("Proxy HTTPS Sink", QueryActionTone.Proxy)
     "PROXY_FAILED" -> QueryActionStyle("Proxy Failed", QueryActionTone.Danger)
     "BLOCK" -> QueryActionStyle("Block", QueryActionTone.Danger)
     "RATELIMIT" -> QueryActionStyle("Rate Limited", QueryActionTone.Danger)

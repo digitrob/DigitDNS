@@ -45,6 +45,8 @@ window.__hdns = {
 };
 
 let sseSource = null;
+let sseConnecting = false;
+let sseGeneration = 0;
 let qpsChart = null;
 let historyChart = null;
 let historyRange = '24h';
@@ -970,9 +972,11 @@ async function bootDashboard() {
   // client list here used to delay the first usable screen on every reload.
   handleRouteFromURL(true);
   startStatsPolling();
-  // The live stream is opened by switchTab only while the Live Log tab is on
-  // screen. Keeping it open on Home made every dashboard parse every query the
-  // resolver answered — pure CPU and battery for a screen nobody was reading.
+  // The live log must keep collecting while the operator browses in another
+  // tab or another dashboard screen. The stream is started once here and lives
+  // until sign-out; pushStreamQuery already skips DOM work when the Log tab is
+  // not visible, so the connection costs a buffer update rather than a repaint.
+  startLiveStream();
   initHistory();
   initStatsSettings();
   initFiltering();
@@ -4084,13 +4088,15 @@ function startStatsPolling() {
     if (document.visibilityState === 'hidden') {
       clearTimeout(statsPollTimer);
       statsPollTimer = null;
-      // A hidden Live Log does not need the firehose; reconnect on return and
-      // let the server's history event refill the table.
-      if (activeDashTab === 'stream') stopLiveStream();
       stopAgentPolling();
+      // The live stream stays open: an operator watching the log in one tab
+      // while browsing in another must keep seeing the queries that happen in
+      // between. pushStreamQuery already skips DOM work while hidden.
       return;
     }
-    if (activeDashTab === 'stream') startLiveStream();
+    // If the stream dropped while the tab was hidden, its backoff timer may
+    // have been throttled; reconnect as soon as the page is visible again.
+    if (!sseSource || sseSource.readyState === EventSource.CLOSED) startLiveStream();
     if (activeDashTab === 'agents') startAgentPolling();
     if (statsPollTimer === null) pollStatsOnce();
     // Returning to a visible page while the stream tab is showing: the SSE
@@ -4109,6 +4115,15 @@ async function updateStats() {
     const res = await fetch(api('/api/stats'), {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
+    if (res.status === 401) {
+      // The deploy restarts the daemon and sessions are in memory: the page
+      // must say so instead of showing stale tiles with a dead live log.
+      markStatsHealth(false, 'Session expired');
+      stopLiveStream();
+      stopAgentPolling();
+      showLoginModal();
+      return;
+    }
     if (!res.ok) {
       markStatsHealth(false, `The server answered ${res.status}`);
       return;
@@ -4639,9 +4654,13 @@ function renderUpstreams(upstreams) {
 // LIVE QUERY STREAM (SSE)
 // =======================================================
 async function startLiveStream() {
-  // Already connected (or connecting): switching to the tab again must not
-  // tear down and re-mint a ticket.
+  // Single-flight: boot, visibility and a manual refresh can all ask for the
+  // stream at once, and minting two tickets used to leave the loser's
+  // EventSource orphaned.
+  if (sseConnecting) return;
   if (sseSource && sseSource.readyState !== EventSource.CLOSED) return;
+  sseConnecting = true;
+  const generation = ++sseGeneration;
   if (sseBackoffTimer) {
     clearTimeout(sseBackoffTimer);
     sseBackoffTimer = null;
@@ -4669,6 +4688,7 @@ async function startLiveStream() {
       });
       if (tr.status === 401) {
         console.warn('SSE: session expired; stopping stream and re-authenticating.');
+        sseConnecting = false;
         showLoginModal();
         return;
       }
@@ -4679,17 +4699,33 @@ async function startLiveStream() {
     } catch (e) { /* network blip: fall through and retry on backoff */ }
   }
 
+  // A sign-out or refresh may have superseded this attempt while the ticket
+  // was being minted.
+  if (generation !== sseGeneration) {
+    sseConnecting = false;
+    return;
+  }
+
   // The stream URL carries only a fresh ticket; the fallback to the long-lived
   // token is gone, so a failed mint means the connect will 401. Treat that as a
   // retryable drop (the mint itself may have hit a network blip) rather than
   // opening a stream we know is unauthenticated.
   if (!ticketParam) {
+    sseConnecting = false;
     scheduleStreamReconnect();
     return;
   }
 
-  const source = new EventSource(`${api('/api/stream/queries')}${ticketParam}`);
+  let source;
+  try {
+    source = new EventSource(`${api('/api/stream/queries')}${ticketParam}`);
+  } catch (e) {
+    sseConnecting = false;
+    scheduleStreamReconnect();
+    return;
+  }
   sseSource = source;
+  sseConnecting = false;
 
   source.onopen = () => {
     // A live connection is the only proof the ticket was accepted: reset the
@@ -4784,6 +4820,10 @@ function scheduleStreamReconnect() {
 // stopLiveStream tears the stream down and cancels any pending reconnect, so a
 // sign-out does not race a backoff timer into re-opening an authenticated route.
 function stopLiveStream() {
+  // Invalidate any ticket mint still in flight, so it cannot open a stream
+  // after sign-out or a manual refresh.
+  sseGeneration++;
+  sseConnecting = false;
   if (sseBackoffTimer) {
     clearTimeout(sseBackoffTimer);
     sseBackoffTimer = null;
@@ -4912,7 +4952,7 @@ function queryMatchesStream(q, f) {
 const STREAM_ACTION_BADGES = {
   PROXY: '<span class="badge badge-proxy">PROXY</span>',
   PROXY_IPV6_SINK: '<span class="badge badge-proxy">PROXY · IPv6 SINK</span>',
-  PROXY_HTTPS_SINK: '<span class="badge badge-proxy">PROXY · QUIC FALLBACK</span>',
+  PROXY_HTTPS_SINK: '<span class="badge badge-proxy">PROXY · HTTPS SINK</span>',
   PROXY_FAILED: '<span class="badge badge-block">PROXY FAILED</span>',
   SERVFAIL: '<span class="badge badge-block">SERVFAIL</span>',
   BLOCK: '<span class="badge badge-block">BLOCK</span>',
@@ -7388,6 +7428,11 @@ async function loadAgents() {
   const list = document.getElementById('agents-list');
   try {
     const res = await fetch(api('/api/agents'), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    if (res.status === 401) {
+      stopAgentPolling();
+      showLoginModal();
+      return;
+    }
     if (!res.ok) throw new Error(await errorMessage(res, 'Could not load agents'));
     const data = await res.json();
     agentsCache = Array.isArray(data.agents) ? data.agents : [];
@@ -8054,15 +8099,6 @@ function switchTab(target, updateUrl = true, loadData = true) {
   if (targetEl) {
     targetEl.classList.remove('hidden');
     if (loadData) {
-      // The live query stream is a per-query firehose. Keep it open only while
-      // the Live Log is the visible tab; every other tab uses the 1 Hz stats
-      // poll. On a busy resolver this removes thousands of JSON parses a second
-      // from the browser and the matching marshals from the daemon.
-      if (target === 'stream') {
-        startLiveStream();
-      } else {
-        stopLiveStream();
-      }
       if (target === 'clients') {
         loadClients();
       }
