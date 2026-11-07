@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"digitdns/internal/core/cache"
 	"digitdns/internal/core/matcher"
@@ -39,6 +40,12 @@ type API struct {
 	// without re-implementing them. Injected by the web server via SetV3Backend;
 	// nil in bare harnesses, where the backend-dependent routes answer 503.
 	v3Backend V3Backend
+
+	// statsCache and historyCache are process-wide because the work is identical
+	// for every caller: several dashboards and the Android app poll the same
+	// documents. The cache is an optimisation only — a miss simply recomputes.
+	statsCache   *httpx.ResponseCache
+	historyCache *httpx.ResponseCache
 }
 
 // masterKeyMatches compares a token against the master REST key in constant time.
@@ -93,6 +100,11 @@ func NewAPI(
 		settings:    settings,
 		tlsSettings: tlsSettings,
 		sessions:    sessions,
+		// The dashboard polls live stats every second or two; a one-second shared
+		// snapshot means N open panels cost one computation. History is heavier
+		// (summary, series and six top tables) and changes at most once per bucket.
+		statsCache:   httpx.NewResponseCache(time.Second, 4),
+		historyCache: httpx.NewResponseCache(5*time.Second, 32),
 	}
 }
 

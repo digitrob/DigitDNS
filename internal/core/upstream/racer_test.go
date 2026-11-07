@@ -66,20 +66,20 @@ func TestCircuitBreakerUsesTransportFailuresOnly(t *testing.T) {
 	p := newTestPool(t, []string{addr}, time.Second, false, "")
 
 	for i := 0; i < circuitFailureThreshold-1; i++ {
-		p.recordStat(addr, time.Millisecond, statTransportError, "timeout")
+		p.recordStat(addr, time.Millisecond, statTransportError, "timeout", false)
 	}
 	if statFor(t, p, addr).CircuitOpen {
 		t.Fatal("circuit opened before the failure threshold")
 	}
 
-	p.recordStat(addr, time.Millisecond, statPolicyRcode, "REFUSED")
+	p.recordStat(addr, time.Millisecond, statPolicyRcode, "REFUSED", false)
 	s := statFor(t, p, addr)
 	if s.CircuitOpen || s.ConsecutiveFailures != 0 || s.PolicyErrors != 1 {
 		t.Fatalf("a policy rcode did not reset transport failures: %+v", s)
 	}
 
 	for i := 0; i < circuitFailureThreshold; i++ {
-		p.recordStat(addr, time.Millisecond, statTransportError, "timeout")
+		p.recordStat(addr, time.Millisecond, statTransportError, "timeout", false)
 	}
 	s = statFor(t, p, addr)
 	if !s.CircuitOpen || s.TransportErrors < uint64(circuitFailureThreshold) {
@@ -94,7 +94,7 @@ func TestCircuitBreakerSkipsOpenUpstream(t *testing.T) {
 	const bad, good = "192.0.2.1:53", "192.0.2.2:53"
 	p := newTestPool(t, []string{bad, good}, time.Second, false, "")
 	for i := 0; i < circuitFailureThreshold; i++ {
-		p.recordStat(bad, time.Millisecond, statTransportError, "timeout")
+		p.recordStat(bad, time.Millisecond, statTransportError, "timeout", false)
 	}
 
 	got := p.availableCandidates([]string{bad, good})
@@ -406,7 +406,7 @@ func TestNormalizeUpstreams(t *testing.T) {
 	}
 }
 
-func TestNewUpstreamPoolNormalizesAndSeeds(t *testing.T) {
+func TestNewUpstreamPoolNormalizesWithoutFakeLatency(t *testing.T) {
 	p := newTestPool(t, []string{" 1.1.1.1 ", "1.1.1.1:53", "garbage host", "8.8.8.8:53"}, 0, true, "")
 
 	got := p.GetUpstreams()
@@ -421,11 +421,16 @@ func TestNewUpstreamPoolNormalizesAndSeeds(t *testing.T) {
 		t.Fatalf("timeout = %v, want the 2500ms default for a non-positive input", p.timeout)
 	}
 
-	// Every upstream starts with a seeded estimate so the dashboard has something
-	// to show before the first real query lands.
+	// Nothing has answered yet, so every upstream is honestly unmeasured. The old
+	// code seeded 12ms here, which the dashboard rendered as a real measurement
+	// with the green "fastest" badge.
 	for _, s := range p.GetUpstreamStats() {
-		if s.LatencyNs <= 0 {
-			t.Fatalf("upstream %s seeded with latency %d, want a positive estimate", s.Address, s.LatencyNs)
+		if s.Measured || s.LatencyNs != 0 || s.LatencyMs != 0 {
+			t.Fatalf("upstream %s reported measured=%v latency=%d/%v before answering, want unmeasured",
+				s.Address, s.Measured, s.LatencyNs, s.LatencyMs)
+		}
+		if s.Samples != 0 {
+			t.Fatalf("upstream %s has %d samples before answering", s.Address, s.Samples)
 		}
 	}
 
@@ -810,9 +815,9 @@ func TestSetUpstreamsReplacesListAndPrunesStats(t *testing.T) {
 	}
 }
 
-// TestUpstreamStatsOrderIsStable — right after a restart every upstream carries
-// the same seeded estimate, and an unstable sort made the dashboard's resolver
-// list reshuffle on every poll.
+// TestUpstreamStatsOrderIsStable — before any measurement every upstream has no
+// latency, and an unstable sort made the dashboard's resolver list reshuffle on
+// every poll.
 func TestUpstreamStatsOrderIsStable(t *testing.T) {
 	p := newTestPool(t, []string{"9.9.9.9:53", "1.1.1.1:53", "8.8.8.8:53"}, time.Second, false, "")
 
@@ -841,6 +846,115 @@ func TestUpstreamStatsOrderIsStable(t *testing.T) {
 		if want := float64(s.LatencyNs) / 1e6; s.LatencyMs != want {
 			t.Fatalf("%s: LatencyMs = %v, want %v", s.Address, s.LatencyMs, want)
 		}
+	}
+}
+
+// TestProbeOutcomesStayOutOfLiveStats — a startup or on-demand benchmark is not
+// client traffic. Folding it into hits/errors made an upstream that was probed
+// while the network was down look broken for the life of the process.
+func TestProbeOutcomesStayOutOfLiveStats(t *testing.T) {
+	const addr = "192.0.2.1:53"
+	p := newTestPool(t, []string{addr}, time.Second, false, "")
+
+	p.recordStat(addr, 20*time.Millisecond, statSuccess, "", true)
+	s := statFor(t, p, addr)
+	if s.Hits != 0 || s.Errors != 0 || s.Samples != 0 || s.TransportErrors != 0 {
+		t.Fatalf("a probe leaked into live stats: %+v", s)
+	}
+	if s.ProbeHits != 1 || !s.Measured || s.LastProbeMs != 20 {
+		t.Fatalf("probe not recorded separately: %+v", s)
+	}
+
+	for i := 0; i < circuitFailureThreshold; i++ {
+		p.recordStat(addr, 0, statTransportError, "timeout", true)
+	}
+	s = statFor(t, p, addr)
+	if s.CircuitOpen || s.TransportErrors != 0 || s.ConsecutiveFailures != 0 {
+		t.Fatalf("failed probes tripped the live breaker: %+v", s)
+	}
+	if s.ProbeErrors != uint64(circuitFailureThreshold) {
+		t.Fatalf("ProbeErrors = %d, want %d", s.ProbeErrors, circuitFailureThreshold)
+	}
+}
+
+// TestLatencyUsesRollingMedianNotOutlier — the EWMA jumped to ~190ms on one
+// 600ms exchange and took many samples to recover. The card shows the median.
+func TestLatencyUsesRollingMedianNotOutlier(t *testing.T) {
+	const addr = "192.0.2.1:53"
+	p := newTestPool(t, []string{addr}, time.Second, false, "")
+
+	for i := 0; i < 9; i++ {
+		p.recordStat(addr, 10*time.Millisecond, statSuccess, "", false)
+	}
+	p.recordStat(addr, 600*time.Millisecond, statSuccess, "", false)
+
+	s := statFor(t, p, addr)
+	if s.Samples != 10 {
+		t.Fatalf("Samples = %d, want 10", s.Samples)
+	}
+	if s.LatencyMs != 10 {
+		t.Fatalf("median = %v ms, want 10 ms despite the 600 ms outlier", s.LatencyMs)
+	}
+	if s.LatencyP95Ms != 600 {
+		t.Fatalf("p95 = %v ms, want the 600 ms outlier", s.LatencyP95Ms)
+	}
+	if !s.Measured {
+		t.Fatal("a measured upstream reported measured=false")
+	}
+}
+
+// TestRecentErrorRateForgetsOldFailures — the health dot answers "is this
+// resolver working now", not "has it ever failed since the process started".
+func TestRecentErrorRateForgetsOldFailures(t *testing.T) {
+	const addr = "192.0.2.1:53"
+	p := newTestPool(t, []string{addr}, time.Second, false, "")
+
+	for i := 0; i < 4; i++ {
+		p.recordStat(addr, 10*time.Millisecond, statTransportError, "timeout", false)
+	}
+	for i := 0; i < 4; i++ {
+		p.recordStat(addr, 10*time.Millisecond, statSuccess, "", false)
+	}
+	s := statFor(t, p, addr)
+	if s.RecentSamples != 8 || s.RecentErrorRate != 0.5 {
+		t.Fatalf("recent = %d samples at %.2f, want 8 at 0.50", s.RecentSamples, s.RecentErrorRate)
+	}
+
+	// The window is 64: sixty more successes push all four failures out.
+	for i := 0; i < 60; i++ {
+		p.recordStat(addr, 10*time.Millisecond, statSuccess, "", false)
+	}
+	s = statFor(t, p, addr)
+	if s.RecentSamples != 64 {
+		t.Fatalf("RecentSamples = %d, want the window cap of 64", s.RecentSamples)
+	}
+	if s.RecentErrorRate != 0 {
+		t.Fatalf("recent error rate = %.2f, want 0 after the failures aged out", s.RecentErrorRate)
+	}
+	// Lifetime errors are still there: the dot is quiet, the history is not lost.
+	if s.TransportErrors != 4 {
+		t.Fatalf("TransportErrors = %d, want the lifetime total 4", s.TransportErrors)
+	}
+}
+
+// TestPolicyResponseIsReachableForHealth — a REFUSED or SERVFAIL proves the
+// resolver answered. It must count as a good recent outcome, not a failure.
+func TestPolicyResponseIsReachableForHealth(t *testing.T) {
+	const addr = "192.0.2.1:53"
+	p := newTestPool(t, []string{addr}, time.Second, false, "")
+
+	p.recordStat(addr, 10*time.Millisecond, statTransportError, "timeout", false)
+	p.recordStat(addr, 10*time.Millisecond, statPolicyRcode, "SERVFAIL", false)
+
+	s := statFor(t, p, addr)
+	if s.RecentSamples != 2 || s.RecentErrorRate != 0.5 {
+		t.Fatalf("recent = %d at %.2f, want 2 at 0.50", s.RecentSamples, s.RecentErrorRate)
+	}
+	if s.PolicyErrors != 1 || s.TransportErrors != 1 {
+		t.Fatalf("policy/transport = %d/%d, want 1/1", s.PolicyErrors, s.TransportErrors)
+	}
+	if s.ConsecutiveFailures != 0 {
+		t.Fatalf("ConsecutiveFailures = %d, want 0 after a policy answer", s.ConsecutiveFailures)
 	}
 }
 
@@ -1217,18 +1331,17 @@ func TestProfileFallsBackToPoolEvenWithRetiredFailChoice(t *testing.T) {
 	}
 }
 
-// setMeasuredLatency seeds the live racer stat used by Best Known and Hedged.
+// setMeasuredLatency records one successful live exchange for the racer stat
+// used by Best Known and Hedged.
 func setMeasuredLatency(t *testing.T, p *UpstreamPool, addr string, d time.Duration) {
 	t.Helper()
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	st, ok := p.stats[addr]
+	p.mu.RLock()
+	_, ok := p.stats[addr]
+	p.mu.RUnlock()
 	if !ok {
 		t.Fatalf("no stat entry for %s", addr)
 	}
-	st.mu.Lock()
-	st.avgLatency = d
-	st.mu.Unlock()
+	p.recordStat(addr, d, statSuccess, "", false)
 }
 
 func TestBestKnownStartsWithFastestMeasured(t *testing.T) {

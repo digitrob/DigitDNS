@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -1423,6 +1424,10 @@ func (a *API) handleV3Stats(w http.ResponseWriter, r *http.Request) {
 		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
 		return
 	}
+	if entry, ok := a.statsCache.Get("v3/stats"); ok {
+		httpx.WriteCached(w, r, entry)
+		return
+	}
 	// Carry the per-upstream rows in the same response the panel reads. The
 	// Android dashboard used to poll /upstreams/stats alongside this endpoint on
 	// every tick; one document is both fewer requests and one less JSON parse.
@@ -1434,7 +1439,14 @@ func (a *API) handleV3Stats(w http.ResponseWriter, r *http.Request) {
 	if a.upstreams != nil {
 		resp.Upstreams = a.upstreams.GetUpstreamStats()
 	}
-	_ = json.NewEncoder(w).Encode(resp)
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(resp); err != nil {
+		writeProblemAt(w, r, http.StatusInternalServerError, "internal", "encode stats")
+		return
+	}
+	const contentType = "application/json"
+	a.statsCache.Set("v3/stats", buf.Bytes(), contentType)
+	httpx.WriteCached(w, r, httpx.CachedResponse{Body: buf.Bytes(), ContentType: contentType})
 }
 
 func (a *API) handleV3Stream(w http.ResponseWriter, r *http.Request) {

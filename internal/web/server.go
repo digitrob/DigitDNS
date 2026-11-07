@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -80,6 +81,10 @@ type WebServer struct {
 	loginLimiter  *service.LoginAttemptTracker
 	benchmark     *service.BenchmarkRunner
 	sseTickets    *sseTicketStore
+	// statsCache shares one encoded /api/stats document between every open
+	// dashboard for a second. The payload is identical for all of them, and the
+	// dashboard polls it every couple of seconds.
+	statsCache *httpx.ResponseCache
 
 	// kdfGate bounds how many password verifications run at once. Verification is
 	// deliberately expensive and reachable without authentication, so without a
@@ -211,6 +216,7 @@ func NewWebServer(
 		sseTickets:  newSSETicketStore(),
 		kdfGate:     make(chan struct{}, kdfConcurrency()),
 		totpReplay:  newTOTPReplayGuard(),
+		statsCache:  httpx.NewResponseCache(time.Second, 2),
 	}
 	ws.loginLimiter = service.NewLoginAttemptTracker()
 	ws.benchmark = service.NewBenchmarkRunner(func() {
@@ -2166,6 +2172,10 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
 		return
 	}
+	if entry, ok := ws.statsCache.Get("web/stats"); ok {
+		httpx.WriteCached(w, r, entry)
+		return
+	}
 	st := ws.stats.GetLiveStats()
 
 	// GetUpstreamStats on a nil pool panics, and the panic would land on the
@@ -2242,8 +2252,14 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 
 		"upstreams": upstreamStats,
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(resp); err != nil {
+		httpx.WriteJSONErrorFor(w, http.StatusInternalServerError, err)
+		return
+	}
+	const contentType = "application/json"
+	ws.statsCache.Set("web/stats", buf.Bytes(), contentType)
+	httpx.WriteCached(w, r, httpx.CachedResponse{Body: buf.Bytes(), ContentType: contentType})
 }
 
 func (ws *WebServer) handleClients(w http.ResponseWriter, r *http.Request) {

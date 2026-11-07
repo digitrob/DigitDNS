@@ -17,6 +17,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -549,7 +550,18 @@ func (a *API) handleV2Stats(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD")
 		return
 	}
-	_ = json.NewEncoder(w).Encode(a.stats.GetLiveStats())
+	if entry, ok := a.statsCache.Get("v2/stats"); ok {
+		httpx.WriteCached(w, r, entry)
+		return
+	}
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(a.stats.GetLiveStats()); err != nil {
+		writeProblem(w, http.StatusInternalServerError, "internal", "encode stats")
+		return
+	}
+	const contentType = "application/json"
+	a.statsCache.Set("v2/stats", buf.Bytes(), contentType)
+	httpx.WriteCached(w, r, httpx.CachedResponse{Body: buf.Bytes(), ContentType: contentType})
 }
 
 func (a *API) handleV2Settings(w http.ResponseWriter, r *http.Request) {

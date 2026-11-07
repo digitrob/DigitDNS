@@ -4497,6 +4497,8 @@ function renderUpstreams(upstreams) {
   const sig = upstreams.map(u => [
     u.address, u.latency || 0, u.errors || 0, u.transport_errors || 0,
     u.policy_errors || 0, u.circuit_open ? 1 : 0, u.last_error || '',
+    u.measured ? 1 : 0, u.samples || 0, u.recent_samples || 0,
+    Math.round((u.recent_error_rate || 0) * 100), u.consecutive_failures || 0,
   ].join(':')).join('|') + '|' + policySig;
   if (sig === lastUpstreamsSig) return;
   lastUpstreamsSig = sig;
@@ -4520,7 +4522,11 @@ function renderUpstreams(upstreams) {
     // means "fastest". Zero was worse, because "0.0 ms" with a green badge reads as a
     // perfect upstream when it means nobody has timed it yet.
     const latency = Number(u.latency) / 1e6;
-    const measured = Number.isFinite(latency) && latency > 0;
+    // The server says whether it has actually measured this upstream. Fall back
+    // to the numeric check for an older server that does not send the flag.
+    const measured = (typeof u.measured === 'boolean')
+      ? u.measured
+      : (Number.isFinite(latency) && latency > 0);
 
     let badgeClass = 'text-slate-400 bg-slate-500/10 border-slate-600/40';
     let dotClass = 'w-2 h-2 rounded-full bg-slate-600';
@@ -4529,32 +4535,48 @@ function renderUpstreams(upstreams) {
       dotClass = 'w-2 h-2 rounded-full bg-emerald-400';
       if (latency > 40) {
         badgeClass = 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30';
-        dotClass = 'w-2 h-2 rounded-full bg-yellow-400';
       }
       if (latency > 80) {
         badgeClass = 'text-red-400 bg-red-500/10 border-red-500/30';
-        dotClass = 'w-2 h-2 rounded-full bg-red-400';
       }
     }
     // "not timed yet" and "timed at 0.4 ms" have to look different, and the title is
     // where the distinction is spelled out for whoever hovers it.
     const latText = measured ? `${latency.toFixed(1)} ms` : '—';
-    let latTitle = measured ? 'Last measured round-trip' : 'Not measured yet — no answer has been timed from this upstream';
+    const recentRate = Number(u.recent_error_rate) || 0;
+    const recentSamples = Number(u.recent_samples) || 0;
+    const failing = (Number(u.consecutive_failures) || 0) > 0
+      || (recentSamples > 0 && recentRate >= 0.1);
+
+    let latTitle = measured
+      ? (Number(u.samples) > 0
+          ? `Median of the last ${Number(u.samples).toLocaleString()} live exchanges`
+          : 'Last successful probe — no live query has been timed yet')
+      : 'Not measured yet — no answer has been timed from this upstream';
+    if (measured && Number(u.latency_p95_ms) > 0) {
+      latTitle += ` · p95 ${Number(u.latency_p95_ms).toFixed(1)} ms`;
+    }
     const errorParts = [];
     if (u.circuit_open) errorParts.push('circuit open — retrying soon');
+    if (recentSamples > 0) {
+      errorParts.push(`recent errors ${Math.round(recentRate * 100)}% of ${recentSamples}`);
+    }
     if (u.transport_errors || u.policy_errors) {
-      errorParts.push(`transport ${u.transport_errors || 0} · policy ${u.policy_errors || 0}`);
+      errorParts.push(`live transport ${u.transport_errors || 0} · policy ${u.policy_errors || 0}`);
+    }
+    if (u.probe_hits || u.probe_errors || u.probe_policy) {
+      errorParts.push(`probes ${u.probe_hits || 0} ok · ${(u.probe_errors || 0) + (u.probe_policy || 0)} failed`);
     }
     if (u.last_error) errorParts.push(`last: ${u.last_error}`);
     if (errorParts.length) latTitle += ` · ${errorParts.join(' · ')}`;
 
-    // No extra chip or line: the dot carries the state, and the latency badge's
-    // tooltip carries the numbers and the last error. This keeps the resolver
-    // list as compact as it was before the classification existed.
+    // No extra chip or line: the dot carries current health, and the latency
+    // badge's tooltip carries the numbers and the last error. The dot is not the
+    // latency colour any more: a slow-but-healthy resolver stays green, and a
+    // resolver that timed out once an hour ago stops looking permanently broken.
     if (u.circuit_open) {
-      badgeClass = 'text-red-400 bg-red-500/10 border-red-500/30';
       dotClass = 'w-2 h-2 rounded-full bg-red-400';
-    } else if (u.transport_errors > 0) {
+    } else if (failing) {
       dotClass = 'w-2 h-2 rounded-full bg-amber-400';
     }
 

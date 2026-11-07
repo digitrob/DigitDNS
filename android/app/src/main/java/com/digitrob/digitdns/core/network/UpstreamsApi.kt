@@ -70,28 +70,49 @@ data class UpstreamStat(
     val address: String = "",
     val latency: Long = 0,
     @SerialName("latency_ms") val latencyMs: Double = 0.0,
+    @SerialName("latency_p50_ms") val latencyP50Ms: Double = 0.0,
+    @SerialName("latency_p95_ms") val latencyP95Ms: Double = 0.0,
+    @SerialName("measured") val measured: Boolean? = null,
+    @SerialName("samples") val samples: Long = 0,
     val hits: Long = 0,
     val errors: Long = 0,
     @SerialName("transport_errors") val transportErrors: Long = 0,
     @SerialName("policy_errors") val policyErrors: Long = 0,
+    @SerialName("recent_samples") val recentSamples: Int = 0,
+    @SerialName("recent_error_rate") val recentErrorRate: Double = 0.0,
     @SerialName("consecutive_failures") val consecutiveFailures: Int = 0,
     @SerialName("circuit_open") val circuitOpen: Boolean = false,
     @SerialName("last_error") val lastError: String = "",
     @SerialName("last_error_at") val lastErrorAt: String = "",
+    @SerialName("probe_hits") val probeHits: Long = 0,
+    @SerialName("probe_errors") val probeErrors: Long = 0,
+    @SerialName("probe_policy") val probePolicy: Long = 0,
+    @SerialName("last_probe_ms") val lastProbeMs: Double = 0.0,
+    @SerialName("last_probe_ok") val lastProbeOk: Boolean = false,
+    @SerialName("last_probe_at") val lastProbeAt: String = "",
 ) {
     /** Milliseconds to show, preferring the server's value. */
     val displayLatencyMs: Double get() = if (latencyMs > 0.0) latencyMs else latency / 1_000_000.0
 
     /**
-     * Whether the racer has actually timed this upstream. A freshly added resolver, or
-     * one that has never answered, has no measurement — showing it as "0.0 ms, fast"
-     * would dress an untested entry in the green that means "fastest". Matches the
-     * panel, which treats only a finite, positive latency as measured.
+     * Whether the racer has actually timed this upstream. The server's `measured`
+     * flag is authoritative; the numeric fallback keeps an older server working.
+     * A freshly added resolver, or one that has never answered, has no measurement —
+     * showing it as "0.0 ms, fast" would dress an untested entry in the green that
+     * means "fastest". Matches the panel, which treats only a finite, positive
+     * latency as measured.
      */
-    val isMeasured: Boolean get() = displayLatencyMs.isFinite() && displayLatencyMs > 0.0
+    val isMeasured: Boolean get() = measured
+        ?: (displayLatencyMs.isFinite() && displayLatencyMs > 0.0)
 
-    /** A row is healthy until it has errored at least once. */
-    val isHealthy: Boolean get() = errors == 0L
+    /**
+     * Current health, not lifetime history: an open circuit, a failure streak, or
+     * a high error rate in the recent window. A timeout an hour ago does not make a
+     * working resolver look broken.
+     */
+    val isHealthy: Boolean get() = !circuitOpen &&
+        consecutiveFailures == 0 &&
+        !(recentSamples > 0 && recentErrorRate >= 0.1)
 }
 
 @Serializable

@@ -305,13 +305,52 @@ func NormalizeUpstream(raw string) (string, bool) {
 	return normalizeUpstream(raw)
 }
 
+const (
+	// latencyWindow is the number of successful live exchanges kept per upstream.
+	// The card shows the median of this window: an EWMA is dragged up by a single
+	// slow DNSSEC or TCP-fallback exchange and takes many fast samples to recover,
+	// which made healthy resolvers look permanently slow.
+	latencyWindow = 128
+	// recentWindow is how many live outcomes the health dot considers. It is
+	// deliberately short: "did this resolver work recently" is the question the dot
+	// answers, not "has it ever failed since the process started".
+	recentWindow = 64
+)
+
 type upstreamStatInternal struct {
-	mu              sync.Mutex
-	avgLatency      time.Duration
+	mu sync.Mutex
+	// latencyRing holds the last latencyWindow successful live round trips. p50
+	// is what the card shows; p95 is in the tooltip. Probes do not enter it, so
+	// the live figure cannot be skewed by a startup benchmark on a bad network.
+	latencyRing  [latencyWindow]time.Duration
+	latencyNext  int
+	latencyCount int
+	samples      uint64
+	lastMeasured time.Time
+
 	hits            uint64
-	errors          uint64 // transport + policy, kept for the existing card
+	errors          uint64 // live transport + policy, kept for the existing card
 	transportErrors uint64
 	policyErrors    uint64
+
+	// Probe counters are separate from live traffic. Folding startup benchmarks
+	// into hits/errors made an upstream that was down for one probe look broken
+	// for the life of the process.
+	probeHits        uint64
+	probeErrors      uint64
+	probePolicy      uint64
+	lastProbeLatency time.Duration
+	lastProbeOK      bool
+	lastProbeAt      time.Time
+
+	// recent is a ring of live outcomes: 1 is a transport failure, 0 is a usable
+	// answer or a policy response (both prove reachability). The health dot reads
+	// this instead of the lifetime error count.
+	recent         [recentWindow]uint8
+	recentNext     int
+	recentLen      int
+	recentFailures int
+
 	// consecutiveFailures counts transport failures only. A REFUSED or SERVFAIL
 	// proves the resolver is reachable; it must not trip the breaker.
 	consecutiveFailures uint32
@@ -321,6 +360,72 @@ type upstreamStatInternal struct {
 	// openUntil is UnixNano, or 0 while the circuit is closed. Atomic so the
 	// query path can skip an open resolver without taking the per-stat mutex.
 	openUntil atomic.Int64
+}
+
+// observeLatency appends a successful live round trip to the rolling window.
+func (st *upstreamStatInternal) observeLatency(rtt time.Duration) {
+	if rtt <= 0 {
+		return
+	}
+	st.latencyRing[st.latencyNext] = rtt
+	st.latencyNext = (st.latencyNext + 1) % latencyWindow
+	if st.latencyCount < latencyWindow {
+		st.latencyCount++
+	}
+}
+
+// observeRecent records one live outcome for the health dot.
+func (st *upstreamStatInternal) observeRecent(failure bool) {
+	var v uint8
+	if failure {
+		v = 1
+	}
+	if st.recentLen < recentWindow {
+		st.recent[st.recentNext] = v
+		st.recentNext = (st.recentNext + 1) % recentWindow
+		st.recentLen++
+		if failure {
+			st.recentFailures++
+		}
+		return
+	}
+	if st.recent[st.recentNext] == 1 {
+		st.recentFailures--
+	}
+	st.recent[st.recentNext] = v
+	st.recentNext = (st.recentNext + 1) % recentWindow
+	if failure {
+		st.recentFailures++
+	}
+}
+
+// latencyPercentiles returns the median, p95 and mean of the rolling window.
+// A single allocation-free copy keeps the per-second stats read cheap.
+func (st *upstreamStatInternal) latencyPercentiles() (p50, p95, avg time.Duration) {
+	n := st.latencyCount
+	if n == 0 {
+		return 0, 0, 0
+	}
+	var vals [latencyWindow]time.Duration
+	start := (st.latencyNext - n + latencyWindow) % latencyWindow
+	for i := 0; i < n; i++ {
+		vals[i] = st.latencyRing[(start+i)%latencyWindow]
+	}
+	slices.Sort(vals[:n])
+	var sum time.Duration
+	for _, v := range vals[:n] {
+		sum += v
+	}
+	// Nearest-rank percentiles: ceil(p*n/100)-1, so a single slow outlier is
+	// visible in p95 while p50 stays the typical exchange.
+	rank := func(p int) int {
+		idx := (p*n + 99) / 100
+		if idx < 1 {
+			idx = 1
+		}
+		return idx - 1
+	}
+	return vals[rank(50)], vals[rank(95)], sum / time.Duration(n)
 }
 
 // Circuit breaker policy. Five consecutive transport failures is enough to stop
@@ -538,23 +643,25 @@ func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecs
 	}
 
 	for _, u := range normalized {
-		pool.stats[u] = &upstreamStatInternal{
-			avgLatency:  12 * time.Millisecond,
-			lastUpdated: time.Now(),
-		}
+		pool.stats[u] = &upstreamStatInternal{lastUpdated: time.Now()}
 	}
 	pool.rebuildSnapshotLocked()
 
-	// No probe from here. Latency is pre-seeded above, so the pool is usable the
-	// instant it is built, and the caller decides when to spend network I/O on
-	// measuring it: the daemon fires BenchmarkAll once at startup, the dashboard
-	// and the TUI fire it on demand. A probe launched from the constructor had no
-	// handle to cancel or await, which made every test that reads these stats race
-	// an unstoppable goroutine and put ~65 real DNS queries into a unit-test run.
+	// No probe from here. The pool is usable the instant it is built; the caller
+	// decides when to spend network I/O on measuring it: the daemon fires
+	// BenchmarkAll once at startup, the dashboard and the TUI fire it on demand.
+	// A probe launched from the constructor had no handle to cancel or await,
+	// which made every test that reads these stats race an unstoppable goroutine
+	// and put ~65 real DNS queries into a unit-test run.
+	//
+	// Until something has actually answered, an upstream reports measured=false
+	// and no latency. There is deliberately no seeded "12 ms": that number was
+	// indistinguishable from a real measurement and dressed an untested resolver
+	// in the green badge that means "fastest".
 	return pool
 }
 
-func (p *UpstreamPool) recordStat(addr string, latency time.Duration, outcome statOutcome, reason string) {
+func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOutcome, reason string, probe bool) {
 	p.mu.RLock()
 	stat, ok := p.stats[addr]
 	p.mu.RUnlock()
@@ -570,12 +677,21 @@ func (p *UpstreamPool) recordStat(addr string, latency time.Duration, outcome st
 	stat.lastUpdated = now
 	switch outcome {
 	case statSuccess:
-		stat.hits++
-		if stat.avgLatency == 0 {
-			stat.avgLatency = latency
-		} else {
-			stat.avgLatency = (stat.avgLatency*7 + latency*3) / 10
+		if probe {
+			// A benchmark proves the resolver works and gives the dashboard a
+			// starting latency, but it is not client traffic: it must not inflate
+			// hits, the rolling live median or the recent-health ring.
+			stat.probeHits++
+			stat.lastProbeLatency = rtt
+			stat.lastProbeOK = true
+			stat.lastProbeAt = now
+			break
 		}
+		stat.hits++
+		stat.samples++
+		stat.observeLatency(rtt)
+		stat.observeRecent(false)
+		stat.lastMeasured = now
 		stat.consecutiveFailures = 0
 		if stat.openUntil.Swap(0) != 0 {
 			p.openCircuits.Add(-1)
@@ -583,7 +699,16 @@ func (p *UpstreamPool) recordStat(addr string, latency time.Duration, outcome st
 	case statPolicyRcode:
 		// The resolver answered. A filtered REFUSED is worth showing, but it is
 		// not a reason to stop asking this resolver anything at all.
+		if probe {
+			stat.probePolicy++
+			stat.lastProbeOK = false
+			stat.lastProbeAt = now
+			break
+		}
 		stat.policyErrors++
+		// Reachable, so it counts as a good outcome for the health dot even
+		// though the rcode is not a usable answer.
+		stat.observeRecent(false)
 		stat.consecutiveFailures = 0
 		if stat.openUntil.Swap(0) != 0 {
 			p.openCircuits.Add(-1)
@@ -591,7 +716,16 @@ func (p *UpstreamPool) recordStat(addr string, latency time.Duration, outcome st
 		stat.lastError = reason
 		stat.lastErrorAt = now
 	case statTransportError:
+		if probe {
+			// A failed startup probe says the network was bad at that moment; it
+			// must not open the breaker or colour the live card for its lifetime.
+			stat.probeErrors++
+			stat.lastProbeOK = false
+			stat.lastProbeAt = now
+			break
+		}
 		stat.transportErrors++
+		stat.observeRecent(true)
 		stat.consecutiveFailures++
 		stat.lastError = reason
 		stat.lastErrorAt = now
@@ -671,11 +805,10 @@ func (p *UpstreamPool) BenchmarkAll() {
 			// port that is not even listening, so it scored as broken.
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
-			start := time.Now()
-			resp, _, err := p.queryOne(ctx, m, addr)
-			dur := time.Since(start)
+			resp, rtt, err := p.queryOne(ctx, m, addr)
 			outcome, reason := classifyStat(resp, err)
-			p.recordStat(addr, dur, outcome, reason)
+			// probe=true: this is a benchmark, not client traffic.
+			p.recordStat(addr, rtt, outcome, reason, true)
 		}(s)
 	}
 	wg.Wait()
@@ -923,13 +1056,13 @@ func (p *UpstreamPool) exchangeHedged(req *dns.Msg, upstreams []string, timeout 
 
 	start := func(addr string) {
 		go func() {
-			startedAt := time.Now()
 			resp, rtt, err := p.queryOne(ctx, req, addr)
-			dur := time.Since(startedAt)
 			// A canceled loser is not a resolver failure; a real error is.
 			if err == nil || !errors.Is(err, context.Canceled) {
 				outcome, reason := classifyStat(resp, err)
-				p.recordStat(addr, dur, outcome, reason)
+				// Record the transport round trip, not the goroutine's wall time:
+				// scheduling and race bookkeeping are not upstream latency.
+				p.recordStat(addr, rtt, outcome, reason, false)
 			}
 			select {
 			case resChan <- result{resp: resp, duration: rtt, upstream: addr, err: err}:
@@ -1304,9 +1437,7 @@ func (p *UpstreamPool) exchangeRacing(req *dns.Msg, upstreams []string, timeout 
 
 	for _, u := range upstreams {
 		go func(addr string) {
-			start := time.Now()
 			resp, rtt, err := p.queryOne(ctx, req, addr)
-			dur := time.Since(start)
 
 			// A query abandoned because another upstream already answered is not
 			// an upstream failure. Recording it added an error to every healthy
@@ -1322,7 +1453,8 @@ func (p *UpstreamPool) exchangeRacing(req *dns.Msg, upstreams []string, timeout 
 			// from the dashboard. errors.Is(err, ...) answers per-goroutine.
 			if err == nil || !errors.Is(err, context.Canceled) {
 				outcome, reason := classifyStat(resp, err)
-				p.recordStat(addr, dur, outcome, reason)
+				// The transport RTT, not goroutine wall time.
+				p.recordStat(addr, rtt, outcome, reason, false)
 			}
 
 			select {
@@ -1391,11 +1523,10 @@ func (p *UpstreamPool) exchangeSequential(req *dns.Msg, upstreams []string, time
 		if i > 0 && ctx.Err() != nil {
 			break
 		}
-		start := time.Now()
 		resp, rtt, err := p.queryOne(ctx, req, u)
 		outcome, reason := classifyStat(resp, err)
 		ok := outcome == statSuccess
-		p.recordStat(u, time.Since(start), outcome, reason)
+		p.recordStat(u, rtt, outcome, reason, false)
 		if ok {
 			return resp, rtt, u, nil
 		}
@@ -1420,32 +1551,65 @@ func (p *UpstreamPool) exchangeSequential(req *dns.Msg, upstreams []string, time
 }
 
 // UpstreamStat is an exported, read-only snapshot of a single upstream server health.
+//
+// LatencyMs is the median of the last latencyWindow successful live exchanges
+// (or, before any live traffic, the last successful probe). It is 0 and
+// Measured is false when nothing has answered; clients must not render a
+// fabricated value in that case.
 type UpstreamStat struct {
 	Address             string  `json:"address"`
 	LatencyNs           int64   `json:"latency"` // nanoseconds (frontend divides by 1e6)
 	LatencyMs           float64 `json:"latency_ms"`
+	LatencyP50Ms        float64 `json:"latency_p50_ms"`
+	LatencyP95Ms        float64 `json:"latency_p95_ms"`
+	LatencyAvgMs        float64 `json:"latency_avg_ms"`
+	Measured            bool    `json:"measured"`
+	Samples             uint64  `json:"samples"`
+	LastMeasuredAt      string  `json:"last_measured_at,omitempty"`
 	Hits                uint64  `json:"hits"`
 	Errors              uint64  `json:"errors"`
 	TransportErrors     uint64  `json:"transport_errors"`
 	PolicyErrors        uint64  `json:"policy_errors"`
+	RecentSamples       int     `json:"recent_samples"`
+	RecentErrorRate     float64 `json:"recent_error_rate"`
 	ConsecutiveFailures uint32  `json:"consecutive_failures"`
 	CircuitOpen         bool    `json:"circuit_open"`
 	LastError           string  `json:"last_error,omitempty"`
 	LastErrorAt         string  `json:"last_error_at,omitempty"`
+	// Probe counters are the startup/explicit benchmark, kept apart from live
+	// traffic so a single bad probe does not make the card look broken.
+	ProbeHits   uint64  `json:"probe_hits"`
+	ProbeErrors uint64  `json:"probe_errors"`
+	ProbePolicy uint64  `json:"probe_policy"`
+	LastProbeMs float64 `json:"last_probe_ms"`
+	LastProbeOK bool    `json:"last_probe_ok"`
+	LastProbeAt string  `json:"last_probe_at,omitempty"`
 }
 
 // GetUpstreamStats returns a snapshot of latency/health stats for all upstreams, sorted by latency.
 func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 	type snapshot struct {
 		latency             time.Duration
+		latencyP95          time.Duration
+		latencyAvg          time.Duration
+		samples             uint64
+		measuredAt          time.Time
 		hits                uint64
 		errors              uint64
 		transportErrors     uint64
 		policyErrors        uint64
+		recentLen           int
+		recentFailures      int
 		consecutiveFailures uint32
 		lastError           string
 		lastErrorAt         time.Time
 		openUntil           int64
+		probeHits           uint64
+		probeErrors         uint64
+		probePolicy         uint64
+		lastProbeLatency    time.Duration
+		lastProbeOK         bool
+		lastProbeAt         time.Time
 	}
 
 	p.mu.RLock()
@@ -1454,16 +1618,29 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 	stats := make(map[string]snapshot, len(p.stats))
 	for addr, st := range p.stats {
 		st.mu.Lock()
+		p50, p95, avg := st.latencyPercentiles()
 		stats[addr] = snapshot{
-			latency:             st.avgLatency,
+			latency:             p50,
+			latencyP95:          p95,
+			latencyAvg:          avg,
+			samples:             st.samples,
+			measuredAt:          st.lastMeasured,
 			hits:                st.hits,
 			errors:              st.errors,
 			transportErrors:     st.transportErrors,
 			policyErrors:        st.policyErrors,
+			recentLen:           st.recentLen,
+			recentFailures:      st.recentFailures,
 			consecutiveFailures: st.consecutiveFailures,
 			lastError:           st.lastError,
 			lastErrorAt:         st.lastErrorAt,
 			openUntil:           st.openUntil.Load(),
+			probeHits:           st.probeHits,
+			probeErrors:         st.probeErrors,
+			probePolicy:         st.probePolicy,
+			lastProbeLatency:    st.lastProbeLatency,
+			lastProbeOK:         st.lastProbeOK,
+			lastProbeAt:         st.lastProbeAt,
 		}
 		st.mu.Unlock()
 	}
@@ -1472,9 +1649,10 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 	now := time.Now()
 	out := make([]UpstreamStat, 0, len(addrs))
 	for _, addr := range addrs {
-		s := UpstreamStat{Address: addr, LatencyNs: int64(12 * time.Millisecond)}
+		// No seeded latency. An upstream that has never answered is honestly
+		// unmeasured; the dashboard renders "—", not a fake 12 ms.
+		s := UpstreamStat{Address: addr}
 		if raw, ok := stats[addr]; ok {
-			s.LatencyNs = int64(raw.latency)
 			s.Hits = raw.hits
 			s.Errors = raw.errors
 			s.TransportErrors = raw.transportErrors
@@ -1485,6 +1663,39 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 			if !raw.lastErrorAt.IsZero() {
 				s.LastErrorAt = raw.lastErrorAt.UTC().Format(time.RFC3339)
 			}
+			s.Samples = raw.samples
+			if raw.samples > 0 {
+				s.Measured = true
+				s.LatencyNs = int64(raw.latency)
+				s.LatencyP50Ms = float64(raw.latency) / 1e6
+				s.LatencyP95Ms = float64(raw.latencyP95) / 1e6
+				s.LatencyAvgMs = float64(raw.latencyAvg) / 1e6
+				if !raw.measuredAt.IsZero() {
+					s.LastMeasuredAt = raw.measuredAt.UTC().Format(time.RFC3339)
+				}
+			} else if raw.lastProbeOK && raw.lastProbeLatency > 0 {
+				// A real probe answered but no client query has yet: show the
+				// probe's round trip, marked as such by Samples == 0.
+				s.Measured = true
+				s.LatencyNs = int64(raw.lastProbeLatency)
+				s.LatencyP50Ms = float64(raw.lastProbeLatency) / 1e6
+				s.LatencyP95Ms = s.LatencyP50Ms
+				s.LatencyAvgMs = s.LatencyP50Ms
+			}
+			s.RecentSamples = raw.recentLen
+			if raw.recentLen > 0 {
+				s.RecentErrorRate = float64(raw.recentFailures) / float64(raw.recentLen)
+			}
+			s.ProbeHits = raw.probeHits
+			s.ProbeErrors = raw.probeErrors
+			s.ProbePolicy = raw.probePolicy
+			s.LastProbeOK = raw.lastProbeOK
+			if raw.lastProbeLatency > 0 {
+				s.LastProbeMs = float64(raw.lastProbeLatency) / 1e6
+			}
+			if !raw.lastProbeAt.IsZero() {
+				s.LastProbeAt = raw.lastProbeAt.UTC().Format(time.RFC3339)
+			}
 		}
 		s.LatencyMs = float64(s.LatencyNs) / 1e6
 		out = append(out, s)
@@ -1494,8 +1705,8 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 		if a.LatencyNs != b.LatencyNs {
 			return cmp.Compare(a.LatencyNs, b.LatencyNs)
 		}
-		// Equal latencies are the normal state right after a restart — every
-		// upstream starts at the same seeded 12ms — and an unstable sort made the
+		// Equal latencies are the normal state before the first measurement —
+		// every unmeasured upstream reports 0 — and an unstable sort made the
 		// dashboard's resolver list reshuffle itself on every refresh.
 		return strings.Compare(a.Address, b.Address)
 	})
@@ -1563,10 +1774,7 @@ func (p *UpstreamPool) SetUpstreams(list []string) {
 	p.upstreams = normalized
 	for _, u := range p.upstreams {
 		if _, ok := p.stats[u]; !ok {
-			p.stats[u] = &upstreamStatInternal{
-				avgLatency:  12 * time.Millisecond,
-				lastUpdated: time.Now(),
-			}
+			p.stats[u] = &upstreamStatInternal{lastUpdated: time.Now()}
 		}
 	}
 	// Drop stats for removed upstreams, keeping the open-circuit count honest.

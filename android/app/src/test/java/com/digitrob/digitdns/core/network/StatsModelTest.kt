@@ -33,9 +33,24 @@ class StatsModelTest {
     }
 
     @Test
-    fun `an upstream with no errors reads healthy, one with errors does not`() {
-        assertTrue(UpstreamStat(errors = 0).isHealthy)
-        assertFalse(UpstreamStat(errors = 1).isHealthy)
+    fun `health follows the current window, not lifetime errors`() {
+        // A resolver that failed once long ago is not unhealthy now.
+        assertTrue(UpstreamStat(errors = 1, transportErrors = 1).isHealthy)
+        // A failure streak is unhealthy.
+        assertFalse(UpstreamStat(consecutiveFailures = 1).isHealthy)
+        // An open circuit is unhealthy.
+        assertFalse(UpstreamStat(circuitOpen = true).isHealthy)
+        // A high recent error rate is unhealthy.
+        assertFalse(UpstreamStat(recentSamples = 10, recentErrorRate = 0.2).isHealthy)
+        assertTrue(UpstreamStat(recentSamples = 10, recentErrorRate = 0.01).isHealthy)
+    }
+
+    @Test
+    fun `measured flag wins over a numeric latency`() {
+        // The server explicitly says it has not measured this upstream.
+        assertFalse(UpstreamStat(latency = 12_000_000, latencyMs = 12.0, measured = false, samples = 0).isMeasured)
+        // A real measurement, even if only from the startup probe.
+        assertTrue(UpstreamStat(latency = 12_000_000, latencyMs = 12.0, measured = true).isMeasured)
     }
 
     @Test

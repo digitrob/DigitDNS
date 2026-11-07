@@ -22,7 +22,9 @@ const (
 	// arrive split across TCP segments, so the buffer covers a full TLS record
 	// and the read below loops until the record is complete.
 	handshakeBufSize = 16 * 1024
-	relayBufSize     = 32 * 1024
+	// 64 KiB halves the read/write syscalls per byte compared with 32 KiB. The
+	// buffers are pooled, so this is two pages, not two allocations per relay.
+	relayBufSize = 64 * 1024
 
 	// maxConcurrentRelays caps how many relays run at once. Each one holds two
 	// sockets, two goroutines and a relay buffer, and nothing in the protocol
@@ -530,17 +532,27 @@ func (s *Server) relay(clientConn, targetConn net.Conn, idle time.Duration, repo
 
 	go func() {
 		defer wg.Done()
-		b := relayBufPool.Get().(*[]byte)
-		defer relayBufPool.Put(b)
-		s.bytesSent.Add(copyIdle(targetConn, clientConn, *b, idle, report))
+		// A metered relay needs the userspace buffer; the unmetered splice path
+		// does not, so do not reserve 64 KiB per direction for nothing.
+		var buf []byte
+		if report != nil {
+			b := relayBufPool.Get().(*[]byte)
+			defer relayBufPool.Put(b)
+			buf = *b
+		}
+		s.bytesSent.Add(copyIdle(targetConn, clientConn, buf, idle, report))
 		closeWrite(targetConn)
 	}()
 
 	go func() {
 		defer wg.Done()
-		b := relayBufPool.Get().(*[]byte)
-		defer relayBufPool.Put(b)
-		s.bytesRecv.Add(copyIdle(clientConn, targetConn, *b, idle, report))
+		var buf []byte
+		if report != nil {
+			b := relayBufPool.Get().(*[]byte)
+			defer relayBufPool.Put(b)
+			buf = *b
+		}
+		s.bytesRecv.Add(copyIdle(clientConn, targetConn, buf, idle, report))
 		closeWrite(clientConn)
 	}()
 
@@ -550,8 +562,30 @@ func (s *Server) relay(clientConn, targetConn net.Conn, idle time.Duration, repo
 // copyIdle is io.CopyBuffer with an inactivity deadline refreshed per chunk. It
 // reports progress to report every meterFlushBytes so that accounting for a
 // long-lived connection does not wait for the connection to end.
+//
+// When there is no meter to update, both ends are plain TCP and the kernel can
+// move the bytes with splice instead of copying them through this process. That
+// path is chosen only for unmetered relays: splice bypasses the per-chunk Read
+// hook the meter needs. It still honours the idle timeout — a ReadFrom call with
+// no data within idle returns a timeout, and only a call that also moved bytes
+// resets the window.
 func copyIdle(dst, src net.Conn, buf []byte, idle time.Duration, report func(uint64)) uint64 {
+	if report == nil {
+		if dt, ok := dst.(*net.TCPConn); ok {
+			if st, ok := src.(*net.TCPConn); ok {
+				return copySpliceIdle(dt, st, idle)
+			}
+		}
+	}
 	var total, unreported uint64
+	// The caller may pass no buffer on the unmetered path. If the splice fast
+	// path did not apply (one side is not a plain TCP socket), take one from the
+	// pool rather than reading into a nil slice, which would spin.
+	if len(buf) == 0 {
+		b := relayBufPool.Get().(*[]byte)
+		defer relayBufPool.Put(b)
+		buf = *b
+	}
 	// Whatever is still unreported when the copy ends has to be handed over, on
 	// every exit path.
 	defer func() {
@@ -585,6 +619,34 @@ func copyIdle(dst, src net.Conn, buf []byte, idle time.Duration, report func(uin
 		if rerr != nil {
 			return total
 		}
+	}
+}
+
+// copySpliceIdle is the zero-copy relay path. TCPConn.ReadFrom asks Linux to
+// splice the socket buffers, so a bulk transfer does not pass through userspace
+// twice. The idle deadline is still refreshed per ReadFrom call: the call only
+// returns after an idle timeout, and a call that moved bytes is treated as
+// activity and retried.
+func copySpliceIdle(dst, src *net.TCPConn, idle time.Duration) uint64 {
+	var total uint64
+	for {
+		if idle > 0 {
+			_ = src.SetReadDeadline(time.Now().Add(idle))
+			// Bound a receiver that has stopped reading. The relay still closes
+			// both sockets when this returns, so a stuck peer cannot park a slot.
+			_ = dst.SetWriteDeadline(time.Now().Add(4 * idle))
+		}
+		n, err := dst.ReadFrom(src)
+		if n > 0 {
+			total += uint64(n)
+		}
+		if err == nil {
+			return total
+		}
+		if ne, ok := err.(net.Error); ok && ne.Timeout() && n > 0 {
+			continue
+		}
+		return total
 	}
 }
 

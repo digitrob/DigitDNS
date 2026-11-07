@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.2.5] — trustworthy upstream metrics, faster relay and stats
+
+**Upstream metrics.** The resolver now records the transport round trip returned
+by the exchange, not the wall-clock time of the goroutine around it. Latency is
+the median of the last 128 successful live exchanges (`p95` in the tooltip)
+instead of an EWMA that one slow DNSSEC or TCP-fallback query could inflate for
+minutes. The seeded 12 ms estimate is gone: an upstream that has not answered
+reports `measured: false` and renders `—`.
+
+- Startup probes are counted separately (`probe_hits`, `probe_errors`,
+  `last_probe_ms`) and no longer inflate live hits/errors or trip the breaker.
+- `recent_error_rate` over the last 64 live outcomes drives the health dot, so a
+  timeout an hour ago does not keep a working resolver amber.
+- The dot means health; the latency badge keeps its own colour. A slow but
+  healthy resolver stays green.
+- Policy rcodes (REFUSED/SERVFAIL) count as reachable and stay distinct from
+  transport failures.
+
+**Performance.** The SNI relay uses `TCPConn.ReadFrom` (splice) for unmetered
+relays while preserving the idle timeout; metered relays keep the buffered,
+per-1 MB accounting path. The relay buffer is now 64 KiB. Live stats and the
+combined history endpoint are cached per process (1 s and 5 s respectively), so
+several dashboards share one computation.
+
 ## 🏷️ [v5.2.4] — SNI Refused counts real refusals only
 
 **A patch for the SNI proxy card.** Public port 443 constantly receives

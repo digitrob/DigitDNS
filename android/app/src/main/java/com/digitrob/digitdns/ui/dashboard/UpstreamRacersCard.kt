@@ -456,8 +456,10 @@ private fun UpstreamRow(
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // The status dot mirrors the panel: green when measured and fast, amber above
-            // 40 ms, red above 80 ms, grey when nothing has timed it yet.
+            // The status dot carries current health, not lifetime history: red while
+            // the circuit is open, amber on a failure streak or a high recent error
+            // rate, grey until something has been timed. The latency number beside it
+            // keeps its own colour, so a slow-but-working resolver stays green.
             Box(
                 modifier = Modifier
                     .size(8.dp)
@@ -499,24 +501,32 @@ private fun UpstreamRow(
             Text(
                 text = if (stat.isMeasured) "%.1f ms".format(stat.displayLatencyMs) else "—",
                 style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
-                color = racerDotColor(stat, colors),
+                color = racerLatencyColor(stat, colors),
             )
         }
     }
 }
 
-/** The racer status dot, by the panel's measured-latency thresholds. */
+/** The racer status dot: current health, not the latency number beside it. */
 private fun racerDotColor(stat: UpstreamStat, colors: ExtendedColors): Color =
     when {
         stat.circuitOpen -> colors.danger
+        !stat.isHealthy -> colors.warning
+        !stat.isMeasured -> colors.textMuted
+        else -> colors.success
+    }
+
+/** The latency number's own colour, by the panel's measured thresholds. */
+private fun racerLatencyColor(stat: UpstreamStat, colors: ExtendedColors): Color =
+    when {
         !stat.isMeasured -> colors.textMuted
         stat.displayLatencyMs > RACER_DANGER_MS -> colors.danger
         stat.displayLatencyMs > RACER_WARNING_MS -> colors.warning
         else -> colors.success
     }
 
-/** Racer dot: at/above this measured latency reads amber, matching the panel. */
+/** Racer latency: at/above this measured latency reads amber, matching the panel. */
 private const val RACER_WARNING_MS = 40.0
 
-/** Racer dot: at/above this measured latency reads red, matching the panel. */
+/** Racer latency: at/above this measured latency reads red, matching the panel. */
 private const val RACER_DANGER_MS = 80.0

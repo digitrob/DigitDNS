@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"io"
 	"net"
 	"sync"
 	"testing"
@@ -374,4 +375,99 @@ func TestGuardStatsDetailSeparatesMalformedProbe(t *testing.T) {
 	if refused, unreadable := s.GuardStats(); refused != 0 || unreadable != 0 {
 		t.Fatalf("GuardStats() = (%d, %d), want (0, 0): malformed probes are not refusals", refused, unreadable)
 	}
+}
+
+// TestCopySpliceIdleMovesBytesAndHonoursIdle — the unmetered relay path uses
+// TCPConn.ReadFrom (splice) instead of the userspace buffer loop. It still has to
+// move bytes and still has to release the slot when the connection goes quiet.
+func TestCopySpliceIdleMovesBytesAndHonoursIdle(t *testing.T) {
+	srcClient, srcServer := newTCPPair(t)
+	dstServer, dstClient := newTCPPair(t)
+	defer srcClient.Close()
+	defer srcServer.Close()
+	defer dstServer.Close()
+	defer dstClient.Close()
+
+	done := make(chan uint64, 1)
+	go func() { done <- copySpliceIdle(dstServer, srcServer, 200*time.Millisecond) }()
+
+	if _, err := srcClient.Write([]byte("hello")); err != nil {
+		t.Fatalf("write to source: %v", err)
+	}
+	got := make([]byte, 5)
+	_ = dstClient.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.ReadFull(dstClient, got); err != nil {
+		t.Fatalf("read relayed bytes: %v", err)
+	}
+	if string(got) != "hello" {
+		t.Fatalf("relayed %q, want hello", got)
+	}
+
+	select {
+	case n := <-done:
+		if n != 5 {
+			t.Fatalf("copySpliceIdle counted %d bytes, want 5", n)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("copySpliceIdle did not return after the idle deadline")
+	}
+}
+
+// TestCopyIdleKeepsMeteredPathBuffered — a metered relay must not take the
+// splice path, because splice would bypass the per-chunk byte accounting.
+func TestCopyIdleKeepsMeteredPathBuffered(t *testing.T) {
+	srcClient, srcServer := newTCPPair(t)
+	dstServer, dstClient := newTCPPair(t)
+	defer srcClient.Close()
+	defer srcServer.Close()
+	defer dstServer.Close()
+	defer dstClient.Close()
+
+	var metered uint64
+	done := make(chan uint64, 1)
+	go func() {
+		done <- copyIdle(dstServer, srcServer, make([]byte, relayBufSize), 200*time.Millisecond, func(n uint64) { metered += n })
+	}()
+
+	if _, err := srcClient.Write([]byte("metered")); err != nil {
+		t.Fatalf("write to source: %v", err)
+	}
+	got := make([]byte, 7)
+	_ = dstClient.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.ReadFull(dstClient, got); err != nil {
+		t.Fatalf("read relayed bytes: %v", err)
+	}
+	if string(got) != "metered" {
+		t.Fatalf("relayed %q, want metered", got)
+	}
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("copyIdle did not return after the idle deadline")
+	}
+	if metered != 7 {
+		t.Fatalf("meter saw %d bytes, want 7", metered)
+	}
+}
+
+func newTCPPair(t *testing.T) (client, server *net.TCPConn) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	accepted := make(chan *net.TCPConn, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- conn.(*net.TCPConn)
+	}()
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	return conn.(*net.TCPConn), <-accepted
 }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 
 	"digitdns/internal/aggregate"
 	"digitdns/internal/database"
+	"digitdns/internal/httpx"
 )
 
 // historicalStatsProblem maps the aggregate package's validation errors to a
@@ -135,6 +137,12 @@ func (a *API) handleV3StatsHistory(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 
+	cacheKey := "history|" + window + "|" + interval + "|" + strconv.Itoa(limit)
+	if entry, ok := a.historyCache.Get(cacheKey); ok {
+		httpx.WriteCached(w, r, entry)
+		return
+	}
+
 	summary, err := agg.Summary(window)
 	if err != nil {
 		historicalStatsProblem(w, r, err)
@@ -154,10 +162,16 @@ func (a *API) handleV3StatsHistory(w http.ResponseWriter, r *http.Request) {
 		}
 		tops[dimension] = a.withClientNames(top)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(map[string]any{
 		"range": window, "summary": summary, "series": series, "tops": tops,
-	})
+	}); err != nil {
+		writeProblemAt(w, r, http.StatusInternalServerError, "internal", "encode history")
+		return
+	}
+	const contentType = "application/json"
+	a.historyCache.Set(cacheKey, buf.Bytes(), contentType)
+	httpx.WriteCached(w, r, httpx.CachedResponse{Body: buf.Bytes(), ContentType: contentType})
 }
 
 // withClientNames resolves an IP-keyed client row to the account's current name.

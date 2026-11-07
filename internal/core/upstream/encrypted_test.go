@@ -218,8 +218,8 @@ func TestBenchmarkProbesDotOverTLS(t *testing.T) {
 	if hits.Load() == 0 {
 		t.Fatal("BenchmarkAll probed the DoT upstream on a transport it does not listen on")
 	}
-	if statFor(t, p, "tls://"+addr).Hits == 0 {
-		t.Fatal("a successful DoT benchmark recorded no hit")
+	if statFor(t, p, "tls://"+addr).ProbeHits == 0 {
+		t.Fatal("a successful DoT benchmark recorded no probe hit")
 	}
 }
 
@@ -255,7 +255,7 @@ func TestBenchmarkProbesDoHOverHTTPS(t *testing.T) {
 	if hits.Load() == 0 {
 		t.Fatal("BenchmarkAll probed the DoH upstream on UDP:53 instead of HTTPS")
 	}
-	if statFor(t, p, url).Hits == 0 {
-		t.Fatal("a successful DoH benchmark recorded no hit")
+	if statFor(t, p, url).ProbeHits == 0 {
+		t.Fatal("a successful DoH benchmark recorded no probe hit")
 	}
 }
