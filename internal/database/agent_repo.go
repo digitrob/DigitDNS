@@ -21,24 +21,54 @@ import (
 // copy action — so it lives as plain JSON for the same reason custom policy
 // groups do.
 type Agent struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Country   string    `json:"country"`
-	PublicIP  string    `json:"public_ip"`
-	RelayPort int       `json:"relay_port,omitempty"`
-	Version   string    `json:"version"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"created_at"`
-	LastSeen  time.Time `json:"last_seen"`
-	PingMs    float64   `json:"ping_ms,omitempty"`
-	PingAt    time.Time `json:"ping_at,omitempty"`
-	BytesIn   uint64    `json:"bytes_in"`
-	BytesOut  uint64    `json:"bytes_out"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Country  string `json:"country"`
+	PublicIP string `json:"public_ip"`
+	// PublicIPv6 is the agent's globally routable IPv6, reported by the agent
+	// heartbeat or set by the operator. It is published in proxied AAAA answers
+	// only while IPv6Enabled is true and the global proxy IPv6 switch is on.
+	PublicIPv6 string `json:"public_ipv6"`
+	// IPv6Enabled is the per-agent opt-in. It defaults off, so upgrading agents
+	// that start reporting an address cannot begin advertising IPv6 until the
+	// operator enables it.
+	IPv6Enabled bool      `json:"ipv6_enabled"`
+	RelayPort   int       `json:"relay_port,omitempty"`
+	Version     string    `json:"version"`
+	Enabled     bool      `json:"enabled"`
+	CreatedAt   time.Time `json:"created_at"`
+	LastSeen    time.Time `json:"last_seen"`
+	PingMs      float64   `json:"ping_ms,omitempty"`
+	PingAt      time.Time `json:"ping_at,omitempty"`
+	BytesIn     uint64    `json:"bytes_in"`
+	BytesOut    uint64    `json:"bytes_out"`
 
 	// secretHash is the SHA-256 of the key. Stored separately from the JSON so a
 	// list response can never carry it. The encrypted clear copy under key/<id>
 	// exists only for the authenticated copy action.
 	secretHash []byte `json:"-"`
+}
+
+// parseAgentPublicIPv6 mirrors netutil.ParsePublicIPv6 without importing it:
+// netutil already imports this package, and a database-level validator that
+// pulled in the whole utility package would close that import cycle. Only a
+// globally routable literal is accepted; empty or invalid leaves the record
+// unchanged.
+func parseAgentPublicIPv6(raw string) (net.IP, bool) {
+	ip := net.ParseIP(strings.TrimSpace(raw))
+	if ip == nil || ip.To4() != nil {
+		return nil, false
+	}
+	ip16 := ip.To16()
+	if ip16 == nil {
+		return nil, false
+	}
+	if ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || !ip.IsGlobalUnicast() {
+		return nil, false
+	}
+	return ip16, true
 }
 
 // HostBytes is one row of an agent's per-host traffic report.
@@ -309,11 +339,16 @@ func (db *DB) AuthenticateAgent(id, secret string) (Agent, error) {
 }
 
 // TouchAgent records a heartbeat: version, last-seen and traffic totals.
-func (db *DB) TouchAgent(id, version, publicIP string, relayPort int, bytesIn, bytesOut uint64) error {
+func (db *DB) TouchAgent(id, version, publicIP, publicIPv6 string, relayPort int, bytesIn, bytesOut uint64) error {
 	return db.updateAgent(id, func(a *Agent) {
 		a.Version = version
 		if ip := net.ParseIP(strings.TrimSpace(publicIP)); ip != nil && ip.To4() != nil {
 			a.PublicIP = ip.String()
+		}
+		// An empty report leaves the stored address alone: an agent that cannot
+		// detect IPv6 must not erase an operator-supplied value.
+		if ip, ok := parseAgentPublicIPv6(publicIPv6); ok {
+			a.PublicIPv6 = ip.String()
 		}
 		if relayPort > 0 {
 			a.RelayPort = relayPort
@@ -340,10 +375,11 @@ func (db *DB) SetAgentEnabled(id string, enabled bool) error {
 // UpdateAgentDetails changes the operator-editable fields. The key is untouched;
 // rotating it is a separate action so an edit form cannot silently invalidate a
 // running agent.
-func (db *DB) UpdateAgentDetails(id, name, country, publicIP string) error {
+func (db *DB) UpdateAgentDetails(id, name, country, publicIP, publicIPv6 string, ipv6Enabled bool) error {
 	name = strings.TrimSpace(name)
 	country = strings.ToUpper(strings.TrimSpace(country))
 	publicIP = strings.TrimSpace(publicIP)
+	publicIPv6 = strings.TrimSpace(publicIPv6)
 	if country == "" {
 		return ErrAgentNotFound
 	}
@@ -356,6 +392,11 @@ func (db *DB) UpdateAgentDetails(id, name, country, publicIP string) error {
 		if ip := net.ParseIP(publicIP); ip != nil && ip.To4() != nil {
 			a.PublicIP = ip.String()
 		}
+		a.PublicIPv6 = ""
+		if ip, ok := parseAgentPublicIPv6(publicIPv6); ok {
+			a.PublicIPv6 = ip.String()
+		}
+		a.IPv6Enabled = ipv6Enabled
 	})
 }
 

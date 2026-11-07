@@ -520,7 +520,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const rememberBox = document.getElementById('login-remember');
         if (rememberBox && rememberBox.checked) saveRememberedLogin(u, p);
         else forgetRememberedLogin();
-        hideLoginModal();
+        // Deliberately not hidden before the reload. The dashboard underneath may
+        // still hold the previous session's state (an expired-session line in a
+        // panel, a stale "STALE — NO TELEMETRY" badge). Hiding the overlay first
+        // revealed that stale page for a frame before the reload replaced it, which
+        // is the "session expired" flash operators reported. The reload removes
+        // both the overlay and the stale content at the same time.
         // Reload the document instead of booting the dashboard in place. If this
         // tab was opened before a server update, its markup is the old build and
         // bootDashboard() would only refresh the data, leaving the stale UI on
@@ -692,10 +697,6 @@ function checkAuthAndBoot() {
 
 function showLoginModal() {
   document.getElementById('login-modal')?.classList.remove('hidden');
-}
-
-function hideLoginModal() {
-  document.getElementById('login-modal')?.classList.add('hidden');
 }
 
 // The credential modal has two modes. Forced is the security nag: the stored
@@ -2035,6 +2036,7 @@ function renderConfig(cfg) {
     const live = Number(cfg.server?.session_idle_minutes);
     idleEl.value = Number.isFinite(live) && live > 0 ? live : 15;
   }
+  renderProxyIPv6Controls();
   const apiBindBadge = document.getElementById('api-bind-badge');
 
   if (apiBindBadge) {
@@ -2843,6 +2845,106 @@ async function saveDNSSECSettings() {
   } catch (e) {
     if (status) status.textContent = '';
     showToast('Could not save the DNSSEC settings', 'error');
+  }
+}
+
+// Proxy IPv6 is the server-side counterpart of the Android/agent path: the
+// public address is stored in ServerSettings and the live switch is applied by
+// the backend. The web form deliberately requires a global IPv6 literal before
+// the switch can be saved on; the server validates it again.
+let proxyIPv6Saving = false;
+
+function revealProxyIPv6Controls() {
+  const controls = document.getElementById('proxy-ipv6-controls');
+  if (!controls) return;
+  controls.style.visibility = 'visible';
+  controls.classList.remove('boot-hide');
+}
+
+function renderProxyIPv6Controls() {
+  const server = currentConfig?.server || {};
+  const input = document.getElementById('proxy-ipv6-input');
+  if (input && document.activeElement !== input) {
+    input.value = server.public_ipv6 || '';
+  }
+  const toggle = document.getElementById('proxy-ipv6-enabled');
+  if (toggle) toggle.checked = !!server.proxy_ipv6_enabled;
+  const on = !!server.proxy_ipv6_enabled;
+  const badge = document.getElementById('proxy-ipv6-badge');
+  if (badge) {
+    badge.textContent = on ? 'ON' : 'OFF';
+    badge.classList.toggle('bg-emerald-500/20', on);
+    badge.classList.toggle('text-emerald-300', on);
+    badge.classList.toggle('border-emerald-500/30', on);
+    badge.classList.toggle('bg-slate-800/70', !on);
+    badge.classList.toggle('text-slate-400', !on);
+    badge.classList.toggle('border-slate-700', !on);
+  }
+  document.getElementById('proxy-ipv6-off-note')?.classList.toggle('hidden', on);
+  document.getElementById('proxy-ipv6-on-note')?.classList.toggle('hidden', !on);
+  revealProxyIPv6Controls();
+}
+
+async function saveProxyIPv6Settings() {
+  if (proxyIPv6Saving) return;
+  const input = document.getElementById('proxy-ipv6-input');
+  const toggle = document.getElementById('proxy-ipv6-enabled');
+  const address = (input?.value || '').trim();
+  const enabled = !!(toggle && toggle.checked);
+  if (enabled && !address) {
+    showToast('Enter a global IPv6 address before enabling Proxy IPv6.', 'error');
+    input?.focus();
+    return;
+  }
+  const status = document.getElementById('proxy-ipv6-status');
+  const btn = document.getElementById('save-proxy-ipv6-btn');
+  proxyIPv6Saving = true;
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'Saving…';
+  try {
+    const res = await fetch(api('/api/settings'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ public_ipv6: address, proxy_ipv6_enabled: enabled })
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not save IPv6 settings'));
+    const data = await res.json();
+    if (!currentConfig.server) currentConfig.server = {};
+    currentConfig.server.public_ipv6 = data.public_ipv6 || '';
+    currentConfig.server.proxy_ipv6_enabled = data.proxy_ipv6_enabled === true;
+    renderProxyIPv6Controls();
+    if (typeof renderAgents === 'function') renderAgents();
+    if (status) status.textContent = 'Saved.';
+    showToast(enabled ? 'Proxy IPv6 enabled' : 'Proxy IPv6 disabled', enabled ? 'success' : 'warning');
+  } catch (e) {
+    if (status) status.textContent = e.message || 'Could not save IPv6 settings';
+    showToast(e.message || 'Could not save IPv6 settings', 'error');
+  } finally {
+    proxyIPv6Saving = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+function initProxyIPv6Events() {
+  const toggle = document.getElementById('proxy-ipv6-enabled');
+  if (toggle && !toggle.dataset.bound) {
+    toggle.dataset.bound = '1';
+    toggle.addEventListener('change', async () => {
+      if (toggle.checked) return;
+      const ok = await confirmAction({
+        destructive: true,
+        title: 'Turn off Proxy IPv6?',
+        hint: 'PROXIED AAAA WILL BE WITHHELD',
+        message: 'Clients will be forced onto the IPv4 relay. HTTPS/SVCB hints stay blocked, and direct domains keep their normal AAAA.',
+        confirmText: 'TURN OFF',
+      });
+      if (!ok) toggle.checked = true;
+    });
+  }
+  const btn = document.getElementById('save-proxy-ipv6-btn');
+  if (btn && !btn.dataset.bound) {
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', saveProxyIPv6Settings);
   }
 }
 
@@ -5966,8 +6068,13 @@ async function historyFetch(path) {
     headers: { 'Authorization': `Bearer ${authToken}` },
   });
   if (res.status === 401) {
+    // The gate is the whole answer. Marking this as a 401 lets loadHistory keep
+    // the panel quiet instead of painting "Session expired" behind the login
+    // overlay, where it stayed until the next reload.
+    const err = new Error('Session expired');
+    err.status = 401;
     showLoginModal();
-    throw new Error('Session expired');
+    throw err;
   }
   if (!res.ok) {
     const err = new Error(await errorMessage(res, 'Could not load traffic history'));
@@ -6003,6 +6110,14 @@ async function loadHistory(force = false) {
     scheduleHistoryRefresh();
   } catch (e) {
     if (seq !== historySeq) return;
+    if (e.status === 401) {
+      // Signed out: showLoginModal() has already raised the gate. Writing the
+      // auth failure into the card put a message behind the overlay that was
+      // revealed briefly when the next login hid it before reloading.
+      setHistoryError('');
+      setHistoryStatus('');
+      return;
+    }
     setHistoryError(e.status === 503
       ? 'Historical stats are unavailable on this instance.'
       : (e.message || 'Could not load traffic history.'));
@@ -7265,6 +7380,15 @@ function renderAgents() {
       + (status === 'disabled' ? ' is-disabled' : '')
       + (agentEditingId === a.id ? ' is-editing' : '');
     const ip = a.public_ip || 'not reported';
+    const ipv6 = a.public_ipv6 || 'not reported';
+    const globalIPv6 = !!currentConfig?.server?.proxy_ipv6_enabled;
+    const ipv6Badge = !a.ipv6_enabled
+      ? '<span class="agent-badge is-disabled">IPv6 OFF</span>'
+      : (!globalIPv6
+        ? '<span class="agent-badge is-disabled" title="Global Proxy IPv6 is off">IPv6 GLOBAL OFF</span>'
+        : (a.public_ipv6
+          ? '<span class="agent-badge is-online">IPv6 ON</span>'
+          : '<span class="agent-badge is-offline">IPv6 WAIT</span>'));
     const traffic = humanBytes((a.bytes_in || 0) + (a.bytes_out || 0));
     const assigned = assignedDomainsForAgent(a.id).size;
     const rules = currentConfig?.rules || {};
@@ -7281,6 +7405,7 @@ function renderAgents() {
                 ${agentFlagHTML(a)}
                 <h4 class="agent-name truncate">${escapeHTML(a.name || a.id)}</h4>
                 <span class="agent-badge ${escapeHTML(stateClass)}">${escapeHTML(status)}</span>
+                ${ipv6Badge}
                 ${agentEditingId === a.id ? '<span class="agent-badge is-editing">editing</span>' : ''}
               </div>
               <div class="agent-meta mt-0.5 truncate">${escapeHTML(a.country || '—')}${a.country ? ' · ' + escapeHTML(countryName(a.country)) : ''} · ${escapeHTML(a.id)}</div>
@@ -7307,6 +7432,11 @@ function renderAgents() {
                 <span class="text-slate-500 font-semibold shrink-0">PUBLIC IP</span>
                 <span class="text-cyan-300 min-w-0 flex-1 truncate text-right select-all" title="${escapeHTML(ip)}">${escapeHTML(ip)}</span>
                 ${a.public_ip ? `<button type="button" class="agent-icon-btn agent-icon-btn-inline" data-agent-copy-ip="${escapeHTML(a.public_ip)}" title="Copy public IP" aria-label="Copy public IP"><i data-feather="copy" class="w-3 h-3"></i></button>` : ''}
+              </div>
+              <div class="flex items-center justify-between gap-2 text-[10px] font-mono bg-slate-950/80 px-2.5 py-1.5 rounded-lg border border-slate-800/80">
+                <span class="text-slate-500 font-semibold shrink-0">PUBLIC IPV6</span>
+                <span class="${a.public_ipv6 ? 'text-cyan-300' : 'text-slate-500'} min-w-0 flex-1 truncate text-right select-all" title="${escapeHTML(ipv6)}">${escapeHTML(ipv6)}</span>
+                ${a.public_ipv6 ? `<button type="button" class="agent-icon-btn agent-icon-btn-inline" data-agent-copy-ip="${escapeHTML(a.public_ipv6)}" title="Copy public IPv6" aria-label="Copy public IPv6"><i data-feather="copy" class="w-3 h-3"></i></button>` : ''}
               </div>
               <div class="flex items-center justify-between gap-2 text-[10px] font-mono bg-slate-950/80 px-2.5 py-1.5 rounded-lg border border-slate-800/80">
                 <span class="text-slate-500 font-semibold shrink-0">AGENT KEY</span>
@@ -7433,6 +7563,26 @@ function openAgentForm(agent) {
   document.getElementById('agent-name').value = agent ? (agent.name || '') : '';
   document.getElementById('agent-country').value = agent && agent.country ? agent.country.toLowerCase() : 'de';
   document.getElementById('agent-public-ip').value = agent ? (agent.public_ip || '') : '';
+  const ipv6Input = document.getElementById('agent-public-ipv6');
+  const ipv6Toggle = document.getElementById('agent-ipv6-enabled');
+  if (ipv6Input) {
+    ipv6Input.value = agent ? (agent.public_ipv6 || '') : '';
+    ipv6Input.disabled = !agent;
+  }
+  if (ipv6Toggle) {
+    ipv6Toggle.checked = !!(agent && agent.ipv6_enabled);
+    ipv6Toggle.disabled = !agent;
+  }
+  const ipv6Note = document.getElementById('agent-ipv6-note');
+  if (ipv6Note) {
+    if (!agent) {
+      ipv6Note.textContent = 'Create the agent first; IPv6 is optional and its first heartbeat fills the address.';
+    } else if (!currentConfig?.server?.proxy_ipv6_enabled) {
+      ipv6Note.textContent = 'Optional for this existing agent; IPv4 keeps working. Global Proxy IPv6 is off; the agent stops IPv6 on its next heartbeat.';
+    } else {
+      ipv6Note.textContent = 'Optional for this existing agent; IPv4 keeps working. The agent applies this on its next heartbeat (within 30 seconds).';
+    }
+  }
   const keyEl = document.getElementById('agent-key');
   if (keyEl) keyEl.value = agent ? 'Stored encrypted — rotate to replace' : 'Generated when you create the agent';
   const rotate = document.getElementById('rotate-agent-key-btn');
@@ -7453,6 +7603,8 @@ async function saveAgentForm() {
   const name = (document.getElementById('agent-name').value || '').trim();
   const country = (document.getElementById('agent-country').value || '').toUpperCase();
   const publicIP = (document.getElementById('agent-public-ip').value || '').trim();
+  const publicIPv6 = (document.getElementById('agent-public-ipv6')?.value || '').trim();
+  const ipv6Enabled = !!(document.getElementById('agent-ipv6-enabled')?.checked);
   if (!/^[A-Z]{2}$/.test(country)) { if (status) status.textContent = 'Choose a country.'; return; }
   if (status) status.textContent = editing ? 'Saving…' : 'Creating agent…';
   try {
@@ -7460,7 +7612,13 @@ async function saveAgentForm() {
       const res = await fetch(api('/api/agents/' + encodeURIComponent(editing)), {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, country, public_ip: publicIP })
+        body: JSON.stringify({
+          name,
+          country,
+          public_ip: publicIP,
+          public_ipv6: publicIPv6,
+          ipv6_enabled: ipv6Enabled
+        })
       });
       if (!res.ok) throw new Error(await errorMessage(res, 'Could not save the agent'));
       showToast('Agent saved.', 'success');
@@ -8705,6 +8863,7 @@ function initEventListeners() {
     );
     if (!saved) e.target.checked = !want;
   });
+  initProxyIPv6Events();
   document.getElementById('resolution-transport')?.addEventListener('change', (e) => {
     saveResolutionSettings({ transport: e.target.value }, 'Resolution defaults saved');
   });
@@ -10625,6 +10784,15 @@ function promptForValue(opts) {
 }
 
 function showToast(msg, type = 'info') {
+  // A 401 body is the auth gate talking, not an error an operator can act on.
+  // Rendering its raw "session expired, please login again" text produced a
+  // toast that flashed over the login overlay until the reload cleared it, so
+  // any such message only re-raises the gate.
+  if (/session (?:has )?expired/i.test(String(msg || ''))) {
+    showLoginModal();
+    return;
+  }
+
   const container = document.getElementById('toast-container');
   if (!container) return;
 

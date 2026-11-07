@@ -58,9 +58,10 @@ var safeAttrInterp = map[string]string{
 	"!c.enabled":    "a boolean",
 	"i":             "a loop index in the hour/minute pickers",
 	"d":             "a day number in the datepicker grid",
-	"c.enabled ? 'Disable Client' : 'Enable Client'": "two literals",
-	"c.enabled ? 'pause' : 'play'":                   "two literals",
-	"r.success ? 'bg-emerald-400' : 'bg-red-400'":    "two literals",
+	"c.enabled ? 'Disable Client' : 'Enable Client'":     "two literals",
+	"c.enabled ? 'pause' : 'play'":                       "two literals",
+	"r.success ? 'bg-emerald-400' : 'bg-red-400'":        "two literals",
+	"a.public_ipv6 ? 'text-cyan-300' : 'text-slate-500'": "a CSS class name chosen by whether the agent reported IPv6, in renderAgents",
 }
 
 // A quoted attribute is the easier half of this to get wrong, because breaking out of

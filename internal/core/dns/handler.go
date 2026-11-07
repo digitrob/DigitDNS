@@ -15,6 +15,7 @@ import (
 	"digitdns/internal/core/matcher"
 	"digitdns/internal/core/upstream"
 	"digitdns/internal/database"
+	"digitdns/internal/netutil"
 	"github.com/miekg/dns"
 )
 
@@ -43,11 +44,11 @@ type ClientQueryCounter interface {
 	RecordClientQuery(clientID string)
 }
 
-// RelayLookup returns the egress address for a proxied domain. Both families are
-// reported because an agent may publish only one; the caller sinks the missing
+// RelayLookup returns the egress addresses for a proxied domain. Either family
+// may be empty when the agent publishes only one; the caller sinks the missing
 // family rather than leaking the hub's address. The agent fields are for the
 // query log and the dashboard badge.
-type RelayLookup func(domain string) (ipv4, agentID, agentName, country string, ok bool)
+type RelayLookup func(domain string) (ipv4, ipv6, agentID, agentName, country string, ok bool)
 
 type Handler struct {
 	access     AccessProvider
@@ -87,6 +88,11 @@ type Handler struct {
 	// atomic because the dashboard applies the setting live.
 	proxyLeakProtection atomic.Bool
 
+	// proxyIPv6Enabled chooses whether proxied names may answer AAAA with the
+	// hub's public IPv6. While false, AAAA stays sunk and the HTTPS/SVCB guard is
+	// forced on even when proxyLeakProtection is off, so no IPv6 hint can leak.
+	proxyIPv6Enabled atomic.Bool
+
 	// blockPolicy supplies the operator's chosen block response. It is read only
 	// for names that already matched a block rule, so a normal query never pays
 	// for it. Nil keeps the historical null-IP answer.
@@ -118,6 +124,9 @@ func NewHandler(
 	// Recommended default: proxied names must not advertise QUIC or origin
 	// address hints. main and the settings record can turn it off explicitly.
 	h.proxyLeakProtection.Store(true)
+	// IPv6 is opt-in: an upgraded install keeps forcing proxied clients onto the
+	// IPv4 relay until an operator supplies and enables a public IPv6.
+	h.proxyIPv6Enabled.Store(false)
 	if q, ok := access.(QuotaEnforcer); ok {
 		h.quota = q
 	}
@@ -248,29 +257,37 @@ func (h *Handler) SetPublicIP(ip string) {
 	h.publicIPv4 = net.ParseIP(h.publicIP).To4()
 }
 
-// SetPublicIPv6 installs the address proxied AAAA answers point at (v2.5). Only
-// a usable IPv6 literal is accepted; anything else clears it, and with it clear
-// the resolver keeps the older behaviour of sinking AAAA on proxied names so an
-// IPv4 client is forced onto the A record. Set it only when the server actually
-// has a reachable IPv6 on which the SNI proxy listens, or IPv6 clients would be
-// handed an address that answers nothing.
+// SetPublicIPv6 installs the address proxied AAAA answers point at. Only a
+// globally routable IPv6 literal is accepted; anything else clears it, and the
+// resolver keeps sinking AAAA on proxied names so an IPv4 client is forced onto
+// the A record. Set it only when the server actually has a reachable IPv6 on
+// which the SNI proxy listens, or IPv6 clients would be handed an address that
+// answers nothing. The address can be stored while ProxyIPv6Enabled is false;
+// SetProxyIPv6Enabled controls whether it is actually published.
 func (h *Handler) SetPublicIPv6(ip string) {
 	ip = strings.TrimSpace(ip)
-	if ip != "" {
-		parsed := net.ParseIP(ip)
-		if parsed == nil || parsed.To4() != nil {
-			log.Printf("[DNS] Warning: public IPv6 %q is not a usable IPv6 address; proxied AAAA stays sunk (IPv4 forced)", ip)
-			h.publicIPv6 = ""
-			h.publicIPv6Addr = nil
-			return
-		}
-	}
-	h.publicIPv6 = ip
 	if ip == "" {
+		h.publicIPv6 = ""
 		h.publicIPv6Addr = nil
 		return
 	}
-	h.publicIPv6Addr = net.ParseIP(ip).To16()
+	parsed, ok := netutil.ParsePublicIPv6(ip)
+	if !ok {
+		log.Printf("[DNS] Warning: public IPv6 %q is not a usable global IPv6 address; proxied AAAA stays sunk (IPv4 forced)", ip)
+		h.publicIPv6 = ""
+		h.publicIPv6Addr = nil
+		return
+	}
+	h.publicIPv6 = parsed.String()
+	h.publicIPv6Addr = parsed
+}
+
+// SetProxyIPv6Enabled chooses whether proxied names may publish the server's
+// public IPv6. It is safe to call while serving: the query path reads the value
+// atomically, and the dashboard applies the setting live. When false, AAAA is
+// sunk and the HTTPS/SVCB sink is forced regardless of ProxyLeakProtection.
+func (h *Handler) SetProxyIPv6Enabled(enabled bool) {
+	h.proxyIPv6Enabled.Store(enabled)
 }
 
 // SetRelayLookup installs the geo-agent resolver. Call during startup only; the
@@ -606,7 +623,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			if rr := makeARecord(q.Name, 60, h.publicIPv4); rr != nil {
 				m.Answer = append(m.Answer, rr)
 			}
-		} else if q.Qtype == dns.TypeAAAA && h.publicIPv6Addr != nil {
+		} else if q.Qtype == dns.TypeAAAA && h.publicIPv6Addr != nil && h.proxyIPv6Enabled.Load() {
 			if rr := makeAAAARecord(q.Name, 60, h.publicIPv6Addr); rr != nil {
 				m.Answer = append(m.Answer, rr)
 			}
@@ -722,17 +739,26 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		// the assigned one is offline, so an agent outage cannot silently leak the
 		// origin's real address.
 		targetIPv4, targetIPv6 := h.publicIP, h.publicIPv6
+		// The IPv6 switch is a hard gate: with it off the address is ignored even
+		// though it may still be stored, so a later enable does not need the
+		// operator to re-enter it. The same gate is applied after the relay
+		// lookup, because an agent may publish an IPv6 of its own.
+		ipv6Allowed := h.proxyIPv6Enabled.Load()
+		if !ipv6Allowed {
+			targetIPv6 = ""
+		}
 		agentID, agentName, agentCountry := "", "", ""
 		agentAssigned := false
 		if h.relayLookup != nil {
-			if v4, id, name, country, ok := h.relayLookup(domain); ok {
+			if v4, v6, id, name, country, ok := h.relayLookup(domain); ok {
 				agentAssigned = true
 				targetIPv4 = v4
-				// Agents are IPv4-only; an agent-assigned AAAA must sink rather
-				// than fall back to the hub's IPv6.
-				targetIPv6 = ""
+				targetIPv6 = v6
 				agentID, agentName, agentCountry = id, name, country
 			}
+		}
+		if !ipv6Allowed {
+			targetIPv6 = ""
 		}
 
 		if q.Qtype == dns.TypeA {
@@ -778,9 +804,13 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			m := new(dns.Msg)
 			m.SetReply(r)
 			if targetIPv6 != "" {
-				targetIP := h.publicIPv6Addr
+				// Parse the target string first: the local egress and a future
+				// agent egress both travel through the same field, and using the
+				// hub's cached address here would answer the wrong host once
+				// agents can publish IPv6.
+				targetIP := net.ParseIP(targetIPv6)
 				if targetIP == nil {
-					targetIP = net.ParseIP(targetIPv6)
+					targetIP = h.publicIPv6Addr
 				}
 				if rr := makeAAAARecord(q.Name, 60, targetIP); rr != nil {
 					m.Answer = append(m.Answer, rr)
@@ -795,7 +825,12 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			}
 			return m
 		}
-		if (q.Qtype == dns.TypeHTTPS || q.Qtype == dns.TypeSVCB) && h.proxyLeakProtection.Load() {
+		// With proxy IPv6 off the HTTPS/SVCB sink is unconditional: an upstream
+		// record would otherwise carry ipv6hint (and h3) and reopen the IPv6
+		// bypass even if the operator had disabled the proxy leak guard. When
+		// IPv6 is on, the guard remains the operator's explicit policy.
+		if (q.Qtype == dns.TypeHTTPS || q.Qtype == dns.TypeSVCB) &&
+			(h.proxyLeakProtection.Load() || !h.proxyIPv6Enabled.Load()) {
 			// HTTPS/SVCB can carry two things that bypass an SNI relay:
 			// an h3 ALPN entry (QUIC/UDP 443) and ipv4hint/ipv6hint with the
 			// origin's real addresses. Letting the upstream answer through would

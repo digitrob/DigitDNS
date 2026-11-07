@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Policy
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
@@ -67,6 +68,7 @@ import com.digitrob.digitdns.ui.rules.UpstreamsScreen
 private enum class SettingsSection(@StringRes val labelRes: Int, val icon: ImageVector) {
     App(R.string.settings_app, Icons.Filled.Tune),
     Dnssec(R.string.settings_dnssec, Icons.Filled.Shield),
+    Ipv6(R.string.settings_ipv6, Icons.Filled.Public),
     History(R.string.settings_history, Icons.Filled.BarChart),
     AdBlocking(R.string.settings_ad_blocking, Icons.Filled.Block),
     Servers(R.string.settings_servers, Icons.Filled.Dns),
@@ -143,6 +145,7 @@ private fun SettingsSectionContent(
     when (section) {
         SettingsSection.App -> AppSettingsScreen()
         SettingsSection.Dnssec -> DnssecProxySettingsScreen()
+        SettingsSection.Ipv6 -> Ipv6SettingsScreen()
         SettingsSection.History -> HistorySettingsScreen()
         SettingsSection.AdBlocking -> AdBlockingScreen()
         SettingsSection.Servers -> ServersScreen(

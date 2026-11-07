@@ -130,6 +130,27 @@ class SettingsApiTest {
     }
 
     @Test
+    fun ipv6SaveUsesTheSettingsRouteAndMapsTheResponse() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"public_ipv6":"2001:db8::1","proxy_ipv6_enabled":true}""",
+            ),
+        )
+
+        val saved = repo.saveIpv6(enabled = true, address = "2001:db8::1")
+
+        val recorded = server.takeRequest()
+        assertEquals("POST", recorded.method)
+        assertEquals("/settings", recorded.path)
+        assertEquals(
+            """{"public_ipv6":"2001:db8::1","proxy_ipv6_enabled":true}""",
+            recorded.body.readUtf8(),
+        )
+        assertEquals("2001:db8::1", saved.publicIpv6)
+        assertEquals(true, saved.proxyIpv6Enabled)
+    }
+
+    @Test
     fun proxyLeakReadAndSaveUseTheLiveRoute() = runTest {
         server.enqueue(
             MockResponse().setResponseCode(200).setBody("""{"enabled":true,"recommended":true}"""),

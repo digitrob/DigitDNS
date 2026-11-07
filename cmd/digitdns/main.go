@@ -530,16 +530,20 @@ func main() {
 	}
 	dnsHandler.SetProxyLeakProtection(dnsSettings.ProxyLeakProtection)
 	dnsHandler.SetBlockPolicy(filterService.BlockPolicy)
-	dnsHandler.SetRelayLookup(func(domain string) (string, string, string, string, bool) {
+	dnsHandler.SetRelayLookup(func(domain string) (string, string, string, string, string, bool) {
 		target, ok := relayRouter.Lookup(domain)
 		if !ok {
-			return "", "", "", "", false
+			return "", "", "", "", "", false
 		}
-		return target.IPv4, target.AgentID, target.Name, target.Country, true
+		return target.IPv4, target.IPv6, target.AgentID, target.Name, target.Country, true
 	})
 	// v2.5: publish the server's IPv6 for proxied AAAA when one is configured, so
 	// IPv6 clients reach the SNI proxy over v6 instead of being forced to IPv4.
 	dnsHandler.SetPublicIPv6(serverSettings.PublicIPv6)
+	dnsHandler.SetProxyIPv6Enabled(serverSettings.ProxyIPv6Enabled)
+	if serverSettings.ProxyIPv6Enabled && strings.TrimSpace(serverSettings.PublicIPv6) == "" {
+		log.Printf("[Main] Warning: proxy IPv6 is enabled but public_ipv6 is empty; proxied AAAA stays sunk")
+	}
 	// v2.6 self-service reachability: teach the resolver its own service names
 	// (panel domain, the DoH/DoT host, and the subscriber-portal domain) so it
 	// answers them with the public IP ahead of the access whitelist. Without this,
@@ -632,6 +636,10 @@ func main() {
 	// report whether a restart is pending. It is set before listeners start.
 	webServer.SetDNSSECStatus(dnsHandler.DNSSECEnabled(), dnsSettings.DNSSECTrustAnchors)
 	webServer.SetProxyLeakProtectionSetter(dnsHandler.SetProxyLeakProtection)
+	webServer.SetIPv6PolicySetter(func(enabled bool, address string) {
+		dnsHandler.SetPublicIPv6(address)
+		dnsHandler.SetProxyIPv6Enabled(enabled)
+	})
 	webServer.SetFilterService(filterService)
 	filterService.Start()
 

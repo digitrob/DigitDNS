@@ -178,6 +178,39 @@ func TestConfigProxyLeakProtectionCanBeDisabled(t *testing.T) {
 	}
 }
 
+func TestConfigPublicIPv6AndProxyIPv6(t *testing.T) {
+	path := writeConfig(t, `{
+	  "server": {
+	    "public_ipv6": "2001:db8::1",
+	    "proxy_ipv6_enabled": true
+	  }
+	}`)
+
+	server, dns, sni, tls := defaults()
+	applyConfigFile(path, server, dns, sni, tls)
+
+	if server.PublicIPv6 != "2001:db8::1" {
+		t.Errorf("public_ipv6 = %q, want 2001:db8::1", server.PublicIPv6)
+	}
+	if !server.ProxyIPv6Enabled {
+		t.Error("proxy_ipv6_enabled = false, want the explicit true")
+	}
+}
+
+func TestConfigAbsentIPv6KeysKeepTheDefaults(t *testing.T) {
+	path := writeConfig(t, `{"server": {"public_ip": "198.51.100.7"}}`)
+
+	server, dns, sni, tls := defaults()
+	applyConfigFile(path, server, dns, sni, tls)
+
+	if server.PublicIPv6 != "" {
+		t.Errorf("public_ipv6 = %q, want empty", server.PublicIPv6)
+	}
+	if server.ProxyIPv6Enabled {
+		t.Error("proxy_ipv6_enabled = true from an absent key, want false")
+	}
+}
+
 // TestConfigSNIProxyBlock covers the shipped spelling. Timeout is nanoseconds in
 // the file — the same units database.SNIProxySettings stores — so a plain integer
 // has to survive the round trip unscaled.

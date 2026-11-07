@@ -43,6 +43,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -138,7 +139,7 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
                 // Only a hair of top padding: the chip row above is the header, and
                 // the two cards need the full remaining height to fit without
                 // scrolling on a phone.
-                contentPadding = PaddingValues(start = 12.dp, top = 2.dp, end = 12.dp, bottom = 8.dp),
+                contentPadding = PaddingValues(start = 12.dp, top = 0.dp, end = 12.dp, bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize(),
@@ -147,10 +148,14 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
                     // No connection badge here: the page is about agents, and the
                     // freed right-hand space carries the at-a-glance count instead.
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        TextButton(onClick = { creating = true }) {
+                        TextButton(
+                            onClick = { creating = true },
+                            modifier = Modifier.height(36.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        ) {
                             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(stringResource(R.string.agents_add))
@@ -227,7 +232,7 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
             agent = null,
             saving = state.isSaving,
             onDismiss = { creating = false },
-            onSave = { name, country, publicIp ->
+            onSave = { name, country, _, _, _ ->
                 viewModel.create(name, country)
                 creating = false
             },
@@ -239,8 +244,8 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
             agent = agent,
             saving = state.isSaving,
             onDismiss = { editing = null },
-            onSave = { name, country, publicIp ->
-                viewModel.update(agent.id, name, country, publicIp)
+            onSave = { name, country, publicIp, publicIpv6, ipv6Enabled ->
+                viewModel.update(agent.id, name, country, publicIp, publicIpv6, ipv6Enabled)
                 editing = null
             },
         )
@@ -364,13 +369,15 @@ private fun AgentCard(
         else -> DigitDnsTheme.colors.warning
     }
 
+    // Compact by design: two cards must fit above the nav bar on a short phone
+    // without scrolling, so the page only scrolls from the third agent onward.
     PanelCard(
         modifier = Modifier
             .fillMaxWidth()
             .alpha(if (agent.enabled) 1f else 0.62f),
-        contentPadding = 12.dp,
+        contentPadding = 8.dp,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 CountryFlag(
                     country = agent.country,
@@ -444,8 +451,8 @@ private fun AgentCard(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 AgentStat(stringResource(R.string.agents_version), agent.version.ifBlank { "—" }, Modifier.weight(1f))
                 AgentStat(stringResource(R.string.agents_last_seen), relayRelativeAge(agent.lastSeen), Modifier.weight(1f))
@@ -464,7 +471,7 @@ private fun AgentCard(
                 },
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
 
@@ -476,7 +483,8 @@ private fun AgentCard(
                 OutlinedButton(
                     onClick = onTest,
                     enabled = !testing,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(34.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                 ) {
                     if (testing) {
                         CircularProgressIndicator(
@@ -520,7 +528,7 @@ private fun AgentActionButton(
 ) {
     Box(
         modifier = Modifier
-            .size(32.dp)
+            .size(28.dp)
             .clip(RoundedCornerShape(8.dp))
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -529,7 +537,7 @@ private fun AgentActionButton(
             icon,
             contentDescription = label,
             tint = tint,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(16.dp),
         )
     }
 }
@@ -547,7 +555,7 @@ private fun AgentValueRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .padding(start = 10.dp, end = 2.dp, top = 3.dp, bottom = 3.dp),
+            .padding(start = 8.dp, end = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -565,19 +573,19 @@ private fun AgentValueRow(
             modifier = Modifier.weight(1f),
         )
         if (onRotate != null) {
-            IconButton(onClick = onRotate, modifier = Modifier.size(32.dp)) {
+            IconButton(onClick = onRotate, modifier = Modifier.size(26.dp)) {
                 Icon(
                     Icons.Filled.Autorenew,
                     contentDescription = stringResource(R.string.agents_rotate_key),
-                    modifier = Modifier.size(15.dp),
+                    modifier = Modifier.size(13.dp),
                 )
             }
         }
-        IconButton(onClick = onCopy, enabled = copyEnabled, modifier = Modifier.size(32.dp)) {
+        IconButton(onClick = onCopy, enabled = copyEnabled, modifier = Modifier.size(26.dp)) {
             Icon(
                 Icons.Filled.ContentCopy,
                 contentDescription = stringResource(R.string.agents_copy_value, label),
-                modifier = Modifier.size(15.dp),
+                modifier = Modifier.size(13.dp),
             )
         }
     }
@@ -616,16 +624,18 @@ private fun PingBadge(agent: RelayAgentInfo) {
 }
 
 @Composable
-@Suppress("LongParameterList")
+@Suppress("LongParameterList", "LongMethod")
 private fun AgentFormDialog(
     agent: RelayAgentInfo?,
     saving: Boolean,
     onDismiss: () -> Unit,
-    onSave: (String, String, String) -> Unit,
+    onSave: (String, String, String, String, Boolean) -> Unit,
 ) {
     var name by remember(agent) { mutableStateOf(agent?.name.orEmpty()) }
     var country by remember(agent) { mutableStateOf(agent?.country.orEmpty().uppercase(Locale.US)) }
     var publicIp by remember(agent) { mutableStateOf(agent?.publicIp.orEmpty()) }
+    var publicIpv6 by remember(agent) { mutableStateOf(agent?.publicIpv6.orEmpty()) }
+    var ipv6Enabled by remember(agent) { mutableStateOf(agent?.ipv6Enabled == true) }
     val editing = agent != null
     val valid = country.trim().length == 2
 
@@ -638,7 +648,7 @@ private fun AgentFormDialog(
         text = {
             Column(
                 modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
                     stringResource(if (editing) R.string.agents_edit_body else R.string.agents_add_body),
@@ -664,6 +674,42 @@ private fun AgentFormDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    OutlinedTextField(
+                        value = publicIpv6,
+                        onValueChange = { publicIpv6 = it },
+                        label = { Text(stringResource(R.string.agents_public_ipv6)) },
+                        placeholder = { Text("2001:db8::10") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.agents_ipv6_use),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                stringResource(R.string.agents_ipv6_optional),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Switch(
+                            checked = ipv6Enabled,
+                            onCheckedChange = { ipv6Enabled = it },
+                        )
+                    }
+                    Text(
+                        stringResource(R.string.agents_ipv6_note),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 } else {
                     Text(
                         stringResource(R.string.agents_public_ip_hint),
@@ -675,7 +721,7 @@ private fun AgentFormDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(name, country, publicIp) },
+                onClick = { onSave(name, country, publicIp, publicIpv6, ipv6Enabled) },
                 enabled = valid && !saving,
             ) { Text(stringResource(if (editing) R.string.action_save else R.string.action_add)) }
         },

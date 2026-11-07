@@ -53,6 +53,16 @@ The same release adds the v3 DNSSEC settings route, a compact Android card that
 opens with the real saved state, shared status-pill styling, and DNSSEC-aware
 cache keys so DO=0 clients never receive signature or denial records.
 
+**5.2.2 adds optional IPv6 for proxied names and relay agents.** A hub-wide
+**Proxy IPv6** switch and a per-agent **Use IPv6 for this agent** opt-in publish
+AAAA only when both are on. The hub pushes the effective policy to agents on
+their heartbeat; turning it off rebinds the agent IPv4-only, stops IPv6
+detection and reporting, and keeps proxied AAAA withheld. Proxied
+`HTTPS`/`SVCB` hints stay sunk even when proxy leak protection is off. The
+Android app gains an **IPv6** Settings card, a per-agent switch, and compact
+Relay Agents and Traffic History screens that fit a phone without scrolling.
+Sign-in no longer flashes a stale “session expired” line.
+
 The 5.1 line remains included: Graphite theme, reverse-DNS filtering in Top
 Domains, Docker Hub mirrors, faster web/Android boot paths and the previous
 performance work. See the latest release notes for details.
@@ -225,6 +235,8 @@ theme chosen on the login screen survives sign-in and app restarts.
 - **DNSSEC validation when you want it.** Optional chain-of-trust validation
   with built-in root anchors, NSEC/NSEC3 denial proofs, `AD` on validated answers
   and `SERVFAIL` for bogus zones.
+- **IPv6 when you want it.** Publish your own IPv6 for proxied names globally or
+  per relay agent; off keeps clients on IPv4 and withholds AAAA and IPv6 hints.
 - **A Pi-hole / AdGuard Home alternative with a relay.** Run the 45-preset
   blocklist engine on its own, or let the same install bypass geo-blocks through
   SNI relay agents.
@@ -247,7 +259,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.2/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -306,7 +318,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.2/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -389,7 +401,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.2.1` | Proxy leak protection for proxied HTTPS/SVCB, live panel/Android control, login and refresh UI fixes (latest) |
+| `5.2.2` | Optional IPv6 for proxied names and relay agents, Web/Android IPv6 controls, silent re-auth and compact Android cards (latest) |
+| `5.2.1` | Proxy leak protection for proxied HTTPS/SVCB, live panel/Android control, login and refresh UI fixes (older) |
 | `5.2.0` | DNSSEC validation, Settings card, v3 API and Android DNSSEC section (older) |
 | `5.1.4` | Reverse DNS excluded from Top Domains; Docker Hub mirror published (older) |
 | `5.1.3` | Faster web route boot and Android startup, lifecycle and live-log batching (older) |
@@ -432,7 +445,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.2.1/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.2/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -799,6 +812,30 @@ names already return the block response for every query type.
 "proxy_leak_protection": true
 ```
 
+### IPv6 for proxied names
+
+IPv6 is optional and off by default. Proxied AAAA is answered only when the
+server-wide **Proxy IPv6** switch is on, `public_ipv6` is set, and — for traffic
+through a relay agent — that agent's own IPv6 switch is on.
+
+- **Global master switch.** `proxy_ipv6_enabled` plus `public_ipv6` in Settings.
+  Direct names keep their normal AAAA; proxied names receive the configured
+  address.
+- **Per-agent opt-in.** `ipv6_enabled` and `public_ipv6` on each relay agent.
+  The effective policy is the agent's switch **and** the global switch.
+- **Applied live, without a restart.** The hub sends the effective policy in the
+  agent's catalogue and heartbeat reply; the agent rebinds within 30 seconds.
+- **No leak when off.** Proxied AAAA is withheld, the agent listens IPv4-only and
+  stops detecting/reporting IPv6, and proxied `HTTPS`/`SVCB` hints stay sunk
+  even if proxy leak protection is disabled.
+- **Panel and Android.** **Settings → Proxy IPv6** on the web; **Settings → IPv6**
+  on Android. The relay-agent editor exposes the per-agent switch on both.
+
+```json
+"public_ipv6": "2001:db8::1",
+"proxy_ipv6_enabled": true
+```
+
 ### Upstream resolvers and policy
 
 - Plain UDP/TCP, DoT, DoH, DoQ, DoH3 and DNSCrypt upstreams, benchmarked live
@@ -836,7 +873,7 @@ names already return the block response for every query type.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.2.1`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.2.2`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

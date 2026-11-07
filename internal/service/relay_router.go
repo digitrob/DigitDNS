@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"digitdns/internal/database"
+	"digitdns/internal/netutil"
 )
 
 // RelayTarget is the egress an assigned domain should use. IPv4 and IPv6 are
@@ -18,6 +19,7 @@ type RelayTarget struct {
 	Name    string
 	Country string
 	IPv4    string
+	IPv6    string
 }
 
 // RelayRouter holds the live geo-agent assignment map. It is read on the DNS
@@ -27,9 +29,12 @@ type RelayRouter struct {
 	mu sync.RWMutex
 
 	agents map[string]database.Agent
-	// agentIPv4 holds the parsed, canonical IPv4 for each agent. It is built with
-	// the agent snapshot so the query path never re-parses the same literal.
+	// agentIPv4 and agentIPv6 hold the parsed, canonical addresses for each
+	// agent. They are built with the agent snapshot so the query path never
+	// re-parses the same literal. An agent may publish one family, both, or
+	// neither; a missing family is sunk by the DNS handler.
 	agentIPv4      map[string]string
+	agentIPv6      map[string]string
 	domainAgents   assignmentIndex
 	serviceAgents  map[string]string
 	domainServices assignmentIndex
@@ -114,6 +119,7 @@ func NewRelayRouter() *RelayRouter {
 	return &RelayRouter{
 		agents:         map[string]database.Agent{},
 		agentIPv4:      map[string]string{},
+		agentIPv6:      map[string]string{},
 		domainAgents:   newAssignmentIndex(),
 		serviceAgents:  map[string]string{},
 		domainServices: newAssignmentIndex(),
@@ -127,15 +133,22 @@ func NewRelayRouter() *RelayRouter {
 func (r *RelayRouter) SetAgents(agents []database.Agent) {
 	next := make(map[string]database.Agent, len(agents))
 	ipv4 := make(map[string]string, len(agents))
+	ipv6 := make(map[string]string, len(agents))
 	for _, a := range agents {
 		next[a.ID] = a
 		if ip := net.ParseIP(strings.TrimSpace(a.PublicIP)); ip != nil && ip.To4() != nil {
 			ipv4[a.ID] = ip.String()
 		}
+		if a.IPv6Enabled {
+			if ip, ok := netutil.ParsePublicIPv6(a.PublicIPv6); ok {
+				ipv6[a.ID] = ip.String()
+			}
+		}
 	}
 	r.mu.Lock()
 	r.agents = next
 	r.agentIPv4 = ipv4
+	r.agentIPv6 = ipv6
 	r.mu.Unlock()
 }
 
@@ -224,13 +237,22 @@ func (r *RelayRouter) Lookup(domain string) (RelayTarget, bool) {
 	}
 	agent, ok := r.agents[agentID]
 	ipv4 := r.agentIPv4[agentID]
+	ipv6 := r.agentIPv6[agentID]
 	r.mu.RUnlock()
 
 	if !ok || !r.healthy(agent) {
 		return RelayTarget{}, false
 	}
-	target := RelayTarget{AgentID: agent.ID, Name: agent.Name, Country: agent.Country, IPv4: ipv4}
-	if target.IPv4 == "" {
+	target := RelayTarget{
+		AgentID: agent.ID,
+		Name:    agent.Name,
+		Country: agent.Country,
+		IPv4:    ipv4,
+		IPv6:    ipv6,
+	}
+	// An agent with no usable family at all is not a target. A healthy
+	// IPv6-only agent is: its A queries fail closed while its AAAA queries work.
+	if target.IPv4 == "" && target.IPv6 == "" {
 		return RelayTarget{}, false
 	}
 	return target, true

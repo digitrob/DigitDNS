@@ -59,6 +59,8 @@ data class ServerConfig(
     val adminPath: String,
     /** ISO 3166-1 alpha-2 country for [publicIp], from the server's GeoIP database. */
     val country: String = "",
+    val publicIpv6: String = "",
+    val proxyIpv6Enabled: Boolean = false,
 ) {
     companion object {
         fun from(dto: ServerSettings) = ServerConfig(
@@ -73,6 +75,8 @@ data class ServerConfig(
             sessionIdleMinutes = dto.sessionIdleMinutes,
             adminPath = dto.adminPath,
             country = dto.country,
+            publicIpv6 = dto.publicIpv6,
+            proxyIpv6Enabled = dto.proxyIpv6Enabled,
         )
     }
 }

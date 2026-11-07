@@ -62,13 +62,17 @@ type AccessConfig struct {
 // writes) and the legacy "sni_proxy" spelling.
 type fileConfig struct {
 	Server *struct {
-		PublicIP      *string `json:"public_ip"`
-		BindHost      *string `json:"bind_host"`
-		WebPort       *int    `json:"web_port"`
-		AdminUsername *string `json:"admin_username"`
-		AdminPassword *string `json:"admin_password"`
-		APIKey        *string `json:"api_key"`
-		APIBind       *string `json:"api_bind"`
+		PublicIP   *string `json:"public_ip"`
+		PublicIPv6 *string `json:"public_ipv6"`
+		// ProxyIPv6Enabled controls AAAA advertising for proxied names. It is
+		// live; an absent key leaves the built-in false default in place.
+		ProxyIPv6Enabled *bool   `json:"proxy_ipv6_enabled"`
+		BindHost         *string `json:"bind_host"`
+		WebPort          *int    `json:"web_port"`
+		AdminUsername    *string `json:"admin_username"`
+		AdminPassword    *string `json:"admin_password"`
+		APIKey           *string `json:"api_key"`
+		APIBind          *string `json:"api_bind"`
 		// APIBindList is the multi-CIDR REST exposure rule (v3.1.0). When present
 		// and non-empty it outranks api_bind; see ServerSettings.APIBindList.
 		APIBindList *[]string `json:"api_bind_list"`
@@ -127,6 +131,12 @@ func applyConfigFile(path string, server *database.ServerSettings, dns *database
 	if s := cfg.Server; s != nil {
 		if s.PublicIP != nil {
 			server.PublicIP = *s.PublicIP
+		}
+		if s.PublicIPv6 != nil {
+			server.PublicIPv6 = *s.PublicIPv6
+		}
+		if s.ProxyIPv6Enabled != nil {
+			server.ProxyIPv6Enabled = *s.ProxyIPv6Enabled
 		}
 		if s.BindHost != nil {
 			server.BindHost = *s.BindHost

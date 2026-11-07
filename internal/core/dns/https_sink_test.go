@@ -96,6 +96,10 @@ func TestProxiedHTTPSGuardWinsOverCachedUpstream(t *testing.T) {
 func TestProxyLeakProtectionCanBeDisabled(t *testing.T) {
 	h, c, m := newGuardHandler(t)
 	m.SetCustomRules([]string{"proxied.test"}, nil, nil, nil)
+	// The IPv6-off state forces the HTTPS/SVCB sink independently of this
+	// switch, so enable IPv6 to exercise the explicit proxy-leak opt-out.
+	h.SetPublicIPv6("2001:db8::1")
+	h.SetProxyIPv6Enabled(true)
 	h.SetProxyLeakProtection(false)
 
 	q := dns.Question{Name: "proxied.test.", Qtype: dns.TypeHTTPS, Qclass: dns.ClassINET}
@@ -108,6 +112,65 @@ func TestProxyLeakProtectionCanBeDisabled(t *testing.T) {
 	resp := h.ProcessQuery(req, "127.0.0.1", "UDP")
 	if resp == nil || resp.Rcode != dns.RcodeSuccess || len(resp.Answer) != 1 {
 		t.Fatalf("disabled proxy leak protection = %v, want the cached HTTPS answer", resp)
+	}
+}
+
+// Turning proxy leak protection off is not enough to reopen HTTPS/SVCB while
+// proxied IPv6 is off: an upstream ipv6hint would still let the client bypass
+// the relay. This is the hard leak guarantee the IPv6 switch exists for.
+func TestHTTPSStaysSunkWhenIPv6OffEvenIfLeakGuardDisabled(t *testing.T) {
+	h, c, m := newGuardHandler(t)
+	m.SetCustomRules([]string{"proxied.test"}, nil, nil, nil)
+	h.SetProxyLeakProtection(false)
+	// proxyIPv6Enabled is false by default.
+
+	q := dns.Question{Name: "proxied.test.", Qtype: dns.TypeHTTPS, Qclass: dns.ClassINET}
+	opts := cache.QueryOptions{EDNS: true, DO: true}
+	c.PutWithOptions(q, httpsHintMsg("proxied.test."), opts)
+
+	req := new(dns.Msg)
+	req.SetQuestion("proxied.test.", dns.TypeHTTPS)
+	req.SetEdns0(4096, true)
+	resp := h.ProcessQuery(req, "127.0.0.1", "UDP")
+	if resp == nil || resp.Rcode != dns.RcodeSuccess {
+		t.Fatalf("proxied HTTPS = %v, want NOERROR", resp)
+	}
+	if len(resp.Answer) != 0 {
+		t.Fatalf("proxied HTTPS served %v with IPv6 off and the leak guard disabled, want a sink", resp.Answer)
+	}
+}
+
+// A proxied AAAA follows the IPv6 policy: the stored public address is
+// published only while the switch is on, and disabling it immediately returns
+// the empty-NOERROR sink.
+func TestProxiedAAAAFollowsTheIPv6Switch(t *testing.T) {
+	h, _, m := newGuardHandler(t)
+	m.SetCustomRules([]string{"proxied.test"}, nil, nil, nil)
+	h.SetPublicIPv6("2001:db8::1")
+
+	ask := func() *dns.Msg {
+		req := new(dns.Msg)
+		req.SetQuestion("proxied.test.", dns.TypeAAAA)
+		return h.ProcessQuery(req, "127.0.0.1", "UDP")
+	}
+
+	if resp := ask(); resp == nil || resp.Rcode != dns.RcodeSuccess || len(resp.Answer) != 0 {
+		t.Fatalf("AAAA with IPv6 off = %v, want the empty sink", resp)
+	}
+
+	h.SetProxyIPv6Enabled(true)
+	resp := ask()
+	if resp == nil || resp.Rcode != dns.RcodeSuccess || len(resp.Answer) != 1 {
+		t.Fatalf("AAAA with IPv6 on = %v, want the public IPv6 answer", resp)
+	}
+	aaaa, ok := resp.Answer[0].(*dns.AAAA)
+	if !ok || aaaa.AAAA.String() != "2001:db8::1" {
+		t.Fatalf("AAAA answer = %v, want 2001:db8::1", resp.Answer[0])
+	}
+
+	h.SetProxyIPv6Enabled(false)
+	if resp := ask(); resp == nil || resp.Rcode != dns.RcodeSuccess || len(resp.Answer) != 0 {
+		t.Fatalf("AAAA after disabling IPv6 = %v, want the empty sink again", resp)
 	}
 }
 

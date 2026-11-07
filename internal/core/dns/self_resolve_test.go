@@ -59,10 +59,18 @@ func TestSelfServiceNamesResolveDespiteWhitelist(t *testing.T) {
 		t.Fatalf("self name AAAA with no IPv6: want empty NOERROR, got %v", resp)
 	}
 
-	// With an IPv6 published, AAAA is answered too.
+	// With IPv6 published and the proxy IPv6 policy enabled, AAAA is answered.
 	h.SetPublicIPv6("2001:db8::1")
+	h.SetProxyIPv6Enabled(true)
 	if resp := ask("panel.example.com.", dns.TypeAAAA); resp == nil || len(resp.Answer) == 0 {
 		t.Fatalf("self name AAAA with IPv6 set: want an AAAA answer, got %v", resp)
+	}
+
+	// The switch also gates the server's own names, so disabling it makes the
+	// panel/DoH/portal undiscoverable over IPv6 even though the address is stored.
+	h.SetProxyIPv6Enabled(false)
+	if resp := ask("panel.example.com.", dns.TypeAAAA); resp == nil || resp.Rcode != dns.RcodeSuccess || len(resp.Answer) != 0 {
+		t.Fatalf("self name AAAA after IPv6 off: want empty NOERROR, got %v", resp)
 	}
 }
 

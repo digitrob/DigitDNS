@@ -1,9 +1,31 @@
 package agent
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
+
+func TestListenAddressesIPv4Only(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		on   bool
+		want []string
+	}{
+		{"dual stack default", ":80,:443", true, []string{":80", ":443"}},
+		{"ipv4 only wildcard", ":80,:443", false, []string{"0.0.0.0:80", "0.0.0.0:443"}},
+		{"explicit ipv6 dropped", ":80,[2001:db8::1]:443", false, []string{"0.0.0.0:80"}},
+		{"explicit ipv4 kept", "127.0.0.1:18080,0.0.0.0:18443", false, []string{"127.0.0.1:18080", "0.0.0.0:18443"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := listenAddresses(tc.in, tc.on); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("listenAddresses(%q, %v) = %v, want %v", tc.in, tc.on, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestRefusalLogThrottlesAndReportsSuppressed(t *testing.T) {
 	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)

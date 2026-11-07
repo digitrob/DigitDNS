@@ -125,7 +125,14 @@ class RelayAgentsViewModel @Inject constructor(
         }
     }
 
-    fun update(id: String, name: String, country: String, publicIp: String) {
+    fun update(
+        id: String,
+        name: String,
+        country: String,
+        publicIp: String,
+        publicIpv6: String,
+        ipv6Enabled: Boolean,
+    ) {
         val code = country.trim().uppercase(Locale.US)
         if (code.length != 2) {
             _state.update { it.copy(error = "Choose a two-letter country.") }
@@ -134,7 +141,14 @@ class RelayAgentsViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, error = null) }
             try {
-                val updated = repository.update(id, name.trim(), code, publicIp.trim())
+                val updated = repository.update(
+                    id,
+                    name.trim(),
+                    code,
+                    publicIp.trim(),
+                    publicIpv6.trim(),
+                    ipv6Enabled,
+                )
                 _state.update { state ->
                     state.copy(
                         agents = state.agents.map { if (it.id == id) updated else it }

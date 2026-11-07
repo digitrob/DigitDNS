@@ -32,10 +32,23 @@ class AgentsRepository @Inject constructor(
         )
     }
 
-    suspend fun update(id: String, name: String, country: String, publicIp: String): RelayAgentInfo {
+    suspend fun update(
+        id: String,
+        name: String,
+        country: String,
+        publicIp: String,
+        publicIpv6: String,
+        ipv6Enabled: Boolean,
+    ): RelayAgentInfo {
         val response = api.update(
             id,
-            AgentUpdateRequest(name = name, country = country, publicIp = publicIp),
+            AgentUpdateRequest(
+                name = name,
+                country = country,
+                publicIp = publicIp,
+                publicIpv6 = publicIpv6,
+                ipv6Enabled = ipv6Enabled,
+            ),
         )
         return response.agent?.let(RelayAgentInfo::from) ?: error("the server returned no agent")
     }

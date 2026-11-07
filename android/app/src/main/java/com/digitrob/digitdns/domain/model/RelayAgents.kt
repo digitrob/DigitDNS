@@ -26,9 +26,14 @@ data class RelayAgentInfo(
     val pingAt: String,
     val bytesIn: Long,
     val bytesOut: Long,
+    /** The agent's globally routable IPv6; blank until an enabled agent reports one. */
+    val publicIpv6: String = "",
+    /** The per-agent opt-in. The global Proxy IPv6 switch must also be on. */
+    val ipv6Enabled: Boolean = false,
 ) {
     val displayName: String get() = name.ifBlank { id }
     val address: String get() = publicIp.ifBlank { "not reported" }
+    val ipv6Address: String get() = publicIpv6.ifBlank { "not reported" }
     val hasPing: Boolean
         get() = pingMs > 0 && pingAt.isNotBlank() && !pingAt.startsWith("0001")
 
@@ -71,6 +76,8 @@ data class RelayAgentInfo(
             pingAt = dto.pingAt,
             bytesIn = dto.bytesIn,
             bytesOut = dto.bytesOut,
+            publicIpv6 = dto.publicIpv6,
+            ipv6Enabled = dto.ipv6Enabled,
         )
     }
 }

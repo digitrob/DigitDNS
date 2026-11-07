@@ -68,6 +68,15 @@ type Catalogue struct {
 	Hosts   []string `json:"hosts"`
 	Clients []string `json:"clients"`
 	Synced  string   `json:"synced_at"`
+	// Pointer so an older hub that does not send the field cannot force an
+	// upgraded agent to disable IPv6 merely by omitting it.
+	IPv6Enabled *bool `json:"ipv6_enabled"`
+}
+
+// HeartbeatState is the hub's reply to a heartbeat: the effective IPv6 policy
+// for this agent. Pointer for the same old-hub compatibility reason.
+type HeartbeatState struct {
+	IPv6Enabled *bool `json:"ipv6_enabled"`
 }
 
 // Fetch pulls the allowlists. A 401 is reported as ErrHubRejected so the caller
@@ -86,15 +95,22 @@ func (h *Hub) Fetch(key string) (Catalogue, error) {
 	return out, nil
 }
 
-// Heartbeat reports liveness and traffic totals.
-func (h *Hub) Heartbeat(key, version string, relayPort int, in, out uint64) error {
+// Heartbeat reports liveness, traffic totals and the agent's public IPv6, and
+// returns the hub's effective IPv6 policy. An empty publicIPv6 tells the hub
+// nothing new; it must not erase an operator's manual value.
+func (h *Hub) Heartbeat(key, version string, relayPort int, in, out uint64, publicIPv6 string) (HeartbeatState, error) {
 	body := map[string]any{
-		"version":    version,
-		"relay_port": relayPort,
-		"bytes_in":   in,
-		"bytes_out":  out,
+		"version":     version,
+		"relay_port":  relayPort,
+		"bytes_in":    in,
+		"bytes_out":   out,
+		"public_ipv6": publicIPv6,
 	}
-	return h.post("/agent/heartbeat", key, body, nil)
+	var state HeartbeatState
+	if err := h.post("/agent/heartbeat", key, body, &state); err != nil {
+		return HeartbeatState{}, err
+	}
+	return state, nil
 }
 
 func (h *Hub) get(path, key string, out any) error {
@@ -153,6 +169,10 @@ type State struct {
 	Hosts    []string  `json:"hosts"`
 	Clients  []string  `json:"clients"`
 	SyncedAt time.Time `json:"synced_at"`
+	// IPv6Enabled caches the last effective hub policy. A hub outage must not
+	// make an agent that the operator switched off start listening on IPv6
+	// again; a zero value from an old state file therefore means IPv4-only.
+	IPv6Enabled bool `json:"ipv6_enabled"`
 }
 
 // LoadState reads the cached identity, returning a zero State when the file is

@@ -112,7 +112,10 @@ func TestSettingsResponsesDoNotLeakThePasswordVerifier(t *testing.T) {
 	if !ok {
 		t.Fatalf("/api/config has no server object: %v", cfg)
 	}
-	for _, key := range []string{"public_ip", "admin_username", "api_key", "api_bind", "web_port"} {
+	for _, key := range []string{
+		"public_ip", "public_ipv6", "proxy_ipv6_enabled",
+		"admin_username", "api_key", "api_bind", "web_port",
+	} {
 		if _, has := server[key]; !has {
 			t.Errorf("/api/config server object is missing %q", key)
 		}
@@ -161,6 +164,11 @@ func TestSettingsPostRejectsBadInput(t *testing.T) {
 		{"empty body", ``, http.StatusBadRequest},
 		{"public_ip is a hostname", `{"public_ip":"example.com"}`, http.StatusBadRequest},
 		{"public_ip is garbage", `{"public_ip":"999.1.1.1"}`, http.StatusBadRequest},
+		{"public_ipv6 is IPv4", `{"public_ipv6":"192.0.2.1"}`, http.StatusBadRequest},
+		{"public_ipv6 is loopback", `{"public_ipv6":"::1"}`, http.StatusBadRequest},
+		{"public_ipv6 is ULA", `{"public_ipv6":"fc00::1"}`, http.StatusBadRequest},
+		{"public_ipv6 is link-local", `{"public_ipv6":"fe80::1"}`, http.StatusBadRequest},
+		{"proxy IPv6 enabled without an address", `{"proxy_ipv6_enabled":true}`, http.StatusBadRequest},
 		{"api_bind is a word, not an address", `{"api_bind":"localhost"}`, http.StatusBadRequest},
 		{"api_bind is a typo'd CIDR", `{"api_bind":"100.64.0.0/1o"}`, http.StatusBadRequest},
 		{"api_bind has a bad prefix length", `{"api_bind":"10.0.0.0/33"}`, http.StatusBadRequest},
@@ -200,6 +208,74 @@ func TestSettingsPostRejectsBadInput(t *testing.T) {
 		if ws.settings.APIBind != v {
 			t.Errorf("api_bind stored as %q, want %q", ws.settings.APIBind, v)
 		}
+	}
+}
+
+func TestSettingsIPv6RoundTrip(t *testing.T) {
+	ws, h, tok, cleanup := authedServer(t)
+	defer cleanup()
+
+	var appliedEnabled bool
+	var appliedAddress string
+	ws.SetIPv6PolicySetter(func(enabled bool, address string) {
+		appliedEnabled, appliedAddress = enabled, address
+	})
+
+	w := postJSON(t, h, "/api/settings",
+		`{"public_ipv6":"2001:0db8:0:0:0:0:0:1","proxy_ipv6_enabled":true}`, tok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("enable IPv6 = %d, want 200 — %s", w.Code, w.Body.String())
+	}
+	var got struct {
+		PublicIPv6       string `json:"public_ipv6"`
+		ProxyIPv6Enabled bool   `json:"proxy_ipv6_enabled"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("settings response is not JSON: %v", err)
+	}
+	if got.PublicIPv6 != "2001:db8::1" || !got.ProxyIPv6Enabled {
+		t.Fatalf("response = %+v, want canonical address and enabled", got)
+	}
+	if snap := ws.settings.Snapshot(); snap.PublicIPv6 != "2001:db8::1" || !snap.ProxyIPv6Enabled {
+		t.Fatalf("live settings = %+v, want canonical address and enabled", snap)
+	}
+	if !appliedEnabled || appliedAddress != "2001:db8::1" {
+		t.Fatalf("live resolver setter got enabled=%v address=%q", appliedEnabled, appliedAddress)
+	}
+
+	var stored database.ServerSettings
+	if err := ws.db.GetSetting("server", &stored); err != nil {
+		t.Fatalf("read persisted server settings: %v", err)
+	}
+	if stored.PublicIPv6 != "2001:db8::1" || !stored.ProxyIPv6Enabled {
+		t.Fatalf("persisted settings = public_ipv6 %q enabled %v, want canonical address and enabled",
+			stored.PublicIPv6, stored.ProxyIPv6Enabled)
+	}
+
+	// The address cannot be cleared while the switch is on: that would leave the
+	// panel claiming IPv6 is enabled while every AAAA was sunk.
+	if w := postJSON(t, h, "/api/settings", `{"public_ipv6":""}`, tok); w.Code != http.StatusBadRequest {
+		t.Fatalf("clearing public_ipv6 while enabled = %d, want 400 — %s", w.Code, w.Body.String())
+	}
+
+	if w := postJSON(t, h, "/api/settings", `{"proxy_ipv6_enabled":false}`, tok); w.Code != http.StatusOK {
+		t.Fatalf("disable IPv6 = %d, want 200 — %s", w.Code, w.Body.String())
+	}
+	if snap := ws.settings.Snapshot(); snap.ProxyIPv6Enabled || snap.PublicIPv6 != "2001:db8::1" {
+		t.Fatalf("disable changed the stored address or left the switch on: %+v", snap)
+	}
+	if appliedEnabled || appliedAddress != "2001:db8::1" {
+		t.Fatalf("disable setter got enabled=%v address=%q", appliedEnabled, appliedAddress)
+	}
+
+	if w := postJSON(t, h, "/api/settings", `{"public_ipv6":""}`, tok); w.Code != http.StatusOK {
+		t.Fatalf("clearing public_ipv6 while disabled = %d, want 200 — %s", w.Code, w.Body.String())
+	}
+	if snap := ws.settings.Snapshot(); snap.PublicIPv6 != "" || snap.ProxyIPv6Enabled {
+		t.Fatalf("clear address left %+v", snap)
+	}
+	if appliedEnabled || appliedAddress != "" {
+		t.Fatalf("clear setter got enabled=%v address=%q", appliedEnabled, appliedAddress)
 	}
 }
 

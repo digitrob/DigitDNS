@@ -124,20 +124,26 @@ type QueryLogItem struct {
 // read is not safe. BindHost and WebPort are fixed at startup and may be read
 // directly.
 type ServerSettings struct {
-	// mu guards the six fields mutated at runtime: PublicIP, APIBind, APIKey,
-	// AdminUsername, AdminPassword and AdminPasswordWeak. It is unexported, so
-	// encoding/json skips it and it never reaches the database record.
+	// mu guards the fields mutated at runtime: PublicIP, PublicIPv6,
+	// ProxyIPv6Enabled, APIBind, APIKey, AdminUsername, AdminPassword and
+	// AdminPasswordWeak. It is unexported, so encoding/json skips it and it never
+	// reaches the database record.
 	mu sync.RWMutex
 
 	PublicIP string `json:"public_ip"`
 	// PublicIPv6 is the server's reachable IPv6, used for proxied AAAA answers
-	// (v2.5). Empty keeps the IPv4-forcing behaviour: AAAA on a proxied name is
-	// sunk so the client uses the A record. Set it only when the SNI proxy is
-	// actually reachable over IPv6.
-	PublicIPv6    string `json:"public_ipv6"`
-	BindHost      string `json:"bind_host"`
-	WebPort       int    `json:"web_port"`
-	AdminUsername string `json:"admin_username"`
+	// when ProxyIPv6Enabled is true. Empty keeps the IPv4-forcing behaviour:
+	// AAAA on a proxied name is sunk so the client uses the A record. Set it only
+	// when the SNI proxy is actually reachable over IPv6.
+	PublicIPv6 string `json:"public_ipv6"`
+	// ProxyIPv6Enabled turns IPv6 advertising for proxied names on or off. It is
+	// live. While false, proxied AAAA answers are withheld and the HTTPS/SVCB
+	// sink is forced even if proxy leak protection was explicitly disabled, so a
+	// client cannot learn or reach an origin over IPv6.
+	ProxyIPv6Enabled bool   `json:"proxy_ipv6_enabled"`
+	BindHost         string `json:"bind_host"`
+	WebPort          int    `json:"web_port"`
+	AdminUsername    string `json:"admin_username"`
 
 	// AdminPassword holds a PBKDF2-HMAC-SHA256 verifier in the encoded form
 	// produced by crypto.HashPassword, never the plaintext. Records written by

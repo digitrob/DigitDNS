@@ -1784,6 +1784,21 @@
                   class="panel-field w-full font-mono">
               </label>
               <label class="block">
+                <span class="block text-[11px] font-semibold text-slate-400 mb-1">Public IPv6 <span class="text-slate-500">(reported by the agent)</span></span>
+                <input id="agent-public-ipv6" type="text" placeholder="2001:db8::10" autocomplete="off"
+                  class="panel-field w-full font-mono">
+              </label>
+              <div class="block">
+                <span class="block text-[11px] font-semibold text-slate-400 mb-1">Use IPv6 for this agent</span>
+                <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-950/80 border border-slate-800">
+                  <span class="text-[11px] text-slate-400">Optional — IPv4 keeps working</span>
+                  <label class="switch" title="Enable IPv6 for this agent">
+                    <input type="checkbox" id="agent-ipv6-enabled" aria-label="Enable IPv6 for this agent">
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+              <label class="block">
                 <span class="block text-[11px] font-semibold text-slate-400 mb-1">Agent key</span>
                 <div class="flex items-center gap-2">
                   <input id="agent-key" type="text" readonly placeholder="Generated when you create the agent"
@@ -1792,6 +1807,9 @@
                 </div>
               </label>
             </div>
+            <p id="agent-ipv6-note" class="text-[10px] text-slate-500">
+              Optional for this existing agent. IPv4 keeps working; the agent applies the hub policy on its next heartbeat (within 30 seconds).
+            </p>
             <div class="flex items-center gap-2 flex-wrap">
               <button id="save-agent-btn" type="button" class="panel-btn panel-btn-primary">Create agent</button>
               <button id="cancel-agent-btn" type="button" class="panel-btn panel-btn-neutral">Cancel</button>
@@ -2711,11 +2729,12 @@ async function onBuySubscription(ctx, username) {
              mobile. The built-in root anchors are always visible inside a fixed
              height block, so the DNSSEC card never grows when it is opened. -->
         <div class="settings-pair settings-wide">
+        <div class="flex flex-col gap-3 min-w-0">
         <!-- Proxy leak protection. Proxied names must never advertise QUIC or
              origin address hints through HTTPS/SVCB: those records would let a
              browser skip the SNI relay. The guard is automatic and has no
              policy switch. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4" id="proxy-leak-card">
+        <div class="glass-panel panel-card p-4 sm:p-5 space-y-3 flex-none" id="proxy-leak-card">
           <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
             <div class="flex items-start gap-3">
               <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
@@ -2738,32 +2757,84 @@ async function onBuySubscription(ctx, username) {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-1.5">
               <div class="text-[9px] font-bold uppercase tracking-wider text-slate-400">HTTPS / SVCB</div>
               <div class="text-[11px] text-cyan-300 font-mono mt-0.5">withheld</div>
             </div>
-            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
+            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-1.5">
               <div class="text-[9px] font-bold uppercase tracking-wider text-slate-400">h3 / QUIC</div>
               <div class="text-[11px] text-cyan-300 font-mono mt-0.5">not advertised</div>
             </div>
-            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
+            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-1.5">
               <div class="text-[9px] font-bold uppercase tracking-wider text-slate-400">IPv4 / IPv6 hint</div>
               <div class="text-[11px] text-cyan-300 font-mono mt-0.5">removed</div>
             </div>
           </div>
 
-          <p class="text-[10px] text-slate-500">
-            Applies live to every domain routed through <span class="font-mono text-slate-400">Proxy</span>.
-            Direct-routed names keep their normal HTTPS/SVCB records.
+          <p class="text-[9px] leading-snug text-slate-500">
+            Live for every <span class="font-mono text-slate-400">Proxy</span> domain; direct names keep normal records.
           </p>
-          <p id="proxy-leak-off-note" class="hidden rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+          <p id="proxy-leak-off-note" class="hidden rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[10px] leading-snug text-red-300">
             Protection is off. Proxied names may advertise QUIC and real IPv4/IPv6 hints, allowing clients to bypass the relay.
           </p>
-          <p class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+          <p class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[10px] leading-snug text-amber-300">
             Recommended: keep this enabled. Turning it off lets proxied names advertise QUIC and origin IPv4/IPv6 hints,
             which can bypass the relay. Only change this if you know what you are doing.
           </p>
+        </div>
+
+        <!-- Proxy IPv6. The server's public IPv6 is published for proxied
+             domains only while the switch is on and the address is valid. With
+             the switch off, proxied AAAA is withheld and the HTTPS/SVCB guard is
+             forced even when Proxy Leak Protection was explicitly disabled. -->
+        <div class="glass-panel panel-card p-4 sm:p-5 flex flex-col gap-3 flex-1 min-h-0" id="proxy-ipv6-card">
+          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div class="flex items-start gap-3">
+              <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
+                <i data-feather="globe" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="panel-card-title">Proxy IPv6</h3>
+                <p class="text-[11px] text-slate-400">
+                  Publish this server's IPv6 for proxied domains. Off keeps clients on the IPv4 relay and blocks every IPv6 hint.
+                </p>
+              </div>
+            </div>
+            <div id="proxy-ipv6-controls" class="boot-hide flex items-center gap-3 shrink-0 self-end sm:self-start" style="visibility:hidden">
+              <span id="proxy-ipv6-badge" class="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800/70 text-slate-400 border border-slate-700">OFF</span>
+              <label class="switch" title="Enable IPv6 for proxied domains">
+                <input type="checkbox" id="proxy-ipv6-enabled" aria-label="Enable IPv6 for proxied domains">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="space-y-2 border-t border-slate-800 pt-4">
+            <label for="proxy-ipv6-input" class="block text-[11px] font-semibold text-slate-400">
+              Public IPv6 <span class="text-slate-500">(globally routable)</span>
+            </label>
+            <input id="proxy-ipv6-input" type="text" spellcheck="false" autocomplete="off"
+              placeholder="2001:db8::1" class="panel-field w-full font-mono text-[11px]">
+            <p class="text-[10px] text-slate-500">
+              The SNI proxy must be reachable on this address. AAAA is withheld when it is empty.
+            </p>
+            <p id="proxy-ipv6-off-note" class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+              IPv6 is off: proxied AAAA is withheld and HTTPS/SVCB hints stay blocked even if proxy leak protection is disabled. Agents switch to IPv4-only on their next heartbeat.
+            </p>
+            <p id="proxy-ipv6-on-note" class="hidden rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-[11px] text-cyan-300">
+              IPv6 is on: proxied AAAA uses this address and agents re-enable IPv6 on their next heartbeat. HTTPS/SVCB remains governed by Proxy Leak Protection.
+            </p>
+          </div>
+
+          <div class="mt-auto flex items-center gap-3 flex-wrap">
+            <button id="save-proxy-ipv6-btn" type="button"
+              class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
+              Save IPv6 settings
+            </button>
+            <span id="proxy-ipv6-status" class="text-[11px] text-slate-400"></span>
+          </div>
+        </div>
         </div>
 
         <!-- DNSSEC validation. Startup-only by design: the validator is built

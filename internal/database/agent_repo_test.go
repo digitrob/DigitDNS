@@ -126,7 +126,7 @@ func TestAgentListTouchDisableDelete(t *testing.T) {
 		t.Fatalf("enrol: %v", err)
 	}
 
-	if err := db.TouchAgent(agent.ID, "1.0.1", "91.0.0.1", 443, 100, 200); err != nil {
+	if err := db.TouchAgent(agent.ID, "1.0.1", "91.0.0.1", "2001:db8::5", 443, 100, 200); err != nil {
 		t.Fatalf("touch: %v", err)
 	}
 	got, err := db.GetAgent(agent.ID)
@@ -135,6 +135,10 @@ func TestAgentListTouchDisableDelete(t *testing.T) {
 	}
 	if got.Version != "1.0.1" || got.BytesIn != 100 || got.BytesOut != 200 || got.RelayPort != 443 {
 		t.Fatalf("touch not applied: %+v", got)
+	}
+	if got.PublicIPv6 != "2001:db8::5" || got.IPv6Enabled {
+		t.Fatalf("touch IPv6 fields = %q/%v, want the address and the conservative disabled opt-in",
+			got.PublicIPv6, got.IPv6Enabled)
 	}
 	if err := db.RecordAgentPing(agent.ID, 12.5); err != nil {
 		t.Fatalf("record ping: %v", err)

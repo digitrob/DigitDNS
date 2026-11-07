@@ -33,9 +33,10 @@ func TestHubEnrolFetchHeartbeat(t *testing.T) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"country": "DE",
-			"hosts":   []string{"api.ard.de"},
-			"clients": []string{"203.0.113.5"},
+			"country":      "DE",
+			"hosts":        []string{"api.ard.de"},
+			"clients":      []string{"203.0.113.5"},
+			"ipv6_enabled": true,
 		})
 	})
 	mux.HandleFunc("/agent/heartbeat", func(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +44,16 @@ func TestHubEnrolFetchHeartbeat(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		w.WriteHeader(http.StatusNoContent)
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if body["public_ipv6"] != "2001:db8::5" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"ipv6_enabled": true})
 	})
 
 	srv := httptest.NewServer(mux)
@@ -74,10 +84,14 @@ func TestHubEnrolFetchHeartbeat(t *testing.T) {
 		t.Fatalf("key was not sent: %q", gotKey)
 	}
 
-	if err := hub.Heartbeat(enr.Key, "1.0.0", 443, 1, 2); err != nil {
+	hb, err := hub.Heartbeat(enr.Key, "1.0.0", 443, 1, 2, "2001:db8::5")
+	if err != nil {
 		t.Fatalf("heartbeat: %v", err)
 	}
-	if err := hub.Heartbeat("id01:wrong", "1.0.0", 443, 1, 2); !errors.Is(err, ErrHubRejected) {
+	if hb.IPv6Enabled == nil || !*hb.IPv6Enabled {
+		t.Fatalf("heartbeat IPv6 policy = %v, want true", hb.IPv6Enabled)
+	}
+	if _, err := hub.Heartbeat("id01:wrong", "1.0.0", 443, 1, 2, "2001:db8::5"); !errors.Is(err, ErrHubRejected) {
 		t.Fatalf("wrong key should be rejected, got %v", err)
 	}
 
@@ -98,7 +112,7 @@ func TestStateRoundTrip(t *testing.T) {
 		t.Fatal("missing state should be empty")
 	}
 
-	want := State{AgentID: "id01", Key: "id01:secret", Country: "DE", Hosts: []string{"a.example"}}
+	want := State{AgentID: "id01", Key: "id01:secret", Country: "DE", Hosts: []string{"a.example"}, IPv6Enabled: true}
 	if err := SaveState(path, want); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -106,7 +120,7 @@ func TestStateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if got.Key != want.Key || got.Country != want.Country || len(got.Hosts) != 1 {
+	if got.Key != want.Key || got.Country != want.Country || len(got.Hosts) != 1 || got.IPv6Enabled != want.IPv6Enabled {
 		t.Fatalf("state did not round-trip: %+v", got)
 	}
 }

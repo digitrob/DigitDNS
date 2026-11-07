@@ -19,6 +19,52 @@ func relayAgent(id, name, country, ip string) database.Agent {
 	}
 }
 
+func relayAgentIPv6(id, name, country, ipv4, ipv6 string, ipv6Enabled bool) database.Agent {
+	return database.Agent{
+		ID:          id,
+		Name:        name,
+		Country:     country,
+		PublicIP:    ipv4,
+		PublicIPv6:  ipv6,
+		IPv6Enabled: ipv6Enabled,
+		Enabled:     true,
+		CreatedAt:   time.Now(),
+		LastSeen:    time.Now(),
+	}
+}
+
+func TestRelayRouterIPv6OnlyAgentIsSelectable(t *testing.T) {
+	r := NewRelayRouter()
+	r.SetAgents([]database.Agent{
+		relayAgentIPv6("v6", "IPv6 Only", "DE", "", "2001:db8::10", true),
+	})
+	r.SetAssignments(map[string]string{"example.com": "v6"}, nil, nil)
+
+	target, ok := r.Lookup("example.com")
+	if !ok {
+		t.Fatal("an IPv6-only agent should be selectable")
+	}
+	if target.IPv4 != "" || target.IPv6 != "2001:db8::10" {
+		t.Fatalf("target = %+v, want only the IPv6 address", target)
+	}
+}
+
+func TestRelayRouterIgnoresIPv6WhenAgentOptedOut(t *testing.T) {
+	r := NewRelayRouter()
+	r.SetAgents([]database.Agent{
+		relayAgentIPv6("v4", "IPv4 Only", "DE", "203.0.113.10", "2001:db8::10", false),
+	})
+	r.SetAssignments(map[string]string{"example.com": "v4"}, nil, nil)
+
+	target, ok := r.Lookup("example.com")
+	if !ok {
+		t.Fatal("the IPv4 address should keep the agent selectable")
+	}
+	if target.IPv4 != "203.0.113.10" || target.IPv6 != "" {
+		t.Fatalf("target = %+v, want IPv4 with IPv6 suppressed", target)
+	}
+}
+
 func TestRelayRouterMatchesAssignedDomain(t *testing.T) {
 	r := NewRelayRouter()
 	r.SetAgents([]database.Agent{

@@ -12,6 +12,7 @@ import (
 
 	"digitdns/internal/database"
 	"digitdns/internal/httpx"
+	"digitdns/internal/netutil"
 )
 
 // Geo agent endpoints.
@@ -166,9 +167,11 @@ func (ws *WebServer) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			Name     string `json:"name"`
-			Country  string `json:"country"`
-			PublicIP string `json:"public_ip"`
+			Name        string  `json:"name"`
+			Country     string  `json:"country"`
+			PublicIP    string  `json:"public_ip"`
+			PublicIPv6  *string `json:"public_ipv6"`
+			IPv6Enabled *bool   `json:"ipv6_enabled"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody)).Decode(&req); err != nil {
 			httpx.WriteJSONError(w, http.StatusBadRequest, "the request body could not be read as JSON")
@@ -179,7 +182,32 @@ func (ws *WebServer) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteJSONError(w, http.StatusBadRequest, "a two-letter country code is required")
 			return
 		}
-		if err := ws.db.UpdateAgentDetails(id, req.Name, country, req.PublicIP); err != nil {
+		current, err := ws.db.GetAgent(id)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, database.ErrAgentNotFound) {
+				status = http.StatusNotFound
+			}
+			httpx.WriteJSONError(w, status, err.Error())
+			return
+		}
+		publicIPv6 := current.PublicIPv6
+		if req.PublicIPv6 != nil {
+			publicIPv6 = strings.TrimSpace(*req.PublicIPv6)
+		}
+		if publicIPv6 != "" {
+			ip, ok := netutil.ParsePublicIPv6(publicIPv6)
+			if !ok {
+				httpx.WriteJSONError(w, http.StatusBadRequest, "public_ipv6 must be a global IPv6 address")
+				return
+			}
+			publicIPv6 = ip.String()
+		}
+		ipv6Enabled := current.IPv6Enabled
+		if req.IPv6Enabled != nil {
+			ipv6Enabled = *req.IPv6Enabled
+		}
+		if err := ws.db.UpdateAgentDetails(id, req.Name, country, req.PublicIP, publicIPv6, ipv6Enabled); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, database.ErrAgentNotFound) {
 				status = http.StatusNotFound
@@ -210,6 +238,23 @@ type agentCatalogue struct {
 	Hosts    []string `json:"hosts"`
 	Clients  []string `json:"clients"`
 	SyncedAt string   `json:"synced_at"`
+	// IPv6Enabled is the effective policy: the per-agent opt-in AND the global
+	// Proxy IPv6 master switch. The agent uses it to rebind IPv4-only and to
+	// stop detecting/reporting IPv6.
+	IPv6Enabled bool `json:"ipv6_enabled"`
+}
+
+// agentIPv6Effective combines the per-agent opt-in with the global master
+// switch. The agent is told the effective value, so turning the global switch
+// off stops every agent's IPv6 listener rather than only hiding DNS answers.
+func (ws *WebServer) agentIPv6Effective(agent database.Agent) bool {
+	if !agent.IPv6Enabled {
+		return false
+	}
+	if ws.settings == nil {
+		return true
+	}
+	return ws.settings.Snapshot().ProxyIPv6Enabled
 }
 
 // agentFromRequest authenticates an agent by its key.
@@ -284,21 +329,31 @@ func (ws *WebServer) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request
 	}
 
 	var req struct {
-		Version   string `json:"version"`
-		RelayPort int    `json:"relay_port"`
-		BytesIn   uint64 `json:"bytes_in"`
-		BytesOut  uint64 `json:"bytes_out"`
+		Version    string `json:"version"`
+		RelayPort  int    `json:"relay_port"`
+		BytesIn    uint64 `json:"bytes_in"`
+		BytesOut   uint64 `json:"bytes_out"`
+		PublicIPv6 string `json:"public_ipv6"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody)).Decode(&req); err != nil {
 		httpx.WriteJSONError(w, http.StatusBadRequest, "the request body could not be read as JSON")
 		return
 	}
-	if err := ws.db.TouchAgent(agent.ID, req.Version, clientIP(r), req.RelayPort, req.BytesIn, req.BytesOut); err != nil {
+	// The reported value wins; the source address of the heartbeat is the
+	// fallback when the agent itself could not detect an address.
+	publicIPv6 := strings.TrimSpace(req.PublicIPv6)
+	if publicIPv6 == "" {
+		publicIPv6 = clientIP(r)
+	}
+	if err := ws.db.TouchAgent(agent.ID, req.Version, clientIP(r), publicIPv6, req.RelayPort, req.BytesIn, req.BytesOut); err != nil {
 		httpx.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	ws.refreshRelayAgents()
-	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ipv6_enabled": ws.agentIPv6Effective(agent),
+	})
 }
 
 // handleAgentCatalogue returns the allowlists for this agent: the active proxied
@@ -381,11 +436,12 @@ func (ws *WebServer) handleAgentCatalogue(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(agentCatalogue{
-		AgentID:  agent.ID,
-		Country:  agent.Country,
-		Hosts:    hosts,
-		Clients:  clients,
-		SyncedAt: time.Now().UTC().Format(time.RFC3339),
+		AgentID:     agent.ID,
+		Country:     agent.Country,
+		Hosts:       hosts,
+		Clients:     clients,
+		SyncedAt:    time.Now().UTC().Format(time.RFC3339),
+		IPv6Enabled: ws.agentIPv6Effective(agent),
 	})
 }
 
@@ -403,29 +459,49 @@ func (ws *WebServer) handleAgentTest(w http.ResponseWriter, id string) {
 		httpx.WriteJSONError(w, status, err.Error())
 		return
 	}
-	if agent.PublicIP == "" {
-		httpx.WriteJSONError(w, http.StatusConflict, "the agent has not reported a public IPv4 address yet")
+	candidates := make([]string, 0, 2)
+	if agent.PublicIP != "" {
+		candidates = append(candidates, agent.PublicIP)
+	}
+	if agent.PublicIPv6 != "" {
+		candidates = append(candidates, agent.PublicIPv6)
+	}
+	if len(candidates) == 0 {
+		httpx.WriteJSONError(w, http.StatusConflict, "the agent has not reported a public address yet")
 		return
 	}
 	port := agent.RelayPort
 	if port == 0 {
 		port = 443
 	}
-	start := time.Now()
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(agent.PublicIP, strconv.Itoa(port)), 3*time.Second)
-	ms := float64(time.Since(start).Microseconds()) / 1000.0
-	if err != nil {
+	var (
+		used    string
+		ms      float64
+		lastErr error
+	)
+	for _, host := range candidates {
+		start := time.Now()
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 3*time.Second)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		_ = conn.Close()
+		used = host
+		ms = float64(time.Since(start).Microseconds()) / 1000.0
+		break
+	}
+	if used == "" {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"ok":        false,
-			"error":     err.Error(),
+			"error":     lastErr.Error(),
 			"ping_ms":   ms,
-			"address":   net.JoinHostPort(agent.PublicIP, strconv.Itoa(port)),
+			"address":   net.JoinHostPort(candidates[0], strconv.Itoa(port)),
 			"last_seen": agent.LastSeen,
 		})
 		return
 	}
-	_ = conn.Close()
 	if err := ws.db.RecordAgentPing(id, ms); err != nil {
 		httpx.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -435,7 +511,7 @@ func (ws *WebServer) handleAgentTest(w http.ResponseWriter, id string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"ok":        true,
 		"ping_ms":   ms,
-		"address":   net.JoinHostPort(agent.PublicIP, strconv.Itoa(port)),
+		"address":   net.JoinHostPort(used, strconv.Itoa(port)),
 		"agent":     agent,
 		"last_seen": agent.LastSeen,
 	})

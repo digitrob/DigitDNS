@@ -45,8 +45,8 @@ fun HistorySettingsScreen(viewModel: HistorySettingsViewModel = hiltViewModel())
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (state.unsupported) {
             UnsupportedHistorySettings()
@@ -78,8 +78,11 @@ private fun HistoryPolicyCard(
     state: HistorySettingsUiState,
     viewModel: HistorySettingsViewModel,
 ) {
-    PanelCard(modifier = Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // Compact on purpose: the whole policy must fit above the nav bar on a
+    // short phone, so the card drops the explanatory paragraphs that used to
+    // sit above Save and uses tight spacing between the fields.
+    PanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = 12.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             HistoryPolicyHeader(state)
             HistoryPolicyFields(state, viewModel)
             HistoryPolicyFooter(state, viewModel::save)
@@ -157,24 +160,14 @@ private fun HistoryPolicyFields(
         value = state.excludeClients,
         onValueChange = viewModel::onExcludeClientsChange,
         label = { Text(stringResource(R.string.history_settings_exclude)) },
-        minLines = 3,
-        maxLines = 6,
+        minLines = 2,
+        maxLines = 4,
         modifier = Modifier.fillMaxWidth(),
-    )
-    Text(
-        text = stringResource(R.string.history_settings_exclude_help),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
 @Composable
 private fun HistoryPolicyFooter(state: HistorySettingsUiState, onSave: () -> Unit) {
-    Text(
-        text = stringResource(R.string.history_settings_restart_note),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
     state.error?.let { error ->
         Text(
             text = error,

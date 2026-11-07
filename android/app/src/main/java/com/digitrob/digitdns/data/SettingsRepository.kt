@@ -49,6 +49,8 @@ class SettingsRepository @Inject constructor(
         apiBind: String,
         apiBindList: List<String>?,
         sessionIdleMinutes: Int?,
+        publicIpv6: String? = null,
+        proxyIpv6Enabled: Boolean? = null,
     ): ServerConfig = ServerConfig.from(
         api.save(
             SettingsSaveRequest(
@@ -56,6 +58,18 @@ class SettingsRepository @Inject constructor(
                 apiBind = apiBind,
                 apiBindList = apiBindList,
                 sessionIdleMinutes = sessionIdleMinutes,
+                publicIpv6 = publicIpv6,
+                proxyIpv6Enabled = proxyIpv6Enabled,
+            ),
+        ),
+    )
+
+    /** Save only the live proxy-IPv6 policy; omitted fields stay untouched. */
+    suspend fun saveIpv6(enabled: Boolean, address: String): ServerConfig = ServerConfig.from(
+        api.save(
+            SettingsSaveRequest(
+                publicIpv6 = address,
+                proxyIpv6Enabled = enabled,
             ),
         ),
     )

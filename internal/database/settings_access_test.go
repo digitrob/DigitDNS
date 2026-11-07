@@ -83,6 +83,7 @@ func fullSettings() *ServerSettings {
 	return &ServerSettings{
 		PublicIP:           "203.0.113.9",
 		PublicIPv6:         "2001:db8::9",
+		ProxyIPv6Enabled:   true,
 		BindHost:           "0.0.0.0",
 		WebPort:            8080,
 		AdminUsername:      "admin",
@@ -125,6 +126,8 @@ func TestSnapshotReportsTheCurrentValues(t *testing.T) {
 
 	want := ServerSettingsSnapshot{
 		PublicIP:           "203.0.113.9",
+		PublicIPv6:         "2001:db8::9",
+		ProxyIPv6Enabled:   true,
 		BindHost:           "0.0.0.0",
 		WebPort:            8080,
 		AdminUsername:      "admin",

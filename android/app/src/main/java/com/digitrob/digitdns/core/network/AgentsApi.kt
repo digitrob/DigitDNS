@@ -53,6 +53,8 @@ data class AgentDto(
     val name: String = "",
     val country: String = "",
     @SerialName("public_ip") val publicIp: String = "",
+    @SerialName("public_ipv6") val publicIpv6: String = "",
+    @SerialName("ipv6_enabled") val ipv6Enabled: Boolean = false,
     @SerialName("relay_port") val relayPort: Int = 0,
     val version: String = "",
     val enabled: Boolean = false,
@@ -96,6 +98,12 @@ data class AgentUpdateRequest(
     val name: String = "",
     val country: String,
     @SerialName("public_ip") val publicIp: String = "",
+    // Null means "leave unchanged": the server treats an explicit empty address
+    // as a clear, so an absent field must not be confused with that. The switch
+    // must be nullable so an explicit `false` is sent rather than omitted as a
+    // default.
+    @SerialName("public_ipv6") val publicIpv6: String? = null,
+    @SerialName("ipv6_enabled") val ipv6Enabled: Boolean? = null,
 )
 
 /** The result of the real TCP test; [ok] is false with [error] on a failed connect. */

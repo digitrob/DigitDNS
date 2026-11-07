@@ -147,6 +147,11 @@ type WebServer struct {
 	// lighter test harnesses.
 	proxyLeakSetter func(bool)
 
+	// ipv6Setter applies the live proxied-IPv6 policy to the running resolver.
+	// Installed during startup; nil leaves the API persistence-only in the
+	// lighter test harnesses.
+	ipv6Setter func(enabled bool, address string)
+
 	// static holds the embedded dashboard, hashed and pre-compressed. Preparing it
 	// costs one pass over every asset, so it is built on first use and reused: the
 	// files came out of the binary and cannot change while the process runs, and
@@ -270,6 +275,15 @@ func (ws *WebServer) SetProxyLeakProtectionSetter(fn func(bool)) {
 	ws.proxyLeakSetter = fn
 }
 
+// SetIPv6PolicySetter installs the live-resolver hook used by the server
+// settings save for public_ipv6 and proxy_ipv6_enabled. Call it during startup.
+func (ws *WebServer) SetIPv6PolicySetter(fn func(enabled bool, address string)) {
+	if ws == nil {
+		return
+	}
+	ws.ipv6Setter = fn
+}
+
 func (ws *WebServer) SetSubscriptionSettings(s *database.SubscriptionSettings) {
 	ws.subSettings = s
 }
@@ -355,6 +369,8 @@ func (ws *WebServer) refreshRelayAgents() {
 // there is no other route that hands it back.
 type serverSettingsView struct {
 	PublicIP          string `json:"public_ip"`
+	PublicIPv6        string `json:"public_ipv6"`
+	ProxyIPv6Enabled  bool   `json:"proxy_ipv6_enabled"`
 	Country           string `json:"country"`
 	BindHost          string `json:"bind_host"`
 	WebPort           int    `json:"web_port"`
@@ -383,6 +399,8 @@ func (ws *WebServer) settingsView() serverSettingsView {
 	s := ws.settings.Snapshot()
 	return serverSettingsView{
 		PublicIP:           s.PublicIP,
+		PublicIPv6:         s.PublicIPv6,
+		ProxyIPv6Enabled:   s.ProxyIPv6Enabled,
 		Country:            ws.countryOfServer(),
 		BindHost:           s.BindHost,
 		WebPort:            s.WebPort,
@@ -2647,6 +2665,8 @@ func (ws *WebServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 		var req struct {
 			PublicIP           string    `json:"public_ip"`
+			PublicIPv6         *string   `json:"public_ipv6"`
+			ProxyIPv6Enabled   *bool     `json:"proxy_ipv6_enabled"`
 			APIBind            string    `json:"api_bind"`
 			APIBindList        *[]string `json:"api_bind_list"`
 			SessionIdleMinutes *int      `json:"session_idle_minutes"`
@@ -2679,6 +2699,32 @@ func (ws *WebServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		publicIP := strings.TrimSpace(req.PublicIP)
 		if publicIP != "" && net.ParseIP(publicIP) == nil {
 			httpx.WriteJSONError(w, http.StatusBadRequest, "public_ip must be an IP address")
+			return
+		}
+
+		// The IPv6 fields are optional on the wire: absent means "leave this one
+		// alone", while an explicit empty public_ipv6 clears the stored address.
+		// The toggle may not be turned on without a usable address, otherwise the
+		// panel would report IPv6 enabled while every proxied AAAA stayed sunk.
+		current := ws.settings.Snapshot()
+		publicIPv6 := strings.TrimSpace(current.PublicIPv6)
+		if req.PublicIPv6 != nil {
+			publicIPv6 = strings.TrimSpace(*req.PublicIPv6)
+		}
+		if publicIPv6 != "" {
+			parsed, ok := netutil.ParsePublicIPv6(publicIPv6)
+			if !ok {
+				httpx.WriteJSONError(w, http.StatusBadRequest, "public_ipv6 must be a global IPv6 address")
+				return
+			}
+			publicIPv6 = parsed.String()
+		}
+		proxyIPv6Enabled := current.ProxyIPv6Enabled
+		if req.ProxyIPv6Enabled != nil {
+			proxyIPv6Enabled = *req.ProxyIPv6Enabled
+		}
+		if proxyIPv6Enabled && publicIPv6 == "" {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "public_ipv6 is required when proxy IPv6 is enabled")
 			return
 		}
 
@@ -2716,12 +2762,25 @@ func (ws *WebServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		// actual transition rather than "set to X" on every save.
 		_, prevBind := ws.settings.Endpoint()
 		prevList := ws.settings.GetAPIBindList()
+		// The values read back from the record under the write lock are the ones
+		// the running resolver must receive. They also avoid clobbering a
+		// concurrent IPv6 save when this request only changed api_bind.
+		finalPublicIPv6 := current.PublicIPv6
+		finalProxyIPv6Enabled := current.ProxyIPv6Enabled
 		if err := ws.settings.UpdateAndPersist(
 			func(m *database.MutableSettings) {
 				// An empty field means "leave this one alone", so a bind-only save
 				// must not blank out the advertised IP.
 				if publicIP != "" {
 					m.PublicIP = publicIP
+				}
+				// Only write the IPv6 fields this request actually carried, so an
+				// unrelated save cannot revert a concurrent IPv6 change.
+				if req.PublicIPv6 != nil {
+					m.PublicIPv6 = publicIPv6
+				}
+				if req.ProxyIPv6Enabled != nil {
+					m.ProxyIPv6Enabled = proxyIPv6Enabled
 				}
 				// The list wins over the single field when both are set. A save that
 				// carries the list is the multi-CIDR editor: storing a non-empty list
@@ -2746,11 +2805,21 @@ func (ws *WebServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 					m.SessionIdleMinutes = idleMinutes
 				}
 			},
-			func(s *database.ServerSettings) error { return ws.db.SetSetting("server", s) },
+			func(s *database.ServerSettings) error {
+				finalPublicIPv6 = s.PublicIPv6
+				finalProxyIPv6Enabled = s.ProxyIPv6Enabled
+				return ws.db.SetSetting("server", s)
+			},
 		); err != nil {
 			log.Printf("[Web] Could not persist the server settings: %v", err)
 			httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not save settings")
 			return
+		}
+		if ws.ipv6Setter != nil {
+			ws.ipv6Setter(finalProxyIPv6Enabled, finalPublicIPv6)
+		}
+		if finalProxyIPv6Enabled != current.ProxyIPv6Enabled || finalPublicIPv6 != current.PublicIPv6 {
+			log.Printf("[Web] Proxy IPv6 policy: enabled=%t public_ipv6=%q", finalProxyIPv6Enabled, finalPublicIPv6)
 		}
 		if req.SessionIdleMinutes != nil && ws.sessions != nil {
 			ws.sessions.SetIdleTimeout(time.Duration(idleMinutes) * time.Minute)

@@ -142,6 +142,8 @@ data class SettingsResponse(
 @Serializable
 data class ServerSettings(
     @SerialName("public_ip") val publicIp: String = "",
+    @SerialName("public_ipv6") val publicIpv6: String = "",
+    @SerialName("proxy_ipv6_enabled") val proxyIpv6Enabled: Boolean = false,
     /** ISO 3166-1 alpha-2 country the server's public address resolves to. */
     val country: String = "",
     @SerialName("bind_host") val bindHost: String = "",
@@ -166,6 +168,9 @@ data class SettingsSaveRequest(
     @SerialName("api_bind") val apiBind: String = "",
     @SerialName("api_bind_list") val apiBindList: List<String>? = null,
     @SerialName("session_idle_minutes") val sessionIdleMinutes: Int? = null,
+    // Null means "leave unchanged". An empty string is the explicit clear.
+    @SerialName("public_ipv6") val publicIpv6: String? = null,
+    @SerialName("proxy_ipv6_enabled") val proxyIpv6Enabled: Boolean? = null,
 )
 
 @Serializable

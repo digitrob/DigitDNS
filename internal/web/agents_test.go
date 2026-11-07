@@ -41,15 +41,26 @@ func TestAgentCreateHeartbeatCatalogueLoop(t *testing.T) {
 	auth := map[string]string{agentKeyHeader: key}
 
 	rec := doJSON(t, ws.handleAgentHeartbeat, http.MethodPost, "/agent/heartbeat",
-		`{"version":"1.0.1","relay_port":443,"bytes_in":10,"bytes_out":20}`, auth)
-	if rec.Code != http.StatusNoContent {
+		`{"version":"1.0.1","relay_port":443,"bytes_in":10,"bytes_out":20,"public_ipv6":"2001:db8::20"}`, auth)
+	if rec.Code != http.StatusOK {
 		t.Fatalf("heartbeat: %d %s", rec.Code, rec.Body.String())
+	}
+	var hb struct {
+		IPv6Enabled bool `json:"ipv6_enabled"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &hb); err != nil {
+		t.Fatalf("decode heartbeat reply: %v", err)
+	}
+	// The agent starts with the per-agent opt-in off, so the effective policy
+	// is false even though it reported an address.
+	if hb.IPv6Enabled {
+		t.Fatal("heartbeat enabled IPv6 without the per-agent opt-in")
 	}
 	agent, err := ws.db.GetAgent(agentID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent.PublicIP != "203.0.113.9" || agent.LastSeen.IsZero() {
+	if agent.PublicIP != "203.0.113.9" || agent.PublicIPv6 != "2001:db8::20" || agent.LastSeen.IsZero() {
 		t.Fatalf("heartbeat did not record address/liveness: %+v", agent)
 	}
 
@@ -71,6 +82,51 @@ func TestAgentCreateHeartbeatCatalogueLoop(t *testing.T) {
 	}
 }
 
+// The hub's per-agent opt-in is necessary but not sufficient: the global Proxy
+// IPv6 switch must also be on, and the agent is told the effective value so it
+// can stop listening on IPv6.
+func TestAgentIPv6EffectiveRequiresBothSwitches(t *testing.T) {
+	ws := newAgentWebServer(t)
+	agentID, key := createAgent(t, ws, "DE", "DE-1")
+	auth := map[string]string{agentKeyHeader: key}
+	if err := ws.db.UpdateAgentDetails(agentID, "DE-1", "DE", "203.0.113.9", "2001:db8::30", true); err != nil {
+		t.Fatal(err)
+	}
+
+	heartbeatPolicy := func() bool {
+		rec := doJSON(t, ws.handleAgentHeartbeat, http.MethodPost, "/agent/heartbeat",
+			`{"version":"1.0.0","relay_port":443,"bytes_in":0,"bytes_out":0}`, auth)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("heartbeat: %d %s", rec.Code, rec.Body.String())
+		}
+		var out struct {
+			IPv6Enabled bool `json:"ipv6_enabled"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return out.IPv6Enabled
+	}
+	cataloguePolicy := func() bool {
+		rec := doJSON(t, ws.handleAgentCatalogue, http.MethodGet, "/agent/catalogue", "", auth)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("catalogue: %d %s", rec.Code, rec.Body.String())
+		}
+		var out agentCatalogue
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out.IPv6Enabled
+	}
+
+	ws.settings.ProxyIPv6Enabled = false
+	if heartbeatPolicy() || cataloguePolicy() {
+		t.Fatal("IPv6 was effective while the global switch was off")
+	}
+	ws.settings.ProxyIPv6Enabled = true
+	if !heartbeatPolicy() || !cataloguePolicy() {
+		t.Fatal("IPv6 was not effective with both switches on")
+	}
+}
+
 func TestAgentConnectionTestRecordsPing(t *testing.T) {
 	ws := newAgentWebServer(t)
 	agentID, _ := createAgent(t, ws, "DE", "DE-1")
@@ -81,7 +137,7 @@ func TestAgentConnectionTestRecordsPing(t *testing.T) {
 	}
 	defer ln.Close()
 	port, _ := strconv.Atoi(strings.Split(ln.Addr().String(), ":")[1])
-	if err := ws.db.TouchAgent(agentID, "1.0.0", "127.0.0.1", port, 0, 0); err != nil {
+	if err := ws.db.TouchAgent(agentID, "1.0.0", "127.0.0.1", "", port, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -167,7 +223,7 @@ func TestAgentEditAndRotateKey(t *testing.T) {
 	}
 
 	rec = doJSON(t, ws.handleAgentByID, http.MethodPut, "/api/agents/"+agentID,
-		`{"name":"Frankfurt 2","country":"US","public_ip":"203.0.113.20"}`, nil)
+		`{"name":"Frankfurt 2","country":"US","public_ip":"203.0.113.20","public_ipv6":"2001:db8::20","ipv6_enabled":true}`, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("edit: %d %s", rec.Code, rec.Body.String())
 	}
@@ -175,7 +231,8 @@ func TestAgentEditAndRotateKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent.Name != "Frankfurt 2" || agent.Country != "US" || agent.PublicIP != "203.0.113.20" {
+	if agent.Name != "Frankfurt 2" || agent.Country != "US" || agent.PublicIP != "203.0.113.20" ||
+		agent.PublicIPv6 != "2001:db8::20" || !agent.IPv6Enabled {
 		t.Fatalf("agent after edit = %+v", agent)
 	}
 

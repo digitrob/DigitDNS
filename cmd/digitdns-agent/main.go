@@ -8,10 +8,15 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sort"
@@ -20,6 +25,7 @@ import (
 	"time"
 
 	"digitdns/internal/agent"
+	"digitdns/internal/netutil"
 	"digitdns/internal/version"
 )
 
@@ -28,6 +34,7 @@ func main() {
 		configPath   = flag.String("config", "", "path to a JSON config file (cached hub config)")
 		listen       = flag.String("listen", "", "comma-separated listen addresses, e.g. :80,:443 (default from config, else :80,:443)")
 		country      = flag.String("country", "", "country this agent exits as, e.g. DE")
+		publicIPv6   = flag.String("public-ipv6", "", "globally routable IPv6 this agent publishes for proxied AAAA (auto-detected when empty)")
 		hosts        = flag.String("hosts", "", "comma-separated host allowlist (overrides config)")
 		clients      = flag.String("clients", "", "comma-separated client IP/CIDR allowlist (overrides config)")
 		httpsPort    = flag.Int("port", 0, "TLS port dialled on the far side (default 443)")
@@ -60,6 +67,16 @@ func main() {
 	}
 	if *country != "" {
 		cfg.Country = *country
+	}
+	if *publicIPv6 != "" {
+		cfg.PublicIPv6 = strings.TrimSpace(*publicIPv6)
+	}
+	if cfg.PublicIPv6 != "" {
+		ip, ok := netutil.ParsePublicIPv6(cfg.PublicIPv6)
+		if !ok {
+			log.Fatalf("[agent] -public-ipv6 %q is not a globally routable IPv6 address", cfg.PublicIPv6)
+		}
+		cfg.PublicIPv6 = ip.String()
 	}
 	if *hosts != "" {
 		cfg.Hosts = splitList(*hosts)
@@ -95,6 +112,12 @@ func main() {
 	state, err := agent.LoadState(*statePath)
 	if err != nil {
 		log.Fatalf("[agent] %v", err)
+	}
+	// The cached hub policy is the fallback while the hub is unreachable. A
+	// zero value from an old state file means IPv4-only, which is the safe
+	// default for an upgraded agent.
+	if state.AgentID != "" {
+		cfg.IPv6Enabled = state.IPv6Enabled
 	}
 	if *key != "" {
 		id, secret, ok := strings.Cut(strings.TrimSpace(*key), ":")
@@ -138,7 +161,12 @@ func main() {
 			if cat.Country != "" {
 				state.Country = cat.Country
 			}
-			log.Printf("[agent] catalogue synced: %d hosts, %d clients", len(cat.Hosts), len(cat.Clients))
+			if cat.IPv6Enabled != nil {
+				cfg.IPv6Enabled = *cat.IPv6Enabled
+				state.IPv6Enabled = *cat.IPv6Enabled
+			}
+			log.Printf("[agent] catalogue synced: %d hosts, %d clients · IPv6 %s",
+				len(cat.Hosts), len(cat.Clients), onOff(cfg.IPv6Enabled))
 		}
 	}
 
@@ -153,18 +181,65 @@ func main() {
 	if cfg.Country == "" {
 		cfg.Country = state.Country
 	}
+
+	// Auto-detect only after the hub policy is known. A disabled agent must not
+	// probe for IPv6 at all; an enabled one probes once if it has no manual
+	// address.
+	if cfg.IPv6Enabled && cfg.PublicIPv6 == "" {
+		if detected := detectPublicIPv6(); detected != "" {
+			cfg.PublicIPv6 = detected
+			log.Printf("[agent] auto-detected public IPv6: %s", detected)
+		} else {
+			log.Printf("[agent] no public IPv6 detected; proxied AAAA for this agent stays sunk")
+		}
+	}
+	if !cfg.IPv6Enabled {
+		log.Printf("[agent] IPv6 disabled by the hub; listening IPv4-only and reporting no IPv6")
+	}
 	if err := agent.SaveState(*statePath, state); err != nil {
 		log.Printf("[agent] could not write state: %v", err)
 	}
 
 	srv := agent.NewServer(cfg)
 
+	// applyIPv6Policy is the live hub control. It rebinds the listeners before
+	// updating the reported policy, so "off" really stops accepting IPv6
+	// connections rather than only hiding the address from DNS.
+	applyIPv6Policy := func(enabled bool) {
+		if enabled == cfg.IPv6Enabled {
+			return
+		}
+		if err := srv.SetIPv6Enabled(enabled); err != nil {
+			log.Printf("[agent] could not apply hub IPv6 policy %s: %v", onOff(enabled), err)
+			return
+		}
+		cfg.IPv6Enabled = enabled
+		if enabled && cfg.PublicIPv6 == "" {
+			if detected := detectPublicIPv6(); detected != "" {
+				cfg.PublicIPv6 = detected
+				log.Printf("[agent] auto-detected public IPv6: %s", detected)
+			} else {
+				log.Printf("[agent] no public IPv6 detected; proxied AAAA for this agent stays sunk")
+			}
+		}
+		state.IPv6Enabled = enabled
+		if err := agent.SaveState(*statePath, state); err != nil {
+			log.Printf("[agent] could not write state: %v", err)
+		}
+		log.Printf("[agent] hub set IPv6 %s", onOff(enabled))
+	}
+
 	// The startup line is the whole configuration in one place. An agent that
 	// refuses everything because it synced an empty list looks identical to one
 	// that is working until you read these counts, so they are printed, not
 	// inferred.
-	log.Printf("[agent] %s · country %s · listening %s · dialling http :%d / https :%d",
-		version.Display(), orDash(cfg.Country), cfg.Listen, cfg.HTTPPort, cfg.HTTPSPort)
+	displayIPv6 := "-"
+	if cfg.IPv6Enabled {
+		displayIPv6 = orDash(cfg.PublicIPv6)
+	}
+	log.Printf("[agent] %s · country %s · IPv6 %s · public IPv6 %s · listening %s · dialling http :%d / https :%d",
+		version.Display(), orDash(cfg.Country), onOff(cfg.IPv6Enabled),
+		displayIPv6, cfg.Listen, cfg.HTTPPort, cfg.HTTPSPort)
 	log.Printf("[agent] %d hosts allowed · %d client entries · private guard %s",
 		srv.Allowlist().Len(), srv.ClientList().Len(), guardState(cfg.AllowPrivate))
 	if srv.Allowlist().Len() == 0 {
@@ -206,11 +281,19 @@ func main() {
 				continue
 			}
 			in, out := srv.Counters().Totals()
-			if err := hub.Heartbeat(state.Key, version.Display(), advertisedPort(cfg.Listen), in, out); err != nil {
+			publicIPv6 := ""
+			if cfg.IPv6Enabled {
+				publicIPv6 = cfg.PublicIPv6
+			}
+			hb, err := hub.Heartbeat(state.Key, version.Display(), advertisedPort(cfg.Listen), in, out, publicIPv6)
+			if err != nil {
 				// Logged, never fatal: a hub that is down cannot be allowed to
 				// stop a relay that is working.
 				log.Printf("[agent] heartbeat failed: %v", err)
 			} else {
+				if hb.IPv6Enabled != nil {
+					applyIPv6Policy(*hb.IPv6Enabled)
+				}
 				_, _, _, _ = srv.Stats()
 			}
 
@@ -228,12 +311,57 @@ func main() {
 			srv.UpdateAllowlists(cat.Hosts, cat.Clients)
 			state.Hosts, state.Clients = cat.Hosts, cat.Clients
 			state.SyncedAt = time.Now().UTC()
+			if cat.IPv6Enabled != nil {
+				applyIPv6Policy(*cat.IPv6Enabled)
+			}
 			if err := agent.SaveState(*statePath, state); err != nil {
 				log.Printf("[agent] could not write state: %v", err)
 			}
-			log.Printf("[agent] catalogue resynced: %d hosts, %d clients", len(cat.Hosts), len(cat.Clients))
+			log.Printf("[agent] catalogue resynced: %d hosts, %d clients · IPv6 %s",
+				len(cat.Hosts), len(cat.Clients), onOff(cfg.IPv6Enabled))
 		}
 	}
+}
+
+// detectPublicIPv6 asks an IPv6-only echo endpoint for this host's address. The
+// dialer is forced to tcp6, so an agent with no IPv6 route fails quickly rather
+// than silently reporting an IPv4 answer as if it were IPv6. The total budget is
+// short because this runs at startup and must not hold the relay down.
+func detectPublicIPv6() string {
+	endpoints := []string{
+		"https://api6.ipify.org",
+		"https://ipv6.icanhazip.com",
+		"https://ipv6.ifconfig.co",
+	}
+	dialer := &net.Dialer{Timeout: 3 * time.Second}
+	client := &http.Client{
+		Timeout: 4 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return dialer.DialContext(ctx, "tcp6", addr)
+			},
+			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		},
+	}
+	deadline := time.Now().Add(6 * time.Second)
+	for _, ep := range endpoints {
+		if time.Now().After(deadline) {
+			break
+		}
+		resp, err := client.Get(ep)
+		if err != nil {
+			continue
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 128))
+		_ = resp.Body.Close()
+		if readErr != nil || resp.StatusCode != http.StatusOK {
+			continue
+		}
+		if ip, ok := netutil.ParsePublicIPv6(string(body)); ok {
+			return ip.String()
+		}
+	}
+	return ""
 }
 
 // advertisedPort is the relay port the hub should dial for its connection test.
@@ -315,6 +443,13 @@ func splitList(s string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func onOff(v bool) string {
+	if v {
+		return "on"
+	}
+	return "off"
 }
 
 func guardState(allowPrivate bool) string {

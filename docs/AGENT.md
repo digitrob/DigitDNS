@@ -120,6 +120,12 @@ docker run -d --name digitdns-agent --network host --restart unless-stopped \
   the reported port.
 - `-state /data/agent-state.json` keeps the key and the last catalogue across
   container recreation. Back up `/opt/digitdns-agent`.
+- IPv6 is controlled by the hub. Enabling **Use IPv6 for this agent** in the
+  panel (and the global **Proxy IPv6** switch) is what makes the agent publish
+  AAAA and listen on IPv6. `-public-ipv6` supplies the address when automatic
+  detection cannot; the agent applies a policy change on its next heartbeat
+  (within 30 seconds), with no restart. When the policy is off, the agent
+  rebinds IPv4-only and reports no IPv6.
 
 The image is multi-arch (`linux/amd64`, `linux/arm64`) and cosign-signed with
 the same keyless identity as the hub image. The agent creation box always tracks the
@@ -145,9 +151,9 @@ on the agent host:
 
 ```bash
 curl -fL -o /tmp/agent-image.tar.gz \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.2.1/digitdns-agent-5.2.1-linux-arm64-image.tar.gz
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.2/digitdns-agent-5.2.2-linux-arm64-image.tar.gz
 gunzip -c /tmp/agent-image.tar.gz | docker load
-docker tag ghcr.io/digitrob/digitdns-agent:5.2.1 ghcr.io/digitrob/digitdns-agent:latest
+docker tag ghcr.io/digitrob/digitdns-agent:5.2.2 ghcr.io/digitrob/digitdns-agent:latest
 ```
 
 As an offline fallback from another machine, save the image and load it on the
@@ -155,15 +161,15 @@ agent host:
 
 ```bash
 # on a connected machine
-docker pull --platform linux/arm64 ghcr.io/digitrob/digitdns-agent:5.2.1
-docker save ghcr.io/digitrob/digitdns-agent:5.2.1 | gzip > agent-arm64.tar.gz
+docker pull --platform linux/arm64 ghcr.io/digitrob/digitdns-agent:5.2.2
+docker save ghcr.io/digitrob/digitdns-agent:5.2.2 | gzip > agent-arm64.tar.gz
 scp agent-arm64.tar.gz admin@agent-host:/tmp/
 
 # on the agent host
 gunzip -c /tmp/agent-arm64.tar.gz | docker load
 docker run -d --name digitdns-agent --pull never --network host \
   --restart unless-stopped -v /opt/digitdns-agent:/data \
-  ghcr.io/digitrob/digitdns-agent:5.2.1 \
+  ghcr.io/digitrob/digitdns-agent:5.2.2 \
   -hub 'https://panel.example.com:8080/ADMIN_PATH' \
   -key 'AGENT_ID:SECRET' -listen :80,:443 \
   -state /data/agent-state.json
@@ -220,7 +226,7 @@ Download the matching binary from the release page:
 ```bash
 # amd64
 curl -fL -o /usr/local/bin/digitdns-agent \
-  https://github.com/digitrob/DigitDNS/releases/download/v4.0.0/digitdns-agent-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.2/digitdns-agent-linux-amd64
 chmod +x /usr/local/bin/digitdns-agent
 
 # arm64: use digitdns-agent-linux-arm64 instead
@@ -289,7 +295,7 @@ On the hub card:
 In the agent log:
 
 ```
-[agent] v4.0.0-stable · country DE · listening :80,:443 · dialling http :80 / https :443
+[agent] v5.2.2-stable · country DE · IPv6 on · public IPv6 2001:db8::2 · listening :80,:443 · dialling http :80 / https :443
 [agent] 2 hosts allowed · 3 client entries · private guard blocked
 ```
 
@@ -326,7 +332,7 @@ store. They are part of the rules API and survive a partial save.
 
 | Control | Effect |
 | :--- | :--- |
-| Edit | Change name, country or the reported public IPv4. |
+| Edit | Change name, country, the reported public IPv4/IPv6, or the per-agent IPv6 opt-in. |
 | Pause / play | Disable or re-enable the agent. Disabled agents are not selected for DNS answers. |
 | Rotate key | Issue a new key. The old key stops working immediately. |
 | Copy key | Return the encrypted clear-key copy. A legacy key answers 409 and must be rotated once. |
@@ -384,6 +390,7 @@ then stop and remove the container or unit and its state directory.
 | `-port` | `443` | TLS port dialled on the far side (origin). |
 | `-http-port` | `80` | Plain HTTP port dialled on the far side. |
 | `-country` | — | Label for the agent's exit country. |
+| `-public-ipv6` | auto-detect | Globally routable IPv6 this agent publishes for proxied AAAA. |
 | `-state` | `agent-state.json` | Key and catalogue cache. |
 | `-hosts` | — | Local host allowlist override, for testing. |
 | `-clients` | — | Local client allowlist override, for testing. |

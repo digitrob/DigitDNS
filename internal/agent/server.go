@@ -40,6 +40,10 @@ type Config struct {
 	// label the status line; it never changes routing by itself, because the
 	// host list is decided by the hub.
 	Country string `json:"country"`
+	// PublicIPv6 is the agent's globally routable IPv6, reported in the
+	// heartbeat so the hub can answer proxied AAAA with it. Empty means the
+	// agent has no usable IPv6; the hub then keeps that agent's AAAA sunk.
+	PublicIPv6 string `json:"public_ipv6"`
 	// Hosts and Clients are the allowlists. Both are computed upstream from the
 	// operator's domain routes; the agent applies them and nothing else.
 	Hosts   []string `json:"hosts"`
@@ -53,6 +57,10 @@ type Config struct {
 	// with it on, a name that resolves to a loopback address is relayed, which
 	// is exactly what an SSRF guard exists to prevent.
 	AllowPrivate bool `json:"allow_private"`
+	// IPv6Enabled is the effective hub policy. When false the agent binds only
+	// IPv4 listeners, skips IPv6 detection and reports no IPv6 in its heartbeat.
+	// The hub per-agent switch and the global Proxy IPv6 switch both feed this.
+	IPv6Enabled bool `json:"ipv6_enabled"`
 }
 
 // Server is the agent relay.
@@ -63,6 +71,10 @@ type Server struct {
 	counters *Counters
 
 	listeners []net.Listener
+	// listenersMu guards rebinding the relay between IPv4-only and dual-stack
+	// when the hub changes the effective IPv6 policy.
+	listenersMu sync.Mutex
+	ipv6Enabled bool
 	// mu guards the two allowlists, which a sync may replace while connections
 	// are in flight.
 	mu      sync.RWMutex
@@ -111,37 +123,103 @@ func (s *Server) Stats() (active, total, refused, nohost int64) {
 // RefusedIP returns the number of requests whose destination was a bare IP.
 func (s *Server) RefusedIP() int64 { return int64(s.refusedIP.Load()) }
 
-// Start binds the listen address and serves until Close.
+// Start binds the listen addresses and serves until Close.
 func (s *Server) Start() error {
-	for _, addr := range strings.Split(s.cfg.Listen, ",") {
-		addr = strings.TrimSpace(addr)
-		if addr == "" {
-			continue
-		}
-		ln, err := net.Listen("tcp", addr)
+	s.listenersMu.Lock()
+	defer s.listenersMu.Unlock()
+	return s.bindListenersLocked(s.cfg.IPv6Enabled)
+}
+
+// SetIPv6Enabled applies the hub's effective IPv6 policy live. With it off the
+// listeners are rebuilt from IPv4 addresses only, so the agent stops accepting
+// IPv6 connections instead of merely hiding the address from DNS.
+func (s *Server) SetIPv6Enabled(enabled bool) error {
+	s.listenersMu.Lock()
+	defer s.listenersMu.Unlock()
+	if s.ipv6Enabled == enabled && len(s.listeners) > 0 {
+		return nil
+	}
+	_ = s.closeListenersLocked()
+	if err := s.bindListenersLocked(enabled); err != nil {
+		return err
+	}
+	s.cfg.IPv6Enabled = enabled
+	return nil
+}
+
+func (s *Server) bindListenersLocked(enabled bool) error {
+	addrs := listenAddresses(s.cfg.Listen, enabled)
+	if len(addrs) == 0 {
+		return fmt.Errorf("agent: no listen address configured for IPv4-only mode")
+	}
+	network := "tcp"
+	if !enabled {
+		// A plain "tcp" bind of 0.0.0.0 can still use an IPv6 socket on some
+		// platforms; tcp4 is what actually guarantees no IPv6 listener.
+		network = "tcp4"
+	}
+	for _, addr := range addrs {
+		ln, err := net.Listen(network, addr)
 		if err != nil {
-			_ = s.Close()
+			_ = s.closeListenersLocked()
 			return fmt.Errorf("agent: listen %s: %w", addr, err)
 		}
 		s.listeners = append(s.listeners, ln)
 		go s.acceptLoop(ln)
 	}
-	if len(s.listeners) == 0 {
-		return fmt.Errorf("agent: no listen address configured")
-	}
+	s.ipv6Enabled = enabled
 	return nil
+}
+
+// listenAddresses converts the configured bind list for the effective policy.
+// In IPv4-only mode a wildcard (":80" or "[::]:80") becomes "0.0.0.0:80"; an
+// explicit IPv6 literal is dropped because it cannot be bound as IPv4. In
+// dual-stack mode the operator's list is used unchanged.
+func listenAddresses(listen string, ipv6Enabled bool) []string {
+	var out []string
+	for _, raw := range strings.Split(listen, ",") {
+		addr := strings.TrimSpace(raw)
+		if addr == "" {
+			continue
+		}
+		if ipv6Enabled {
+			out = append(out, addr)
+			continue
+		}
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			continue
+		}
+		switch {
+		case host == "" || host == "::" || host == "0.0.0.0":
+			out = append(out, net.JoinHostPort("0.0.0.0", port))
+		case strings.Contains(host, ":"):
+			// Explicit IPv6 listener; no IPv4 equivalent.
+			continue
+		default:
+			out = append(out, addr)
+		}
+	}
+	return out
 }
 
 // Close stops every listener. Connections in flight finish on their own idle
 // timeout rather than being cut, so a restart does not truncate a stream
 // mid-play.
 func (s *Server) Close() error {
+	s.listenersMu.Lock()
+	defer s.listenersMu.Unlock()
+	return s.closeListenersLocked()
+}
+
+func (s *Server) closeListenersLocked() error {
 	var first error
 	for _, ln := range s.listeners {
 		if err := ln.Close(); err != nil && first == nil {
 			first = err
 		}
 	}
+	s.listeners = nil
 	return first
 }
 

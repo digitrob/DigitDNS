@@ -52,6 +52,8 @@ var ErrSettingsNil = errors.New("server settings are not initialised")
 // serialised into a response again.
 type ServerSettingsSnapshot struct {
 	PublicIP          string
+	PublicIPv6        string
+	ProxyIPv6Enabled  bool
 	BindHost          string
 	WebPort           int
 	AdminUsername     string
@@ -77,6 +79,8 @@ type ServerSettingsSnapshot struct {
 // methods to call.
 type MutableSettings struct {
 	PublicIP          string
+	PublicIPv6        string
+	ProxyIPv6Enabled  bool
 	APIBind           string
 	APIBindList       []string
 	APIKey            string
@@ -224,6 +228,8 @@ func (s *ServerSettings) Snapshot() ServerSettingsSnapshot {
 	defer s.mu.RUnlock()
 	return ServerSettingsSnapshot{
 		PublicIP:           s.PublicIP,
+		PublicIPv6:         s.PublicIPv6,
+		ProxyIPv6Enabled:   s.ProxyIPv6Enabled,
 		BindHost:           s.BindHost,
 		WebPort:            s.WebPort,
 		AdminUsername:      s.AdminUsername,
@@ -259,6 +265,8 @@ func (s *ServerSettings) UpdateAndPersist(mutate func(*MutableSettings), persist
 
 	before := MutableSettings{
 		PublicIP:           s.PublicIP,
+		PublicIPv6:         s.PublicIPv6,
+		ProxyIPv6Enabled:   s.ProxyIPv6Enabled,
 		APIBind:            s.APIBind,
 		APIBindList:        append([]string(nil), s.APIBindList...),
 		APIKey:             s.APIKey,
@@ -288,6 +296,8 @@ func (s *ServerSettings) UpdateAndPersist(mutate func(*MutableSettings), persist
 // applyLocked writes a MutableSettings back into the struct. Caller holds mu.
 func (s *ServerSettings) applyLocked(m MutableSettings) {
 	s.PublicIP = m.PublicIP
+	s.PublicIPv6 = m.PublicIPv6
+	s.ProxyIPv6Enabled = m.ProxyIPv6Enabled
 	s.APIBind = m.APIBind
 	s.APIBindList = append([]string(nil), m.APIBindList...)
 	s.APIKey = m.APIKey
@@ -337,6 +347,7 @@ func (s *ServerSettings) PersistWebPort(port int, persist func(*ServerSettings) 
 	return persist(&ServerSettings{
 		PublicIP:           s.PublicIP,
 		PublicIPv6:         s.PublicIPv6,
+		ProxyIPv6Enabled:   s.ProxyIPv6Enabled,
 		BindHost:           s.BindHost,
 		WebPort:            port,
 		AdminUsername:      s.AdminUsername,
