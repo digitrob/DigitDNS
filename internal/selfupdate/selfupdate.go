@@ -22,6 +22,7 @@
 package selfupdate
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -29,6 +30,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -132,12 +134,50 @@ type Status struct {
 
 // Progress is the live state of an in-flight apply, polled by the modal.
 type Progress struct {
-	Running    bool   `json:"running"`
-	Phase      string `json:"phase"` // idle|resolve|download|verify|backup|swap|restart|done|error
-	Percent    int    `json:"percent"`
-	Message    string `json:"message"`
-	Restarting bool   `json:"restarting"`
-	Error      string `json:"error,omitempty"`
+	Running    bool      `json:"running"`
+	Phase      string    `json:"phase"` // idle|resolve|download|verify|backup|swap|restart|done|error
+	Percent    int       `json:"percent"`
+	Message    string    `json:"message"`
+	Restarting bool      `json:"restarting"`
+	StartedAt  time.Time `json:"started_at,omitempty"`
+	Error      string    `json:"error,omitempty"`
+}
+
+// updateStaleAfter is how long a Running apply may sit without the process
+// having exited before a retry is allowed. The apply context is five minutes;
+// this leaves a margin for cleanup. Without it, a failed restart or a hung
+// goroutine made every later click answer "an update is already in progress".
+const updateStaleAfter = 6 * time.Minute
+
+// applyBusy reports whether an in-flight apply is still recent enough to refuse
+// a second one. A zero StartedAt (a state written by an older build) is stale.
+func applyBusy(progress Progress, now time.Time) bool {
+	return progress.Running && now.Sub(progress.StartedAt) < updateStaleAfter
+}
+
+// runningInContainer reports whether this process is inside a container. The
+// binary-swap updater is correct for a systemd install, but inside Docker it
+// replaces the container's writable-layer binary and never pulls the image the
+// operator actually deploys. Container installs are therefore told to pull and
+// recreate instead.
+func runningInContainer() bool {
+	if os.Getenv("DIGITDNS_CONTAINER") == "1" {
+		return true
+	}
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+	if _, err := os.Stat("/run/.containerenv"); err == nil {
+		return true
+	}
+	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
+		for _, marker := range [][]byte{[]byte("docker"), []byte("kubepods"), []byte("containerd"), []byte("lxc")} {
+			if bytes.Contains(data, marker) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Updater owns the paths it may touch and the progress of the current apply.
@@ -145,6 +185,7 @@ type Updater struct {
 	binPath   string   // the running executable (os.Executable)
 	dataPaths []string // files to back up before swapping (db, key, config)
 	backupDir string   // where timestamped pre-update backups are written
+	container bool     // true inside Docker/Podman; binary swap is not the deployed artefact
 	client    *http.Client
 
 	mu       sync.Mutex
@@ -158,6 +199,7 @@ func New(binPath string, dataPaths []string, backupDir string) *Updater {
 		binPath:   binPath,
 		dataPaths: dataPaths,
 		backupDir: backupDir,
+		container: runningInContainer(),
 		client: &http.Client{
 			Timeout: 3 * time.Minute, // a whole binary download, not a metadata call
 			Transport: &http.Transport{
@@ -192,6 +234,7 @@ func (u *Updater) setProgress(phase, msg string, percent int) {
 func (u *Updater) fail(err error) {
 	u.mu.Lock()
 	u.progress.Running = false
+	u.progress.Restarting = false
 	u.progress.Phase = "error"
 	u.progress.Error = err.Error()
 	u.mu.Unlock()
@@ -202,12 +245,17 @@ func (u *Updater) fail(err error) {
 // update" answer is not an error.
 func (u *Updater) Check(ctx context.Context) (Status, error) {
 	cur := version.Get()
-	st := Status{
-		Current:   cur.Version,
-		Supported: runtime.GOOS == "linux",
-	}
-	if !st.Supported {
+	st := Status{Current: cur.Version}
+	switch {
+	case runtime.GOOS != "linux":
 		st.Note = "Automatic update is available on Linux/systemd installs only."
+	case u.container:
+		// The binary-swap updater would replace the container's writable-layer
+		// binary, not the image the operator actually deploys. Refuse it and
+		// give the command that does update the deployment.
+		st.Note = "This install runs in a container. Update the image instead: docker compose pull && docker compose up -d"
+	default:
+		st.Supported = true
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawVersionURL, nil)
@@ -290,12 +338,22 @@ func (u *Updater) StartApply() error {
 	if runtime.GOOS != "linux" {
 		return fmt.Errorf("automatic update runs on Linux/systemd installs only")
 	}
-	u.mu.Lock()
-	if u.progress.Running {
-		u.mu.Unlock()
-		return fmt.Errorf("an update is already in progress")
+	if u.container {
+		return fmt.Errorf("this install runs in a container; update the image instead: docker compose pull && docker compose up -d")
 	}
-	u.progress = Progress{Running: true, Phase: "resolve", Message: "Starting update…", Percent: 1}
+	u.mu.Lock()
+	if applyBusy(u.progress, time.Now()) {
+		phase, message := u.progress.Phase, u.progress.Message
+		u.mu.Unlock()
+		return fmt.Errorf("an update is already in progress (%s: %s)", phase, message)
+	}
+	u.progress = Progress{
+		Running:   true,
+		Phase:     "resolve",
+		Message:   "Starting update…",
+		Percent:   1,
+		StartedAt: time.Now(),
+	}
 	u.mu.Unlock()
 
 	go func() {

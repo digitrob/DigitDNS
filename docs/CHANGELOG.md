@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.2.9] — Docker-aware updater and no stuck apply lock
+
+- The self-updater now detects Docker/Podman (`/.dockerenv`, `/run/.containerenv`,
+  the container cgroup, or `DIGITDNS_CONTAINER=1`). Container installs report
+  `supported: false` and show the correct command:
+  `docker compose pull && docker compose up -d`.
+- Container `POST /api/update/apply` is refused with that command. The old path
+  swapped `/app/digitdns` inside the container's writable layer; it never pulled
+  the image, and the next recreate reverted it.
+- A `Running` apply older than six minutes is treated as stale and a new attempt
+  is allowed. A restart signal that fails, or a process that does not exit within
+  15 seconds, now sets an error and releases the lock instead of leaving every
+  later click on “an update is already in progress”.
+- systemd installs keep the verified binary swap, backup and restart path.
+- The update card displays the server's note, so the pull/recreate instruction is
+  visible where the operator checks for updates.
+
 ## 🏷️ [v5.2.8] — web live log survives buffered SSE
 
 - Added an authenticated `/api/stream/recent` endpoint that returns the server's

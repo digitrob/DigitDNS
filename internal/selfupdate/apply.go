@@ -134,7 +134,15 @@ func (u *Updater) apply(ctx context.Context) error {
 	go func() {
 		// Let the modal poll the "restarting" state once before the process goes.
 		time.Sleep(1500 * time.Millisecond)
-		_ = signalRestart()
+		if err := signalRestart(); err != nil {
+			u.fail(fmt.Errorf("update installed but the daemon could not restart: %w", err))
+			return
+		}
+		// A successful signal normally exits within a moment. If the process is
+		// still alive here, the lock would otherwise read as "in progress"
+		// forever; release it with an actionable error.
+		time.Sleep(15 * time.Second)
+		u.fail(fmt.Errorf("update installed but the daemon did not exit; restart it manually"))
 	}()
 	return nil
 }

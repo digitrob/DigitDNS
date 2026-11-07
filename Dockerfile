@@ -45,6 +45,12 @@ FROM alpine:3.20
 
 WORKDIR /app
 
+# The in-app updater swaps a binary for systemd installs. That is not how a
+# container is deployed: the image is the artefact, and the next recreate would
+# discard the swap. Mark the runtime so the updater refuses apply and tells the
+# operator to pull/recreate instead.
+ENV DIGITDNS_CONTAINER=1
+
 # ca-certificates: the ACME client and the outbound public-IP probe both need a
 # trust store. tzdata: expiry timestamps and quota cycles are rendered in the
 # operator's zone, and without this every container is UTC whatever TZ says.

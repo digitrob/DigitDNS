@@ -1,37 +1,47 @@
-# DigitDNS v5.2.8 — web live log survives buffered SSE
+# DigitDNS v5.2.9 — Docker-aware updater and no stuck apply lock
 
-**A web live-log reliability patch.** Some browsers or reverse proxies buffer an
-EventSource connection even though it opens successfully, so the log page sat on
-“Listening…” while Android — which connects directly — showed queries. The web
-now falls back to the server's recent-log ring when SSE stays silent.
+**The web update button now tells the truth in Docker.** The old apply path
+downloaded a release binary and swapped the running executable inside the
+container. It never pulled the image, and the next container recreate reverted
+the swap. Container installs now refuse that path and show the command that
+actually updates the deployment:
 
-- Added authenticated `GET /api/stream/recent`, returning the last hundred queries
-  from the same in-memory ring the SSE history uses.
-- If the EventSource delivers no frame for three seconds, the web log starts
-  polling that endpoint every two seconds and stops immediately when SSE resumes.
-  Polling runs only while the Log tab is visible and skips an unchanged ring.
-- The empty state now distinguishes **Connecting**, **Connected via polling**,
-  **Listening** and **Paused** instead of always saying “Listening”.
-- Pause/Resume now has a fixed 96 px box, so the search bar and filter row do not
-  resize when the label changes between the two verbs.
-- The filter compile log now reads `rules (exact + suffix) / unique domains`.
-  A plain domain is stored twice by design: exact for the apex and suffix for its
-  subdomains, so roughly two lookup entries per unique name is expected.
+```bash
+docker compose pull && docker compose up -d
+```
+
+- Docker/Podman is detected via `/.dockerenv`, `/run/.containerenv`, the container
+  cgroup, or `DIGITDNS_CONTAINER=1` (set by the shipped image).
+- `/api/update/check` reports `supported: false` with the pull/recreate note;
+  `/api/update/apply` is refused with the same command.
+- systemd installs keep the signed binary download, checksum/signature
+  verification, pre-update backup and restart path.
+
+**Stuck “update in progress” fixed**
+
+- A `Running` apply older than six minutes is treated as stale, so a new attempt
+  is allowed instead of returning 409 forever.
+- A failed restart signal now surfaces an error, and a daemon that has not exited
+  15 seconds after the signal releases the lock with an actionable message.
+- The update card shows the server's note, so the Docker instruction is visible
+  where the operator checks for updates.
 
 No database migration. No resolver, relay or agent behaviour changes.
 
 ## Upgrade
 
-The in-panel self-updater and the one-line installer use the same release.
+On Docker, use the image path (do not use the in-panel Update button):
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Or pull the images directly:
 
 ```bash
 docker pull ghcr.io/digitrob/digitdns:latest
 docker pull ghcr.io/digitrob/digitdns-agent:latest
-```
-
-Docker Hub mirror:
-
-```bash
 docker pull robmeister/digitdns:latest
 docker pull robmeister/digitdns-agent:latest
 ```
@@ -39,17 +49,23 @@ docker pull robmeister/digitdns-agent:latest
 Pinned versions:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.2.8
-docker pull robmeister/digitdns:5.2.8
+docker pull ghcr.io/digitrob/digitdns:5.2.9
+docker pull robmeister/digitdns:5.2.9
+```
+
+systemd installs can still use the dashboard updater or:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.9/scripts/install.sh | sudo bash
 ```
 
 ## Assets
 
 - `digitdns-linux-amd64`, `digitdns-linux-arm64`
 - `digitdns-agent-linux-amd64`, `digitdns-agent-linux-arm64`
-- `digitdns-agent-5.2.8-linux-arm64-image.tar.gz` and `.sha256`
+- `digitdns-agent-5.2.9-linux-arm64-image.tar.gz` and `.sha256`
 - `digitdns-offline-bundle.tar.gz`, `digitdns-offline-bundle.zip`
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-The Android APKs are attached to this release from the `android-v5.2.8` tag.
+The Android APKs are attached to this release from the `android-v5.2.9` tag.

@@ -11757,7 +11757,9 @@ function serverUpdateStatusText(st) {
 
 function serverUpdateMetaText(st) {
   if (!st) return 'Updates come from the GitHub release channel.';
-  if (st.update_available && !st.supported) return 'This install cannot apply it from the app.';
+  if (st.update_available && !st.supported) {
+    return st.note || 'This install cannot apply it from the app.';
+  }
   if (st.update_available) return 'Applying an update restarts the service.';
   return 'Checked just now · data is preserved and backed up.';
 }
