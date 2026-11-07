@@ -122,12 +122,30 @@ func (i *Index) DomainCount() int {
 	return n
 }
 
-// RuleCount is the number of blocked-domain entries (exact and suffix).
+// RuleCount is the number of blocked lookup entries. A plain domain is stored
+// twice on purpose — once as an exact entry for the name and once as a suffix
+// entry for its subdomains — so this is normally about twice DomainCount.
 func (i *Index) RuleCount() int {
 	if i == nil {
 		return 0
 	}
 	return len(i.blockExact) + len(i.blockWildcard)
+}
+
+// ExactCount is the number of names matched exactly.
+func (i *Index) ExactCount() int {
+	if i == nil {
+		return 0
+	}
+	return len(i.blockExact)
+}
+
+// SuffixCount is the number of suffix entries covering subdomains.
+func (i *Index) SuffixCount() int {
+	if i == nil {
+		return 0
+	}
+	return len(i.blockWildcard)
 }
 
 func (i *Index) addBlock(domain string, exact, suffix bool, source string) {

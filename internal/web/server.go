@@ -893,6 +893,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/diagnostics/run", ws.requireAuth(ws.handleDiagnosticsRun))
 	mux.HandleFunc("/api/diagnostics/targets", ws.requireAuth(ws.handleDiagnosticsTargets))
 	mux.HandleFunc("/api/stats", ws.requireAuth(ws.handleStats))
+	mux.HandleFunc("/api/stream/recent", ws.requireAuth(ws.handleStreamRecent))
 	mux.HandleFunc("/api/stats/settings", ws.requireAuth(ws.handleStatsSettings))
 	mux.HandleFunc("/api/filtering", ws.requireAuth(ws.handleFiltering))
 	mux.HandleFunc("/api/filtering/settings", ws.requireAuth(ws.handleFilteringSettings))
@@ -2289,6 +2290,26 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteCached(w, r, httpx.CachedResponse{Body: buf.Bytes(), ContentType: contentType})
+}
+
+func (ws *WebServer) handleStreamRecent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
+		return
+	}
+	logs := ws.stats.GetRecentLogs()
+	if logs == nil {
+		logs = []database.QueryLogItem{}
+	}
+	body, err := json.Marshal(map[string]any{"queries": logs})
+	if err != nil {
+		httpx.WriteJSONError(w, http.StatusInternalServerError, "could not encode recent queries")
+		return
+	}
+	// This is a fallback for a buffered/blocked SSE stream; a shared cache must
+	// never serve an older ring than the direct connection would have.
+	w.Header().Set("Cache-Control", "no-store")
+	httpx.WriteJSONBytes(w, r, http.StatusOK, body, "application/json")
 }
 
 func (ws *WebServer) handleClients(w http.ResponseWriter, r *http.Request) {

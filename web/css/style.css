@@ -2768,6 +2768,10 @@ html[data-boot-tab="rules"] #tab-rules.settings-layout {
 /* Per-control refresh spin, shared by the relay-agent card and the live log. */
 .agent-icon-btn.is-refreshing svg,
 .stream-refresh-btn.is-refreshing svg { animation: dash-spin 0.8s linear infinite; }
+
+/* Pause/Resume changes the label length. Keep the button's box fixed so the
+   search bar and filters beside it do not resize when the verb changes. */
+#stream-pause-btn { width: 96px; justify-content: center; }
 @media (prefers-reduced-motion: reduce) {
   .agent-icon-btn.is-refreshing svg,
   .stream-refresh-btn.is-refreshing svg { animation: none; }

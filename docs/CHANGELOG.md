@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.2.8] — web live log survives buffered SSE
+
+- Added an authenticated `/api/stream/recent` endpoint that returns the server's
+  recent-query ring. The web log falls back to it when the EventSource opens but
+  delivers no frames for three seconds, which is what a proxy that buffers SSE
+  looks like. Polling stops as soon as an SSE event arrives; it polls only while
+  the Log tab is visible and does nothing when the ring has not changed.
+- The empty state now says whether the log is connecting, connected via polling,
+  listening for queries, or paused, instead of always saying “Listening”.
+- Pause/Resume has a fixed 96 px box, so the search bar and filter row no longer
+  resize when the label switches between the two verbs.
+- The filter compile line now reports `rules (exact + suffix) / unique domains`,
+  making it clear why a plain-domain list stores roughly two lookup entries per
+  name (exact for the apex, suffix for subdomains).
+
 ## 🏷️ [v5.2.7] — web live log stays connected
 
 - The browser live-log stream is opened once at dashboard boot and kept alive

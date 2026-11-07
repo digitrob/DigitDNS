@@ -53,6 +53,13 @@ The same release adds the v3 DNSSEC settings route, a compact Android card that
 opens with the real saved state, shared status-pill styling, and DNSSEC-aware
 cache keys so DO=0 clients never receive signature or denial records.
 
+**5.2.8 makes the web live log robust when SSE is buffered or blocked.** A REST
+fallback reads the server’s recent-log ring, so the Log tab still fills behind a
+proxy that buffers EventSource. The empty state now says whether it is connecting,
+polling or listening, an expired session raises the login prompt, and Pause/Resume
+no longer resizes the toolbar. The filter compile log now spells out exact and
+suffix entries, which is why the rule count is about twice the unique-domain count.
+
 **5.2.7 fixes the web live log.** The browser stream now stays connected while
 you browse in another tab or another panel screen, so queries keep arriving in
 the log instead of being dropped while the tab is hidden. If the daemon restarts
@@ -295,7 +302,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.7/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.8/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -354,7 +361,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.7/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.8/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -437,7 +444,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.2.7` | Web live log stays connected while browsing; session-expiry prompt and single-flight reconnect (latest) |
+| `5.2.8` | Web live log REST fallback, clearer empty state, fixed Pause/Resume toolbar and exact/suffix filter log (latest) |
+| `5.2.7` | Web live log stays connected while browsing; session-expiry prompt and single-flight reconnect (older) |
 | `5.2.6` | Panic containment, half-open upstream breaker, gzip JSON, hub↔agent long-poll and agent relay tuning (older) |
 | `5.2.5` | Trustworthy upstream metrics, SNI relay splice and shared stats caches (older) |
 | `5.2.4` | SNI Refused counts actionable refusals only; malformed scanner probes are reported separately (older) |
@@ -486,7 +494,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.2.7/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.8/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -914,7 +922,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.2.7`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.2.8`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

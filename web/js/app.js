@@ -47,6 +47,11 @@ window.__hdns = {
 let sseSource = null;
 let sseConnecting = false;
 let sseGeneration = 0;
+let streamFallbackTimer = null;
+let streamFallbackCheck = null;
+let streamFallbackInFlight = false;
+let streamLastEventAt = 0;
+let streamFallbackSig = '';
 let qpsChart = null;
 let historyChart = null;
 let historyRange = '24h';
@@ -4103,7 +4108,11 @@ function startStatsPolling() {
     // buffer kept growing hidden (per-query DOM work is skipped then — see
     // pushStreamQuery), so this is where the backlog becomes rows. Without
     // it the table stays stale until the next query happens to arrive.
-    if (activeDashTab === 'stream' && !isStreamPaused) renderQueryStream();
+    if (activeDashTab === 'stream') {
+      if (!isStreamPaused) renderQueryStream();
+      if (streamFallbackTimer) streamFallbackPoll();
+      else if (Date.now() - streamLastEventAt >= 3000) startStreamFallback();
+    }
   });
 
   pollStatsOnce();
@@ -4731,10 +4740,15 @@ async function startLiveStream() {
     // A live connection is the only proof the ticket was accepted: reset the
     // backoff so the next drop reconnects promptly.
     sseBackoffMs = 0;
+    streamLastEventAt = Date.now();
+    stopStreamFallback();
+    scheduleStreamFallbackCheck();
+    refreshStreamPlaceholder();
   };
 
   // Handle single query event
   source.addEventListener('query', (event) => {
+    markStreamActivity();
     // No pause gate here: pushStreamQuery keeps buffering and only skips the DOM
     // insert. Dropping arrivals at this point made Resume show a hole.
     try {
@@ -4746,6 +4760,7 @@ async function startLiveStream() {
 
   // Handle initial history batch
   source.addEventListener('history', (event) => {
+    markStreamActivity();
     try {
       const list = JSON.parse(event.data);
       if (!Array.isArray(list)) return;
@@ -4772,6 +4787,7 @@ async function startLiveStream() {
 
   // Fallback for default messages
   source.onmessage = (event) => {
+    markStreamActivity();
     try {
       const q = JSON.parse(event.data);
       if (Array.isArray(q)) {
@@ -4795,6 +4811,10 @@ async function startLiveStream() {
     try { source.close(); } catch(e) {}
     sseSource = null;
     scheduleStreamReconnect();
+    // Keep the log usable through the reconnect. The polling path reads the
+    // server's recent-log ring and stops as soon as the EventSource delivers.
+    startStreamFallback();
+    refreshStreamPlaceholder();
   };
 }
 
@@ -4817,6 +4837,88 @@ function scheduleStreamReconnect() {
   }, sseBackoffMs);
 }
 
+// markStreamActivity records a real SSE frame and stops the REST fallback. A
+// working EventSource is always preferred: it is pushed, not polled.
+function markStreamActivity() {
+  streamLastEventAt = Date.now();
+  if (streamFallbackTimer) stopStreamFallback();
+}
+
+function stopStreamFallback() {
+  if (streamFallbackTimer) {
+    clearInterval(streamFallbackTimer);
+    streamFallbackTimer = null;
+    streamFallbackSig = '';
+    refreshStreamPlaceholder();
+  }
+}
+
+function clearStreamFallbackCheck() {
+  if (streamFallbackCheck) {
+    clearTimeout(streamFallbackCheck);
+    streamFallbackCheck = null;
+  }
+}
+
+// scheduleStreamFallbackCheck gives the EventSource a few seconds to deliver its
+// opening snapshot. If it never arrives, a proxy is buffering the stream or the
+// browser refused it; the recent-log endpoint keeps the log usable.
+function scheduleStreamFallbackCheck() {
+  clearStreamFallbackCheck();
+  streamFallbackCheck = setTimeout(() => {
+    streamFallbackCheck = null;
+    if (Date.now() - streamLastEventAt >= 3000) startStreamFallback();
+  }, 3000);
+}
+
+function startStreamFallback() {
+  if (streamFallbackTimer) return;
+  streamFallbackSig = '';
+  streamFallbackTimer = setInterval(streamFallbackPoll, 2000);
+  refreshStreamPlaceholder();
+  streamFallbackPoll();
+}
+
+async function streamFallbackPoll() {
+  // Poll only while the log is actually on screen. When the operator opens it,
+  // the first poll fills the buffer with the server's last hundred queries.
+  if (activeDashTab !== 'stream' || document.visibilityState === 'hidden') return;
+  if (streamFallbackInFlight || !authToken) return;
+  streamFallbackInFlight = true;
+  try {
+    const res = await fetch(api('/api/stream/recent'), {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (res.status === 401) {
+      stopLiveStream();
+      showLoginModal();
+      return;
+    }
+    if (!res.ok) return;
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : (data.queries || []);
+    if (!Array.isArray(list) || list.length === 0) return;
+    // Re-rendering an unchanged ring every two seconds would make the table
+    // flicker and reset its scroll for nothing.
+    const sig = list.map((q) => q.id).join(',');
+    if (sig === streamFallbackSig) return;
+    streamFallbackSig = sig;
+    if (isStreamPaused) {
+      streamBuffer = list.slice(0, STREAM_BUFFER_MAX);
+      return;
+    }
+    seedStreamQueries(list);
+  } catch (e) {
+    // Keep the previous frame; the next tick retries.
+  } finally {
+    streamFallbackInFlight = false;
+  }
+}
+
+function refreshStreamPlaceholder() {
+  if (streamBuffer.length === 0) renderQueryStream();
+}
+
 // stopLiveStream tears the stream down and cancels any pending reconnect, so a
 // sign-out does not race a backoff timer into re-opening an authenticated route.
 function stopLiveStream() {
@@ -4824,6 +4926,8 @@ function stopLiveStream() {
   // after sign-out or a manual refresh.
   sseGeneration++;
   sseConnecting = false;
+  clearStreamFallbackCheck();
+  stopStreamFallback();
   if (sseBackoffTimer) {
     clearTimeout(sseBackoffTimer);
     sseBackoffTimer = null;
@@ -4851,6 +4955,7 @@ function setStreamPaused(paused) {
     safeFeatherReplace();
   }
   if (!paused) renderQueryStream();
+  else refreshStreamPlaceholder();
 }
 
 function setStreamRefreshBusy(busy) {
@@ -5095,15 +5200,25 @@ function newQueryRow(q) {
 // the old code matched tbody.children[0].innerText against the string 'Listening', so
 // rewording the copy in index.html would have left the placeholder stuck above the first real
 // query forever, with nothing anywhere to say why.
-const STREAM_LISTENING_ROW = `
+function streamListeningRow() {
+  let text = 'Listening for live DNS queries...';
+  if (isStreamPaused) {
+    text = 'Live log paused. Press Resume to continue.';
+  } else if (streamFallbackTimer) {
+    text = 'Live log connected via polling — waiting for queries...';
+  } else if (!sseSource) {
+    text = 'Connecting to the live log...';
+  }
+  return `
   <tr class="stream-placeholder">
     <td colspan="8" class="py-12 text-center text-slate-500">
       <div class="flex flex-col items-center gap-2">
         <div class="pulse-dot"></div>
-        <span>Listening for live DNS queries...</span>
+        <span>${text}</span>
       </div>
     </td>
   </tr>`;
+}
 
 // The no-match state names the term and the number of queries held, because "no queries have
 // arrived" and "none of the 200 I am holding match this" are opposite situations: the first is
@@ -5147,7 +5262,7 @@ function renderQueryStream() {
   streamPendingDropped = [];
 
   if (streamBuffer.length === 0) {
-    tbody.innerHTML = STREAM_LISTENING_ROW;
+    tbody.innerHTML = streamListeningRow();
     streamRendered = [];
     return;
   }
@@ -5654,6 +5769,7 @@ function resetStreamView() {
   streamPendingQueries = [];
   streamPendingDropped = [];
   streamPendingRender = false;
+  streamFallbackSig = '';
   renderQueryStream();
 }
 
@@ -8107,6 +8223,10 @@ function switchTab(target, updateUrl = true, loadData = true) {
       // pushStreamQuery), so this is where the queued history becomes rows.
       if (target === 'stream') {
         renderQueryStream();
+        // If the EventSource has been silent for a while (or a proxy is
+        // buffering it), the REST fallback fills the table on tab open.
+        if (streamFallbackTimer) streamFallbackPoll();
+        else if (Date.now() - streamLastEventAt >= 3000) startStreamFallback();
       }
       // The Proxied list fills as the region scrolls, but a panel that was hidden
       // while it rendered has no height to measure against, so the first batch is

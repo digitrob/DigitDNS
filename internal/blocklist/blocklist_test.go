@@ -93,3 +93,26 @@ func TestAnalyzeCountsUniqueDomains(t *testing.T) {
 		t.Errorf("unique domains = %d, want 2", stats.Domains)
 	}
 }
+
+// A plain domain is deliberately stored twice: exact for the apex and suffix
+// for subdomains. This is why the compiled rule count is normally about twice
+// the unique-domain count.
+func TestRuleCountCountsExactAndSuffixEntries(t *testing.T) {
+	idx, _ := Build([]Source{{
+		Name:    "test",
+		Text:    "ads.example\n*.wild.example\n|exact.example|\n",
+		Enabled: true,
+	}}, nil)
+	if got := idx.RuleCount(); got != 4 {
+		t.Fatalf("RuleCount = %d, want 4 (plain domain exact+suffix, wildcard suffix, exact-only exact)", got)
+	}
+	if got := idx.ExactCount(); got != 2 {
+		t.Fatalf("ExactCount = %d, want 2", got)
+	}
+	if got := idx.SuffixCount(); got != 2 {
+		t.Fatalf("SuffixCount = %d, want 2", got)
+	}
+	if got := idx.DomainCount(); got != 3 {
+		t.Fatalf("DomainCount = %d, want 3", got)
+	}
+}

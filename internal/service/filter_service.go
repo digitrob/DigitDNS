@@ -666,7 +666,8 @@ func (s *FilterService) rebuild() {
 	s.matcher.SetBlockIndex(index)
 	s.rules.Store(int64(count))
 	s.domains.Store(int64(domains))
-	log.Printf("[Filters] compiled %d rules / %d unique domains from %d list(s)", count, domains, len(sources))
+	log.Printf("[Filters] compiled %d lookup rules (%d exact + %d suffix) / %d unique domains from %d list(s)",
+		count, index.ExactCount(), index.SuffixCount(), domains, len(sources))
 }
 
 func (s *FilterService) fetch(rawURL, etag, lastModified string) (body, newETag, newLastModified string, notModified bool, err error) {
