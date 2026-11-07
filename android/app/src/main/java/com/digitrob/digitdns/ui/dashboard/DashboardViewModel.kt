@@ -433,7 +433,10 @@ class DashboardViewModel @Inject constructor(
         }
         try {
             val stats = statsRepository.live()
-            val upstreams = runCatching { upstreamsRepository.stats() }
+            // Current hubs carry the upstream rows in /stats. Keep the separate
+            // read as a fallback for a hub that predates that field, so an older
+            // server still renders its resolver list.
+            val upstreams = stats.upstreams ?: runCatching { upstreamsRepository.stats() }
                 .getOrElse {
                     Timber.d(it, "upstream stats poll failed; keeping last rows")
                     _state.value.upstreams

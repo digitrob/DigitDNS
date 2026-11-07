@@ -67,10 +67,11 @@ type StatsService struct {
 	// getProxyGuardStats reports the SNI proxy's two non-relay outcomes (refused,
 	// unreadable). It is a setter rather than a second constructor argument only to
 	// keep NewStatsService's signature stable; the proxy does exist by then.
-	guardMu            sync.RWMutex
-	getGuardStats      func() (uint64, int)
-	getPrefetchStats   func() (uint64, uint64, uint64, uint64)
-	getProxyGuardStats func() (uint64, uint64)
+	guardMu             sync.RWMutex
+	getGuardStats       func() (uint64, int)
+	getPrefetchStats    func() (uint64, uint64, uint64, uint64)
+	getProxyGuardStats  func() (uint64, uint64)
+	getProxyGuardDetail func() ProxyGuardStats
 
 	// Latency distributions, fed from PushQueryLog because every terminal path in
 	// the DNS handler logs exactly once. latencyAll is what a client experiences;
@@ -174,10 +175,31 @@ func (s *StatsService) SetPrefetchStatsSource(fn func() (uint64, uint64, uint64,
 }
 
 // SetProxyGuardStatsSource wires in the SNI proxy's refused and unreadable
-// counters. Call it once during startup.
+// counters. Kept for callers that do not have the reason breakdown.
 func (s *StatsService) SetProxyGuardStatsSource(fn func() (uint64, uint64)) {
 	s.guardMu.Lock()
 	s.getProxyGuardStats = fn
+	s.guardMu.Unlock()
+}
+
+// ProxyGuardStats is the SNI proxy's drop breakdown. The reasons sum to
+// Refused; Malformed is the scanner-noise counter.
+type ProxyGuardStats struct {
+	Refused       uint64
+	Unreadable    uint64
+	Malformed     uint64
+	Blocked       uint64
+	Self          uint64
+	Quota         uint64
+	TableFull     uint64
+	ResolveFailed uint64
+}
+
+// SetProxyGuardDetailSource wires in the reason breakdown. Call it once during
+// startup; it takes precedence over the older two-value source.
+func (s *StatsService) SetProxyGuardDetailSource(fn func() ProxyGuardStats) {
+	s.guardMu.Lock()
+	s.getProxyGuardDetail = fn
 	s.guardMu.Unlock()
 }
 
@@ -582,8 +604,14 @@ type LiveStatsResponse struct {
 	// not TLS-with-SNI or HTTP-with-Host, so the proxy cannot learn where it
 	// wanted to go. The client sees a connection that opens and dies; the
 	// operator, until now, saw nothing at all.
-	RelaysRefused    uint64 `json:"relays_refused"`
-	RelaysUnreadable uint64 `json:"relays_unreadable"`
+	RelaysRefused          uint64 `json:"relays_refused"`
+	RelaysUnreadable       uint64 `json:"relays_unreadable"`
+	RelaysRefusedMalformed uint64 `json:"relays_refused_malformed"`
+	RelaysRefusedBlocked   uint64 `json:"relays_refused_blocked"`
+	RelaysRefusedSelf      uint64 `json:"relays_refused_self"`
+	RelaysRefusedQuota     uint64 `json:"relays_refused_quota"`
+	RelaysRefusedTableFull uint64 `json:"relays_refused_table_full"`
+	RelaysRefusedResolve   uint64 `json:"relays_refused_resolve"`
 
 	// Latency is the service-time distribution of every query; LatencyUncached is
 	// the same restricted to the ones the cache did not answer, which is where an
@@ -628,9 +656,11 @@ func (s *StatsService) GetLiveStats() LiveStatsResponse {
 	if prefetch != nil {
 		staleServed, refreshStarted, refreshFailed, refreshDropped = prefetch()
 	}
-	var relaysRefused, relaysUnreadable uint64
-	if proxyGuard != nil {
-		relaysRefused, relaysUnreadable = proxyGuard()
+	var proxyDrops ProxyGuardStats
+	if detail := s.getProxyGuardDetail; detail != nil {
+		proxyDrops = detail()
+	} else if proxyGuard != nil {
+		proxyDrops.Refused, proxyDrops.Unreadable = proxyGuard()
 	}
 
 	// qpsRate is written by telemetryLoop under telemetryMu, so it has to be
@@ -678,8 +708,14 @@ func (s *StatsService) GetLiveStats() LiveStatsResponse {
 		RefreshFailed:  refreshFailed,
 		RefreshDropped: refreshDropped,
 
-		RelaysRefused:    relaysRefused,
-		RelaysUnreadable: relaysUnreadable,
+		RelaysRefused:          proxyDrops.Refused,
+		RelaysUnreadable:       proxyDrops.Unreadable,
+		RelaysRefusedMalformed: proxyDrops.Malformed,
+		RelaysRefusedBlocked:   proxyDrops.Blocked,
+		RelaysRefusedSelf:      proxyDrops.Self,
+		RelaysRefusedQuota:     proxyDrops.Quota,
+		RelaysRefusedTableFull: proxyDrops.TableFull,
+		RelaysRefusedResolve:   proxyDrops.ResolveFailed,
 
 		Latency:         s.latencyAll.snapshot(),
 		LatencyUncached: s.latencyResolve.snapshot(),

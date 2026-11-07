@@ -8,8 +8,6 @@ import com.digitrob.digitdns.core.network.StatsSummary
 import com.digitrob.digitdns.core.network.StatsTop
 import com.digitrob.digitdns.domain.model.HistoryRange
 import com.digitrob.digitdns.domain.model.TopDimension
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,25 +21,20 @@ data class HistorySnapshot(
 /**
  * Historical aggregates and their server-wide policy.
  *
- * The six ranked tables are independent endpoints, so they load concurrently. On a
- * phone only five rows per table fit; requesting the same five the UI renders keeps
- * the response small without changing the server's bounded top-N contract.
+ * One request returns the summary, the series and every ranked table. On a phone
+ * only five rows per table fit; requesting the same five the UI renders keeps the
+ * response small without changing the server's bounded top-N contract.
  */
 @Singleton
 class HistoryRepository @Inject constructor(
     private val api: HistoryApi,
 ) {
-    suspend fun load(range: HistoryRange): HistorySnapshot = coroutineScope {
-        val summary = async { api.summary(range.wire) }
-        val series = async { api.series(range.wire) }
+    suspend fun load(range: HistoryRange): HistorySnapshot {
+        val data = api.history(range.wire, null, TOP_LIMIT)
         val tops = TopDimension.entries.associateWith { dimension ->
-            async { api.top(range.wire, dimension.wire, TOP_LIMIT) }
+            data.tops[dimension.wire] ?: StatsTop(range = data.range, dimension = dimension.wire)
         }
-        HistorySnapshot(
-            summary = summary.await(),
-            series = series.await(),
-            tops = tops.mapValues { (_, deferred) -> deferred.await() },
-        )
+        return HistorySnapshot(data.summary, data.series, tops)
     }
 
     suspend fun settings(): StatsSettings = api.settings()

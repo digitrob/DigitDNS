@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/miekg/dns"
@@ -45,6 +46,55 @@ type UpstreamPool struct {
 	// SetPolicy and read on the query path, so the hot path never scans every
 	// configured pattern.
 	profileIndex *resolution.ProfileIndex
+
+	// snap is the immutable query-path view of upstreams + policy + the compiled
+	// profile index + the per-transport candidate lists. Settings saves replace
+	// it wholesale, so a query never copies a slice or takes the settings lock.
+	snap atomic.Pointer[poolSnapshot]
+
+	// orderMu guards the cached latency order used by Hedged and Best Known. The
+	// order changes only when a measurement does, so rebuilding it at most once
+	// per second keeps those strategies from sorting the pool on every miss.
+	orderMu    sync.Mutex
+	orderBuilt time.Time
+	orderFor   []string
+	order      []string
+
+	// openCircuits is a fast-path count: zero means no candidate can be skipped,
+	// so the query path returns the snapshot list without touching any stat lock.
+	openCircuits atomic.Int32
+
+	// Connection reuse. DoT keeps a small idle pool per endpoint; DoQ keeps one
+	// QUIC connection per endpoint and opens a stream per query.
+	dotPoolsMu sync.Mutex
+	dotPools   map[string]*dotConnPool
+	doqMu      sync.Mutex
+	doqConns   map[string]*doqConn
+}
+
+// poolSnapshot is the read-only query-path state. Every field is immutable once
+// published; a settings save builds a new snapshot and swaps the pointer.
+type poolSnapshot struct {
+	upstreams    []string
+	policy       Policy
+	profileIndex *resolution.ProfileIndex
+	racing       bool
+	all          []string
+	encrypted    []string
+	regular      []string
+}
+
+// candidates returns the pre-filtered list for a transport. The returned slice
+// is owned by the snapshot and must not be modified by the caller.
+func (s *poolSnapshot) candidates(transport string) []string {
+	switch resolution.NormalizeTransport(transport) {
+	case resolution.TransportEncrypted:
+		return s.encrypted
+	case resolution.TransportRegular:
+		return s.regular
+	default:
+		return s.all
+	}
 }
 
 // Policy is the resolution policy installed by the settings layer.
@@ -256,11 +306,66 @@ func NormalizeUpstream(raw string) (string, bool) {
 }
 
 type upstreamStatInternal struct {
-	mu          sync.Mutex
-	avgLatency  time.Duration
-	hits        uint64
-	errors      uint64
-	lastUpdated time.Time
+	mu              sync.Mutex
+	avgLatency      time.Duration
+	hits            uint64
+	errors          uint64 // transport + policy, kept for the existing card
+	transportErrors uint64
+	policyErrors    uint64
+	// consecutiveFailures counts transport failures only. A REFUSED or SERVFAIL
+	// proves the resolver is reachable; it must not trip the breaker.
+	consecutiveFailures uint32
+	lastError           string
+	lastErrorAt         time.Time
+	lastUpdated         time.Time
+	// openUntil is UnixNano, or 0 while the circuit is closed. Atomic so the
+	// query path can skip an open resolver without taking the per-stat mutex.
+	openUntil atomic.Int64
+}
+
+// Circuit breaker policy. Five consecutive transport failures is enough to stop
+// paying a timeout on every miss; thirty seconds is short enough that a resolver
+// coming back is picked up without an operator action. Policy rcodes never count.
+const (
+	circuitFailureThreshold = 5
+	circuitCooldown         = 30 * time.Second
+)
+
+// statOutcome separates a resolver that answered from one that could not be
+// reached. REFUSED/SERVFAIL are answers even when they are filtered responses.
+type statOutcome uint8
+
+const (
+	statSuccess statOutcome = iota
+	statPolicyRcode
+	statTransportError
+)
+
+func classifyStat(resp *dns.Msg, err error) (statOutcome, string) {
+	switch {
+	case err != nil:
+		return statTransportError, shortError(err)
+	case resp == nil:
+		return statTransportError, "no response"
+	case resp.Truncated:
+		return statTransportError, "truncated response"
+	case usableRcode(resp):
+		return statSuccess, ""
+	default:
+		if name, ok := dns.RcodeToString[resp.Rcode]; ok {
+			return statPolicyRcode, name
+		}
+		return statPolicyRcode, fmt.Sprintf("rcode %d", resp.Rcode)
+	}
+}
+
+func shortError(err error) string {
+	msg := err.Error()
+	const max = 160
+	if len(msg) > max {
+		return msg[:max] + "…"
+	}
+	return msg
 }
 
 // normalizeUpstreams cleans a raw upstream list: trims blanks, canonicalises
@@ -366,12 +471,19 @@ func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecs
 
 	normalized := normalizeUpstreams(upstreams)
 
+	// TLS 1.3 resumption saves a round trip even when a connection has to be
+	// re-established. The cache is shared by DoT, DoH and DoQ because the key is
+	// the server name, not the transport.
+	sessionCache := tls.NewLRUClientSessionCache(128)
+
 	pool := &UpstreamPool{
 		upstreams:   normalized,
 		timeout:     timeout,
 		racing:      racing,
 		ecsClientIP: parseECSClientIP(ecsIP),
 		stats:       make(map[string]*upstreamStatInternal),
+		dotPools:    make(map[string]*dotConnPool),
+		doqConns:    make(map[string]*doqConn),
 		udpClient: &dns.Client{
 			Net:     "udp",
 			Timeout: timeout,
@@ -384,9 +496,12 @@ func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecs
 		// is deliberately no InsecureSkipVerify escape hatch. The host is taken
 		// from the address by miekg/dns when TLSConfig.ServerName is empty.
 		tlsClient: &dns.Client{
-			Net:       "tcp-tls",
-			Timeout:   timeout,
-			TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+			Net:     "tcp-tls",
+			Timeout: timeout,
+			TLSConfig: &tls.Config{
+				MinVersion:         tls.VersionTLS12,
+				ClientSessionCache: sessionCache,
+			},
 		},
 		// DoH posts a binary DNS message over HTTPS. Proxy is nil because an
 		// upstream resolver is not a web fetch: honouring HTTP_PROXY here would
@@ -395,12 +510,14 @@ func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecs
 		httpClient: &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{
-				Proxy:              nil,
-				TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12},
-				ForceAttemptHTTP2:  true,
-				MaxIdleConns:       4,
-				IdleConnTimeout:    90 * time.Second,
-				DisableCompression: true,
+				Proxy:               nil,
+				TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12, ClientSessionCache: sessionCache},
+				ForceAttemptHTTP2:   true,
+				MaxIdleConns:        32,
+				MaxIdleConnsPerHost: 8,
+				MaxConnsPerHost:     16,
+				IdleConnTimeout:     90 * time.Second,
+				DisableCompression:  true,
 			},
 		},
 		// DoH3 posts the same RFC 8484 body over HTTP/3. The http3.Transport
@@ -409,13 +526,14 @@ func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecs
 		h3Client: &http.Client{
 			Timeout: timeout,
 			Transport: &http3.Transport{
-				TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12},
+				TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12, ClientSessionCache: sessionCache},
 				DisableCompression: true,
 			},
 		},
-		// DoQ dials a QUIC connection per query. NextProtos carries the RFC 9250
-		// "doq" ALPN token; ServerName is filled in per dial from the upstream.
-		quicTLS:  &tls.Config{MinVersion: tls.VersionTLS12, NextProtos: []string{doqALPN}},
+		// DoQ reuses one QUIC connection per endpoint and opens a stream per query.
+		// NextProtos carries the RFC 9250 "doq" ALPN token; ServerName is filled in
+		// per dial from the upstream.
+		quicTLS:  &tls.Config{MinVersion: tls.VersionTLS12, NextProtos: []string{doqALPN}, ClientSessionCache: sessionCache},
 		dnscrypt: newDNSCryptTransport(timeout),
 	}
 
@@ -425,6 +543,7 @@ func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecs
 			lastUpdated: time.Now(),
 		}
 	}
+	pool.rebuildSnapshotLocked()
 
 	// No probe from here. Latency is pre-seeded above, so the pool is usable the
 	// instant it is built, and the caller decides when to spend network I/O on
@@ -435,7 +554,7 @@ func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecs
 	return pool
 }
 
-func (p *UpstreamPool) recordStat(addr string, latency time.Duration, success bool) {
+func (p *UpstreamPool) recordStat(addr string, latency time.Duration, outcome statOutcome, reason string) {
 	p.mu.RLock()
 	stat, ok := p.stats[addr]
 	p.mu.RUnlock()
@@ -447,17 +566,83 @@ func (p *UpstreamPool) recordStat(addr string, latency time.Duration, success bo
 	stat.mu.Lock()
 	defer stat.mu.Unlock()
 
-	if success {
+	now := time.Now()
+	stat.lastUpdated = now
+	switch outcome {
+	case statSuccess:
 		stat.hits++
 		if stat.avgLatency == 0 {
 			stat.avgLatency = latency
 		} else {
 			stat.avgLatency = (stat.avgLatency*7 + latency*3) / 10
 		}
-	} else {
-		stat.errors++
+		stat.consecutiveFailures = 0
+		if stat.openUntil.Swap(0) != 0 {
+			p.openCircuits.Add(-1)
+		}
+	case statPolicyRcode:
+		// The resolver answered. A filtered REFUSED is worth showing, but it is
+		// not a reason to stop asking this resolver anything at all.
+		stat.policyErrors++
+		stat.consecutiveFailures = 0
+		if stat.openUntil.Swap(0) != 0 {
+			p.openCircuits.Add(-1)
+		}
+		stat.lastError = reason
+		stat.lastErrorAt = now
+	case statTransportError:
+		stat.transportErrors++
+		stat.consecutiveFailures++
+		stat.lastError = reason
+		stat.lastErrorAt = now
+		if stat.consecutiveFailures >= circuitFailureThreshold {
+			wasOpen := stat.openUntil.Load() != 0
+			stat.openUntil.Store(now.Add(circuitCooldown).UnixNano())
+			if !wasOpen {
+				p.openCircuits.Add(1)
+				log.Printf("[Upstream] Circuit open for %s after %d consecutive failures: %s",
+					addr, stat.consecutiveFailures, reason)
+			}
+		}
 	}
-	stat.lastUpdated = time.Now()
+	stat.errors = stat.transportErrors + stat.policyErrors
+}
+
+// upstreamAvailable reports whether an upstream is outside its breaker cooldown.
+// It reads only the atomic openUntil, so the query path can test every candidate
+// without taking any per-stat mutex.
+func (p *UpstreamPool) upstreamAvailable(addr string, now time.Time) bool {
+	p.mu.RLock()
+	stat := p.stats[addr]
+	p.mu.RUnlock()
+	if stat == nil {
+		return true
+	}
+	until := stat.openUntil.Load()
+	return until == 0 || now.UnixNano() >= until
+}
+
+// availableCandidates drops resolvers whose breaker is open. If every candidate
+// is open, the original list is returned: a resolver that recovered must get a
+// chance to close its own circuit, and returning an empty pool would turn one
+// temporary outage into SERVFAIL for every client.
+func (p *UpstreamPool) availableCandidates(list []string) []string {
+	// Common case: every breaker is closed. Return the immutable snapshot list
+	// without a single stat lock.
+	if p.openCircuits.Load() == 0 {
+		return list
+	}
+	now := time.Now()
+	out := make([]string, 0, len(list))
+	for _, u := range list {
+		if p.upstreamAvailable(u, now) {
+			out = append(out, u)
+		}
+	}
+	if len(out) == 0 || len(out) == len(list) {
+		return list
+	}
+	return out
 }
 
 // BenchmarkAll probes every upstream once and folds the round-trip time into its
@@ -489,7 +674,8 @@ func (p *UpstreamPool) BenchmarkAll() {
 			start := time.Now()
 			resp, _, err := p.queryOne(ctx, m, addr)
 			dur := time.Since(start)
-			p.recordStat(addr, dur, err == nil && usableRcode(resp))
+			outcome, reason := classifyStat(resp, err)
+			p.recordStat(addr, dur, outcome, reason)
 		}(s)
 	}
 	wg.Wait()
@@ -519,15 +705,16 @@ func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.
 		return nil, 0, "", errors.New("nil dns request")
 	}
 
-	p.mu.RLock()
-	upstreams := make([]string, len(p.upstreams))
-	copy(upstreams, p.upstreams)
-	racing := p.racing
+	snap := p.snap.Load()
+	if snap == nil {
+		return nil, 0, "", errors.New("upstream pool is not initialized")
+	}
+	upstreams := snap.upstreams
+	racing := snap.racing
 	timeout := p.timeout
 	ecs := p.ecsClientIP
-	policy := p.policy
-	profileIndex := p.profileIndex
-	p.mu.RUnlock()
+	policy := snap.policy
+	profileIndex := snap.profileIndex
 
 	if len(upstreams) == 0 {
 		return nil, 0, "", errors.New("no upstream resolvers configured")
@@ -549,9 +736,9 @@ func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.
 	// never the pinned default — "fall back" means the ordinary pool. It never
 	// bypasses the global transport either: an encrypted-only install stays
 	// encrypted-only even when a profile's own candidates fail.
-	fallbackCandidates := eligibleUpstreams(upstreams, policy.Transport)
+	fallbackCandidates := p.availableCandidates(snap.candidates(policy.Transport))
 
-	candidates := eligibleUpstreams(upstreams, effectiveTransport)
+	candidates := p.availableCandidates(snap.candidates(effectiveTransport))
 	strategy := poolStrategy(racing)
 	switch policy.DefaultStrategy {
 	case resolution.StrategyFastest, resolution.StrategySequential,
@@ -627,10 +814,13 @@ func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.
 	return nil, 0, "", err
 }
 
-// poolStrategy is the strategy represented by the legacy racing flag.
+// poolStrategy is the strategy represented by the legacy racing flag. Hedged is
+// the default when racing is enabled: it keeps the latency benefit of asking the
+// second resolver when the first is slow, without the N-way query amplification
+// and N goroutines that Fastest spends on every cache miss.
 func poolStrategy(racing bool) string {
 	if racing {
-		return resolution.StrategyFastest
+		return resolution.StrategyHedged
 	}
 	return resolution.StrategySequential
 }
@@ -667,6 +857,16 @@ const hedgeStartDelay = 50 * time.Millisecond
 // resolver first. Untimed resolvers keep their configured order after the known
 // ones. The live stats are the same numbers the resolver card shows.
 func (p *UpstreamPool) orderedByLatency(upstreams []string) []string {
+	if len(upstreams) <= 1 {
+		return upstreams
+	}
+
+	p.orderMu.Lock()
+	defer p.orderMu.Unlock()
+	if !p.orderBuilt.IsZero() && time.Since(p.orderBuilt) < time.Second && sameUpstreams(p.orderFor, upstreams) {
+		return p.order
+	}
+
 	stats := p.GetUpstreamStats()
 	latency := make(map[string]time.Duration, len(stats))
 	for _, s := range stats {
@@ -686,6 +886,9 @@ func (p *UpstreamPool) orderedByLatency(upstreams []string) []string {
 			return cmp.Compare(la, lb)
 		}
 	})
+	p.orderFor = slices.Clone(upstreams)
+	p.order = out
+	p.orderBuilt = time.Now()
 	return out
 }
 
@@ -725,7 +928,8 @@ func (p *UpstreamPool) exchangeHedged(req *dns.Msg, upstreams []string, timeout 
 			dur := time.Since(startedAt)
 			// A canceled loser is not a resolver failure; a real error is.
 			if err == nil || !errors.Is(err, context.Canceled) {
-				p.recordStat(addr, dur, err == nil && usableRcode(resp))
+				outcome, reason := classifyStat(resp, err)
+				p.recordStat(addr, dur, outcome, reason)
 			}
 			select {
 			case resChan <- result{resp: resp, duration: rtt, upstream: addr, err: err}:
@@ -1015,7 +1219,7 @@ func (p *UpstreamPool) queryOne(ctx context.Context, req *dns.Msg, addr string) 
 	case scheme == schemeTLS:
 		// The client's ID rule above still holds: query under a fresh ID.
 		q.Id = dns.Id()
-		resp, rtt, err = p.tlsClient.ExchangeContext(ctx, q, endpoint)
+		resp, rtt, err = p.exchangeDoT(ctx, q, endpoint)
 	case scheme == schemeTCP:
 		q.Id = dns.Id()
 		resp, rtt, err = p.tcpClient.ExchangeContext(ctx, q, endpoint)
@@ -1117,7 +1321,8 @@ func (p *UpstreamPool) exchangeRacing(req *dns.Msg, upstreams []string, timeout 
 			// and read ctx.Err()==Canceled, silently dropping a real failure
 			// from the dashboard. errors.Is(err, ...) answers per-goroutine.
 			if err == nil || !errors.Is(err, context.Canceled) {
-				p.recordStat(addr, dur, err == nil && usableRcode(resp))
+				outcome, reason := classifyStat(resp, err)
+				p.recordStat(addr, dur, outcome, reason)
 			}
 
 			select {
@@ -1188,8 +1393,9 @@ func (p *UpstreamPool) exchangeSequential(req *dns.Msg, upstreams []string, time
 		}
 		start := time.Now()
 		resp, rtt, err := p.queryOne(ctx, req, u)
-		ok := err == nil && usableRcode(resp)
-		p.recordStat(u, time.Since(start), ok)
+		outcome, reason := classifyStat(resp, err)
+		ok := outcome == statSuccess
+		p.recordStat(u, time.Since(start), outcome, reason)
 		if ok {
 			return resp, rtt, u, nil
 		}
@@ -1215,19 +1421,31 @@ func (p *UpstreamPool) exchangeSequential(req *dns.Msg, upstreams []string, time
 
 // UpstreamStat is an exported, read-only snapshot of a single upstream server health.
 type UpstreamStat struct {
-	Address   string  `json:"address"`
-	LatencyNs int64   `json:"latency"` // nanoseconds (frontend divides by 1e6)
-	LatencyMs float64 `json:"latency_ms"`
-	Hits      uint64  `json:"hits"`
-	Errors    uint64  `json:"errors"`
+	Address             string  `json:"address"`
+	LatencyNs           int64   `json:"latency"` // nanoseconds (frontend divides by 1e6)
+	LatencyMs           float64 `json:"latency_ms"`
+	Hits                uint64  `json:"hits"`
+	Errors              uint64  `json:"errors"`
+	TransportErrors     uint64  `json:"transport_errors"`
+	PolicyErrors        uint64  `json:"policy_errors"`
+	ConsecutiveFailures uint32  `json:"consecutive_failures"`
+	CircuitOpen         bool    `json:"circuit_open"`
+	LastError           string  `json:"last_error,omitempty"`
+	LastErrorAt         string  `json:"last_error_at,omitempty"`
 }
 
 // GetUpstreamStats returns a snapshot of latency/health stats for all upstreams, sorted by latency.
 func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 	type snapshot struct {
-		latency time.Duration
-		hits    uint64
-		errors  uint64
+		latency             time.Duration
+		hits                uint64
+		errors              uint64
+		transportErrors     uint64
+		policyErrors        uint64
+		consecutiveFailures uint32
+		lastError           string
+		lastErrorAt         time.Time
+		openUntil           int64
 	}
 
 	p.mu.RLock()
@@ -1236,11 +1454,22 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 	stats := make(map[string]snapshot, len(p.stats))
 	for addr, st := range p.stats {
 		st.mu.Lock()
-		stats[addr] = snapshot{latency: st.avgLatency, hits: st.hits, errors: st.errors}
+		stats[addr] = snapshot{
+			latency:             st.avgLatency,
+			hits:                st.hits,
+			errors:              st.errors,
+			transportErrors:     st.transportErrors,
+			policyErrors:        st.policyErrors,
+			consecutiveFailures: st.consecutiveFailures,
+			lastError:           st.lastError,
+			lastErrorAt:         st.lastErrorAt,
+			openUntil:           st.openUntil.Load(),
+		}
 		st.mu.Unlock()
 	}
 	p.mu.RUnlock()
 
+	now := time.Now()
 	out := make([]UpstreamStat, 0, len(addrs))
 	for _, addr := range addrs {
 		s := UpstreamStat{Address: addr, LatencyNs: int64(12 * time.Millisecond)}
@@ -1248,6 +1477,14 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 			s.LatencyNs = int64(raw.latency)
 			s.Hits = raw.hits
 			s.Errors = raw.errors
+			s.TransportErrors = raw.transportErrors
+			s.PolicyErrors = raw.policyErrors
+			s.ConsecutiveFailures = raw.consecutiveFailures
+			s.CircuitOpen = raw.openUntil != 0 && now.UnixNano() < raw.openUntil
+			s.LastError = raw.lastError
+			if !raw.lastErrorAt.IsZero() {
+				s.LastErrorAt = raw.lastErrorAt.UTC().Format(time.RFC3339)
+			}
 		}
 		s.LatencyMs = float64(s.LatencyNs) / 1e6
 		out = append(out, s)
@@ -1277,7 +1514,34 @@ func (p *UpstreamPool) SetPolicy(policy Policy) {
 	p.mu.Lock()
 	p.policy = policy
 	p.profileIndex = index
+	p.rebuildSnapshotLocked()
 	p.mu.Unlock()
+}
+
+// rebuildSnapshotLocked publishes a new immutable query-path snapshot. Callers
+// hold p.mu.
+func (p *UpstreamPool) rebuildSnapshotLocked() {
+	snap := &poolSnapshot{
+		upstreams:    append([]string(nil), p.upstreams...),
+		policy:       p.policy,
+		profileIndex: p.profileIndex,
+		racing:       p.racing,
+	}
+	snap.all = snap.upstreams
+	for _, u := range snap.upstreams {
+		if resolution.Encrypted(u) {
+			snap.encrypted = append(snap.encrypted, u)
+		} else {
+			snap.regular = append(snap.regular, u)
+		}
+	}
+	if snap.encrypted == nil {
+		snap.encrypted = []string{}
+	}
+	if snap.regular == nil {
+		snap.regular = []string{}
+	}
+	p.snap.Store(snap)
 }
 
 // SetUpstreams atomically replaces the upstream server list (thread-safe, live reload).
@@ -1285,7 +1549,16 @@ func (p *UpstreamPool) SetUpstreams(list []string) {
 	normalized := normalizeUpstreams(list)
 
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	removed := make([]string, 0, len(p.upstreams))
+	keep := make(map[string]struct{}, len(normalized))
+	for _, u := range normalized {
+		keep[u] = struct{}{}
+	}
+	for _, u := range p.upstreams {
+		if _, ok := keep[u]; !ok {
+			removed = append(removed, u)
+		}
+	}
 
 	p.upstreams = normalized
 	for _, u := range p.upstreams {
@@ -1296,24 +1569,31 @@ func (p *UpstreamPool) SetUpstreams(list []string) {
 			}
 		}
 	}
-	// Drop stats for removed upstreams
-	keep := make(map[string]struct{}, len(p.upstreams))
-	for _, u := range p.upstreams {
-		keep[u] = struct{}{}
-	}
-	for addr := range p.stats {
+	// Drop stats for removed upstreams, keeping the open-circuit count honest.
+	for addr, st := range p.stats {
 		if _, ok := keep[addr]; !ok {
+			if st.openUntil.Swap(0) != 0 {
+				p.openCircuits.Add(-1)
+			}
 			delete(p.stats, addr)
 		}
+	}
+	p.rebuildSnapshotLocked()
+	p.mu.Unlock()
+
+	for _, u := range removed {
+		p.closeConnectionPool(u)
 	}
 }
 
 // GetUpstreams returns a copy of the active upstream list.
 func (p *UpstreamPool) GetUpstreams() []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	out := make([]string, len(p.upstreams))
-	copy(out, p.upstreams)
+	snap := p.snap.Load()
+	if snap == nil {
+		return nil
+	}
+	out := make([]string, len(snap.upstreams))
+	copy(out, snap.upstreams)
 	return out
 }
 

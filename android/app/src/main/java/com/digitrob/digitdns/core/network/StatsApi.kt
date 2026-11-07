@@ -55,6 +55,10 @@ data class LiveStats(
     // Query service-time distributions: all queries, and cache-misses only.
     val latency: LatencySnapshot = LatencySnapshot(),
     @SerialName("latency_uncached") val latencyUncached: LatencySnapshot = LatencySnapshot(),
+    // The per-upstream rows are already in this response. The dashboard used to
+    // poll /upstreams/stats every three seconds as well, doubling the request
+    // count for data that had just arrived here.
+    val upstreams: List<UpstreamStat>? = null,
 ) {
     /** Total bytes moved: what the panel's "Live Traffic" footer shows. */
     val totalBytesTransferred: Long get() = bytesSent + bytesRecv

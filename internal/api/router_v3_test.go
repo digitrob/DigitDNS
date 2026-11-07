@@ -859,7 +859,8 @@ func TestV3_OpenAPIServed(t *testing.T) {
 	paths, _ := spec["paths"].(map[string]any)
 	for _, want := range []string{
 		"/api/v3/auth/login", "/api/v3/clients", "/api/v3/settings", "/api/v3/tls/issue",
-		"/api/v3/stats/summary", "/api/v3/stats/series", "/api/v3/stats/top", "/api/v3/stats/export",
+		"/api/v3/stats/summary", "/api/v3/stats/series", "/api/v3/stats/top", "/api/v3/stats/history",
+		"/api/v3/stats/export",
 		"/api/v3/stats/settings",
 	} {
 		if _, ok := paths[want]; !ok {
@@ -871,6 +872,27 @@ func TestV3_OpenAPIServed(t *testing.T) {
 		if _, ok := schemas[want]; !ok {
 			t.Errorf("openapi spec missing schema %s", want)
 		}
+	}
+}
+
+// The Android dashboard reads the upstream rows from /stats; the field must be
+// present even when no pool is wired, or the app keeps stale rows forever.
+func TestV3StatsCarriesUpstreams(t *testing.T) {
+	apiInst, _, _, cleanup := setupTestAPI(t)
+	defer cleanup()
+	mux := http.NewServeMux()
+	apiInst.RegisterRoutes(mux)
+
+	w := v3Request(mux, http.MethodGet, "/api/v3/stats", testKey, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("stats = %d: %s", w.Code, w.Body.String())
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("stats JSON: %v", err)
+	}
+	if _, ok := body["upstreams"]; !ok {
+		t.Fatal("/api/v3/stats has no upstreams field; the Android poll would keep stale rows")
 	}
 }
 

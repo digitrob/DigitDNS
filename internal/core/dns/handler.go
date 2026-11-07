@@ -48,7 +48,7 @@ type ClientQueryCounter interface {
 // may be empty when the agent publishes only one; the caller sinks the missing
 // family rather than leaking the hub's address. The agent fields are for the
 // query log and the dashboard badge.
-type RelayLookup func(domain string) (ipv4, ipv6, agentID, agentName, country string, ok bool)
+type RelayLookup func(domain string) (ipv4, ipv6 net.IP, agentID, agentName, country string, ok bool)
 
 type Handler struct {
 	access     AccessProvider
@@ -738,14 +738,14 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		// address. The local relay is the fallback when no agent is assigned or
 		// the assigned one is offline, so an agent outage cannot silently leak the
 		// origin's real address.
-		targetIPv4, targetIPv6 := h.publicIP, h.publicIPv6
+		targetIPv4, targetIPv6 := h.publicIPv4, h.publicIPv6Addr
 		// The IPv6 switch is a hard gate: with it off the address is ignored even
 		// though it may still be stored, so a later enable does not need the
 		// operator to re-enter it. The same gate is applied after the relay
 		// lookup, because an agent may publish an IPv6 of its own.
 		ipv6Allowed := h.proxyIPv6Enabled.Load()
 		if !ipv6Allowed {
-			targetIPv6 = ""
+			targetIPv6 = nil
 		}
 		agentID, agentName, agentCountry := "", "", ""
 		agentAssigned := false
@@ -758,11 +758,11 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			}
 		}
 		if !ipv6Allowed {
-			targetIPv6 = ""
+			targetIPv6 = nil
 		}
 
 		if q.Qtype == dns.TypeA {
-			if targetIPv4 == "" {
+			if len(targetIPv4) == 0 {
 				m := new(dns.Msg)
 				m.SetReply(r)
 				// An agent with no IPv4 must not fall through to the cache or an
@@ -774,20 +774,15 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			}
 			m := new(dns.Msg)
 			m.SetReply(r)
-			// The local relay answers with the already-parsed operator address;
-			// an agent target is parsed here once per query because it travels as
-			// a string through the relay router.
-			targetIP := h.publicIPv4
-			if agentAssigned {
-				targetIP = net.ParseIP(targetIPv4)
-			}
-			rr := makeARecord(q.Name, 60, targetIP)
+			// The relay router publishes already-parsed addresses, so the query
+			// path neither re-parses the same literal nor allocates for it.
+			rr := makeARecord(q.Name, 60, targetIPv4)
 			if rr == nil {
 				// Unreachable while SetPublicIP validates and the relay router
 				// only publishes parsed addresses, but a distinct action here
 				// means a future regression can never masquerade as a successful
 				// proxy answer again (v2.1.0 B-13 remediation).
-				log.Printf("[DNS] Could not build proxied A record for %s from %q", q.Name, targetIPv4)
+				log.Printf("[DNS] Could not build proxied A record for %s from %s", q.Name, targetIPv4)
 				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, dns.RcodeServerFailure)
 				m.SetRcode(r, dns.RcodeServerFailure)
 				return m
@@ -803,16 +798,8 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			// proxied A record instead of escaping to the real host over v6.
 			m := new(dns.Msg)
 			m.SetReply(r)
-			if targetIPv6 != "" {
-				// Parse the target string first: the local egress and a future
-				// agent egress both travel through the same field, and using the
-				// hub's cached address here would answer the wrong host once
-				// agents can publish IPv6.
-				targetIP := net.ParseIP(targetIPv6)
-				if targetIP == nil {
-					targetIP = h.publicIPv6Addr
-				}
-				if rr := makeAAAARecord(q.Name, 60, targetIP); rr != nil {
+			if len(targetIPv6) != 0 {
+				if rr := makeAAAARecord(q.Name, 60, targetIPv6); rr != nil {
 					m.Answer = append(m.Answer, rr)
 					h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, m.Rcode)
 					return m

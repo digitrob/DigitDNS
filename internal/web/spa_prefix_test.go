@@ -50,7 +50,8 @@ func TestSPADocumentRewritesAssetReferencesToTheAdminPrefix(t *testing.T) {
 		prefix + `/css/tailwind.purged.css`,
 		prefix + `/css/style.css`,
 		prefix + `/js/feather.min.js`,
-		prefix + `/js/chart.umd.min.js`,
+		// Chart.js is loaded on demand by app.js, not by a tag in the document;
+		// TestChartLoaderUsesTheAdminPrefix below pins that URL instead.
 		prefix + `/js/app.js`,
 		prefix + `/js/i18n.js`,
 		prefix + `/js/modules/twofa.js`,
@@ -77,6 +78,19 @@ func TestSPADocumentRewritesAssetReferencesToTheAdminPrefix(t *testing.T) {
 		if !strings.Contains(doc, `href="`+prefix+p+`"`) {
 			t.Errorf("the %s anchor was not moved under the admin prefix", p)
 		}
+	}
+}
+
+// TestChartLoaderUsesTheAdminPrefix pins the on-demand chart URL. The dashboard
+// assets are not mounted at the host root, so a hardcoded /js/chart.umd.min.js
+// would 404 and the charts would never paint.
+func TestChartLoaderUsesTheAdminPrefix(t *testing.T) {
+	app := readAsset(t, "js/app.js")
+	if strings.Contains(app, "script.src = '/js/chart.umd.min.js'") {
+		t.Fatal("the chart loader still names the host root; the asset 404s below the admin namespace")
+	}
+	if !strings.Contains(app, "script.src = ADMIN_BASE + '/js/chart.umd.min.js'") {
+		t.Fatal("the chart loader does not prefix /js/chart.umd.min.js with ADMIN_BASE")
 	}
 }
 

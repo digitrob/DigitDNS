@@ -530,10 +530,10 @@ func main() {
 	}
 	dnsHandler.SetProxyLeakProtection(dnsSettings.ProxyLeakProtection)
 	dnsHandler.SetBlockPolicy(filterService.BlockPolicy)
-	dnsHandler.SetRelayLookup(func(domain string) (string, string, string, string, string, bool) {
+	dnsHandler.SetRelayLookup(func(domain string) (net.IP, net.IP, string, string, string, bool) {
 		target, ok := relayRouter.Lookup(domain)
 		if !ok {
-			return "", "", "", "", "", false
+			return nil, nil, "", "", "", false
 		}
 		return target.IPv4, target.IPv6, target.AgentID, target.Name, target.Country, true
 	})
@@ -615,7 +615,19 @@ func main() {
 	// never becomes a relay, so it appears in none of the relay figures — and it is
 	// exactly the shape a proxied name whose traffic this relay cannot carry takes
 	// on the wire.
-	statsService.SetProxyGuardStatsSource(sniServer.GuardStats)
+	statsService.SetProxyGuardDetailSource(func() service.ProxyGuardStats {
+		d := sniServer.GuardStatsDetail()
+		return service.ProxyGuardStats{
+			Refused:       d.Refused,
+			Unreadable:    d.Unreadable,
+			Malformed:     d.Malformed,
+			Blocked:       d.Blocked,
+			Self:          d.Self,
+			Quota:         d.Quota,
+			TableFull:     d.TableFull,
+			ResolveFailed: d.ResolveFailed,
+		}
+	})
 
 	webServer := internalWeb.NewWebServer(
 		db,

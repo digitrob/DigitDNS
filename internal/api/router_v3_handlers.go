@@ -1423,7 +1423,18 @@ func (a *API) handleV3Stats(w http.ResponseWriter, r *http.Request) {
 		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
 		return
 	}
-	_ = json.NewEncoder(w).Encode(a.stats.GetLiveStats())
+	// Carry the per-upstream rows in the same response the panel reads. The
+	// Android dashboard used to poll /upstreams/stats alongside this endpoint on
+	// every tick; one document is both fewer requests and one less JSON parse.
+	resp := struct {
+		service.LiveStatsResponse
+		Upstreams any `json:"upstreams"`
+	}{LiveStatsResponse: a.stats.GetLiveStats()}
+	resp.Upstreams = []upstream.UpstreamStat{}
+	if a.upstreams != nil {
+		resp.Upstreams = a.upstreams.GetUpstreamStats()
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (a *API) handleV3Stream(w http.ResponseWriter, r *http.Request) {

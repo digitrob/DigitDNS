@@ -16,6 +16,7 @@ package upstream
 // panic or a torn read; it cannot certify the pool race-free.
 
 import (
+	"context"
 	"errors"
 	"net"
 	"strconv"
@@ -29,6 +30,78 @@ import (
 
 	"github.com/miekg/dns"
 )
+
+// The pool's legacy racing flag now means Hedged, not Fastest. Hedged keeps the
+// latency benefit of a second resolver when the first is slow while avoiding an
+// N-way query, an N-way message copy and N connections on every cache miss.
+func TestRacingPoolDefaultsToHedged(t *testing.T) {
+	if got := poolStrategy(true); got != resolution.StrategyHedged {
+		t.Fatalf("poolStrategy(true) = %q, want %q", got, resolution.StrategyHedged)
+	}
+	if got := poolStrategy(false); got != resolution.StrategySequential {
+		t.Fatalf("poolStrategy(false) = %q, want %q", got, resolution.StrategySequential)
+	}
+}
+
+func TestUpstreamErrorClassification(t *testing.T) {
+	refused := new(dns.Msg)
+	refused.Rcode = dns.RcodeRefused
+	if outcome, reason := classifyStat(refused, nil); outcome != statPolicyRcode || reason != "REFUSED" {
+		t.Fatalf("REFUSED classified as %v/%q, want policy/REFUSED", outcome, reason)
+	}
+	if outcome, reason := classifyStat(nil, context.DeadlineExceeded); outcome != statTransportError || reason == "" {
+		t.Fatalf("timeout classified as %v/%q, want transport", outcome, reason)
+	}
+	ok := new(dns.Msg)
+	ok.Rcode = dns.RcodeSuccess
+	if outcome, reason := classifyStat(ok, nil); outcome != statSuccess || reason != "" {
+		t.Fatalf("NOERROR classified as %v/%q, want success", outcome, reason)
+	}
+}
+
+// A filtered REFUSED proves the resolver is reachable and must not open the
+// breaker; repeated transport failures must.
+func TestCircuitBreakerUsesTransportFailuresOnly(t *testing.T) {
+	const addr = "192.0.2.1:53"
+	p := newTestPool(t, []string{addr}, time.Second, false, "")
+
+	for i := 0; i < circuitFailureThreshold-1; i++ {
+		p.recordStat(addr, time.Millisecond, statTransportError, "timeout")
+	}
+	if statFor(t, p, addr).CircuitOpen {
+		t.Fatal("circuit opened before the failure threshold")
+	}
+
+	p.recordStat(addr, time.Millisecond, statPolicyRcode, "REFUSED")
+	s := statFor(t, p, addr)
+	if s.CircuitOpen || s.ConsecutiveFailures != 0 || s.PolicyErrors != 1 {
+		t.Fatalf("a policy rcode did not reset transport failures: %+v", s)
+	}
+
+	for i := 0; i < circuitFailureThreshold; i++ {
+		p.recordStat(addr, time.Millisecond, statTransportError, "timeout")
+	}
+	s = statFor(t, p, addr)
+	if !s.CircuitOpen || s.TransportErrors < uint64(circuitFailureThreshold) {
+		t.Fatalf("circuit did not open after transport failures: %+v", s)
+	}
+	if got := p.availableCandidates([]string{addr}); len(got) != 1 || got[0] != addr {
+		t.Fatalf("all-open pool = %v, want fail-open with the one candidate", got)
+	}
+}
+
+func TestCircuitBreakerSkipsOpenUpstream(t *testing.T) {
+	const bad, good = "192.0.2.1:53", "192.0.2.2:53"
+	p := newTestPool(t, []string{bad, good}, time.Second, false, "")
+	for i := 0; i < circuitFailureThreshold; i++ {
+		p.recordStat(bad, time.Millisecond, statTransportError, "timeout")
+	}
+
+	got := p.availableCandidates([]string{bad, good})
+	if len(got) != 1 || got[0] != good {
+		t.Fatalf("available candidates = %v, want only %s", got, good)
+	}
+}
 
 // probeName is the name the tests query. It is deliberately not cloudflare.com.,
 // the name BenchmarkAll asks for: keeping them distinct means a reply function

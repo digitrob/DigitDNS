@@ -2225,8 +2225,14 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 		// SNI proxy connections that never became relays. relays_unreadable is the
 		// diagnostic one: it means a name is answered with this server's address and
 		// the client then speaks something the relay cannot read a destination out of.
-		"relays_refused":    st.RelaysRefused,
-		"relays_unreadable": st.RelaysUnreadable,
+		"relays_refused":            st.RelaysRefused,
+		"relays_unreadable":         st.RelaysUnreadable,
+		"relays_refused_malformed":  st.RelaysRefusedMalformed,
+		"relays_refused_blocked":    st.RelaysRefusedBlocked,
+		"relays_refused_self":       st.RelaysRefusedSelf,
+		"relays_refused_quota":      st.RelaysRefusedQuota,
+		"relays_refused_table_full": st.RelaysRefusedTableFull,
+		"relays_refused_resolve":    st.RelaysRefusedResolve,
 
 		// Query service time. latency covers everything the resolver answered;
 		// latency_uncached drops the cache hits, which is the only one of the two

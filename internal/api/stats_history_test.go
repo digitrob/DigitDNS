@@ -82,6 +82,29 @@ func TestV3HistoricalStatsEndpoints(t *testing.T) {
 		t.Errorf("top = %#v, want only the non-blocked domain", top)
 	}
 
+	w = v3Request(mux, http.MethodGet, "/api/v3/stats/history?range=24h&interval=hour&limit=5", testKey, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("history = %d: %s", w.Code, w.Body.String())
+	}
+	var history struct {
+		Range   string                   `json:"range"`
+		Summary aggregate.Summary        `json:"summary"`
+		Series  aggregate.Series         `json:"series"`
+		Tops    map[string]aggregate.Top `json:"tops"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &history); err != nil {
+		t.Fatalf("history JSON: %v", err)
+	}
+	if history.Range != "24h" || history.Summary.Queries != 2 || history.Series.Interval != "hour" {
+		t.Errorf("history = %#v", history)
+	}
+	if len(history.Tops) != len(historyExportDimensions) {
+		t.Errorf("history tops = %d, want %d", len(history.Tops), len(historyExportDimensions))
+	}
+	if got := history.Tops["domain"]; len(got.Items) != 1 || got.Items[0].Value != "history.example" {
+		t.Errorf("history domain top = %#v", got)
+	}
+
 	w = v3Request(mux, http.MethodGet, "/api/v3/stats/summary?range=2h", testKey, nil)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("invalid range = %d, want 400", w.Code)

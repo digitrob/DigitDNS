@@ -77,7 +77,8 @@
   
   <!-- Local Vendor Scripts & Styles -->
   <script src="/js/feather.min.js"></script>
-  <script src="/js/chart.umd.min.js"></script>
+  <!-- Chart.js is loaded on demand by initChart/ensureHistoryChart. It is the
+       largest script on the page and the first screen is useful without it. -->
   <link rel="stylesheet" href="/css/style.css">
   <style>
     .skip-link {
@@ -1089,7 +1090,7 @@
                    being truncated away at the narrow six-column widths. -->
               <div class="text-[9px] sm:text-[10px] text-slate-500 font-mono leading-tight text-right min-w-0">
                 <div>Total: <span id="stat-proxy-total" class="text-slate-300 font-bold">0</span></div>
-                <div>Refused: <span id="stat-proxy-refused" class="text-slate-400" title="Connections dropped for a blocked target, a self-dial, or a full relay table">0</span></div>
+                <div>Refused: <span id="stat-proxy-refused" class="text-slate-400" title="Connections dropped for a malformed target, a blocked target, a self-dial, a spent quota, or a full relay table">0</span></div>
                 <div>Unreadable: <span id="stat-proxy-unreadable" class="text-slate-400" title="Connections that arrived without naming a destination — no TLS SNI and no HTTP Host header">0</span></div>
               </div>
             </div>

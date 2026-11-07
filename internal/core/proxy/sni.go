@@ -120,9 +120,19 @@ type Server struct {
 	// GuardStats for why the distinction is the one an operator needs.
 	refused    atomic.Uint64
 	unreadable atomic.Uint64
-	listeners  []net.Listener
-	mu         sync.Mutex
-	cancel     context.CancelFunc
+	// Refusal reasons. They sum to refused (plus any future uncategorised site),
+	// so the card can say why a connection was dropped instead of only that it
+	// was. malformed is the one internet scanners produce and the one that used
+	// to be silent.
+	refusedMalformed atomic.Uint64
+	refusedBlocked   atomic.Uint64
+	refusedSelf      atomic.Uint64
+	refusedQuota     atomic.Uint64
+	refusedTableFull atomic.Uint64
+	refusedResolve   atomic.Uint64
+	listeners        []net.Listener
+	mu               sync.Mutex
+	cancel           context.CancelFunc
 
 	guard *targetGuard
 	// slots is a counting semaphore: a relay takes one for its lifetime.
@@ -347,6 +357,7 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 	// without an operator re-enabling anything by hand.
 	if client != nil && s.meter != nil && s.meter.QuotaExceeded(client) {
 		s.refused.Add(1)
+		s.refusedQuota.Add(1)
 		return
 	}
 
@@ -358,6 +369,7 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 		defer func() { <-s.slots }()
 	default:
 		s.refused.Add(1)
+		s.refusedTableFull.Add(1)
 		return
 	}
 
@@ -417,6 +429,16 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 	cancel()
 	if err != nil {
 		s.refused.Add(1)
+		switch {
+		case errors.Is(err, ErrTargetMalformed):
+			s.refusedMalformed.Add(1)
+		case errors.Is(err, ErrTargetBlocked):
+			s.refusedBlocked.Add(1)
+		case errors.Is(err, ErrTargetSelf):
+			s.refusedSelf.Add(1)
+		default:
+			s.refusedResolve.Add(1)
+		}
 		if !errors.Is(err, ErrTargetMalformed) {
 			log.Printf("[SNI Proxy] Refused relay from %s: %v", clientIP, err)
 		}
@@ -644,4 +666,30 @@ func (s *Server) GetStats() (int64, uint64, uint64, uint64) {
 // Both are lifetime totals since start.
 func (s *Server) GuardStats() (refused, unreadable uint64) {
 	return s.refused.Load(), s.unreadable.Load()
+}
+
+// GuardStatsDetail is GuardStats plus the refusal reasons. The reasons sum to
+// Refused; Malformed is the scanner-noise counter that used to be invisible.
+type GuardStatsDetail struct {
+	Refused       uint64
+	Unreadable    uint64
+	Malformed     uint64
+	Blocked       uint64
+	Self          uint64
+	Quota         uint64
+	TableFull     uint64
+	ResolveFailed uint64
+}
+
+func (s *Server) GuardStatsDetail() GuardStatsDetail {
+	return GuardStatsDetail{
+		Refused:       s.refused.Load(),
+		Unreadable:    s.unreadable.Load(),
+		Malformed:     s.refusedMalformed.Load(),
+		Blocked:       s.refusedBlocked.Load(),
+		Self:          s.refusedSelf.Load(),
+		Quota:         s.refusedQuota.Load(),
+		TableFull:     s.refusedTableFull.Load(),
+		ResolveFailed: s.refusedResolve.Load(),
+	}
 }

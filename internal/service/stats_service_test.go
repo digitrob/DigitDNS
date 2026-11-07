@@ -106,6 +106,27 @@ func TestProxyGuardStatsAreForwarded(t *testing.T) {
 	}
 }
 
+func TestProxyGuardBreakdownIsForwarded(t *testing.T) {
+	s := NewStatsService(nil, nil, nil)
+	defer s.Close()
+	s.SetProxyGuardDetailSource(func() ProxyGuardStats {
+		return ProxyGuardStats{
+			Refused: 91, Unreadable: 7,
+			Malformed: 80, Blocked: 1, Self: 2, Quota: 3, TableFull: 4, ResolveFailed: 1,
+		}
+	})
+
+	st := s.GetLiveStats()
+	if st.RelaysRefused != 91 || st.RelaysUnreadable != 7 {
+		t.Fatalf("drops = (%d, %d), want (91, 7)", st.RelaysRefused, st.RelaysUnreadable)
+	}
+	if st.RelaysRefusedMalformed != 80 || st.RelaysRefusedBlocked != 1 ||
+		st.RelaysRefusedSelf != 2 || st.RelaysRefusedQuota != 3 ||
+		st.RelaysRefusedTableFull != 4 || st.RelaysRefusedResolve != 1 {
+		t.Fatalf("breakdown not forwarded: %+v", st)
+	}
+}
+
 // The proxy counters must not be confused with the relay counters. GetStats and
 // GuardStats are separate sources on the proxy and separate fields here, because
 // a refused connection is not a relay — reporting it as one would inflate the

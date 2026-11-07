@@ -18,8 +18,8 @@ type RelayTarget struct {
 	AgentID string
 	Name    string
 	Country string
-	IPv4    string
-	IPv6    string
+	IPv4    net.IP
+	IPv6    net.IP
 }
 
 // RelayRouter holds the live geo-agent assignment map. It is read on the DNS
@@ -33,8 +33,8 @@ type RelayRouter struct {
 	// agent. They are built with the agent snapshot so the query path never
 	// re-parses the same literal. An agent may publish one family, both, or
 	// neither; a missing family is sunk by the DNS handler.
-	agentIPv4      map[string]string
-	agentIPv6      map[string]string
+	agentIPv4      map[string]net.IP
+	agentIPv6      map[string]net.IP
 	domainAgents   assignmentIndex
 	serviceAgents  map[string]string
 	domainServices assignmentIndex
@@ -118,8 +118,8 @@ func (idx *assignmentIndex) lookup(domain string) string {
 func NewRelayRouter() *RelayRouter {
 	return &RelayRouter{
 		agents:         map[string]database.Agent{},
-		agentIPv4:      map[string]string{},
-		agentIPv6:      map[string]string{},
+		agentIPv4:      map[string]net.IP{},
+		agentIPv6:      map[string]net.IP{},
 		domainAgents:   newAssignmentIndex(),
 		serviceAgents:  map[string]string{},
 		domainServices: newAssignmentIndex(),
@@ -132,16 +132,16 @@ func NewRelayRouter() *RelayRouter {
 // heartbeat, enable/disable and delete.
 func (r *RelayRouter) SetAgents(agents []database.Agent) {
 	next := make(map[string]database.Agent, len(agents))
-	ipv4 := make(map[string]string, len(agents))
-	ipv6 := make(map[string]string, len(agents))
+	ipv4 := make(map[string]net.IP, len(agents))
+	ipv6 := make(map[string]net.IP, len(agents))
 	for _, a := range agents {
 		next[a.ID] = a
-		if ip := net.ParseIP(strings.TrimSpace(a.PublicIP)); ip != nil && ip.To4() != nil {
-			ipv4[a.ID] = ip.String()
+		if ip := net.ParseIP(strings.TrimSpace(a.PublicIP)).To4(); ip != nil {
+			ipv4[a.ID] = ip
 		}
 		if a.IPv6Enabled {
 			if ip, ok := netutil.ParsePublicIPv6(a.PublicIPv6); ok {
-				ipv6[a.ID] = ip.String()
+				ipv6[a.ID] = ip
 			}
 		}
 	}
@@ -252,7 +252,7 @@ func (r *RelayRouter) Lookup(domain string) (RelayTarget, bool) {
 	}
 	// An agent with no usable family at all is not a target. A healthy
 	// IPv6-only agent is: its A queries fail closed while its AAAA queries work.
-	if target.IPv4 == "" && target.IPv6 == "" {
+	if len(target.IPv4) == 0 && len(target.IPv6) == 0 {
 		return RelayTarget{}, false
 	}
 	return target, true

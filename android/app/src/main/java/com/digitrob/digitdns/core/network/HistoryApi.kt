@@ -17,18 +17,17 @@ import retrofit2.http.Query
  */
 interface HistoryApi {
 
-    @GET("stats/summary")
-    suspend fun summary(@Query("range") range: String): StatsSummary
-
-    @GET("stats/series")
-    suspend fun series(@Query("range") range: String): StatsSeries
-
-    @GET("stats/top")
-    suspend fun top(
+    /**
+     * One range's summary, series and every ranked table in one response. The
+     * app used to fan out to eight endpoints on every refresh; the combined
+     * route removes seven round trips and one JSON envelope per call.
+     */
+    @GET("stats/history")
+    suspend fun history(
         @Query("range") range: String,
-        @Query("dimension") dimension: String,
+        @Query("interval") interval: String? = null,
         @Query("limit") limit: Int,
-    ): StatsTop
+    ): StatsHistory
 
     @GET("stats/settings")
     suspend fun settings(): StatsSettings
@@ -77,6 +76,14 @@ data class StatsSeriesPoint(
     /** Everything the stacked chart draws as "allowed": neither blocked nor proxied. */
     val allowed: Long get() = (queries - blocked - proxied).coerceAtLeast(0)
 }
+
+@Serializable
+data class StatsHistory(
+    val range: String = "",
+    val summary: StatsSummary = StatsSummary(),
+    val series: StatsSeries = StatsSeries(),
+    val tops: Map<String, StatsTop> = emptyMap(),
+)
 
 @Serializable
 data class StatsTop(

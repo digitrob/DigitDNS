@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"net"
 	"testing"
 
 	"digitdns/internal/core/matcher"
@@ -11,11 +12,18 @@ func relayHandler(v4, v6 string) *Handler {
 	m := matcher.NewMatcher()
 	m.SetCustomRules([]string{"ard.example"}, nil, nil, nil)
 	h := NewHandler(&dummyAccess{}, nil, m, nil, nil, "198.51.100.1")
-	h.SetRelayLookup(func(domain string) (string, string, string, string, string, bool) {
+	h.SetRelayLookup(func(domain string) (net.IP, net.IP, string, string, string, bool) {
 		if domain != "ard.example" {
-			return "", "", "", "", "", false
+			return nil, nil, "", "", "", false
 		}
-		return v4, v6, "agt_de", "Frankfurt", "DE", true
+		var ipv4, ipv6 net.IP
+		if v4 != "" {
+			ipv4 = net.ParseIP(v4).To4()
+		}
+		if v6 != "" {
+			ipv6 = net.ParseIP(v6)
+		}
+		return ipv4, ipv6, "agt_de", "Frankfurt", "DE", true
 	})
 	return h
 }

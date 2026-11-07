@@ -8,10 +8,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
-import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -20,10 +18,11 @@ import org.junit.Test
 import retrofit2.Retrofit
 
 /**
- * Historical aggregates and the server-wide policy. The load path fans out to
- * eight endpoints (summary, series and six ranked tables), so the request set is
- * asserted as a whole; the settings save body is checked field-for-field because
- * a defaulted serializer would silently omit values the server validates.
+ * Historical aggregates and the server-wide policy. The load path is one combined
+ * document (summary, series and six ranked tables), so a regression to the old
+ * eight-request fan-out fails the request count; the settings save body is checked
+ * field-for-field because a defaulted serializer would silently omit values the
+ * server validates.
  */
 class HistoryApiTest {
 
@@ -49,38 +48,26 @@ class HistoryApiTest {
     fun tearDown() = server.shutdown()
 
     @Test
-    fun loadFetchesSummarySeriesAndEveryTopDimension() = runTest {
-        // The eight calls run concurrently, so responses are selected by path
-        // rather than enqueue order.
-        server.dispatcher = object : Dispatcher() {
-            override fun dispatch(request: RecordedRequest): MockResponse {
-                val path = request.path.orEmpty()
-                val body = when {
-                    path.contains("/stats/summary") ->
-                        """{"range":"24h","queries":12,"active_clients":3}"""
-                    path.contains("/stats/series") ->
-                        """{"range":"24h","interval":"hour","points":[]}"""
-                    else ->
-                        """{"items":[{"value":"x","count":1}],"other_count":2}"""
-                }
-                return MockResponse().setResponseCode(200).setBody(body)
-            }
-        }
+    fun loadFetchesOneCombinedHistoryDocument() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"range":"7d","summary":{"range":"7d","queries":12,"active_clients":3},"series":{"range":"7d","interval":"hour","points":[]},"tops":{"domain":{"items":[{"value":"x","count":1}],"other_count":2},"client":{"items":[]}}}""",
+            ),
+        )
 
         val snapshot = repo.load(HistoryRange.LAST_7D)
 
         assertEquals(12L, snapshot.summary.queries)
         assertEquals(3, snapshot.summary.activeClients)
+        // The repository fills a missing dimension with an empty table so the UI
+        // never has to distinguish "not returned" from "no rows".
         assertEquals(6, snapshot.tops.size)
-        repeat(8) {
-            val path = server.takeRequest().path.orEmpty()
-            assertTrue("unexpected path $path", path.startsWith("/stats/"))
-            assertTrue("missing range in $path", path.contains("range=7d"))
-            if (path.startsWith("/stats/top")) {
-                assertTrue("top limit is not 5 in $path", path.contains("limit=5"))
-            }
-        }
-        assertTrue(snapshot.tops.containsKey(TopDimension.CLIENT))
+        val path = server.takeRequest().path.orEmpty()
+        assertTrue("unexpected path $path", path.startsWith("/stats/history"))
+        assertTrue("missing range in $path", path.contains("range=7d"))
+        assertTrue("top limit is not 5 in $path", path.contains("limit=5"))
+        assertEquals(1L, snapshot.tops[TopDimension.DOMAIN]?.items?.first()?.count)
+        assertEquals(0, snapshot.tops[TopDimension.CLIENT]?.items?.size)
     }
 
     @Test

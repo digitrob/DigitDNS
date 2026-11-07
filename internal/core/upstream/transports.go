@@ -9,6 +9,7 @@ package upstream
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -25,20 +26,11 @@ import (
 const doqALPN = "doq"
 
 // exchangeDoQ sends one DNS query over DNS-over-QUIC (RFC 9250) and returns the
-// decoded reply. Each query opens its own QUIC connection and bidi stream, which
-// matches how the racer uses every other transport (one exchange, one deadline)
-// and keeps a stalled upstream from pinning a connection for the whole pool.
+// decoded reply. The QUIC connection is reused across queries; each query opens
+// its own bidi stream, as the protocol intends. A failed stream drops the
+// connection and retries once on a fresh one, so an upstream that closed an idle
+// connection does not surface as a query failure.
 func (p *UpstreamPool) exchangeDoQ(ctx context.Context, q *dns.Msg, endpoint string) (*dns.Msg, time.Duration, error) {
-	start := time.Now()
-
-	packed, err := q.Pack()
-	if err != nil {
-		return nil, 0, fmt.Errorf("pack DoQ query for %s: %w", endpoint, err)
-	}
-	if len(packed) > dns.MaxMsgSize {
-		return nil, 0, fmt.Errorf("DoQ query for %s is too large to frame", endpoint)
-	}
-
 	// Copy the pool's TLS settings so the per-dial ServerName cannot leak back
 	// into the shared config. Verification is never skipped: an IP literal is
 	// checked against the certificate's IP SAN and a hostname against its DNS
@@ -50,14 +42,40 @@ func (p *UpstreamPool) exchangeDoQ(ctx context.Context, q *dns.Msg, endpoint str
 		}
 	}
 
-	conn, err := quic.DialAddr(ctx, endpoint, tlsConf, &quic.Config{
-		HandshakeIdleTimeout: p.timeout,
-		MaxIdleTimeout:       p.timeout,
-	})
+	conn, err := p.doqConnection(ctx, endpoint, tlsConf)
 	if err != nil {
-		return nil, time.Since(start), err
+		return nil, 0, err
 	}
-	defer func() { _ = conn.CloseWithError(0, "") }()
+	resp, rtt, err := p.exchangeDoQOn(ctx, conn, q, endpoint)
+	if err != nil {
+		// A per-query deadline or a canceled race says nothing about the QUIC
+		// connection itself; closing it would tear down every other stream a
+		// concurrent query is using. Only a transport-level failure drops it.
+		if ctx.Err() == nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			p.dropDoQ(endpoint, conn)
+		}
+		if ctx.Err() == nil {
+			if fresh, dialErr := p.doqConnection(ctx, endpoint, tlsConf); dialErr == nil {
+				resp, rtt, err = p.exchangeDoQOn(ctx, fresh, q, endpoint)
+				if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+					p.dropDoQ(endpoint, fresh)
+				}
+			}
+		}
+	}
+	return resp, rtt, err
+}
+
+func (p *UpstreamPool) exchangeDoQOn(ctx context.Context, conn *quic.Conn, q *dns.Msg, endpoint string) (*dns.Msg, time.Duration, error) {
+	start := time.Now()
+
+	packed, err := q.Pack()
+	if err != nil {
+		return nil, 0, fmt.Errorf("pack DoQ query for %s: %w", endpoint, err)
+	}
+	if len(packed) > dns.MaxMsgSize {
+		return nil, 0, fmt.Errorf("DoQ query for %s is too large to frame", endpoint)
+	}
 
 	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {

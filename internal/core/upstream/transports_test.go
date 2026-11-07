@@ -76,7 +76,7 @@ func serveDoQ(t *testing.T, conn *quic.Conn, reply func(string) answer, hits *at
 // newDoQResolver starts a DNS-over-QUIC listener on loopback and returns its
 // address, the leaf for the client's root pool, a hit counter, and whether any
 // query arrived with a nonzero transaction ID.
-func newDoQResolver(t *testing.T, reply func(string) answer) (addr string, leaf *x509.Certificate, hits *atomic.Int64, sawNonZeroID *atomic.Bool) {
+func newDoQResolver(t *testing.T, reply func(string) answer) (addr string, leaf *x509.Certificate, hits, conns *atomic.Int64, sawNonZeroID *atomic.Bool) {
 	t.Helper()
 	cert, leaf := newTestCert(t)
 
@@ -91,6 +91,7 @@ func newDoQResolver(t *testing.T, reply func(string) answer) (addr string, leaf 
 	t.Cleanup(func() { _ = ln.Close() })
 
 	hits = &atomic.Int64{}
+	conns = &atomic.Int64{}
 	sawNonZeroID = &atomic.Bool{}
 	go func() {
 		for {
@@ -98,14 +99,15 @@ func newDoQResolver(t *testing.T, reply func(string) answer) (addr string, leaf 
 			if err != nil {
 				return
 			}
+			conns.Add(1)
 			go serveDoQ(t, conn, reply, hits, sawNonZeroID)
 		}
 	}()
-	return ln.Addr().String(), leaf, hits, sawNonZeroID
+	return ln.Addr().String(), leaf, hits, conns, sawNonZeroID
 }
 
 func TestDoQUpstreamExchangesOverQUIC(t *testing.T) {
-	addr, leaf, hits, sawNonZeroID := newDoQResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "192.0.2.61"}))
+	addr, leaf, hits, _, sawNonZeroID := newDoQResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "192.0.2.61"}))
 
 	p := newTestPool(t, []string{"quic://" + addr}, 2*time.Second, false, "")
 	roots := x509.NewCertPool()
@@ -127,10 +129,36 @@ func TestDoQUpstreamExchangesOverQUIC(t *testing.T) {
 	}
 }
 
+// One QUIC connection carries every query as a separate stream; a warm DoQ
+// upstream must not dial per query.
+func TestDoQReusesOneConnection(t *testing.T) {
+	addr, leaf, hits, conns, sawNonZeroID := newDoQResolver(t, always(answer{rcode: dns.RcodeSuccess, ip: "192.0.2.61"}))
+
+	p := newTestPool(t, []string{"quic://" + addr}, 2*time.Second, false, "")
+	roots := x509.NewCertPool()
+	roots.AddCert(leaf)
+	p.quicTLS = &tls.Config{MinVersion: tls.VersionTLS12, NextProtos: []string{doqALPN}, RootCAs: roots}
+
+	for i := 0; i < 5; i++ {
+		if _, _, _, err := p.Exchange(query(probeName)); err != nil {
+			t.Fatalf("exchange %d over DoQ: %v", i, err)
+		}
+	}
+	if hits.Load() != 5 {
+		t.Fatalf("DoQ hits = %d, want 5", hits.Load())
+	}
+	if conns.Load() != 1 {
+		t.Fatalf("DoQ opened %d connections for 5 queries, want 1", conns.Load())
+	}
+	if sawNonZeroID.Load() {
+		t.Fatal("a DoQ query must be sent with transaction ID 0 (RFC 9250 §4.2.1)")
+	}
+}
+
 // TestDoQUpstreamRejectsUntrustedCertificate pins the strict verification: DoQ
 // must not disable certificate validation any more than DoT does.
 func TestDoQUpstreamRejectsUntrustedCertificate(t *testing.T) {
-	addr, _, _, _ := newDoQResolver(t, always(answer{rcode: dns.RcodeSuccess, ip: "192.0.2.61"}))
+	addr, _, _, _, _ := newDoQResolver(t, always(answer{rcode: dns.RcodeSuccess, ip: "192.0.2.61"}))
 
 	// The default pool trusts the system roots, which do not include the test leaf.
 	p := newTestPool(t, []string{"quic://" + addr}, 2*time.Second, false, "")

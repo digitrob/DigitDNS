@@ -238,6 +238,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/stats/summary", a.SecurityMiddlewareV3(a.handleV3StatsSummary))
 	mux.HandleFunc("/api/v3/stats/series", a.SecurityMiddlewareV3(a.handleV3StatsSeries))
 	mux.HandleFunc("/api/v3/stats/top", a.SecurityMiddlewareV3(a.handleV3StatsTop))
+	mux.HandleFunc("/api/v3/stats/history", a.SecurityMiddlewareV3(a.handleV3StatsHistory))
 	mux.HandleFunc("/api/v3/stats/export", a.SecurityMiddlewareV3(a.handleV3StatsExport))
 	mux.HandleFunc("/api/v3/stats/settings", a.SecurityMiddlewareV3(a.handleV3StatsSettings))
 	mux.HandleFunc("/api/v3/events/stream", a.SecurityMiddlewareV3Stream(a.handleV3Stream))

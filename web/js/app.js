@@ -1034,10 +1034,9 @@ async function loadConfig() {
     const weak = !!(meData.password_weak || meData.is_default_password);
     currentConfig = cfgData;
     renderConfig(currentConfig);
-    loadResolutionSettings();
-    loadDNSSECSettings();
-    loadProxyLeakSettings();
-    loadAgents();
+    // Settings and agent data are loaded by the tab that needs them, not on
+    // every dashboard boot. The four calls that used to be here put four extra
+    // round trips in front of the panel for screens the operator may never open.
     // Raised after the config lands so the modal can prefill the real username
     // rather than the markup's placeholder.
     if (weak) showChangePwdModal();
@@ -4360,12 +4359,24 @@ function renderProxyDrops(data) {
   if (!refusedEl && !unreadableEl) return;
 
   const refused = data.relays_refused || 0;
+  const malformed = data.relays_refused_malformed || 0;
+  const blocked = data.relays_refused_blocked || 0;
+  const selfDial = data.relays_refused_self || 0;
+  const quota = data.relays_refused_quota || 0;
+  const tableFull = data.relays_refused_table_full || 0;
+  const resolveFailed = data.relays_refused_resolve || 0;
   const unreadable = data.relays_unreadable || 0;
+
+  const breakdown = `Refused ${refused.toLocaleString()}: malformed ${malformed.toLocaleString()}, blocked ${blocked.toLocaleString()}, self ${selfDial.toLocaleString()}, quota ${quota.toLocaleString()}, table full ${tableFull.toLocaleString()}, resolve failed ${resolveFailed.toLocaleString()}`;
 
   if (refusedEl) {
     refusedEl.textContent = refused.toLocaleString();
-    refusedEl.className = refused > 0 ? 'text-slate-300 font-bold' : 'text-slate-400';
-    refusedEl.title = 'Connections dropped for a blocked target, a self-dial, or a full relay table';
+    // The breakdown lives in the tooltip. The only visual cue is colour: amber
+    // when the count is mostly malformed scanner probes, otherwise the old
+    // neutral slate. No extra line on the card.
+    refusedEl.className = malformed > 0 ? 'text-amber-400 font-bold'
+      : refused > 0 ? 'text-slate-300 font-bold' : 'text-slate-400';
+    refusedEl.title = breakdown;
   }
 
   if (unreadableEl) {
@@ -4485,7 +4496,10 @@ function renderUpstreams(upstreams) {
     resolutionSettings.default_upstream || '',
     (resolutionSettings.encrypted_upstreams || []).join(','),
   ].join('~');
-  const sig = upstreams.map(u => u.address + ':' + (u.latency || 0)).join('|') + '|' + policySig;
+  const sig = upstreams.map(u => [
+    u.address, u.latency || 0, u.errors || 0, u.transport_errors || 0,
+    u.policy_errors || 0, u.circuit_open ? 1 : 0, u.last_error || '',
+  ].join(':')).join('|') + '|' + policySig;
   if (sig === lastUpstreamsSig) return;
   lastUpstreamsSig = sig;
 
@@ -4527,7 +4541,24 @@ function renderUpstreams(upstreams) {
     // "not timed yet" and "timed at 0.4 ms" have to look different, and the title is
     // where the distinction is spelled out for whoever hovers it.
     const latText = measured ? `${latency.toFixed(1)} ms` : '—';
-    const latTitle = measured ? 'Last measured round-trip' : 'Not measured yet — no answer has been timed from this upstream';
+    let latTitle = measured ? 'Last measured round-trip' : 'Not measured yet — no answer has been timed from this upstream';
+    const errorParts = [];
+    if (u.circuit_open) errorParts.push('circuit open — retrying soon');
+    if (u.transport_errors || u.policy_errors) {
+      errorParts.push(`transport ${u.transport_errors || 0} · policy ${u.policy_errors || 0}`);
+    }
+    if (u.last_error) errorParts.push(`last: ${u.last_error}`);
+    if (errorParts.length) latTitle += ` · ${errorParts.join(' · ')}`;
+
+    // No extra chip or line: the dot carries the state, and the latency badge's
+    // tooltip carries the numbers and the last error. This keeps the resolver
+    // list as compact as it was before the classification existed.
+    if (u.circuit_open) {
+      badgeClass = 'text-red-400 bg-red-500/10 border-red-500/30';
+      dotClass = 'w-2 h-2 rounded-full bg-red-400';
+    } else if (u.transport_errors > 0) {
+      dotClass = 'w-2 h-2 rounded-full bg-amber-400';
+    }
 
     const row = document.createElement('div');
     // A resolver the active transport excludes, or one a valid pin bypasses, is
@@ -4541,14 +4572,16 @@ function renderUpstreams(upstreams) {
     // square. min-w-0 lets the name shrink, truncate ellipsizes it, and the
     // badge keeps shrink-0 so it never wraps.
     row.innerHTML = `
-      <div class="flex items-center gap-2 min-w-0">
+      <div class="flex items-center gap-2 min-w-0 flex-1">
         <span class="${dotClass} shrink-0" aria-hidden="true"></span>
-        <!-- The address is its own horizontal scroll area, not a clipped ellipsis:
-             a DoH URL is routinely wider than this column and the operator needs
-             to read the whole host to know which resolver a latency belongs to.
-             Drag it, scroll it, or focus and use the arrow keys; the title is the
-             hover fallback. The dot and the latency/delete controls never move. -->
-        <span class="upstream-addr min-w-0 font-mono text-slate-200" tabindex="0" title="${escapeHTML(u.address)}">${escapeHTML(u.address)}</span>
+        <div class="min-w-0">
+          <!-- The address is its own horizontal scroll area, not a clipped ellipsis:
+               a DoH URL is routinely wider than this column and the operator needs
+               to read the whole host to know which resolver a latency belongs to.
+               Drag it, scroll it, or focus and use the arrow keys; the title is the
+               hover fallback. The dot and the latency/delete controls never move. -->
+          <span class="upstream-addr block min-w-0 font-mono text-slate-200" tabindex="0" title="${escapeHTML(u.address)}">${escapeHTML(u.address)}</span>
+        </div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <span class="shrink-0 px-2 py-0.5 rounded border ${badgeClass} text-[10px] font-bold font-mono whitespace-nowrap" title="${latTitle}">${latText}</span>
@@ -5643,15 +5676,33 @@ function applyChartTheme() {
 document.addEventListener('digitdns:theme', applyChartTheme);
 document.addEventListener('digitdns:theme', applyHistoryChartTheme);
 
-function initChart() {
+// Chart.js is 201 KB and the dashboard's first screen is useful before it
+// paints. Load it on demand, once, and let both charts share the same promise.
+let chartLibPromise = null;
+function ensureChartLib() {
+  if (typeof Chart !== 'undefined') return Promise.resolve(true);
+  if (!chartLibPromise) {
+    chartLibPromise = new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = ADMIN_BASE + '/js/chart.umd.min.js';
+      script.async = true;
+      script.onload = () => resolve(typeof Chart !== 'undefined');
+      script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    });
+  }
+  return chartLibPromise;
+}
+
+async function initChart() {
   try {
     const canvas = document.getElementById('qpsChart');
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (typeof Chart === 'undefined') {
-      console.warn('Chart.js not yet available');
+    if (!(await ensureChartLib())) {
+      console.warn('Chart.js could not be loaded');
       return;
     }
+    const ctx = canvas.getContext('2d');
 
     const pal = chartPalette(ctx);
 
@@ -5785,10 +5836,11 @@ function applyHistoryChartTheme() {
 }
 
 
-function ensureHistoryChart() {
+async function ensureHistoryChart() {
   if (historyChart) return historyChart;
   const canvas = document.getElementById('historyChart');
-  if (!canvas || typeof Chart === 'undefined') return null;
+  if (!canvas) return null;
+  if (!(await ensureChartLib())) return null;
   const p = historyPalette();
   try {
     historyChart = new Chart(canvas.getContext('2d'), {
@@ -5889,8 +5941,8 @@ function historyLabel(start, range, interval) {
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-function renderHistoryChart(series) {
-  const chart = ensureHistoryChart();
+async function renderHistoryChart(series) {
+  const chart = await ensureHistoryChart();
   if (!chart) return;
   const range = series.range || historyRange;
   const points = Array.isArray(series.points) ? series.points : [];
@@ -6094,17 +6146,18 @@ async function loadHistory(force = false) {
   const query = `range=${encodeURIComponent(range)}`;
   setHistoryStatus('Loading history…');
   try {
-    const requests = [
-      historyFetch(`/api/v3/stats/summary?${query}`),
-      historyFetch(`/api/v3/stats/series?${query}&interval=${interval}`),
-      ...HISTORY_TOP_DIMENSIONS.map((entry) =>
-        historyFetch(`/api/v3/stats/top?${query}&dimension=${encodeURIComponent(entry.dimension)}&limit=10`)),
-    ];
-    const [summary, series, ...tops] = await Promise.all(requests);
+    // One document instead of eight requests. The six ranked tables, the series
+    // and the summary all come from the same aggregate store, so splitting them
+    // only added round trips — seven extra on every refresh, on every client.
+    const data = await historyFetch(
+      `/api/v3/stats/history?${query}&interval=${encodeURIComponent(interval)}&limit=10`);
     if (seq !== historySeq) return;
-    renderHistorySummary(summary);
-    renderHistoryChart(series);
-    HISTORY_TOP_DIMENSIONS.forEach((entry, i) => renderHistoryTop(entry.id, tops[i], entry.empty, entry.dimension));
+    renderHistorySummary(data.summary);
+    await renderHistoryChart(data.series);
+    HISTORY_TOP_DIMENSIONS.forEach((entry) => {
+      const top = (data.tops && data.tops[entry.dimension]) || { items: [] };
+      renderHistoryTop(entry.id, top, entry.empty, entry.dimension);
+    });
     setHistoryError('');
     setHistoryStatus(`Updated ${new Date().toLocaleTimeString()} · ${range} aggregate`);
     scheduleHistoryRefresh();
@@ -7947,8 +8000,10 @@ function switchTab(target, updateUrl = true, loadData = true) {
         proxiedFillViewport();
         requestAnimationFrame(sizeProxiedScroll);
         // Agents enrol and go offline outside this tab, so refresh the cache
-        // before the relay column is read.
+        // before the relay column is read. Resolution profiles drive the gear
+        // dialog, so they are loaded with the list rather than on every boot.
         loadAgents();
+        loadResolutionSettings();
       }
       if (target === 'agents') {
         loadAgents();
@@ -7961,6 +8016,7 @@ function switchTab(target, updateUrl = true, loadData = true) {
         // so a restart performed elsewhere in the panel clears the pending note.
         loadDNSSECSettings();
         loadProxyLeakSettings();
+        loadResolutionSettings();
       }
       if (target === 'dashboard') {
         loadHistory();

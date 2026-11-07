@@ -109,6 +109,57 @@ func (a *API) handleV3StatsTop(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(a.withClientNames(out))
 }
 
+// handleV3StatsHistory returns one range's summary, series and every ranked
+// table in a single response. The web panel and Android used to fan out to eight
+// endpoints (summary + series + six tops) on every refresh; one document removes
+// seven round trips without changing any of the underlying aggregates.
+func (a *API) handleV3StatsHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		return
+	}
+	agg := a.stats.Aggregate()
+	if agg == nil {
+		writeProblemAt(w, r, http.StatusServiceUnavailable, "stats_unavailable", "historical stats are not available on this instance")
+		return
+	}
+	window := statsWindow(r)
+	interval := strings.TrimSpace(r.URL.Query().Get("interval"))
+	limit := 10
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "limit must be an integer")
+			return
+		}
+		limit = n
+	}
+
+	summary, err := agg.Summary(window)
+	if err != nil {
+		historicalStatsProblem(w, r, err)
+		return
+	}
+	series, err := agg.Series(window, interval)
+	if err != nil {
+		historicalStatsProblem(w, r, err)
+		return
+	}
+	tops := make(map[string]aggregate.Top, len(historyExportDimensions))
+	for _, dimension := range historyExportDimensions {
+		top, err := agg.Top(window, dimension, limit)
+		if err != nil {
+			historicalStatsProblem(w, r, err)
+			return
+		}
+		tops[dimension] = a.withClientNames(top)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"range": window, "summary": summary, "series": series, "tops": tops,
+	})
+}
+
 // withClientNames resolves an IP-keyed client row to the account's current name.
 // The aggregate store keeps the address as its identity, so this also fixes rows
 // written before names were available; a deleted or unknown client keeps its IP.

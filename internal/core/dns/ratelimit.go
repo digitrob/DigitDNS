@@ -2,7 +2,7 @@ package dns
 
 import (
 	"hash/maphash"
-	"net"
+	"net/netip"
 	"sync"
 	"time"
 )
@@ -117,6 +117,6 @@ func (l *rateLimiter) allow(ip string, peer ...string) bool {
 // value is not loopback: it arrives from a header on the DoH path and must not be
 // able to buy an exemption.
 func isLoopback(ip string) bool {
-	parsed := net.ParseIP(ip)
-	return parsed != nil && parsed.IsLoopback()
+	addr, err := netip.ParseAddr(ip)
+	return err == nil && addr.IsLoopback()
 }

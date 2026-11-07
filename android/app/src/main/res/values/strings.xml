@@ -538,6 +538,9 @@
         <item quantity="one">%1$d error</item>
         <item quantity="other">%1$d errors</item>
     </plurals>
+    <string name="upstream_error_breakdown">transport %1$d · policy %2$d</string>
+    <string name="upstream_last_error">last: %1$s</string>
+    <string name="upstream_circuit_open">circuit open — retrying soon</string>
     <string name="diag_not_tested">not tested</string>
     <string name="diag_unreachable">unreachable</string>
 

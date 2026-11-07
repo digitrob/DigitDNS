@@ -44,7 +44,7 @@ func TestRelayRouterIPv6OnlyAgentIsSelectable(t *testing.T) {
 	if !ok {
 		t.Fatal("an IPv6-only agent should be selectable")
 	}
-	if target.IPv4 != "" || target.IPv6 != "2001:db8::10" {
+	if target.IPv4 != nil || target.IPv6.String() != "2001:db8::10" {
 		t.Fatalf("target = %+v, want only the IPv6 address", target)
 	}
 }
@@ -60,7 +60,7 @@ func TestRelayRouterIgnoresIPv6WhenAgentOptedOut(t *testing.T) {
 	if !ok {
 		t.Fatal("the IPv4 address should keep the agent selectable")
 	}
-	if target.IPv4 != "203.0.113.10" || target.IPv6 != "" {
+	if target.IPv4.String() != "203.0.113.10" || target.IPv6 != nil {
 		t.Fatalf("target = %+v, want IPv4 with IPv6 suppressed", target)
 	}
 }

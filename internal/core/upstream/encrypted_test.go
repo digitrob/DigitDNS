@@ -56,12 +56,28 @@ func newTestCert(t *testing.T) (tls.Certificate, *x509.Certificate) {
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}, leaf
 }
 
+// countingListener counts accepted TCP connections, which for a TLS DNS server
+// is one per DoT connection.
+type countingListener struct {
+	net.Listener
+	n *atomic.Int64
+}
+
+func (l countingListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err == nil {
+		l.n.Add(1)
+	}
+	return c, err
+}
+
 // newDoTResolver starts a DNS server behind TLS on loopback and returns its
-// address, its leaf (for the client's root), and a hit counter. Only a TLS
-// listener exists, so a probe sent over plain UDP or TCP would fail to connect
-// and leave the counter at zero — which is what makes the benchmark test below a
-// real assertion about the transport, not just about the answer.
-func newDoTResolver(t *testing.T, reply func(string) answer) (addr string, leaf *x509.Certificate, hits *atomic.Int64) {
+// address, its leaf (for the client's root), a hit counter and a connection
+// counter. Only a TLS listener exists, so a probe sent over plain UDP or TCP
+// would fail to connect and leave the counter at zero — which is what makes the
+// benchmark test below a real assertion about the transport, not just about the
+// answer.
+func newDoTResolver(t *testing.T, reply func(string) answer) (addr string, leaf *x509.Certificate, hits, conns *atomic.Int64) {
 	t.Helper()
 	cert, leaf := newTestCert(t)
 	rawLn, err := net.Listen("tcp", "127.0.0.1:0")
@@ -71,15 +87,16 @@ func newDoTResolver(t *testing.T, reply func(string) answer) (addr string, leaf 
 	ln := tls.NewListener(rawLn, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})
 
 	hits = &atomic.Int64{}
+	conns = &atomic.Int64{}
 	r := &testResolver{}
-	srv := &dns.Server{Listener: ln, Handler: dns.HandlerFunc(func(w dns.ResponseWriter, req *dns.Msg) {
+	srv := &dns.Server{Listener: countingListener{Listener: ln, n: conns}, Handler: dns.HandlerFunc(func(w dns.ResponseWriter, req *dns.Msg) {
 		hits.Add(1)
 		r.reply(w, req, reply)
 	})}
 	go func() { _ = srv.ActivateAndServe() }()
 	t.Cleanup(func() { _ = srv.Shutdown() })
 
-	return rawLn.Addr().String(), leaf, hits
+	return rawLn.Addr().String(), leaf, hits, conns
 }
 
 // newDoHResolver starts an RFC 8484 endpoint and returns its URL, the server (whose
@@ -135,7 +152,7 @@ func newDoHResolver(t *testing.T, reply func(string) answer) (url string, srv *h
 }
 
 func TestDotUpstreamExchangesOverTLS(t *testing.T) {
-	addr, leaf, _ := newDoTResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "192.0.2.41"}))
+	addr, leaf, _, _ := newDoTResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "192.0.2.41"}))
 
 	p := newTestPool(t, []string{"tls://" + addr}, 2*time.Second, false, "")
 	roots := x509.NewCertPool()
@@ -154,8 +171,31 @@ func TestDotUpstreamExchangesOverTLS(t *testing.T) {
 // TestDotUpstreamRejectsUntrustedCertificate pins the strict verification: the
 // pool must not disable TLS validation. A DoT server whose certificate the client
 // does not trust has to fail, or "encrypted" would mean encrypted to anyone.
+// A warm DoT upstream must not pay a TLS handshake per query. This pins the
+// persistent-connection path: five exchanges, one accepted connection.
+func TestDotReusesOneConnection(t *testing.T) {
+	addr, leaf, hits, conns := newDoTResolver(t, always(answer{rcode: dns.RcodeSuccess, ip: "192.0.2.41"}))
+
+	p := newTestPool(t, []string{"tls://" + addr}, 2*time.Second, false, "")
+	roots := x509.NewCertPool()
+	roots.AddCert(leaf)
+	p.tlsClient.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}
+
+	for i := 0; i < 5; i++ {
+		if _, _, _, err := p.Exchange(query(probeName)); err != nil {
+			t.Fatalf("exchange %d over DoT: %v", i, err)
+		}
+	}
+	if hits.Load() != 5 {
+		t.Fatalf("DoT hits = %d, want 5", hits.Load())
+	}
+	if conns.Load() != 1 {
+		t.Fatalf("DoT opened %d connections for 5 queries, want 1", conns.Load())
+	}
+}
+
 func TestDotUpstreamRejectsUntrustedCertificate(t *testing.T) {
-	addr, _, _ := newDoTResolver(t, always(answer{rcode: dns.RcodeSuccess, ip: "192.0.2.41"}))
+	addr, _, _, _ := newDoTResolver(t, always(answer{rcode: dns.RcodeSuccess, ip: "192.0.2.41"}))
 
 	// The default pool trusts the system roots, which do not include the test leaf.
 	p := newTestPool(t, []string{"tls://" + addr}, 2*time.Second, false, "")
@@ -166,7 +206,7 @@ func TestDotUpstreamRejectsUntrustedCertificate(t *testing.T) {
 }
 
 func TestBenchmarkProbesDotOverTLS(t *testing.T) {
-	addr, leaf, hits := newDoTResolver(t, always(answer{rcode: dns.RcodeSuccess, ip: "192.0.2.51"}))
+	addr, leaf, hits, _ := newDoTResolver(t, always(answer{rcode: dns.RcodeSuccess, ip: "192.0.2.51"}))
 
 	p := newTestPool(t, []string{"tls://" + addr}, 2*time.Second, false, "")
 	roots := x509.NewCertPool()

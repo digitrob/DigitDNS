@@ -72,6 +72,12 @@ data class UpstreamStat(
     @SerialName("latency_ms") val latencyMs: Double = 0.0,
     val hits: Long = 0,
     val errors: Long = 0,
+    @SerialName("transport_errors") val transportErrors: Long = 0,
+    @SerialName("policy_errors") val policyErrors: Long = 0,
+    @SerialName("consecutive_failures") val consecutiveFailures: Int = 0,
+    @SerialName("circuit_open") val circuitOpen: Boolean = false,
+    @SerialName("last_error") val lastError: String = "",
+    @SerialName("last_error_at") val lastErrorAt: String = "",
 ) {
     /** Milliseconds to show, preferring the server's value. */
     val displayLatencyMs: Double get() = if (latencyMs > 0.0) latencyMs else latency / 1_000_000.0
