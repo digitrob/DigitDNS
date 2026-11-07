@@ -4047,6 +4047,12 @@ async function saveRules(silent = false) {
 //   of stale ones followed by a jump.
 const STATS_POLL_MS = 1000;
 
+// Off the home tab the tiles are not on screen, but the sidebar badges still need to
+// stay truthful. Five seconds keeps them current without paying the 1 Hz cost of a
+// dashboard nobody is looking at — the Logs tab is left open for long stretches, and
+// it was polling stats every second the whole time.
+const STATS_POLL_IDLE_MS = 5000;
+
 // While the poll is failing, back off instead of hammering a daemon that is already
 // unhappy once a second. The ceiling is low on purpose: a resolver that comes back up
 // should light the badge again within a few seconds, not after a minute of silence.
@@ -4079,9 +4085,10 @@ async function pollStatsOnce() {
   // The backoff reads statsFailures, which markStatsHealth already maintains for the
   // LIVE ENGINE badge. Deriving both from one counter keeps the page from claiming to
   // be live while polling every eight seconds, or the reverse.
+  const base = activeDashTab === 'dashboard' ? STATS_POLL_MS : STATS_POLL_IDLE_MS;
   const delay = statsFailures > 0
-    ? Math.min(STATS_POLL_MS * 2 ** statsFailures, STATS_POLL_MAX_BACKOFF_MS)
-    : STATS_POLL_MS;
+    ? Math.min(base * 2 ** statsFailures, STATS_POLL_MAX_BACKOFF_MS)
+    : base;
 
   statsPollTimer = setTimeout(pollStatsOnce, delay);
 }
@@ -6978,6 +6985,55 @@ async function refreshAllFiltering() {
   }
 }
 
+// testFilterRule asks the server which rule would decide a name. It is
+// deliberately read-only: the matcher is consulted, nothing is added or rebuilt,
+// so an operator can probe a suspicious domain without changing policy.
+async function testFilterRule() {
+  const input = document.getElementById('filter-test-input');
+  const out = document.getElementById('filter-test-result');
+  const btn = document.getElementById('filter-test-btn');
+  if (!out || !input) return;
+  const domain = input.value.trim().replace(/\.$/, '');
+  if (!domain) {
+    out.classList.remove('hidden');
+    out.textContent = 'Type a domain to test.';
+    out.className = 'text-xs text-slate-400 mt-1';
+    return;
+  }
+  out.classList.remove('hidden');
+  out.textContent = 'Testing…';
+  out.className = 'text-xs text-slate-400 mt-1';
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(api('/api/filter/test?domain=' + encodeURIComponent(domain)), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'The rule test failed.'));
+    const r = await res.json();
+    const action = String(r.action || 'DIRECT');
+    const tone = action === 'BLOCK' ? 'text-rose-300'
+      : action === 'PROXY' ? 'text-cyan-300'
+      : 'text-emerald-300';
+    const pattern = String(r.pattern || '');
+    const how = pattern
+      ? (pattern.startsWith('*.') ? `parent wildcard ${pattern}` : `exact entry ${pattern}`)
+      : 'no rule matched';
+    out.className = 'text-xs mt-1 flex flex-wrap items-center gap-2';
+    out.innerHTML =
+      `<span class="font-mono text-slate-400">${escapeHTML(domain)}</span>` +
+      `<span class="text-slate-600">→</span>` +
+      `<span class="font-bold ${tone}">${escapeHTML(action)}</span>` +
+      `<span class="text-slate-300">${escapeHTML(String(r.rule || 'Direct'))}</span>` +
+      `<span class="font-mono text-slate-500">${escapeHTML(how)}</span>`;
+  } catch (e) {
+    out.className = 'text-xs mt-1 text-amber-300';
+    out.textContent = e.message || 'The rule test failed.';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function initFiltering() {
   if (filteringInitialized) return;
   filteringInitialized = true;
@@ -6997,6 +7053,13 @@ function initFiltering() {
       '',
       document.getElementById('filtering-homepage-input')?.value || '',
     );
+  });
+  document.getElementById('filter-test-btn')?.addEventListener('click', testFilterRule);
+  document.getElementById('filter-test-input')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      testFilterRule();
+    }
   });
   document.getElementById('filtering-file-input')?.addEventListener('change', async (event) => {
     const file = event.target.files && event.target.files[0];
@@ -8258,6 +8321,13 @@ function switchTab(target, updateUrl = true, loadData = true) {
       }
       if (target === 'dashboard') {
         loadHistory();
+        // Returning from a slower tab: refresh the tiles now rather than waiting
+        // out the idle interval.
+        if (statsPollTimer) {
+          clearTimeout(statsPollTimer);
+          statsPollTimer = null;
+        }
+        pollStatsOnce();
         requestAnimationFrame(() => { if (historyChart) historyChart.resize(); });
       } else if (historyTimer) {
         clearTimeout(historyTimer);

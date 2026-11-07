@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -54,6 +55,7 @@ type cachedGzip struct {
 
 // staticAsset is one embedded file, prepared for serving.
 type staticAsset struct {
+	name        string // slash path without a leading slash
 	contentType string
 	body        []byte // the identity encoding, always present
 	gzipped     []byte // nil when compression was skipped or did not pay
@@ -67,6 +69,16 @@ type staticAsset struct {
 type staticServer struct {
 	assets map[string]*staticAsset
 	index  *staticAsset
+
+	// version fingerprints the embedded assets so their URLs can be made
+	// immutable. The dashboard used to revalidate every stylesheet, script and
+	// font on every load because /js/app.js keeps its name across builds. The
+	// document now references them as /js/app.js?v=<version>; a request carrying
+	// the current value is served with a one-year immutable lifetime, and an old
+	// bookmark or a document cached across an upgrade still revalidates because
+	// its version no longer matches. The value is content-derived, so any asset
+	// edit invalidates it automatically.
+	version string
 
 	// prefixedIndex caches the dashboard document rewritten for one admin
 	// namespace. Since v2.1 the SPA is served below a generated 16-hex path,
@@ -90,6 +102,10 @@ type staticServer struct {
 	loginRaw    *staticAsset
 	loginDoc    *staticAsset
 	loginPrefix string
+	// loginCSP is the policy for the rewritten login document. Its main inline
+	// script contains the admin namespace the server splices in, so it cannot use
+	// the dashboard's precomputed hashes.
+	loginCSP string
 }
 
 // newStaticServer reads the whole asset tree once. A file that cannot be read is
@@ -114,7 +130,29 @@ func newStaticServer(fsys fs.FS) *staticServer {
 	})
 
 	s.index = s.assets["index.html"]
+	s.version = assetVersion(s.assets)
 	return s
+}
+
+// assetVersion derive the cache-busting token from the bytes actually served.
+// The dashboard, its stylesheet and its two largest scripts are hashed together:
+// a change to any of them changes the token, which is what makes the one-year
+// immutable lifetime on the versioned URLs safe.
+func assetVersion(assets map[string]*staticAsset) string {
+	h := sha256.New()
+	for _, name := range []string{
+		"index.html",
+		"css/style.css",
+		"css/tailwind.purged.css",
+		"js/app.js",
+		"js/i18n.js",
+		"js/feather.min.js",
+	} {
+		if a := assets[name]; a != nil {
+			_, _ = h.Write(a.body)
+		}
+	}
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil)[:8])
 }
 
 // newStaticAsset prepares one file: content type, strong validator, and a gzip
@@ -124,6 +162,7 @@ func newStaticAsset(name string, body []byte) *staticAsset {
 	tag := base64.RawURLEncoding.EncodeToString(sum[:12])
 
 	a := &staticAsset{
+		name:        name,
 		contentType: contentTypeFor(name),
 		body:        body,
 		etag:        `"` + tag + `"`,
@@ -300,6 +339,13 @@ func (s *staticServer) prefixDocument(adminPath string) *staticAsset {
 	for _, p := range []string{"/api/v2/docs", "/api/v3/docs"} {
 		html = strings.ReplaceAll(html, `href="`+p+`"`, `href="`+prefix+p+`"`)
 	}
+	// Add the content fingerprint to every asset reference. The document itself
+	// stays no-cache; the files it names become immutable for as long as the
+	// fingerprint matches what this build serves.
+	refRe := regexp.MustCompile(`="` + regexp.QuoteMeta(prefix) + `/(?:css|js|fonts|img|swagger)/[^"?#]+"`)
+	html = refRe.ReplaceAllStringFunc(html, func(ref string) string {
+		return strings.TrimSuffix(ref, `"`) + "?v=" + s.version + `"`
+	})
 	return newStaticAsset("index.html", []byte(html))
 }
 
@@ -334,11 +380,18 @@ func (s *staticServer) serveLogin(w http.ResponseWriter, r *http.Request, adminP
 		// Always rewrite from the pristine copy: rewriting the already-rewritten
 		// body would leave nothing to replace after the first regeneration.
 		s.loginDoc = newStaticAsset(loginDocName, []byte(strings.ReplaceAll(string(s.loginRaw.body), adminBasePlaceholder, base)))
+		s.loginCSP = loginContentSecurityPolicy(s.loginDoc.body)
 		s.loginPrefix = adminPath
 	}
 	doc := s.loginDoc
+	csp := s.loginCSP
 	s.prefixMu.Unlock()
 
+	// Override the middleware's dashboard policy: this document's inline script
+	// contains the namespace, so its hash is specific to this admin path.
+	if csp != "" {
+		w.Header().Set("Content-Security-Policy", csp)
+	}
 	s.write(w, r, doc)
 	return true
 }
@@ -380,12 +433,16 @@ func (s *staticServer) serveIndex(w http.ResponseWriter, r *http.Request, adminP
 func (s *staticServer) write(w http.ResponseWriter, r *http.Request, a *staticAsset) {
 	h := w.Header()
 	h.Set("Content-Type", a.contentType)
-	// The URLs are not content-addressed — /js/app.js keeps its name across builds —
-	// so the browser must revalidate rather than trust a lifetime. no-cache means
-	// "reuse it, but ask first", which turns a repeat visit into a 304 with no body
-	// instead of a fresh download of every asset. Neither max-age nor immutable is
-	// safe here: an operator who upgrades the binary would keep the old panel.
-	h.Set("Cache-Control", "no-cache")
+	// The document is not content-addressed, so it must revalidate; the assets it
+	// names carry a ?v=<content fingerprint>, and a matching request can be cached
+	// for a year because the URL itself changes when the bytes do. A request with
+	// an old or missing fingerprint still gets no-cache, so an upgrade is picked up
+	// on the next load rather than after the lifetime expires.
+	if a.name != "index.html" && a.name != "login.html" && s.version != "" && r.URL.Query().Get("v") == s.version {
+		h.Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		h.Set("Cache-Control", "no-cache")
+	}
 	// Two representations share this URL, so any shared cache has to key on the
 	// request's encoding.
 	h.Set("Vary", "Accept-Encoding")

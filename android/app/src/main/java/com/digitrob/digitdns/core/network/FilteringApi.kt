@@ -8,6 +8,7 @@ import retrofit2.http.GET
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 /**
  * The v3 ad-blocking surface, from `internal/api/openapi/v3.json` and the
@@ -31,6 +32,13 @@ interface FilteringApi {
 
     @GET("filtering/presets")
     suspend fun presets(): FilteringPresetsDto
+
+    /**
+     * Ask the live matcher how it would classify a name. Read-only: nothing is
+     * added or recompiled by this call.
+     */
+    @GET("filter/test")
+    suspend fun testRule(@Query("domain") domain: String): RuleTestDto
 
     @POST("filtering/presets")
     suspend fun addPresets(@Body body: PresetAddRequest): PresetAddResultDto
@@ -170,4 +178,12 @@ data class FilterListAddRequest(
 @Serializable
 data class FilterListEnabledRequest(
     val enabled: Boolean,
+)
+
+@Serializable
+data class RuleTestDto(
+    val domain: String = "",
+    val action: String = "DIRECT",
+    val rule: String = "",
+    val pattern: String = "",
 )

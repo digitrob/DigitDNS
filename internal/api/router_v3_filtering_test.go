@@ -68,3 +68,28 @@ func TestV3_FilteringRoutes(t *testing.T) {
 		t.Fatalf("filtering without credential = %d, want 401", w.Code)
 	}
 }
+
+// The rule tester is read-only and reachable with the master API key, which is
+// what lets the Android client use it without a browser session.
+func TestV3_FilterTestRoute(t *testing.T) {
+	apiInst, _, _, cleanup := setupTestAPI(t)
+	defer cleanup()
+	apiInst.SetV3Backend(&fakeV3Backend{})
+	mux := http.NewServeMux()
+	apiInst.RegisterRoutes(mux)
+	const key = "digitdns_live_testkey123"
+
+	w := v3Request(mux, http.MethodGet, "/api/v3/filter/test?domain=example.com", key, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("filter test = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var out map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	if out["domain"] != "example.com" || out["action"] != "DIRECT" {
+		t.Fatalf("filter test body = %v", out)
+	}
+
+	if w := v3Request(mux, http.MethodPost, "/api/v3/filter/test", key, map[string]any{}); w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST filter test = %d, want 405", w.Code)
+	}
+}

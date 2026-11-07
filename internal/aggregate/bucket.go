@@ -109,7 +109,7 @@ func (b *Bucket) recordTotal() {
 func (b *Bucket) record(item database.QueryLogItem, cfg Config, clientSalt []byte) {
 	b.ensureMaps()
 
-	action := strings.ToUpper(strings.TrimSpace(item.Action))
+	action := canonicalAction(item.Action)
 	if action == "" {
 		action = "UNKNOWN"
 	}
@@ -135,7 +135,7 @@ func (b *Bucket) record(item database.QueryLogItem, cfg Config, clientSalt []byt
 		b.Failed++
 	}
 
-	proto := strings.ToUpper(strings.TrimSpace(item.Protocol))
+	proto := canonicalProtocol(item.Protocol)
 	if proto == "" {
 		proto = "UNKNOWN"
 	}
@@ -325,6 +325,45 @@ func isReverseDNSName(name string) bool {
 		strings.HasSuffix(name, ".in-addr.arpa") ||
 		name == "ip6.arpa" ||
 		strings.HasSuffix(name, ".ip6.arpa")
+}
+
+// canonicalAction normalizes an action label without the allocations that a
+// ToUpper(TrimSpace(...)) pair costs on every logged query. The resolver emits a
+// small fixed vocabulary, so the common case returns a constant. Anything else
+// (an imported log line, a future action) falls back to the general form so two
+// distinct labels can never be merged by accident.
+func canonicalAction(s string) string {
+	switch s {
+	case "DIRECT", "BLOCK", "PROXY", "CACHED", "STALE",
+		"RATELIMIT", "QUOTA", "PROXY_FAILED",
+		"PROXY_IPV6_SINK", "PROXY_HTTPS_SINK":
+		return s
+	case "":
+		return "UNKNOWN"
+	}
+	return strings.ToUpper(strings.TrimSpace(s))
+}
+
+// canonicalProtocol preserves the historical label spelling exactly: the buckets
+// have always held upper-case protocol names ("DOT", "DOH"), and changing them
+// would silently split every existing aggregate. Only the common values skip the
+// allocation.
+func canonicalProtocol(s string) string {
+	switch s {
+	case "UDP", "TCP":
+		return s
+	case "DoT", "DOT":
+		return "DOT"
+	case "DoH", "DOH":
+		return "DOH"
+	case "DoQ", "DOQ":
+		return "DOQ"
+	case "DoH3", "DOH3":
+		return "DOH3"
+	case "":
+		return "UNKNOWN"
+	}
+	return strings.ToUpper(strings.TrimSpace(s))
 }
 
 func qtypeName(qtype uint16) string {

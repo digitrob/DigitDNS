@@ -1514,6 +1514,31 @@
             </p>
           </div>
         </div>
+
+        <!-- Rule tester. Read-only: it asks the live matcher what it would do with
+             a name, including which list and whether the match was exact or a
+             parent wildcard. -->
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-3">
+          <div>
+            <h3 class="panel-card-header">
+              <i data-feather="search" class="w-4 h-4"></i> Rule tester
+            </h3>
+            <p class="text-[11px] text-slate-400 mt-1">
+              Check how the live rules classify a name before adding or debugging one.
+              The result shows the action, the matching list and whether an exact entry
+              or a parent wildcard applied.
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <input type="text" id="filter-test-input" maxlength="253" autocomplete="off"
+              spellcheck="false" placeholder="ads.example.com"
+              class="panel-field flex-1 min-w-0 font-mono" aria-label="Domain to test">
+            <button type="button" id="filter-test-btn" class="panel-btn panel-btn-primary shrink-0">
+              Test rule
+            </button>
+          </div>
+          <div id="filter-test-result" class="hidden" aria-live="polite"></div>
+        </div>
       </section>
 
       <!-- ============================================== -->

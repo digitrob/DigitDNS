@@ -608,6 +608,10 @@ func (b *v3Backend) FilteringPresets(r *http.Request) (map[string]any, error) {
 	return b.delegateRequest(r, b.ws.handleFilteringPresets)
 }
 
+func (b *v3Backend) FilterTest(r *http.Request) (map[string]any, error) {
+	return b.delegateRequest(r, b.ws.handleFilterTest)
+}
+
 func (b *v3Backend) AddFilteringList(r *http.Request) (map[string]any, error) {
 	return b.delegateRequest(r, b.ws.handleFilterLists)
 }

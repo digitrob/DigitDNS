@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.core.notifications
 
+import com.digitrob.digitdns.core.network.StreamClient
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -24,7 +25,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class LiveStreamClient @Inject constructor(
-    private val client: OkHttpClient,
+    @StreamClient private val client: OkHttpClient,
 ) {
     /** What the service hears back. Mirrors the EventSource callbacks the service uses. */
     interface Listener {

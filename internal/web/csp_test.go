@@ -247,3 +247,34 @@ func TestCSPAllowsCrossOriginServiceIcons(t *testing.T) {
 		t.Error("img-src must allow https: images or service favicons never render")
 	}
 }
+
+// Each inline block the dashboard serves must be authorized by its own hash.
+// 'unsafe-inline' is gone from script-src, so a block that is not listed here
+// would simply not run — the failure mode this test exists to catch before a
+// browser shows it.
+func TestInlineScriptsAreAuthorizedByHash(t *testing.T) {
+	if strings.Contains(contentSecurityPolicy, "script-src 'self' 'unsafe-inline'") {
+		t.Fatal("script-src still allows 'unsafe-inline'; hashes are what replaced it")
+	}
+	html := []byte(readAsset(t, "index.html"))
+	hashes := inlineScriptHashes(html)
+	if len(hashes) != 2 {
+		t.Fatalf("index.html yielded %d inline-script hashes, want 2", len(hashes))
+	}
+	for _, h := range hashes {
+		if !strings.Contains(contentSecurityPolicy, h) {
+			t.Errorf("inline script hash %s is missing from contentSecurityPolicy", h)
+		}
+	}
+}
+
+// login.html's main block contains the spliced admin namespace, so its hash is
+// per path and must match the bytes the page actually serves.
+func TestLoginPolicyHashesItsRewrittenScript(t *testing.T) {
+	doc := []byte(`<script>var ADMIN_BASE = "/0123456789abcdef";</script>`)
+	policy := loginContentSecurityPolicy(doc)
+	hash := inlineScriptHashes(doc)
+	if len(hash) != 1 || !strings.Contains(policy, hash[0]) {
+		t.Fatalf("login policy %q does not authorize %v", policy, hash)
+	}
+}

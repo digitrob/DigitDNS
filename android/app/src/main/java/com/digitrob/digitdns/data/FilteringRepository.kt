@@ -8,6 +8,7 @@ import com.digitrob.digitdns.core.network.FilteringSettingsRequest
 import com.digitrob.digitdns.core.network.FilteringStatusDto
 import com.digitrob.digitdns.core.network.PresetAddRequest
 import com.digitrob.digitdns.core.network.PresetAddResultDto
+import com.digitrob.digitdns.core.network.RuleTestDto
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -60,4 +61,7 @@ class FilteringRepository @Inject constructor(
     suspend fun update(id: String) {
         api.update(id)
     }
+
+    /** Read-only rule probe against the live matcher. */
+    suspend fun testRule(domain: String): RuleTestDto = api.testRule(domain)
 }

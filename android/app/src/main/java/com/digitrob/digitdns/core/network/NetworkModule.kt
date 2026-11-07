@@ -38,8 +38,13 @@ private const val CONNECT_TIMEOUT_SECONDS = 15L
 /** Seconds to wait to finish sending a request body. */
 private const val WRITE_TIMEOUT_SECONDS = 15L
 
-/** Zero disables the read timeout, which the idle-between-events SSE stream requires. */
-private const val STREAM_READ_TIMEOUT_MILLIS = 0L
+/**
+ * Seconds to wait for a response byte on an ordinary request. This used to be 0
+ * (disabled) because the live stream shared the client, which meant a stalled
+ * stats call could hang a coroutine forever and leave a spinner up. The stream now
+ * gets its own client (StreamClientModule), so only the stream waits indefinitely.
+ */
+private const val READ_TIMEOUT_SECONDS = 20L
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -84,7 +89,7 @@ object NetworkModule {
             // The live stream holds a long connection that is idle between events, so
             // the read timeout must be disabled or SSE would be torn down mid-wait.
             .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            .readTimeout(STREAM_READ_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+            .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
         // TOFU only applies to the active install's host — resolved per handshake,

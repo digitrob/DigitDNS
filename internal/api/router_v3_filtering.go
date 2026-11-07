@@ -143,3 +143,24 @@ func (a *API) handleV3FilteringListItem(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
+
+// handleV3FilterTest asks the live matcher which rule would decide a name. It is
+// read-only: the dashboard handler it delegates to adds, removes and recompiles
+// nothing.
+func (a *API) handleV3FilterTest(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		return
+	}
+	resp, err := a.v3Backend.FilterTest(r)
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}

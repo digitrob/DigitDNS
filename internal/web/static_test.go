@@ -451,3 +451,40 @@ func TestUnusableVendorStylesheetIsNotEmbedded(t *testing.T) {
 		}
 	}
 }
+
+// Versioned asset URLs are the only ones that may be cached for a year. The
+// document itself, an unversioned request and a request carrying a stale
+// fingerprint all have to keep revalidating, or an upgrade would leave an
+// operator on the old panel with no way to notice.
+func TestVersionedAssetURLsAreImmutable(t *testing.T) {
+	s := testAssets()
+
+	versioned := get(t, s, "/js/app.js?v="+s.version, nil)
+	if got, want := versioned.Header().Get("Cache-Control"), "public, max-age=31536000, immutable"; got != want {
+		t.Errorf("versioned Cache-Control = %q, want %q", got, want)
+	}
+
+	for _, path := range []string{"/js/app.js", "/js/app.js?v=stale", "/index.html?v=" + s.version} {
+		if got := get(t, s, path, nil).Header().Get("Cache-Control"); got != "no-cache" {
+			t.Errorf("%s Cache-Control = %q, want no-cache", path, got)
+		}
+	}
+}
+
+// The dashboard's asset references must carry the same fingerprint the static
+// server compares against, otherwise no asset is ever served immutably.
+func TestPrefixDocumentVersionsAssetReferences(t *testing.T) {
+	s := newStaticServer(fstest.MapFS{
+		"index.html":    {Data: []byte(`<html><script src="/js/app.js"></script><link href="/css/style.css"></html>`)},
+		"js/app.js":     {Data: bigJS},
+		"css/style.css": {Data: []byte(".x{color:red}")},
+	})
+	doc := s.prefixDocument("abc123")
+	want := "?v=" + s.version
+	if !bytes.Contains(doc.body, []byte("/abc123/js/app.js"+want)) {
+		t.Fatalf("script reference is not versioned: %s", doc.body)
+	}
+	if !bytes.Contains(doc.body, []byte("/abc123/css/style.css"+want)) {
+		t.Fatalf("stylesheet reference is not versioned: %s", doc.body)
+	}
+}

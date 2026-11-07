@@ -880,6 +880,11 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/update/apply", ws.requireAuth(ws.handleUpdateApply))
 	mux.HandleFunc("/api/update/status", ws.requireAuth(ws.handleUpdateStatus))
 
+	// Prometheus scrape surface. The master REST key (or a live dashboard
+	// session) may read it; unlike the dashboard routes, the API key is accepted
+	// because a scraper has no browser session to present.
+	mux.HandleFunc("/api/metrics", ws.requireAuthWithMasterKey(ws.handleMetrics))
+
 	// 6. Internal Dashboard Ajax APIs (all authenticated)
 	mux.HandleFunc("/api/icons/search", ws.requireAuth(ws.handleIconSearch))
 	mux.HandleFunc("/api/dashboard/layout", ws.requireAuth(ws.handleDashboardLayout))
@@ -900,6 +905,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/filtering/refresh", ws.requireAuth(ws.handleFilteringRefresh))
 	mux.HandleFunc("/api/filtering/presets", ws.requireAuth(ws.handleFilteringPresets))
 	mux.HandleFunc("/api/filtering/lists", ws.requireAuth(ws.handleFilterLists))
+	mux.HandleFunc("/api/filter/test", ws.requireAuth(ws.handleFilterTest))
 	mux.HandleFunc("/api/filtering/lists/", ws.requireAuth(ws.handleFilterListItem))
 	mux.HandleFunc("/api/clients", ws.requireAuth(ws.agentMutation(ws.handleClients)))
 	mux.HandleFunc("/api/clients/add", ws.requireAuth(ws.agentMutation(ws.handleClientsAdd)))
@@ -1090,48 +1096,19 @@ func (ws *WebServer) withSecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// contentSecurityPolicy is the policy sent on every route this handler serves — the
-// dashboard, the subscriber portal, and the JSON API alike.
+// contentSecurityPolicy is built in csp.go: it is the base policy plus the
+// SHA-256 of every inline script in the served dashboard document. script-src no
+// longer carries 'unsafe-inline', so an injected <script> is refused even if it
+// reaches the markup. login.html is hashed per admin path in serveLogin because
+// its block contains the spliced namespace.
 //
-// 'unsafe-eval' is gone (v2.1): the Tailwind Play CDN JIT engine that needed it was
-// replaced by the committed purged stylesheet /css/tailwind.purged.css, and
-// TestUnsafeEvalIsTiedToTheJITEngine keeps the two tied — reintroducing the engine
-// without reintroducing the relaxation fails the suite, and vice versa.
-//
-// 'unsafe-inline' in script-src now covers exactly one block: the pre-paint
-// theme/language restore at the top of index.html, which must run before the first
-// paint and cannot afford a second round trip as an external file. Everything else
-// that used to need it is gone — the tailwind.config block died with the JIT engine,
-// index.html's event handlers became delegated listeners in app.js, and the
-// subscriber portal's inline <script>, inline <style> and fifteen onclick
-// attributes became /js/portal.js and /css/portal.css. style-src 'unsafe-inline'
-// remains for the operator's custom portal stylesheet, which is rendered as a
-// <style> element by design.
-//
-// What the policy already buys is the part that matters against a stored-XSS payload
-// in a domain name or a client note: every source is 'self', so an injected
-// <script src> or a fetch to an attacker's host is refused, and default-src blocks
-// plugins and workers. 'unsafe-inline' does not weaken that.
-//
-// It also applies to the portal, which is worth stating because the portal is the one
-// page served to a stranger: a subscription URL is public by construction, so /sub/,
-// /ip/ and /api/sub/ are the routes an attacker can reach without credentials.
+// It applies to the portal too, which is worth stating because the portal is the
+// one page served to a stranger: a subscription URL is public by construction, so
+// /sub/, /ip/ and /api/sub/ are the routes an attacker can reach without
+// credentials.
 //
 // connect-src includes ws:/wss: because the log stream may be upgraded from SSE.
 // frame-ancestors duplicates X-Frame-Options for browsers that dropped the latter.
-const contentSecurityPolicy = "default-src 'self'; " +
-	"script-src 'self' 'unsafe-inline'; " +
-	"style-src 'self' 'unsafe-inline'; " +
-	// https: is allowed for images because a service's mark is an operator-chosen
-	// favicon or icon URL, which is necessarily cross-origin. It cannot execute or
-	// read anything: img-src only permits rendering the response.
-	"img-src 'self' data: blob: https:; " +
-	"font-src 'self' data:; " +
-	"connect-src 'self' ws: wss:; " +
-	"object-src 'none'; " +
-	"base-uri 'self'; " +
-	"form-action 'self'; " +
-	"frame-ancestors 'none'"
 
 // cspFor returns the response's Content-Security-Policy. It is the static policy
 // above, with one portal-specific widening: when the operator's custom portal

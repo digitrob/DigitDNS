@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.2.11] — faster panel, Prometheus metrics and a rule tester
+
+- Asset URLs now carry a content fingerprint (`/js/app.js?v=…`). A matching
+  request is served with `Cache-Control: public, max-age=31536000, immutable`;
+  the document and stale fingerprints still revalidate, so an upgrade is never
+  pinned to an old bundle.
+- The dashboard polls `/api/stats` once a second only on the Dashboard tab and
+  every five seconds elsewhere, refreshing immediately when the tab returns.
+- `script-src` no longer allows `'unsafe-inline'`. The two dashboard inline
+  scripts and the per-admin-path login script are authorised by SHA-256 hashes.
+- New `GET /api/metrics` (Prometheus text format, guarded by the master REST
+  key or a dashboard session): build info, queries, QPS, cache, refreshes,
+  relays, CPU/RAM, goroutines and latency quantiles. No unbounded labels.
+- New read-only rule tester: `GET /api/filter/test?domain=…` and
+  `GET /api/v3/filter/test`, with a card in the web Ad Blocking tab and the
+  Android Ad Blocking screen. It reports the action, the matching list and
+  whether an exact entry or a parent wildcard applied.
+- The aggregator normalises the fixed action/protocol vocabulary without
+  allocating on the common path; `BenchmarkBucketRecord` records the result.
+- Android: ordinary API calls have a 20-second read timeout again. Only the SSE
+  client disables it, so a stalled stats call can no longer hang a coroutine.
+- Android: the upstream resolver rows no longer show the amber
+  `transport … · policy … · last: …` line. The status dot and latency colour
+  remain.
+
 ## 🏷️ [v5.2.10] — update modal can no longer spin forever
 
 - `GET /api/update/status` now clears a `Running` flag that has outlived the

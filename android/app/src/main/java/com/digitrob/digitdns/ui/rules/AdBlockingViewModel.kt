@@ -73,6 +73,12 @@ data class AdBlockingUiState(
     val customFileName: String = "",
     val customSaving: Boolean = false,
     val deleteTarget: FilterListDto? = null,
+    // Read-only rule probe. Kept separate from the roster state so a failed test
+    // never looks like a failed list update.
+    val testDomain: String = "",
+    val testLoading: Boolean = false,
+    val testResult: com.digitrob.digitdns.core.network.RuleTestDto? = null,
+    val testError: String? = null,
 )
 
 private val GROUP_ORDER = listOf(
@@ -166,6 +172,31 @@ class AdBlockingViewModel @Inject constructor(
     fun onSearchChange(value: String) {
         _state.update { it.copy(search = value) }
         recompute()
+    }
+
+    fun onTestDomainChange(value: String) {
+        _state.update { it.copy(testDomain = value, testError = null) }
+    }
+
+    /**
+     * Ask the daemon how it would classify the typed name. Nothing is added or
+     * recompiled: the answer is the same one the query log would record.
+     */
+    fun testRule() {
+        val domain = _state.value.testDomain.trim().trimEnd('.')
+        if (domain.isEmpty()) {
+            _state.update { it.copy(testError = "Type a domain to test.") }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(testLoading = true, testError = null, testResult = null) }
+            try {
+                val result = repository.testRule(domain)
+                _state.update { it.copy(testLoading = false, testResult = result) }
+            } catch (e: Throwable) {
+                _state.update { it.copy(testLoading = false, testError = errorText(e)) }
+            }
+        }
     }
 
     fun setEnabled(value: Boolean) = _state.update { it.copy(enabled = value) }

@@ -157,6 +157,7 @@ type V3Backend interface {
 	SaveFilteringSettings(r *http.Request) (map[string]any, error)
 	RefreshFiltering(r *http.Request) (map[string]any, error)
 	FilteringPresets(r *http.Request) (map[string]any, error)
+	FilterTest(r *http.Request) (map[string]any, error)
 	AddFilteringList(r *http.Request) (map[string]any, error)
 	FilteringListItem(r *http.Request, rest string) (map[string]any, error)
 }
@@ -214,6 +215,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/filtering/settings", a.SecurityMiddlewareV3(a.handleV3FilteringSettings))
 	mux.HandleFunc("/api/v3/filtering/refresh", a.SecurityMiddlewareV3(a.handleV3FilteringRefresh))
 	mux.HandleFunc("/api/v3/filtering/presets", a.SecurityMiddlewareV3(a.handleV3FilteringPresets))
+	mux.HandleFunc("/api/v3/filter/test", a.SecurityMiddlewareV3(a.handleV3FilterTest))
 	mux.HandleFunc("/api/v3/filtering/lists", a.SecurityMiddlewareV3(a.handleV3FilteringLists))
 	mux.HandleFunc("/api/v3/filtering/lists/", a.SecurityMiddlewareV3(a.handleV3FilteringListItem))
 

@@ -1,0 +1,103 @@
+package web
+
+import (
+	"fmt"
+	"net/http"
+	"runtime"
+	"strings"
+
+	"digitdns/internal/httpx"
+	"digitdns/internal/version"
+)
+
+// Metrics is the Prometheus scrape surface. It is scratch-built rather than
+// pulling in the client library: the exposition format is a few lines of text,
+// and this project keeps its module graph small on purpose.
+//
+// Authorization is the master REST key (or a live dashboard session). Prometheus
+// sends the key as `Authorization: Bearer <key>`; the same key already guards the
+// v2/v3 APIs, so no second credential has to be stored or rotated.
+//
+// Cardinality is deliberately bounded: labels are fixed vocabularies (version,
+// channel) and quantiles. No domain names, client addresses or account names —
+// those belong to the dashboard, not to a time-series database.
+func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
+		return
+	}
+	if ws.stats == nil {
+		http.Error(w, "metrics unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	st := ws.stats.GetLiveStats()
+	info := version.Get()
+
+	var b strings.Builder
+	writeMetric := func(name, help, kind string, value any) {
+		fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s %s\n%s %v\n", name, help, name, kind, name, value)
+	}
+
+	// A constant 1 carrying build labels: the standard way to join a dashboard to
+	// the running version.
+	b.WriteString("# HELP digitdns_build_info Build identity of the running daemon.\n")
+	b.WriteString("# TYPE digitdns_build_info gauge\n")
+	fmt.Fprintf(&b, "digitdns_build_info{version=%q,channel=%q,hash=%q,go=%q} 1\n",
+		info.Version, info.Channel, info.Hash, runtime.Version())
+
+	writeMetric("digitdns_uptime_seconds", "Seconds since the daemon started.", "gauge", st.UptimeSec)
+	writeMetric("digitdns_queries_total", "Queries answered since start.", "counter", st.TotalQueries)
+	writeMetric("digitdns_qps", "Queries per second over the current window.", "gauge", st.QPS)
+	writeMetric("digitdns_rate_limited_total", "Queries refused by the per-source rate limiter.", "counter", st.RateLimited)
+	writeMetric("digitdns_panics_total", "Panics recovered at a request boundary.", "counter", st.PanicsTotal)
+
+	writeMetric("digitdns_cache_entries", "Entries currently held in the DNS cache.", "gauge", st.CacheItems)
+	writeMetric("digitdns_cache_hits_total", "DNS cache hits since start.", "counter", st.CacheHits)
+	writeMetric("digitdns_cache_misses_total", "DNS cache misses since start.", "counter", st.CacheMisses)
+	writeMetric("digitdns_cache_hit_ratio", "Cache hit ratio in the range 0..1.", "gauge", st.CacheHitRate/100.0)
+
+	writeMetric("digitdns_stale_served_total", "Expired entries served while a refresh ran.", "counter", st.StaleServed)
+	writeMetric("digitdns_refresh_started_total", "Background cache refreshes started.", "counter", st.RefreshStarted)
+	writeMetric("digitdns_refresh_failed_total", "Background cache refreshes that failed.", "counter", st.RefreshFailed)
+	writeMetric("digitdns_refresh_dropped_total", "Refreshes skipped because the pool was saturated.", "counter", st.RefreshDropped)
+
+	writeMetric("digitdns_relays_active", "SNI relay connections currently open.", "gauge", st.ActiveRelays)
+	writeMetric("digitdns_relays_total", "SNI relay connections since start.", "counter", st.TotalRelays)
+	writeMetric("digitdns_relay_bytes_sent_total", "Bytes sent through the SNI relay.", "counter", st.BytesSent)
+	writeMetric("digitdns_relay_bytes_received_total", "Bytes received through the SNI relay.", "counter", st.BytesRecv)
+	writeMetric("digitdns_relays_refused_total", "Relay connections refused (blocked, self-dial, quota, table full).", "counter", st.RelaysRefused)
+	writeMetric("digitdns_relays_unreadable_total", "Relay connections whose opening bytes named no destination.", "counter", st.RelaysUnreadable)
+
+	writeMetric("digitdns_cpu_percent", "Process CPU usage percentage.", "gauge", st.CPUUsagePercent)
+	writeMetric("digitdns_system_cpu_percent", "Machine-wide CPU usage percentage.", "gauge", st.SystemCPUPercent)
+	writeMetric("digitdns_memory_alloc_bytes", "Bytes of allocated heap objects.", "gauge", st.AllocMemoryMB*1024*1024)
+	writeMetric("digitdns_memory_sys_bytes", "Bytes obtained from the OS.", "gauge", st.SysMemoryMB*1024*1024)
+	writeMetric("digitdns_system_memory_used_bytes", "Machine-wide used memory in bytes.", "gauge", st.SystemMemUsedMB*1024*1024)
+	writeMetric("digitdns_system_memory_total_bytes", "Machine-wide total memory in bytes.", "gauge", st.SystemMemTotalMB*1024*1024)
+	writeMetric("digitdns_goroutines", "Goroutines currently running.", "gauge", st.NumGoroutines)
+
+	// Latency as summary quantiles. The histogram buckets behind these numbers are
+	// already maintained for the dashboard, so the scrape reuses them rather than
+	// keeping a second set for Prometheus.
+	b.WriteString("# HELP digitdns_latency_ms Query service time in milliseconds.\n")
+	b.WriteString("# TYPE digitdns_latency_ms summary\n")
+	for _, q := range []struct {
+		label string
+		value float64
+	}{{"0.5", st.Latency.P50Ms}, {"0.95", st.Latency.P95Ms}, {"0.99", st.Latency.P99Ms}} {
+		fmt.Fprintf(&b, "digitdns_latency_ms{quantile=%q,cached=%q} %v\n", q.label, "all", q.value)
+	}
+	for _, q := range []struct {
+		label string
+		value float64
+	}{{"0.5", st.LatencyUncached.P50Ms}, {"0.95", st.LatencyUncached.P95Ms}, {"0.99", st.LatencyUncached.P99Ms}} {
+		fmt.Fprintf(&b, "digitdns_latency_ms{quantile=%q,cached=%q} %v\n", q.label, "never", q.value)
+	}
+	fmt.Fprintf(&b, "digitdns_latency_ms_count %d\n", st.Latency.Count)
+	fmt.Fprintf(&b, "digitdns_latency_ms_sum %v\n", st.Latency.AvgMs*float64(st.Latency.Count))
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(b.String()))
+}

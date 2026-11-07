@@ -481,22 +481,6 @@ private fun UpstreamRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                val breakdown = stringResource(R.string.upstream_error_breakdown, stat.transportErrors, stat.policyErrors)
-                val lastError = stringResource(R.string.upstream_last_error, stat.lastError)
-                val detail = listOfNotNull(
-                    stringResource(R.string.upstream_circuit_open).takeIf { stat.circuitOpen },
-                    breakdown.takeIf { stat.transportErrors > 0 || stat.policyErrors > 0 },
-                    lastError.takeIf { stat.lastError.isNotBlank() },
-                ).joinToString(" · ").ifBlank { null }
-                if (detail != null) {
-                    Text(
-                        text = detail,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (stat.circuitOpen) colors.danger else colors.warning,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
             }
             Text(
                 text = if (stat.isMeasured) "%.1f ms".format(stat.displayLatencyMs) else "—",

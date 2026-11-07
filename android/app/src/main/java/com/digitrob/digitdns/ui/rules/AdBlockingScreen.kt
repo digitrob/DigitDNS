@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.core.network.FilterListDto
+import com.digitrob.digitdns.core.network.RuleTestDto
 import com.digitrob.digitdns.ui.formatCount
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelDialog
@@ -240,6 +241,98 @@ private fun Roster(
                 modifier = Modifier.padding(horizontal = 2.dp),
             )
         }
+        item { RuleTesterCard(state, viewModel) }
+    }
+}
+
+/**
+ * Read-only rule probe: the same question the web panel answers. It never edits
+ * the roster, so a test result cannot be mistaken for a policy change.
+ */
+@Composable
+private fun RuleTesterCard(state: AdBlockingUiState, viewModel: AdBlockingViewModel) {
+    PanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = 12.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "Rule tester",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "Check how the live rules classify a name before adding or debugging one. " +
+                    "The result shows the action, the matching list and whether an exact entry " +
+                    "or a parent wildcard applied.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = state.testDomain,
+                    onValueChange = viewModel::onTestDomainChange,
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    label = { Text("Domain") },
+                    placeholder = { Text("ads.example.com") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                )
+                Button(onClick = viewModel::testRule, enabled = !state.testLoading) {
+                    if (state.testLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Test")
+                    }
+                }
+            }
+            state.testError?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = DigitDnsTheme.colors.danger)
+            }
+            state.testResult?.let { RuleTestResultRow(it) }
+        }
+    }
+}
+
+@Composable
+private fun RuleTestResultRow(result: RuleTestDto) {
+    val actionColor = when (result.action.uppercase()) {
+        "BLOCK" -> DigitDnsTheme.colors.danger
+        "PROXY" -> MaterialTheme.colorScheme.primary
+        else -> ActiveGreen
+    }
+    val how = when {
+        result.pattern.startsWith("*.") -> "parent wildcard ${result.pattern}"
+        result.pattern.isNotEmpty() -> "exact entry ${result.pattern}"
+        else -> "no rule matched"
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                result.domain,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = PanelMono,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("\u2192", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                result.action,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = actionColor,
+            )
+            Text(result.rule.ifBlank { "Direct" }, style = MaterialTheme.typography.bodySmall)
+        }
+        Text(
+            how,
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = PanelMono,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

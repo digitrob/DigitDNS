@@ -53,6 +53,17 @@ The same release adds the v3 DNSSEC settings route, a compact Android card that
 opens with the real saved state, shared status-pill styling, and DNSSEC-aware
 cache keys so DO=0 clients never receive signature or denial records.
 
+**5.2.11 makes the panel and the phone faster and adds two operator tools.**
+Assets are now served from content-versioned URLs with a one-year immutable
+cache, so repeat visits stop revalidating every script and stylesheet. The
+dashboard polls stats once a second only on the Dashboard tab. The CSP drops
+`script-src 'unsafe-inline'` in favour of SHA-256 hashes for the inline boot
+scripts. A Prometheus `/api/metrics` endpoint and a read-only rule tester
+(web and Android) answer the two questions operators ask most: “how is the
+resolver doing?” and “why is this domain blocked?”. On Android, ordinary API
+calls get a finite read timeout again, and the upstream rows no longer carry
+the transport/policy/last-error line.
+
 **5.2.10 finishes the stuck-updater fix.** The progress modal now treats a
 finished or restarted apply as terminal instead of polling an idle status
 forever, and the status endpoint heals a stale `Running` flag even when the
@@ -315,7 +326,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.10/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.11/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -374,7 +385,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.10/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.11/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -457,7 +468,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.2.10` | Update modal reaches a terminal state and the status endpoint heals a stale Running flag (latest) |
+| `5.2.11` | Immutable asset caching, tab-aware stats polling, CSP script hashes, Prometheus metrics, rule tester on web and Android (latest) |
+| `5.2.10` | Update modal reaches a terminal state and the status endpoint heals a stale Running flag (older) |
 | `5.2.9` | Docker updater refuses binary swap and shows the image pull/recreate command; stale apply lock fixed (older) |
 | `5.2.8` | Web live log REST fallback, clearer empty state, fixed Pause/Resume toolbar and exact/suffix filter log (older) |
 | `5.2.7` | Web live log stays connected while browsing; session-expiry prompt and single-flight reconnect (older) |
@@ -509,7 +521,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.2.10/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.11/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -937,7 +949,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.2.10`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.2.11`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |
