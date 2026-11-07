@@ -365,13 +365,13 @@ func TestGuardStatsDetailSeparatesMalformedProbe(t *testing.T) {
 	s.handleConnection(context.Background(), server, true, 443)
 
 	d := s.GuardStatsDetail()
-	if d.Refused != 1 || d.Malformed != 1 || d.Unreadable != 0 {
-		t.Fatalf("detail = %+v, want one malformed refusal and no unreadable", d)
+	if d.Refused != 0 || d.Malformed != 1 || d.Unreadable != 0 {
+		t.Fatalf("detail = %+v, want malformed counted separately from Refused", d)
 	}
 	if d.Blocked != 0 || d.Self != 0 || d.Quota != 0 || d.TableFull != 0 || d.ResolveFailed != 0 {
 		t.Fatalf("detail = %+v, want the other reasons at zero", d)
 	}
-	if refused, unreadable := s.GuardStats(); refused != 1 || unreadable != 0 {
-		t.Fatalf("GuardStats() = (%d, %d), want (1, 0)", refused, unreadable)
+	if refused, unreadable := s.GuardStats(); refused != 0 || unreadable != 0 {
+		t.Fatalf("GuardStats() = (%d, %d), want (0, 0): malformed probes are not refusals", refused, unreadable)
 	}
 }

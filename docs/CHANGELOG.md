@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.2.4] — SNI Refused counts real refusals only
+
+**A patch for the SNI proxy card.** Public port 443 constantly receives
+connections with invalid SNI/Host values. Those malformed probes were counted in
+`relays_refused`, so a healthy proxy looked like it was refusing traffic all day.
+
+- Malformed SNI/Host probes no longer increment `relays_refused`. They are
+  counted separately as `relays_refused_malformed` and shown in the Refused
+  tooltip as “malformed probes … (not counted)”.
+- `relays_refused` now covers only actionable refusals: blocked targets,
+  self-dials, spent quota, a full relay table and resolution failures.
+- The card stays quiet on a public proxy port; no extra line was added.
+- No database migration and no other behavior changes.
+
 ## 🏷️ [v5.2.3] — Faster resolution and clearer diagnostics
 
 **A performance and operations release.** The resolver defaults to Hedged

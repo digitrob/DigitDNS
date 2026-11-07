@@ -112,18 +112,16 @@ type Server struct {
 	totalRelays  atomic.Uint64
 	bytesSent    atomic.Uint64
 	bytesRecv    atomic.Uint64
-	// refused and unreadable are disjoint drop counters, so their sum is every
-	// connection that was accepted and never relayed. refused covers the decisions
-	// this proxy makes about a destination it managed to read (quota spent, relay
-	// table full, target blocked or pointing back at this host); unreadable covers
-	// the connections whose opening bytes named no destination at all. See
-	// GuardStats for why the distinction is the one an operator needs.
+	// refused, unreadable and malformed are disjoint drop categories. refused
+	// covers a destination this proxy read and declined (quota spent, relay table
+	// full, target blocked or pointing back at this host). unreadable covers
+	// connections whose opening bytes named no destination. malformed covers a
+	// syntactically invalid hostname — almost always internet scanner noise, so it
+	// must not make the Refused number climb.
 	refused    atomic.Uint64
 	unreadable atomic.Uint64
-	// Refusal reasons. They sum to refused (plus any future uncategorised site),
-	// so the card can say why a connection was dropped instead of only that it
-	// was. malformed is the one internet scanners produce and the one that used
-	// to be silent.
+	// Malformed is kept separate on purpose: a public SNI port sees these
+	// constantly, and counting them as refusals made a healthy proxy look broken.
 	refusedMalformed atomic.Uint64
 	refusedBlocked   atomic.Uint64
 	refusedSelf      atomic.Uint64
@@ -428,18 +426,20 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 	_, addrs, err := s.guard.resolve(dialCtx, hostname)
 	cancel()
 	if err != nil {
-		s.refused.Add(1)
 		switch {
 		case errors.Is(err, ErrTargetMalformed):
+			// Scanner noise, not a relay decision. Keep it visible in the detail
+			// counter but do not make the Refused total climb.
 			s.refusedMalformed.Add(1)
 		case errors.Is(err, ErrTargetBlocked):
+			s.refused.Add(1)
 			s.refusedBlocked.Add(1)
 		case errors.Is(err, ErrTargetSelf):
+			s.refused.Add(1)
 			s.refusedSelf.Add(1)
 		default:
+			s.refused.Add(1)
 			s.refusedResolve.Add(1)
-		}
-		if !errors.Is(err, ErrTargetMalformed) {
 			log.Printf("[SNI Proxy] Refused relay from %s: %v", clientIP, err)
 		}
 		return
@@ -646,14 +646,14 @@ func (s *Server) GetStats() (int64, uint64, uint64, uint64) {
 		s.bytesRecv.Load()
 }
 
-// GuardStats reports the two ways a connection reaches this proxy and leaves
-// again without ever becoming a relay, neither of which appears in GetStats. The
-// two are disjoint, so their sum is every accepted-but-not-relayed connection:
+// GuardStats reports the two actionable ways a connection reaches this proxy and
+// leaves again without ever becoming a relay, neither of which appears in
+// GetStats. They are disjoint and exclude malformed scanner probes:
 //
 //   - refused: this proxy read a destination and declined it — the client's quota
 //     was spent, the relay table was already at maxConcurrentRelays, or the target
-//     was blocked, malformed, or resolved back to this host. Mostly evidence that
-//     the guards are working.
+//     was blocked or resolved back to this host. Mostly evidence that the guards
+//     are working.
 //   - unreadable: the opening bytes named no destination, so there was nothing to
 //     dial. A port scanner looks exactly like this, so a handful on a public IP is
 //     background noise. A count that climbs with real traffic is not: it means a
@@ -663,13 +663,17 @@ func (s *Server) GetStats() (int64, uint64, uint64, uint64) {
 //     nor HTTP. The client cannot diagnose it either, because the substitution
 //     happened in DNS.
 //
+// Malformed hostnames are reported separately by GuardStatsDetail. They are
+// scanner noise and must not make Refused climb.
+//
 // Both are lifetime totals since start.
 func (s *Server) GuardStats() (refused, unreadable uint64) {
 	return s.refused.Load(), s.unreadable.Load()
 }
 
-// GuardStatsDetail is GuardStats plus the refusal reasons. The reasons sum to
-// Refused; Malformed is the scanner-noise counter that used to be invisible.
+// GuardStatsDetail is GuardStats plus the refusal reasons. Blocked, Self, Quota,
+// TableFull and ResolveFailed sum to Refused. Malformed is separate scanner noise
+// and is deliberately not part of Refused.
 type GuardStatsDetail struct {
 	Refused       uint64
 	Unreadable    uint64

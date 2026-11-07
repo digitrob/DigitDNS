@@ -4367,15 +4367,13 @@ function renderProxyDrops(data) {
   const resolveFailed = data.relays_refused_resolve || 0;
   const unreadable = data.relays_unreadable || 0;
 
-  const breakdown = `Refused ${refused.toLocaleString()}: malformed ${malformed.toLocaleString()}, blocked ${blocked.toLocaleString()}, self ${selfDial.toLocaleString()}, quota ${quota.toLocaleString()}, table full ${tableFull.toLocaleString()}, resolve failed ${resolveFailed.toLocaleString()}`;
+  const breakdown = `Refused ${refused.toLocaleString()}: blocked ${blocked.toLocaleString()}, self ${selfDial.toLocaleString()}, quota ${quota.toLocaleString()}, table full ${tableFull.toLocaleString()}, resolve failed ${resolveFailed.toLocaleString()} · malformed probes ${malformed.toLocaleString()} (not counted)`;
 
   if (refusedEl) {
     refusedEl.textContent = refused.toLocaleString();
-    // The breakdown lives in the tooltip. The only visual cue is colour: amber
-    // when the count is mostly malformed scanner probes, otherwise the old
-    // neutral slate. No extra line on the card.
-    refusedEl.className = malformed > 0 ? 'text-amber-400 font-bold'
-      : refused > 0 ? 'text-slate-300 font-bold' : 'text-slate-400';
+    // Only actionable refusals are counted here. Malformed scanner probes live
+    // in the tooltip and never make the card climb or turn amber.
+    refusedEl.className = refused > 0 ? 'text-slate-300 font-bold' : 'text-slate-400';
     refusedEl.title = breakdown;
   }
 

@@ -53,6 +53,12 @@ The same release adds the v3 DNSSEC settings route, a compact Android card that
 opens with the real saved state, shared status-pill styling, and DNSSEC-aware
 cache keys so DO=0 clients never receive signature or denial records.
 
+**5.2.4 stops malformed scanner probes from inflating the SNI Refused count.**
+Public proxy ports constantly receive invalid SNI/Host probes. Those are now
+counted separately (`relays_refused_malformed`) and shown in the Refused tooltip
+as “not counted”; the card’s Refused number only moves for actionable refusals:
+blocked/self targets, quota, a full relay table or a resolution failure.
+
 **5.2.3 makes the resolver and the panel faster, and explains the drops.**
 Upstream racing now defaults to Hedged, DoT and DoQ connections are reused, and
 the history/settings fan-out was collapsed into far fewer requests. The SNI
@@ -267,7 +273,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.4/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -326,7 +332,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.4/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -409,7 +415,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.2.3` | Faster resolver and panel, Hedged upstreams, DoT/DoQ reuse, one-request history, SNI drop reasons and upstream circuit breaker (latest) |
+| `5.2.4` | SNI Refused counts actionable refusals only; malformed scanner probes are reported separately (latest) |
+| `5.2.3` | Faster resolver and panel, Hedged upstreams, DoT/DoQ reuse, one-request history, SNI drop reasons and upstream circuit breaker (older) |
 | `5.2.2` | Optional IPv6 for proxied names and relay agents, Web/Android IPv6 controls, silent re-auth and compact Android cards (older) |
 | `5.2.1` | Proxy leak protection for proxied HTTPS/SVCB, live panel/Android control, login and refresh UI fixes (older) |
 | `5.2.0` | DNSSEC validation, Settings card, v3 API and Android DNSSEC section (older) |
@@ -454,7 +461,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.2.3/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.2.4/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -882,7 +889,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.2.3`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.2.4`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |
