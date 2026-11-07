@@ -214,10 +214,20 @@ func New(binPath string, dataPaths []string, backupDir string) *Updater {
 	}
 }
 
-// Progress returns a copy of the current apply state.
+// Progress returns a copy of the current apply state. A Running flag that has
+// outlived the apply deadline is cleared here as well as in StartApply: the
+// progress modal polls this endpoint, so without it a goroutine that never
+// reached fail() would leave the panel spinning on "in progress" forever even
+// though every later click is allowed.
 func (u *Updater) Progress() Progress {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	if u.progress.Running && !applyBusy(u.progress, time.Now()) {
+		u.progress.Running = false
+		u.progress.Restarting = false
+		u.progress.Phase = "error"
+		u.progress.Error = "the previous update stalled; check the service log and retry"
+	}
 	return u.progress
 }
 

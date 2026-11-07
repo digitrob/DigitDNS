@@ -1365,7 +1365,17 @@ html[data-boot-tab="rules"] #tab-rules.settings-layout {
 @media (min-width: 1024px) {
   #main-content { padding-left: 1rem; padding-right: 1rem; }
 }
-#tab-stream:not(.hidden) {
+/* The `html[data-boot-tab]` prefix is load-bearing rather than decorative. The
+ * pre-paint tab rule above (`html[data-boot-tab="stream"] #tab-stream`) sets
+ * display:block with one id, one attribute and two elements; a bare
+ * `#tab-stream:not(.hidden)` has one id, one class and no element, so the boot
+ * rule out-specified it and the section stayed a block. The panel then had no
+ * definite height, `.stream-viewport`'s flex:1 resolved to 0px, and the log
+ * showed 100 rows inside a zero-height scroller — an empty table with a
+ * working stream behind it. Matching the boot rule's prefix here (plus the
+ * :not(.hidden) class) wins the cascade without touching the display switch
+ * that keeps the initial paint from showing every tab at once. */
+html[data-boot-tab] #tab-stream:not(.hidden) {
   flex: 1;
   min-height: 0;
   display: flex;

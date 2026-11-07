@@ -67,3 +67,33 @@ func TestContainerMarkerIsDetected(t *testing.T) {
 		t.Fatalf("unexpected refusal: %v", err)
 	}
 }
+
+// The modal polls the status endpoint, so a stale Running flag must be cleared
+// there — not only when the operator clicks Update again.
+func TestProgressClearsStaleRunning(t *testing.T) {
+	now := time.Now()
+	u := &Updater{progress: Progress{
+		Running:    true,
+		Restarting: true,
+		Phase:      "download",
+		Message:    "Downloading…",
+		StartedAt:  now.Add(-10 * time.Minute),
+	}}
+	got := u.Progress()
+	if got.Running || got.Restarting {
+		t.Fatalf("stale apply still reported as running: %+v", got)
+	}
+	if got.Phase != "error" || got.Error == "" {
+		t.Fatalf("stale apply was not turned into an actionable error: %+v", got)
+	}
+	// The stored state is healed too, so every later poll agrees.
+	if again := u.Progress(); again.Running || again.Error != got.Error {
+		t.Fatalf("stale state was not persisted: %+v", again)
+	}
+
+	// A recent apply is returned untouched.
+	u2 := &Updater{progress: Progress{Running: true, Phase: "download", StartedAt: time.Now()}}
+	if live := u2.Progress(); !live.Running || live.Phase != "download" {
+		t.Fatalf("live apply was modified: %+v", live)
+	}
+}

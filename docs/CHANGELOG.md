@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.2.10] — update modal can no longer spin forever
+
+- `GET /api/update/status` now clears a `Running` flag that has outlived the
+  apply deadline (six minutes) and reports an actionable error. Previously the
+  progress modal polled that stale state indefinitely; only a further click on
+  Update was forgiven.
+- The progress modal treats `running: false` as a terminal state. When the
+  daemon restarts faster than a poll observes `restarting`, the in-memory
+  progress is already idle; the modal now reloads instead of polling an empty
+  status every 1.5 s forever.
+- Container installs continue to refuse the binary-swap path and show
+  `docker compose pull && docker compose up -d` (v5.2.9 behaviour).
+
 ## 🏷️ [v5.2.9] — Docker-aware updater and no stuck apply lock
 
 - The self-updater now detects Docker/Podman (`/.dockerenv`, `/run/.containerenv`,

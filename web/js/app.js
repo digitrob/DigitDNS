@@ -11910,6 +11910,15 @@ async function applyUpdate(modal) {
       bar.style.width = '100%';
       msg.textContent = 'Restarting on the new version… this page will reload automatically.';
       waitForServerBack();
+    } else if (!p.running) {
+      // The daemon may come back from the restart before a poll observes the
+      // "restarting" flag — the in-memory progress state is then idle. Without
+      // this branch the modal would poll a finished update every 1.5 s forever
+      // with an empty message.
+      clearInterval(poll);
+      bar.style.width = '100%';
+      msg.textContent = 'Update finished. Reloading…';
+      waitForServerBack();
     }
   }, 1500);
 }
