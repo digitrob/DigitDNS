@@ -373,17 +373,16 @@ func (ws *WebServer) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request
 	if publicIPv6 == "" {
 		publicIPv6 = clientIP(r)
 	}
-	if err := ws.db.TouchAgent(agent.ID, req.Version, clientIP(r), publicIPv6, req.RelayPort, req.BytesIn, req.BytesOut, req.CatalogueRevision); err != nil {
+	updated, err := ws.db.TouchAgent(agent.ID, req.Version, clientIP(r), publicIPv6, req.RelayPort, req.BytesIn, req.BytesOut, req.CatalogueRevision)
+	if err != nil {
 		httpx.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// Update just this agent in the live router. Reloading every agent on every
-	// heartbeat was O(agents) DB reads and map rebuilds per beat; the next DNS
-	// answer still sees this agent's new address and liveness.
+	// Update just this agent in the live router. TouchAgent returns the record it
+	// wrote, so the handler no longer needs a second read; the next DNS answer
+	// still sees this agent's new address and liveness.
 	if ws.relayRouter != nil {
-		if updated, err := ws.db.GetAgent(agent.ID); err == nil {
-			ws.relayRouter.UpdateAgent(updated)
-		}
+		ws.relayRouter.UpdateAgent(updated)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -464,7 +463,9 @@ func (ws *WebServer) handleAgentCatalogue(w http.ResponseWriter, r *http.Request
 		if tick > 10*time.Second {
 			tick = 10 * time.Second
 		}
+		ws.agentCatParked.Add(1)
 		ws.agentNotify.wait(r.Context(), tick)
+		ws.agentCatParked.Add(-1)
 		if r.Context().Err() != nil {
 			return
 		}
@@ -476,7 +477,11 @@ func (ws *WebServer) handleAgentCatalogue(w http.ResponseWriter, r *http.Request
 // deliberately separate from the HTTP handler so the ETag/304 fast path can
 // avoid this work entirely.
 func (ws *WebServer) buildAgentCatalogue(agent database.Agent) (agentCatalogue, error) {
-	rules := ws.loadRulesConfig()
+	ws.agentCatBuilds.Add(1)
+	rules, clients, err := ws.catalogueInputs()
+	if err != nil {
+		return agentCatalogue{}, err
+	}
 	domainAgents, _ := rules["domain_agents"].(map[string]string)
 	serviceAgents, _ := rules["service_agents"].(map[string]string)
 	domainServices, _ := rules["domain_services"].(map[string]string)
@@ -533,10 +538,6 @@ func (ws *WebServer) buildAgentCatalogue(agent database.Agent) (agentCatalogue, 
 	}
 	sort.Strings(hosts)
 
-	clients, err := ws.panelClientIPs()
-	if err != nil {
-		return agentCatalogue{}, err
-	}
 	return agentCatalogue{
 		AgentID:     agent.ID,
 		Country:     agent.Country,

@@ -1,35 +1,38 @@
-# DigitDNS v5.2.12 — choose how a container updates
+# DigitDNS v5.2.13 — agent control plane without the restart stampede
 
-**Docker installs can now pick the update method** in **Settings → Server Update**.
+**Restarting the hub no longer makes every agent pull a full catalogue.** The
+control-plane revision is now persisted, and the catalogue ETag carries a build
+fingerprint:
 
-- **Pull image (recommended)** — the default. The panel refuses the
-  in-container swap and shows the command that updates the real deployment:
+```
+ETag: "v<N>-<buildhash>"
+```
 
-  ```bash
-  docker compose pull && docker compose up -d
-  ```
+- Same build, unchanged config, hub restarted → every parked agent gets **304**,
+  no rebuild.
+- A real upgrade changes the build hash, so agents refresh exactly once.
+- A config change still bumps the counter and wakes the parked long-polls
+  immediately.
 
-- **Patch binary in this container (temporary)** — re-enables the in-panel swap.
-  The release binary is still downloaded, its SHA-256 checked against the signed
-  `checksums.txt`, the data files backed up, and the daemon restarted. The
-  difference is honest and visible: the image tag and digest do **not** change,
-  and a container recreate restores the image's binary.
+**A config change is now O(1) in database work.** The rules and panel client list
+behind every catalogue are cached per revision; only the per-agent assignment
+walk runs. Before this, one change woke N agents and each re-read both inputs.
 
-The choice is container-only. On a systemd install the selector is hidden, the
-API rejects a change, and the updater ignores any stale value; the signed binary
-path is unchanged.
+**Heartbeats are cheaper.** They share a batched bbolt transaction (one fsync for
+beats arriving together) and the write returns the updated agent, so the handler
+no longer performs a second read to update the live relay router.
 
-**A badge tells the truth.** Beside the pre-update backups the daemon records the
-container ID, the image's version and the swapped version. While a swapped binary
-is running, the card shows **“Temporary binary update active — a container
-recreate restores vX”**. A recreate changes the container ID, so the marker is
-cleared and the card returns to the image state.
+**The safety sync is rarer, and reconnects are faster.** The agent's forced full
+fetch moved from every 5 minutes to every 30; normal propagation is still the
+long-poll. A transport-level drop (hub restart or an idle proxy) is no longer
+treated like an HTTP rejection: the next successful heartbeat re-arms the poll
+immediately, while genuine errors and 5xx keep the exponential backoff.
 
-**Android** gets the same selector on the About page (container installs only),
-the temporary badge, and a compact layout with the update controls first, so
-they fit on one screen without scrolling.
+**New metrics** for the control plane: catalogue requests, 304s, builds, parked
+long-polls, revision, agents online and agents total.
 
-No database migration. No resolver, relay or agent behaviour changes.
+No resolver, relay or storage-format changes. The only new setting record is
+`agent_revision`.
 
 ## Upgrade
 
@@ -43,25 +46,29 @@ docker compose up -d
 Pinned versions:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.2.12
-docker pull ghcr.io/digitrob/digitdns-agent:5.2.12
-docker pull robmeister/digitdns:5.2.12
-docker pull robmeister/digitdns-agent:5.2.12
+docker pull ghcr.io/digitrob/digitdns:5.2.13
+docker pull ghcr.io/digitrob/digitdns-agent:5.2.13
+docker pull robmeister/digitdns:5.2.13
+docker pull robmeister/digitdns-agent:5.2.13
 ```
 
 systemd:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.12/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.13/scripts/install.sh | sudo bash
 ```
+
+Agents may be updated independently; older agents keep working, but only 5.2.13
+agents get the batched heartbeat, persisted-revision 304s, the 30-minute safety
+sync and the fast re-arm.
 
 ## Assets
 
 - `digitdns-linux-amd64`, `digitdns-linux-arm64`
 - `digitdns-agent-linux-amd64`, `digitdns-agent-linux-arm64`
-- `digitdns-agent-5.2.12-linux-arm64-image.tar.gz` and `.sha256`
+- `digitdns-agent-5.2.13-linux-arm64-image.tar.gz` and `.sha256`
 - `digitdns-offline-bundle.tar.gz`, `digitdns-offline-bundle.zip`
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-The Android APKs are attached to this release from the `android-v5.2.12` tag.
+The Android APKs are attached to this release from the `android-v5.2.13` tag.

@@ -126,8 +126,14 @@ func TestAgentListTouchDisableDelete(t *testing.T) {
 		t.Fatalf("enrol: %v", err)
 	}
 
-	if err := db.TouchAgent(agent.ID, "1.0.1", "91.0.0.1", "2001:db8::5", 443, 100, 200, ""); err != nil {
+	touched, err := db.TouchAgent(agent.ID, "1.0.1", "91.0.0.1", "2001:db8::5", 443, 100, 200, "")
+	if err != nil {
 		t.Fatalf("touch: %v", err)
+	}
+	// The caller uses the returned record to update the live router, so it has
+	// to be the post-write state rather than the pre-write one.
+	if touched.Version != "1.0.1" || touched.BytesIn != 100 || touched.LastSeen.IsZero() {
+		t.Fatalf("TouchAgent returned a stale record: %+v", touched)
 	}
 	got, err := db.GetAgent(agent.ID)
 	if err != nil {

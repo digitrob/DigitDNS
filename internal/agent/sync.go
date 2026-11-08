@@ -31,9 +31,29 @@ type Hub struct {
 // it looks: the agent must not hang behind an unresponsive control plane while
 // it already has a cached catalogue it could be serving from.
 func NewHub(baseURL string) *Hub {
+	// The long-poll and the heartbeat can be in flight at the same time, and a
+	// catalogue sync may join them. An explicit pool keeps those connections
+	// alive across the gaps instead of repeatedly re-dialling and re-handshaking
+	// the hub. The zero-value client used the default pool, whose two idle
+	// connections per host is exactly the number this agent needs at peak.
+	var transport *http.Transport
+	if base, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = base.Clone()
+	} else {
+		transport = &http.Transport{}
+	}
+	transport.MaxIdleConns = 16
+	transport.MaxIdleConnsPerHost = 4
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.TLSHandshakeTimeout = 5 * time.Second
+	transport.ForceAttemptHTTP2 = true
+
 	return &Hub{
 		BaseURL: baseURL,
-		HTTP:    &http.Client{Timeout: 15 * time.Second},
+		HTTP: &http.Client{
+			Timeout:   15 * time.Second,
+			Transport: transport,
+		},
 	}
 }
 

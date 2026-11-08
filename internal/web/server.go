@@ -92,6 +92,14 @@ type WebServer struct {
 	agentNotify      *agentConfigNotifier
 	agentCatRequests atomic.Uint64
 	agentCatNotMod   atomic.Uint64
+	agentCatBuilds   atomic.Uint64
+	agentCatParked   atomic.Int64
+	// agentInputs caches the two global inputs to every agent catalogue (rules
+	// and the panel client list) for one control-plane revision. Without it, a
+	// single config change woke N agents and made each one re-read both from the
+	// database, turning an O(1) change into O(N) scans.
+	agentInputsMu sync.Mutex
+	agentInputs   *agentCatalogueInputs
 
 	// kdfGate bounds how many password verifications run at once. Verification is
 	// deliberately expensive and reachable without authentication, so without a
@@ -226,9 +234,11 @@ func NewWebServer(
 		statsCache:  httpx.NewResponseCache(time.Second, 2),
 		agentNotify: newAgentConfigNotifier(),
 	}
-	// A random starting point, not zero: after a hub restart an agent must not
-	// match an ETag it held from before the restart and skip a changed catalogue.
-	ws.agentRev.Store(uint64(time.Now().UnixNano()))
+	// Resume the persisted control-plane counter. The ETag also carries the
+	// build hash, so an upgrade invalidates it while a plain restart does not —
+	// a restart with unchanged config now answers 304 instead of forcing every
+	// agent to pull a full catalogue at once.
+	ws.agentRev.Store(loadAgentRevision(db))
 	ws.loginLimiter = service.NewLoginAttemptTracker()
 	ws.benchmark = service.NewBenchmarkRunner(func() {
 		if ws.upstreams != nil {

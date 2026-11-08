@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
+	"time"
 
 	"digitdns/internal/httpx"
+	"digitdns/internal/service"
 	"digitdns/internal/version"
 )
 
@@ -77,6 +79,18 @@ func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	writeMetric("digitdns_system_memory_total_bytes", "Machine-wide total memory in bytes.", "gauge", st.SystemMemTotalMB*1024*1024)
 	writeMetric("digitdns_goroutines", "Goroutines currently running.", "gauge", st.NumGoroutines)
 
+	// Relay-agent control plane. The catalogue counters are the ones to watch
+	// after a hub restart: a spike in builds with no config change means agents
+	// were invalidated unnecessarily.
+	writeMetric("digitdns_agent_catalogue_requests_total", "Agent catalogue requests received.", "counter", ws.agentCatRequests.Load())
+	writeMetric("digitdns_agent_catalogue_not_modified_total", "Agent catalogue requests answered 304.", "counter", ws.agentCatNotMod.Load())
+	writeMetric("digitdns_agent_catalogue_builds_total", "Agent catalogues rebuilt (full fetch).", "counter", ws.agentCatBuilds.Load())
+	writeMetric("digitdns_agent_catalogue_long_polls", "Long-poll catalogue requests currently parked.", "gauge", ws.agentCatParked.Load())
+	writeMetric("digitdns_agent_revision", "Current agent control-plane revision.", "gauge", ws.agentRev.Load())
+	online, total := ws.agentFleetCounts()
+	writeMetric("digitdns_agents_online", "Agents inside the heartbeat window.", "gauge", online)
+	writeMetric("digitdns_agents_total", "Configured relay agents.", "gauge", total)
+
 	// Latency as summary quantiles. The histogram buckets behind these numbers are
 	// already maintained for the dashboard, so the scrape reuses them rather than
 	// keeping a second set for Prometheus.
@@ -100,4 +114,24 @@ func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte(b.String()))
+}
+
+// agentFleetCounts reports how many configured agents are inside the same
+// heartbeat window the relay router uses.
+func (ws *WebServer) agentFleetCounts() (int, int) {
+	if ws.db == nil {
+		return 0, 0
+	}
+	agents, err := ws.db.ListAgents()
+	if err != nil {
+		return 0, 0
+	}
+	now := time.Now()
+	online := 0
+	for _, a := range agents {
+		if a.Enabled && !a.LastSeen.IsZero() && now.Sub(a.LastSeen) <= service.AgentOnlineFor {
+			online++
+		}
+	}
+	return online, len(agents)
 }

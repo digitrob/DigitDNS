@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.2.13] — agent control plane without the restart stampede
+
+- The agent control-plane revision is persisted (`agent_revision`) and the
+  catalogue ETag now carries the build fingerprint: `"v<counter>-<hash>"`. A hub
+  restart with unchanged config answers 304 instead of forcing every agent to
+  pull a full catalogue; an upgrade still invalidates because the hash changes.
+- The two global catalogue inputs (rules and the panel client list) are cached
+  per revision. A config change now costs two database reads in total, not two
+  per agent.
+- Heartbeats use `bolt.Batch`, so concurrent beats share one transaction and one
+  fsync. `TouchAgent` returns the record it wrote, removing the extra `GetAgent`
+  the handler used for the live router.
+- The agent's five-minute safety full sync moved to 30 minutes. Changes still
+  propagate immediately through the long-poll; the heartbeat revision check is
+  the fallback.
+- The agent's hub client uses an explicit transport: four idle connections per
+  host, 90 s idle timeout, 5 s TLS handshake and HTTP/2 when the hub supports it.
+- A transport-level end to an established long-poll (hub restart, idle proxy) is
+  no longer treated like a rejection: the next successful heartbeat re-arms the
+  poll immediately. HTTP errors and 5xx keep the exponential backoff.
+- New Prometheus series: `digitdns_agent_catalogue_requests_total`,
+  `_not_modified_total`, `_builds_total`, `_long_polls`, `digitdns_agent_revision`,
+  `digitdns_agents_online` and `digitdns_agents_total`.
+
 ## 🏷️ [v5.2.12] — container update method is now a choice
 
 - Docker installs get **Settings → Server Update → Container update method**:

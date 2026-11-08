@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -280,6 +281,11 @@ func main() {
 		etag        string
 		notModified bool
 		err         error
+		// dropped marks a transport-level end to an established long-poll (hub
+		// restart, idle proxy). It is not a rejection or a 5xx, so the next
+		// successful heartbeat may re-arm the poll immediately instead of
+		// serving out the full error backoff.
+		dropped bool
 	}
 	var (
 		syncReq    chan catalogueRequest
@@ -294,8 +300,9 @@ func main() {
 		go func() {
 			for req := range syncReq {
 				cat, etag, notModified, err := hub.FetchConditional(syncCtx, state.Key, req.etag, req.wait)
+				dropped := err != nil && req.wait > 0 && isTransportDrop(err)
 				select {
-				case syncRes <- catalogueResult{cat: cat, etag: etag, notModified: notModified, err: err}:
+				case syncRes <- catalogueResult{cat: cat, etag: etag, notModified: notModified, err: err, dropped: dropped}:
 				case <-syncCtx.Done():
 					return
 				}
@@ -348,6 +355,7 @@ func main() {
 	defer beatTimer.Stop()
 	syncFailures, heartbeatFailures := 0, 0
 	syncInFlight := false
+	syncDropped := false
 	lastFullSync := time.Now()
 
 	for {
@@ -379,8 +387,13 @@ func main() {
 						applyIPv6Policy(*hb.IPv6Enabled)
 					}
 					// If the long-poll dropped during a change, the heartbeat is
-					// the fallback that notices the agent is behind.
-					if hb.ConfigRevision != "" && hb.ConfigRevision != state.CatalogueETag && !syncInFlight && syncTimer != nil {
+					// the fallback that notices the agent is behind. Also re-arm
+					// immediately after a transport drop (hub restart or an idle
+					// proxy): that is not a failure, and waiting out the full
+					// error backoff delayed the resumed poll by minutes.
+					if !syncInFlight && syncTimer != nil &&
+						(syncDropped || (hb.ConfigRevision != "" && hb.ConfigRevision != state.CatalogueETag)) {
+						syncDropped = false
 						syncTimer.Reset(0)
 					}
 					_, _, _, _ = srv.Stats()
@@ -393,9 +406,11 @@ func main() {
 				continue
 			}
 			req := catalogueRequest{etag: state.CatalogueETag, wait: 25 * time.Second}
-			// A full fetch every five minutes catches a hub-side change whose
-			// notifier was missed; the normal path is ETag/304.
-			if time.Since(lastFullSync) >= 5*time.Minute {
+			// A full fetch every half hour is the backstop for a hub-side change
+			// whose notifier and revision bump were both missed. The normal path
+			// is ETag/304; the old five-minute cadence made every agent pull a
+			// complete catalogue twelve times an hour for no additional safety.
+			if time.Since(lastFullSync) >= agentFullSyncInterval {
 				req.etag = ""
 				lastFullSync = time.Now()
 			}
@@ -413,6 +428,7 @@ func main() {
 		case res := <-syncRes:
 			syncInFlight = false
 			if res.err != nil {
+				syncDropped = res.dropped
 				syncFailures++
 				log.Printf("[agent] catalogue resync failed (%v) - keeping the current list", res.err)
 				if syncTimer != nil {
@@ -421,6 +437,7 @@ func main() {
 				continue
 			}
 			syncFailures = 0
+			syncDropped = false
 			if !res.notModified {
 				applyCatalogue(res.cat, res.etag)
 			}
@@ -437,11 +454,27 @@ func main() {
 	}
 }
 
+// isTransportDrop reports whether an error ended an established long-poll
+// rather than rejecting the request. Those are the cases a heartbeat can safely
+// retry at once; HTTP rejections and 5xx keep the exponential backoff.
+func isTransportDrop(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "use of closed network connection")
+}
+
 const (
-	agentHeartbeatBase  = 30 * time.Second
-	agentSyncBase       = 60 * time.Second
-	agentSyncMaxBackoff = 5 * time.Minute
-	agentSyncMaxShift   = 6
+	agentHeartbeatBase    = 30 * time.Second
+	agentFullSyncInterval = 30 * time.Minute
+	agentSyncBase         = 60 * time.Second
+	agentSyncMaxBackoff   = 5 * time.Minute
+	agentSyncMaxShift     = 6
 )
 
 // jitteredInterval spreads heartbeats and catalogue pulls by ±20%, and backs

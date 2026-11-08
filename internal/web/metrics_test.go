@@ -40,6 +40,10 @@ func TestMetricsRequiresAuthAndExposesPrometheusText(t *testing.T) {
 		"digitdns_cache_hit_ratio",
 		"# TYPE digitdns_latency_ms summary",
 		"digitdns_latency_ms{quantile=\"0.99\"",
+		"digitdns_agent_catalogue_requests_total",
+		"digitdns_agent_catalogue_builds_total",
+		"digitdns_agents_online",
+		"digitdns_agent_revision",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics body is missing %q", want)

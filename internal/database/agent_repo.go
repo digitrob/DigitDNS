@@ -344,28 +344,56 @@ func (db *DB) AuthenticateAgent(id, secret string) (Agent, error) {
 }
 
 // TouchAgent records a heartbeat: version, last-seen and traffic totals.
-func (db *DB) TouchAgent(id, version, publicIP, publicIPv6 string, relayPort int, bytesIn, bytesOut uint64, catalogueRevision string) error {
-	return db.updateAgent(id, func(a *Agent) {
-		a.Version = version
+func (db *DB) TouchAgent(id, version, publicIP, publicIPv6 string, relayPort int, bytesIn, bytesOut uint64, catalogueRevision string) (Agent, error) {
+	var updated Agent
+	// Batch coalesces heartbeats arriving together into one transaction and one
+	// fsync. The callback re-reads the agent inside each transaction, so a retry
+	// (which bbolt may do) is idempotent. Heartbeats are the highest-frequency
+	// write this daemon performs; one fsync per agent per 30 s was the wrong
+	// shape for a multi-agent hub.
+	err := db.bolt.Batch(func(tx *bolt.Tx) error {
+		agents := tx.Bucket(bucketAgents)
+		if agents == nil {
+			return ErrAgentNotFound
+		}
+		raw := agents.Get([]byte(id))
+		if raw == nil {
+			return ErrAgentNotFound
+		}
+		var agent Agent
+		if err := json.Unmarshal(raw, &agent); err != nil {
+			return err
+		}
+		agent.Version = version
 		if ip := net.ParseIP(strings.TrimSpace(publicIP)); ip != nil && ip.To4() != nil {
-			a.PublicIP = ip.String()
+			agent.PublicIP = ip.String()
 		}
 		// An empty report leaves the stored address alone: an agent that cannot
 		// detect IPv6 must not erase an operator-supplied value.
 		if ip, ok := parseAgentPublicIPv6(publicIPv6); ok {
-			a.PublicIPv6 = ip.String()
+			agent.PublicIPv6 = ip.String()
 		}
 		if relayPort > 0 {
-			a.RelayPort = relayPort
+			agent.RelayPort = relayPort
 		}
-		a.LastSeen = time.Now().UTC()
-		a.BytesIn = bytesIn
-		a.BytesOut = bytesOut
-		if revision := strings.TrimSpace(catalogueRevision); revision != "" && revision != a.CatalogueRevision {
-			a.CatalogueRevision = revision
-			a.CatalogueSyncedAt = a.LastSeen
+		agent.LastSeen = time.Now().UTC()
+		agent.BytesIn = bytesIn
+		agent.BytesOut = bytesOut
+		if revision := strings.TrimSpace(catalogueRevision); revision != "" && revision != agent.CatalogueRevision {
+			agent.CatalogueRevision = revision
+			agent.CatalogueSyncedAt = agent.LastSeen
 		}
+		encoded, err := json.Marshal(agent)
+		if err != nil {
+			return err
+		}
+		if err := agents.Put([]byte(id), encoded); err != nil {
+			return err
+		}
+		updated = agent
+		return nil
 	})
+	return updated, err
 }
 
 // RecordAgentPing stores the result of the operator-triggered connection test.

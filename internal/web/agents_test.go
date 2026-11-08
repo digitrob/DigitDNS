@@ -138,7 +138,7 @@ func TestAgentConnectionTestRecordsPing(t *testing.T) {
 	}
 	defer ln.Close()
 	port, _ := strconv.Atoi(strings.Split(ln.Addr().String(), ":")[1])
-	if err := ws.db.TouchAgent(agentID, "1.0.0", "127.0.0.1", "", port, 0, 0, ""); err != nil {
+	if _, err := ws.db.TouchAgent(agentID, "1.0.0", "127.0.0.1", "", port, 0, 0, ""); err != nil {
 		t.Fatal(err)
 	}
 
