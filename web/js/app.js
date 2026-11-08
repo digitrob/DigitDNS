@@ -4409,13 +4409,17 @@ function renderProxyDrops(data) {
   const flood = data.relays_refused_flood || 0;
   const unreadable = data.relays_unreadable || 0;
 
-  const breakdown = `Refused ${refused.toLocaleString()}: blocked ${blocked.toLocaleString()}, self ${selfDial.toLocaleString()}, quota ${quota.toLocaleString()}, table full ${tableFull.toLocaleString()}, resolve failed ${resolveFailed.toLocaleString()}, flood ${flood.toLocaleString()} · malformed probes ${malformed.toLocaleString()} (not counted)`;
+  // Flood attempts are the penalty box counting every retry from a source
+  // already blocked for malformed probes. One scanner can produce tens of
+  // thousands of them, which says nothing about relay health, so the headline
+  // reports only actionable refusals. The tooltip keeps the full breakdown.
+  const actionableRefused = Math.max(refused - flood, 0);
+
+  const breakdown = `Actionable refusals ${actionableRefused.toLocaleString()} (blocked ${blocked.toLocaleString()}, self ${selfDial.toLocaleString()}, quota ${quota.toLocaleString()}, table full ${tableFull.toLocaleString()}, resolve failed ${resolveFailed.toLocaleString()}) · flood attempts ${flood.toLocaleString()} (excluded) · malformed probes ${malformed.toLocaleString()} (excluded)`;
 
   if (refusedEl) {
-    refusedEl.textContent = refused.toLocaleString();
-    // Only actionable refusals are counted here. Malformed scanner probes live
-    // in the tooltip and never make the card climb or turn amber.
-    refusedEl.className = refused > 0 ? 'text-slate-300 font-bold' : 'text-slate-400';
+    refusedEl.textContent = actionableRefused.toLocaleString();
+    refusedEl.className = actionableRefused > 0 ? 'text-slate-300 font-bold' : 'text-slate-400';
     refusedEl.title = breakdown;
   }
 

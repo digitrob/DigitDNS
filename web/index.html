@@ -1090,7 +1090,7 @@
                    being truncated away at the narrow six-column widths. -->
               <div class="text-[9px] sm:text-[10px] text-slate-500 font-mono leading-tight text-right min-w-0">
                 <div>Total: <span id="stat-proxy-total" class="text-slate-300 font-bold">0</span></div>
-                <div>Refused: <span id="stat-proxy-refused" class="text-slate-400" title="Connections dropped for a malformed target, a blocked target, a self-dial, a spent quota, or a full relay table">0</span></div>
+                <div>Refused: <span id="stat-proxy-refused" class="text-slate-400" title="Actionable refusals only: a blocked target, a self-dial, a spent quota, a resolve failure, or a full relay table. Flood attempts from a source already in the malformed-probe penalty box are excluded.">0</span></div>
                 <div>Unreadable: <span id="stat-proxy-unreadable" class="text-slate-400" title="Connections that arrived without naming a destination — no TLS SNI and no HTTP Host header">0</span></div>
               </div>
             </div>

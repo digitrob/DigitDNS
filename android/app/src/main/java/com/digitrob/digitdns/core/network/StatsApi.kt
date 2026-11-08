@@ -46,6 +46,10 @@ data class LiveStats(
     @SerialName("rate_limit_qps") val rateLimitQps: Int = 0,
     // SNI proxy connections that never became relays.
     @SerialName("relays_refused") val relaysRefused: Long = 0,
+    // Refusals caused by the per-source penalty box after repeated malformed
+    // probes. One scanner can produce thousands of these, so the dashboard
+    // subtracts them from the actionable drop count.
+    @SerialName("relays_refused_flood") val relaysRefusedFlood: Long = 0,
     @SerialName("relays_unreadable") val relaysUnreadable: Long = 0,
     // Cache serve-stale / background refresh health.
     @SerialName("stale_served") val staleServed: Long = 0,

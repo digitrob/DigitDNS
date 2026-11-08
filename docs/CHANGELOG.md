@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.3.3] — accurate SNI proxy drop counters
+
+- The web and Android SNI proxy cards no longer count flood attempts from a
+  source already in the malformed-probe penalty box as relay drops.
+- The card headline now reports actionable refusals plus unreadable
+  connections; the full breakdown, including excluded flood and malformed
+  probes, stays in the web tooltip.
+- Prometheus adds `digitdns_relays_refused_actionable_total` and
+  `digitdns_relays_flood_total`; `digitdns_relays_refused_total` keeps its
+  existing total semantics.
+- No resolver, filtering, routing or database behaviour changes.
+
 ## 🏷️ [v5.3.2] — balanced Settings layout
 
 - Server Location grows to fill the left column, so it ends level with Server

@@ -68,7 +68,15 @@ func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	writeMetric("digitdns_relays_total", "SNI relay connections since start.", "counter", st.TotalRelays)
 	writeMetric("digitdns_relay_bytes_sent_total", "Bytes sent through the SNI relay.", "counter", st.BytesSent)
 	writeMetric("digitdns_relay_bytes_received_total", "Bytes received through the SNI relay.", "counter", st.BytesRecv)
-	writeMetric("digitdns_relays_refused_total", "Relay connections refused (blocked, self-dial, quota, table full).", "counter", st.RelaysRefused)
+	writeMetric("digitdns_relays_refused_total", "Relay connections refused, including flood attempts from a source already in the malformed-probe penalty box.", "counter", st.RelaysRefused)
+	actionableRefused := st.RelaysRefused
+	if st.RelaysRefusedFlood > actionableRefused {
+		actionableRefused = 0
+	} else {
+		actionableRefused -= st.RelaysRefusedFlood
+	}
+	writeMetric("digitdns_relays_refused_actionable_total", "Relay connections refused for an actionable reason (flood attempts excluded).", "counter", actionableRefused)
+	writeMetric("digitdns_relays_flood_total", "Relay connection attempts from a source already in the malformed-probe penalty box.", "counter", st.RelaysRefusedFlood)
 	writeMetric("digitdns_relays_unreadable_total", "Relay connections whose opening bytes named no destination.", "counter", st.RelaysUnreadable)
 
 	writeMetric("digitdns_cpu_percent", "Process CPU usage percentage.", "gauge", st.CPUUsagePercent)

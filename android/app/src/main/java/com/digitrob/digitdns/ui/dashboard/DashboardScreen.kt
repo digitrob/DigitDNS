@@ -753,7 +753,13 @@ private fun SniProxyCard(stats: LiveStats?) {
                 style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            val drops = (stats?.relaysRefused ?: 0) + (stats?.relaysUnreadable ?: 0)
+            // Flood refusals are the penalty box counting every retry from a
+            // malformed-probe source. One scanner can dominate the raw refused
+            // counter, so the footer reports only actionable refusals plus
+            // unreadable connections. The web card keeps the full breakdown.
+            val flood = stats?.relaysRefusedFlood ?: 0
+            val actionableRefused = ((stats?.relaysRefused ?: 0) - flood).coerceAtLeast(0)
+            val drops = actionableRefused + (stats?.relaysUnreadable ?: 0)
             // Same colour as every other card's secondary line. The amber warning tint
             // made this one tile's footer read differently for the same kind of text.
             Text(

@@ -44,6 +44,8 @@ func TestMetricsRequiresAuthAndExposesPrometheusText(t *testing.T) {
 		"digitdns_agent_catalogue_builds_total",
 		"digitdns_agents_online",
 		"digitdns_agent_revision",
+		"digitdns_relays_refused_actionable_total",
+		"digitdns_relays_flood_total",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics body is missing %q", want)

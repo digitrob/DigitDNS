@@ -41,6 +41,16 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.3.3
+
+**The SNI proxy drop counters no longer count scanner noise.** A source that
+keeps retrying while in the malformed-probe penalty box is counted as a flood
+attempt, not as a relay drop. The web and Android cards now show actionable
+refusals and unreadable connections separately from that noise, with the full
+breakdown still available in the tooltip. Prometheus gains
+`digitdns_relays_refused_actionable_total` and `digitdns_relays_flood_total`
+alongside the existing total.
+
 ## What's new in 5.3.2
 
 **Settings balances its cards and uses the wide layout.** Server Location now
@@ -375,7 +385,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.3/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -434,7 +444,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.3/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -517,7 +527,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.3.2` | Balanced Settings cards; Server Location fills the left column and Subscription Portal pairs with the SSL/TLS Manager on wide panels (latest) |
+| `5.3.3` | Accurate SNI proxy drop counters; scanner flood attempts excluded from web and Android headlines (latest) |
+| `5.3.2` | Balanced Settings cards; Server Location fills the left column and Subscription Portal pairs with the SSL/TLS Manager on wide panels (older) |
 | `5.3.1` | Compact Server Location and 2FA under it in Settings; works on systemd and Docker (older) |
 | `5.3.0` | Faster cached query path, metrics docs + Grafana, adaptive Android navigation, Quick Settings tile, baseline profiles (older) |
 | `5.2.13` | Persisted agent revision, shared catalogue cache, batched heartbeats, faster reconnect, control-plane metrics (older) |
@@ -575,7 +586,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.3.2/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.3.3/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1025,7 +1036,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.3.2`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.3.3`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

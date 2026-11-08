@@ -1,22 +1,25 @@
-# DigitDNS v5.3.2 — balanced Settings layout
+# DigitDNS v5.3.3 — accurate SNI proxy drop counters
 
-**Settings cards now share their space instead of leaving gaps.**
+**Scanner noise no longer looks like relay failure.**
 
-- **Server Location** grows to fill the left column, so it ends level with
-  **Server Update** on both systemd and Docker. Its title uses the same padding
-  and top alignment as the update card, so the two headings sit on one line.
-- The container image/binary selector still only changes the update card's
-  height; the Location card absorbs the difference. There is no blank gap
-  before Hidden Admin Path and no stretched, empty-looking card on systemd.
-- On panels **1400 px and wider**, **Subscription Portal** and the **SSL / TLS
-  Manager** share a row. The TLS card stretches to the taller card's height, and
-  its field rows reflow to two columns with full-width action buttons instead of
-  squeezing three controls into a half-width card.
-- Below 1400 px both cards keep the normal full-width stacked layout, so narrow
-  windows and mobile are unchanged.
+- The **web** and **Android** SNI proxy cards used to report
+  `relays_refused + relays_unreadable` as “drops”. `relays_refused` includes
+  flood attempts from a source already in the malformed-probe penalty box, so a
+  single scanner could show tens of thousands of drops against a few hundred
+  real relays.
+- The cards now show **actionable refusals plus unreadable connections**. Flood
+  attempts and malformed probes are excluded from the headline.
+- The web card keeps the full breakdown in its tooltip: blocked, self-dial,
+  quota, table full, resolve failure, flood attempts and malformed probes.
+- Prometheus gains:
+  - `digitdns_relays_refused_actionable_total`
+  - `digitdns_relays_flood_total`
 
-No resolver, API, database or Android behaviour changes. The Android APK is
-rebuilt with the version bump only.
+  `digitdns_relays_refused_total` keeps its existing total semantics.
+
+No resolver, filtering, routing, database or Android networking behaviour
+changes. The Android APK is rebuilt with the version bump and the corrected
+dashboard card.
 
 ## Upgrade
 
@@ -30,25 +33,25 @@ docker compose up -d
 Pinned versions:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.3.2
-docker pull ghcr.io/digitrob/digitdns-agent:5.3.2
-docker pull robmeister/digitdns:5.3.2
-docker pull robmeister/digitdns-agent:5.3.2
+docker pull ghcr.io/digitrob/digitdns:5.3.3
+docker pull ghcr.io/digitrob/digitdns-agent:5.3.3
+docker pull robmeister/digitdns:5.3.3
+docker pull robmeister/digitdns-agent:5.3.3
 ```
 
 systemd:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.3/scripts/install.sh | sudo bash
 ```
 
 ## Assets
 
 - `digitdns-linux-amd64`, `digitdns-linux-arm64`
 - `digitdns-agent-linux-amd64`, `digitdns-agent-linux-arm64`
-- `digitdns-agent-5.3.2-linux-arm64-image.tar.gz` and `.sha256`
+- `digitdns-agent-5.3.3-linux-arm64-image.tar.gz` and `.sha256`
 - `digitdns-offline-bundle.tar.gz`, `digitdns-offline-bundle.zip`
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-The Android APKs are attached to this release from the `android-v5.3.2` tag.
+The Android APKs are attached to this release from the `android-v5.3.3` tag.

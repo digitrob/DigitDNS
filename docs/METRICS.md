@@ -57,7 +57,9 @@ scrape_configs:
 | `digitdns_relays_total` | counter | SNI relay connections since start. |
 | `digitdns_relay_bytes_sent_total` | counter | Bytes sent through the relay. |
 | `digitdns_relay_bytes_received_total` | counter | Bytes received through the relay. |
-| `digitdns_relays_refused_total` | counter | Relay connections refused (blocked, self-dial, quota, table full). |
+| `digitdns_relays_refused_total` | counter | Relay connections refused, including flood attempts from a source already in the malformed-probe penalty box. |
+| `digitdns_relays_refused_actionable_total` | counter | Relay connections refused for an actionable reason (flood attempts excluded). |
+| `digitdns_relays_flood_total` | counter | Relay connection attempts from a source already in the malformed-probe penalty box. |
 | `digitdns_relays_unreadable_total` | counter | Connections whose opening bytes named no destination. |
 | `digitdns_cpu_percent` | gauge | Process CPU usage. |
 | `digitdns_system_cpu_percent` | gauge | Machine-wide CPU usage. |
