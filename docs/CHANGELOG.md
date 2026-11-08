@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.3.2] — balanced Settings layout
+
+- Server Location grows to fill the left column, so it ends level with Server
+  Update on both systemd and Docker; its title shares the update card's padding
+  and top alignment.
+- The container image/binary selector only changes the update card's height;
+  the Location card absorbs the difference, leaving no gap before Hidden Admin
+  Path and no stretched card on systemd.
+- On panels 1400 px and wider, Subscription Portal and the SSL / TLS Manager
+  share a row. The TLS card stretches to the taller card's height, and its field
+  rows reflow to two columns with full-width action buttons.
+- Below 1400 px both cards keep the full-width stacked layout; mobile and narrow
+  windows are unchanged.
+
 ## 🏷️ [v5.3.1] — compact Settings top row
 
 - Server Location is now a one-line card: country and the GeoIP database date

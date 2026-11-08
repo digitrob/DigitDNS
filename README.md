@@ -41,6 +41,15 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.3.2
+
+**Settings balances its cards and uses the wide layout.** Server Location now
+grows to fill the left column, so it ends level with Server Update on both
+systemd and Docker, and its title lines up with the update card's. On panels
+1400 px and wider, Subscription Portal and the SSL/TLS Manager share a row: the
+TLS card stretches to the taller card's height and its field rows reflow to two
+columns with full-width action buttons.
+
 ## What's new in 5.3.1
 
 **Settings uses its width better.** The Server Location card is a one-line
@@ -366,7 +375,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.2/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -425,7 +434,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.2/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -508,7 +517,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.3.1` | Compact Server Location and 2FA under it in Settings; works on systemd and Docker (latest) |
+| `5.3.2` | Balanced Settings cards; Server Location fills the left column and Subscription Portal pairs with the SSL/TLS Manager on wide panels (latest) |
+| `5.3.1` | Compact Server Location and 2FA under it in Settings; works on systemd and Docker (older) |
 | `5.3.0` | Faster cached query path, metrics docs + Grafana, adaptive Android navigation, Quick Settings tile, baseline profiles (older) |
 | `5.2.13` | Persisted agent revision, shared catalogue cache, batched heartbeats, faster reconnect, control-plane metrics (older) |
 | `5.2.12` | Container update method selector (web + Android), temporary-swap marker and badge, compact Android update page (older) |
@@ -565,7 +575,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.3.1/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.3.2/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1015,7 +1025,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.3.1`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.3.2`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

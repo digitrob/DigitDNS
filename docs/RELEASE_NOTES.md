@@ -1,15 +1,19 @@
-# DigitDNS v5.3.1 — compact Settings top row
+# DigitDNS v5.3.2 — balanced Settings layout
 
-**Settings uses its width instead of stacking a full-width 2FA card.**
+**Settings cards now share their space instead of leaving gaps.**
 
-- **Server Location** is now a one-line card: the flag, country and GeoIP
-  database date share a row, and the card is roughly half its previous height.
-- **Two-Factor Authentication** sits directly underneath it in a tight left
-  column; **Server Update** owns the right column. The old full-width 2FA row is
-  gone, and the Hidden Admin Path / Administrator Credentials pair moves up.
-- The layout is identical on **systemd and Docker**. The container image/binary
-  selector simply makes the update card taller; it no longer decides where 2FA
-  can be placed.
+- **Server Location** grows to fill the left column, so it ends level with
+  **Server Update** on both systemd and Docker. Its title uses the same padding
+  and top alignment as the update card, so the two headings sit on one line.
+- The container image/binary selector still only changes the update card's
+  height; the Location card absorbs the difference. There is no blank gap
+  before Hidden Admin Path and no stretched, empty-looking card on systemd.
+- On panels **1400 px and wider**, **Subscription Portal** and the **SSL / TLS
+  Manager** share a row. The TLS card stretches to the taller card's height, and
+  its field rows reflow to two columns with full-width action buttons instead of
+  squeezing three controls into a half-width card.
+- Below 1400 px both cards keep the normal full-width stacked layout, so narrow
+  windows and mobile are unchanged.
 
 No resolver, API, database or Android behaviour changes. The Android APK is
 rebuilt with the version bump only.
@@ -26,25 +30,25 @@ docker compose up -d
 Pinned versions:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.3.1
-docker pull ghcr.io/digitrob/digitdns-agent:5.3.1
-docker pull robmeister/digitdns:5.3.1
-docker pull robmeister/digitdns-agent:5.3.1
+docker pull ghcr.io/digitrob/digitdns:5.3.2
+docker pull ghcr.io/digitrob/digitdns-agent:5.3.2
+docker pull robmeister/digitdns:5.3.2
+docker pull robmeister/digitdns-agent:5.3.2
 ```
 
 systemd:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.2/scripts/install.sh | sudo bash
 ```
 
 ## Assets
 
 - `digitdns-linux-amd64`, `digitdns-linux-arm64`
 - `digitdns-agent-linux-amd64`, `digitdns-agent-linux-arm64`
-- `digitdns-agent-5.3.1-linux-arm64-image.tar.gz` and `.sha256`
+- `digitdns-agent-5.3.2-linux-arm64-image.tar.gz` and `.sha256`
 - `digitdns-offline-bundle.tar.gz`, `digitdns-offline-bundle.zip`
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-The Android APKs are attached to this release from the `android-v5.3.1` tag.
+The Android APKs are attached to this release from the `android-v5.3.2` tag.

@@ -1236,18 +1236,15 @@ input:checked + .slider:before {
   .settings-pair {
     grid-template-columns: 1fr 1fr;
     gap: 1.5rem;
-    align-items: start;
+    /* The left column stretches to the update card's height; Server Location
+       grows to absorb the difference so 2FA ends level with the update card. */
+    align-items: stretch;
   }
 }
 
-/* The Server Location card is one line of metadata, so it is deliberately
-   shorter than the update card beside it. It and the 2FA card form a tight
-   left column; the update card sits in the right column. That works on both
-   systemd (short update card) and Docker (update card with the image/binary
-   selector), without stretching either one. */
-#tab-rules #server-location-card {
-  padding: 0.7rem 1rem;
-}
+/* Server Location shares the update card's padding, so both card titles sit on
+   the same line. The card itself grows to fill the left column; its content
+   stays top-aligned with Server Update rather than floating in the middle. */
 .settings-pair-left {
   display: flex;
   flex-direction: column;
@@ -1259,9 +1256,43 @@ input:checked + .slider:before {
     grid-column: 1;
     grid-row: 1;
   }
+  /* The update card keeps its natural height; the space it leaves in the row
+     becomes the location card's extra height, not a gap under 2FA. */
   .settings-pair > #server-update-card {
     grid-column: 2;
     grid-row: 1;
+    align-self: start;
+  }
+  .settings-pair-left > #server-location-card {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* Subscription Portal and the TLS manager are dense forms. Side by side only
+   on a very wide panel; below that they keep the full width they need. */
+.settings-pair-dense {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+@media (min-width: 1400px) {
+  .settings-pair-dense {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+    /* Both cards share the row height: the taller Subscription card sets it,
+       and the TLS card stretches to fill the space instead of leaving a
+       blank notch under it. */
+    align-items: stretch;
+  }
+  /* Half width is too narrow for three fields plus a button in one line, so
+     the TLS field rows become two columns with a full-width action button. */
+  .settings-pair-dense .settings-tls-card .tls-field-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .settings-pair-dense .settings-tls-card .tls-field-row > button {
+    grid-column: 1 / -1;
   }
 }
 

@@ -2477,6 +2477,8 @@ async function onBuySubscription(ctx, username) {
           </div>
         </div>
 
+        <div class="settings-pair-dense settings-wide">
+
         <!-- Subscription surface settings (3x-ui style, third tab group). -->
         <div class="glass-panel panel-card p-5 sm:p-6 space-y-4 settings-wide">
           <div class="flex items-center gap-3">
@@ -2585,7 +2587,7 @@ async function onBuySubscription(ctx, username) {
              re-domained the whole dashboard — the ERR_CERT_COMMON_NAME_INVALID
              field report. The subheadings make each field's blast radius
              readable at a glance instead of inferred from position. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 settings-wide">
+        <div class="glass-panel panel-card p-5 sm:p-6 settings-wide settings-tls-card">
           <div class="flex items-center gap-3 mb-3">
             <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
               <i data-feather="lock" class="w-5 h-5"></i>
@@ -2598,7 +2600,7 @@ async function onBuySubscription(ctx, username) {
 
           <!-- Custom DoH/DoT domain (empty = panel domain) — first, matching the title -->
           <p class="text-[11px] font-bold text-cyan-300 mb-1.5">DNS TRANSPORTS (DoT :853 / DoH :8443)</p>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 tls-field-row">
             <input type="text" id="dot-domain-input" aria-label="Custom DoH DoT domain" placeholder="Custom DoH, DoT domain (empty = panel domain)"
               class="panel-field sm:col-span-2 font-mono focus:border-cyan-400">
             <button id="issue-dot-ssl-btn" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition disabled:opacity-50 disabled:cursor-not-allowed">
@@ -2624,7 +2626,7 @@ async function onBuySubscription(ctx, username) {
           <!-- Panel domain — second, under its own heading, so its wider
                blast radius (the whole dashboard) is stated, not inferred -->
           <p class="text-[11px] font-bold text-slate-300 mt-4 mb-1.5">ADMIN PANEL (the dashboard itself)</p>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 tls-field-row">
             <input type="text" id="ssl-domain-input" aria-label="Panel domain name" placeholder="Panel domain — the dashboard's own name"
               class="panel-field font-mono focus:border-cyan-400">
             <input type="email" id="ssl-email-input" aria-label="Certificate contact email" placeholder="Admin Email (optional)"
@@ -2644,6 +2646,7 @@ async function onBuySubscription(ctx, username) {
                Certificate" when this line says the certificate has expired. -->
           <p id="panel-cert-details" class="text-[11px] font-mono text-slate-500 mt-1"></p>
           <p class="text-[10px] text-slate-500 mt-1">Changing this renames the dashboard itself — every panel link and the admin cert follow it. Not the field for your DoH/DoT hostname.</p>
+        </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 settings-wide">
