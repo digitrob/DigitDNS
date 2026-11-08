@@ -41,6 +41,14 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.3.1
+
+**Settings uses its width better.** The Server Location card is a one-line
+metadata strip (country and GeoIP database date together), the Two-Factor
+Authentication card sits directly under it, and Server Update owns the right
+column. The same layout works on systemd and Docker: the container image/binary
+selector simply makes the update card taller.
+
 ## What's new in 5.3
 
 **The panel is faster, the resolver is leaner, and Android starts better.**
@@ -358,7 +366,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.1/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -417,7 +425,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.1/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -500,7 +508,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.3.0` | Faster cached query path, metrics docs + Grafana, adaptive Android navigation, Quick Settings tile, baseline profiles (latest) |
+| `5.3.1` | Compact Server Location and 2FA under it in Settings; works on systemd and Docker (latest) |
+| `5.3.0` | Faster cached query path, metrics docs + Grafana, adaptive Android navigation, Quick Settings tile, baseline profiles (older) |
 | `5.2.13` | Persisted agent revision, shared catalogue cache, batched heartbeats, faster reconnect, control-plane metrics (older) |
 | `5.2.12` | Container update method selector (web + Android), temporary-swap marker and badge, compact Android update page (older) |
 | `5.2.11` | Immutable asset caching, tab-aware stats polling, CSP script hashes, Prometheus metrics, rule tester on web and Android (older) |
@@ -556,7 +565,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.3.0/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.3.1/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1006,7 +1015,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.3.0`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.3.1`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

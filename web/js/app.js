@@ -255,10 +255,12 @@ function renderGeoipCard(status) {
   const dbEl = document.getElementById('geoip-db');
   if (dbEl) {
     if (!status || !status.available) {
-      dbEl.textContent = 'GeoIP database: not downloaded yet — press Update database';
+      dbEl.textContent = 'DB: not downloaded';
+      dbEl.title = 'GeoIP database: not downloaded yet — press Update database';
     } else {
       const date = status.database_date || 'date unknown';
-      dbEl.textContent = `GeoIP database: ${date} · updates daily`;
+      dbEl.textContent = `DB ${date}`;
+      dbEl.title = `GeoIP database updated ${date} · updates daily`;
     }
   }
   const errEl = document.getElementById('geoip-error');

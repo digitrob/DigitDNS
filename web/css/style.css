@@ -1236,7 +1236,32 @@ input:checked + .slider:before {
   .settings-pair {
     grid-template-columns: 1fr 1fr;
     gap: 1.5rem;
-    align-items: stretch;
+    align-items: start;
+  }
+}
+
+/* The Server Location card is one line of metadata, so it is deliberately
+   shorter than the update card beside it. It and the 2FA card form a tight
+   left column; the update card sits in the right column. That works on both
+   systemd (short update card) and Docker (update card with the image/binary
+   selector), without stretching either one. */
+#tab-rules #server-location-card {
+  padding: 0.7rem 1rem;
+}
+.settings-pair-left {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+@media (min-width: 1024px) {
+  .settings-pair-left {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .settings-pair > #server-update-card {
+    grid-column: 2;
+    grid-row: 1;
   }
 }
 

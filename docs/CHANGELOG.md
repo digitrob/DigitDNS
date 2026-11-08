@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.3.1] — compact Settings top row
+
+- Server Location is now a one-line card: country and the GeoIP database date
+  share a row, and the card is roughly half its previous height.
+- Two-Factor Authentication sits directly underneath it in a tight left column;
+  Server Update occupies the right column. The old full-width 2FA row is gone.
+- The layout is identical on systemd and Docker. The container image/binary
+  selector only makes the update card taller; it no longer decides where the
+  2FA card can go.
+- The GeoIP database age remains available as the inline `DB <date>` text and as
+  a tooltip.
+
 ## 🏷️ [v5.3.0] — faster cached queries, metrics docs and Android startup
 
 ### Performance
