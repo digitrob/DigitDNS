@@ -56,16 +56,21 @@ func TestSPADocumentRewritesAssetReferencesToTheAdminPrefix(t *testing.T) {
 		prefix + `/js/i18n.js`,
 		prefix + `/js/modules/twofa.js`,
 		prefix + `/img/digitdns-app-icon.png`,
+		prefix + `/img/favicon-32.png`,
+		prefix + `/img/favicon-64.png`,
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("served index.html is missing %q — the browser would request the asset at the host root and draw a 404", want)
 		}
 	}
 
-	// Non-asset references must not have been rewritten. The dashboard's own
-	// favicon is a data: URI — that shape does not match the rewrite.
-	if !strings.Contains(doc, `rel="icon" href="data:image/png;base64,`) {
-		t.Error("the data: favicon was disturbed by the prefix rewrite")
+	// The two dashboard favicons used to be inline data: URIs, which the
+	// rewrite left alone. They are files now so the browser can cache them;
+	// both must move under the admin prefix like every other asset.
+	for _, name := range []string{"favicon-32.png", "favicon-64.png"} {
+		if !strings.Contains(doc, `rel="icon" href="`+prefix+`/img/`+name) {
+			t.Errorf("the %s favicon was not moved under the admin prefix", name)
+		}
 	}
 
 	// Every docs anchor is rewritten too — they are the absolute links that are

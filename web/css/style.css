@@ -1317,6 +1317,13 @@ html[data-boot-tab="rules"] #tab-rules.settings-layout {
   }
 }
 
+/* The update card's release-notes link. Styled here rather than with a
+ * `underline` utility so the purged Tailwind sheet does not need another class
+ * for one link. */
+#server-update-notes {
+  text-decoration: underline;
+}
+
 /* The Server Update card stacks its two actions against the end edge. Plain CSS
  * because `items-end` is not in the purged utility sheet. */
 .server-update-actions {

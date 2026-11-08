@@ -1,0 +1,564 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {},
+      "targets": [
+        {
+          "expr": "rate(digitdns_queries_total[5m])",
+          "refId": "A",
+          "legendFormat": "rate(digitdns_queries_total[5m])"
+        }
+      ],
+      "title": "Queries per second",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {},
+      "targets": [
+        {
+          "expr": "digitdns_qps",
+          "refId": "A",
+          "legendFormat": "digitdns_qps"
+        }
+      ],
+      "title": "Query rate (gauge)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 3,
+      "options": {},
+      "targets": [
+        {
+          "expr": "digitdns_cache_hit_ratio",
+          "refId": "A",
+          "legendFormat": "digitdns_cache_hit_ratio"
+        }
+      ],
+      "title": "Cache hit ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4,
+      "options": {},
+      "targets": [
+        {
+          "expr": "digitdns_latency_ms{quantile=\"0.5\",cached=\"all\"}",
+          "refId": "A",
+          "legendFormat": "digitdns_latency_ms{quantile=\"0.5\",cached=\"all\"}"
+        },
+        {
+          "expr": "digitdns_latency_ms{quantile=\"0.95\",cached=\"all\"}",
+          "refId": "B",
+          "legendFormat": "digitdns_latency_ms{quantile=\"0.95\",cached=\"all\"}"
+        },
+        {
+          "expr": "digitdns_latency_ms{quantile=\"0.99\",cached=\"all\"}",
+          "refId": "C",
+          "legendFormat": "digitdns_latency_ms{quantile=\"0.99\",cached=\"all\"}"
+        },
+        {
+          "expr": "digitdns_latency_ms{quantile=\"0.95\",cached=\"never\"}",
+          "refId": "D",
+          "legendFormat": "digitdns_latency_ms{quantile=\"0.95\",cached=\"never\"}"
+        }
+      ],
+      "title": "Latency quantiles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 8
+      },
+      "id": 5,
+      "options": {},
+      "targets": [
+        {
+          "expr": "digitdns_cpu_percent",
+          "refId": "A",
+          "legendFormat": "digitdns_cpu_percent"
+        },
+        {
+          "expr": "digitdns_system_cpu_percent",
+          "refId": "B",
+          "legendFormat": "digitdns_system_cpu_percent"
+        }
+      ],
+      "title": "Process and system CPU",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 8
+      },
+      "id": 6,
+      "options": {},
+      "targets": [
+        {
+          "expr": "digitdns_memory_alloc_bytes",
+          "refId": "A",
+          "legendFormat": "digitdns_memory_alloc_bytes"
+        },
+        {
+          "expr": "digitdns_memory_sys_bytes",
+          "refId": "B",
+          "legendFormat": "digitdns_memory_sys_bytes"
+        }
+      ],
+      "title": "Memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 16
+      },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "digitdns_agents_online",
+          "refId": "A"
+        }
+      ],
+      "title": "Agents online",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 6,
+        "y": 16
+      },
+      "id": 8,
+      "options": {},
+      "targets": [
+        {
+          "expr": "sum(rate(digitdns_agent_catalogue_not_modified_total[5m])) / sum(rate(digitdns_agent_catalogue_requests_total[5m]))",
+          "refId": "A",
+          "legendFormat": "sum(rate(digitdns_agent_catalogue_not_modified_total[5m])) / sum(rate(digitdns_agent_catalogue_requests_total[5m]))"
+        }
+      ],
+      "title": "Catalogue 304 ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 15,
+        "y": 16
+      },
+      "id": 9,
+      "options": {},
+      "targets": [
+        {
+          "expr": "increase(digitdns_agent_catalogue_builds_total[10m])",
+          "refId": "A",
+          "legendFormat": "increase(digitdns_agent_catalogue_builds_total[10m])"
+        }
+      ],
+      "title": "Catalogue rebuilds (10m)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 21
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "digitdns_agent_catalogue_long_polls",
+          "refId": "A"
+        }
+      ],
+      "title": "Long polls parked",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 21
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "digitdns_agent_revision",
+          "refId": "A"
+        }
+      ],
+      "title": "Control-plane revision",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "id": 12,
+      "options": {},
+      "targets": [
+        {
+          "expr": "digitdns_relays_active",
+          "refId": "A",
+          "legendFormat": "digitdns_relays_active"
+        }
+      ],
+      "title": "Relay connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 26
+      },
+      "id": 13,
+      "options": {},
+      "targets": [
+        {
+          "expr": "digitdns_cache_entries",
+          "refId": "A",
+          "legendFormat": "digitdns_cache_entries"
+        }
+      ],
+      "title": "Cache entries",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 6,
+        "y": 26
+      },
+      "id": 14,
+      "options": {},
+      "targets": [
+        {
+          "expr": "digitdns_queries_total",
+          "refId": "A"
+        }
+      ],
+      "title": "Queries by action",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 15,
+        "y": 26
+      },
+      "id": 15,
+      "options": {},
+      "targets": [
+        {
+          "expr": "rate(digitdns_refresh_started_total[5m])",
+          "refId": "A",
+          "legendFormat": "rate(digitdns_refresh_started_total[5m])"
+        },
+        {
+          "expr": "rate(digitdns_refresh_failed_total[5m])",
+          "refId": "B",
+          "legendFormat": "rate(digitdns_refresh_failed_total[5m])"
+        },
+        {
+          "expr": "rate(digitdns_refresh_dropped_total[5m])",
+          "refId": "C",
+          "legendFormat": "rate(digitdns_refresh_dropped_total[5m])"
+        }
+      ],
+      "title": "Refreshes",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "digitdns"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Prometheus",
+        "multi": false,
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "DigitDNS",
+  "uid": "digitdns",
+  "version": 1
+}

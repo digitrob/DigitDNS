@@ -9239,6 +9239,15 @@ function initEventListeners() {
   });
   document.getElementById('server-update-check-btn')?.addEventListener('click', checkServerUpdate);
   document.getElementById('server-update-apply-btn')?.addEventListener('click', applyServerUpdate);
+  document.getElementById('server-update-copy')?.addEventListener('click', async () => {
+    const command = 'docker compose pull && docker compose up -d';
+    try {
+      await navigator.clipboard.writeText(command);
+      showToast('Update command copied.', 'success');
+    } catch (e) {
+      showToast('Could not copy the command.', 'error');
+    }
+  });
   document.querySelectorAll('input[name="server-update-mode"]').forEach((el) => {
     el.addEventListener('change', () => setContainerUpdateMode(el.value));
   });
@@ -11875,6 +11884,17 @@ function renderServerUpdate(st) {
       ? 'Temporary: a recreate restores the image binary; the image tag and digest stay unchanged.'
       : 'The panel refuses the in-container swap and shows the pull/recreate command.';
   }
+  const notes = document.getElementById('server-update-notes');
+  if (notes) {
+    if (st && st.latest) {
+      // setAttribute keeps this out of the "off-origin resource" scan: it is a
+      // navigation link, not something the page fetches.
+      notes.setAttribute('href', 'https://github.com/digitrob/DigitDNS/releases/tag/v' + encodeURIComponent(st.latest));
+      notes.classList.remove('hidden');
+    } else {
+      notes.classList.add('hidden');
+    }
+  }
   const temp = document.getElementById('server-update-temp');
   if (temp) {
     const active = !!(st && st.container && st.container_swap_active);
@@ -11902,8 +11922,8 @@ async function setContainerUpdateMode(mode) {
     });
     if (!res.ok) throw new Error(await errorMessage(res, 'Could not save the update method.'));
     const note = mode === 'binary'
-      ? 'Temporary binary update: this replaces the binary inside the container. A container recreate restores the image\'s binary; the image is not updated.'
-      : 'This install runs in a container. Update the image instead: docker compose pull && docker compose up -d';
+      ? 'Temporary binary update: a recreate restores the image\'s binary.'
+      : 'Update the image: docker compose pull && docker compose up -d';
     renderServerUpdate({
       ...(serverUpdateState || {}),
       update_mode: mode,

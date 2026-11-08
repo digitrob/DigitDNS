@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.3.0] — faster cached queries, metrics docs and Android startup
+
+### Performance
+- The cached query path skips `applyQueryOptions`/DNSSEC stripping when the entry
+  was stored already normalised for the same EDNS/DO/CD key. `MatchDetailLower`
+  and `LookupWithOptionsLower` reuse the lowercase name the resolver already
+  computed. `BenchmarkProcessCacheHit`: ~932 ns → ~770 ns.
+- Agent fleet counts in `/api/metrics` are cached for five seconds.
+- Dashboard favicons moved out of `index.html` into `/img/favicon-*.png`
+  (document 228.6 KB → 219.8 KB) and are served from the immutable asset URLs.
+
+### Monitoring and docs
+- New `docs/METRICS.md` and `docs/grafana/digitdns.json`.
+- `docs/API.md` lists `/api/metrics`, `/api/update/mode`, `/api/filter/test`
+  and their v3 equivalents.
+- Relay Agents on web and Android show the applied catalogue revision and age.
+- The update card links to release notes and can copy the compose command; server
+  notes are shorter.
+
+### Android
+- `NavigationRail` replaces the bottom bar at ≥600 dp.
+- Quick Settings tile toggles ad blocking through the v3 filtering API.
+- Baseline and startup profiles generated with `:baselineprofile` and packaged
+  via `androidx.profileinstaller` (`assets/dexopt/baseline.prof`).
+
+### CI
+- cosign is pinned to v2.5.2 and downloaded with retries instead of the floating
+  installer action that could time out and redden `Docker main`.
+
 ## 🏷️ [v5.2.13] — agent control plane without the restart stampede
 
 - The agent control-plane revision is persisted (`agent_revision`) and the

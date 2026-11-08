@@ -133,8 +133,25 @@ jobs:
       # the repository or in an Actions secret — Sigstore's transparency log
       # binds the signature to this repository, this workflow file and this run.
       # Verify with the command documented in README.md.
+      # Pinned and retried: the installer action once spent its whole 120 s
+      # budget on a single GitHub release download and turned the run red. A
+      # direct download with retries fails only when cosign is genuinely
+      # unreachable, and the version is explicit rather than whatever v3 floats
+      # to.
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        run: |
+          mkdir -p "$HOME/.cosign"
+          url="https://github.com/sigstore/cosign/releases/download/v2.5.2/cosign-linux-amd64"
+          for attempt in 1 2 3 4; do
+            if curl -fsSL --retry 3 --retry-delay 2 -o "$HOME/.cosign/cosign" "$url"; then
+              break
+            fi
+            echo "cosign download failed (attempt $attempt); retrying" >&2
+            sleep $((attempt * 5))
+          done
+          chmod +x "$HOME/.cosign/cosign"
+          echo "$HOME/.cosign" >> "$GITHUB_PATH"
+          "$HOME/.cosign/cosign" version
 
       - name: Sign the image
         env:
@@ -214,8 +231,25 @@ jobs:
           cache-from: type=gha,scope=agent
           cache-to: type=gha,mode=max,scope=agent
 
+      # Pinned and retried: the installer action once spent its whole 120 s
+      # budget on a single GitHub release download and turned the run red. A
+      # direct download with retries fails only when cosign is genuinely
+      # unreachable, and the version is explicit rather than whatever v3 floats
+      # to.
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        run: |
+          mkdir -p "$HOME/.cosign"
+          url="https://github.com/sigstore/cosign/releases/download/v2.5.2/cosign-linux-amd64"
+          for attempt in 1 2 3 4; do
+            if curl -fsSL --retry 3 --retry-delay 2 -o "$HOME/.cosign/cosign" "$url"; then
+              break
+            fi
+            echo "cosign download failed (attempt $attempt); retrying" >&2
+            sleep $((attempt * 5))
+          done
+          chmod +x "$HOME/.cosign/cosign"
+          echo "$HOME/.cosign" >> "$GITHUB_PATH"
+          "$HOME/.cosign/cosign" version
 
       - name: Verify the agent image is amd64 + arm64 on both registries
         env:

@@ -41,6 +41,22 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.3
+
+**The panel is faster, the resolver is leaner, and Android starts better.**
+The cached query path skips redundant EDNS/DNSSEC normalisation and reuses the
+lowercase name the resolver already computed — the full cached-query benchmark
+drops from ~932 ns to ~770 ns. The dashboard externalises its favicons, serves
+every asset from a content-versioned immutable URL, and exposes Prometheus
+metrics with a documented Grafana dashboard. The agent catalogue and heartbeat
+paths now scale with payloads rather than per-agent database work.
+
+On Android, a NavigationRail replaces the bottom bar at 600 dp and above, a Quick
+Settings tile toggles ad blocking without opening the app, and generated baseline
+and startup profiles are compiled into release builds (`assets/dexopt/baseline.prof`).
+The About page keeps the update controls on the first screen, and Relay Agents
+shows the applied control-plane revision and its age.
+
 ## What's new in 5.2
 
 **DNSSEC validation is now built into the hub, the panel and the Android app.**
@@ -342,7 +358,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.13/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -401,7 +417,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.13/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -484,7 +500,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.2.13` | Persisted agent revision, shared catalogue cache, batched heartbeats, faster reconnect, control-plane metrics (latest) |
+| `5.3.0` | Faster cached query path, metrics docs + Grafana, adaptive Android navigation, Quick Settings tile, baseline profiles (latest) |
+| `5.2.13` | Persisted agent revision, shared catalogue cache, batched heartbeats, faster reconnect, control-plane metrics (older) |
 | `5.2.12` | Container update method selector (web + Android), temporary-swap marker and badge, compact Android update page (older) |
 | `5.2.11` | Immutable asset caching, tab-aware stats polling, CSP script hashes, Prometheus metrics, rule tester on web and Android (older) |
 | `5.2.10` | Update modal reaches a terminal state and the status endpoint heals a stale Running flag (older) |
@@ -539,7 +556,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.2.13/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.3.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -591,6 +608,21 @@ installer, systemd unit and packaged binaries target Linux.
 
 The companion APKs are attached to every release. See
 [Android app](#android-app) for the architecture table and installation steps.
+
+#### Baseline profiles
+
+The Android app ships generated baseline and startup profiles
+(`android/app/src/release/generated/baselineProfiles/`), which are compiled into
+`assets/dexopt/baseline.prof` in release builds. Regenerate them after a
+navigation or startup-path change with a connected API 33+ device or emulator:
+
+```bash
+cd android
+./gradlew :app:generateBaselineProfile \
+  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR
+```
+
+The generator drives a cold start through the first rendered screen.
 
 ### 6. Relay agent (optional)
 
@@ -760,6 +792,13 @@ week?” without retaining the queries themselves.
 - **Names, not addresses.** Ranked client rows resolve the stored address to the
   client’s current name through the access index; an unknown or deleted client
   keeps its IP. Relay rows show the country flag and localized name.
+
+### Monitoring
+
+`GET /<admin-path>/api/metrics` exposes a Prometheus endpoint covering the
+resolver, cache, relay, latency and the agent control plane. See
+[docs/METRICS.md](docs/METRICS.md) for the scrape config, the full metric
+reference, PromQL examples and an importable Grafana dashboard.
 
 ### Proxy relay
 
@@ -967,7 +1006,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.2.13`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.3.0`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

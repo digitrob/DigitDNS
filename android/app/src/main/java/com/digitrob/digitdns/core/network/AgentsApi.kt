@@ -66,6 +66,10 @@ data class AgentDto(
     @SerialName("ping_at") val pingAt: String = "",
     @SerialName("bytes_in") val bytesIn: Long = 0,
     @SerialName("bytes_out") val bytesOut: Long = 0,
+    /** The control-plane revision this agent last applied. */
+    @SerialName("catalogue_revision") val catalogueRevision: String = "",
+    /** Age of that applied revision, computed by the hub when it answered. */
+    @SerialName("sync_age_seconds") val syncAgeSeconds: Long = 0,
 )
 
 @Serializable

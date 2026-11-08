@@ -300,12 +300,12 @@ func (u *Updater) Check(ctx context.Context) (Status, error) {
 		// The binary-swap updater would replace the container's writable-layer
 		// binary, not the image the operator actually deploys. Refuse it and
 		// give the command that does update the deployment.
-		st.Note = "This install runs in a container. Update the image instead: docker compose pull && docker compose up -d"
+		st.Note = "Update the image: docker compose pull && docker compose up -d"
 	case u.container:
 		// The operator opted into the temporary path explicitly. Never present it
 		// as an image update: a recreate restores the image's binary.
 		st.Supported = true
-		st.Note = "Temporary binary update: this replaces the binary inside the container. A container recreate restores the image's binary; the image is not updated."
+		st.Note = "Temporary binary update: a recreate restores the image's binary."
 	default:
 		st.Supported = true
 	}

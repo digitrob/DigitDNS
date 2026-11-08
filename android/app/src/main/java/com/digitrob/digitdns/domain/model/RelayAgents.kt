@@ -32,12 +32,29 @@ data class RelayAgentInfo(
     val publicIpv6: String = "",
     /** The per-agent opt-in. The global Proxy IPv6 switch must also be on. */
     val ipv6Enabled: Boolean = false,
+    /** The control-plane revision this agent last applied; blank on an old hub. */
+    val catalogueRevision: String = "",
+    /** Age of that applied revision, in seconds. */
+    val syncAgeSeconds: Long = 0,
 ) {
     val displayName: String get() = name.ifBlank { id }
     val address: String get() = publicIp.ifBlank { "not reported" }
     val ipv6Address: String get() = publicIpv6.ifBlank { "not reported" }
     val hasPing: Boolean
         get() = pingMs > 0 && pingAt.isNotBlank() && !pingAt.startsWith("0001")
+
+    /** Compact "applied X ago" label; a blank revision means the hub did not report one. */
+    val syncLabel: String
+        get() {
+            if (catalogueRevision.isBlank()) return "—"
+            val age = syncAgeSeconds.coerceAtLeast(0)
+            return when {
+                age < 5 -> "just now"
+                age < 60 -> "${age}s ago"
+                age < 3600 -> "${age / 60}m ago"
+                else -> "${age / 3600}h ago"
+            }
+        }
 
     fun isOnline(now: Instant = Instant.now()): Boolean =
         online ?: (enabled &&
@@ -81,6 +98,8 @@ data class RelayAgentInfo(
             online = dto.online,
             publicIpv6 = dto.publicIpv6,
             ipv6Enabled = dto.ipv6Enabled,
+            catalogueRevision = dto.catalogueRevision,
+            syncAgeSeconds = dto.syncAgeSeconds,
         )
     }
 }

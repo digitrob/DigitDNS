@@ -6,7 +6,11 @@ import androidx.activity.compose.setContent
 import androidx.annotation.StringRes
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ListAlt
@@ -18,9 +22,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
@@ -31,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.compose.NavHost
@@ -309,44 +317,74 @@ private fun DigitDnsGraph(
     }
 }
 
-/** One top-level tab: its content under a bottom navigation bar. */
+/**
+ * One top-level tab. A phone keeps the bottom bar; a tablet or foldable gets a
+ * navigation rail on the leading edge, where the thumb is not travelling the
+ * height of a 12-inch screen to switch tabs. The breakpoint is the standard
+ * 600 dp compact/medium boundary.
+ */
 @Composable
 private fun TabShell(
     navController: androidx.navigation.NavHostController,
     current: String,
     content: @Composable () -> Unit,
 ) {
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                val backStackEntry by navController.currentBackStackEntryAsState()
-                val destination = backStackEntry?.destination
-                tabs.forEach { tab ->
-                    val selected = destination?.hierarchy?.any { it.route == tab.route } == true
-                    NavigationBarItem(
-                        selected = selected || current == tab.route,
-                        onClick = {
-                            navController.navigate(tab.route) {
-                                // Standard bottom-nav behaviour: one entry per tab, and
-                                // resuming where you left the tab rather than resetting it.
-                                // The anchor is DASHBOARD, not findStartDestination(): when
-                                // the app started logged out the graph's start is LOGIN, which
-                                // goToDashboard has already popped, so the pop target was
-                                // missing and tab taps did nothing.
-                                popUpTo(Routes.DASHBOARD) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = { Icon(tab.icon, contentDescription = stringResource(tab.labelRes)) },
-                        label = { Text(stringResource(tab.labelRes)) },
-                    )
+    BoxWithConstraints {
+        val wide = maxWidth >= 600.dp
+        val backStackEntry by navController.currentBackStackEntryAsState()
+        val destination = backStackEntry?.destination
+        val selectedTab = { tab: Tab ->
+            destination?.hierarchy?.any { it.route == tab.route } == true || current == tab.route
+        }
+        val open = { tab: Tab ->
+            navController.navigate(tab.route) {
+                // One entry per tab, resuming where you left it. The anchor is
+                // DASHBOARD, not findStartDestination(): when the app started
+                // logged out the graph's start is LOGIN, which goToDashboard has
+                // already popped, so the pop target was missing and tab taps did
+                // nothing.
+                popUpTo(Routes.DASHBOARD) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+            Unit
+        }
+
+        Scaffold(
+            bottomBar = {
+                if (!wide) {
+                    NavigationBar {
+                        tabs.forEach { tab ->
+                            NavigationBarItem(
+                                selected = selectedTab(tab),
+                                onClick = { open(tab) },
+                                icon = { Icon(tab.icon, contentDescription = stringResource(tab.labelRes)) },
+                                label = { Text(stringResource(tab.labelRes)) },
+                            )
+                        }
+                    }
+                }
+            },
+        ) { padding ->
+            Row(modifier = Modifier.fillMaxSize().padding(padding)) {
+                if (wide) {
+                    NavigationRail {
+                        Spacer(Modifier.height(8.dp))
+                        tabs.forEach { tab ->
+                            NavigationRailItem(
+                                selected = selectedTab(tab),
+                                onClick = { open(tab) },
+                                icon = { Icon(tab.icon, contentDescription = stringResource(tab.labelRes)) },
+                                label = { Text(stringResource(tab.labelRes)) },
+                            )
+                        }
+                    }
+                    VerticalDivider()
+                }
+                Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+                    content()
                 }
             }
-        },
-    ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            content()
         }
     }
 }

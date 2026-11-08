@@ -117,21 +117,35 @@ func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 // agentFleetCounts reports how many configured agents are inside the same
-// heartbeat window the relay router uses.
+// heartbeat window the relay router uses. The result is cached for five seconds:
+// a Prometheus scrape should not walk the whole agent bucket every time.
 func (ws *WebServer) agentFleetCounts() (int, int) {
 	if ws.db == nil {
 		return 0, 0
 	}
+	now := time.Now()
+	ws.agentFleetMu.Lock()
+	if !ws.agentFleetAt.IsZero() && now.Sub(ws.agentFleetAt) < 5*time.Second {
+		online, total := ws.agentFleetOnline, ws.agentFleetTotal
+		ws.agentFleetMu.Unlock()
+		return online, total
+	}
+	ws.agentFleetMu.Unlock()
+
 	agents, err := ws.db.ListAgents()
 	if err != nil {
 		return 0, 0
 	}
-	now := time.Now()
 	online := 0
 	for _, a := range agents {
 		if a.Enabled && !a.LastSeen.IsZero() && now.Sub(a.LastSeen) <= service.AgentOnlineFor {
 			online++
 		}
 	}
+	ws.agentFleetMu.Lock()
+	ws.agentFleetAt = now
+	ws.agentFleetOnline = online
+	ws.agentFleetTotal = len(agents)
+	ws.agentFleetMu.Unlock()
 	return online, len(agents)
 }

@@ -1,38 +1,42 @@
-# DigitDNS v5.2.13 — agent control plane without the restart stampede
+# DigitDNS v5.3.0 — faster cached queries, metrics docs and Android startup
 
-**Restarting the hub no longer makes every agent pull a full catalogue.** The
-control-plane revision is now persisted, and the catalogue ETag carries a build
-fingerprint:
+**The resolver's cached path is leaner.** Entries that were stored already shaped
+for their EDNS/DO/CD key no longer repeat that normalisation on every hit, and the
+matcher/cache reuse the lowercase name the resolver already computed for logging.
+`BenchmarkProcessCacheHit` dropped from **~932 ns to ~770 ns** per query, with the
+same 296 B / 7 allocs. The wire-format cache was evaluated and deferred: profiling
+put the message copy at ~5 % of a hit, not enough to justify rewriting every
+transport.
 
-```
-ETag: "v<N>-<buildhash>"
-```
+**The dashboard is lighter and observable.**
 
-- Same build, unchanged config, hub restarted → every parked agent gets **304**,
-  no rebuild.
-- A real upgrade changes the build hash, so agents refresh exactly once.
-- A config change still bumps the counter and wakes the parked long-polls
-  immediately.
+- Favicons moved out of `index.html` into content-versioned images; the document
+  is 228.6 KB → 219.8 KB and the icons are cached immutably.
+- New `docs/METRICS.md` and an importable `docs/grafana/digitdns.json` covering
+  queries, cache, latency, relay traffic and the agent control plane.
+- `docs/API.md` documents `/api/metrics`, `/api/update/mode` and the rule-tester
+  routes.
+- Relay Agents on web and Android show the applied catalogue revision and age.
+- The update card links to the matching GitHub release and can copy the
+  `docker compose pull && docker compose up -d` command.
+- Agent fleet counts behind `/api/metrics` are cached for five seconds.
 
-**A config change is now O(1) in database work.** The rules and panel client list
-behind every catalogue are cached per revision; only the per-agent assignment
-walk runs. Before this, one change woke N agents and each re-read both inputs.
+**Android starts better and is easier to drive.**
 
-**Heartbeats are cheaper.** They share a batched bbolt transaction (one fsync for
-beats arriving together) and the write returns the updated agent, so the handler
-no longer performs a second read to update the live relay router.
+- A `NavigationRail` replaces the bottom bar at 600 dp and above; phones keep the
+  bottom bar.
+- A Quick Settings tile toggles ad blocking through the same v3 filtering API as
+  the Ad Blocking screen.
+- Baseline and startup profiles are generated from the real startup path and
+  compiled into release builds as `assets/dexopt/baseline.prof` /
+  `baseline.profm`, with `androidx.profileinstaller` ensuring they are applied.
+- Relay Agents shows **Applied** and its age; the About page keeps the update
+  controls on the first screen.
 
-**The safety sync is rarer, and reconnects are faster.** The agent's forced full
-fetch moved from every 5 minutes to every 30; normal propagation is still the
-long-poll. A transport-level drop (hub restart or an idle proxy) is no longer
-treated like an HTTP rejection: the next successful heartbeat re-arms the poll
-immediately, while genuine errors and 5xx keep the exponential backoff.
+**CI** pins cosign v2.5.2 and downloads it with retries, removing the transient
+`Docker main` failure caused by the floating installer action.
 
-**New metrics** for the control plane: catalogue requests, 304s, builds, parked
-long-polls, revision, agents online and agents total.
-
-No resolver, relay or storage-format changes. The only new setting record is
-`agent_revision`.
+No database migration. No resolver policy, relay or agent protocol changes.
 
 ## Upgrade
 
@@ -46,29 +50,25 @@ docker compose up -d
 Pinned versions:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.2.13
-docker pull ghcr.io/digitrob/digitdns-agent:5.2.13
-docker pull robmeister/digitdns:5.2.13
-docker pull robmeister/digitdns-agent:5.2.13
+docker pull ghcr.io/digitrob/digitdns:5.3.0
+docker pull ghcr.io/digitrob/digitdns-agent:5.3.0
+docker pull robmeister/digitdns:5.3.0
+docker pull robmeister/digitdns-agent:5.3.0
 ```
 
 systemd:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.2.13/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.0/scripts/install.sh | sudo bash
 ```
-
-Agents may be updated independently; older agents keep working, but only 5.2.13
-agents get the batched heartbeat, persisted-revision 304s, the 30-minute safety
-sync and the fast re-arm.
 
 ## Assets
 
 - `digitdns-linux-amd64`, `digitdns-linux-arm64`
 - `digitdns-agent-linux-amd64`, `digitdns-agent-linux-arm64`
-- `digitdns-agent-5.2.13-linux-arm64-image.tar.gz` and `.sha256`
+- `digitdns-agent-5.3.0-linux-arm64-image.tar.gz` and `.sha256`
 - `digitdns-offline-bundle.tar.gz`, `digitdns-offline-bundle.zip`
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-The Android APKs are attached to this release from the `android-v5.2.13` tag.
+The Android APKs are attached to this release from the `android-v5.3.0` tag.

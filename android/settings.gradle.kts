@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "DigitDNS"
 include(":app")
+include(":baselineprofile")

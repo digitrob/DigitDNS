@@ -99,6 +99,11 @@
     <string name="agents_status_disabled">Disabled</string>
     <string name="agents_version">Version</string>
     <string name="agents_last_seen">Last seen</string>
+    <string name="agents_applied">Applied</string>
+    <string name="tile_filtering">DigitDNS filtering</string>
+    <string name="tile_filtering_on">Filtering on</string>
+    <string name="tile_filtering_off">Filtering off</string>
+    <string name="tile_filtering_offline">Sign in to DigitDNS</string>
     <string name="agents_domains">Domains</string>
     <string name="agents_traffic_service_none">%1$s relayed · No service default</string>
     <string name="agents_traffic_services">%1$s relayed · Services: %2$s</string>

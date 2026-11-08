@@ -8,13 +8,14 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.detekt)
+    alias(libs.plugins.androidx.baselineprofile)
 }
 
 // The app carries its own version, independent of the server's v3.2.x line: a
 // panel release and an app release are different products on different cadences,
 // and tying them would make every server patch look like an app release.
-val appVersionName: String = "5.2.13"
-val appVersionCode: Int = 532
+val appVersionName: String = "5.3.0"
+val appVersionCode: Int = 533
 
 android {
     namespace = "com.digitrob.digitdns"
@@ -78,6 +79,13 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
+        // Created by the baseline-profile plugin. It builds the app with release
+        // optimisations but without minification so the profile can be generated.
+        // Locally there is no release keystore, so sign it with the debug key;
+        // CI, which holds the release key, keeps using it.
+        create("nonMinifiedRelease") {
+            signingConfig = signingConfigs.getByName(if (hasReleaseSigning) "release" else "debug")
+        }
     }
 
     compileOptions {
@@ -131,8 +139,15 @@ detekt {
     source.setFrom(files("src/main/java"))
 }
 
+// Keep the generated profile in the source tree, where it is packaged into
+// release builds, instead of a build-directory artefact a clean would erase.
+baselineProfile {
+    saveInSrc = true
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.profileinstaller)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -178,6 +193,8 @@ dependencies {
     implementation(libs.coil.svg)
 
     implementation(libs.timber)
+
+    baselineProfile(project(":baselineprofile"))
 
     testImplementation(libs.junit)
     testImplementation(libs.turbine)

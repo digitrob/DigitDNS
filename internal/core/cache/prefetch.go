@@ -121,8 +121,17 @@ func (c *Cache) LookupWithOptions(q dns.Question, opts QueryOptions) (*dns.Msg, 
 	return c.lookup(q, opts, true)
 }
 
+// LookupWithOptionsLower is LookupWithOptions for a name the caller has already
+// lowercased (the resolver keeps one lowercase copy for logging and matching).
+func (c *Cache) LookupWithOptionsLower(q dns.Question, name string, opts QueryOptions) (*dns.Msg, bool) {
+	return c.lookupKey(c.cacheKeyForName(q, name, opts), q, opts, true)
+}
+
 func (c *Cache) lookup(q dns.Question, opts QueryOptions, normalize bool) (*dns.Msg, bool) {
-	key := c.cacheKeyFor(q, opts)
+	return c.lookupKey(c.cacheKeyFor(q, opts), q, opts, normalize)
+}
+
+func (c *Cache) lookupKey(key string, q dns.Question, opts QueryOptions, normalize bool) (*dns.Msg, bool) {
 	shard := c.getShard(key)
 	now := time.Now()
 

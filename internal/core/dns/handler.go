@@ -737,7 +737,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	// 4. Rule matcher. Every client is matched against the same admin-wide
 	// rules: the per-client policy lists a stored account may still carry are
 	// inert in this build.
-	action, ruleName, matchedPattern := h.matcher.MatchDetail(domain)
+	action, ruleName, matchedPattern := h.matcher.MatchDetailLower(domain)
 
 	switch action {
 	case matcher.ActionBlock:
@@ -883,7 +883,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	// resolver already knows.
 	cacheOpts := cacheOptions(r)
 	if h.cache != nil {
-		if cachedResp, stale := h.cache.LookupWithOptions(q, cacheOpts); cachedResp != nil {
+		if cachedResp, stale := h.cache.LookupWithOptionsLower(q, qName, cacheOpts); cachedResp != nil {
 			cachedResp.Id = r.Id
 			cachedResp.Question = r.Question
 			cachedResp.RecursionDesired = r.RecursionDesired

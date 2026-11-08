@@ -83,6 +83,22 @@ Authorization: Bearer digitdns_session_your_token_here
 - **Interactive Swagger Documentation:** Open `http://<SERVER_IP>:<panel-port>/<admin-path>/api/v3/docs` in your browser (v2 at `/api/v2/docs`). Press **Authorize**, paste the Master API Key from Settings — or a session token from `/api/v3/auth/login` — and every endpoint on the page becomes runnable from the browser.
 - **Docs are gated too:** the documentation pages and the OpenAPI specs are subject to the same network-binding rule as the API — they are not exposed to callers `api_bind`/`api_bind_list` does not admit. A refused **browser** gets an HTML `403` that names the rule in force and how to satisfy it (add your address in **Settings → API Network Binding**, use an already-allowed network such as a tailnet, or browse over an SSH tunnel to loopback); a refused **API route** keeps the JSON `403` above, because its caller parses a body rather than reads a page.
 
+### Operational endpoints
+
+Beyond the client/policy REST surface, four routes support monitoring and updates.
+All of them live under the same `<admin-path>` prefix.
+
+| Route | Auth | Purpose |
+| :--- | :--- | :--- |
+| `GET /api/metrics` | Master key **or** dashboard session | Prometheus text exposition (`text/plain; version=0.0.4`). See [METRICS.md](METRICS.md). |
+| `POST /api/update/mode` | Dashboard session | Container installs only: `{"mode":"image"\|"binary"}`. Systemd installs answer `400`. |
+| `POST /api/v3/update/mode` | Master key or dashboard session | Same, for the Android app and automation. |
+| `GET /api/filter/test?domain=…` | Dashboard session | Read-only rule tester: action, matching rule and exact/wildcard pattern. |
+| `GET /api/v3/filter/test?domain=…` | Master key or dashboard session | Same, for the Android app and automation. |
+
+`/api/update/check`, `/apply` and `/status` are unchanged; the container
+`supported` flag reflects the saved update method.
+
 ---
 
 ## ⚡ API v2 — the current contract

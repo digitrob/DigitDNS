@@ -456,6 +456,16 @@ private fun AgentCard(
             ) {
                 AgentStat(stringResource(R.string.agents_version), agent.version.ifBlank { "—" }, Modifier.weight(1f))
                 AgentStat(stringResource(R.string.agents_last_seen), relayRelativeAge(agent.lastSeen), Modifier.weight(1f))
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                AgentStat(stringResource(R.string.agents_applied), agent.syncLabel, Modifier.weight(1f))
                 AgentStat(stringResource(R.string.agents_domains), assignedDomains.toString(), Modifier.weight(1f))
             }
 

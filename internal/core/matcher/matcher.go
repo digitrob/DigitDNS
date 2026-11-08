@@ -292,7 +292,17 @@ func (m *Matcher) match(domain string, policies []string) (Action, string) {
 }
 
 func (m *Matcher) matchDetail(domain string, _ []string) (Action, string, string) {
-	d := normalizeDomain(domain)
+	return m.matchDetailLower(normalizeDomain(domain))
+}
+
+// MatchDetailLower is MatchDetail for a name the resolver has already
+// normalised: lower case, trimmed and with the trailing dot removed. It skips
+// the second normalisation pass on the query path.
+func (m *Matcher) MatchDetailLower(d string) (Action, string, string) {
+	return m.matchDetailLower(d)
+}
+
+func (m *Matcher) matchDetailLower(d string) (Action, string, string) {
 	if d == "" {
 		return ActionDirect, "Direct", ""
 	}

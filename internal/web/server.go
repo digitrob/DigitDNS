@@ -100,6 +100,13 @@ type WebServer struct {
 	// database, turning an O(1) change into O(N) scans.
 	agentInputsMu sync.Mutex
 	agentInputs   *agentCatalogueInputs
+	// agentFleet caches the online/total counts for a few seconds. A scrape is
+	// cheap, but ListAgents walks every agent; a 5 s cache keeps a 15 s Prometheus
+	// scrape from turning into a DB read per scrape.
+	agentFleetMu     sync.Mutex
+	agentFleetAt     time.Time
+	agentFleetOnline int
+	agentFleetTotal  int
 
 	// kdfGate bounds how many password verifications run at once. Verification is
 	// deliberately expensive and reachable without authentication, so without a

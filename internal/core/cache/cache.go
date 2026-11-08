@@ -31,6 +31,11 @@ type cacheEntry struct {
 	cachedAt time.Time
 	expireAt time.Time
 	origTTL  uint32
+	// normalized records that the entry was stored already shaped for its
+	// QueryOptions (OPT presence, DO bit, DNSSEC records). A lookup whose key
+	// carries the same options then does not need to repeat that work; an entry
+	// written through the option-less Put still does.
+	normalized bool
 }
 
 // QueryOptions is the parts of a request that change what a cached answer may
@@ -165,7 +170,13 @@ func (c *Cache) cacheKey(q dns.Question) string {
 }
 
 func (c *Cache) cacheKeyFor(q dns.Question, opts QueryOptions) string {
-	name := strings.ToLower(q.Name)
+	return c.cacheKeyForName(q, strings.ToLower(q.Name), opts)
+}
+
+// cacheKeyForName is cacheKeyFor for a caller that already normalised the name.
+// The resolver lowercases the question once for logging and the matcher, so
+// doing it again here was a second scan of the same bytes on every hit.
+func (c *Cache) cacheKeyForName(q dns.Question, name string, opts QueryOptions) string {
 
 	var scratch [maxNameLen + 5]byte
 	var buf []byte
@@ -220,6 +231,7 @@ func (c *Cache) get(q dns.Question, opts QueryOptions, normalize bool) *dns.Msg 
 	// Clone while still holding the read lock so the stored message is never
 	// read outside the shard's synchronization.
 	resp := entry.msg.Copy()
+	normalized := entry.normalized
 	shard.mu.RUnlock()
 
 	c.hits.Add(1)
@@ -227,7 +239,7 @@ func (c *Cache) get(q dns.Question, opts QueryOptions, normalize bool) *dns.Msg 
 	adjustRRs(resp.Answer, elapsed)
 	adjustRRs(resp.Ns, elapsed)
 	adjustRRs(resp.Extra, elapsed)
-	if normalize {
+	if normalize && !normalized {
 		applyQueryOptions(resp, q, opts)
 	}
 
@@ -292,10 +304,11 @@ func (c *Cache) put(q dns.Question, msg *dns.Msg, opts QueryOptions, normalize b
 	}
 
 	entry := &cacheEntry{
-		msg:      stored,
-		cachedAt: now,
-		expireAt: now.Add(time.Duration(minTTL) * time.Second),
-		origTTL:  minTTL,
+		msg:        stored,
+		normalized: normalize,
+		cachedAt:   now,
+		expireAt:   now.Add(time.Duration(minTTL) * time.Second),
+		origTTL:    minTTL,
 	}
 
 	shard.mu.Lock()
