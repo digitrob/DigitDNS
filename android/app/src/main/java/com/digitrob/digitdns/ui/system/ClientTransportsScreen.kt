@@ -138,91 +138,11 @@ private fun Doh3Card(state: ClientTransportsUiState, viewModel: ClientTransports
 private fun DoqCard(state: ClientTransportsUiState, viewModel: ClientTransportsViewModel) {
     PanelCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.transports_doq), style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        stringResource(R.string.transports_doq_help),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(checked = state.doqEnabled, onCheckedChange = viewModel::setDoqEnabled)
-            }
-
-            OutlinedTextField(
-                value = state.doqPort,
-                onValueChange = viewModel::setDoqPort,
-                label = { Text(stringResource(R.string.transports_port)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Text(stringResource(R.string.transports_auth), style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = state.doqAuth != "sni-token",
-                    onClick = { viewModel.setDoqAuth("ip") },
-                    label = { Text(stringResource(R.string.transports_auth_ip)) },
-                )
-                FilterChip(
-                    selected = state.doqAuth == "sni-token",
-                    onClick = { viewModel.setDoqAuth("sni-token") },
-                    label = { Text(stringResource(R.string.transports_auth_token)) },
-                )
-            }
-
+            DoqHeader(state, viewModel)
+            DoqPortAndAuth(state, viewModel)
             if (state.doqAuth == "sni-token") {
-                OutlinedTextField(
-                    value = state.tokenDomain,
-                    onValueChange = viewModel::setTokenDomain,
-                    label = { Text(stringResource(R.string.transports_token_domain)) },
-                    placeholder = { Text(stringResource(R.string.transports_token_domain_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = state.newToken,
-                        onValueChange = viewModel::setNewToken,
-                        label = { Text(stringResource(R.string.transports_new_token)) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Button(onClick = viewModel::addToken) {
-                        Text(stringResource(R.string.transports_add_token))
-                    }
-                }
-                if (state.tokens.isEmpty()) {
-                    Text(
-                        stringResource(R.string.transports_no_tokens),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    state.tokens.forEach { token ->
-                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                token,
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            IconButton(onClick = { viewModel.removeToken(token) }) {
-                                Icon(Icons.Filled.Close, contentDescription = "Remove $token")
-                            }
-                        }
-                    }
-                }
-                Text(
-                    stringResource(R.string.transports_cert_warning),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = DigitDnsTheme.colors.warning,
-                )
+                DoqTokenEditor(state, viewModel)
             }
-
             TransportStatus(state.doqEnabled, state.doqListening)
             Text(
                 stringResource(R.string.transports_firewall),
@@ -231,6 +151,97 @@ private fun DoqCard(state: ClientTransportsUiState, viewModel: ClientTransportsV
             )
         }
     }
+}
+
+@Composable
+private fun DoqHeader(state: ClientTransportsUiState, viewModel: ClientTransportsViewModel) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.transports_doq), style = MaterialTheme.typography.titleSmall)
+            Text(
+                stringResource(R.string.transports_doq_help),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = state.doqEnabled, onCheckedChange = viewModel::setDoqEnabled)
+    }
+}
+
+@Composable
+private fun DoqPortAndAuth(state: ClientTransportsUiState, viewModel: ClientTransportsViewModel) {
+    OutlinedTextField(
+        value = state.doqPort,
+        onValueChange = viewModel::setDoqPort,
+        label = { Text(stringResource(R.string.transports_port)) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Text(stringResource(R.string.transports_auth), style = MaterialTheme.typography.labelMedium)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = state.doqAuth != "sni-token",
+            onClick = { viewModel.setDoqAuth("ip") },
+            label = { Text(stringResource(R.string.transports_auth_ip)) },
+        )
+        FilterChip(
+            selected = state.doqAuth == "sni-token",
+            onClick = { viewModel.setDoqAuth("sni-token") },
+            label = { Text(stringResource(R.string.transports_auth_token)) },
+        )
+    }
+}
+
+@Composable
+private fun DoqTokenEditor(state: ClientTransportsUiState, viewModel: ClientTransportsViewModel) {
+    OutlinedTextField(
+        value = state.tokenDomain,
+        onValueChange = viewModel::setTokenDomain,
+        label = { Text(stringResource(R.string.transports_token_domain)) },
+        placeholder = { Text(stringResource(R.string.transports_token_domain_hint)) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = state.newToken,
+            onValueChange = viewModel::setNewToken,
+            label = { Text(stringResource(R.string.transports_new_token)) },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        Button(onClick = viewModel::addToken) {
+            Text(stringResource(R.string.transports_add_token))
+        }
+    }
+    if (state.tokens.isEmpty()) {
+        Text(
+            stringResource(R.string.transports_no_tokens),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else {
+        state.tokens.forEach { token ->
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    token,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                IconButton(onClick = { viewModel.removeToken(token) }) {
+                    Icon(Icons.Filled.Close, contentDescription = "Remove $token")
+                }
+            }
+        }
+    }
+    Text(
+        stringResource(R.string.transports_cert_warning),
+        style = MaterialTheme.typography.bodySmall,
+        color = DigitDnsTheme.colors.warning,
+    )
 }
 
 @Composable

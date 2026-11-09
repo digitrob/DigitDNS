@@ -16,6 +16,9 @@ import java.io.IOException
 import javax.inject.Inject
 
 private val TOKEN_LABEL = Regex("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+private const val MAX_DOQ_PORT = 65535
+private const val NO_PORT = 0
+private const val MAX_PORT_DIGITS = 5
 
 data class ClientTransportsUiState(
     val doh3Enabled: Boolean = false,
@@ -92,7 +95,7 @@ class ClientTransportsViewModel @Inject constructor(
     }
 
     fun setDoqPort(value: String) = _state.update {
-        it.copy(doqPort = value.filter(Char::isDigit).take(5), saved = false)
+        it.copy(doqPort = value.filter(Char::isDigit).take(MAX_PORT_DIGITS), saved = false)
     }
 
     fun setDoqAuth(value: String) = _state.update {
@@ -131,20 +134,18 @@ class ClientTransportsViewModel @Inject constructor(
     fun save() {
         val current = _state.value
         if (current.isSaving || !current.loaded) return
-        val port = current.doqPort.toIntOrNull()
-        if (port == null || port !in 1..65535) {
-            _state.update { it.copy(error = "DoQ port must be between 1 and 65535.") }
-            return
+        val port = current.doqPort.toIntOrNull() ?: NO_PORT
+        val problem = when {
+            port !in 1..MAX_DOQ_PORT -> "DoQ port must be between 1 and $MAX_DOQ_PORT."
+            current.doqAuth == "sni-token" && current.tokenDomain.isBlank() ->
+                "Token domain is required for SNI-token mode."
+            current.doqAuth == "sni-token" && current.tokens.isEmpty() ->
+                "Add at least one token for SNI-token mode."
+            else -> null
         }
-        if (current.doqAuth == "sni-token") {
-            if (current.tokenDomain.isBlank()) {
-                _state.update { it.copy(error = "Token domain is required for SNI-token mode.") }
-                return
-            }
-            if (current.tokens.isEmpty()) {
-                _state.update { it.copy(error = "Add at least one token for SNI-token mode.") }
-                return
-            }
+        if (problem != null) {
+            _state.update { it.copy(error = problem) }
+            return
         }
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, saved = false, error = null) }
