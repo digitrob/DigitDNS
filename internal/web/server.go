@@ -174,6 +174,16 @@ type WebServer struct {
 	// lighter test harnesses.
 	proxyLeakSetter func(bool)
 
+	// transportApplier applies DoQ/DoH3 settings to the running DNS server.
+	// Installed during startup once the listeners exist; nil in test harnesses,
+	// where the save is persistence-only.
+	transportApplier func(database.DNSSettings, []string) error
+	// transportStatus reports whether the QUIC listeners are actually serving.
+	// Nil in harnesses that never build a DNS server.
+	transportStatus func() (doh3 bool, doq bool)
+	// transportMetrics reports the QUIC listener counters. Nil means all zero.
+	transportMetrics func() (doh3, doq, authFailures uint64)
+
 	// ipv6Setter applies the live proxied-IPv6 policy to the running resolver.
 	// Installed during startup; nil leaves the API persistence-only in the
 	// lighter test harnesses.
@@ -307,6 +317,33 @@ func (ws *WebServer) SetProxyLeakProtectionSetter(fn func(bool)) {
 		return
 	}
 	ws.proxyLeakSetter = fn
+}
+
+// SetTransportApplier installs the hook that applies DoQ/DoH3 settings to the
+// running DNS server. Call it during startup, after the listener exists.
+func (ws *WebServer) SetTransportApplier(fn func(database.DNSSettings, []string) error) {
+	if ws == nil {
+		return
+	}
+	ws.transportApplier = fn
+}
+
+// SetTransportStatusSource installs the read-only listener state used by the
+// transport card. Call it during startup, after the DNS server exists.
+func (ws *WebServer) SetTransportStatusSource(fn func() (doh3 bool, doq bool)) {
+	if ws == nil {
+		return
+	}
+	ws.transportStatus = fn
+}
+
+// SetTransportMetricsSource installs the QUIC counter source. Call it during
+// startup, after the DNS server exists.
+func (ws *WebServer) SetTransportMetricsSource(fn func() (doh3, doq, authFailures uint64)) {
+	if ws == nil {
+		return
+	}
+	ws.transportMetrics = fn
 }
 
 // SetIPv6PolicySetter installs the live-resolver hook used by the server
@@ -953,6 +990,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/upstreams/add", ws.requireAuth(ws.handleUpstreamsAdd))
 	mux.HandleFunc("/api/settings/resolution", ws.requireAuth(ws.handleResolutionSettings))
 	mux.HandleFunc("/api/settings/dnssec", ws.requireAuth(ws.handleDNSSECSettings))
+	mux.HandleFunc("/api/settings/transports", ws.requireAuth(ws.handleTransportSettings))
 	mux.HandleFunc("/api/settings/proxy-leak", ws.requireAuth(ws.handleProxyLeakSettings))
 	mux.HandleFunc("/api/upstreams/delete", ws.requireAuth(ws.handleUpstreamsDelete))
 	mux.HandleFunc("/api/tls/issue", ws.requireAuth(ws.handleTLSSettings))
@@ -1744,6 +1782,11 @@ func (ws *WebServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 		// the configured domain in preference to the public IP. The Connect
 		// Guide used to rebuild this from the web port and got all three wrong.
 		"doh_url": ws.dohURL(),
+		// The DoQ endpoint uses the same host preference and its own UDP port.
+		"doq_url": ws.doqURL(),
+		// The client-facing QUIC transports. Both are opt-in and live-applied;
+		// the card reads and writes them through /api/settings/transports.
+		"transports": ws.transportSettingsView(),
 		// Auth state for the settings panel's 2FA prompts: the snapshot type
 		// structurally cannot carry the TOTP secret.
 		"auth": ws.authSettings.Snapshot(),
@@ -1761,14 +1804,18 @@ func (ws *WebServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 type accessConfig struct {
 	AllowAll   bool     `json:"allow_all"`
 	DoHTokens  []string `json:"doh_tokens"`
+	DoQTokens  []string `json:"doq_tokens"`
 	AllowedIPs []string `json:"allowed_ips"`
 }
 
 func (ws *WebServer) loadAccessConfig() accessConfig {
-	acc := accessConfig{AllowAll: ws.clients.IsAllowAll(), DoHTokens: []string{}}
+	acc := accessConfig{AllowAll: ws.clients.IsAllowAll(), DoHTokens: []string{}, DoQTokens: []string{}}
 	_ = ws.db.GetSetting("access", &acc)
 	if acc.DoHTokens == nil {
 		acc.DoHTokens = []string{}
+	}
+	if acc.DoQTokens == nil {
+		acc.DoQTokens = []string{}
 	}
 	// The client service owns the parsed allowlist; report its canonical form so a
 	// hand-edited or legacy record is shown exactly as the resolver sees it.
@@ -1789,6 +1836,12 @@ func (ws *WebServer) handleConfigAccess(w http.ResponseWriter, r *http.Request) 
 		}
 		if acc.DoHTokens == nil {
 			acc.DoHTokens = []string{}
+		}
+		// DoQ tokens are managed by the transport card. A DoH-token save that
+		// omits them must not wipe them, so keep whatever the store already
+		// holds unless the caller sent an explicit list.
+		if acc.DoQTokens == nil {
+			acc.DoQTokens = ws.loadAccessConfig().DoQTokens
 		}
 		if acc.AllowedIPs == nil {
 			acc.AllowedIPs = []string{}

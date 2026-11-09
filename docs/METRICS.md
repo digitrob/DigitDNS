@@ -61,6 +61,9 @@ scrape_configs:
 | `digitdns_relays_refused_actionable_total` | counter | Relay connections refused for an actionable reason (flood attempts excluded). |
 | `digitdns_relays_flood_total` | counter | Relay connection attempts from a source already in the malformed-probe penalty box. |
 | `digitdns_relays_unreadable_total` | counter | Connections whose opening bytes named no destination. |
+| `digitdns_doh3_requests_total` | counter | HTTP/3 DoH requests served since start. |
+| `digitdns_doq_queries_total` | counter | DNS-over-QUIC queries served since start. |
+| `digitdns_doq_auth_failures_total` | counter | DoQ connections rejected by SNI-token authentication. |
 | `digitdns_cpu_percent` | gauge | Process CPU usage. |
 | `digitdns_system_cpu_percent` | gauge | Machine-wide CPU usage. |
 | `digitdns_memory_alloc_bytes` | gauge | Allocated heap bytes. |

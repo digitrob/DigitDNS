@@ -175,6 +175,12 @@ internal fun GuideTab(status: SubscriberStatusDto, onCopy: (String) -> Unit) {
             if (status.hasDomain) {
                 GuideValueRow(stringResource(R.string.subscriber_doh), "https://${status.serverHost}:${status.dohPort}/dns-query", onCopy)
             }
+            if (status.doh3Enabled && status.hasDomain) {
+                GuideValueRow(stringResource(R.string.subscriber_doh3), "https://${status.serverHost}:${status.dohPort}/dns-query", onCopy)
+            }
+            if (status.doqEnabled && status.doqUrl.isNotBlank()) {
+                GuideValueRow(stringResource(R.string.subscriber_doq), status.doqUrl, onCopy)
+            }
             GuideValueRow(stringResource(R.string.subscriber_dot), "${status.serverHost}:${status.dotPort}", onCopy)
         }
     }

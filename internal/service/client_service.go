@@ -503,6 +503,7 @@ func (s *ClientService) SetResolverAllowCIDRs(cidrs []string) ([]string, error) 
 	acc := struct {
 		AllowAll   *bool    `json:"allow_all,omitempty"`
 		DoHTokens  []string `json:"doh_tokens"`
+		DoQTokens  []string `json:"doq_tokens"`
 		AllowedIPs []string `json:"allowed_ips"`
 	}{}
 	_ = s.db.GetSetting("access", &acc)

@@ -64,6 +64,14 @@ func (f *fakeV3Backend) SaveDnssecSettings(r *http.Request, body map[string]any)
 	return f.dnssec, nil
 }
 
+func (f *fakeV3Backend) TransportSettings() (map[string]any, error) {
+	return map[string]any{}, nil
+}
+
+func (f *fakeV3Backend) SaveTransportSettings(r *http.Request, body map[string]any) (map[string]any, error) {
+	return body, nil
+}
+
 func (f *fakeV3Backend) ProxyLeakSettings() (map[string]any, error) {
 	if f.proxyLeak == nil {
 		return map[string]any{"enabled": true, "recommended": true}, nil

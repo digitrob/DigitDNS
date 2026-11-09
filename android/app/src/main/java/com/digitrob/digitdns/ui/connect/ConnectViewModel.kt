@@ -20,6 +20,11 @@ data class ConnectUiState(
     val selectedClientId: String? = null,
     val subscriptionOrigin: String = "",
     val dohUrl: String = "",
+    val doqUrl: String = "",
+    val doh3Enabled: Boolean = false,
+    val doqEnabled: Boolean = false,
+    val doqAuth: String = "",
+    val doqTokenDomain: String = "",
     val dnsAddress: String = "",
     /** The raw public IP the Windows/console guide tells the user to enter. */
     val serverIp: String = "",
@@ -76,6 +81,11 @@ class ConnectViewModel @Inject constructor(
                         selectedClientId = current.selectedClientId ?: clients.firstOrNull()?.id,
                         subscriptionOrigin = config?.subscriptionOrigin.orEmpty(),
                         dohUrl = config?.dohUrl.orEmpty(),
+                        doqUrl = config?.doqUrl.orEmpty(),
+                        doh3Enabled = config?.transports?.doh3Enabled == true,
+                        doqEnabled = config?.transports?.doqEnabled == true,
+                        doqAuth = config?.transports?.doqAuth.orEmpty(),
+                        doqTokenDomain = config?.transports?.doqTokenDomain.orEmpty(),
                         dnsAddress = config?.server?.let { server ->
                             server.domain.ifBlank { server.publicIp }
                         }.orEmpty(),

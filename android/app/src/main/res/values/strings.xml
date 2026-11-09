@@ -168,8 +168,9 @@
     <string name="dashboard_cache_items">Items %1$s · %2$s hits</string>
     <string name="dashboard_cache_missed">Missed %1$s</string>
     <string name="dashboard_relays">Relays</string>
-    <string name="dashboard_relay_total">Total %1$s · %2$s drops</string>
-    <string name="dashboard_relay_total_clean">Total %1$s · no drops</string>
+    <string name="dashboard_relay_total">Total %1$s · %2$s refused</string>
+    <string name="dashboard_relay_total_clean">Total %1$s · no refusals</string>
+    <string name="dashboard_relay_unreadable">%1$s unreadable</string>
     <string name="dashboard_cores">%1$d cores</string>
     <string name="dashboard_system_percent">System %1$s</string>
     <string name="dashboard_traffic_total">Total · ↓ %1$s · ↑ %2$s</string>
@@ -342,7 +343,33 @@
     <string name="subscriber_primary_dns">Primary DNS</string>
     <string name="subscriber_secondary_dns">Secondary DNS</string>
     <string name="subscriber_doh">DoH</string>
+    <string name="subscriber_doh3">DoH3 (HTTP/3)</string>
+    <string name="subscriber_doq">DoQ (QUIC)</string>
     <string name="subscriber_dot">DoT</string>
+
+    <string name="transports_title">Client Encrypted Transports</string>
+    <string name="transports_help">Optional HTTP/3 and DNS-over-QUIC endpoints. Both use the DoH/DoT certificate.</string>
+    <string name="transports_doh3">DoH3 (HTTP/3)</string>
+    <string name="transports_doh3_help">Same DoH URL, negotiated over QUIC automatically.</string>
+    <string name="transports_doh3_port">UDP 8443</string>
+    <string name="transports_doq">DoQ (DNS-over-QUIC)</string>
+    <string name="transports_doq_help">RFC 9250 for clients and routers that support QUIC.</string>
+    <string name="transports_port">UDP port</string>
+    <string name="transports_auth">Authentication</string>
+    <string name="transports_auth_ip">IP allowlist</string>
+    <string name="transports_auth_token">SNI token</string>
+    <string name="transports_token_domain">Token domain</string>
+    <string name="transports_token_domain_hint">doq.example.com</string>
+    <string name="transports_new_token">Token label</string>
+    <string name="transports_add_token">Add</string>
+    <string name="transports_no_tokens">No DoQ tokens yet</string>
+    <string name="transports_save">Save transports</string>
+    <string name="transports_saved">Saved</string>
+    <string name="transports_status_off">Off</string>
+    <string name="transports_status_listening">Listening</string>
+    <string name="transports_status_pending">Enabled, not listening</string>
+    <string name="transports_firewall">Open the UDP port in the firewall.</string>
+    <string name="transports_cert_warning">SNI-token mode needs a certificate covering the token hostnames; the built-in ACME client cannot issue wildcards.</string>
 
     <string name="subscriber_registration_secret">Registration Secret</string>
     <string name="subscriber_save_secret">Save on this device</string>
@@ -590,6 +617,7 @@
     <string name="card_history_chart">History chart</string>
 
     <string name="settings_dnssec">DNSSEC/Proxy Leak</string>
+    <string name="settings_transports">Transports</string>
     <string name="settings_ipv6">IPv6</string>
     <string name="settings_history">Traffic History</string>
     <string name="settings_ad_blocking">Ad Blocking</string>

@@ -68,6 +68,7 @@ import com.digitrob.digitdns.ui.rules.UpstreamsScreen
 private enum class SettingsSection(@StringRes val labelRes: Int, val icon: ImageVector) {
     App(R.string.settings_app, Icons.Filled.Tune),
     Dnssec(R.string.settings_dnssec, Icons.Filled.Shield),
+    Transports(R.string.settings_transports, Icons.Filled.Wifi),
     Ipv6(R.string.settings_ipv6, Icons.Filled.Public),
     History(R.string.settings_history, Icons.Filled.BarChart),
     AdBlocking(R.string.settings_ad_blocking, Icons.Filled.Block),
@@ -145,6 +146,7 @@ private fun SettingsSectionContent(
     when (section) {
         SettingsSection.App -> AppSettingsScreen()
         SettingsSection.Dnssec -> DnssecProxySettingsScreen()
+        SettingsSection.Transports -> ClientTransportsScreen()
         SettingsSection.Ipv6 -> Ipv6SettingsScreen()
         SettingsSection.History -> HistorySettingsScreen()
         SettingsSection.AdBlocking -> AdBlockingScreen()

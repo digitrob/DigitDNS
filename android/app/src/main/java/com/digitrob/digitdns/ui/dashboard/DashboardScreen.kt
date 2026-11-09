@@ -755,22 +755,31 @@ private fun SniProxyCard(stats: LiveStats?) {
             )
             // Flood refusals are the penalty box counting every retry from a
             // malformed-probe source. One scanner can dominate the raw refused
-            // counter, so the footer reports only actionable refusals plus
-            // unreadable connections. The web card keeps the full breakdown.
+            // counter, so the footer reports only actionable refusals. Unreadable
+            // connections are a separate diagnostic: on a public port they are
+            // mostly scanners that opened TLS without a usable SNI, and folding
+            // them into "drops" made a healthy relay look broken.
             val flood = stats?.relaysRefusedFlood ?: 0
             val actionableRefused = ((stats?.relaysRefused ?: 0) - flood).coerceAtLeast(0)
-            val drops = actionableRefused + (stats?.relaysUnreadable ?: 0)
+            val unreadable = stats?.relaysUnreadable ?: 0
             // Same colour as every other card's secondary line. The amber warning tint
             // made this one tile's footer read differently for the same kind of text.
             Text(
-                text = if (drops > 0) {
-                    stringResource(R.string.dashboard_relay_total, formatCount(stats?.totalRelays ?: 0), formatCount(drops))
+                text = if (actionableRefused > 0) {
+                    stringResource(R.string.dashboard_relay_total, formatCount(stats?.totalRelays ?: 0), formatCount(actionableRefused))
                 } else {
                     stringResource(R.string.dashboard_relay_total_clean, formatCount(stats?.totalRelays ?: 0))
                 },
                 style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (unreadable > 0) {
+                Text(
+                    text = stringResource(R.string.dashboard_relay_unreadable, formatCount(unreadable)),
+                    style = MetricMeta,
+                    color = colors.warning,
+                )
+            }
         }
     }
 }

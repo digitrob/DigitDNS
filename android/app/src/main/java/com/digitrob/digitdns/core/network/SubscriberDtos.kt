@@ -17,6 +17,10 @@ data class SubscriberStatusDto(
     @SerialName("has_domain") val hasDomain: Boolean = false,
     @SerialName("doh_port") val dohPort: Int = 0,
     @SerialName("dot_port") val dotPort: Int = 0,
+    @SerialName("doq_port") val doqPort: Int = 0,
+    @SerialName("doh3_enabled") val doh3Enabled: Boolean = false,
+    @SerialName("doq_enabled") val doqEnabled: Boolean = false,
+    @SerialName("doq_url") val doqUrl: String = "",
     @SerialName("detected_ip_registered") val detectedIpRegistered: Boolean = false,
     /** active | suspended | expired | quota, worked out by the server. */
     val status: String = "active",

@@ -273,6 +273,22 @@ func (b *v3Backend) SaveDnssecSettings(r *http.Request, body map[string]any) (ma
 	return b.delegateBody(post, body, b.ws.handleDNSSECSettings)
 }
 
+// TransportSettings is the dashboard's DoQ/DoH3 card. The Android client uses
+// the v3 route because its credential can be the master API key.
+func (b *v3Backend) TransportSettings() (map[string]any, error) {
+	rec := httptest.NewRecorder()
+	b.ws.handleTransportSettings(rec, httptest.NewRequest(http.MethodGet, "/api/settings/transports", nil))
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	return out, nil
+}
+
+func (b *v3Backend) SaveTransportSettings(r *http.Request, body map[string]any) (map[string]any, error) {
+	post := r.Clone(r.Context())
+	post.Method = http.MethodPost
+	return b.delegateBody(post, body, b.ws.handleTransportSettings)
+}
+
 // ProxyLeakSettings is the dashboard's live proxy leak guard. The Android
 // client uses the v3 route because its credential can be the master API key.
 func (b *v3Backend) ProxyLeakSettings() (map[string]any, error) {

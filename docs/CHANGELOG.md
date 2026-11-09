@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.4.0] — client-facing DoH3 and DoQ
+
+### Added
+- **DoH3 (HTTP/3)** as an opt-in client transport on **UDP 8443**, using the
+  same `/dns-query` URL and certificate as DoH. TCP DoH advertises the endpoint
+  with `Alt-Svc` while it is listening; incapable clients fall back to TCP DoH.
+- **DoQ (DNS-over-QUIC)** as an opt-in client transport on **UDP 853**,
+  implementing RFC 9250 framing, transaction ID 0, one query per stream,
+  connection/stream caps and no 0-RTT.
+- **DoQ authentication** in two modes: the existing client IP allowlist, or
+  SNI-label tokens (`quic://<token>.doq.example.com:853`). Token mode requires a
+  certificate covering the token hostnames; the built-in ACME client cannot
+  issue wildcards.
+- **Settings → Client Encrypted Transports**: a full-width, two-column card
+  with DoH3/DoQ switches, live listener status, copyable endpoints, DoQ port,
+  auth mode, token domain and token list, and one Save action.
+- **Connect Guide and subscriber portal** endpoint cards for DoH3/DoQ.
+- **Android Transports settings screen** with the same DoH3/DoQ switches, port,
+  auth mode and token list; Android Connect and subscriber guides show the new
+  endpoints when enabled.
+- **Prometheus** counters `digitdns_doh3_requests_total`,
+  `digitdns_doq_queries_total` and `digitdns_doq_auth_failures_total`.
+- `GET/POST /api/settings/transports` and its v3 equivalent; `GET /api/config`
+  now includes `doq_url` and the transport view.
+
+### Changed
+- The installer banner, firewall guidance and Docker `EXPOSE` list mention
+  **UDP 853** and **UDP 8443**. Both transports remain disabled by default.
+- The SNI proxy cards report **actionable refusals** and **unreadable scanner
+  traffic** separately, on web and Android, instead of adding them into one
+  “drops” figure.
+- The DoQ token list is seeded before the listener starts, so an install that
+  boots with DoQ already enabled enforces its tokens immediately.
+
+### Fixed
+- A DoH3/DoQ bind failure is reported to the caller and leaves the listener
+  off; the card shows the actual listener state rather than the saved switch.
+
+### Operations
+- Open **UDP 853** and **UDP 8443** in the firewall.
+- DoH3 needs the normal DoH/DoT certificate. DoQ SNI-token mode needs a
+  wildcard or multi-SAN certificate; HTTP-01 cannot issue wildcards.
+- DoQ is not used by Android Private DNS; that remains DoT.
+
 ## 🏷️ [v5.3.3] — accurate SNI proxy drop counters
 
 - The web and Android SNI proxy cards no longer count flood attempts from a

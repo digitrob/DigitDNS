@@ -1194,6 +1194,36 @@ func (a *API) handleV3DnssecSettings(w http.ResponseWriter, r *http.Request) {
 // handleV3ProxyLeakSettings mirrors the dashboard's live proxy leak guard.
 // Unlike DNSSEC, a save applies without a restart, so the Android client can
 // toggle it and use the returned state directly.
+func (a *API) handleV3TransportSettings(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		resp, err := a.v3Backend.TransportSettings()
+		if err != nil {
+			writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	case http.MethodPost, http.MethodPut:
+		body, ok := v3Body(r)
+		if !ok {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			return
+		}
+		resp, err := a.v3Backend.SaveTransportSettings(r, body)
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
+	}
+}
+
 func (a *API) handleV3ProxyLeakSettings(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
 		v3BackendUnavailable(w, r)

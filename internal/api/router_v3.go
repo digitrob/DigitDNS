@@ -80,6 +80,8 @@ type V3Backend interface {
 	SaveRules(r *http.Request, body map[string]any) (map[string]any, error)
 	Settings() (map[string]any, error)
 	SaveSettings(r *http.Request, body map[string]any) (map[string]any, error)
+	TransportSettings() (map[string]any, error)
+	SaveTransportSettings(r *http.Request, body map[string]any) (map[string]any, error)
 	RegenerateAPIKey(r *http.Request, currentPassword, code string) (map[string]any, error)
 	RegenerateAdminPath(r *http.Request, confirm bool) (map[string]any, error)
 	Subscription() map[string]any
@@ -224,6 +226,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/settings", a.SecurityMiddlewareV3(a.handleV3Settings))
 	mux.HandleFunc("/api/v3/settings/resolution", a.SecurityMiddlewareV3(a.handleV3Resolution))
 	mux.HandleFunc("/api/v3/settings/dnssec", a.SecurityMiddlewareV3(a.handleV3DnssecSettings))
+	mux.HandleFunc("/api/v3/settings/transports", a.SecurityMiddlewareV3(a.handleV3TransportSettings))
 	mux.HandleFunc("/api/v3/settings/proxy-leak", a.SecurityMiddlewareV3(a.handleV3ProxyLeakSettings))
 	mux.HandleFunc("/api/v3/settings/subscription", a.SecurityMiddlewareV3(a.handleV3Subscription))
 	mux.HandleFunc("/api/v3/settings/regenerate-api-key", a.SecurityMiddlewareV3(a.handleV3RegenerateAPIKey))

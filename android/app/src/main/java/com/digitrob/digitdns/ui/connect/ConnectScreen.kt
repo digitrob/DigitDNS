@@ -151,8 +151,25 @@ private fun ConnectGuides(
                 "Choose Custom and paste your DoH URL:",
             ),
             code = state.dohUrl,
+            note = if (state.doh3Enabled) {
+                "HTTP/3 (DoH3) is enabled on this server. Clients that support it negotiate it automatically with the same URL."
+            } else null,
             clipboard = clipboard,
         )
+        if (state.doqEnabled && state.doqUrl.isNotBlank()) {
+            GuideCard(
+                title = "DNS-over-QUIC (DoQ)",
+                steps = listOf(
+                    "Use a client or router that supports RFC 9250 DoQ.",
+                    "Enter this endpoint:",
+                ),
+                code = state.doqUrl,
+                note = if (state.doqAuth == "sni-token" && state.doqTokenDomain.isNotBlank()) {
+                    "SNI-token mode uses <token>.${state.doqTokenDomain} in place of the hostname."
+                } else null,
+                clipboard = clipboard,
+            )
+        }
     }
 }
 
@@ -166,6 +183,7 @@ private fun GuideCard(
     title: String,
     steps: List<String>,
     code: String,
+    note: String? = null,
     clipboard: androidx.compose.ui.platform.ClipboardManager,
 ) {
     PanelCard(modifier = Modifier.fillMaxWidth()) {
@@ -196,6 +214,13 @@ private fun GuideCard(
                         modifier = Modifier.clickableText { clipboard.setText(AnnotatedString(code)) },
                     )
                 }
+            }
+            note?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

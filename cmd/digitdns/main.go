@@ -153,6 +153,8 @@ func main() {
 		Port:          53,
 		DoTPort:       853,
 		DoHPort:       8443,
+		DoQPort:       853,
+		DoQAuth:       "ip",
 		Upstreams:     []string{"1.1.1.1:53", "8.8.8.8:53", "9.9.9.9:53", "1.0.0.1:53"},
 		CacheSize:     20000,
 		CacheMinTTL:   60,
@@ -220,6 +222,7 @@ func main() {
 	}
 	var accessSettings struct {
 		DoHTokens []string `json:"doh_tokens"`
+		DoQTokens []string `json:"doq_tokens"`
 	}
 	if err := bootstrap.LoadPresentSettings(db,
 		bootstrap.SettingSpec{Key: "server", Target: serverSettings},
@@ -568,7 +571,10 @@ func main() {
 			// is the runtime surface afterwards.
 			if len(dohTokens) == 0 {
 				dohTokens = fileAccess.DoHTokens
-				if err := db.SetSetting("access", map[string]any{"doh_tokens": dohTokens}); err != nil {
+				if err := db.SetSetting("access", map[string]any{
+					"doh_tokens": dohTokens,
+					"doq_tokens": accessSettings.DoQTokens,
+				}); err != nil {
 					log.Printf("[Main] Warning: could not seed DoH tokens into the access record: %v", err)
 				} else {
 					log.Printf("[Main] Seeded %d DoH token(s) from config.json into the access record", len(dohTokens))
@@ -804,7 +810,20 @@ func main() {
 	// The DoH listener gets the restricted surface, not BuildHandler: the DoH
 	// port answers /dns-query and the public portal routes, and never the
 	// admin namespace (Mantis v2.1.0 finding #1).
-	dnsServer := dns.NewServer(dnsHandler, tlsConfig, webServer.BuildDoHHandler(), serverSettings.BindHost, dnsSettings.Port, dnsSettings.DoTPort, dnsSettings.DoHPort)
+	dnsServer := dns.NewServer(dnsHandler, tlsConfig, webServer.BuildDoHHandler(), dohHandler, serverSettings.BindHost, dns.TransportConfig{
+		Port:           dnsSettings.Port,
+		DoTPort:        dnsSettings.DoTPort,
+		DoHPort:        dnsSettings.DoHPort,
+		DoQPort:        dnsSettings.DoQPort,
+		DoQEnabled:     dnsSettings.DoQEnabled,
+		DoQAuth:        dnsSettings.DoQAuth,
+		DoQTokenDomain: dnsSettings.DoQTokenDomain,
+		DoH3Enabled:    dnsSettings.DoH3Enabled,
+	})
+	// Tokens are enforced per connection, but the listener must see them before
+	// Start or a boot with DoQ already enabled would refuse every connection.
+	// The dashboard applier keeps them current after this initial seed.
+	dnsServer.SetDoQTokens(accessSettings.DoQTokens)
 	if dotHolder != nil {
 		dnsServer.SetDOTCertSource(dotHolder)
 	}
@@ -816,6 +835,27 @@ func main() {
 	webServer.SetDOTCertHolder(dotHolder, func(src *internalWeb.CertHolder) error {
 		dnsServer.SetDOTCertSource(src)
 		return dnsServer.RebindTLS()
+	})
+	// The transport card applies DoQ/DoH3 changes to the running server. Tokens
+	// are carried separately so the DoQ listener can install them without
+	// rebuilding the DoH3 listener.
+	webServer.SetTransportApplier(func(cfg database.DNSSettings, tokens []string) error {
+		dnsServer.SetDoQTokens(tokens)
+		return dnsServer.ApplyTransports(dns.TransportConfig{
+			Port:           cfg.Port,
+			DoTPort:        cfg.DoTPort,
+			DoHPort:        cfg.DoHPort,
+			DoQPort:        cfg.DoQPort,
+			DoQEnabled:     cfg.DoQEnabled,
+			DoQAuth:        cfg.DoQAuth,
+			DoQTokenDomain: cfg.DoQTokenDomain,
+			DoH3Enabled:    cfg.DoH3Enabled,
+		})
+	})
+	webServer.SetTransportStatusSource(dnsServer.TransportStatus)
+	webServer.SetTransportMetricsSource(func() (uint64, uint64, uint64) {
+		m := dnsServer.TransportMetrics()
+		return m.DoH3Requests, m.DoQQueries, m.DoQAuthFailure
 	})
 
 	// Only explicit service modes reach runtime ownership. A bare invocation was
@@ -990,6 +1030,16 @@ func summaryLines(srv *database.ServerSettings, dns *database.DNSSettings, sni *
 		doh = "https://" + doTHost + "/dns-query"
 	}
 	lines = append(lines, fmt.Sprintf(" DNS-over-HTTPS     : %s", doh))
+	if dns.DoH3Enabled {
+		lines = append(lines, fmt.Sprintf(" DNS-over-HTTPS/3   : %s (HTTP/3, UDP %d)", doh, dns.DoHPort))
+	}
+	if dns.DoQEnabled {
+		doqPort := dns.DoQPort
+		if doqPort == 0 {
+			doqPort = 853
+		}
+		lines = append(lines, fmt.Sprintf(" DNS-over-QUIC      : quic://%s (UDP)", net.JoinHostPort(doTHost, strconv.Itoa(doqPort))))
+	}
 
 	if sni.Enabled {
 		lines = append(lines, fmt.Sprintf(" SNI Proxy Relays   : Ports %d (HTTP) and %d (HTTPS)", sni.HTTPPort, sni.HTTPSPort))

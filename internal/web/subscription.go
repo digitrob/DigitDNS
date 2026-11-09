@@ -125,6 +125,34 @@ func (ws *WebServer) dohURL() string {
 	return "https://" + host + ":" + strconv.Itoa(port) + "/dns-query"
 }
 
+// doqURL builds the DNS-over-QUIC endpoint clients should configure. Like
+// dohURL it prefers the dedicated DoH/DoT name, then the panel name, then the
+// public IP; the port is the DoQ listener's own and is never the panel port.
+// Empty when there is no host to name.
+func (ws *WebServer) doqURL() string {
+	host := ""
+	if ws.tlsSettings != nil {
+		host = strings.TrimSpace(ws.tlsSettings.GetDoTDomain())
+	}
+	if host == "" {
+		host = ws.effectivePanelDomain()
+	}
+	if host == "" {
+		host = ws.effectiveSubscriptionDomain()
+	}
+	if host == "" {
+		return ""
+	}
+	port := 0
+	if ws.dnsCfg != nil {
+		port = ws.dnsCfg.DoQPort
+	}
+	if port == 0 {
+		port = 853
+	}
+	return "quic://" + host + ":" + strconv.Itoa(port)
+}
+
 // registerLink returns the 1-click registration URL for a subscriber token —
 // the string the dashboard copies, the QR code encodes, and the Telegram bot
 // sends. Empty when the daemon has no origin to name; callers must render a

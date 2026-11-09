@@ -41,6 +41,38 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.4.0
+
+**Client-facing DoH3 and DoQ.** DigitDNS can now serve encrypted DNS to
+clients over **HTTP/3** and **DNS-over-QUIC**, not just DoT and DoH. Both are
+opt-in and off by default, so existing installs keep their current listeners
+until an operator enables them.
+
+- **DoH3 (HTTP/3)** listens on **UDP 8443** at the same `/dns-query` URL as
+  DoH. TCP DoH advertises it with `Alt-Svc`, so capable browsers upgrade
+  automatically; clients that cannot use QUIC fall back to TCP DoH.
+- **DoQ (DNS-over-QUIC)** listens on **UDP 853** and implements RFC 9250:
+  one query per stream, transaction ID 0, 2-byte length framing.
+- **DoQ authentication** is either the existing client IP allowlist or an
+  **SNI token** (`quic://<token>.doq.example.com:853`). Token mode requires a
+  certificate covering the token hostnames; the built-in ACME client issues
+  HTTP-01 certificates only, so a wildcard/multi-SAN pair must be supplied
+  separately.
+- **Settings → Client Encrypted Transports** is a new two-column card with
+  live listener status, copyable endpoints, DoQ port/auth/token controls and a
+  single Save action. The Connect Guide and subscriber portal expose the new
+  endpoints, and Android gets a matching **Settings → Transports** screen.
+- **Prometheus** adds `digitdns_doh3_requests_total`,
+  `digitdns_doq_queries_total` and `digitdns_doq_auth_failures_total`.
+- **Operations:** open **UDP 853** and **UDP 8443** in the firewall. The
+  installer, firewall documentation and container `EXPOSE` list cover them.
+- The SNI proxy cards now separate **actionable refusals** from **unreadable
+  scanner traffic**, so a public port under scanning no longer looks like a
+  failing relay.
+
+No change is made to UDP/TCP, DoT or DoH behaviour. Both new transports are
+disabled until enabled.
+
 ## What's new in 5.3.3
 
 **The SNI proxy drop counters no longer count scanner noise.** A source that
@@ -356,8 +388,7 @@ theme chosen on the login screen survives sign-in and app restarts.
 - **Built for paying subscribers.** Per-client quotas, expiry, device limits,
   traffic accounting, a private portal link, a registration secret and an
   Android client area.
-- **Encrypted DNS where it matters.** DoT and DoH for clients; DoT, DoH, DoQ,
-  DoH3 and DNSCrypt for upstreams.
+- **Encrypted DNS where it matters.** DoT, DoH, DoH3 and DoQ for clients; DoT, DoH, DoQ, DoH3 and DNSCrypt for upstreams.
 - **DNSSEC validation when you want it.** Optional chain-of-trust validation
   with built-in root anchors, NSEC/NSEC3 denial proofs, `AD` on validated answers
   and `SERVFAIL` for bogus zones.
@@ -385,7 +416,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -444,7 +475,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.3.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -527,7 +558,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.3.3` | Accurate SNI proxy drop counters; scanner flood attempts excluded from web and Android headlines (latest) |
+| `5.4.0` | Client-facing DoH3 and DoQ (opt-in), web/Android transport controls, SNI-token auth, QUIC metrics (latest) |
+| `5.3.3` | Accurate SNI proxy drop counters; scanner flood attempts excluded from web and Android headlines (older) |
 | `5.3.2` | Balanced Settings cards; Server Location fills the left column and Subscription Portal pairs with the SSL/TLS Manager on wide panels (older) |
 | `5.3.1` | Compact Server Location and 2FA under it in Settings; works on systemd and Docker (older) |
 | `5.3.0` | Faster cached query path, metrics docs + Grafana, adaptive Android navigation, Quick Settings tile, baseline profiles (older) |
@@ -586,7 +618,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.3.3/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.4.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -915,14 +947,22 @@ Android, the same surface natively:
 
 | Transport | Direction | Where |
 | :--- | :--- | :--- |
-| DoT | Clients and upstreams | Client listener on 853; upstream `tls://host` |
-| DoH | Clients and upstreams | Client listener on 8443 `/dns-query`; upstream `https://host/dns-query` |
-| DoQ | Upstreams | `quic://host` |
-| DoH3 | Upstreams | `h3://host/dns-query` |
+| DoT | Clients and upstreams | Client listener on 853/TCP; upstream `tls://host` |
+| DoH | Clients and upstreams | Client listener on 8443/TCP `/dns-query` (HTTP/2); upstream `https://host/dns-query` |
+| DoQ | Clients and upstreams | Client listener on 853/UDP (opt-in); upstream `quic://host` |
+| DoH3 | Clients and upstreams | Client listener on 8443/UDP (opt-in, advertised with `Alt-Svc`); upstream `h3://host/dns-query` |
 | DNSCrypt | Upstreams | `sdns://…` stamp |
 
 Client DoT/DoH need a valid certificate, so they require a domain. The server
 keeps upstream connections alive between queries to cut handshake latency.
+
+Client-facing **DoQ** and **DoH3** are opt-in under **Settings → Client
+Encrypted Transports**. They share the DoH/DoT certificate and the same access
+allowlist; open **UDP 853** and **UDP 8443** in the firewall. DoQ can
+authenticate by client IP or by an SNI token
+(`quic://<token>.doq.example.com:853`); SNI-token mode requires a certificate
+covering the token hostnames, and the built-in ACME client issues HTTP-01
+certificates only, so a wildcard/multi-SAN pair must be supplied separately.
 
 ### DNSSEC validation
 
@@ -1036,7 +1076,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.3.3`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.4.0`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

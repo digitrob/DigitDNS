@@ -24,12 +24,29 @@ interface ConfigApi {
 data class ConfigResponse(
     @SerialName("subscription_origin") val subscriptionOrigin: String = "",
     @SerialName("doh_url") val dohUrl: String = "",
+    @SerialName("doq_url") val doqUrl: String = "",
+    val transports: TransportView? = null,
     val server: ServerView? = null,
     val tls: TlsView? = null,
     val subscription: SubscriptionConfigView? = null,
     @SerialName("dot_cert") val dotCert: CertView? = null,
     @SerialName("panel_cert") val panelCert: CertView? = null,
     @SerialName("subscription_cert") val subscriptionCert: CertView? = null,
+)
+
+/**
+ * The client-facing QUIC transports, as the dashboard's transport card reports
+ * them. The Connect tab only needs the two flags and the DoQ endpoint; the auth
+ * fields are there so an SNI-token install can explain the hostname pattern
+ * instead of presenting the base endpoint as if it were directly usable.
+ */
+@Serializable
+data class TransportView(
+    @SerialName("doh3_enabled") val doh3Enabled: Boolean = false,
+    @SerialName("doq_enabled") val doqEnabled: Boolean = false,
+    @SerialName("doq_port") val doqPort: Int = 0,
+    @SerialName("doq_auth") val doqAuth: String = "",
+    @SerialName("doq_token_domain") val doqTokenDomain: String = "",
 )
 
 /**

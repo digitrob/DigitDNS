@@ -78,17 +78,22 @@ type fileConfig struct {
 		APIBindList *[]string `json:"api_bind_list"`
 	} `json:"server"`
 	DNS *struct {
-		Enabled       *bool     `json:"enabled"`
-		Port          *int      `json:"port"`
-		DoTPort       *int      `json:"dot_port"`
-		DoHPort       *int      `json:"doh_port"`
-		Upstreams     *[]string `json:"upstreams"`
-		CacheSize     *int      `json:"cache_size"`
-		CacheMinTTL   *uint32   `json:"cache_min_ttl"`
-		CacheMaxTTL   *uint32   `json:"cache_max_ttl"`
-		QueryTimeout  *int64    `json:"query_timeout"`
-		FastestRacing *bool     `json:"fastest_racing"`
-		ECSClientIP   *string   `json:"ecs_client_ip"`
+		Enabled        *bool     `json:"enabled"`
+		Port           *int      `json:"port"`
+		DoTPort        *int      `json:"dot_port"`
+		DoHPort        *int      `json:"doh_port"`
+		DoQEnabled     *bool     `json:"doq_enabled"`
+		DoQPort        *int      `json:"doq_port"`
+		DoQAuth        *string   `json:"doq_auth"`
+		DoQTokenDomain *string   `json:"doq_token_domain"`
+		DoH3Enabled    *bool     `json:"doh3_enabled"`
+		Upstreams      *[]string `json:"upstreams"`
+		CacheSize      *int      `json:"cache_size"`
+		CacheMinTTL    *uint32   `json:"cache_min_ttl"`
+		CacheMaxTTL    *uint32   `json:"cache_max_ttl"`
+		QueryTimeout   *int64    `json:"query_timeout"`
+		FastestRacing  *bool     `json:"fastest_racing"`
+		ECSClientIP    *string   `json:"ecs_client_ip"`
 		// Pointer, like every other key here, so that an explicit 0 turns
 		// serve-stale off while an absent key keeps the built-in default.
 		ServeStaleSeconds *uint32 `json:"serve_stale_seconds"`
@@ -173,6 +178,21 @@ func applyConfigFile(path string, server *database.ServerSettings, dns *database
 		}
 		if d.DoHPort != nil {
 			dns.DoHPort = *d.DoHPort
+		}
+		if d.DoQEnabled != nil {
+			dns.DoQEnabled = *d.DoQEnabled
+		}
+		if d.DoQPort != nil {
+			dns.DoQPort = *d.DoQPort
+		}
+		if d.DoQAuth != nil {
+			dns.DoQAuth = *d.DoQAuth
+		}
+		if d.DoQTokenDomain != nil {
+			dns.DoQTokenDomain = *d.DoQTokenDomain
+		}
+		if d.DoH3Enabled != nil {
+			dns.DoH3Enabled = *d.DoH3Enabled
 		}
 		if d.Upstreams != nil {
 			dns.Upstreams = *d.Upstreams

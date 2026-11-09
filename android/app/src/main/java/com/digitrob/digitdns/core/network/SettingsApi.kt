@@ -53,6 +53,12 @@ interface SettingsApi {
 
     @POST("settings/proxy-leak")
     suspend fun saveProxyLeak(@Body body: ProxyLeakSettingsSave): ProxyLeakSettings
+
+    @GET("settings/transports")
+    suspend fun getTransports(): TransportSettingsDto
+
+    @POST("settings/transports")
+    suspend fun saveTransports(@Body body: TransportSettingsSave): TransportSettingsDto
 }
 
 /**
@@ -94,6 +100,33 @@ data class ProxyLeakSettings(
 @Serializable
 data class ProxyLeakSettingsSave(
     val enabled: Boolean,
+)
+
+/**
+ * The client-facing QUIC transports. [doh3Listening] and [doqListening] are the
+ * server's actual bind state, not the saved switches — a port that could not be
+ * opened reports false here.
+ */
+@Serializable
+data class TransportSettingsDto(
+    @SerialName("doq_enabled") val doqEnabled: Boolean = false,
+    @SerialName("doq_port") val doqPort: Int = 853,
+    @SerialName("doq_auth") val doqAuth: String = "ip",
+    @SerialName("doq_token_domain") val doqTokenDomain: String = "",
+    @SerialName("doh3_enabled") val doh3Enabled: Boolean = false,
+    @SerialName("doq_tokens") val doqTokens: List<String> = emptyList(),
+    @SerialName("doh3_listening") val doh3Listening: Boolean = false,
+    @SerialName("doq_listening") val doqListening: Boolean = false,
+)
+
+@Serializable
+data class TransportSettingsSave(
+    @SerialName("doq_enabled") val doqEnabled: Boolean,
+    @SerialName("doh3_enabled") val doh3Enabled: Boolean,
+    @SerialName("doq_port") val doqPort: Int,
+    @SerialName("doq_auth") val doqAuth: String,
+    @SerialName("doq_token_domain") val doqTokenDomain: String,
+    @SerialName("doq_tokens") val doqTokens: List<String>,
 )
 
 /**

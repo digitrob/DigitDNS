@@ -884,6 +884,7 @@ input:checked + .slider:before {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  text-align: left;
   transition: all 0.25s ease;
   word-break: break-all;
 }
@@ -1293,6 +1294,21 @@ input:checked + .slider:before {
   }
   .settings-pair-dense .settings-tls-card .tls-field-row > button {
     grid-column: 1 / -1;
+  }
+}
+
+/* The client-facing QUIC card is full width but reads best as two compact
+   sections: DoH3 is a toggle and an endpoint, DoQ carries the auth and token
+   controls. Below the split they stack as normal cards. */
+.transport-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+@media (min-width: 1024px) {
+  .transport-grid {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: start;
   }
 }
 

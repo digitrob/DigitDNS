@@ -205,17 +205,26 @@ type ServerSettings struct {
 // has to resize the cache and reset the stale window itself, or say out loud that
 // a restart is needed.
 type DNSSettings struct {
-	Enabled       bool          `json:"enabled"`
-	Port          int           `json:"port"`
-	DoTPort       int           `json:"dot_port"`
-	DoHPort       int           `json:"doh_port"`
-	Upstreams     []string      `json:"upstreams"`
-	CacheSize     int           `json:"cache_size"`
-	CacheMinTTL   uint32        `json:"cache_min_ttl"`
-	CacheMaxTTL   uint32        `json:"cache_max_ttl"`
-	QueryTimeout  time.Duration `json:"query_timeout"`
-	FastestRacing bool          `json:"fastest_racing"`
-	ECSClientIP   string        `json:"ecs_client_ip"`
+	Enabled bool `json:"enabled"`
+	Port    int  `json:"port"`
+	DoTPort int  `json:"dot_port"`
+	DoHPort int  `json:"doh_port"`
+	// Client-facing QUIC transports. Both are opt-in: a fresh install keeps
+	// only UDP/TCP, DoT and DoH until the operator enables them. DoQAuth is
+	// "ip" (client allowlist) or "sni-token" (the leftmost SNI label names a
+	// token; the certificate must cover the token hostnames).
+	DoQEnabled     bool          `json:"doq_enabled"`
+	DoQPort        int           `json:"doq_port"`
+	DoQAuth        string        `json:"doq_auth"`
+	DoQTokenDomain string        `json:"doq_token_domain"`
+	DoH3Enabled    bool          `json:"doh3_enabled"`
+	Upstreams      []string      `json:"upstreams"`
+	CacheSize      int           `json:"cache_size"`
+	CacheMinTTL    uint32        `json:"cache_min_ttl"`
+	CacheMaxTTL    uint32        `json:"cache_max_ttl"`
+	QueryTimeout   time.Duration `json:"query_timeout"`
+	FastestRacing  bool          `json:"fastest_racing"`
+	ECSClientIP    string        `json:"ecs_client_ip"`
 
 	// ServeStaleSeconds is how long past its expiry an answer may still be served
 	// while a fresh one is fetched behind it (RFC 8767). Zero turns serve-stale off

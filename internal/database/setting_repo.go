@@ -109,6 +109,7 @@ var authoritativeSettingTargets = map[string]func() any{
 	"access": func() any {
 		return &struct {
 			DoHTokens []string `json:"doh_tokens"`
+			DoQTokens []string `json:"doq_tokens"`
 		}{}
 	},
 	// The migration marker bookkeeping is an object of marker-name -> bool.

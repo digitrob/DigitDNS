@@ -1932,6 +1932,7 @@ function renderConfig(cfg) {
   }
   if (!cfg.access || typeof cfg.access !== 'object') cfg.access = {};
   if (!Array.isArray(cfg.access.doh_tokens)) cfg.access.doh_tokens = [];
+  normalizeTransportSettings(cfg);
 
   // The subscription record may be absent on an older config response; an
   // empty object keeps the renderers below total.
@@ -2004,6 +2005,21 @@ function renderConfig(cfg) {
     guideDohEl.innerText = doh;
     guideDohEl.title = doh;
   }
+  const guideDoH3Note = document.getElementById('guide-doh3-note');
+  if (guideDoH3Note) {
+    guideDoH3Note.classList.toggle('hidden', !(cfg.transports && cfg.transports.doh3_enabled));
+  }
+  const guideDoQCard = document.getElementById('guide-doq-card');
+  if (guideDoQCard) {
+    guideDoQCard.classList.toggle('hidden', !(cfg.transports && cfg.transports.doq_enabled));
+  }
+  const guideDoQEl = document.getElementById('guide-doq-url');
+  if (guideDoQEl) {
+    const port = (cfg.transports && cfg.transports.doq_port) || 853;
+    const host = (cfg.tls && (cfg.tls.dot_domain || cfg.tls.domain)) || pubIP || '';
+    guideDoQEl.innerText = cfg.doq_url || (host ? `quic://${host}:${port}` : 'quic://…');
+    guideDoQEl.title = guideDoQEl.innerText;
+  }
 
   // The guide's DoT hostname prefers the dedicated DoH/DoT domain when one
   // is set — it is the only name the 853 certificate is guaranteed to cover.
@@ -2032,6 +2048,7 @@ function renderConfig(cfg) {
   }
 
   renderTLSCertDetails(cfg);
+  renderTransportSettings();
 
   // Render API Key & Bind
   renderAPIKeyDisplay();
@@ -2218,6 +2235,201 @@ function renderList(containerId, items, removeClass) {
     container.appendChild(row);
   });
   safeFeatherReplace();
+}
+
+// ---- Client-facing QUIC transports -----------------------------------------
+//
+// The Settings card is a two-column form: DoH3 is one toggle and one endpoint;
+// DoQ carries the auth mode, the optional SNI-token list and its endpoint. The
+// values are staged in currentConfig.transports and saved by the card's button,
+// so an operator can flip both switches and edit a token list in one request.
+function normalizeTransportSettings(cfg) {
+  if (!cfg) return { doq_enabled: false, doh3_enabled: false, doq_port: 853, doq_auth: 'ip', doq_token_domain: '', doq_tokens: [] };
+  if (!cfg.transports || typeof cfg.transports !== 'object') cfg.transports = {};
+  const t = cfg.transports;
+  t.doq_enabled = !!t.doq_enabled;
+  t.doh3_enabled = !!t.doh3_enabled;
+  t.doq_port = Number.isFinite(Number(t.doq_port)) && Number(t.doq_port) > 0 ? Number(t.doq_port) : 853;
+  t.doq_auth = t.doq_auth === 'sni-token' ? 'sni-token' : 'ip';
+  t.doq_token_domain = typeof t.doq_token_domain === 'string' ? t.doq_token_domain : '';
+  if (!Array.isArray(t.doq_tokens)) t.doq_tokens = [];
+  t.doh3_listening = !!t.doh3_listening;
+  t.doq_listening = !!t.doq_listening;
+  return t;
+}
+
+function transportGuideHost() {
+  const cfg = currentConfig || {};
+  return (cfg.tls && (cfg.tls.dot_domain || cfg.tls.domain)) || (cfg.server && cfg.server.public_ip) || '';
+}
+
+function renderTransportEndpoints(t) {
+  const host = transportGuideHost();
+  const cfg = currentConfig || {};
+  const doh3El = document.getElementById('doh3-endpoint');
+  if (doh3El) {
+    doh3El.innerText = (typeof cfg.doh_url === 'string' && cfg.doh_url)
+      ? cfg.doh_url
+      : (host ? `https://${host}:8443/dns-query` : 'Configure a domain and certificate first');
+  }
+  const port = t.doq_port || 853;
+  const doqEl = document.getElementById('doq-endpoint');
+  if (doqEl) {
+    doqEl.innerText = (t.doq_auth === 'sni-token' && t.doq_token_domain)
+      ? `quic://<token>.${t.doq_token_domain}:${port}`
+      : ((typeof cfg.doq_url === 'string' && cfg.doq_url) || (host ? `quic://${host}:${port}` : 'Configure a domain and certificate first'));
+  }
+  const status = document.getElementById('doh3-status');
+  if (status) {
+    status.innerText = t.doh3_listening ? 'Listening on UDP 8443' : (t.doh3_enabled ? 'Enabled — not listening' : 'Off');
+    status.className = t.doh3_listening
+      ? 'font-mono text-emerald-300'
+      : (t.doh3_enabled ? 'font-mono text-amber-300' : 'font-mono text-slate-300');
+  }
+  const doqStatus = document.getElementById('doq-status');
+  if (doqStatus) {
+    doqStatus.innerText = t.doq_listening ? `Listening on UDP ${port}` : (t.doq_enabled ? 'Enabled — not listening' : 'Off');
+    doqStatus.className = t.doq_listening
+      ? 'font-mono text-emerald-300'
+      : (t.doq_enabled ? 'font-mono text-amber-300' : 'font-mono text-slate-300');
+  }
+}
+
+function updateTransportBadge(t) {
+  const badge = document.getElementById('transports-state-badge');
+  if (!badge) return;
+  const on = [t.doh3_listening, t.doq_listening].filter(Boolean).length;
+  const desired = t.doh3_enabled || t.doq_enabled;
+  const missing = (t.doh3_enabled && !t.doh3_listening) || (t.doq_enabled && !t.doq_listening);
+  badge.innerText = missing
+    ? (on > 0 ? 'Partial' : 'Not listening')
+    : (on === 2 ? 'Both on' : on === 1 ? (t.doh3_listening ? 'DoH3 on' : 'DoQ on') : 'Off');
+  badge.className = missing
+    ? 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30'
+    : (on > 0
+      ? 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+      : (desired
+        ? 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30'
+        : 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700'));
+}
+
+function renderDoQTokens(t) {
+  const list = document.getElementById('doq-tokens-list');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!t.doq_tokens.length) {
+    list.innerHTML = '<div class="text-slate-500 text-xs py-1">No DoQ tokens yet</div>';
+    return;
+  }
+  t.doq_tokens.forEach(token => {
+    const row = document.createElement('div');
+    row.className = 'flex items-center justify-between py-1.5 px-3 rounded-lg bg-slate-950/60 border border-slate-800 text-xs';
+    row.innerHTML = `
+      <span class="font-mono text-emerald-300">${escapeHTML(token)}</span>
+      <button class="remove-doq-token inline-flex items-center justify-center w-6 h-6 shrink-0 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition" data-val="${escapeHTML(token)}" aria-label="Remove ${escapeHTML(token)}">
+        <i data-feather="x" class="w-3.5 h-3.5"></i>
+      </button>
+    `;
+    list.appendChild(row);
+  });
+  safeFeatherReplace();
+}
+
+function markTransportsDirty() {
+  const el = document.getElementById('transports-save-status');
+  if (el) {
+    el.innerText = 'Unsaved changes';
+    el.className = 'text-[11px] text-amber-300';
+  }
+}
+
+function renderTransportSettings() {
+  const card = document.getElementById('transports-card');
+  if (!card || !currentConfig) return;
+  const t = normalizeTransportSettings(currentConfig);
+
+  const doh3 = document.getElementById('doh3-enabled-input');
+  if (doh3) doh3.checked = t.doh3_enabled;
+  const doq = document.getElementById('doq-enabled-input');
+  if (doq) doq.checked = t.doq_enabled;
+  const auth = document.getElementById('doq-auth-select');
+  if (auth) auth.value = t.doq_auth;
+  const domain = document.getElementById('doq-token-domain-input');
+  if (domain) domain.value = t.doq_token_domain || '';
+  const portInput = document.getElementById('doq-port-input');
+  if (portInput) portInput.value = t.doq_port || 853;
+
+  const fields = document.getElementById('doq-token-fields');
+  if (fields) fields.classList.toggle('hidden', t.doq_auth !== 'sni-token');
+  const warning = document.getElementById('doq-cert-warning');
+  if (warning) warning.classList.toggle('hidden', t.doq_auth !== 'sni-token');
+
+  renderTransportEndpoints(t);
+  renderDoQTokens(t);
+  updateTransportBadge(t);
+}
+
+async function refreshTransportState() {
+  try {
+    const res = await fetch(api('/api/settings/transports'), {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (res.ok) {
+      currentConfig.transports = normalizeTransportSettings({ transports: await res.json() });
+      renderTransportSettings();
+    }
+  } catch (e) { /* the toast already carries the save failure */ }
+}
+
+async function saveTransportSettings() {
+  if (!currentConfig) return;
+  const t = normalizeTransportSettings(currentConfig);
+  const btn = document.getElementById('save-transports-btn');
+  const status = document.getElementById('transports-save-status');
+  const payload = {
+    doq_enabled: !!document.getElementById('doq-enabled-input')?.checked,
+    doh3_enabled: !!document.getElementById('doh3-enabled-input')?.checked,
+    doq_auth: document.getElementById('doq-auth-select')?.value || 'ip',
+    doq_port: Number(document.getElementById('doq-port-input')?.value) || 853,
+    doq_token_domain: (document.getElementById('doq-token-domain-input')?.value || '').trim().toLowerCase(),
+    doq_tokens: t.doq_tokens.slice(),
+  };
+  if (btn) btn.disabled = true;
+  if (status) {
+    status.innerText = 'Saving…';
+    status.className = 'text-[11px] text-slate-400';
+  }
+  try {
+    const res = await fetch(api('/api/settings/transports'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      if (status) {
+        status.innerText = '';
+        status.className = 'text-[11px] text-slate-400';
+      }
+      await refreshTransportState();
+      showToast(await errorMessage(res, 'Could not save the transport settings.'), 'error');
+      return;
+    }
+    currentConfig.transports = normalizeTransportSettings({ transports: await res.json() });
+    renderTransportSettings();
+    if (status) {
+      status.innerText = 'Saved';
+      status.className = 'text-[11px] text-emerald-300';
+    }
+    showToast('Transport settings saved', 'success');
+  } catch (e) {
+    if (status) {
+      status.innerText = '';
+      status.className = 'text-[11px] text-slate-400';
+    }
+    showToast('Could not save the transport settings.', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ---- Proxied domains: sort and windowed rendering ---------------------------
@@ -9519,6 +9731,59 @@ function initEventListeners() {
     }
   });
 
+  // Client-facing QUIC transport card. The switches and token edits are staged
+  // in currentConfig.transports and committed by one Save request.
+  document.getElementById('save-transports-btn')?.addEventListener('click', saveTransportSettings);
+  document.getElementById('doh3-enabled-input')?.addEventListener('change', (e) => {
+    const t = normalizeTransportSettings(currentConfig);
+    t.doh3_enabled = !!e.target.checked;
+    updateTransportBadge(t);
+    markTransportsDirty();
+  });
+  document.getElementById('doq-enabled-input')?.addEventListener('change', (e) => {
+    const t = normalizeTransportSettings(currentConfig);
+    t.doq_enabled = !!e.target.checked;
+    updateTransportBadge(t);
+    markTransportsDirty();
+  });
+  document.getElementById('doq-auth-select')?.addEventListener('change', (e) => {
+    const t = normalizeTransportSettings(currentConfig);
+    t.doq_auth = e.target.value === 'sni-token' ? 'sni-token' : 'ip';
+    renderTransportSettings();
+    markTransportsDirty();
+  });
+  document.getElementById('doq-token-domain-input')?.addEventListener('change', (e) => {
+    const t = normalizeTransportSettings(currentConfig);
+    t.doq_token_domain = (e.target.value || '').trim().toLowerCase();
+    renderTransportEndpoints(t);
+    markTransportsDirty();
+  });
+  document.getElementById('doq-port-input')?.addEventListener('change', (e) => {
+    const t = normalizeTransportSettings(currentConfig);
+    const n = Number(e.target.value);
+    t.doq_port = Number.isFinite(n) && n > 0 ? n : 853;
+    renderTransportEndpoints(t);
+    markTransportsDirty();
+  });
+  document.getElementById('add-doq-token-btn')?.addEventListener('click', () => {
+    const input = document.getElementById('new-doq-token-input');
+    const val = (input ? input.value : '').trim().toLowerCase();
+    if (!val || !currentConfig) return;
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(val)) {
+      showToast('A DoQ token must be a single DNS label (letters, digits, hyphens).', 'error');
+      return;
+    }
+    const t = normalizeTransportSettings(currentConfig);
+    if (t.doq_tokens.includes(val)) {
+      showToast(`${val} is already listed`, 'info');
+      return;
+    }
+    t.doq_tokens.push(val);
+    if (input) input.value = '';
+    renderDoQTokens(t);
+    markTransportsDirty();
+  });
+
   // Add Custom Record
   document.getElementById('add-custom-record-btn')?.addEventListener('click', () => {
     const dInput = document.getElementById('custom-record-domain');
@@ -9617,6 +9882,14 @@ function initEventListeners() {
         });
         showToast('DoH Token removed', 'info');
         renderConfig(currentConfig);
+      }
+    } else if (btn.classList.contains('remove-doq-token')) {
+      const val = btn.dataset.val;
+      if (currentConfig) {
+        const t = normalizeTransportSettings(currentConfig);
+        t.doq_tokens = t.doq_tokens.filter(x => x !== val);
+        renderDoQTokens(t);
+        markTransportsDirty();
       }
     } else if (btn.classList.contains('remove-record')) {
       const dom = btn.dataset.dom;

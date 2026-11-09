@@ -77,6 +77,14 @@ func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	writeMetric("digitdns_relays_refused_actionable_total", "Relay connections refused for an actionable reason (flood attempts excluded).", "counter", actionableRefused)
 	writeMetric("digitdns_relays_flood_total", "Relay connection attempts from a source already in the malformed-probe penalty box.", "counter", st.RelaysRefusedFlood)
+
+	var doh3Requests, doqQueries, doqAuthFailures uint64
+	if ws.transportMetrics != nil {
+		doh3Requests, doqQueries, doqAuthFailures = ws.transportMetrics()
+	}
+	writeMetric("digitdns_doh3_requests_total", "HTTP/3 DoH requests served since start.", "counter", doh3Requests)
+	writeMetric("digitdns_doq_queries_total", "DNS-over-QUIC queries served since start.", "counter", doqQueries)
+	writeMetric("digitdns_doq_auth_failures_total", "DNS-over-QUIC connections rejected by SNI-token authentication.", "counter", doqAuthFailures)
 	writeMetric("digitdns_relays_unreadable_total", "Relay connections whose opening bytes named no destination.", "counter", st.RelaysUnreadable)
 
 	writeMetric("digitdns_cpu_percent", "Process CPU usage percentage.", "gauge", st.CPUUsagePercent)

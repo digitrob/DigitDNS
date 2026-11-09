@@ -125,6 +125,10 @@ func (ws *WebServer) handleSubDataAPI(w http.ResponseWriter, r *http.Request) {
 		// already bound (including CIDR entries), and one word for the account state.
 		"doh_port":               dohPortForDisplay(ws.dnsCfg),
 		"dot_port":               dotPortForDisplay(ws.dnsCfg),
+		"doq_port":               doqPortForDisplay(ws.dnsCfg),
+		"doh3_enabled":           ws.dnsCfg != nil && ws.dnsCfg.DoH3Enabled,
+		"doq_enabled":            ws.dnsCfg != nil && ws.dnsCfg.DoQEnabled,
+		"doq_url":                ws.doqURL(),
 		"detected_ip_registered": ipMatchesBindings(clientIP, client.AllowedIPs),
 		"status":                 portalAccountStatus(client, view),
 	})
@@ -463,6 +467,13 @@ type portalData struct {
 	// endpoint.
 	DoHPort int
 	DoTPort int
+	// DoQPort, DoQEnabled and DoH3Enabled drive the optional QUIC rows in the
+	// portal. They are separate from ServerHost because a subscriber needs a
+	// copyable endpoint only when the operator turned the transport on.
+	DoQPort     int
+	DoQEnabled  bool
+	DoH3Enabled bool
+	DoQURL      string
 	// ThemeCSS is the operator's custom stylesheet, already sanitised and
 	// wrapped in its own <style> element (or a <link>, or empty). It is emitted
 	// into the page head verbatim, so it is typed template.HTML: a template.CSS
@@ -654,17 +665,21 @@ func (ws *WebServer) renderIPResultPage(w http.ResponseWriter, r *http.Request, 
 	w.Header().Add("Vary", "Cookie")
 
 	data := portalData{
-		Lang:      "en",
-		Dir:       "ltr",
-		Theme:     theme,
-		IsLight:   theme == portalThemeLight,
-		T:         t,
-		ClientIP:  clientIP,
-		ServerDNS: safeHostDisplay(serverDNS),
-		Title:     ws.subSettings.GetTitle(),
-		Version:   version.Display(),
-		DoHPort:   dohPortForDisplay(ws.dnsCfg),
-		DoTPort:   dotPortForDisplay(ws.dnsCfg),
+		Lang:        "en",
+		Dir:         "ltr",
+		Theme:       theme,
+		IsLight:     theme == portalThemeLight,
+		T:           t,
+		ClientIP:    clientIP,
+		ServerDNS:   safeHostDisplay(serverDNS),
+		Title:       ws.subSettings.GetTitle(),
+		Version:     version.Display(),
+		DoHPort:     dohPortForDisplay(ws.dnsCfg),
+		DoTPort:     dotPortForDisplay(ws.dnsCfg),
+		DoQPort:     doqPortForDisplay(ws.dnsCfg),
+		DoQURL:      ws.doqURL(),
+		DoH3Enabled: ws.dnsCfg != nil && ws.dnsCfg.DoH3Enabled,
+		DoQEnabled:  ws.dnsCfg != nil && ws.dnsCfg.DoQEnabled,
 		// The operator's stylesheet lands after the built-in one. Depending on
 		// the configured source it is the inline text, a sanitised server-local
 		// file, or a <link> to a URL the browser loads (v2.4). Empty renders
@@ -1116,6 +1131,20 @@ const portalPageHTML = `<!DOCTYPE html>
           <span class="copy-card-top"><span>DNS-over-TLS (DoT):</span><span class="copy-card-tag"><i class="ico ico-clipboard" aria-hidden="true"></i>{{.T.BtnCopy}}</span></span>
           <span class="copy-card-val">{{.ServerHost}}:{{.DoTPort}}</span>
         </button>
+
+        {{if .DoH3Enabled}}
+        <button type="button" class="copy-card" data-copy="https://{{.ServerHost}}:{{.DoHPort}}/dns-query" data-copied="{{.T.CopiedDoH}}">
+          <span class="copy-card-top"><span>DNS-over-HTTPS/3 (DoH3):</span><span class="copy-card-tag"><i class="ico ico-clipboard" aria-hidden="true"></i>{{.T.BtnCopy}}</span></span>
+          <span class="copy-card-val">https://{{.ServerHost}}:{{.DoHPort}}/dns-query</span>
+        </button>
+        {{end}}
+
+        {{if and .DoQEnabled .DoQURL}}
+        <button type="button" class="copy-card" data-copy="{{.DoQURL}}" data-copied="{{.T.CopiedDoT}}">
+          <span class="copy-card-top"><span>DNS-over-QUIC (DoQ):</span><span class="copy-card-tag"><i class="ico ico-clipboard" aria-hidden="true"></i>{{.T.BtnCopy}}</span></span>
+          <span class="copy-card-val">{{.DoQURL}}</span>
+        </button>
+        {{end}}
       </div>
     </div>
 
@@ -1271,4 +1300,11 @@ func dotPortForDisplay(cfg *database.DNSSettings) int {
 		return 853
 	}
 	return cfg.DoTPort
+}
+
+func doqPortForDisplay(cfg *database.DNSSettings) int {
+	if cfg == nil || cfg.DoQPort == 0 {
+		return 853
+	}
+	return cfg.DoQPort
 }

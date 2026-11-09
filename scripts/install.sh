@@ -227,6 +227,7 @@ validate_domain() {
 echo -e "${CYAN}${BOLD}DigitDNS uses these ports:${NC}"
 echo -e "  ${BOLD}53/udp,53/tcp${NC}  DNS resolver (plain)      ${BOLD}853${NC}  DoT (DNS-over-TLS)"
 echo -e "  ${BOLD}443${NC}          SNI relay / HTTPS          ${BOLD}8443${NC} DoH (DNS-over-HTTPS)"
+echo -e "  ${BOLD}853/udp${NC}      DoQ (DNS-over-QUIC)        ${BOLD}8443/udp${NC} DoH3 (HTTP/3)"
 echo -e "  ${BOLD}80${NC}           SNI relay + ACME HTTP-01   ${BOLD}(panel port is random, shown below)${NC}"
 _port_lister=""
 if command -v ss >/dev/null 2>&1; then _port_lister="ss"; elif command -v netstat >/dev/null 2>&1; then _port_lister="netstat"; fi
@@ -279,7 +280,7 @@ echo -e "  ${GREEN}✓ Architecture detected: ${ARCH} (${BIN_ARCH})${NC}"
 # one-liner pins it to the tag the user is installing, so the binary, the config
 # template and version.json can never disagree with the installer itself.
 # RELEASE CHECKLIST: bump this to the new tag on every release.
-DIGITDNS_REF="${DIGITDNS_REF:-v5.3.3}"
+DIGITDNS_REF="${DIGITDNS_REF:-v5.4.0}"
 RAW_BASE="https://raw.githubusercontent.com/digitrob/DigitDNS/${DIGITDNS_REF}"
 RELEASE_BASE="https://github.com/digitrob/DigitDNS/releases/download/${DIGITDNS_REF}"
 

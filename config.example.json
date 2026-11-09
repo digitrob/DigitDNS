@@ -15,6 +15,11 @@
     "port": 53,
     "dot_port": 853,
     "doh_port": 8443,
+    "doq_port": 853,
+    "doq_enabled": false,
+    "doq_auth": "ip",
+    "doq_token_domain": "",
+    "doh3_enabled": false,
     "upstreams": [
       "1.1.1.1:53",
       "8.8.8.8:53",

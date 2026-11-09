@@ -2649,6 +2649,109 @@ async function onBuySubscription(ctx, username) {
         </div>
         </div>
 
+        <!-- Client-facing QUIC transports: opt-in HTTP/3 and DNS-over-QUIC.
+             Sits directly after the TLS manager because both reuse its
+             certificate; the two columns keep a full-width row from becoming
+             one tall stack on a wide panel. -->
+        <div class="glass-panel panel-card p-5 sm:p-6 settings-wide" id="transports-card">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-xl bg-sky-500/20 text-sky-400">
+                <i data-feather="zap" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="panel-card-title">Client Encrypted Transports</h3>
+                <p class="text-[11px] text-slate-400">Optional HTTP/3 and DNS-over-QUIC endpoints. Both are off until enabled and use the certificate above.</p>
+              </div>
+            </div>
+            <span id="transports-state-badge" class="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700">Off</span>
+          </div>
+
+          <div class="transport-grid">
+            <section class="rounded-xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h4 class="text-xs font-bold text-white font-heading">DoH3 (HTTP/3)</h4>
+                  <p class="text-[10px] text-slate-500 mt-0.5">The same DoH URL, negotiated over QUIC automatically.</p>
+                </div>
+                <label class="inline-flex items-center gap-2 text-xs text-slate-300 shrink-0">
+                  <input type="checkbox" id="doh3-enabled-input" class="accent-cyan-500 w-4 h-4"> Enabled
+                </label>
+              </div>
+              <div class="text-[11px] text-slate-400 space-y-1">
+                <div>UDP port <span class="font-mono text-slate-200">8443</span></div>
+                <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doh3-endpoint" aria-label="Copy DoH3 URL">
+                  <span id="doh3-endpoint" class="font-mono text-cyan-300 break-all">—</span>
+                  <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
+                </button>
+              </div>
+              <div class="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-1.5 text-[10px] text-slate-400">
+                <div class="flex items-center justify-between gap-2">
+                  <span>Status</span>
+                  <span id="doh3-status" class="font-mono text-slate-300">Off</span>
+                </div>
+                <p>When on, TCP DoH advertises this endpoint with <code>Alt-Svc</code>; browsers upgrade automatically and clients that cannot use QUIC fall back to TCP DoH.</p>
+                <p>Uses the DoH/DoT certificate above; no extra domain is needed.</p>
+              </div>
+            </section>
+
+            <section class="rounded-xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h4 class="text-xs font-bold text-white font-heading">DoQ (DNS-over-QUIC)</h4>
+                  <p class="text-[10px] text-slate-500 mt-0.5">RFC 9250 for clients and routers that support QUIC.</p>
+                </div>
+                <label class="inline-flex items-center gap-2 text-xs text-slate-300 shrink-0">
+                  <input type="checkbox" id="doq-enabled-input" class="accent-emerald-500 w-4 h-4"> Enabled
+                </label>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label for="doq-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">UDP port</label>
+                  <input type="number" id="doq-port-input" min="1" max="65535" step="1" value="853" aria-label="DoQ UDP port" class="panel-field w-full font-mono text-xs focus:border-emerald-400">
+                </div>
+                <div>
+                  <label for="doq-auth-select" class="block text-[10px] font-semibold text-slate-400 mb-1">Authentication</label>
+                  <select id="doq-auth-select" class="panel-field w-full text-xs focus:border-emerald-400">
+                    <option value="ip">IP allowlist</option>
+                    <option value="sni-token">SNI token</option>
+                  </select>
+                </div>
+              </div>
+              <div id="doq-token-fields" class="space-y-2">
+                <div>
+                  <label for="doq-token-domain-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Token domain</label>
+                  <input type="text" id="doq-token-domain-input" placeholder="doq.example.com" class="panel-field w-full font-mono text-xs focus:border-emerald-400">
+                </div>
+                <div class="flex gap-2">
+                  <input type="text" id="new-doq-token-input" aria-label="New DoQ token label" placeholder="token label (e.g. home)" class="panel-field flex-1 min-w-0 font-mono text-xs focus:border-emerald-400">
+                  <button type="button" id="add-doq-token-btn" class="shrink-0 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-[11px] font-heading transition">Add</button>
+                </div>
+                <div id="doq-tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">No DoQ tokens yet</div></div>
+              </div>
+              <div class="text-[11px] text-slate-400 space-y-1">
+                <div>Endpoint</div>
+                <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doq-endpoint" aria-label="Copy DoQ URL">
+                  <span id="doq-endpoint" class="font-mono text-emerald-300 break-all">—</span>
+                  <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
+                </button>
+                <p class="text-[10px] text-slate-500">In SNI-token mode each client uses its own token in place of <code>&lt;token&gt;</code>.</p>
+              </div>
+              <div class="flex items-center justify-between gap-2 text-[10px] text-slate-400">
+                <span>Status</span>
+                <span id="doq-status" class="font-mono text-slate-300">Off</span>
+              </div>
+              <p id="doq-cert-warning" class="hidden text-[10px] text-amber-300 leading-relaxed">SNI-token mode requires a certificate covering <span class="font-mono">*.&lt;token domain&gt;</span> or every token hostname. The built-in ACME client cannot issue wildcard certificates.</p>
+              <p class="text-[10px] text-slate-500">Open UDP 853 in the firewall. DoQ is not used by Android Private DNS; that remains DoT.</p>
+            </section>
+          </div>
+
+          <div class="flex items-center gap-3 flex-wrap pt-2">
+            <button type="button" id="save-transports-btn" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition">Save Transports</button>
+            <span id="transports-save-status" class="text-[11px] text-slate-400"></span>
+          </div>
+        </div>
+
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 settings-wide">
           
           <!-- Custom Blocklist (Sinkhole / Adblock) -->
@@ -3144,6 +3247,29 @@ async function onBuySubscription(ctx, username) {
                 <span id="guide-doh-url">https://your-server-domain:8443/dns-query</span>
                 <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 hover:text-cyan-400 flex-shrink-0 ms-2"></i>
               </div>
+              <p id="guide-doh3-note" class="hidden text-[10px] text-slate-500 leading-relaxed">
+                HTTP/3 (DoH3) is enabled on this server. Clients that support it negotiate it automatically
+                with the same URL — no separate configuration.
+              </p>
+            </div>
+
+            <!-- Guide 5: DNS-over-QUIC (DoQ), shown only when the operator enables it -->
+            <div id="guide-doq-card" class="hidden p-5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
+              <div class="flex items-center gap-2.5">
+                <i data-feather="zap" class="text-sky-400 w-5 h-5"></i>
+                <h4 class="text-xs sm:text-sm font-bold text-white font-heading">DNS-over-QUIC (DoQ)</h4>
+              </div>
+              <ol class="text-[11px] sm:text-xs text-slate-300 space-y-1.5 list-decimal list-inside leading-relaxed">
+                <li>Use a client or router that supports <strong>RFC 9250 DoQ</strong>.</li>
+                <li>Enter this endpoint (SNI-token mode uses <code>&lt;token&gt;</code> in place of the hostname):</li>
+              </ol>
+              <div class="code-box cursor-pointer" data-copy-target="guide-doq-url" role="button" tabindex="0" aria-label="Copy DNS-over-QUIC URL">
+                <span id="guide-doq-url">quic://your-server-domain:853</span>
+                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 hover:text-cyan-400 flex-shrink-0 ms-2"></i>
+              </div>
+              <p class="text-[10px] text-slate-500 leading-relaxed">
+                DoQ is not used by Android Private DNS; Android keeps using DoT.
+              </p>
             </div>
 
           </div>

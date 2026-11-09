@@ -64,9 +64,10 @@ RUN apk add --no-cache ca-certificates tzdata \
 
 COPY --from=builder /out/digitdns /app/digitdns
 
-# DNS (53), SNI proxy (80/443), DoT (853), dashboard (8080) and HTTPS/DoH (8443).
+# DNS (53), SNI proxy (80/443), DoT (853), DoQ (853/udp), dashboard (8080),
+# HTTPS/DoH (8443) and DoH3 (8443/udp).
 # Decorative under `network_mode: host`, which is what docker-compose.yml uses.
-EXPOSE 53/udp 53/tcp 80/tcp 443/tcp 853/tcp 8080/tcp 8443/tcp
+EXPOSE 53/udp 53/tcp 80/tcp 443/tcp 853/tcp 853/udp 8080/tcp 8443/tcp 8443/udp
 
 VOLUME ["/app/data", "/app/certs"]
 

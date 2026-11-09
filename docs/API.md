@@ -196,7 +196,7 @@ curl -s "https://dns.example.com/<admin-path>/api/v3/clients" \
 | Rules & access | `GET/POST /api/v3/rules`, `GET/POST /api/v3/access`, `POST /api/v3/access/mode` |
 | Upstreams | `GET/POST /api/v3/upstreams`, `POST /api/v3/upstreams/{benchmark,reorder}` |
 | Ad blocking | `GET /api/v3/filtering`, `POST/PUT /api/v3/filtering/settings`, `POST /api/v3/filtering/refresh`, `GET/POST /api/v3/filtering/presets`, `POST /api/v3/filtering/lists`, `PATCH/POST/DELETE /api/v3/filtering/lists/{id}`, `POST /api/v3/filtering/lists/{id}/update` |
-| Settings | `GET/POST /api/v3/settings`, `…/settings/subscription`, `…/settings/regenerate-api-key`, `…/settings/regenerate-admin-path` |
+| Settings | `GET/POST /api/v3/settings`, `…/settings/subscription`, `…/settings/transports`, `…/settings/regenerate-api-key`, `…/settings/regenerate-admin-path` |
 | TLS / ACME | `POST /api/v3/tls/issue`, `POST /api/v3/tls/auto-renew`, `GET /api/v3/tls/acme/status` |
 | Stats & stream | `GET /api/v3/stats`, `GET /api/v3/stats/{summary,series,top,export,settings}`, `POST /api/v3/stats/settings`, `GET /api/v3/events/stream` (`?ticket=` accepted) |
 | Diagnostics | `GET/POST/DELETE /api/v3/diagnostics/targets`, `POST /api/v3/diagnostics/run` |
@@ -1029,6 +1029,7 @@ All of these live **inside the admin namespace** (`/<admin-path>/api/...` below 
 | `POST /api/auth/2fa/disable` | Turns 2FA off. Body: `username`, `current_password`, `code` — both factors are required one last time. |
 | `POST /api/settings/regenerate-admin-path` | Replaces the hidden namespace. Body **must** be `{"confirm":true}`; every session and bookmark under the old path dies immediately. |
 | `GET/POST /api/settings/subscription` | The subscriber-surface record (enabled, domain, port, title, certificate paths, `use_panel_certificate`). A different domain is refused without a valid certificate naming it; `restart_required` is always stated. |
+| `GET/POST /api/settings/transports` | The client-facing QUIC policy: `doq_enabled`, `doq_port`, `doq_auth` (`ip` or `sni-token`), `doq_token_domain`, `doq_tokens`, `doh3_enabled`. The response also reports `doh3_listening` and `doq_listening` (actual bind state). A save persists first, then applies live; a bind failure answers **500** and leaves the listener off. DoH3 uses the DoH port over UDP; DoQ defaults to UDP 853. |
 | `GET /api/update/check` | *(v2.6)* Reports the running version, the version published on the project's `main` branch, and whether a newer one is available. Read-only. |
 | `POST /api/update/apply` | *(v2.6)* Starts a background update and restart (**Linux/systemd only**). Since **v2.8** the release bundle must carry a valid detached **ed25519 signature over `checksums.txt`** (verified against the key pinned in the binary, `X-DigitDNS-Checksums-Signature`) **and** a matching SHA-256; the file is re-hashed immediately before it is installed. The data files are snapshotted first and never rewritten. An unsigned or wrongly-signed bundle is refused with the reason in the response. |
 | `GET /api/update/status` | *(v2.6)* Live progress of an in-flight update, for the dashboard's progress modal to poll. |

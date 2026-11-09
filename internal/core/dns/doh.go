@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"digitdns/internal/netutil"
 	"github.com/miekg/dns"
@@ -24,6 +25,14 @@ type DoHHandler struct {
 	// the moment the operator saved a token on a running server.
 	mu     sync.RWMutex
 	tokens []string
+	// altSvc is the Alt-Svc value advertised to TCP DoH clients while the
+	// HTTP/3 listener is up. Empty means DoH3 is disabled or failed to bind;
+	// advertising a QUIC endpoint that is not listening only delays clients.
+	altSvc string
+	// doh3Requests counts HTTP/3 requests for the Prometheus endpoint. TCP DoH
+	// already contributes to the query and protocol aggregates; this counter
+	// answers "is anyone actually using the QUIC listener?".
+	doh3Requests atomic.Uint64
 }
 
 func NewDoHHandler(h *Handler) *DoHHandler {
@@ -67,6 +76,23 @@ func (h *DoHHandler) tokenOK(r *http.Request) bool {
 	return ok
 }
 
+// SetAltSvc advertises the HTTP/3 endpoint on TCP DoH responses. The DNS
+// server calls it when the DoH3 listener starts and clears it when it stops;
+// an empty value means no h3 endpoint is listening.
+func (h *DoHHandler) SetAltSvc(value string) {
+	h.mu.Lock()
+	h.altSvc = value
+	h.mu.Unlock()
+}
+
+func (h *DoHHandler) altSvcValue() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.altSvc
+}
+
+func (h *DoHHandler) DoH3Requests() uint64 { return h.doh3Requests.Load() }
+
 func (h *DoHHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// No CORS headers (v2.1.0 A-05 remediation): RFC 8484 clients — browsers via
 	// the standard API, stub resolvers — issue no preflighted cross-origin reads
@@ -77,6 +103,10 @@ func (h *DoHHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "GET, POST")
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
+	}
+
+	if alt := h.altSvcValue(); alt != "" {
+		w.Header().Set("Alt-Svc", alt)
 	}
 
 	clientIP := netutil.ClientIP(r)
@@ -140,7 +170,15 @@ func (h *DoHHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// peerIP is the immediate TCP peer: the rate limiter's loopback exemption
 	// keys on it, so a forwarded header can never claim the exemption.
 	peerIP := netutil.PeerIP(r)
-	resp := h.dnsHandler.ProcessQuery(reqMsg, clientIP, "DoH", peerIP)
+	// HTTP/3 requests arrive on the same handler as TCP DoH. r.ProtoMajor is
+	// 3 for HTTP/3, which keeps the protocol breakdown honest without a second
+	// handler or a second token gate.
+	proto := "DoH"
+	if r.ProtoMajor == 3 {
+		proto = "DoH3"
+		h.doh3Requests.Add(1)
+	}
+	resp := h.dnsHandler.ProcessQuery(reqMsg, clientIP, proto, peerIP)
 	if resp == nil {
 		http.Error(w, "DNS processing failure", http.StatusInternalServerError)
 		return

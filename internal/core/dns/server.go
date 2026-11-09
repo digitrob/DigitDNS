@@ -9,11 +9,15 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"digitdns/internal/netutil"
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 )
 
 // alpnDoT is the ALPN identifier RFC 7858 registers for DNS-over-TLS.
@@ -65,18 +69,53 @@ type CertSource interface {
 	GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error)
 }
 
+// TransportConfig carries the client-facing listener ports and the opt-in QUIC
+// transports. It is a value, not a pointer, so an ApplyTransports call cannot
+// retain a caller's struct that is mutated later.
+type TransportConfig struct {
+	Port           int
+	DoTPort        int
+	DoHPort        int
+	DoQPort        int
+	DoQEnabled     bool
+	DoQAuth        string
+	DoQTokenDomain string
+	DoH3Enabled    bool
+}
+
 type Server struct {
 	handler   *Handler
 	tlsConfig *tls.Config
 	webMux    http.Handler
-	udpServer *dns.Server
-	tcpServer *dns.Server
-	dotServer *dns.Server
-	dohServer *http.Server
-	bindHost  string
-	port      int
-	dotPort   int
-	dohPort   int
+	// dohHandler is the concrete DoH front-end behind webMux. It carries the
+	// token list and the Alt-Svc advertisement, so the server keeps a reference
+	// instead of reaching through the restricted mux wrapper.
+	dohHandler  *DoHHandler
+	udpServer   *dns.Server
+	tcpServer   *dns.Server
+	dotServer   *dns.Server
+	dohServer   *http.Server
+	doh3Server  *http3.Server
+	doh3Conn    net.PacketConn
+	doqListener *quic.Listener
+	doqCtx      context.Context
+	doqCancel   context.CancelFunc
+	doqSlots    chan struct{}
+	doqConns    map[*quic.Conn]struct{}
+	doqMu       sync.Mutex
+	doqTokens   []string
+	doqTokensMu sync.RWMutex
+	doqQueries  atomic.Uint64
+	doqAuthFail atomic.Uint64
+	bindHost    string
+	port        int
+	dotPort     int
+	dohPort     int
+	doqPort     int
+
+	// transportCfg is the last applied policy. The DoQ fields are carried here
+	// for the QUIC listener; DoH3 is applied by ApplyTransports.
+	transportCfg TransportConfig
 
 	// dotCertSource is the DoT/DoH listeners' dedicated certificate (the
 	// custom DoH/DoT domain). nil means both ride tlsConfig — the panel pair.
@@ -95,30 +134,40 @@ func NewServer(
 	h *Handler,
 	tlsCfg *tls.Config,
 	webMux http.Handler,
+	doh *DoHHandler,
 	bindHost string,
-	port, dotPort, dohPort int,
+	cfg TransportConfig,
 ) *Server {
-	if port == 0 {
-		port = 53
+	if cfg.Port == 0 {
+		cfg.Port = 53
 	}
-	if dotPort == 0 {
-		dotPort = 853
+	if cfg.DoTPort == 0 {
+		cfg.DoTPort = 853
 	}
-	if dohPort == 0 {
-		dohPort = 8443
+	if cfg.DoHPort == 0 {
+		cfg.DoHPort = 8443
+	}
+	if cfg.DoQPort == 0 {
+		cfg.DoQPort = 853
+	}
+	if cfg.DoQAuth == "" {
+		cfg.DoQAuth = "ip"
 	}
 	if bindHost == "" {
 		bindHost = "0.0.0.0"
 	}
 
 	return &Server{
-		handler:   h,
-		tlsConfig: tlsCfg,
-		webMux:    webMux,
-		bindHost:  bindHost,
-		port:      port,
-		dotPort:   dotPort,
-		dohPort:   dohPort,
+		handler:      h,
+		tlsConfig:    tlsCfg,
+		webMux:       webMux,
+		dohHandler:   doh,
+		bindHost:     bindHost,
+		port:         cfg.Port,
+		dotPort:      cfg.DoTPort,
+		dohPort:      cfg.DoHPort,
+		doqPort:      cfg.DoQPort,
+		transportCfg: cfg,
 	}
 }
 
@@ -187,6 +236,12 @@ func (s *Server) Start() error {
 
 	s.startDoT()
 	s.startHTTPS()
+	if err := s.startDoH3Locked(); err != nil {
+		log.Printf("[DNS] Warning: %v", err)
+	}
+	if err := s.startDoQ(); err != nil {
+		log.Printf("[DNS] Warning: %v", err)
+	}
 	return nil
 }
 
@@ -277,12 +332,24 @@ func (s *Server) RebindTLS() error {
 		_ = s.dohServer.Close()
 		s.dohServer = nil
 	}
+	s.stopDoH3Locked()
+	s.stopDoQ()
 	var errs []error
 	if err := s.startDoT(); err != nil {
 		errs = append(errs, err)
 	}
 	if err := s.startHTTPS(); err != nil {
 		errs = append(errs, err)
+	}
+	if s.transportCfg.DoH3Enabled {
+		if err := s.startDoH3Locked(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.transportCfg.DoQEnabled {
+		if err := s.startDoQ(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -326,6 +393,146 @@ func (s *Server) startHTTPS() error {
 	return nil
 }
 
+// startDoH3Locked brings up the HTTP/3 face of the DoH endpoint. It is opt-in,
+// so an operator who never enables it pays for no UDP socket and no QUIC
+// state. The caller must hold tlsMu or be Start before any listener serves.
+func (s *Server) startDoH3Locked() error {
+	if !s.transportCfg.DoH3Enabled || s.doh3Server != nil {
+		return nil
+	}
+	if s.tlsConfig == nil || s.webMux == nil {
+		return errors.New("DoH3 requires a TLS certificate and the DoH handler")
+	}
+	addr := s.addr(s.dohPort)
+	pc, err := net.ListenPacket("udp", addr)
+	if err != nil {
+		return fmt.Errorf("bind DoH3 %s: %w", addr, err)
+	}
+
+	h3Cfg := s.tlsConfig.Clone()
+	h3Cfg.NextProtos = []string{"h3"}
+	applyDOTCertSource(h3Cfg, s.dotCertSource)
+
+	srv := &http3.Server{
+		Handler:   s.webMux,
+		TLSConfig: h3Cfg,
+		QUICConfig: &quic.Config{
+			MaxIdleTimeout:        httpsIdleTimeout,
+			MaxIncomingStreams:    256,
+			MaxIncomingUniStreams: 0,
+			Allow0RTT:             false,
+		},
+	}
+	s.doh3Server = srv
+	s.doh3Conn = pc
+	if s.dohHandler != nil {
+		s.dohHandler.SetAltSvc(fmt.Sprintf(`h3=":%d"; ma=86400`, s.dohPort))
+	}
+	go func() {
+		log.Printf("[DNS] Starting DoH3 (HTTP/3) on udp://%s/dns-query", addr)
+		if err := srv.Serve(pc); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("[DNS] DoH3 listener stopped: %v", err)
+		}
+	}()
+	return nil
+}
+
+// stopDoH3Locked tears down the HTTP/3 listener and stops advertising it. The
+// caller must hold tlsMu. Shutdown gets the same grace as the other listeners,
+// then Close severs whatever is left so a long-lived request cannot hold the
+// daemon open.
+func (s *Server) stopDoH3Locked() {
+	if s.dohHandler != nil {
+		s.dohHandler.SetAltSvc("")
+	}
+	if s.doh3Server != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		_ = s.doh3Server.Shutdown(ctx)
+		// Shutdown gets the grace window; closing the packet connection below
+		// tears down anything still open without waiting for a client that may
+		// never finish.
+		cancel()
+		s.doh3Server = nil
+	}
+	if s.doh3Conn != nil {
+		_ = s.doh3Conn.Close()
+		s.doh3Conn = nil
+	}
+}
+
+// ApplyTransports applies a live DoH3 change. DoQ is stored in the config for
+// the QUIC listener phase but is not started here yet; enabling it before that
+// phase is a clear error rather than a silent no-op.
+// TransportStatus reports whether the optional QUIC listeners are actually
+// serving. The settings card uses this rather than the saved toggles so a bind
+// failure cannot present itself as a running endpoint.
+func (s *Server) TransportStatus() (doh3 bool, doq bool) {
+	s.tlsMu.Lock()
+	defer s.tlsMu.Unlock()
+	return s.doh3Server != nil, s.doqListener != nil
+}
+
+// TransportMetrics is the small set of QUIC listener counters the Prometheus
+// endpoint exposes. Query and protocol aggregates already live in the stats
+// service; these are the transport-specific ones it cannot see.
+type TransportMetrics struct {
+	DoH3Requests   uint64
+	DoQQueries     uint64
+	DoQAuthFailure uint64
+}
+
+func (s *Server) TransportMetrics() TransportMetrics {
+	var m TransportMetrics
+	if s.dohHandler != nil {
+		m.DoH3Requests = s.dohHandler.DoH3Requests()
+	}
+	m.DoQQueries = s.doqQueries.Load()
+	m.DoQAuthFailure = s.doqAuthFail.Load()
+	return m
+}
+
+func (s *Server) ApplyTransports(cfg TransportConfig) error {
+	if cfg.DoHPort == 0 {
+		cfg.DoHPort = 8443
+	}
+	if cfg.DoQPort == 0 {
+		cfg.DoQPort = 853
+	}
+	auth := strings.ToLower(strings.TrimSpace(cfg.DoQAuth))
+	if auth == "" {
+		auth = "ip"
+	}
+	if auth != "ip" && auth != "sni-token" {
+		return fmt.Errorf("invalid DoQ authentication mode %q", auth)
+	}
+	cfg.DoQAuth = auth
+
+	s.tlsMu.Lock()
+	defer s.tlsMu.Unlock()
+
+	if s.doh3Server != nil && (!cfg.DoH3Enabled || s.dohPort != cfg.DoHPort) {
+		s.stopDoH3Locked()
+	}
+	if s.doqListener != nil && (!cfg.DoQEnabled || s.doqPort != cfg.DoQPort || s.transportCfg.DoQAuth != auth) {
+		s.stopDoQ()
+	}
+
+	s.transportCfg = cfg
+	s.dohPort = cfg.DoHPort
+	s.doqPort = cfg.DoQPort
+	if cfg.DoH3Enabled && s.doh3Server == nil {
+		if err := s.startDoH3Locked(); err != nil {
+			return err
+		}
+	}
+	if cfg.DoQEnabled && s.doqListener == nil {
+		if err := s.startDoQ(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Server) Stop() {
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
@@ -341,6 +548,8 @@ func (s *Server) Stop() {
 	s.tlsMu.Lock()
 	dotServer, dohServer := s.dotServer, s.dohServer
 	s.dotServer, s.dohServer = nil, nil
+	s.stopDoH3Locked()
+	s.stopDoQ()
 	s.tlsMu.Unlock()
 	if dotServer != nil {
 		_ = dotServer.ShutdownContext(ctx)
