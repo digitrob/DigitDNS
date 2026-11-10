@@ -41,6 +41,16 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.5.1
+
+**A DNS-over-QUIC fix and installer sync.**
+
+- **DoQ now sends STREAM FIN** after each query, so strict public resolvers
+  such as AdGuard and Quad9 answer probes and report latency instead of leaving
+  the upstream unmeasured.
+- **The offline-bundle installer opens DNSCrypt 5443**, matching the online
+  installer.
+
 ## What's new in 5.5.0
 
 **Every client-facing transport in one place, with DNSCrypt, mTLS and token
@@ -503,7 +513,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.1/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -566,7 +576,7 @@ DoT SNI-token authentication and mTLS. Open the same ports in the firewall.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.1/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -649,7 +659,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.5.0` | Client Transports with DNSCrypt, mTLS and token auth; live DNSSEC apply; steadier web/Android panels (latest) |
+| `5.5.1` | DoQ FIN fix, offline installer firewall sync; client transports, DNSCrypt, mTLS and UI polish (latest) |
+| `5.5.0` | Client Transports with DNSCrypt, mTLS and token auth; live DNSSEC apply; steadier web/Android panels (older) |
 | `5.4.3` | API gzip, minified assets, deferred chart, health/blocked notices (older) |
 | `5.4.2` | Compact adaptive Android Transports screen; no server changes (older) |
 | `5.4.1` | Transport hardening, QUIC limits/metrics, DoQ allowlist clarity, upstream health check (older) |
@@ -713,7 +724,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.5.0/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.5.1/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1173,7 +1184,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.5.0`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.5.1`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

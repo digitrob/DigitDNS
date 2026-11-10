@@ -49,6 +49,12 @@ func serveDoQ(t *testing.T, conn *quic.Conn, reply func(string) answer, hits *at
 			if err := m.Unpack(body); err != nil {
 				return
 			}
+			// A DoQ client must send STREAM FIN after the query (RFC 9250 §4.2).
+			// Waiting for EOF here makes the test fail if the client leaves its
+			// write side open, which real resolvers treat as an incomplete query.
+			if _, err := io.Copy(io.Discard, s); err != nil {
+				return
+			}
 			hits.Add(1)
 			if m.Id != 0 {
 				sawNonZeroID.Store(true)

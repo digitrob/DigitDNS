@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.5.1] — DoQ completion and installer sync
+
+### Fixed
+- **DoQ queries now close the QUIC write side (STREAM FIN) after the single
+  query, as RFC 9250 §4.2 requires.** Strict public DoQ resolvers (AdGuard,
+  Quad9 and others) were waiting for the rest of the message, so the upstream
+  showed no latency and could be treated as unmeasured. A regression test now
+  waits for FIN before replying.
+- **The offline-bundle installer opens DNSCrypt TCP/UDP 5443** in its firewall
+  rules, matching the online installer. The CI installer-sync check covers this
+  again.
+
+### Operations
+- Server-only fix; the Android app is version **5.5.1 (542)** for release
+  packaging and has the same behaviour as 5.5.0.
+
+---
+
 ## 🏷️ [v5.5.0] — client transport authentication, DNSCrypt and mTLS
 
 ### Added

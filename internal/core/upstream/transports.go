@@ -99,6 +99,12 @@ func (p *UpstreamPool) exchangeDoQOn(ctx context.Context, conn *quic.Conn, q *dn
 	if _, err := stream.Write(frame); err != nil {
 		return nil, time.Since(start), fmt.Errorf("write DoQ query to %s: %w", endpoint, err)
 	}
+	// RFC 9250 §4.2: the client must close the write side after the single
+	// query. The FIN is what tells the server the message is complete; without
+	// it a strict DoQ resolver waits for more data and the query times out.
+	if err := stream.Close(); err != nil {
+		return nil, time.Since(start), fmt.Errorf("close DoQ write side for %s: %w", endpoint, err)
+	}
 
 	var lenBuf [2]byte
 	if _, err := io.ReadFull(stream, lenBuf[:]); err != nil {
