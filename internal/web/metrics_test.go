@@ -44,6 +44,7 @@ func TestMetricsRequiresAuthAndExposesPrometheusText(t *testing.T) {
 		"digitdns_agent_catalogue_builds_total",
 		"digitdns_agents_online",
 		"digitdns_agent_revision",
+		"digitdns_upstreams_degraded",
 		"digitdns_relays_refused_actionable_total",
 		"digitdns_relays_flood_total",
 		"digitdns_doh3_requests_total",

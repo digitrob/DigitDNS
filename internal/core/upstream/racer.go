@@ -862,6 +862,23 @@ func (p *UpstreamPool) Exchange(req *dns.Msg) (*dns.Msg, time.Duration, string, 
 	return p.ExchangeFor(req, "")
 }
 
+// DegradedUpstreams reports how many configured upstreams the health monitor
+// currently considers degraded. It shares upstreamHealthIssue with the monitor,
+// so the Prometheus gauge and the log warning cannot disagree about what
+// "degraded" means.
+func (p *UpstreamPool) DegradedUpstreams() int {
+	if p == nil {
+		return 0
+	}
+	degraded := 0
+	for _, s := range p.GetUpstreamStats() {
+		if _, bad := upstreamHealthIssue(s); bad {
+			degraded++
+		}
+	}
+	return degraded
+}
+
 // Health monitoring. The startup benchmark gives every upstream a latency and a
 // one-off probe verdict; without a slow repeat the dashboard's probe column goes
 // stale and a resolver that quietly starts failing is only visible in the logs

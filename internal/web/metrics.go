@@ -71,6 +71,12 @@ func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	writeMetric("digitdns_rate_limited_total", "Queries refused by the per-source rate limiter.", "counter", st.RateLimited)
 	writeMetric("digitdns_panics_total", "Panics recovered at a request boundary.", "counter", st.PanicsTotal)
 
+	degradedUpstreams := 0
+	if ws.upstreams != nil {
+		degradedUpstreams = ws.upstreams.DegradedUpstreams()
+	}
+	writeMetric("digitdns_upstreams_degraded", "Configured upstream resolvers the health monitor currently considers degraded.", "gauge", degradedUpstreams)
+
 	writeMetric("digitdns_cache_entries", "Entries currently held in the DNS cache.", "gauge", st.CacheItems)
 	writeMetric("digitdns_cache_hits_total", "DNS cache hits since start.", "counter", st.CacheHits)
 	writeMetric("digitdns_cache_misses_total", "DNS cache misses since start.", "counter", st.CacheMisses)
@@ -107,7 +113,7 @@ func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	writeMetric("digitdns_doq_connections_total", "DNS-over-QUIC connections accepted since start.", "counter", tm.DoQConnectionsTotal)
 	writeMetric("digitdns_doq_auth_failures_total", "DNS-over-QUIC connections rejected by SNI-token authentication.", "counter", tm.DoQAuthFailures)
 	writeMetric("digitdns_doq_protocol_errors_total", "DNS-over-QUIC streams closed for a protocol violation.", "counter", tm.DoQProtocolErrors)
-	b.WriteString("# HELP digitdns_quic_handshake_rejected_total New QUIC connections refused before the handshake, by transport.\n")
+	b.WriteString("# HELP digitdns_quic_handshake_rejected_total New QUIC handshake attempts refused before TLS, by transport.\n")
 	b.WriteString("# TYPE digitdns_quic_handshake_rejected_total counter\n")
 	fmt.Fprintf(&b, "digitdns_quic_handshake_rejected_total{transport=%q} %d\n", "doh3", tm.DoH3HandshakeRejects)
 	fmt.Fprintf(&b, "digitdns_quic_handshake_rejected_total{transport=%q} %d\n", "doq", tm.DoQHandshakeRejects)

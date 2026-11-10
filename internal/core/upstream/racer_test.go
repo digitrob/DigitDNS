@@ -1568,3 +1568,31 @@ func TestReportUpstreamHealthLogsTransitions(t *testing.T) {
 		t.Fatal("the recovered upstream stayed marked as alerted")
 	}
 }
+
+// The scrapeable gauge must use the same definition as the monitor: a failed
+// latest probe and an open circuit both count, a healthy probe does not.
+func TestDegradedUpstreamsCountsProbeAndCircuitStates(t *testing.T) {
+	const bad, good = "192.0.2.1:53", "192.0.2.2:53"
+	p := newTestPool(t, []string{bad, good}, time.Second, false, "")
+	if got := p.DegradedUpstreams(); got != 0 {
+		t.Fatalf("degraded = %d before any probe, want 0", got)
+	}
+
+	p.recordStat(bad, 0, statTransportError, "i/o timeout", true)
+	p.recordStat(good, time.Millisecond, statSuccess, "", true)
+	if got := p.DegradedUpstreams(); got != 1 {
+		t.Fatalf("degraded = %d after one failed probe, want 1", got)
+	}
+
+	for i := 0; i < circuitFailureThreshold; i++ {
+		p.recordStat(good, time.Millisecond, statTransportError, "i/o timeout", false)
+	}
+	if got := p.DegradedUpstreams(); got != 2 {
+		t.Fatalf("degraded = %d after opening the second circuit, want 2", got)
+	}
+
+	var nilPool *UpstreamPool
+	if got := nilPool.DegradedUpstreams(); got != 0 {
+		t.Fatalf("nil pool degraded = %d, want 0", got)
+	}
+}

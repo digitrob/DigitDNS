@@ -45,6 +45,7 @@ scrape_configs:
 | `digitdns_qps` | gauge | Queries per second over the current window. |
 | `digitdns_rate_limited_total` | counter | Queries refused by the per-source limiter. |
 | `digitdns_panics_total` | counter | Panics recovered at a request boundary. |
+| `digitdns_upstreams_degraded` | gauge | Configured upstream resolvers the health monitor currently considers degraded: open circuit, failed latest probe, or a recent live error rate of at least 10% over 20 queries. |
 | `digitdns_cache_entries` | gauge | Entries in the DNS cache. |
 | `digitdns_cache_hits_total` | counter | DNS cache hits. |
 | `digitdns_cache_misses_total` | counter | DNS cache misses. |
@@ -69,7 +70,7 @@ scrape_configs:
 | `digitdns_doq_connections_total` | counter | DNS-over-QUIC connections accepted since start. |
 | `digitdns_doq_auth_failures_total` | counter | DoQ connections rejected by SNI-token authentication. |
 | `digitdns_doq_protocol_errors_total` | counter | DoQ streams closed for a protocol violation (bad length, query framing or nonzero transaction ID). |
-| `digitdns_quic_handshake_rejected_total` | counter | New QUIC connections refused before the handshake, by `transport` (`doh3`/`doq`). Covers the per-source rate limit and the 1,024-connection cap. |
+| `digitdns_quic_handshake_rejected_total` | counter | QUIC handshake attempts refused before TLS, by `transport` (`doh3`/`doq`). Covers the per-source rate limit and the 1,024-connection cap. |
 | `digitdns_cpu_percent` | gauge | Process CPU usage. |
 | `digitdns_system_cpu_percent` | gauge | Machine-wide CPU usage. |
 | `digitdns_memory_alloc_bytes` | gauge | Allocated heap bytes. |
@@ -112,6 +113,9 @@ increase(digitdns_agent_catalogue_builds_total[10m])
 
 # Agents currently online
 digitdns_agents_online
+
+# Upstreams currently considered degraded: should be zero in steady state
+digitdns_upstreams_degraded
 
 # QUIC connections in use, by transport (DoH3 multiplexes requests, so this is
 # usually small even under load)
