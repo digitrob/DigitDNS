@@ -87,8 +87,10 @@ type TransportConfig struct {
 	DoQAuth        string
 	DoQTokenDomain string
 	DoH3Enabled    bool
-	// DoT authentication and mTLS are listener-level gates. DoT tokens use the
-	// same <token>.<domain> shape as DoQ; mTLS applies to DoT, DoH and DoQ.
+	// DoT is enabled unless DoTDisabled is set, matching the database field's
+	// backward-compatible default. DoT tokens use the same <token>.<domain>
+	// shape as DoQ; mTLS applies to DoT, DoH and DoQ.
+	DoTDisabled    bool
 	DoTAuth        string
 	DoTTokenDomain string
 	MTLSEnabled    bool
@@ -316,6 +318,9 @@ func (s *Server) Start() error {
 // Start discards the return; RebindTLS propagates it, because a rebind that
 // leaves the listener down must not read as success.
 func (s *Server) startDoT() error {
+	if s.transportCfg.DoTDisabled {
+		return nil
+	}
 	if s.tlsConfig == nil {
 		return nil
 	}
@@ -890,6 +895,7 @@ func (s *Server) ApplyTransports(cfg TransportConfig) error {
 	// DoT's port change is only meaningful when a port was supplied.
 	dotPortChanged := cfg.DoTPort != 0 && s.dotPort != cfg.DoTPort
 	needTLSRebind := prevDoTAuth != cfg.DoTAuth ||
+		s.transportCfg.DoTDisabled != cfg.DoTDisabled ||
 		s.transportCfg.DoTTokenDomain != cfg.DoTTokenDomain ||
 		s.transportCfg.MTLSEnabled != cfg.MTLSEnabled ||
 		s.transportCfg.MTLSCAPEM != cfg.MTLSCAPEM ||

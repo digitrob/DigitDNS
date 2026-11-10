@@ -2675,8 +2675,10 @@ async function onBuySubscription(ctx, username) {
                   <h4 class="text-xs font-bold text-white font-heading">DoH3 (HTTP/3)</h4>
                   <p class="text-[10px] text-slate-500 mt-0.5">The same DoH URL, negotiated over QUIC automatically.</p>
                 </div>
-                <label class="inline-flex items-center gap-2 text-xs text-slate-300 shrink-0">
-                  <input type="checkbox" id="doh3-enabled-input" class="accent-cyan-500 w-4 h-4"> Enabled
+                <label class="transport-toggle switch-cyan shrink-0">
+                  <input type="checkbox" id="doh3-enabled-input" class="transport-toggle-input">
+                  <span class="transport-toggle-label">Enabled</span>
+                  <span class="transport-toggle-track" aria-hidden="true"></span>
                 </label>
               </div>
               <div class="text-[11px] text-slate-400">UDP port <span id="doh3-port" class="font-mono text-slate-200">8443</span></div>
@@ -2701,8 +2703,10 @@ async function onBuySubscription(ctx, username) {
                   <h4 class="text-xs font-bold text-white font-heading">DoQ (DNS-over-QUIC)</h4>
                   <p class="text-[10px] text-slate-500 mt-0.5">RFC 9250 for clients and routers that support QUIC.</p>
                 </div>
-                <label class="inline-flex items-center gap-2 text-xs text-slate-300 shrink-0">
-                  <input type="checkbox" id="doq-enabled-input" class="accent-emerald-500 w-4 h-4"> Enabled
+                <label class="transport-toggle switch-emerald shrink-0">
+                  <input type="checkbox" id="doq-enabled-input" class="transport-toggle-input">
+                  <span class="transport-toggle-label">Enabled</span>
+                  <span class="transport-toggle-track" aria-hidden="true"></span>
                 </label>
               </div>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -2742,12 +2746,19 @@ async function onBuySubscription(ctx, username) {
             </section>
 
             <section class="transport-card">
-              <div class="flex items-start justify-between gap-3">
+              <div class="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                   <h4 class="text-xs font-bold text-white font-heading">DoT (DNS-over-TLS)</h4>
-                  <p class="text-[10px] text-slate-500 mt-0.5">The transport Android Private DNS uses. Always on with the DoH/DoT certificate.</p>
+                  <p class="text-[10px] text-slate-500 mt-0.5">The transport Android Private DNS uses. Serves the DoH/DoT certificate.</p>
                 </div>
-                <span id="dot-status" class="font-mono text-[10px] text-slate-300 shrink-0">TCP 853</span>
+                <div class="flex items-center gap-3 shrink-0">
+                  <span id="dot-status" class="font-mono text-[10px] text-slate-300">TCP 853</span>
+                  <label class="transport-toggle switch-sky">
+                    <input type="checkbox" id="dot-enabled-input" class="transport-toggle-input">
+                    <span class="transport-toggle-label">Enabled</span>
+                    <span class="transport-toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
               </div>
               <div>
                 <label for="dot-auth-select" class="block text-[10px] font-semibold text-slate-400 mb-1">Authentication</label>
@@ -2784,8 +2795,10 @@ async function onBuySubscription(ctx, username) {
                   <h4 class="text-xs font-bold text-white font-heading">DNSCrypt</h4>
                   <p class="text-[10px] text-slate-500 mt-0.5">A stamp-based resolver endpoint with its own provider keys.</p>
                 </div>
-                <label class="inline-flex items-center gap-2 text-xs text-slate-300 shrink-0">
-                  <input type="checkbox" id="dnscrypt-enabled-input" class="accent-fuchsia-500 w-4 h-4"> Enabled
+                <label class="transport-toggle switch-fuchsia shrink-0">
+                  <input type="checkbox" id="dnscrypt-enabled-input" class="transport-toggle-input">
+                  <span class="transport-toggle-label">Enabled</span>
+                  <span class="transport-toggle-track" aria-hidden="true"></span>
                 </label>
               </div>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -2818,8 +2831,10 @@ async function onBuySubscription(ctx, username) {
                   <h4 class="text-xs font-bold text-white font-heading">mTLS (client certificates)</h4>
                   <p class="text-[10px] text-slate-500 mt-0.5">Require a certificate signed by your CA on DoT, DoH and DoQ.</p>
                 </div>
-                <label class="inline-flex items-center gap-2 text-xs text-slate-300 shrink-0">
-                  <input type="checkbox" id="mtls-enabled-input" class="accent-amber-500 w-4 h-4"> Enabled
+                <label class="transport-toggle switch-amber shrink-0">
+                  <input type="checkbox" id="mtls-enabled-input" class="transport-toggle-input">
+                  <span class="transport-toggle-label">Enabled</span>
+                  <span class="transport-toggle-track" aria-hidden="true"></span>
                 </label>
               </div>
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">

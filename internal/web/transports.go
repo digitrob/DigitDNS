@@ -31,7 +31,8 @@ type transportSettingsView struct {
 	DNSCryptStamp        string `json:"dnscrypt_stamp"`
 	DNSCryptCertNotAfter int64  `json:"dnscrypt_cert_not_after"`
 	DNSCryptListening    bool   `json:"dnscrypt_listening"`
-	// DoT authentication and the global mTLS gate.
+	// DoT policy and the global mTLS gate.
+	DoTEnabled     bool     `json:"dot_enabled"`
 	DoTAuth        string   `json:"dot_auth"`
 	DoTPort        int      `json:"dot_port"`
 	DoTTokenDomain string   `json:"dot_token_domain"`
@@ -82,6 +83,7 @@ func (ws *WebServer) transportSettingsView() transportSettingsView {
 		DNSCryptEnabled:      cfg.DNSCryptEnabled,
 		DNSCryptPort:         cfg.DNSCryptPort,
 		DNSCryptProviderName: cfg.DNSCryptProviderName,
+		DoTEnabled:           !cfg.DoTDisabled,
 		DoTAuth:              cfg.DoTAuth,
 		DoTPort:              cfg.DoTPort,
 		DoTTokenDomain:       cfg.DoTTokenDomain,
@@ -225,6 +227,7 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		DoQTokenDomain       *string   `json:"doq_token_domain"`
 		DoH3Enabled          *bool     `json:"doh3_enabled"`
 		DoQTokens            *[]string `json:"doq_tokens"`
+		DoTEnabled           *bool     `json:"dot_enabled"`
 		DNSCryptEnabled      *bool     `json:"dnscrypt_enabled"`
 		DNSCryptPort         *int      `json:"dnscrypt_port"`
 		DNSCryptProviderName *string   `json:"dnscrypt_provider_name"`
@@ -299,7 +302,11 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		}
 		tokens = normalized
 	}
-	if auth == "sni-token" {
+	doqEnabled := before.DoQEnabled
+	if req.DoQEnabled != nil {
+		doqEnabled = *req.DoQEnabled
+	}
+	if doqEnabled && auth == "sni-token" {
 		if tokenDomain == "" {
 			httpx.WriteJSONError(w, http.StatusBadRequest, "doq_token_domain is required when doq_auth is \"sni-token\"")
 			return
@@ -341,6 +348,10 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		dnscryptProvider = "2.dnscrypt-cert." + suffix
 	}
 
+	dotEnabled := !before.DoTDisabled
+	if req.DoTEnabled != nil {
+		dotEnabled = *req.DoTEnabled
+	}
 	dotAuth := strings.ToLower(strings.TrimSpace(before.DoTAuth))
 	if dotAuth == "" {
 		dotAuth = "ip"
@@ -373,7 +384,7 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		}
 		dotTokens = normalized
 	}
-	if dotAuth == "sni-token" {
+	if dotEnabled && dotAuth == "sni-token" {
 		if dotDomain == "" {
 			httpx.WriteJSONError(w, http.StatusBadRequest, "dot_token_domain is required when dot_auth is \"sni-token\"")
 			return
@@ -403,9 +414,7 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	if req.DoQEnabled != nil {
-		next.DoQEnabled = *req.DoQEnabled
-	}
+	next.DoQEnabled = doqEnabled
 	if req.DoH3Enabled != nil {
 		next.DoH3Enabled = *req.DoH3Enabled
 	}
@@ -415,6 +424,7 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 	next.DNSCryptEnabled = dnscryptEnabled
 	next.DNSCryptPort = dnscryptPort
 	next.DNSCryptProviderName = dnscryptProvider
+	next.DoTDisabled = !dotEnabled
 	next.DoTAuth = dotAuth
 	next.DoTTokenDomain = dotDomain
 	next.DoTTokens = dotTokens
@@ -501,6 +511,7 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 	current.DNSCryptEnabled = next.DNSCryptEnabled
 	current.DNSCryptPort = next.DNSCryptPort
 	current.DNSCryptProviderName = next.DNSCryptProviderName
+	current.DoTDisabled = next.DoTDisabled
 	current.DoTAuth = next.DoTAuth
 	current.DoTTokenDomain = next.DoTTokenDomain
 	current.DoTTokens = next.DoTTokens
@@ -518,6 +529,7 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		current.DNSCryptEnabled = before.DNSCryptEnabled
 		current.DNSCryptPort = before.DNSCryptPort
 		current.DNSCryptProviderName = before.DNSCryptProviderName
+		current.DoTDisabled = before.DoTDisabled
 		current.DoTAuth = before.DoTAuth
 		current.DoTTokenDomain = before.DoTTokenDomain
 		current.DoTTokens = before.DoTTokens

@@ -368,7 +368,7 @@
     <string name="transports_doq_ip_public_warning">Public Mode is on — any source can use the IP-authenticated transports (DoQ, DoT, DNSCrypt); the allowlist is not enforced.</string>
     <string name="transports_doq_ip_empty_warning">No IPs allowlisted — IP-authenticated transports will refuse every source.</string>
     <string name="transports_dot">DoT (DNS-over-TLS)</string>
-    <string name="transports_dot_help">Android Private DNS. Always on with the DoH/DoT certificate, TCP %1$d.</string>
+    <string name="transports_dot_help">Android Private DNS. Uses the DoH/DoT certificate, TCP %1$d.</string>
     <string name="transports_dot_firewall">Open TCP %1$d in the firewall.</string>
     <string name="transports_dnscrypt">DNSCrypt</string>
     <string name="transports_dnscrypt_help">A stamp-based resolver endpoint with its own provider keys.</string>

@@ -200,12 +200,21 @@ private fun DotCard(
 ) {
     PanelCard(modifier = modifier.fillMaxWidth(), contentPadding = 12.dp) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(stringResource(R.string.transports_dot), style = MaterialTheme.typography.titleSmall)
-            Text(
-                stringResource(R.string.transports_dot_help, state.dotPort),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.transports_dot), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        stringResource(R.string.transports_dot_help, state.dotPort),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = state.dotEnabled,
+                    onCheckedChange = viewModel::setDotEnabled,
+                    enabled = !state.transportSaving && !state.doh3Saving,
+                )
+            }
             Text(
                 stringResource(R.string.transports_auth),
                 style = MaterialTheme.typography.bodySmall,
@@ -429,13 +438,13 @@ private fun TransportSaveStatus(state: ClientTransportsUiState) {
 
 /** The reason a staged form is not applied yet, or null when it is complete. */
 private fun stagedTransportHint(state: ClientTransportsUiState): String? = when {
-    state.doqAuth == "sni-token" && state.tokenDomain.isBlank() ->
+    state.doqEnabled && state.doqAuth == "sni-token" && state.tokenDomain.isBlank() ->
         "DoQ SNI-token mode needs a token domain."
-    state.doqAuth == "sni-token" && state.tokens.isEmpty() ->
+    state.doqEnabled && state.doqAuth == "sni-token" && state.tokens.isEmpty() ->
         "DoQ SNI-token mode needs at least one token."
-    state.dotAuth == "sni-token" && state.dotTokenDomain.isBlank() ->
+    state.dotEnabled && state.dotAuth == "sni-token" && state.dotTokenDomain.isBlank() ->
         "DoT SNI-token mode needs a token domain."
-    state.dotAuth == "sni-token" && state.dotTokens.isEmpty() ->
+    state.dotEnabled && state.dotAuth == "sni-token" && state.dotTokens.isEmpty() ->
         "DoT SNI-token mode needs at least one token."
     state.mtlsEnabled && state.mtlsCaPem.isBlank() ->
         "Paste the client CA bundle to enable mTLS."

@@ -224,6 +224,10 @@ type DNSSettings struct {
 	DNSCryptEnabled      bool   `json:"dnscrypt_enabled"`
 	DNSCryptPort         int    `json:"dnscrypt_port"`
 	DNSCryptProviderName string `json:"dnscrypt_provider_name"`
+	// DoT stays on unless explicitly disabled. The stored field is negative so
+	// every pre-existing database, and the Go zero value, keeps serving DoT
+	// after an upgrade; the API exposes the positive dot_enabled form.
+	DoTDisabled bool `json:"dot_disabled"`
 	// DoT authentication: "ip" (the client allowlist) or "sni-token".
 	DoTAuth        string   `json:"dot_auth"`
 	DoTTokenDomain string   `json:"dot_token_domain"`

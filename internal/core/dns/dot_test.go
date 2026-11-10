@@ -211,3 +211,42 @@ func TestApplyTransportsRebindsDoTOnAuthChange(t *testing.T) {
 		t.Fatal("DoT listener was not rebound after the authentication mode changed")
 	}
 }
+
+// A disabled DoT listener must really stop binding 853; re-enabling brings it
+// back through the same TLS rebind path a live save uses.
+func TestApplyTransportsDisablesAndReenablesDoT(t *testing.T) {
+	port := freeTCPPort(t)
+	s := &Server{
+		handler:   testDoQHandler(t),
+		tlsConfig: testDoH3TLSConfig(t),
+		bindHost:  "127.0.0.1",
+		dotPort:   port,
+	}
+	t.Cleanup(s.Stop)
+	s.transportCfg.DoTAuth = "ip"
+	s.transportCfg.DoTDisabled = true
+
+	if err := s.ApplyTransports(TransportConfig{DoTPort: port, DoTAuth: "ip", DoTDisabled: false}); err != nil {
+		t.Fatalf("enable DoT: %v", err)
+	}
+	if s.dotServer == nil {
+		t.Fatal("DoT did not start when enabled")
+	}
+
+	if err := s.ApplyTransports(TransportConfig{DoTPort: port, DoTAuth: "ip", DoTDisabled: true}); err != nil {
+		t.Fatalf("disable DoT: %v", err)
+	}
+	if s.dotServer != nil {
+		t.Fatal("DoT listener survived the disable")
+	}
+	if _, err := dialDoT(port, "127.0.0.1"); err == nil {
+		t.Fatal("disabled DoT still accepted a TLS connection")
+	}
+
+	if err := s.ApplyTransports(TransportConfig{DoTPort: port, DoTAuth: "ip", DoTDisabled: false}); err != nil {
+		t.Fatalf("re-enable DoT: %v", err)
+	}
+	if s.dotServer == nil {
+		t.Fatal("DoT did not come back when re-enabled")
+	}
+}

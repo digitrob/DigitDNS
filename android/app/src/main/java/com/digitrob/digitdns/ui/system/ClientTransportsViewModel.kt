@@ -37,6 +37,7 @@ data class ClientTransportsUiState(
     val dnscryptStamp: String = "",
     val dnscryptCertNotAfter: Long = 0,
     val dnscryptListening: Boolean = false,
+    val dotEnabled: Boolean = true,
     val dotAuth: String = "ip",
     val dotPort: Int = 853,
     val dotTokenDomain: String = "",
@@ -208,6 +209,11 @@ class ClientTransportsViewModel @Inject constructor(
         it.copy(dnscryptProviderName = value.trim().lowercase(), stagedDirty = true, error = null)
     }
 
+    fun setDotEnabled(value: Boolean) {
+        _state.update { it.copy(dotEnabled = value, stagedDirty = true, error = null) }
+        autoSaveIfReady()
+    }
+
     fun setDotAuth(value: String) {
         _state.update {
             it.copy(
@@ -295,6 +301,7 @@ class ClientTransportsViewModel @Inject constructor(
                         dnscryptEnabled = current.dnscryptEnabled,
                         dnscryptPort = dnscryptPort,
                         dnscryptProviderName = dnscryptSuffix(current.dnscryptProviderName),
+                        dotEnabled = current.dotEnabled,
                         dotAuth = current.dotAuth,
                         dotTokenDomain = current.dotTokenDomain,
                         dotTokens = current.dotTokens,
@@ -325,13 +332,13 @@ class ClientTransportsViewModel @Inject constructor(
     ): String? = when {
         doqPort !in 1..MAX_PORT -> "DoQ port must be between 1 and $MAX_PORT."
         dnscryptPort !in 1..MAX_PORT -> "DNSCrypt port must be between 1 and $MAX_PORT."
-        current.doqAuth == "sni-token" && current.tokenDomain.isBlank() ->
+        current.doqEnabled && current.doqAuth == "sni-token" && current.tokenDomain.isBlank() ->
             "Token domain is required for DoQ SNI-token mode."
-        current.doqAuth == "sni-token" && current.tokens.isEmpty() ->
+        current.doqEnabled && current.doqAuth == "sni-token" && current.tokens.isEmpty() ->
             "Add at least one DoQ token for SNI-token mode."
-        current.dotAuth == "sni-token" && current.dotTokenDomain.isBlank() ->
+        current.dotEnabled && current.dotAuth == "sni-token" && current.dotTokenDomain.isBlank() ->
             "Token domain is required for DoT SNI-token mode."
-        current.dotAuth == "sni-token" && current.dotTokens.isEmpty() ->
+        current.dotEnabled && current.dotAuth == "sni-token" && current.dotTokens.isEmpty() ->
             "Add at least one DoT token for SNI-token mode."
         current.mtlsEnabled && current.mtlsCaPem.isBlank() ->
             "Paste the client CA bundle to enable mTLS."
@@ -366,6 +373,7 @@ private fun ClientTransportsUiState.apply(settings: TransportSettingsDto): Clien
     dnscryptStamp = settings.dnscryptStamp,
     dnscryptCertNotAfter = settings.dnscryptCertNotAfter,
     dnscryptListening = settings.dnscryptListening,
+    dotEnabled = settings.dotEnabled,
     dotAuth = if (settings.dotAuth == "sni-token") "sni-token" else "ip",
     dotPort = settings.dotPort.takeIf { it > 0 } ?: 853,
     dotTokenDomain = settings.dotTokenDomain,

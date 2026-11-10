@@ -55,6 +55,9 @@ func TestTransportSettingsDefaultsAndRoundTrip(t *testing.T) {
 	if len(initial.DoQTokens) != 0 {
 		t.Errorf("default tokens = %#v, want empty", initial.DoQTokens)
 	}
+	if !initial.DoTEnabled {
+		t.Error("DoT should default to enabled for existing installs")
+	}
 
 	body := `{"doq_enabled":true,"doq_port":853,"doq_auth":"sni-token","doq_token_domain":"doq.example.com","doq_tokens":["Alpha"," beta ","alpha"],"doh3_enabled":true}`
 	w := postTransportSettings(t, ws, body)
@@ -155,9 +158,9 @@ func TestTransportSettingsValidation(t *testing.T) {
 	for _, body := range []string{
 		`{"doq_port":70000}`,
 		`{"doq_auth":"token"}`,
-		`{"doq_auth":"sni-token","doq_tokens":["alpha"]}`,
-		`{"doq_auth":"sni-token","doq_token_domain":"doq.example.com","doq_tokens":[]}`,
-		`{"doq_auth":"sni-token","doq_token_domain":"not a domain","doq_tokens":["alpha"]}`,
+		`{"doq_enabled":true,"doq_auth":"sni-token","doq_tokens":["alpha"]}`,
+		`{"doq_enabled":true,"doq_auth":"sni-token","doq_token_domain":"doq.example.com","doq_tokens":[]}`,
+		`{"doq_enabled":true,"doq_auth":"sni-token","doq_token_domain":"not a domain","doq_tokens":["alpha"]}`,
 		`{"doq_tokens":["-bad"]}`,
 	} {
 		w := postTransportSettings(t, ws, body)
@@ -393,9 +396,9 @@ func TestTransportSettingsDNSCryptDoTMTLSValidation(t *testing.T) {
 		{"dnscrypt_port": 70000},
 		{"dnscrypt_provider_name": "not a domain"},
 		{"dot_auth": "token"},
-		{"dot_auth": "sni-token", "dot_tokens": []string{"alpha"}},
-		{"dot_auth": "sni-token", "dot_token_domain": "dot.example.com", "dot_tokens": []string{}},
-		{"dot_auth": "sni-token", "dot_token_domain": "not a domain", "dot_tokens": []string{"alpha"}},
+		{"dot_enabled": true, "dot_auth": "sni-token", "dot_tokens": []string{"alpha"}},
+		{"dot_enabled": true, "dot_auth": "sni-token", "dot_token_domain": "dot.example.com", "dot_tokens": []string{}},
+		{"dot_enabled": true, "dot_auth": "sni-token", "dot_token_domain": "not a domain", "dot_tokens": []string{"alpha"}},
 		{"dot_tokens": []string{"-bad"}},
 		{"mtls_enabled": true},
 		{"mtls_enabled": true, "mtls_ca_pem": "not a certificate"},
@@ -453,5 +456,63 @@ func TestTransportViewSurfacesDNSCryptStatus(t *testing.T) {
 	}
 	if !strings.Contains(got.LastError, "DNSCrypt UDP listener stopped: boom") {
 		t.Errorf("last_error = %q, want the DNSCrypt failure", got.LastError)
+	}
+}
+
+// DoT is enabled by default and can be switched off without losing its auth
+// configuration. An incomplete SNI setup may be stored while DoT is off, but
+// turning it back on requires the fields the listener needs.
+func TestTransportSettingsDoTToggle(t *testing.T) {
+	ws, db, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	if got := getTransportSettings(t, ws); !got.DoTEnabled {
+		t.Fatal("DoT default = disabled, want enabled")
+	}
+
+	w := postTransportJSON(t, ws, map[string]any{"dot_enabled": false})
+	if w.Code != http.StatusOK {
+		t.Fatalf("disable DoT = %d: %s", w.Code, w.Body.String())
+	}
+	var saved database.DNSSettings
+	if err := db.GetSetting("dns", &saved); err != nil {
+		t.Fatalf("GetSetting(dns): %v", err)
+	}
+	if !saved.DoTDisabled {
+		t.Error("dot_disabled was not persisted")
+	}
+	if got := getTransportSettings(t, ws); got.DoTEnabled {
+		t.Error("view still reports DoT enabled")
+	}
+
+	// With DoT off, an incomplete SNI-token setup is allowed to be staged: the
+	// operator can prepare it before switching the listener on.
+	w = postTransportJSON(t, ws, map[string]any{
+		"dot_auth": "sni-token", "dot_token_domain": "", "dot_tokens": []string{},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("stage SNI while DoT off = %d: %s", w.Code, w.Body.String())
+	}
+
+	// Enabling it now must be refused until the token fields are complete.
+	w = postTransportJSON(t, ws, map[string]any{"dot_enabled": true})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("enable incomplete DoT = %d, want 400: %s", w.Code, w.Body.String())
+	}
+
+	w = postTransportJSON(t, ws, map[string]any{
+		"dot_enabled":      true,
+		"dot_auth":         "sni-token",
+		"dot_token_domain": "dot.example.com",
+		"dot_tokens":       []string{"alpha"},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("enable configured DoT = %d: %s", w.Code, w.Body.String())
+	}
+	if err := db.GetSetting("dns", &saved); err != nil {
+		t.Fatalf("GetSetting(dns): %v", err)
+	}
+	if saved.DoTDisabled {
+		t.Error("dot_disabled stayed set after re-enabling")
 	}
 }

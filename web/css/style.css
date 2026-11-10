@@ -1324,6 +1324,76 @@ input:checked + .slider:before {
   border-radius: var(--radius-lg);
   background: var(--bg-main);
 }
+/* A real switch instead of a checkbox: the transport cards toggle listeners,
+   not form values, so the control should read as an on/off switch. The input
+   stays a checkbox in the DOM, which keeps the existing change handlers and
+   keyboard behaviour. */
+.transport-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.transport-toggle-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.transport-toggle-label {
+  line-height: 1;
+}
+.transport-toggle-track {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  width: 34px;
+  height: 18px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-main);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.transport-toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.transport-toggle-input:checked + .transport-toggle-label + .transport-toggle-track {
+  border-color: transparent;
+  background: var(--switch-on, var(--accent-green));
+}
+.transport-toggle-input:checked + .transport-toggle-label + .transport-toggle-track::after {
+  transform: translateX(16px);
+  background: #fff;
+}
+.transport-toggle-input:focus-visible + .transport-toggle-label + .transport-toggle-track {
+  outline: 2px solid var(--switch-on, var(--accent-cyan));
+  outline-offset: 2px;
+}
+.transport-toggle-input:disabled + .transport-toggle-label {
+  opacity: 0.55;
+}
+.transport-toggle-input:disabled + .transport-toggle-label + .transport-toggle-track {
+  opacity: 0.45;
+  cursor: default;
+}
+.switch-cyan { --switch-on: rgb(34 211 238); }
+.switch-emerald { --switch-on: rgb(16 185 129); }
+.switch-fuchsia { --switch-on: rgb(232 121 249); }
+.switch-amber { --switch-on: rgb(245 158 11); }
+.switch-sky { --switch-on: rgb(14 165 233); }
+
 .transport-status-row {
   display: flex;
   align-items: center;

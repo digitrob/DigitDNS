@@ -2278,6 +2278,7 @@ function normalizeTransportSettings(cfg) {
   t.doq_listening = !!t.doq_listening;
   t.doh3_port = Number.isFinite(Number(t.doh3_port)) && Number(t.doh3_port) > 0 ? Number(t.doh3_port) : 8443;
   t.dot_auth = t.dot_auth === 'sni-token' ? 'sni-token' : 'ip';
+  t.dot_enabled = t.dot_enabled !== false;
   t.dot_port = Number.isFinite(Number(t.dot_port)) && Number(t.dot_port) > 0 ? Number(t.dot_port) : 853;
   t.dot_token_domain = typeof t.dot_token_domain === 'string' ? t.dot_token_domain : '';
   if (!Array.isArray(t.dot_tokens)) t.dot_tokens = [];
@@ -2307,6 +2308,7 @@ function copyTransportDraft(t) {
     doq_auth: t.doq_auth === 'sni-token' ? 'sni-token' : 'ip',
     doq_token_domain: t.doq_token_domain || '',
     doq_tokens: (t.doq_tokens || []).slice(),
+    dot_enabled: t.dot_enabled !== false,
     dot_auth: t.dot_auth === 'sni-token' ? 'sni-token' : 'ip',
     dot_token_domain: t.dot_token_domain || '',
     dot_tokens: (t.dot_tokens || []).slice(),
@@ -2343,11 +2345,11 @@ function transportDraftProblem(draft) {
   if (!Number.isInteger(dnscryptPort) || dnscryptPort < 1 || dnscryptPort > 65535) {
     return 'DNSCrypt port must be between 1 and 65535.';
   }
-  if (draft.doq_auth === 'sni-token') {
+  if (draft.doq_enabled && draft.doq_auth === 'sni-token') {
     if (!draft.doq_token_domain) return 'DoQ SNI-token mode needs a token domain.';
     if (!draft.doq_tokens.length) return 'DoQ SNI-token mode needs at least one token.';
   }
-  if (draft.dot_auth === 'sni-token') {
+  if (draft.dot_enabled && draft.dot_auth === 'sni-token') {
     if (!draft.dot_token_domain) return 'DoT SNI-token mode needs a token domain.';
     if (!draft.dot_tokens.length) return 'DoT SNI-token mode needs at least one token.';
   }
@@ -2367,6 +2369,7 @@ function transportSaveBody(draft) {
     dnscrypt_enabled: !!draft.dnscrypt_enabled,
     dnscrypt_port: Number(draft.dnscrypt_port),
     dnscrypt_provider_name: draft.dnscrypt_provider_name,
+    dot_enabled: !!draft.dot_enabled,
     dot_auth: draft.dot_auth,
     dot_token_domain: draft.dot_token_domain,
     dot_tokens: draft.dot_tokens,
@@ -2381,6 +2384,7 @@ function transportDraftDirty(applied, draft) {
     draft.doq_auth !== applied.doq_auth ||
     draft.doq_token_domain !== applied.doq_token_domain ||
     JSON.stringify(draft.doq_tokens) !== JSON.stringify(applied.doq_tokens) ||
+    draft.dot_enabled !== applied.dot_enabled ||
     draft.dot_auth !== applied.dot_auth ||
     draft.dot_token_domain !== applied.dot_token_domain ||
     JSON.stringify(draft.dot_tokens) !== JSON.stringify(applied.dot_tokens) ||
@@ -2469,7 +2473,10 @@ function renderTransportEndpoints(applied, draft) {
 
   const dotStatus = document.getElementById('dot-status');
   if (dotStatus) {
-    dotStatus.innerText = `${applied.dot_auth === 'sni-token' ? 'SNI token' : 'IP allowlist'} · TCP ${dotPort}`;
+    dotStatus.innerText = draft.dot_enabled
+      ? `${draft.dot_auth === 'sni-token' ? 'SNI token' : 'IP allowlist'} · TCP ${dotPort}`
+      : 'Off';
+    dotStatus.className = draft.dot_enabled ? 'font-mono text-[10px] text-slate-300' : 'font-mono text-[10px] text-slate-500';
   }
 
   const dnscryptStatus = document.getElementById('dnscrypt-status');
@@ -2726,6 +2733,8 @@ function renderTransportSettings() {
   const warning = document.getElementById('doq-cert-warning');
   if (warning) warning.classList.toggle('hidden', draft.doq_auth !== 'sni-token');
 
+  const dotEnabled = document.getElementById('dot-enabled-input');
+  if (dotEnabled) dotEnabled.checked = !!draft.dot_enabled;
   const dotAuth = document.getElementById('dot-auth-select');
   if (dotAuth) dotAuth.value = draft.dot_auth;
   const dotDomain = document.getElementById('dot-token-domain-input');
@@ -10228,6 +10237,9 @@ function initEventListeners() {
     withTransportDraft(d => { d.doq_tokens.push(val); });
   });
 
+  document.getElementById('dot-enabled-input')?.addEventListener('change', (e) => {
+    withTransportDraft(d => { d.dot_enabled = !!e.target.checked; });
+  });
   document.getElementById('dot-auth-select')?.addEventListener('change', (e) => {
     withTransportDraft(d => { d.dot_auth = e.target.value === 'sni-token' ? 'sni-token' : 'ip'; });
   });

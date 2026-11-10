@@ -29,8 +29,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 - `/api/settings/transports` reads and writes the DNSCrypt, DoT-authentication
-  and mTLS fields. A save still applies before it persists, and a failed apply
-  rolls the listeners and the generated DNSCrypt keys back.
+  and mTLS fields, plus `dot_enabled`. A failed apply still rolls the listeners
+  and the generated DNSCrypt keys back.
+- **DoT has an enable switch** and defaults to on, so existing installs keep
+  serving port 853 after an upgrade.
+- **Transport edits autosave:** switches and completed fields apply as they are
+  edited, and the global Save button is gone on web and Android. Incomplete
+  SNI-token or mTLS forms stay local until their required inputs are present.
 - Changing DoT authentication or the mTLS gate rebinds the TLS listeners; an
   unrelated socket change does not. A rebind closes the old listening socket
   before binding the new one.
