@@ -445,6 +445,10 @@ func main() {
 	// is the one place that has to pay for the real numbers, and it runs detached so
 	// a slow or blackholed upstream cannot delay the listeners coming up.
 	go u.BenchmarkAll()
+	// Keep probe health fresh and turn a quiet degradation into one log line,
+	// without adding a probe to the query path.
+	stopUpstreamHealth := u.RunHealthMonitor(0)
+	defer stopUpstreamHealth()
 
 	// Access mode was resolved with every other authoritative setting before any
 	// bootstrap write; constructing services cannot turn a read failure into a
@@ -853,9 +857,20 @@ func main() {
 		})
 	})
 	webServer.SetTransportStatusSource(dnsServer.TransportStatus)
-	webServer.SetTransportMetricsSource(func() (uint64, uint64, uint64) {
+	webServer.SetTransportMetricsSource(func() internalWeb.TransportMetrics {
 		m := dnsServer.TransportMetrics()
-		return m.DoH3Requests, m.DoQQueries, m.DoQAuthFailure
+		return internalWeb.TransportMetrics{
+			DoH3Requests:         m.DoH3Requests,
+			DoH3Connections:      m.DoH3Connections,
+			DoH3ConnectionsTotal: m.DoH3ConnectionsTotal,
+			DoH3HandshakeRejects: m.DoH3HandshakeRejects,
+			DoQQueries:           m.DoQQueries,
+			DoQConnections:       m.DoQConnections,
+			DoQConnectionsTotal:  m.DoQConnectionsTotal,
+			DoQAuthFailures:      m.DoQAuthFailures,
+			DoQProtocolErrors:    m.DoQProtocolErrors,
+			DoQHandshakeRejects:  m.DoQHandshakeRejects,
+		}
 	})
 
 	// Only explicit service modes reach runtime ownership. A bare invocation was

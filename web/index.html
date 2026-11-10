@@ -2679,7 +2679,7 @@ async function onBuySubscription(ctx, username) {
                 </label>
               </div>
               <div class="text-[11px] text-slate-400 space-y-1">
-                <div>UDP port <span class="font-mono text-slate-200">8443</span></div>
+                <div>UDP port <span id="doh3-port" class="font-mono text-slate-200">8443</span></div>
                 <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doh3-endpoint" aria-label="Copy DoH3 URL">
                   <span id="doh3-endpoint" class="font-mono text-cyan-300 break-all">—</span>
                   <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
@@ -2737,19 +2737,25 @@ async function onBuySubscription(ctx, username) {
                 </button>
                 <p class="text-[10px] text-slate-500">In SNI-token mode each client uses its own token in place of <code>&lt;token&gt;</code>.</p>
               </div>
+              <div id="doq-ip-note" class="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-[10px] leading-relaxed text-slate-400 space-y-1">
+                <p>IP authentication accepts a source from <span class="font-semibold text-slate-200">Clients → Allowed IPs</span> or <span class="font-semibold text-slate-200">Settings → Access → Server-wide Resolver Allowlist</span>. The same lists govern every other transport.</p>
+                <p id="doq-ip-counts" class="font-mono text-slate-300"></p>
+                <p id="doq-ip-warning" class="hidden text-amber-300"></p>
+              </div>
               <div class="flex items-center justify-between gap-2 text-[10px] text-slate-400">
                 <span>Status</span>
                 <span id="doq-status" class="font-mono text-slate-300">Off</span>
               </div>
               <p id="doq-cert-warning" class="hidden text-[10px] text-amber-300 leading-relaxed">SNI-token mode requires a certificate covering <span class="font-mono">*.&lt;token domain&gt;</span> or every token hostname. The built-in ACME client cannot issue wildcard certificates.</p>
               <p class="text-[10px] text-slate-500">Open UDP 853 in the firewall. DoQ is not used by Android Private DNS; that remains DoT.</p>
+              <div class="flex items-center gap-3 flex-wrap pt-2">
+                <button type="button" id="save-doq-btn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition">Save DoQ</button>
+                <span id="doq-save-status" class="text-[11px] text-slate-400"></span>
+              </div>
             </section>
           </div>
 
-          <div class="flex items-center gap-3 flex-wrap pt-2">
-            <button type="button" id="save-transports-btn" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition">Save Transports</button>
-            <span id="transports-save-status" class="text-[11px] text-slate-400"></span>
-          </div>
+          <p id="transports-last-error" class="hidden text-[11px] text-red-300 leading-relaxed"></p>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 settings-wide">

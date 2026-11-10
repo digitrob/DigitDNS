@@ -50,6 +50,11 @@ const (
 	maxTCPConns   = 512
 	maxDoTConns   = 1024
 	maxHTTPSConns = 512
+	// maxDoH3Conns matches DoQ's cap. HTTP/3 multiplexes every request from a
+	// client onto one connection, so this is far more headroom than a resolver
+	// needs; it exists so a handshake flood that slips past the per-source
+	// limiter cannot pin one goroutine per connection.
+	maxDoH3Conns = 1024
 )
 
 // The HTTPS listener carries the same handler as the plaintext one in
@@ -90,28 +95,58 @@ type Server struct {
 	// dohHandler is the concrete DoH front-end behind webMux. It carries the
 	// token list and the Alt-Svc advertisement, so the server keeps a reference
 	// instead of reaching through the restricted mux wrapper.
-	dohHandler  *DoHHandler
-	udpServer   *dns.Server
-	tcpServer   *dns.Server
-	dotServer   *dns.Server
-	dohServer   *http.Server
-	doh3Server  *http3.Server
-	doh3Conn    net.PacketConn
-	doqListener *quic.Listener
-	doqCtx      context.Context
-	doqCancel   context.CancelFunc
-	doqSlots    chan struct{}
-	doqConns    map[*quic.Conn]struct{}
-	doqMu       sync.Mutex
-	doqTokens   []string
-	doqTokensMu sync.RWMutex
-	doqQueries  atomic.Uint64
-	doqAuthFail atomic.Uint64
-	bindHost    string
-	port        int
-	dotPort     int
-	dohPort     int
-	doqPort     int
+	dohHandler *DoHHandler
+	udpServer  *dns.Server
+	tcpServer  *dns.Server
+	dotServer  *dns.Server
+	dohServer  *http.Server
+	doh3Server *http3.Server
+	doh3Conn   net.PacketConn
+	// doh3Ready points at the current listener's readiness flag. A pointer per
+	// listen, not one shared bool: when an old Serve goroutine exits after a
+	// restart, it must clear only its own flag, never the new listener's. The
+	// field itself is guarded by tlsMu, and the flag it points at is atomic so
+	// TransportStatus can read it under the same lock.
+	doh3Ready atomic.Pointer[atomic.Bool]
+	// doh3Conns is the live HTTP/3 connection set. A map, not a counter, so a
+	// connection context that ends after a listener restart can only delete its
+	// own entry and never drive a new listener's gauge negative.
+	doh3ConnsMu    sync.Mutex
+	doh3Conns      map[*quic.Conn]struct{}
+	doh3ConnsTotal atomic.Uint64
+	// doh3HandshakeRejects counts connections refused by the per-source limiter
+	// or the connection cap. It is a counter because the interesting signal is a
+	// rate, not the current queue depth.
+	doh3HandshakeRejects atomic.Uint64
+	// listenerErrMu guards the last asynchronous listener failure. The save
+	// response cannot see a Serve goroutine that dies later, so TransportStatus
+	// carries this alongside the booleans and the settings card keeps showing it.
+	listenerErrMu sync.Mutex
+	doh3Err       string
+	doqErr        string
+	doqListener   *quic.Listener
+	doqCtx        context.Context
+	doqCancel     context.CancelFunc
+	doqSlots      chan struct{}
+	doqConns      map[*quic.Conn]struct{}
+	doqMu         sync.Mutex
+	doqTokens     []string
+	doqTokensMu   sync.RWMutex
+	doqQueries    atomic.Uint64
+	doqAuthFail   atomic.Uint64
+	doqConnsTotal atomic.Uint64
+	// doqHandshakeRejects covers both the pre-handshake limiter and the
+	// established-connection cap that closes a conn with EXCESSIVE_LOAD.
+	doqHandshakeRejects atomic.Uint64
+	doqProtoErrors      atomic.Uint64
+	// quicRejectLogAt rate-limits the "handshake refused" log line. A flood is
+	// exactly when it would otherwise write once per packet.
+	quicRejectLogAt atomic.Int64
+	bindHost        string
+	port            int
+	dotPort         int
+	dohPort         int
+	doqPort         int
 
 	// transportCfg is the last applied policy. The DoQ fields are carried here
 	// for the QUIC listener; DoH3 is applied by ApplyTransports.
@@ -396,45 +431,187 @@ func (s *Server) startHTTPS() error {
 // startDoH3Locked brings up the HTTP/3 face of the DoH endpoint. It is opt-in,
 // so an operator who never enables it pays for no UDP socket and no QUIC
 // state. The caller must hold tlsMu or be Start before any listener serves.
+//
+// It does not return until the Serve goroutine has been entered. That is the
+// readiness guarantee the settings card needs: a bind failure is synchronous
+// and returned, while a failure after the bind (or a Serve that exits later) is
+// recorded in doh3Err and reflected by TransportStatus instead of leaving a
+// non-nil server that looks healthy forever.
 func (s *Server) startDoH3Locked() error {
 	if !s.transportCfg.DoH3Enabled || s.doh3Server != nil {
 		return nil
 	}
 	if s.tlsConfig == nil || s.webMux == nil {
-		return errors.New("DoH3 requires a TLS certificate and the DoH handler")
+		err := errors.New("DoH3 requires a TLS certificate and the DoH handler")
+		s.setDoH3Error(err.Error())
+		return err
 	}
 	addr := s.addr(s.dohPort)
 	pc, err := net.ListenPacket("udp", addr)
 	if err != nil {
-		return fmt.Errorf("bind DoH3 %s: %w", addr, err)
+		err = fmt.Errorf("bind DoH3 %s: %w", addr, err)
+		s.setDoH3Error(err.Error())
+		return err
 	}
 
 	h3Cfg := s.tlsConfig.Clone()
 	h3Cfg.NextProtos = []string{"h3"}
 	applyDOTCertSource(h3Cfg, s.dotCertSource)
 
+	limiter := newQUICHandshakeLimiter()
+	s.doh3ConnsMu.Lock()
+	s.doh3Conns = make(map[*quic.Conn]struct{})
+	s.doh3ConnsMu.Unlock()
+
+	quicCfg := &quic.Config{
+		HandshakeIdleTimeout: 5 * time.Second,
+		MaxIdleTimeout:       httpsIdleTimeout,
+		MaxIncomingStreams:   256,
+		// HTTP/3 needs the unidirectional streams for its control and QPACK
+		// channels — quic-go opens them itself. Zero here would break the
+		// protocol, so cap them rather than disabling them.
+		MaxIncomingUniStreams:          8,
+		Allow0RTT:                      false,
+		InitialStreamReceiveWindow:     64 << 10,
+		MaxStreamReceiveWindow:         1 << 20,
+		InitialConnectionReceiveWindow: 256 << 10,
+		MaxConnectionReceiveWindow:     4 << 20,
+	}
+	// The hook runs before the connection is allocated and TLS starts, so a
+	// source over its handshake budget costs a map lookup and one refusal packet.
+	quicCfg.GetConfigForClient = func(info *quic.ClientInfo) (*quic.Config, error) {
+		if limiter.Allow(info.RemoteAddr, time.Now()) {
+			return quicCfg, nil
+		}
+		s.doh3HandshakeRejects.Add(1)
+		s.logHandshakeReject("DoH3", info.RemoteAddr)
+		return nil, errQUICHandshakeLimited
+	}
+
 	srv := &http3.Server{
-		Handler:   s.webMux,
-		TLSConfig: h3Cfg,
-		QUICConfig: &quic.Config{
-			MaxIdleTimeout:        httpsIdleTimeout,
-			MaxIncomingStreams:    256,
-			MaxIncomingUniStreams: 0,
-			Allow0RTT:             false,
+		Handler:    s.webMux,
+		TLSConfig:  h3Cfg,
+		QUICConfig: quicCfg,
+		ConnContext: func(ctx context.Context, conn *quic.Conn) context.Context {
+			if !s.trackDoH3Conn(conn) {
+				return ctx
+			}
+			go func() {
+				<-ctx.Done()
+				s.doh3ConnsMu.Lock()
+				delete(s.doh3Conns, conn)
+				s.doh3ConnsMu.Unlock()
+			}()
+			return ctx
 		},
 	}
 	s.doh3Server = srv
 	s.doh3Conn = pc
+	ready := new(atomic.Bool)
+	s.doh3Ready.Store(ready)
+	s.clearDoH3Error()
 	if s.dohHandler != nil {
 		s.dohHandler.SetAltSvc(fmt.Sprintf(`h3=":%d"; ma=86400`, s.dohPort))
 	}
+
+	started := make(chan struct{})
 	go func() {
 		log.Printf("[DNS] Starting DoH3 (HTTP/3) on udp://%s/dns-query", addr)
-		if err := srv.Serve(pc); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("[DNS] DoH3 listener stopped: %v", err)
+		// Serve returns only when the listener closes or setup fails; everything
+		// before this point (bind, TLS clone, QUIC config) is synchronous and
+		// already succeeded. Marking ready here closes the window in which the
+		// save response would report "enabled, not listening" for a live server.
+		ready.Store(true)
+		close(started)
+		err := srv.Serve(pc)
+		ready.Store(false)
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
+			return
 		}
+		log.Printf("[DNS] DoH3 listener stopped: %v", err)
+
+		// Serve is gone; drop the dead fields so ApplyTransports can retry and
+		// TransportStatus cannot keep reporting a listener that no longer exists.
+		// The lock also makes a restart race harmless: if srv is no longer the
+		// current listener, a newer one owns the fields and this one only closes
+		// its own socket.
+		s.tlsMu.Lock()
+		if s.doh3Server == srv {
+			s.setDoH3Error("DoH3 listener stopped: " + err.Error())
+			s.doh3Server = nil
+			s.doh3Conn = nil
+			s.doh3Ready.Store(nil)
+			s.doh3ConnsMu.Lock()
+			s.doh3Conns = nil
+			s.doh3ConnsMu.Unlock()
+			if s.dohHandler != nil {
+				s.dohHandler.SetAltSvc("")
+			}
+		}
+		s.tlsMu.Unlock()
+		_ = pc.Close()
 	}()
+	<-started
 	return nil
+}
+
+// doh3IsReady reports whether the current HTTP/3 Serve loop is live. The caller
+// must hold tlsMu (or be Start before listeners exist).
+func (s *Server) doh3IsReady() bool {
+	ready := s.doh3Ready.Load()
+	return ready != nil && ready.Load()
+}
+
+// trackDoH3Conn admits an established HTTP/3 connection under the global cap.
+// The handshake limiter already bounds new handshakes per source; this bounds
+// how many live connections one process will hold.
+func (s *Server) trackDoH3Conn(conn *quic.Conn) bool {
+	if conn == nil {
+		return false
+	}
+	s.doh3ConnsMu.Lock()
+	defer s.doh3ConnsMu.Unlock()
+	if s.doh3Conns == nil {
+		// A stop landed between Serve starting and the first connection; the
+		// server is being torn down, so refuse rather than resurrect the set.
+		s.doh3HandshakeRejects.Add(1)
+		_ = conn.CloseWithError(quic.ApplicationErrorCode(doqExcessiveLoad), "server stopping")
+		return false
+	}
+	if len(s.doh3Conns) >= maxDoH3Conns {
+		s.doh3HandshakeRejects.Add(1)
+		_ = conn.CloseWithError(quic.ApplicationErrorCode(doqExcessiveLoad), "too many connections")
+		return false
+	}
+	s.doh3Conns[conn] = struct{}{}
+	s.doh3ConnsTotal.Add(1)
+	return true
+}
+
+func (s *Server) doh3ConnectionCount() int {
+	s.doh3ConnsMu.Lock()
+	defer s.doh3ConnsMu.Unlock()
+	return len(s.doh3Conns)
+}
+
+// errQUICHandshakeLimited is returned from GetConfigForClient when a source is
+// over its handshake budget. quic-go turns it into a refused connection before
+// any TLS work, and the text never reaches a client.
+var errQUICHandshakeLimited = errors.New("QUIC handshake rate limit reached")
+
+// logHandshakeReject writes at most one line per ten seconds for both QUIC
+// transports. The counter is the real signal; this exists so an operator
+// tailing the log can tell a limiter refusal from a network fault.
+func (s *Server) logHandshakeReject(transport string, remote net.Addr) {
+	now := time.Now().Unix()
+	last := s.quicRejectLogAt.Load()
+	if now-last < 10 {
+		return
+	}
+	if !s.quicRejectLogAt.CompareAndSwap(last, now) {
+		return
+	}
+	log.Printf("[DNS] %s handshake from %s refused: per-source rate limit", transport, sourceHost(remote))
 }
 
 // stopDoH3Locked tears down the HTTP/3 listener and stops advertising it. The
@@ -442,6 +619,7 @@ func (s *Server) startDoH3Locked() error {
 // then Close severs whatever is left so a long-lived request cannot hold the
 // daemon open.
 func (s *Server) stopDoH3Locked() {
+	s.doh3Ready.Store(nil)
 	if s.dohHandler != nil {
 		s.dohHandler.SetAltSvc("")
 	}
@@ -458,27 +636,79 @@ func (s *Server) stopDoH3Locked() {
 		_ = s.doh3Conn.Close()
 		s.doh3Conn = nil
 	}
+	s.doh3ConnsMu.Lock()
+	s.doh3Conns = nil
+	s.doh3ConnsMu.Unlock()
+	s.clearDoH3Error()
 }
 
-// ApplyTransports applies a live DoH3 change. DoQ is stored in the config for
-// the QUIC listener phase but is not started here yet; enabling it before that
-// phase is a clear error rather than a silent no-op.
+// ApplyTransports applies a live DoH3/DoQ change. The caller gets a synchronous
+// bind error; anything that fails after the listener is up is reported through
+// TransportStatus and the persistent last_error on the settings card.
+//
 // TransportStatus reports whether the optional QUIC listeners are actually
-// serving. The settings card uses this rather than the saved toggles so a bind
-// failure cannot present itself as a running endpoint.
-func (s *Server) TransportStatus() (doh3 bool, doq bool) {
+// serving, plus the reason a listener that was enabled is not. The settings card
+// uses this rather than the saved toggles so a bind failure or a Serve goroutine
+// that died later cannot present itself as a running endpoint.
+func (s *Server) TransportStatus() (doh3 bool, doq bool, listenerErr string) {
 	s.tlsMu.Lock()
-	defer s.tlsMu.Unlock()
-	return s.doh3Server != nil, s.doqListener != nil
+	doh3 = s.doh3IsReady()
+	doq = s.doqListener != nil
+	s.tlsMu.Unlock()
+
+	s.listenerErrMu.Lock()
+	switch {
+	case s.doh3Err != "" && s.doqErr != "":
+		listenerErr = s.doh3Err + "; " + s.doqErr
+	case s.doh3Err != "":
+		listenerErr = s.doh3Err
+	default:
+		listenerErr = s.doqErr
+	}
+	s.listenerErrMu.Unlock()
+	return doh3, doq, listenerErr
+}
+
+func (s *Server) setDoH3Error(msg string) {
+	s.listenerErrMu.Lock()
+	s.doh3Err = msg
+	s.listenerErrMu.Unlock()
+}
+
+func (s *Server) clearDoH3Error() {
+	s.setDoH3Error("")
+}
+
+func (s *Server) setDoQError(msg string) {
+	s.listenerErrMu.Lock()
+	s.doqErr = msg
+	s.listenerErrMu.Unlock()
+}
+
+func (s *Server) clearDoQError() {
+	s.setDoQError("")
 }
 
 // TransportMetrics is the small set of QUIC listener counters the Prometheus
 // endpoint exposes. Query and protocol aggregates already live in the stats
 // service; these are the transport-specific ones it cannot see.
+//
+// Connection gauges answer "is anyone actually using the QUIC listener?", the
+// totals separate churn from steady state, and the reject counters make a
+// handshake flood or a too-small connection cap visible instead of looking like
+// ordinary traffic.
 type TransportMetrics struct {
-	DoH3Requests   uint64
-	DoQQueries     uint64
-	DoQAuthFailure uint64
+	DoH3Requests         uint64
+	DoH3Connections      int64
+	DoH3ConnectionsTotal uint64
+	DoH3HandshakeRejects uint64
+
+	DoQQueries          uint64
+	DoQConnections      int64
+	DoQConnectionsTotal uint64
+	DoQAuthFailures     uint64
+	DoQProtocolErrors   uint64
+	DoQHandshakeRejects uint64
 }
 
 func (s *Server) TransportMetrics() TransportMetrics {
@@ -486,9 +716,23 @@ func (s *Server) TransportMetrics() TransportMetrics {
 	if s.dohHandler != nil {
 		m.DoH3Requests = s.dohHandler.DoH3Requests()
 	}
+	m.DoH3Connections = int64(s.doh3ConnectionCount())
+	m.DoH3ConnectionsTotal = s.doh3ConnsTotal.Load()
+	m.DoH3HandshakeRejects = s.doh3HandshakeRejects.Load()
+
 	m.DoQQueries = s.doqQueries.Load()
-	m.DoQAuthFailure = s.doqAuthFail.Load()
+	m.DoQConnections = int64(s.doqConnectionCount())
+	m.DoQConnectionsTotal = s.doqConnsTotal.Load()
+	m.DoQAuthFailures = s.doqAuthFail.Load()
+	m.DoQProtocolErrors = s.doqProtoErrors.Load()
+	m.DoQHandshakeRejects = s.doqHandshakeRejects.Load()
 	return m
+}
+
+func (s *Server) doqConnectionCount() int {
+	s.doqMu.Lock()
+	defer s.doqMu.Unlock()
+	return len(s.doqConns)
 }
 
 func (s *Server) ApplyTransports(cfg TransportConfig) error {
@@ -510,17 +754,20 @@ func (s *Server) ApplyTransports(cfg TransportConfig) error {
 	s.tlsMu.Lock()
 	defer s.tlsMu.Unlock()
 
-	if s.doh3Server != nil && (!cfg.DoH3Enabled || s.dohPort != cfg.DoHPort) {
+	// A disabled transport is stopped here even when no listener exists: that is
+	// also where a boot-time bind error is cleared, so the card does not keep
+	// showing a failure for an endpoint the operator has just turned off.
+	if !cfg.DoH3Enabled || (s.doh3Server != nil && (s.dohPort != cfg.DoHPort || !s.doh3IsReady())) {
 		s.stopDoH3Locked()
 	}
-	if s.doqListener != nil && (!cfg.DoQEnabled || s.doqPort != cfg.DoQPort || s.transportCfg.DoQAuth != auth) {
+	if !cfg.DoQEnabled || (s.doqListener != nil && (s.doqPort != cfg.DoQPort || s.transportCfg.DoQAuth != auth)) {
 		s.stopDoQ()
 	}
 
 	s.transportCfg = cfg
 	s.dohPort = cfg.DoHPort
 	s.doqPort = cfg.DoQPort
-	if cfg.DoH3Enabled && s.doh3Server == nil {
+	if cfg.DoH3Enabled && !s.doh3IsReady() {
 		if err := s.startDoH3Locked(); err != nil {
 			return err
 		}

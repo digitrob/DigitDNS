@@ -6,6 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.4.1] — transport hardening and allowlist clarity
+
+### Added
+- **DoQ IP-allowlist clarity** on web and Android: the card names its sources
+  (**Clients → Allowed IPs** and **Settings → Access → Server-wide Resolver
+  Allowlist**), shows live client/entry/range counts, warns when Public Mode
+  (`allow_all`) makes the list irrelevant, and warns when whitelist mode has no
+  entries.
+- **QUIC handshake rate limiting**: 60 burst / 2 per second per source IP,
+  checked before TLS on DoH3 and DoQ, with a bounded source map.
+- **DoH3 connection cap** of 1,024 live connections, matching DoQ.
+- **Prometheus QUIC series**: `digitdns_doh3_connections`,
+  `digitdns_doh3_connections_total`, `digitdns_doq_connections`,
+  `digitdns_doq_connections_total`, `digitdns_doq_protocol_errors_total` and
+  `digitdns_quic_handshake_rejected_total{transport=...}`.
+- **Periodic upstream health check**: every five minutes the resolver re-probes
+  each upstream and logs one warning when an upstream is degraded, plus one
+  recovery line. Degraded means an open circuit, a failed latest probe, or a
+  recent live error rate of at least 10% over 20 queries.
+
+### Changed
+- **DoH3 applies immediately** from its switch. **DoQ is staged** behind
+  **Save DoQ** because its port, authentication mode, token domain and token
+  list must be valid together.
+- Transport saves are now **applied before they are persisted**. A failed bind
+  rolls the listeners back to the previous state instead of leaving a saved
+  switch ahead of a dead listener.
+- The transport card keeps the failure reason in `last_error`, including a
+  listener that fails after the save returns.
+- Android Transports matches the hybrid behaviour and shows applied versus
+  staged DoQ state.
+- The Android **Save DoQ** button now shares a row with the firewall note.
+
+### Fixed
+- DoH3 reported “listening” as soon as the UDP socket was bound. It now waits
+  for the HTTP/3 serve loop, and a listener that dies later is reported as
+  stopped instead of looking healthy.
+- A failed DoH3/DoQ apply no longer leaves the saved switch enabled while the
+  listener is down.
+- Disabling a transport clears a stale boot-time listener error from the card.
+- The DoH3 card shows the configured DoH port instead of a hardcoded 8443.
+
+### Operations
+- No database migration. Existing DoH3/DoQ settings and DoQ tokens survive the
+  upgrade.
+- The default DoQ port remains 853/UDP; DoH3 shares the DoH port on UDP.
+- `9.9.9.9` was removed from the Norwich deployment after repeated upstream
+  timeouts; the release code itself does not change the configured pool.
+
 ## 🏷️ [v5.4.0] — client-facing DoH3 and DoQ
 
 ### Added

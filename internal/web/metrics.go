@@ -12,6 +12,23 @@ import (
 	"digitdns/internal/version"
 )
 
+// TransportMetrics is the QUIC transport's scrape surface. It is a separate
+// type from dns.TransportMetrics so the web package does not have to import the
+// resolver package just to read counters.
+type TransportMetrics struct {
+	DoH3Requests         uint64
+	DoH3Connections      int64
+	DoH3ConnectionsTotal uint64
+	DoH3HandshakeRejects uint64
+
+	DoQQueries          uint64
+	DoQConnections      int64
+	DoQConnectionsTotal uint64
+	DoQAuthFailures     uint64
+	DoQProtocolErrors   uint64
+	DoQHandshakeRejects uint64
+}
+
 // Metrics is the Prometheus scrape surface. It is scratch-built rather than
 // pulling in the client library: the exposition format is a few lines of text,
 // and this project keeps its module graph small on purpose.
@@ -78,13 +95,22 @@ func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	writeMetric("digitdns_relays_refused_actionable_total", "Relay connections refused for an actionable reason (flood attempts excluded).", "counter", actionableRefused)
 	writeMetric("digitdns_relays_flood_total", "Relay connection attempts from a source already in the malformed-probe penalty box.", "counter", st.RelaysRefusedFlood)
 
-	var doh3Requests, doqQueries, doqAuthFailures uint64
+	var tm TransportMetrics
 	if ws.transportMetrics != nil {
-		doh3Requests, doqQueries, doqAuthFailures = ws.transportMetrics()
+		tm = ws.transportMetrics()
 	}
-	writeMetric("digitdns_doh3_requests_total", "HTTP/3 DoH requests served since start.", "counter", doh3Requests)
-	writeMetric("digitdns_doq_queries_total", "DNS-over-QUIC queries served since start.", "counter", doqQueries)
-	writeMetric("digitdns_doq_auth_failures_total", "DNS-over-QUIC connections rejected by SNI-token authentication.", "counter", doqAuthFailures)
+	writeMetric("digitdns_doh3_requests_total", "HTTP/3 DoH requests served since start.", "counter", tm.DoH3Requests)
+	writeMetric("digitdns_doh3_connections", "HTTP/3 DoH connections currently open.", "gauge", tm.DoH3Connections)
+	writeMetric("digitdns_doh3_connections_total", "HTTP/3 DoH connections accepted since start.", "counter", tm.DoH3ConnectionsTotal)
+	writeMetric("digitdns_doq_queries_total", "DNS-over-QUIC queries served since start.", "counter", tm.DoQQueries)
+	writeMetric("digitdns_doq_connections", "DNS-over-QUIC connections currently open.", "gauge", tm.DoQConnections)
+	writeMetric("digitdns_doq_connections_total", "DNS-over-QUIC connections accepted since start.", "counter", tm.DoQConnectionsTotal)
+	writeMetric("digitdns_doq_auth_failures_total", "DNS-over-QUIC connections rejected by SNI-token authentication.", "counter", tm.DoQAuthFailures)
+	writeMetric("digitdns_doq_protocol_errors_total", "DNS-over-QUIC streams closed for a protocol violation.", "counter", tm.DoQProtocolErrors)
+	b.WriteString("# HELP digitdns_quic_handshake_rejected_total New QUIC connections refused before the handshake, by transport.\n")
+	b.WriteString("# TYPE digitdns_quic_handshake_rejected_total counter\n")
+	fmt.Fprintf(&b, "digitdns_quic_handshake_rejected_total{transport=%q} %d\n", "doh3", tm.DoH3HandshakeRejects)
+	fmt.Fprintf(&b, "digitdns_quic_handshake_rejected_total{transport=%q} %d\n", "doq", tm.DoQHandshakeRejects)
 	writeMetric("digitdns_relays_unreadable_total", "Relay connections whose opening bytes named no destination.", "counter", st.RelaysUnreadable)
 
 	writeMetric("digitdns_cpu_percent", "Process CPU usage percentage.", "gauge", st.CPUUsagePercent)

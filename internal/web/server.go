@@ -178,11 +178,19 @@ type WebServer struct {
 	// Installed during startup once the listeners exist; nil in test harnesses,
 	// where the save is persistence-only.
 	transportApplier func(database.DNSSettings, []string) error
-	// transportStatus reports whether the QUIC listeners are actually serving.
-	// Nil in harnesses that never build a DNS server.
-	transportStatus func() (doh3 bool, doq bool)
+	// transportStatus reports whether the QUIC listeners are actually serving,
+	// plus the reason one that is enabled is not. Nil in harnesses that never
+	// build a DNS server.
+	transportStatus func() (doh3 bool, doq bool, listenerErr string)
 	// transportMetrics reports the QUIC listener counters. Nil means all zero.
-	transportMetrics func() (doh3, doq, authFailures uint64)
+	transportMetrics func() TransportMetrics
+	// transportSaveMu serializes transport saves so a rapid switch toggle cannot
+	// interleave two apply/persist transactions.
+	transportSaveMu sync.Mutex
+	// transportErrMu guards transportLastError, the persistent reason shown by
+	// the card after a failed apply.
+	transportErrMu     sync.Mutex
+	transportLastError string
 
 	// ipv6Setter applies the live proxied-IPv6 policy to the running resolver.
 	// Installed during startup; nil leaves the API persistence-only in the
@@ -330,7 +338,7 @@ func (ws *WebServer) SetTransportApplier(fn func(database.DNSSettings, []string)
 
 // SetTransportStatusSource installs the read-only listener state used by the
 // transport card. Call it during startup, after the DNS server exists.
-func (ws *WebServer) SetTransportStatusSource(fn func() (doh3 bool, doq bool)) {
+func (ws *WebServer) SetTransportStatusSource(fn func() (doh3 bool, doq bool, listenerErr string)) {
 	if ws == nil {
 		return
 	}
@@ -339,7 +347,7 @@ func (ws *WebServer) SetTransportStatusSource(fn func() (doh3 bool, doq bool)) {
 
 // SetTransportMetricsSource installs the QUIC counter source. Call it during
 // startup, after the DNS server exists.
-func (ws *WebServer) SetTransportMetricsSource(fn func() (doh3, doq, authFailures uint64)) {
+func (ws *WebServer) SetTransportMetricsSource(fn func() TransportMetrics) {
 	if ws == nil {
 		return
 	}

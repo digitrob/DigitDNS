@@ -351,7 +351,7 @@
     <string name="transports_help">Optional HTTP/3 and DNS-over-QUIC endpoints. Both use the DoH/DoT certificate.</string>
     <string name="transports_doh3">DoH3 (HTTP/3)</string>
     <string name="transports_doh3_help">Same DoH URL, negotiated over QUIC automatically.</string>
-    <string name="transports_doh3_port">UDP 8443</string>
+    <string name="transports_doh3_port">UDP %1$d</string>
     <string name="transports_doq">DoQ (DNS-over-QUIC)</string>
     <string name="transports_doq_help">RFC 9250 for clients and routers that support QUIC.</string>
     <string name="transports_port">UDP port</string>
@@ -363,11 +363,18 @@
     <string name="transports_new_token">Token label</string>
     <string name="transports_add_token">Add</string>
     <string name="transports_no_tokens">No DoQ tokens yet</string>
+    <string name="transports_doq_ip_sources">IP authentication uses Clients → Allowed IPs and Settings → Access → Server-wide Resolver Allowlist.</string>
+    <string name="transports_doq_ip_counts">Clients: %1$d · client IPs/CIDRs: %2$d · resolver ranges: %3$d</string>
+    <string name="transports_doq_ip_public_warning">Public Mode is on — any source can use DoQ, so the IP allowlist is not restricting access.</string>
+    <string name="transports_doq_ip_empty_warning">No IPs are allowlisted — DoQ will refuse every source until you add one in Clients or Settings → Access.</string>
     <string name="transports_save">Save transports</string>
+    <string name="transports_save_doq">Save DoQ</string>
     <string name="transports_saved">Saved</string>
     <string name="transports_status_off">Off</string>
     <string name="transports_status_listening">Listening</string>
     <string name="transports_status_pending">Enabled, not listening</string>
+    <string name="transports_status_saving">Saving…</string>
+    <string name="transports_status_unsaved">Unsaved — press Save DoQ</string>
     <string name="transports_firewall">Open the UDP port in the firewall.</string>
     <string name="transports_cert_warning">SNI-token mode needs a certificate covering the token hostnames; the built-in ACME client cannot issue wildcards.</string>
 

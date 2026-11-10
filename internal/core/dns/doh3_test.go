@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,6 +122,9 @@ func TestApplyTransportsStartsAndStopsDoH3(t *testing.T) {
 	if err := s.ApplyTransports(TransportConfig{DoHPort: port, DoH3Enabled: true}); err != nil {
 		t.Fatalf("start DoH3: %v", err)
 	}
+	if doh3, _, listenerErr := s.TransportStatus(); !doh3 || listenerErr != "" {
+		t.Fatalf("TransportStatus after start = (%v, %q), want Ready", doh3, listenerErr)
+	}
 	if doh.altSvcValue() == "" {
 		t.Fatal("Alt-Svc was not advertised while DoH3 was running")
 	}
@@ -162,8 +166,19 @@ func TestApplyTransportsStartsAndStopsDoH3(t *testing.T) {
 		t.Errorf("answer = %#v", msg.Answer[0])
 	}
 
+	m := s.TransportMetrics()
+	if m.DoH3Requests == 0 || m.DoH3ConnectionsTotal == 0 {
+		t.Errorf("DoH3 metrics after a request = %#v, want a request and a connection", m)
+	}
+	if m.DoH3Connections < 1 {
+		t.Errorf("DoH3 connections gauge = %d, want the live client connection", m.DoH3Connections)
+	}
+
 	if err := s.ApplyTransports(TransportConfig{DoHPort: port}); err != nil {
 		t.Fatalf("stop DoH3: %v", err)
+	}
+	if doh3, _, listenerErr := s.TransportStatus(); doh3 || listenerErr != "" {
+		t.Fatalf("TransportStatus after stop = (%v, %q), want Off and no error", doh3, listenerErr)
 	}
 	if doh.altSvcValue() != "" {
 		t.Error("Alt-Svc still advertised after DoH3 stopped")
@@ -174,5 +189,42 @@ func TestApplyTransportsDoQRequiresTLS(t *testing.T) {
 	s := &Server{}
 	if err := s.ApplyTransports(TransportConfig{DoQEnabled: true, DoQPort: 853}); err == nil {
 		t.Fatal("ApplyTransports accepted DoQ without a TLS certificate")
+	}
+}
+
+func TestDoH3BindFailureIsReportedAndClearsOnDisable(t *testing.T) {
+	// Hold the UDP port so the bind fails while everything else is valid.
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve UDP port: %v", err)
+	}
+	defer pc.Close()
+	port := pc.LocalAddr().(*net.UDPAddr).Port
+
+	doh := testDoH3Handler(t)
+	s := &Server{
+		tlsConfig:  testDoH3TLSConfig(t),
+		webMux:     doh,
+		dohHandler: doh,
+		bindHost:   "127.0.0.1",
+		dohPort:    port,
+	}
+	if err := s.ApplyTransports(TransportConfig{DoHPort: port, DoH3Enabled: true}); err == nil {
+		t.Fatal("ApplyTransports started DoH3 on a port that was already bound")
+	}
+	doh3, _, listenerErr := s.TransportStatus()
+	if doh3 {
+		t.Fatal("TransportStatus reported a listener that never bound")
+	}
+	if !strings.Contains(listenerErr, "bind DoH3") {
+		t.Fatalf("listener error = %q, want the bind failure", listenerErr)
+	}
+
+	// Turning it off must not leave the failed-bind reason on the card.
+	if err := s.ApplyTransports(TransportConfig{DoHPort: port}); err != nil {
+		t.Fatalf("disable DoH3: %v", err)
+	}
+	if _, _, listenerErr := s.TransportStatus(); listenerErr != "" {
+		t.Fatalf("listener error after disable = %q, want empty", listenerErr)
 	}
 }

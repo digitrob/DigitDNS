@@ -16,8 +16,10 @@ package upstream
 // panic or a torn read; it cannot certify the pool race-free.
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -1495,5 +1497,74 @@ func TestHedgedFastFirstSendsOneQuery(t *testing.T) {
 	}
 	if second.udpHits.Load() != 0 {
 		t.Fatalf("second resolver was queried %d time(s), want 0", second.udpHits.Load())
+	}
+}
+
+// The health monitor must not treat "never probed" as a failure, and it must
+// flag exactly the three states an operator can act on.
+func TestUpstreamHealthIssue(t *testing.T) {
+	cases := []struct {
+		name string
+		stat UpstreamStat
+		want bool
+	}{
+		{"fresh upstream", UpstreamStat{}, false},
+		{"healthy probed", UpstreamStat{LastProbeAt: "2026-01-01T00:00:00Z", LastProbeOK: true}, false},
+		{"open circuit", UpstreamStat{CircuitOpen: true}, true},
+		{"probe failed", UpstreamStat{LastProbeAt: "2026-01-01T00:00:00Z", LastProbeOK: false}, true},
+		{"too few samples", UpstreamStat{RecentSamples: upstreamHealthMinSamples - 1, RecentErrorRate: 1}, false},
+		{"error rate at threshold", UpstreamStat{RecentSamples: upstreamHealthMinSamples, RecentErrorRate: upstreamHealthErrorRate}, true},
+		{"error rate below threshold", UpstreamStat{RecentSamples: 64, RecentErrorRate: 0.05}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reason, got := upstreamHealthIssue(tc.stat)
+			if got != tc.want {
+				t.Fatalf("degraded = %v (%q), want %v", got, reason, tc.want)
+			}
+			if got && reason == "" {
+				t.Fatal("a degraded upstream carried no reason")
+			}
+		})
+	}
+}
+
+// The monitor must log one warning when a resolver degrades and one recovery
+// line when it comes back, not a line on every tick.
+func TestReportUpstreamHealthLogsTransitions(t *testing.T) {
+	const addr = "192.0.2.1:53"
+	p := newTestPool(t, []string{addr}, time.Second, false, "")
+	for i := 0; i < circuitFailureThreshold; i++ {
+		p.recordStat(addr, time.Millisecond, statTransportError, "i/o timeout", false)
+	}
+
+	var buf bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(previous)
+
+	alerted := make(map[string]bool)
+	p.reportUpstreamHealth(alerted)
+	if !strings.Contains(buf.String(), "Health warning") || !strings.Contains(buf.String(), addr) {
+		t.Fatalf("first report = %q, want a health warning for %s", buf.String(), addr)
+	}
+	if !alerted[addr] {
+		t.Fatal("the degraded upstream was not marked as alerted")
+	}
+
+	buf.Reset()
+	p.reportUpstreamHealth(alerted)
+	if buf.Len() != 0 {
+		t.Fatalf("second report repeated the warning: %q", buf.String())
+	}
+
+	p.recordStat(addr, time.Millisecond, statSuccess, "", false)
+	buf.Reset()
+	p.reportUpstreamHealth(alerted)
+	if !strings.Contains(buf.String(), "Health recovered") {
+		t.Fatalf("recovery report = %q, want a recovery line", buf.String())
+	}
+	if alerted[addr] {
+		t.Fatal("the recovered upstream stayed marked as alerted")
 	}
 }

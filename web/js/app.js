@@ -1920,6 +1920,10 @@ function initDashboardEditor() {
 
 function renderConfig(cfg) {
   if (!cfg) return;
+  if (cfg !== currentConfig) {
+    transportDraft = null;
+    transportInlineError = '';
+  }
   currentConfig = cfg;
 
   // Normalize config structures to prevent runtime crashes on missing fields
@@ -2239,12 +2243,17 @@ function renderList(containerId, items, removeClass) {
 
 // ---- Client-facing QUIC transports -----------------------------------------
 //
-// The Settings card is a two-column form: DoH3 is one toggle and one endpoint;
-// DoQ carries the auth mode, the optional SNI-token list and its endpoint. The
-// values are staged in currentConfig.transports and saved by the card's button,
-// so an operator can flip both switches and edit a token list in one request.
+// DoH3 applies as soon as its switch moves. DoQ keeps a Save button because its
+// port, auth mode, token domain and token list must be valid together. The
+// applied state lives in currentConfig.transports; transportDraft holds the
+// unsaved DoQ form so a DoH3 auto-save cannot commit it by accident.
+let transportDraft = null;
+let doh3Saving = false;
+let doqSaving = false;
+let transportInlineError = '';
+
 function normalizeTransportSettings(cfg) {
-  if (!cfg) return { doq_enabled: false, doh3_enabled: false, doq_port: 853, doq_auth: 'ip', doq_token_domain: '', doq_tokens: [] };
+  if (!cfg) return { doq_enabled: false, doh3_enabled: false, doq_port: 853, doq_auth: 'ip', doq_token_domain: '', doq_tokens: [], doh3_listening: false, doq_listening: false, ip_allowlist: { allow_all: false, client_accounts: 0, client_entries: 0, resolver_entries: 0 }, last_error: '' };
   if (!cfg.transports || typeof cfg.transports !== 'object') cfg.transports = {};
   const t = cfg.transports;
   t.doq_enabled = !!t.doq_enabled;
@@ -2255,7 +2264,39 @@ function normalizeTransportSettings(cfg) {
   if (!Array.isArray(t.doq_tokens)) t.doq_tokens = [];
   t.doh3_listening = !!t.doh3_listening;
   t.doq_listening = !!t.doq_listening;
+  t.doh3_port = Number.isFinite(Number(t.doh3_port)) && Number(t.doh3_port) > 0 ? Number(t.doh3_port) : 8443;
+  const al = (t.ip_allowlist && typeof t.ip_allowlist === 'object') ? t.ip_allowlist : {};
+  t.ip_allowlist = {
+    allow_all: !!al.allow_all,
+    client_accounts: Number(al.client_accounts) || 0,
+    client_entries: Number(al.client_entries) || 0,
+    resolver_entries: Number(al.resolver_entries) || 0,
+  };
+  t.last_error = typeof t.last_error === 'string' ? t.last_error : '';
   return t;
+}
+
+function copyDoqDraft(t) {
+  return {
+    doq_enabled: !!t.doq_enabled,
+    doq_port: t.doq_port || 853,
+    doq_auth: t.doq_auth === 'sni-token' ? 'sni-token' : 'ip',
+    doq_token_domain: t.doq_token_domain || '',
+    doq_tokens: (t.doq_tokens || []).slice(),
+  };
+}
+
+function ensureTransportDraft(applied) {
+  if (!transportDraft) transportDraft = copyDoqDraft(applied);
+  return transportDraft;
+}
+
+function doqDraftDirty(applied, draft) {
+  return draft.doq_enabled !== applied.doq_enabled ||
+    Number(draft.doq_port) !== Number(applied.doq_port) ||
+    draft.doq_auth !== applied.doq_auth ||
+    draft.doq_token_domain !== applied.doq_token_domain ||
+    JSON.stringify(draft.doq_tokens) !== JSON.stringify(applied.doq_tokens);
 }
 
 function transportGuideHost() {
@@ -2263,65 +2304,95 @@ function transportGuideHost() {
   return (cfg.tls && (cfg.tls.dot_domain || cfg.tls.domain)) || (cfg.server && cfg.server.public_ip) || '';
 }
 
-function renderTransportEndpoints(t) {
+function renderTransportEndpoints(applied, draft) {
   const host = transportGuideHost();
   const cfg = currentConfig || {};
+  const doh3Port = applied.doh3_port || 8443;
+  const doh3PortEl = document.getElementById('doh3-port');
+  if (doh3PortEl) doh3PortEl.innerText = doh3Port;
   const doh3El = document.getElementById('doh3-endpoint');
   if (doh3El) {
     doh3El.innerText = (typeof cfg.doh_url === 'string' && cfg.doh_url)
       ? cfg.doh_url
-      : (host ? `https://${host}:8443/dns-query` : 'Configure a domain and certificate first');
+      : (host ? `https://${host}:${doh3Port}/dns-query` : 'Configure a domain and certificate first');
   }
-  const port = t.doq_port || 853;
+  const port = draft.doq_port || 853;
   const doqEl = document.getElementById('doq-endpoint');
   if (doqEl) {
-    doqEl.innerText = (t.doq_auth === 'sni-token' && t.doq_token_domain)
-      ? `quic://<token>.${t.doq_token_domain}:${port}`
+    doqEl.innerText = (draft.doq_auth === 'sni-token' && draft.doq_token_domain)
+      ? `quic://<token>.${draft.doq_token_domain}:${port}`
       : ((typeof cfg.doq_url === 'string' && cfg.doq_url) || (host ? `quic://${host}:${port}` : 'Configure a domain and certificate first'));
   }
-  const status = document.getElementById('doh3-status');
-  if (status) {
-    status.innerText = t.doh3_listening ? 'Listening on UDP 8443' : (t.doh3_enabled ? 'Enabled — not listening' : 'Off');
-    status.className = t.doh3_listening
-      ? 'font-mono text-emerald-300'
-      : (t.doh3_enabled ? 'font-mono text-amber-300' : 'font-mono text-slate-300');
+
+  const doh3Status = document.getElementById('doh3-status');
+  if (doh3Status) {
+    if (doh3Saving) {
+      doh3Status.innerText = 'Saving…';
+      doh3Status.className = 'font-mono text-slate-400';
+    } else if (applied.doh3_listening) {
+      doh3Status.innerText = `Listening on UDP ${doh3Port}`;
+      doh3Status.className = 'font-mono text-emerald-300';
+    } else if (applied.doh3_enabled) {
+      doh3Status.innerText = 'Enabled — not listening';
+      doh3Status.className = 'font-mono text-amber-300';
+    } else {
+      doh3Status.innerText = 'Off';
+      doh3Status.className = 'font-mono text-slate-300';
+    }
   }
+
   const doqStatus = document.getElementById('doq-status');
   if (doqStatus) {
-    doqStatus.innerText = t.doq_listening ? `Listening on UDP ${port}` : (t.doq_enabled ? 'Enabled — not listening' : 'Off');
-    doqStatus.className = t.doq_listening
-      ? 'font-mono text-emerald-300'
-      : (t.doq_enabled ? 'font-mono text-amber-300' : 'font-mono text-slate-300');
+    if (doqSaving) {
+      doqStatus.innerText = 'Saving…';
+      doqStatus.className = 'font-mono text-slate-400';
+    } else if (doqDraftDirty(applied, draft)) {
+      doqStatus.innerText = 'Unsaved — press Save DoQ';
+      doqStatus.className = 'font-mono text-amber-300';
+    } else if (applied.doq_listening) {
+      doqStatus.innerText = `Listening on UDP ${applied.doq_port}`;
+      doqStatus.className = 'font-mono text-emerald-300';
+    } else if (applied.doq_enabled) {
+      doqStatus.innerText = 'Enabled — not listening';
+      doqStatus.className = 'font-mono text-amber-300';
+    } else {
+      doqStatus.innerText = 'Off';
+      doqStatus.className = 'font-mono text-slate-300';
+    }
   }
 }
 
-function updateTransportBadge(t) {
+function updateTransportBadge(applied) {
   const badge = document.getElementById('transports-state-badge');
   if (!badge) return;
-  const on = [t.doh3_listening, t.doq_listening].filter(Boolean).length;
-  const desired = t.doh3_enabled || t.doq_enabled;
-  const missing = (t.doh3_enabled && !t.doh3_listening) || (t.doq_enabled && !t.doq_listening);
-  badge.innerText = missing
-    ? (on > 0 ? 'Partial' : 'Not listening')
-    : (on === 2 ? 'Both on' : on === 1 ? (t.doh3_listening ? 'DoH3 on' : 'DoQ on') : 'Off');
-  badge.className = missing
+  const draftDirty = transportDraft ? doqDraftDirty(applied, transportDraft) : false;
+  const on = [applied.doh3_listening, applied.doq_listening].filter(Boolean).length;
+  const desired = applied.doh3_enabled || applied.doq_enabled;
+  const missing = (applied.doh3_enabled && !applied.doh3_listening) || (applied.doq_enabled && !applied.doq_listening);
+  const failed = !!(transportInlineError || applied.last_error);
+  const text = (doh3Saving || doqSaving) ? 'Saving…'
+    : failed ? 'Failed'
+    : draftDirty ? 'Unsaved'
+    : missing ? (on > 0 ? 'Partial' : 'Not listening')
+    : (on === 2 ? 'Both on' : on === 1 ? (applied.doh3_listening ? 'DoH3 on' : 'DoQ on') : 'Off');
+  const cls = (doh3Saving || doqSaving || draftDirty || missing || failed)
     ? 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30'
     : (on > 0
       ? 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-      : (desired
-        ? 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30'
-        : 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700'));
+      : 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700');
+  badge.innerText = text;
+  badge.className = cls;
 }
 
-function renderDoQTokens(t) {
+function renderDoQTokens(draft) {
   const list = document.getElementById('doq-tokens-list');
   if (!list) return;
   list.innerHTML = '';
-  if (!t.doq_tokens.length) {
+  if (!draft.doq_tokens.length) {
     list.innerHTML = '<div class="text-slate-500 text-xs py-1">No DoQ tokens yet</div>';
     return;
   }
-  t.doq_tokens.forEach(token => {
+  draft.doq_tokens.forEach(token => {
     const row = document.createElement('div');
     row.className = 'flex items-center justify-between py-1.5 px-3 rounded-lg bg-slate-950/60 border border-slate-800 text-xs';
     row.innerHTML = `
@@ -2335,100 +2406,185 @@ function renderDoQTokens(t) {
   safeFeatherReplace();
 }
 
-function markTransportsDirty() {
-  const el = document.getElementById('transports-save-status');
-  if (el) {
-    el.innerText = 'Unsaved changes';
-    el.className = 'text-[11px] text-amber-300';
+function renderDoqIpAllowlist(applied) {  const counts = document.getElementById('doq-ip-counts');
+  const warning = document.getElementById('doq-ip-warning');
+  if (!counts || !warning) return;
+  const al = applied.ip_allowlist;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  counts.innerText = [
+    plural(al.client_accounts, 'client', 'clients'),
+    plural(al.client_entries, 'client IP/CIDR', 'client IPs/CIDRs'),
+    plural(al.resolver_entries, 'resolver range', 'resolver ranges'),
+  ].join(' · ');
+  let message = '';
+  if (al.allow_all) {
+    message = 'Public Mode is on — any source can use DoQ, so the IP allowlist is not restricting access. Switch Access Mode to whitelist to enforce it.';
+  } else if (al.client_entries === 0 && al.resolver_entries === 0) {
+    message = 'No IPs are allowlisted — DoQ will refuse every source. Add addresses in Clients → Allowed IPs or the Server-wide Resolver Allowlist.';
   }
+  warning.innerText = message;
+  warning.classList.toggle('hidden', !message);
+}
+
+// refreshTransportView re-reads the listener state and allowlist counts without
+// touching the staged DoQ draft. Client and access-mode saves change those
+// counts, and the card is often visible in the same settings page.
+async function refreshTransportView() {
+  if (!currentConfig || !authToken || doh3Saving || doqSaving) return;
+  try {
+    const res = await fetch(api('/api/settings/transports'), {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (!res.ok) return;
+    currentConfig.transports = normalizeTransportSettings({ transports: await res.json() });
+    renderTransportSettings();
+  } catch (ignore) { /* keep the last known card state */ }
 }
 
 function renderTransportSettings() {
   const card = document.getElementById('transports-card');
   if (!card || !currentConfig) return;
-  const t = normalizeTransportSettings(currentConfig);
+  const applied = normalizeTransportSettings(currentConfig);
+  const draft = ensureTransportDraft(applied);
 
   const doh3 = document.getElementById('doh3-enabled-input');
-  if (doh3) doh3.checked = t.doh3_enabled;
+  if (doh3) {
+    doh3.checked = applied.doh3_enabled;
+    doh3.disabled = doh3Saving || doqSaving;
+  }
   const doq = document.getElementById('doq-enabled-input');
-  if (doq) doq.checked = t.doq_enabled;
+  if (doq) {
+    doq.checked = !!draft.doq_enabled;
+    doq.disabled = doqSaving;
+  }
   const auth = document.getElementById('doq-auth-select');
-  if (auth) auth.value = t.doq_auth;
+  if (auth) auth.value = draft.doq_auth;
+  const port = document.getElementById('doq-port-input');
+  if (port) port.value = draft.doq_port || 853;
   const domain = document.getElementById('doq-token-domain-input');
-  if (domain) domain.value = t.doq_token_domain || '';
-  const portInput = document.getElementById('doq-port-input');
-  if (portInput) portInput.value = t.doq_port || 853;
+  if (domain) domain.value = draft.doq_token_domain || '';
 
   const fields = document.getElementById('doq-token-fields');
-  if (fields) fields.classList.toggle('hidden', t.doq_auth !== 'sni-token');
+  if (fields) fields.classList.toggle('hidden', draft.doq_auth !== 'sni-token');
   const warning = document.getElementById('doq-cert-warning');
-  if (warning) warning.classList.toggle('hidden', t.doq_auth !== 'sni-token');
+  if (warning) warning.classList.toggle('hidden', draft.doq_auth !== 'sni-token');
 
-  renderTransportEndpoints(t);
-  renderDoQTokens(t);
-  updateTransportBadge(t);
-}
-
-async function refreshTransportState() {
-  try {
-    const res = await fetch(api('/api/settings/transports'), {
-      headers: { 'Authorization': `Bearer ${authToken}` }
-    });
-    if (res.ok) {
-      currentConfig.transports = normalizeTransportSettings({ transports: await res.json() });
-      renderTransportSettings();
+  const save = document.getElementById('save-doq-btn');
+  if (save) save.disabled = doqSaving || doh3Saving;
+  const saveStatus = document.getElementById('doq-save-status');
+  if (saveStatus) {
+    if (doqSaving) {
+      saveStatus.innerText = 'Saving…';
+      saveStatus.className = 'text-[11px] text-slate-400';
+    } else if (doqDraftDirty(applied, draft)) {
+      saveStatus.innerText = 'Unsaved changes — press Save DoQ';
+      saveStatus.className = 'text-[11px] text-amber-300';
+    } else if (!applied.last_error) {
+      saveStatus.innerText = '';
+      saveStatus.className = 'text-[11px] text-slate-400';
     }
-  } catch (e) { /* the toast already carries the save failure */ }
+  }
+
+  const errorEl = document.getElementById('transports-last-error');
+  if (errorEl) {
+    const message = transportInlineError || applied.last_error || '';
+    errorEl.classList.toggle('hidden', !message);
+    errorEl.innerText = message;
+  }
+
+  renderTransportEndpoints(applied, draft);
+  renderDoQTokens(draft);
+  renderDoqIpAllowlist(applied);
+  updateTransportBadge(applied);
 }
 
-async function saveTransportSettings() {
-  if (!currentConfig) return;
-  const t = normalizeTransportSettings(currentConfig);
-  const btn = document.getElementById('save-transports-btn');
-  const status = document.getElementById('transports-save-status');
-  const payload = {
-    doq_enabled: !!document.getElementById('doq-enabled-input')?.checked,
-    doh3_enabled: !!document.getElementById('doh3-enabled-input')?.checked,
-    doq_auth: document.getElementById('doq-auth-select')?.value || 'ip',
-    doq_port: Number(document.getElementById('doq-port-input')?.value) || 853,
-    doq_token_domain: (document.getElementById('doq-token-domain-input')?.value || '').trim().toLowerCase(),
-    doq_tokens: t.doq_tokens.slice(),
-  };
-  if (btn) btn.disabled = true;
-  if (status) {
-    status.innerText = 'Saving…';
-    status.className = 'text-[11px] text-slate-400';
-  }
+async function saveDoh3(enabled) {
+  if (doh3Saving || doqSaving || !currentConfig) return;
+  doh3Saving = true;
+  transportInlineError = '';
+  renderTransportSettings();
   try {
     const res = await fetch(api('/api/settings/transports'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ doh3_enabled: !!enabled })
     });
     if (!res.ok) {
-      if (status) {
-        status.innerText = '';
-        status.className = 'text-[11px] text-slate-400';
-      }
-      await refreshTransportState();
-      showToast(await errorMessage(res, 'Could not save the transport settings.'), 'error');
+      transportInlineError = await errorMessage(res, 'Could not apply the DoH3 setting.');
+      doh3Saving = false;
+      renderTransportSettings();
+      showToast(transportInlineError, 'error');
       return;
     }
     currentConfig.transports = normalizeTransportSettings({ transports: await res.json() });
+    doh3Saving = false;
     renderTransportSettings();
-    if (status) {
-      status.innerText = 'Saved';
-      status.className = 'text-[11px] text-emerald-300';
-    }
-    showToast('Transport settings saved', 'success');
+    showToast(enabled ? 'DoH3 enabled' : 'DoH3 disabled', 'success');
   } catch (e) {
-    if (status) {
-      status.innerText = '';
-      status.className = 'text-[11px] text-slate-400';
+    transportInlineError = 'Could not apply the DoH3 setting.';
+    doh3Saving = false;
+    renderTransportSettings();
+    showToast(transportInlineError, 'error');
+  }
+}
+
+async function saveDoq() {
+  if (doqSaving || doh3Saving || !currentConfig) return;
+  const applied = normalizeTransportSettings(currentConfig);
+  const draft = ensureTransportDraft(applied);
+  const port = Number(draft.doq_port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    transportInlineError = 'DoQ port must be between 1 and 65535.';
+    renderTransportSettings();
+    return;
+  }
+  if (draft.doq_auth === 'sni-token') {
+    if (!draft.doq_token_domain) {
+      transportInlineError = 'Token domain is required for SNI-token mode.';
+      renderTransportSettings();
+      return;
     }
-    showToast('Could not save the transport settings.', 'error');
-  } finally {
-    if (btn) btn.disabled = false;
+    if (!draft.doq_tokens.length) {
+      transportInlineError = 'Add at least one token for SNI-token mode.';
+      renderTransportSettings();
+      return;
+    }
+  }
+
+  doqSaving = true;
+  transportInlineError = '';
+  renderTransportSettings();
+  try {
+    const res = await fetch(api('/api/settings/transports'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({
+        doq_enabled: !!draft.doq_enabled,
+        doq_port: port,
+        doq_auth: draft.doq_auth,
+        doq_token_domain: draft.doq_token_domain,
+        doq_tokens: draft.doq_tokens,
+      })
+    });
+    if (!res.ok) {
+      transportInlineError = await errorMessage(res, 'Could not save the DoQ settings.');
+      draft.doq_enabled = applied.doq_enabled;
+      doqSaving = false;
+      renderTransportSettings();
+      showToast(transportInlineError, 'error');
+      return;
+    }
+    currentConfig.transports = normalizeTransportSettings({ transports: await res.json() });
+    transportDraft = null;
+    doqSaving = false;
+    renderTransportSettings();
+    showToast('DoQ settings saved', 'success');
+  } catch (e) {
+    transportInlineError = 'Could not save the DoQ settings.';
+    draft.doq_enabled = applied.doq_enabled;
+    doqSaving = false;
+    renderTransportSettings();
+    showToast(transportInlineError, 'error');
   }
 }
 
@@ -9731,39 +9887,33 @@ function initEventListeners() {
     }
   });
 
-  // Client-facing QUIC transport card. The switches and token edits are staged
-  // in currentConfig.transports and committed by one Save request.
-  document.getElementById('save-transports-btn')?.addEventListener('click', saveTransportSettings);
+  // Client-facing QUIC transport card. DoH3 applies immediately; DoQ is staged
+  // in transportDraft and committed by Save DoQ because its fields must be valid
+  // together.
+  document.getElementById('save-doq-btn')?.addEventListener('click', saveDoq);
   document.getElementById('doh3-enabled-input')?.addEventListener('change', (e) => {
-    const t = normalizeTransportSettings(currentConfig);
-    t.doh3_enabled = !!e.target.checked;
-    updateTransportBadge(t);
-    markTransportsDirty();
+    saveDoh3(!!e.target.checked);
   });
   document.getElementById('doq-enabled-input')?.addEventListener('change', (e) => {
-    const t = normalizeTransportSettings(currentConfig);
-    t.doq_enabled = !!e.target.checked;
-    updateTransportBadge(t);
-    markTransportsDirty();
+    const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
+    draft.doq_enabled = !!e.target.checked;
+    renderTransportSettings();
   });
   document.getElementById('doq-auth-select')?.addEventListener('change', (e) => {
-    const t = normalizeTransportSettings(currentConfig);
-    t.doq_auth = e.target.value === 'sni-token' ? 'sni-token' : 'ip';
+    const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
+    draft.doq_auth = e.target.value === 'sni-token' ? 'sni-token' : 'ip';
     renderTransportSettings();
-    markTransportsDirty();
   });
   document.getElementById('doq-token-domain-input')?.addEventListener('change', (e) => {
-    const t = normalizeTransportSettings(currentConfig);
-    t.doq_token_domain = (e.target.value || '').trim().toLowerCase();
-    renderTransportEndpoints(t);
-    markTransportsDirty();
+    const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
+    draft.doq_token_domain = (e.target.value || '').trim().toLowerCase();
+    renderTransportSettings();
   });
   document.getElementById('doq-port-input')?.addEventListener('change', (e) => {
-    const t = normalizeTransportSettings(currentConfig);
+    const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
     const n = Number(e.target.value);
-    t.doq_port = Number.isFinite(n) && n > 0 ? n : 853;
-    renderTransportEndpoints(t);
-    markTransportsDirty();
+    draft.doq_port = Number.isFinite(n) && n > 0 ? n : 853;
+    renderTransportSettings();
   });
   document.getElementById('add-doq-token-btn')?.addEventListener('click', () => {
     const input = document.getElementById('new-doq-token-input');
@@ -9773,15 +9923,14 @@ function initEventListeners() {
       showToast('A DoQ token must be a single DNS label (letters, digits, hyphens).', 'error');
       return;
     }
-    const t = normalizeTransportSettings(currentConfig);
-    if (t.doq_tokens.includes(val)) {
+    const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
+    if (draft.doq_tokens.includes(val)) {
       showToast(`${val} is already listed`, 'info');
       return;
     }
-    t.doq_tokens.push(val);
+    draft.doq_tokens.push(val);
     if (input) input.value = '';
-    renderDoQTokens(t);
-    markTransportsDirty();
+    renderTransportSettings();
   });
 
   // Add Custom Record
@@ -9886,10 +10035,9 @@ function initEventListeners() {
     } else if (btn.classList.contains('remove-doq-token')) {
       const val = btn.dataset.val;
       if (currentConfig) {
-        const t = normalizeTransportSettings(currentConfig);
-        t.doq_tokens = t.doq_tokens.filter(x => x !== val);
-        renderDoQTokens(t);
-        markTransportsDirty();
+        const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
+        draft.doq_tokens = draft.doq_tokens.filter(x => x !== val);
+        renderTransportSettings();
       }
     } else if (btn.classList.contains('remove-record')) {
       const dom = btn.dataset.dom;
@@ -10374,6 +10522,8 @@ async function loadClients() {
 
     clientsDataCache = await res.json();
     renderClientsView(clientsDataCache);
+    // Client IP bindings feed the DoQ IP allowlist counts shown in Settings.
+    refreshTransportView();
   } catch (e) {
     console.error('Failed to load clients:', e);
     clientsPanelMessage('wifi-off', 'Could not reach the server',
@@ -10964,6 +11114,7 @@ function initClientEventListeners() {
       if (res.ok) {
         showToast('Resolver allowlist saved', 'success');
         loadAccessAllowlist();
+        refreshTransportView();
       } else {
         showToast(await errorMessage(res, 'Could not save the resolver allowlist'), 'error');
       }

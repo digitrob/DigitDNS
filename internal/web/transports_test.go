@@ -116,14 +116,26 @@ func TestTransportSettingsApplier(t *testing.T) {
 	ws.SetTransportApplier(func(database.DNSSettings, []string) error {
 		return errors.New("bind failed")
 	})
-	w = postTransportSettings(t, ws, `{"doq_enabled":true,"doq_port":8853}`)
+	w = postTransportSettings(t, ws, `{"doq_port":9853,"doh3_enabled":false}`)
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("bind failure = %d, want 500: %s", w.Code, w.Body.String())
 	}
-	// The desired state is persisted even when the listener cannot start.
+	// A failed apply must not leave the saved switches ahead of the listeners.
 	got := getTransportSettings(t, ws)
-	if !got.DoQEnabled || got.DoQPort != 8853 {
-		t.Errorf("state after bind failure = %#v", got)
+	if !got.DoQEnabled || got.DoQPort != 8853 || !got.DoH3Enabled {
+		t.Errorf("state after bind failure = %#v, want the previous applied state", got)
+	}
+	if !strings.Contains(got.LastError, "bind failed") {
+		t.Errorf("last_error = %q", got.LastError)
+	}
+
+	ws.SetTransportApplier(func(database.DNSSettings, []string) error { return nil })
+	w = postTransportSettings(t, ws, `{"doh3_enabled":true}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("recovery POST = %d: %s", w.Code, w.Body.String())
+	}
+	if got := getTransportSettings(t, ws); got.LastError != "" {
+		t.Errorf("last_error was not cleared: %q", got.LastError)
 	}
 }
 
@@ -143,6 +155,73 @@ func TestTransportSettingsValidation(t *testing.T) {
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("body %s = %d, want 400: %s", body, w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestTransportViewSurfacesListenerFailure(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	ws.SetTransportStatusSource(func() (bool, bool, string) {
+		return false, true, "DoH3 listener stopped: boom"
+	})
+	got := getTransportSettings(t, ws)
+	if got.LastError != "DoH3 listener stopped: boom" {
+		t.Errorf("last_error = %q, want the listener failure", got.LastError)
+	}
+	if !got.DoQListening || got.DoH3Listening {
+		t.Errorf("listener state = doh3 %v doq %v", got.DoH3Listening, got.DoQListening)
+	}
+
+	// A save failure is more specific and must win over a stale listener error.
+	ws.setTransportLastError("apply failed: bind refused")
+	if got := getTransportSettings(t, ws); got.LastError != "apply failed: bind refused" {
+		t.Errorf("last_error = %q, want the save failure", got.LastError)
+	}
+}
+
+func TestTransportViewExplainsIPAllowlistSources(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	// The harness starts in Public Mode, which is exactly the state the card
+	// must warn about.
+	got := getTransportSettings(t, ws)
+	if !got.IPAllowlist.AllowAll {
+		t.Fatalf("initial allow_all = %v, want public mode", got.IPAllowlist.AllowAll)
+	}
+
+	home, err := ws.clients.CreateClient("Home", 30, "203.0.113.10")
+	if err != nil {
+		t.Fatalf("create home client: %v", err)
+	}
+	office, err := ws.clients.CreateClient("Office", 30, "198.51.100.0/24")
+	if err != nil {
+		t.Fatalf("create office client: %v", err)
+	}
+	if _, err := ws.clients.SetClientAllowedIPs(office.ID, []string{"198.51.100.0/24", "198.51.100.7"}); err != nil {
+		t.Fatalf("set office IPs: %v", err)
+	}
+	if _, err := ws.clients.SetResolverAllowCIDRs([]string{"192.0.2.0/24"}); err != nil {
+		t.Fatalf("set resolver allowlist: %v", err)
+	}
+	if err := ws.clients.SetAllowAll(false); err != nil {
+		t.Fatalf("enable whitelist mode: %v", err)
+	}
+
+	got = getTransportSettings(t, ws)
+	al := got.IPAllowlist
+	if al.AllowAll {
+		t.Error("allow_all was not cleared")
+	}
+	if al.ClientAccounts != 2 {
+		t.Errorf("client accounts = %d, want 2 (home %s, office %s)", al.ClientAccounts, home.ID, office.ID)
+	}
+	if al.ClientEntries != 3 {
+		t.Errorf("client entries = %d, want 3 (home exact + office CIDR and exact)", al.ClientEntries)
+	}
+	if al.ResolverEntries != 1 {
+		t.Errorf("resolver entries = %d, want 1", al.ResolverEntries)
 	}
 }
 

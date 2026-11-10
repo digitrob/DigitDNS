@@ -526,6 +526,27 @@ func (s *ClientService) ResolverAllowCIDRs() []string {
 	return slices.Clone(s.allowCIDRStrings)
 }
 
+// AllowlistStats counts what the IP gate can currently match. accounts is the
+// number of enabled, unexpired clients with at least one binding; entries is
+// their exact-IP plus CIDR bindings (exact duplicates collapse, as they do in
+// the resolver index); resolverEntries is the server-wide allowlist. allowAll
+// is the live access mode, which decides whether any of that is consulted.
+//
+// The transport card uses this to explain where DoQ's IP authentication comes
+// from and to warn when public mode has made the lists irrelevant.
+func (s *ClientService) AllowlistStats() (accounts, entries, resolverEntries int, allowAll bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	seen := make(map[*database.Client]struct{}, len(s.ipMap))
+	for _, client := range s.ipMap {
+		seen[client] = struct{}{}
+	}
+	for _, entry := range s.cidrClients {
+		seen[entry.client] = struct{}{}
+	}
+	return len(seen), len(s.ipMap) + len(s.cidrClients), len(s.allowCIDRs), s.allowAll
+}
+
 func (s *ClientService) IsAllowAll() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

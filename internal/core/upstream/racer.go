@@ -862,6 +862,78 @@ func (p *UpstreamPool) Exchange(req *dns.Msg) (*dns.Msg, time.Duration, string, 
 	return p.ExchangeFor(req, "")
 }
 
+// Health monitoring. The startup benchmark gives every upstream a latency and a
+// one-off probe verdict; without a slow repeat the dashboard's probe column goes
+// stale and a resolver that quietly starts failing is only visible in the logs
+// of the queries that happened to pick it. These constants keep the repeat cheap
+// (one probe per upstream every five minutes) and make "degraded" mean either an
+// open breaker, a failed latest probe, or a recent live error rate that is too
+// high to be ordinary noise.
+const (
+	upstreamHealthInterval   = 5 * time.Minute
+	upstreamHealthMinSamples = 20
+	upstreamHealthErrorRate  = 0.10
+)
+
+// RunHealthMonitor re-probes every upstream on a slow timer and logs one warning
+// per degraded upstream plus one recovery line. It returns a stop function; the
+// daemon defers it so the goroutine cannot outlive the pool.
+func (p *UpstreamPool) RunHealthMonitor(interval time.Duration) (stop func()) {
+	if interval <= 0 {
+		interval = upstreamHealthInterval
+	}
+	done := make(chan struct{})
+	var once sync.Once
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		alerted := make(map[string]bool)
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				p.BenchmarkAll()
+				p.reportUpstreamHealth(alerted)
+			}
+		}
+	}()
+	return func() { once.Do(func() { close(done) }) }
+}
+
+// reportUpstreamHealth logs state transitions, not every tick: an operator gets
+// one line when an upstream starts failing and one when it recovers. alerted is
+// owned by the monitor goroutine.
+func (p *UpstreamPool) reportUpstreamHealth(alerted map[string]bool) {
+	for _, s := range p.GetUpstreamStats() {
+		reason, degraded := upstreamHealthIssue(s)
+		switch {
+		case degraded && !alerted[s.Address]:
+			alerted[s.Address] = true
+			log.Printf("[Upstream] Health warning: %s — %s (last error: %s)", s.Address, reason, s.LastError)
+		case !degraded && alerted[s.Address]:
+			delete(alerted, s.Address)
+			log.Printf("[Upstream] Health recovered: %s (p50 %.1fms)", s.Address, s.LatencyP50Ms)
+		}
+	}
+}
+
+// upstreamHealthIssue is the single definition of "degraded" used by the monitor
+// and its tests. A probe that has never run is not a verdict, so an empty
+// LastProbeAt cannot mark a fresh upstream unhealthy.
+func upstreamHealthIssue(s UpstreamStat) (string, bool) {
+	switch {
+	case s.CircuitOpen:
+		return "circuit open", true
+	case s.LastProbeAt != "" && !s.LastProbeOK:
+		return "latest probe failed", true
+	case s.RecentSamples >= upstreamHealthMinSamples && s.RecentErrorRate >= upstreamHealthErrorRate:
+		return fmt.Sprintf("recent error rate %.0f%% over %d queries", s.RecentErrorRate*100, s.RecentSamples), true
+	default:
+		return "", false
+	}
+}
+
 // ExchangeFor resolves req under the profile configured for domain (empty means
 // no domain — the global policy only). It is the only entry point the DNS handler
 // uses; Exchange stays as the profile-less form for benchmark and test callers.

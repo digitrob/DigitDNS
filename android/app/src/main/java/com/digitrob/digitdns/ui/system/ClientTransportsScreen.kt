@@ -41,9 +41,9 @@ import com.digitrob.digitdns.ui.theme.PanelMono
 
 /**
  * Client-facing DoH3/DoQ settings, the phone counterpart of the web's
- * Client Encrypted Transports card. The switches are staged and saved together;
- * DoQ's port, auth mode and SNI-token list are included because a token-mode
- * install cannot start without them.
+ * Client Encrypted Transports card. DoH3 applies as soon as its switch moves;
+ * DoQ's port, auth mode and SNI-token list are staged and committed together by
+ * Save DoQ.
  */
 @Composable
 fun ClientTransportsScreen(viewModel: ClientTransportsViewModel = hiltViewModel()) {
@@ -81,28 +81,6 @@ fun ClientTransportsScreen(viewModel: ClientTransportsViewModel = hiltViewModel(
                     state.error?.let {
                         Text(it, color = DigitDnsTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
                     }
-
-                    Button(
-                        onClick = viewModel::save,
-                        enabled = !state.isSaving,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        if (state.isSaving) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.padding(end = 8.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                            )
-                        }
-                        Text(stringResource(R.string.transports_save))
-                    }
-                    if (state.saved) {
-                        Text(
-                            stringResource(R.string.transports_saved),
-                            color = MaterialTheme.colorScheme.primary,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
                 }
             }
         }
@@ -122,11 +100,15 @@ private fun Doh3Card(state: ClientTransportsUiState, viewModel: ClientTransports
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Switch(checked = state.doh3Enabled, onCheckedChange = viewModel::setDoh3Enabled)
+                Switch(
+                    checked = state.doh3Enabled,
+                    onCheckedChange = viewModel::setDoh3Enabled,
+                    enabled = !state.doh3Saving && !state.doqSaving,
+                )
             }
-            TransportStatus(state.doh3Enabled, state.doh3Listening)
+            TransportStatus(state.appliedDoh3Enabled, state.doh3Listening, state.doh3Saving, false)
             Text(
-                stringResource(R.string.transports_doh3_port),
+                stringResource(R.string.transports_doh3_port, state.doh3Port),
                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -140,15 +122,47 @@ private fun DoqCard(state: ClientTransportsUiState, viewModel: ClientTransportsV
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             DoqHeader(state, viewModel)
             DoqPortAndAuth(state, viewModel)
+            DoqIpAllowlistNote(state)
             if (state.doqAuth == "sni-token") {
                 DoqTokenEditor(state, viewModel)
             }
-            TransportStatus(state.doqEnabled, state.doqListening)
-            Text(
-                stringResource(R.string.transports_firewall),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            TransportStatus(state.appliedDoqEnabled, state.doqListening, state.doqSaving, state.doqDirty)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.transports_firewall),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (state.doqSaving || state.doqDirty) {
+                        Text(
+                            text = when {
+                                state.doqSaving -> stringResource(R.string.transports_status_saving)
+                                else -> stringResource(R.string.transports_status_unsaved)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (state.doqDirty) DigitDnsTheme.colors.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = viewModel::saveDoq,
+                    enabled = !state.doqSaving && !state.doh3Saving,
+                ) {
+                    if (state.doqSaving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(end = 8.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    }
+                    Text(stringResource(R.string.transports_save_doq))
+                }
+            }
         }
     }
 }
@@ -164,7 +178,11 @@ private fun DoqHeader(state: ClientTransportsUiState, viewModel: ClientTransport
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Switch(checked = state.doqEnabled, onCheckedChange = viewModel::setDoqEnabled)
+        Switch(
+            checked = state.doqEnabled,
+            onCheckedChange = viewModel::setDoqEnabled,
+            enabled = !state.doqSaving && !state.doh3Saving,
+        )
     }
 }
 
@@ -190,6 +208,39 @@ private fun DoqPortAndAuth(state: ClientTransportsUiState, viewModel: ClientTran
             onClick = { viewModel.setDoqAuth("sni-token") },
             label = { Text(stringResource(R.string.transports_auth_token)) },
         )
+    }
+}
+
+@Composable
+private fun DoqIpAllowlistNote(state: ClientTransportsUiState) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            stringResource(R.string.transports_doq_ip_sources),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            stringResource(
+                R.string.transports_doq_ip_counts,
+                state.allowlistClientAccounts,
+                state.allowlistClientEntries,
+                state.allowlistResolverEntries,
+            ),
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        when {
+            state.allowAll -> Text(
+                stringResource(R.string.transports_doq_ip_public_warning),
+                style = MaterialTheme.typography.bodySmall,
+                color = DigitDnsTheme.colors.warning,
+            )
+            state.allowlistClientEntries == 0 && state.allowlistResolverEntries == 0 -> Text(
+                stringResource(R.string.transports_doq_ip_empty_warning),
+                style = MaterialTheme.typography.bodySmall,
+                color = DigitDnsTheme.colors.warning,
+            )
+        }
     }
 }
 
@@ -245,13 +296,17 @@ private fun DoqTokenEditor(state: ClientTransportsUiState, viewModel: ClientTran
 }
 
 @Composable
-private fun TransportStatus(enabled: Boolean, listening: Boolean) {
+private fun TransportStatus(enabled: Boolean, listening: Boolean, saving: Boolean, dirty: Boolean) {
     val text = when {
+        saving -> stringResource(R.string.transports_status_saving)
+        dirty -> stringResource(R.string.transports_status_unsaved)
         listening -> stringResource(R.string.transports_status_listening)
         enabled -> stringResource(R.string.transports_status_pending)
         else -> stringResource(R.string.transports_status_off)
     }
     val color: Color = when {
+        saving -> DigitDnsTheme.colors.textMuted
+        dirty -> DigitDnsTheme.colors.warning
         listening -> DigitDnsTheme.colors.success
         enabled -> DigitDnsTheme.colors.warning
         else -> DigitDnsTheme.colors.textMuted

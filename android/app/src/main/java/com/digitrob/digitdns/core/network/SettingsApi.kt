@@ -58,7 +58,10 @@ interface SettingsApi {
     suspend fun getTransports(): TransportSettingsDto
 
     @POST("settings/transports")
-    suspend fun saveTransports(@Body body: TransportSettingsSave): TransportSettingsDto
+    suspend fun saveDoh3(@Body body: Doh3SettingsSave): TransportSettingsDto
+
+    @POST("settings/transports")
+    suspend fun saveDoq(@Body body: DoqSettingsSave): TransportSettingsDto
 }
 
 /**
@@ -114,15 +117,35 @@ data class TransportSettingsDto(
     @SerialName("doq_auth") val doqAuth: String = "ip",
     @SerialName("doq_token_domain") val doqTokenDomain: String = "",
     @SerialName("doh3_enabled") val doh3Enabled: Boolean = false,
+    @SerialName("doh3_port") val doh3Port: Int = 8443,
     @SerialName("doq_tokens") val doqTokens: List<String> = emptyList(),
     @SerialName("doh3_listening") val doh3Listening: Boolean = false,
     @SerialName("doq_listening") val doqListening: Boolean = false,
+    @SerialName("ip_allowlist") val ipAllowlist: TransportIpAllowlistDto = TransportIpAllowlistDto(),
+    @SerialName("last_error") val lastError: String = "",
+)
+
+/**
+ * Where DoQ's IP-auth mode gets its sources. Both lists are shared with the
+ * resolver: per-client bindings and the server-wide resolver allowlist.
+ * `allowAll` (Public Mode) means neither list is consulted.
+ */
+@Serializable
+data class TransportIpAllowlistDto(
+    @SerialName("allow_all") val allowAll: Boolean = false,
+    @SerialName("client_accounts") val clientAccounts: Int = 0,
+    @SerialName("client_entries") val clientEntries: Int = 0,
+    @SerialName("resolver_entries") val resolverEntries: Int = 0,
 )
 
 @Serializable
-data class TransportSettingsSave(
-    @SerialName("doq_enabled") val doqEnabled: Boolean,
+data class Doh3SettingsSave(
     @SerialName("doh3_enabled") val doh3Enabled: Boolean,
+)
+
+@Serializable
+data class DoqSettingsSave(
+    @SerialName("doq_enabled") val doqEnabled: Boolean,
     @SerialName("doq_port") val doqPort: Int,
     @SerialName("doq_auth") val doqAuth: String,
     @SerialName("doq_token_domain") val doqTokenDomain: String,

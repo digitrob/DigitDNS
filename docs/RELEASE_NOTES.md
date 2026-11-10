@@ -1,40 +1,63 @@
-# DigitDNS v5.4.0 — client-facing DoH3 and DoQ
+# DigitDNS v5.4.1 — transport hardening and allowlist clarity
 
-**HTTP/3 and DNS-over-QUIC endpoints for clients, both opt-in.**
+**A patch release for the 5.4 line: safer live transport changes, QUIC limits,
+and a DoQ access screen that explains itself.**
 
-DigitDNS has always spoken DoQ and DoH3 upstream. This release turns the same
-transports around: clients can now reach this resolver over **DoH3** and
-**DoQ**, alongside the existing UDP/TCP, DoT and DoH listeners. Both are off by
-default and use the DoH/DoT certificate, so an existing install behaves exactly
-as before until an operator enables them.
+v5.4.1 keeps the feature set of 5.4.0 and hardens the parts that were easiest to
+misread: applying a transport change, seeing whether its listener is really up,
+and understanding which IPs the DoQ “IP allowlist” mode accepts.
 
-## What is new
+## Live transport changes
 
-- **DoH3 on UDP 8443.** The same `https://host:8443/dns-query` URL as DoH,
-  negotiated over QUIC. TCP DoH advertises it with `Alt-Svc`, so browsers and
-  clients that support HTTP/3 upgrade automatically; everyone else stays on
-  TCP DoH.
-- **DoQ on UDP 853.** RFC 9250 framing (two-octet length prefix, transaction ID
-  0, one query per stream), with a 1,024-connection cap, 128 streams per
-  connection, a 60-second idle timeout and no 0-RTT.
-- **DoQ authentication.** Use the existing client IP allowlist, or issue
-  SNI-label tokens and connect with
-  `quic://<token>.doq.example.com:853`. Token mode is standard-client
-  compatible; it requires a certificate covering the token hostnames.
-- **A real Settings card.** **Client Encrypted Transports** sits directly under
-  the SSL/TLS Manager. It has DoH3 and DoQ switches, visible listener state,
-  copyable endpoints, DoQ port/auth/token controls and one Save action. A bind
-  failure is reported instead of being shown as a running endpoint.
-- **Web and Android parity.** The Connect Guide and subscriber portal list the
-  new endpoints. Android gains a **Settings → Transports** screen with the same
-  switches, port, auth mode and token list; its Connect and Guide screens show
-  DoH3/DoQ when enabled.
-- **Metrics.** `digitdns_doh3_requests_total`,
-  `digitdns_doq_queries_total` and `digitdns_doq_auth_failures_total` join the
-  existing resolver and relay metrics.
-- **Clearer SNI proxy cards.** Actionable refusals and unreadable scanner
-  traffic are reported separately on web and Android, so a public 443 under
-  scanning no longer looks like a failing relay.
+- **DoH3 applies immediately** when its switch moves. **DoQ keeps Save DoQ**
+  because its port, auth mode, token domain and token list must be valid
+  together.
+- The server now **applies before it persists**. A bind or certificate failure
+  rolls the listeners back to the previous state, so the saved switch can never
+  get ahead of what is actually serving.
+- The card keeps the failure reason in `last_error` after the toast is gone,
+  including a listener that dies later.
+- DoH3 reports **listening only after the HTTP/3 serve loop has started**, and a
+  failed start is shown as “enabled — not listening”, not as a healthy endpoint.
+
+## QUIC hardening
+
+- **Per-source handshake rate limiting** runs before TLS: 60 burst and 2 new
+  handshakes per second per IP for both DoH3 and DoQ, with a bounded source map.
+- DoH3 gains a **1,024 live-connection cap** (matching DoQ) and capped HTTP/3
+  and DoQ flow-control windows.
+- New Prometheus series:
+  - `digitdns_doh3_connections`, `digitdns_doh3_connections_total`
+  - `digitdns_doq_connections`, `digitdns_doq_connections_total`
+  - `digitdns_doq_protocol_errors_total`
+  - `digitdns_quic_handshake_rejected_total{transport="doh3"|"doq"}`
+
+## DoQ access control is explicit
+
+- The DoQ card now says where IP auth gets its addresses: **Clients →
+  Allowed IPs** and **Settings → Access → Server-wide Resolver Allowlist**.
+- It shows live counts for client accounts, client IP/CIDR entries and resolver
+  ranges.
+- It warns when **Public Mode (`allow_all`)** makes the allowlist irrelevant,
+  and when whitelist mode has no entries and DoQ will refuse every source.
+- Android Transports has the same explanation, counts and warnings.
+
+## Resolver health
+
+- A background health check re-probes every upstream every **five minutes** and
+  logs one warning when an upstream is degraded plus one recovery line.
+- Degraded means an open circuit, a failed latest probe, or a recent live error
+  rate of **10% or more over at least 20 queries**.
+- Fallback behaviour is unchanged: a failed fastest upstream still hands the
+  query to the next eligible one.
+
+## Android
+
+- DoH3 auto-save and staged **Save DoQ**, with applied-versus-staged state and
+  server errors shown on the screen.
+- The Save DoQ button now sits beside the firewall note, removing a row from the
+  DoQ card.
+- Version **5.4.1 (538)**.
 
 ## Upgrade
 
@@ -48,39 +71,28 @@ docker compose up -d
 Pinned versions:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.4.0
-docker pull ghcr.io/digitrob/digitdns-agent:5.4.0
-docker pull robmeister/digitdns:5.4.0
-docker pull robmeister/digitdns-agent:5.4.0
+docker pull ghcr.io/digitrob/digitdns:5.4.1
+docker pull ghcr.io/digitrob/digitdns-agent:5.4.1
+docker pull robmeister/digitdns:5.4.1
+docker pull robmeister/digitdns-agent:5.4.1
 ```
 
 systemd:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.1/scripts/install.sh | sudo bash
 ```
 
-## Enabling the new transports
-
-1. Make sure the DoH/DoT certificate is valid for the hostname clients use.
-2. Open **UDP 853** and **UDP 8443** in the firewall.
-3. Open **Settings → Client Encrypted Transports**, enable DoH3 and/or DoQ,
-   choose the DoQ authentication mode, then **Save Transports**.
-
-For DoQ SNI-token mode, supply a certificate covering
-`*.doq.example.com` (or each token hostname). The built-in ACME client uses
-HTTP-01 and cannot issue wildcards; issue that certificate separately.
-
-Android Private DNS remains **DoT**. DoQ is for clients and routers that
-support RFC 9250.
+No database migration is required. Existing DoH3/DoQ settings and DoQ tokens
+are preserved.
 
 ## Assets
 
 - `digitdns-linux-amd64`, `digitdns-linux-arm64`
 - `digitdns-agent-linux-amd64`, `digitdns-agent-linux-arm64`
-- `digitdns-agent-5.4.0-linux-arm64-image.tar.gz` and `.sha256`
+- `digitdns-agent-5.4.1-linux-arm64-image.tar.gz` and `.sha256`
 - `digitdns-offline-bundle.tar.gz`, `digitdns-offline-bundle.zip`
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-The Android APKs are attached to this release from the `android-v5.4.0` tag.
+The Android APKs are attached to this release from the `android-v5.4.1` tag.

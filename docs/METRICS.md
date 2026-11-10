@@ -62,8 +62,14 @@ scrape_configs:
 | `digitdns_relays_flood_total` | counter | Relay connection attempts from a source already in the malformed-probe penalty box. |
 | `digitdns_relays_unreadable_total` | counter | Connections whose opening bytes named no destination. |
 | `digitdns_doh3_requests_total` | counter | HTTP/3 DoH requests served since start. |
+| `digitdns_doh3_connections` | gauge | HTTP/3 DoH connections currently open. |
+| `digitdns_doh3_connections_total` | counter | HTTP/3 DoH connections accepted since start. |
 | `digitdns_doq_queries_total` | counter | DNS-over-QUIC queries served since start. |
+| `digitdns_doq_connections` | gauge | DNS-over-QUIC connections currently open. |
+| `digitdns_doq_connections_total` | counter | DNS-over-QUIC connections accepted since start. |
 | `digitdns_doq_auth_failures_total` | counter | DoQ connections rejected by SNI-token authentication. |
+| `digitdns_doq_protocol_errors_total` | counter | DoQ streams closed for a protocol violation (bad length, query framing or nonzero transaction ID). |
+| `digitdns_quic_handshake_rejected_total` | counter | New QUIC connections refused before the handshake, by `transport` (`doh3`/`doq`). Covers the per-source rate limit and the 1,024-connection cap. |
 | `digitdns_cpu_percent` | gauge | Process CPU usage. |
 | `digitdns_system_cpu_percent` | gauge | Machine-wide CPU usage. |
 | `digitdns_memory_alloc_bytes` | gauge | Allocated heap bytes. |
@@ -106,6 +112,18 @@ increase(digitdns_agent_catalogue_builds_total[10m])
 
 # Agents currently online
 digitdns_agents_online
+
+# QUIC connections in use, by transport (DoH3 multiplexes requests, so this is
+# usually small even under load)
+digitdns_doh3_connections
+digitdns_doq_connections
+
+# Handshake refusals: should be zero in steady state. A sustained non-zero rate
+# means a source is exhausting its per-IP budget or the connection cap is hit.
+sum by (transport) (rate(digitdns_quic_handshake_rejected_total[5m]))
+
+# DoQ streams closed for malformed framing — scanners, not subscribers.
+rate(digitdns_doq_protocol_errors_total[5m])
 ```
 
 A restart with the same build and unchanged config should produce **304s and no

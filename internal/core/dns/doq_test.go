@@ -113,11 +113,25 @@ func TestApplyTransportsStartsAndStopsDoQ(t *testing.T) {
 		t.Errorf("answer = %#v", resp.Answer[0])
 	}
 
+	if _, doq, listenerErr := s.TransportStatus(); !doq || listenerErr != "" {
+		t.Fatalf("TransportStatus after start = (%v, %q), want Ready", doq, listenerErr)
+	}
+	m := s.TransportMetrics()
+	if m.DoQQueries == 0 || m.DoQConnectionsTotal == 0 {
+		t.Errorf("DoQ metrics after a query = %#v, want a query and a connection", m)
+	}
+	if m.DoQConnections < 1 {
+		t.Errorf("DoQ connections gauge = %d, want the live client connection", m.DoQConnections)
+	}
+
 	if err := s.ApplyTransports(TransportConfig{DoQPort: port}); err != nil {
 		t.Fatalf("stop DoQ: %v", err)
 	}
 	if s.doqListener != nil {
 		t.Error("DoQ listener still present after disable")
+	}
+	if _, doq, listenerErr := s.TransportStatus(); doq || listenerErr != "" {
+		t.Fatalf("TransportStatus after stop = (%v, %q), want Off and no error", doq, listenerErr)
 	}
 }
 

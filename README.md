@@ -41,6 +41,33 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.4.1
+
+**Safer transport changes, QUIC limits, and a DoQ access screen that explains
+itself.** This is a patch on the 5.4 line; the DoH3/DoQ feature set is
+unchanged.
+
+- **DoH3 applies immediately**; **DoQ is staged behind Save DoQ** because its
+  port, auth mode, token domain and token list must be valid together.
+- Transport changes are **applied before they are persisted**. A failed bind
+  rolls the listeners back, so the saved switch can never be ahead of what is
+  actually serving. The failure reason stays on the card in `last_error`.
+- DoH3 reports **listening only after the HTTP/3 serve loop starts**, and a
+  listener that dies later is reported instead of looking healthy.
+- **QUIC hardening:** per-source handshake rate limiting before TLS, a
+  1,024-connection DoH3 cap, bounded receive windows, and new connection,
+  protocol-error and handshake-rejection metrics.
+- **DoQ IP auth is explicit:** the card names **Clients → Allowed IPs** and
+  **Settings → Access → Server-wide Resolver Allowlist**, shows live counts,
+  warns when Public Mode makes the list irrelevant, and warns when whitelist
+  mode has no entries. Android has the same screen.
+- **Upstream health check:** every five minutes the resolver re-probes each
+  upstream and logs a warning when one is degraded, plus a recovery line.
+- **Android:** DoH3 auto-save, staged Save DoQ, applied-versus-staged state,
+  server error display, and the Save DoQ button shares the firewall row.
+
+No database migration is required.
+
 ## What's new in 5.4.0
 
 **Client-facing DoH3 and DoQ.** DigitDNS can now serve encrypted DNS to
@@ -416,7 +443,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.1/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -475,7 +502,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.1/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -558,7 +585,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.4.0` | Client-facing DoH3 and DoQ (opt-in), web/Android transport controls, SNI-token auth, QUIC metrics (latest) |
+| `5.4.1` | Transport hardening, QUIC limits/metrics, DoQ allowlist clarity, upstream health check (latest) |
+| `5.4.0` | Client-facing DoH3 and DoQ (opt-in), web/Android transport controls, SNI-token auth, QUIC metrics (older) |
 | `5.3.3` | Accurate SNI proxy drop counters; scanner flood attempts excluded from web and Android headlines (older) |
 | `5.3.2` | Balanced Settings cards; Server Location fills the left column and Subscription Portal pairs with the SSL/TLS Manager on wide panels (older) |
 | `5.3.1` | Compact Server Location and 2FA under it in Settings; works on systemd and Docker (older) |
@@ -618,7 +646,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.4.0/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.4.1/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1076,7 +1104,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.4.0`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.4.1`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

@@ -4,8 +4,9 @@ import com.digitrob.digitdns.core.network.DnssecSettings
 import com.digitrob.digitdns.core.network.DnssecSettingsSave
 import com.digitrob.digitdns.core.network.ProxyLeakSettings
 import com.digitrob.digitdns.core.network.ProxyLeakSettingsSave
+import com.digitrob.digitdns.core.network.Doh3SettingsSave
+import com.digitrob.digitdns.core.network.DoqSettingsSave
 import com.digitrob.digitdns.core.network.TransportSettingsDto
-import com.digitrob.digitdns.core.network.TransportSettingsSave
 import com.digitrob.digitdns.core.network.SettingsApi
 import com.digitrob.digitdns.core.network.SettingsSaveRequest
 import com.digitrob.digitdns.core.network.RegenerateApiKeyRequest
@@ -112,7 +113,11 @@ class SettingsRepository @Inject constructor(
     /** The client-facing DoH3/DoQ policy and its actual listener state. */
     suspend fun loadTransports(): TransportSettingsDto = api.getTransports()
 
-    /** Save the DoH3/DoQ policy; a bind failure is surfaced by the API as an error. */
-    suspend fun saveTransports(request: TransportSettingsSave): TransportSettingsDto =
-        api.saveTransports(request)
+    /** Apply only the DoH3 switch; DoQ settings are left untouched. */
+    suspend fun saveDoh3(enabled: Boolean): TransportSettingsDto =
+        api.saveDoh3(Doh3SettingsSave(doh3Enabled = enabled))
+
+    /** Apply the staged DoQ configuration. */
+    suspend fun saveDoq(request: DoqSettingsSave): TransportSettingsDto =
+        api.saveDoq(request)
 }

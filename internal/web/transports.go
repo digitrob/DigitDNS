@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -19,11 +20,31 @@ type transportSettingsView struct {
 	DoQTokenDomain string   `json:"doq_token_domain"`
 	DoH3Enabled    bool     `json:"doh3_enabled"`
 	DoQTokens      []string `json:"doq_tokens"`
+	DoH3Port       int      `json:"doh3_port"`
 	// Actual listener state. A saved toggle is the desired state; these say
 	// whether the bind succeeded, so a failed start is visible instead of
 	// looking like a running endpoint.
 	DoH3Listening bool `json:"doh3_listening"`
 	DoQListening  bool `json:"doq_listening"`
+	// IPAllowlist explains where DoQ's "IP allowlist" mode gets its sources.
+	// Both lists are shared with the resolver: per-client AllowedIPs and the
+	// server-wide resolver allowlist. AllowAll is the live access mode.
+	IPAllowlist ipAllowlistStatus `json:"ip_allowlist"`
+	// LastError is the persistent reason from the last failed apply. Cleared on
+	// the next successful save so the card can explain a bind/cert failure long
+	// after the toast has gone.
+	LastError string `json:"last_error"`
+}
+
+// ipAllowlistStatus is the read-only description of the IP gate behind DoQ. It
+// carries counts rather than the addresses themselves: the settings card only
+// needs to say where the entries come from and whether the gate is actually
+// restricting access.
+type ipAllowlistStatus struct {
+	AllowAll        bool `json:"allow_all"`
+	ClientAccounts  int  `json:"client_accounts"`
+	ClientEntries   int  `json:"client_entries"`
+	ResolverEntries int  `json:"resolver_entries"`
 }
 
 const defaultDoQPort = 853
@@ -40,21 +61,49 @@ func (ws *WebServer) transportSettingsView() transportSettingsView {
 		DoQAuth:        cfg.DoQAuth,
 		DoQTokenDomain: cfg.DoQTokenDomain,
 		DoH3Enabled:    cfg.DoH3Enabled,
+		DoH3Port:       cfg.DoHPort,
 	}
 	ws.dnsMu.Unlock()
 
 	if view.DoQPort == 0 {
 		view.DoQPort = defaultDoQPort
 	}
+	if view.DoH3Port == 0 {
+		view.DoH3Port = 8443
+	}
 	view.DoQAuth = normalizeDoQAuth(view.DoQAuth)
-	view.DoQTokens = ws.loadAccessConfig().DoQTokens
+	access := ws.loadAccessConfig()
+	view.DoQTokens = access.DoQTokens
 	if view.DoQTokens == nil {
 		view.DoQTokens = []string{}
 	}
+	accounts, entries, resolverEntries, allowAll := ws.clients.AllowlistStats()
+	view.IPAllowlist = ipAllowlistStatus{
+		AllowAll:        allowAll,
+		ClientAccounts:  accounts,
+		ClientEntries:   entries,
+		ResolverEntries: resolverEntries,
+	}
+	var listenerErr string
 	if ws.transportStatus != nil {
-		view.DoH3Listening, view.DoQListening = ws.transportStatus()
+		view.DoH3Listening, view.DoQListening, listenerErr = ws.transportStatus()
+	}
+	ws.transportErrMu.Lock()
+	view.LastError = ws.transportLastError
+	ws.transportErrMu.Unlock()
+	// A save failure is the more specific explanation; otherwise surface the
+	// asynchronous listener failure (a Serve goroutine that died after the save
+	// returned, or a listener that failed at boot).
+	if view.LastError == "" {
+		view.LastError = listenerErr
 	}
 	return view
+}
+
+func (ws *WebServer) setTransportLastError(msg string) {
+	ws.transportErrMu.Lock()
+	ws.transportLastError = msg
+	ws.transportErrMu.Unlock()
 }
 
 func normalizeDoQAuth(raw string) string {
@@ -129,20 +178,26 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// A rapid switch toggle must not interleave two apply/persist transactions.
+	ws.transportSaveMu.Lock()
+	defer ws.transportSaveMu.Unlock()
+
 	ws.dnsMu.Lock()
 	cfg := ws.mutableDNSLocked()
 	before := *cfg
+	ws.dnsMu.Unlock()
 
-	auth := normalizeDoQAuth(cfg.DoQAuth)
+	next := before
+
+	auth := normalizeDoQAuth(before.DoQAuth)
 	if req.DoQAuth != nil {
 		auth = normalizeDoQAuth(*req.DoQAuth)
 		if auth == "" {
-			ws.dnsMu.Unlock()
 			httpx.WriteJSONError(w, http.StatusBadRequest, "doq_auth must be \"ip\" or \"sni-token\"")
 			return
 		}
 	}
-	port := cfg.DoQPort
+	port := before.DoQPort
 	if port == 0 {
 		port = defaultDoQPort
 	}
@@ -152,19 +207,17 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 			port = defaultDoQPort
 		}
 		if port < 1 || port > 65535 {
-			ws.dnsMu.Unlock()
 			httpx.WriteJSONError(w, http.StatusBadRequest, "doq_port must be between 1 and 65535")
 			return
 		}
 	}
 
-	tokenDomain := strings.ToLower(strings.TrimSpace(cfg.DoQTokenDomain))
+	tokenDomain := strings.ToLower(strings.TrimSpace(before.DoQTokenDomain))
 	if req.DoQTokenDomain != nil {
 		tokenDomain = strings.ToLower(strings.TrimSpace(*req.DoQTokenDomain))
 		if tokenDomain != "" {
 			normalized, err := validACMEDomain(tokenDomain)
 			if err != nil {
-				ws.dnsMu.Unlock()
 				httpx.WriteJSONError(w, http.StatusBadRequest, "doq_token_domain: "+err.Error())
 				return
 			}
@@ -173,11 +226,11 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 	}
 
 	access := ws.loadAccessConfig()
-	tokens := access.DoQTokens
+	beforeTokens := access.DoQTokens
+	tokens := beforeTokens
 	if req.DoQTokens != nil {
 		normalized, problem := normalizeDoQTokens(*req.DoQTokens)
 		if problem != "" {
-			ws.dnsMu.Unlock()
 			httpx.WriteJSONError(w, http.StatusBadRequest, problem)
 			return
 		}
@@ -185,50 +238,78 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 	}
 	if auth == "sni-token" {
 		if tokenDomain == "" {
-			ws.dnsMu.Unlock()
 			httpx.WriteJSONError(w, http.StatusBadRequest, "doq_token_domain is required when doq_auth is \"sni-token\"")
 			return
 		}
 		if len(tokens) == 0 {
-			ws.dnsMu.Unlock()
 			httpx.WriteJSONError(w, http.StatusBadRequest, "at least one DoQ token is required when doq_auth is \"sni-token\"")
 			return
 		}
 	}
 
 	if req.DoQEnabled != nil {
-		cfg.DoQEnabled = *req.DoQEnabled
+		next.DoQEnabled = *req.DoQEnabled
 	}
 	if req.DoH3Enabled != nil {
-		cfg.DoH3Enabled = *req.DoH3Enabled
+		next.DoH3Enabled = *req.DoH3Enabled
 	}
-	cfg.DoQPort = port
-	cfg.DoQAuth = auth
-	cfg.DoQTokenDomain = tokenDomain
-	err := ws.db.SetSetting("dns", cfg)
-	if err != nil {
-		*cfg = before
+	next.DoQPort = port
+	next.DoQAuth = auth
+	next.DoQTokenDomain = tokenDomain
+
+	rollback := func(reason string) {
+		ws.setTransportLastError(reason)
+		log.Printf("[Transports] %s", reason)
+		if ws.transportApplier != nil {
+			if err := ws.transportApplier(before, beforeTokens); err != nil {
+				log.Printf("[Transports] rollback failed: %v", err)
+			}
+		}
 	}
-	saved := *cfg
-	ws.dnsMu.Unlock()
-	if err != nil {
-		httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not persist the transport settings")
-		return
+
+	if ws.transportApplier != nil {
+		if err := ws.transportApplier(next, tokens); err != nil {
+			rollback("apply failed: " + err.Error())
+			httpx.WriteJSONError(w, http.StatusInternalServerError, "The transport settings were not applied: "+err.Error())
+			return
+		}
 	}
 
 	if req.DoQTokens != nil {
-		access.DoQTokens = tokens
-		if err := ws.db.SetSetting("access", access); err != nil {
+		nextAccess := access
+		nextAccess.DoQTokens = tokens
+		if err := ws.db.SetSetting("access", nextAccess); err != nil {
+			rollback("could not persist the DoQ tokens: " + err.Error())
 			httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not persist the DoQ tokens")
 			return
 		}
 	}
 
-	if ws.transportApplier != nil {
-		if err := ws.transportApplier(saved, access.DoQTokens); err != nil {
-			httpx.WriteJSONError(w, http.StatusInternalServerError, "The transport settings were saved, but the listener could not start: "+err.Error())
-			return
+	ws.dnsMu.Lock()
+	current := ws.mutableDNSLocked()
+	current.DoQEnabled = next.DoQEnabled
+	current.DoH3Enabled = next.DoH3Enabled
+	current.DoQPort = next.DoQPort
+	current.DoQAuth = next.DoQAuth
+	current.DoQTokenDomain = next.DoQTokenDomain
+	err := ws.db.SetSetting("dns", current)
+	ws.dnsMu.Unlock()
+	if err != nil {
+		ws.dnsMu.Lock()
+		current.DoQEnabled = before.DoQEnabled
+		current.DoH3Enabled = before.DoH3Enabled
+		current.DoQPort = before.DoQPort
+		current.DoQAuth = before.DoQAuth
+		current.DoQTokenDomain = before.DoQTokenDomain
+		ws.dnsMu.Unlock()
+		if req.DoQTokens != nil {
+			_ = ws.db.SetSetting("access", access)
 		}
+		rollback("could not persist the transport settings: " + err.Error())
+		httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not persist the transport settings")
+		return
 	}
+
+	ws.setTransportLastError("")
 	ws.writeTransportSettings(w)
 }

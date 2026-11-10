@@ -39,7 +39,9 @@ func (s *Server) startDoQ() error {
 		return nil
 	}
 	if s.tlsConfig == nil {
-		return errors.New("DoQ requires a TLS certificate")
+		err := errors.New("DoQ requires a TLS certificate")
+		s.setDoQError(err.Error())
+		return err
 	}
 	auth := strings.ToLower(strings.TrimSpace(s.transportCfg.DoQAuth))
 	if auth == "" {
@@ -49,29 +51,55 @@ func (s *Server) startDoQ() error {
 	case "ip":
 	case "sni-token":
 		if strings.TrimSpace(s.transportCfg.DoQTokenDomain) == "" {
-			return errors.New("DoQ SNI-token authentication requires a token domain")
+			err := errors.New("DoQ SNI-token authentication requires a token domain")
+			s.setDoQError(err.Error())
+			return err
 		}
 		if len(s.doqTokenList()) == 0 {
-			return errors.New("DoQ SNI-token authentication requires at least one token")
+			err := errors.New("DoQ SNI-token authentication requires at least one token")
+			s.setDoQError(err.Error())
+			return err
 		}
 	default:
-		return fmt.Errorf("invalid DoQ authentication mode %q", auth)
+		err := fmt.Errorf("invalid DoQ authentication mode %q", auth)
+		s.setDoQError(err.Error())
+		return err
 	}
 
 	doqCfg := s.tlsConfig.Clone()
 	doqCfg.NextProtos = []string{alpnDoQ}
 	applyDOTCertSource(doqCfg, s.dotCertSource)
 
+	limiter := newQUICHandshakeLimiter()
+	quicCfg := &quic.Config{
+		HandshakeIdleTimeout:           5 * time.Second,
+		MaxIdleTimeout:                 doqIdleTimeout,
+		MaxIncomingStreams:             maxDoQStreams,
+		MaxIncomingUniStreams:          0,
+		Allow0RTT:                      false,
+		InitialStreamReceiveWindow:     16 << 10,
+		MaxStreamReceiveWindow:         64 << 10,
+		InitialConnectionReceiveWindow: 64 << 10,
+		MaxConnectionReceiveWindow:     256 << 10,
+	}
+	// DoQ connections are cheap after the handshake but the handshake is not.
+	// Refusing before TLS is what makes a flood cost one lookup instead of a key
+	// exchange, and the client sees a normal QUIC connection refusal.
+	quicCfg.GetConfigForClient = func(info *quic.ClientInfo) (*quic.Config, error) {
+		if limiter.Allow(info.RemoteAddr, time.Now()) {
+			return quicCfg, nil
+		}
+		s.doqHandshakeRejects.Add(1)
+		s.logHandshakeReject("DoQ", info.RemoteAddr)
+		return nil, errQUICHandshakeLimited
+	}
+
 	addr := s.addr(s.doqPort)
-	ln, err := quic.ListenAddr(addr, doqCfg, &quic.Config{
-		HandshakeIdleTimeout:  5 * time.Second,
-		MaxIdleTimeout:        doqIdleTimeout,
-		MaxIncomingStreams:    maxDoQStreams,
-		MaxIncomingUniStreams: 0,
-		Allow0RTT:             false,
-	})
+	ln, err := quic.ListenAddr(addr, doqCfg, quicCfg)
 	if err != nil {
-		return fmt.Errorf("bind DoQ %s: %w", addr, err)
+		err = fmt.Errorf("bind DoQ %s: %w", addr, err)
+		s.setDoQError(err.Error())
+		return err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,6 +109,7 @@ func (s *Server) startDoQ() error {
 	s.doqCancel = cancel
 	s.doqSlots = slots
 	s.doqConns = make(map[*quic.Conn]struct{})
+	s.clearDoQError()
 	go s.serveDoQ(ctx, ln, slots)
 	log.Printf("[DNS] Starting DoQ (DNS-over-QUIC) on udp://%s", addr)
 	return nil
@@ -157,6 +186,7 @@ func (s *Server) stopDoQ() {
 	}
 	s.doqCtx = nil
 	s.doqSlots = nil
+	s.clearDoQError()
 }
 
 func (s *Server) serveDoQ(ctx context.Context, ln *quic.Listener, slots chan struct{}) {
@@ -172,14 +202,21 @@ func (s *Server) serveDoQ(ctx context.Context, ln *quic.Listener, slots chan str
 		select {
 		case slots <- struct{}{}:
 		default:
+			s.doqHandshakeRejects.Add(1)
 			_ = conn.CloseWithError(quic.ApplicationErrorCode(doqExcessiveLoad), "too many connections")
 			continue
 		}
 
 		s.doqMu.Lock()
-		if s.doqConns != nil {
-			s.doqConns[conn] = struct{}{}
+		if s.doqConns == nil {
+			s.doqMu.Unlock()
+			<-slots
+			s.doqHandshakeRejects.Add(1)
+			_ = conn.CloseWithError(quic.ApplicationErrorCode(doqExcessiveLoad), "server stopping")
+			continue
 		}
+		s.doqConns[conn] = struct{}{}
+		s.doqConnsTotal.Add(1)
 		s.doqMu.Unlock()
 
 		go func() {
@@ -223,28 +260,33 @@ func (s *Server) handleDoQStream(conn *quic.Conn, stream *quic.Stream, clientIP 
 
 	var lenBuf [2]byte
 	if _, err := io.ReadFull(stream, lenBuf[:]); err != nil {
+		s.doqProtoErrors.Add(1)
 		closeDoQStream(stream, doqProtocolError)
 		return
 	}
 	size := int(binary.BigEndian.Uint16(lenBuf[:]))
 	if size == 0 || size > doqMaxMessageSize {
+		s.doqProtoErrors.Add(1)
 		closeDoQStream(stream, doqProtocolError)
 		return
 	}
 	body := make([]byte, size)
 	if _, err := io.ReadFull(stream, body); err != nil {
+		s.doqProtoErrors.Add(1)
 		closeDoQStream(stream, doqProtocolError)
 		return
 	}
 
 	var query dns.Msg
 	if err := query.Unpack(body); err != nil {
+		s.doqProtoErrors.Add(1)
 		closeDoQStream(stream, doqProtocolError)
 		return
 	}
 	// RFC 9250 §4.2.1: DoQ queries carry transaction ID 0. A nonzero ID is a
 	// protocol error, not something to silently rewrite.
 	if query.Id != 0 {
+		s.doqProtoErrors.Add(1)
 		closeDoQStream(stream, doqProtocolError)
 		return
 	}
