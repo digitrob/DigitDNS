@@ -50,10 +50,10 @@ import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
 
 /**
- * The DNSSEC/Proxy Leak page. Both policies are server-wide; DNSSEC is
- * startup-scoped, while proxy leak protection applies to the running resolver
- * as soon as the switch writes. The two cards are deliberately compact so the
- * phone shows both without scrolling.
+ * The DNSSEC/Proxy Leak page. Both policies are server-wide and apply to the
+ * running resolver; the DNSSEC save also applies the validator before the
+ * response returns. The two cards are deliberately compact so the phone shows
+ * both without scrolling.
  */
 @Composable
 fun DnssecProxySettingsScreen(
@@ -64,8 +64,10 @@ fun DnssecProxySettingsScreen(
     val proxyState by proxyViewModel.state.collectAsStateWithLifecycle()
 
     PanelRefreshBox(
-        isRefreshing = state.isLoading || state.isRefreshing ||
-            proxyState.isLoading || proxyState.isRefreshing,
+        // Do not run the pull-to-refresh arc for the first paint; the cards
+        // already show their own loading state and the arc made the screen look
+        // like a stuck spinner for the whole request.
+        isRefreshing = state.isRefreshing || proxyState.isRefreshing,
         onRefresh = {
             viewModel.load()
             proxyViewModel.load()
@@ -81,7 +83,7 @@ fun DnssecProxySettingsScreen(
         ) {
             when {
                 state.unsupported -> UnsupportedDnssecSettings()
-                !state.loaded -> DnssecLoadingCard(state, viewModel::load)
+                !state.loaded && state.error != null -> DnssecLoadingCard(state, viewModel::load)
                 else -> DnssecPolicyCard(state, viewModel)
             }
             ProxyLeakPolicyCard(proxyState, proxyViewModel)
@@ -109,18 +111,11 @@ private fun DnssecLoadingCard(state: DnssecSettingsUiState, onRetry: () -> Unit)
                 style = MaterialTheme.typography.titleMedium,
             )
             if (state.error == null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.height(18.dp).width(18.dp),
-                        strokeWidth = 2.dp,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.dnssec_settings_loading),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.dnssec_settings_loading),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             } else {
                 Text(
                     text = state.error,
@@ -173,7 +168,7 @@ private fun DnssecPolicyCard(
         bottomPadding = 12.dp,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            DnssecHeader(state.running)
+            DnssecHeader(state.running, state.loaded)
             DnssecSwitch(state, viewModel)
             DnssecAnchors(state, viewModel)
             DnssecFooter(state, viewModel::save)
@@ -182,7 +177,7 @@ private fun DnssecPolicyCard(
 }
 
 @Composable
-private fun DnssecHeader(running: Boolean) {
+private fun DnssecHeader(running: Boolean, loaded: Boolean) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -202,7 +197,14 @@ private fun DnssecHeader(running: Boolean) {
             )
         }
         Spacer(Modifier.width(8.dp))
-        RunningBadge(running)
+        if (loaded) {
+            RunningBadge(running)
+        } else {
+            StatusBadge(
+                text = stringResource(R.string.dnssec_settings_loading_short),
+                color = DigitDnsTheme.colors.textMuted,
+            )
+        }
     }
 }
 
@@ -231,6 +233,7 @@ private fun DnssecSwitch(state: DnssecSettingsUiState, viewModel: DnssecSettings
         Switch(
             checked = state.enabled,
             onCheckedChange = viewModel::onEnabledChange,
+            enabled = state.loaded && !state.isSaving,
         )
     }
 }
@@ -267,6 +270,7 @@ private fun DnssecAnchors(state: DnssecSettingsUiState, viewModel: DnssecSetting
         minLines = 2,
         maxLines = 3,
         textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
+        enabled = state.loaded && !state.isSaving,
         modifier = Modifier.fillMaxWidth(),
     )
     if (showDefaults) {
@@ -298,13 +302,21 @@ private fun DnssecAnchors(state: DnssecSettingsUiState, viewModel: DnssecSetting
 
 @Composable
 private fun DnssecFooter(state: DnssecSettingsUiState, onSave: () -> Unit) {
-    Text(
-        text = stringResource(
-            if (state.restartRequired) R.string.dnssec_settings_restart_pending else R.string.dnssec_settings_restart_note,
-        ),
-        style = MaterialTheme.typography.bodySmall,
-        color = if (state.restartRequired) DigitDnsTheme.colors.warning else MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    if (!state.loaded) {
+        Text(
+            text = stringResource(R.string.dnssec_settings_loading),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else {
+        Text(
+            text = stringResource(
+                if (state.restartRequired) R.string.dnssec_settings_restart_pending else R.string.dnssec_settings_restart_note,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (state.restartRequired) DigitDnsTheme.colors.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
     state.error?.let { error ->
         Text(
             text = error,
@@ -325,7 +337,7 @@ private fun DnssecFooter(state: DnssecSettingsUiState, onSave: () -> Unit) {
         onClick = onSave,
         // The button is only composed once the first load has finished, so a
         // pull-to-refresh must not disable it: that grey flash was the bug.
-        enabled = !state.isSaving,
+        enabled = state.loaded && !state.isSaving,
         modifier = Modifier.fillMaxWidth(),
     ) {
         if (state.isSaving) {
@@ -426,28 +438,30 @@ private fun ProxyLeakHeader(
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
         )
-        if (state.loaded && !state.unsupported) {
+        if (!state.unsupported) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 StatusBadge(
-                    text = stringResource(
-                        if (state.enabled) {
-                            R.string.proxy_leak_settings_status_on
-                        } else {
-                            R.string.proxy_leak_settings_status_off
-                        },
-                    ),
-                    color = if (state.enabled) DigitDnsTheme.colors.success else DigitDnsTheme.colors.textMuted,
+                    text = when {
+                        !state.loaded -> stringResource(R.string.proxy_leak_settings_loading_short)
+                        state.enabled -> stringResource(R.string.proxy_leak_settings_status_on)
+                        else -> stringResource(R.string.proxy_leak_settings_status_off)
+                    },
+                    color = if (state.loaded && state.enabled) {
+                        DigitDnsTheme.colors.success
+                    } else {
+                        DigitDnsTheme.colors.textMuted
+                    },
                 )
                 Spacer(Modifier.width(8.dp))
                 val switchLabel = stringResource(R.string.proxy_leak_settings_enabled)
                 Switch(
                     checked = state.enabled,
                     onCheckedChange = onCheckedChange,
-                    enabled = !state.isSaving,
+                    enabled = state.loaded && !state.isSaving,
                     modifier = Modifier.semantics { contentDescription = switchLabel },
                 )
             }
@@ -458,18 +472,11 @@ private fun ProxyLeakHeader(
 @Composable
 private fun ProxyLeakLoading(state: ProxyLeakSettingsUiState, onRetry: () -> Unit) {
     if (state.error == null) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(
-                modifier = Modifier.height(18.dp).width(18.dp),
-                strokeWidth = 2.dp,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = stringResource(R.string.proxy_leak_settings_loading),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Text(
+            text = stringResource(R.string.proxy_leak_settings_loading),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     } else {
         Text(
             text = state.error,

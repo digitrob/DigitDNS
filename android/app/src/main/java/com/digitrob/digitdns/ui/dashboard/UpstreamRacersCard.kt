@@ -43,16 +43,22 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.ResolutionSettings
+import com.digitrob.digitdns.core.network.UpstreamPresetProvider
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRowDefaults
 import com.digitrob.digitdns.ui.components.SwipeToDeleteRow
+import com.digitrob.digitdns.ui.components.UpstreamPresetBrowser
+import com.digitrob.digitdns.ui.components.UpstreamPresetBrowserActions
+import com.digitrob.digitdns.ui.components.UpstreamPresetBrowserState
 import com.digitrob.digitdns.ui.formatCount
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.ExtendedColors
@@ -73,46 +79,19 @@ internal fun UpstreamRacersCard(
     upstreams: List<UpstreamStat>,
     isBenchmarking: Boolean,
     onBenchmark: () -> Unit,
-    onAdd: suspend (String) -> String?,
-    onRemove: suspend (String) -> String?,
+    actions: UpstreamActions,
     /** False while the dashboard grid is scrolling: reading the page must not arm a delete. */
     swipeEnabled: Boolean = true,
     resolutionControls: ResolutionControls = ResolutionControls(),
 ) {
     val colors = DigitDnsTheme.colors
-    var newAddress by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var removeError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     PanelCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             RacerHeader(isBenchmarking = isBenchmarking, onBenchmark = onBenchmark)
-
-            // Inline add, mirroring the panel's racer input.
-            UpstreamAddRow(
-                value = newAddress,
-                onValueChange = { newAddress = it; error = null },
-                busy = busy,
-                onSubmit = {
-                    val addr = newAddress.trim()
-                    if (addr.isNotBlank()) {
-                        scope.launch {
-                            busy = true
-                            error = onAdd(addr)
-                            busy = false
-                            if (error == null) newAddress = ""
-                        }
-                    }
-                },
-            )
-            error?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.danger,
-                )
-            }
+            UpstreamAddSection(upstreams = upstreams, actions = actions)
 
             val policy = poolPolicy(resolutionControls.settings, upstreams)
             val ordered = orderedResolvers(upstreams, policy)
@@ -142,16 +121,20 @@ internal fun UpstreamRacersCard(
                                 dimmed = resolverExcludedByTransport(stat.address, policy.transport, policy.encrypted) ||
                                     (policy.pinActive && stat.address != policy.pinned),
                                 onRemove = {
-                                    scope.launch {
-                                        busy = true
-                                        error = onRemove(stat.address)
-                                        busy = false
-                                    }
+                                    scope.launch { removeError = actions.onRemove(stat.address) }
                                 },
                             )
                         }
                     }
                 }
+            }
+
+            removeError?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.danger,
+                )
             }
 
             // Global resolution defaults. Per-domain overrides live in Domains.
@@ -163,6 +146,130 @@ internal fun UpstreamRacersCard(
         }
     }
 }
+
+/** The add field and the shared provider browser, kept together so their local
+ *  form state does not make the racer card itself long and branch-heavy. */
+@Suppress("CyclomaticComplexMethod") // Form validation + provider state are one cohesive unit.
+@Composable
+private fun UpstreamAddSection(
+    upstreams: List<UpstreamStat>,
+    actions: UpstreamActions,
+) {
+    val colors = DigitDnsTheme.colors
+    var newAddress by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var presetsOpen by remember { mutableStateOf(false) }
+    var presets by remember { mutableStateOf<List<UpstreamPresetProvider>>(emptyList()) }
+    var presetsLoading by remember { mutableStateOf(false) }
+    var presetsLoaded by remember { mutableStateOf(false) }
+    var presetError by remember { mutableStateOf<String?>(null) }
+    var expandedProviders by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var addingPreset by remember { mutableStateOf<String?>(null) }
+    var locallyAdded by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val scope = rememberCoroutineScope()
+
+    fun openPresets() {
+        presetsOpen = true
+        if (presetsLoaded || presetsLoading) return
+        presetsLoading = true
+        presetError = null
+        scope.launch {
+            val result = actions.onLoadPresets()
+            presetsLoading = false
+            presetsLoaded = true
+            if (result == null) {
+                presetError = "Could not load the provider list. You can still type a resolver address."
+            } else {
+                presets = result
+                if (result.isNotEmpty() && expandedProviders.isEmpty()) {
+                    expandedProviders = setOf(result.first().id)
+                }
+            }
+        }
+    }
+
+    fun addAddress(address: String) {
+        val value = address.trim()
+        if (value.isBlank() || addingPreset != null) return
+        scope.launch {
+            addingPreset = value
+            error = null
+            val addError = actions.onAdd(value)
+            addingPreset = null
+            if (addError == null) {
+                locallyAdded = locallyAdded + value
+                if (value == newAddress.trim()) {
+                    newAddress = ""
+                    presetsOpen = false
+                }
+            } else {
+                error = addError
+            }
+        }
+    }
+
+    fun removeAddress(address: String) {
+        if (addingPreset != null) return
+        scope.launch {
+            addingPreset = address
+            error = null
+            val removeError = actions.onRemove(address)
+            addingPreset = null
+            if (removeError == null) {
+                locallyAdded = locallyAdded - address
+            } else {
+                error = removeError
+            }
+        }
+    }
+
+    UpstreamAddRow(
+        value = newAddress,
+        onValueChange = { newAddress = it; error = null },
+        busy = addingPreset != null,
+        presetsOpen = presetsOpen,
+        onTogglePresets = { if (presetsOpen) presetsOpen = false else openPresets() },
+        onFocus = { openPresets() },
+        onSubmit = { addAddress(newAddress) },
+    )
+    error?.let {
+        Text(text = it, style = MaterialTheme.typography.bodySmall, color = colors.danger)
+    }
+    if (presetsOpen) {
+        UpstreamPresetBrowser(
+            state = UpstreamPresetBrowserState(
+                providers = presets,
+                query = newAddress,
+                added = upstreams.map { it.address }.toSet() + locallyAdded,
+                expanded = expandedProviders,
+                loading = presetsLoading,
+                loaded = presetsLoaded,
+                error = presetError,
+                adding = addingPreset,
+            ),
+            actions = UpstreamPresetBrowserActions(
+                onToggleProvider = { id ->
+                    expandedProviders = if (expandedProviders.contains(id)) {
+                        expandedProviders - id
+                    } else {
+                        expandedProviders + id
+                    }
+                },
+                onAdd = { addAddress(it) },
+                onRemove = { removeAddress(it) },
+                onClose = { presetsOpen = false },
+            ),
+        )
+    }
+}
+
+/** The three mutating upstream operations the racer card needs. Grouped so the
+ *  card and the dashboard grid keep a readable parameter list. */
+data class UpstreamActions(
+    val onAdd: suspend (String) -> String?,
+    val onRemove: suspend (String) -> String?,
+    val onLoadPresets: suspend () -> List<UpstreamPresetProvider>?,
+)
 
 /** The effective pool policy used for dimming one resolver list. */
 private data class PoolPolicy(
@@ -404,16 +511,28 @@ private fun UpstreamAddRow(
     value: String,
     onValueChange: (String) -> Unit,
     busy: Boolean,
+    presetsOpen: Boolean,
+    onTogglePresets: () -> Unit,
+    onFocus: () -> Unit,
     onSubmit: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            placeholder = { Text("8.8.8.8, tls://dns.google") },
+            placeholder = { Text("Search providers or type an address") },
             singleLine = true,
             enabled = !busy,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).onFocusChanged { if (it.isFocused) onFocus() },
+            trailingIcon = {
+                IconButton(onClick = onTogglePresets) {
+                    Icon(
+                        Icons.Filled.ArrowDropDown,
+                        contentDescription = if (presetsOpen) "Hide DNS providers" else "Browse DNS providers",
+                        modifier = Modifier.rotate(if (presetsOpen) 180f else 0f),
+                    )
+                }
+            },
         )
         Spacer(Modifier.width(8.dp))
         IconButton(onClick = onSubmit, enabled = !busy && value.isNotBlank()) {

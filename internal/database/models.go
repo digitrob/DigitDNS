@@ -207,8 +207,13 @@ type ServerSettings struct {
 type DNSSettings struct {
 	Enabled bool `json:"enabled"`
 	Port    int  `json:"port"`
-	DoTPort int  `json:"dot_port"`
-	DoHPort int  `json:"doh_port"`
+	// Plain DNS and DoH are on unless explicitly disabled, so old records and
+	// the zero value keep serving after an upgrade. The API exposes the
+	// positive enabled form.
+	PlainDNSDisabled bool `json:"plain_dns_disabled"`
+	DoHDisabled      bool `json:"doh_disabled"`
+	DoTPort          int  `json:"dot_port"`
+	DoHPort          int  `json:"doh_port"`
 	// Client-facing QUIC transports. Both are opt-in: a fresh install keeps
 	// only UDP/TCP, DoT and DoH until the operator enables them. DoQAuth is
 	// "ip" (client allowlist) or "sni-token" (the leftmost SNI label names a

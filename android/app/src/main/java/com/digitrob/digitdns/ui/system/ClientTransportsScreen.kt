@@ -1,9 +1,14 @@
+@file:Suppress("TooManyFunctions")
+
 package com.digitrob.digitdns.ui.system
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,22 +49,22 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
+import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
 
 /**
- * Client-facing encrypted transports, the phone counterpart of the web's
- * Client Encrypted Transports card: DoH3, DoQ, DoT authentication, DNSCrypt
- * and mTLS. DoH3 applies as soon as its switch moves; everything else is staged
- * and committed together by one Save action.
+ * Every client transport, the phone counterpart of the web's Client Transports
+ * card. Switches and completed fields apply as they are edited; incomplete
+ * SNI-token or mTLS forms stay local.
  */
 @Composable
 fun ClientTransportsScreen(viewModel: ClientTransportsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     PanelRefreshBox(
-        isRefreshing = state.isLoading || state.isRefreshing,
+        isRefreshing = state.isRefreshing,
         onRefresh = viewModel::load,
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -75,9 +80,9 @@ fun ClientTransportsScreen(viewModel: ClientTransportsViewModel = hiltViewModel(
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                TransportsIntro()
+                TransportsHeader(state, wide)
                 if (state.isLoading) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    SettingsLoadingSkeleton(cards = 3)
                 } else {
                     if (wide) {
                         Row(
@@ -85,7 +90,15 @@ fun ClientTransportsScreen(viewModel: ClientTransportsViewModel = hiltViewModel(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.Top,
                         ) {
-                            Doh3Card(state, viewModel, Modifier.weight(1f))
+                            PlainDnsCard(state, viewModel, Modifier.weight(1f))
+                            DotCard(state, viewModel, Modifier.weight(1f))
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            DohCard(state, viewModel, Modifier.weight(1f))
                             DoqCard(state, viewModel, Modifier.weight(1f))
                         }
                         Row(
@@ -93,13 +106,15 @@ fun ClientTransportsScreen(viewModel: ClientTransportsViewModel = hiltViewModel(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.Top,
                         ) {
-                            DotCard(state, viewModel, Modifier.weight(1f))
+                            Doh3Card(state, Modifier.weight(1f))
                             DnscryptCard(state, viewModel, Modifier.weight(1f))
                         }
                     } else {
-                        Doh3Card(state, viewModel)
-                        DoqCard(state, viewModel)
+                        PlainDnsCard(state, viewModel)
                         DotCard(state, viewModel)
+                        DohCard(state, viewModel)
+                        DoqCard(state, viewModel)
+                        Doh3Card(state)
                         DnscryptCard(state, viewModel)
                     }
                     MtlsCard(state, viewModel)
@@ -115,49 +130,271 @@ fun ClientTransportsScreen(viewModel: ClientTransportsViewModel = hiltViewModel(
 }
 
 // The tab header already says Transports; a full card repeating the title only
-// cost vertical space. One muted line keeps the certificate dependency visible.
+// cost vertical space. The top-right line names every transport that is not
+// currently serving, so a disabled switch is visible without scanning the cards.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TransportsIntro() {
-    Text(
-        stringResource(R.string.transports_help),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun TransportsHeader(state: ClientTransportsUiState, wide: Boolean) {
+    val names = listOf(
+        stringResource(R.string.transports_plain) to (state.plainDNSEnabled && state.plainDNSListening),
+        "DoT" to (state.dotEnabled && state.dotListening),
+        "DoH" to (state.dohEnabled && state.dohListening),
+        "DoQ" to (state.doqEnabled && state.doqListening),
+        "DoH3" to state.doh3Listening,
+        "DNSCrypt" to (state.dnscryptEnabled && state.dnscryptListening),
     )
+    val running = names.filter { it.second }.map { it.first }
+    val missing = names.filterNot { it.second }.map { it.first }
+    val allOn = missing.isEmpty()
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            stringResource(R.string.transports_help),
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(8.dp))
+        // Fixed width for the status area: the text column must not reflow when
+        // a transport switches on or off and the badge text changes length.
+        FlowRow(
+            modifier = Modifier.width(if (wide) 276.dp else 168.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (!state.loaded) {
+                StatusBadge(
+                    text = stringResource(R.string.transports_status_loading),
+                    color = DigitDnsTheme.colors.textMuted,
+                )
+            } else {
+                if (running.isNotEmpty()) {
+                    StatusBadge(
+                        text = if (allOn) {
+                            stringResource(R.string.transports_all_on)
+                        } else {
+                            stringResource(R.string.transports_on, running.joinToString(", "))
+                        },
+                        color = DigitDnsTheme.colors.success,
+                        maxLines = 2,
+                    )
+                }
+                if (missing.isNotEmpty()) {
+                    StatusBadge(
+                        text = stringResource(R.string.transports_off, missing.joinToString(", ")),
+                        color = DigitDnsTheme.colors.warning,
+                        maxLines = 2,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
-private fun Doh3Card(
+private fun TransportHeader(
+    title: String,
+    help: String,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    toggleEnabled: Boolean,
+    status: @Composable () -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                help,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // Keep the status and switch as one vertically centred group flush with
+        // the card's right edge. The status slot has a fixed width and the switch
+        // keeps a fixed size, so "Listening" -> "Off" cannot move either one.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(modifier = Modifier.width(132.dp), contentAlignment = Alignment.CenterEnd) {
+                status()
+            }
+            Switch(checked = enabled, onCheckedChange = onToggle, enabled = toggleEnabled)
+        }
+    }
+}
+
+@Composable
+private fun EnforcedStatus(enabled: Boolean, saving: Boolean) {
+    val text = when {
+        saving -> stringResource(R.string.transports_status_saving)
+        enabled -> stringResource(R.string.transports_enforced)
+        else -> stringResource(R.string.transports_status_off)
+    }
+    val color = when {
+        saving -> DigitDnsTheme.colors.textMuted
+        enabled -> DigitDnsTheme.colors.success
+        else -> DigitDnsTheme.colors.textMuted
+    }
+    StatusBadge(text = text, color = color)
+}
+
+@Composable
+private fun CopyBox(value: String, contentDescription: String) {
+    val clipboard = LocalClipboardManager.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = value.ifBlank { "—" },
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (value.isNotBlank()) {
+            IconButton(onClick = { clipboard.setText(AnnotatedString(value)) }) {
+                Icon(Icons.Filled.ContentCopy, contentDescription = contentDescription)
+            }
+        }
+    }
+}
+
+private fun endpointURL(scheme: String, host: String, port: String, path: String = ""): String {
+    if (host.isBlank()) return "Configure a domain and certificate first"
+    val authority = if (scheme == "https" && port == "443") host else "$host:$port"
+    return "$scheme://$authority$path"
+}
+
+@Composable
+private fun PlainDnsCard(
     state: ClientTransportsUiState,
     viewModel: ClientTransportsViewModel,
     modifier: Modifier = Modifier,
 ) {
     PanelCard(modifier = modifier.fillMaxWidth(), contentPadding = 12.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(R.string.transports_doh3),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                )
-                TransportStatus(state.appliedDoh3Enabled, state.doh3Listening, state.doh3Saving, false)
-                Spacer(Modifier.width(8.dp))
-                Switch(
-                    checked = state.doh3Enabled,
-                    onCheckedChange = viewModel::setDoh3Enabled,
-                    enabled = !state.doh3Saving && !state.transportSaving,
-                )
-            }
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            TransportHeader(
+                title = stringResource(R.string.transports_plain),
+                help = stringResource(R.string.transports_plain_help),
+                enabled = state.plainDNSEnabled,
+                onToggle = viewModel::setPlainDNSEnabled,
+                toggleEnabled = true,
+                status = {
+                    TransportStatus(state.plainDNSEnabled, state.plainDNSListening, false, false)
+                },
+            )
+            OutlinedTextField(
+                value = state.plainDNSPort,
+                onValueChange = viewModel::setPlainDNSPort,
+                label = { Text(stringResource(R.string.transports_plain_port)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth().saveTransportOnBlur(viewModel),
+            )
+            CopyBox(
+                value = if (state.serverHost.isBlank()) {
+                    "Configure a domain and certificate first"
+                } else {
+                    "${state.serverHost}:${state.plainDNSPort}"
+                },
+                contentDescription = stringResource(R.string.transports_copy_plain),
+            )
             Text(
-                stringResource(R.string.transports_doh3_help),
+                stringResource(R.string.transports_plain_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
-                stringResource(R.string.transports_doh3_port, state.doh3Port),
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        }
+    }
+}
+
+@Composable
+private fun DohCard(
+    state: ClientTransportsUiState,
+    viewModel: ClientTransportsViewModel,
+    modifier: Modifier = Modifier,
+) {
+    PanelCard(modifier = modifier.fillMaxWidth(), contentPadding = 12.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            TransportHeader(
+                title = stringResource(R.string.transports_doh),
+                help = stringResource(R.string.transports_doh_help),
+                enabled = state.dohEnabled,
+                onToggle = viewModel::setDohEnabled,
+                toggleEnabled = true,
+                status = {
+                    TransportStatus(state.dohEnabled, state.dohListening, false, false)
+                },
+            )
+            OutlinedTextField(
+                value = state.dohPort,
+                onValueChange = viewModel::setDohPort,
+                label = { Text(stringResource(R.string.transports_doh_port)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth().saveTransportOnBlur(viewModel),
+            )
+            CopyBox(
+                value = endpointURL("https", state.dotHost.ifBlank { state.serverHost }, state.dohPort, "/dns-query"),
+                contentDescription = stringResource(R.string.transports_copy_doh),
             )
             CertificateRow()
+            Text(
+                stringResource(R.string.transports_doh_portal_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun Doh3Card(
+    state: ClientTransportsUiState,
+    modifier: Modifier = Modifier,
+) {
+    PanelCard(modifier = modifier.fillMaxWidth(), contentPadding = 12.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            TransportHeader(
+                title = stringResource(R.string.transports_doh3),
+                help = stringResource(R.string.transports_doh3_help),
+                enabled = true,
+                onToggle = {},
+                toggleEnabled = false,
+                status = {
+                    TransportStatus(true, state.doh3Listening, false, false)
+                },
+            )
+            OutlinedTextField(
+                value = state.dohPort,
+                onValueChange = {},
+                enabled = false,
+                label = { Text(stringResource(R.string.transports_doh3_port_shared)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            CopyBox(
+                value = endpointURL("h3", state.dotHost.ifBlank { state.serverHost }, state.dohPort, "/dns-query"),
+                contentDescription = stringResource(R.string.transports_copy_doh3),
+            )
+            CertificateRow()
+            Text(
+                stringResource(R.string.transports_doh3_shared_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -175,23 +412,25 @@ private fun DoqCard(
             if (state.doqAuth == "sni-token") {
                 DoqTokenEditor(state, viewModel)
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        stringResource(R.string.transports_firewall),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            val doqHost = if (state.doqAuth == "sni-token" && state.tokenDomain.isNotBlank()) {
+                "<token>.${state.tokenDomain}"
+            } else {
+                state.dotHost.ifBlank { state.serverHost }
             }
+            CopyBox(
+                value = endpointURL("quic", doqHost, state.doqPort),
+                contentDescription = stringResource(R.string.transports_copy_doq),
+            )
+            Text(
+                stringResource(R.string.transports_firewall),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
 
-/** DoT has no on/off switch: it serves whenever the DoH/DoT certificate is installed. */
+/** DoT serves whenever it is enabled and the DoH/DoT certificate is installed. */
 @Composable
 private fun DotCard(
     state: ClientTransportsUiState,
@@ -200,21 +439,33 @@ private fun DotCard(
 ) {
     PanelCard(modifier = modifier.fillMaxWidth(), contentPadding = 12.dp) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.transports_dot), style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        stringResource(R.string.transports_dot_help, state.dotPort),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = state.dotEnabled,
-                    onCheckedChange = viewModel::setDotEnabled,
-                    enabled = !state.transportSaving && !state.doh3Saving,
-                )
+            TransportHeader(
+                title = stringResource(R.string.transports_dot),
+                help = stringResource(R.string.transports_dot_help, state.dotPort),
+                enabled = state.dotEnabled,
+                onToggle = viewModel::setDotEnabled,
+                toggleEnabled = true,
+                status = {
+                    TransportStatus(state.dotEnabled, state.dotListening, false, false)
+                },
+            )
+            OutlinedTextField(
+                value = state.dotPort,
+                onValueChange = viewModel::setDotPort,
+                label = { Text(stringResource(R.string.transports_tcp_port)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth().saveTransportOnBlur(viewModel),
+            )
+            val dotHost = if (state.dotAuth == "sni-token" && state.dotTokenDomain.isNotBlank()) {
+                "<token>.${state.dotTokenDomain}"
+            } else {
+                state.dotHost.ifBlank { state.serverHost }
             }
+            CopyBox(
+                value = endpointURL("tls", dotHost, state.dotPort),
+                contentDescription = stringResource(R.string.transports_copy_dot),
+            )
             Text(
                 stringResource(R.string.transports_auth),
                 style = MaterialTheme.typography.bodySmall,
@@ -234,15 +485,17 @@ private fun DotCard(
             }
             if (state.dotAuth == "sni-token") {
                 TokenEditor(
-                    domain = state.dotTokenDomain,
+                    model = TokenEditorModel(
+                        domain = state.dotTokenDomain,
+                        domainHint = "dot.example.com",
+                        newToken = state.newDotToken,
+                        tokens = state.dotTokens,
+                        emptyLabel = stringResource(R.string.transports_no_dot_tokens),
+                    ),
                     onDomainChange = viewModel::setDotTokenDomain,
-                    domainHint = "dot.example.com",
-                    newToken = state.newDotToken,
                     onNewTokenChange = viewModel::setNewDotToken,
                     onAdd = viewModel::addDotToken,
-                    tokens = state.dotTokens,
                     onRemove = viewModel::removeDotToken,
-                    emptyLabel = stringResource(R.string.transports_no_dot_tokens),
                     onBlur = viewModel::autoSaveIfReady,
                 )
                 Text(
@@ -267,26 +520,18 @@ private fun DnscryptCard(
     viewModel: ClientTransportsViewModel,
     modifier: Modifier = Modifier,
 ) {
-    val clipboard = LocalClipboardManager.current
     PanelCard(modifier = modifier.fillMaxWidth(), contentPadding = 12.dp) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.transports_dnscrypt), style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        stringResource(R.string.transports_dnscrypt_help),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                TransportStatus(state.dnscryptEnabled, state.dnscryptListening, state.transportSaving, state.stagedDirty)
-                Spacer(Modifier.width(8.dp))
-                Switch(
-                    checked = state.dnscryptEnabled,
-                    onCheckedChange = viewModel::setDnscryptEnabled,
-                    enabled = !state.transportSaving && !state.doh3Saving,
-                )
-            }
+            TransportHeader(
+                title = stringResource(R.string.transports_dnscrypt),
+                help = stringResource(R.string.transports_dnscrypt_help),
+                enabled = state.dnscryptEnabled,
+                onToggle = viewModel::setDnscryptEnabled,
+                toggleEnabled = true,
+                status = {
+                    TransportStatus(state.dnscryptEnabled, state.dnscryptListening, false, false)
+                },
+            )
             OutlinedTextField(
                 value = state.dnscryptPort,
                 onValueChange = viewModel::setDnscryptPort,
@@ -308,51 +553,10 @@ private fun DnscryptCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                        shape = RoundedCornerShape(8.dp),
-                    )
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = state.dnscryptStamp.ifBlank { stringResource(R.string.transports_dnscrypt_stamp_empty) },
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                if (state.dnscryptStamp.isNotBlank()) {
-                    IconButton(
-                        onClick = { clipboard.setText(AnnotatedString(state.dnscryptStamp)) },
-                    ) {
-                        Icon(
-                            Icons.Filled.ContentCopy,
-                            contentDescription = stringResource(R.string.transports_dnscrypt_copy_stamp),
-                        )
-                    }
-                }
-            }
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(R.string.transports_status),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    stringResource(
-                        if (state.dnscryptListening) R.string.transports_status_listening else R.string.transports_status_off,
-                    ),
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            CopyBox(
+                value = state.dnscryptStamp,
+                contentDescription = stringResource(R.string.transports_dnscrypt_copy_stamp),
+            )
             if (state.dnscryptCertNotAfter > 0) {
                 Text(
                     stringResource(
@@ -380,21 +584,14 @@ private fun MtlsCard(
 ) {
     PanelCard(modifier = modifier.fillMaxWidth(), contentPadding = 12.dp) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.transports_mtls), style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        stringResource(R.string.transports_mtls_help),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = state.mtlsEnabled,
-                    onCheckedChange = viewModel::setMtlsEnabled,
-                    enabled = !state.transportSaving && !state.doh3Saving,
-                )
-            }
+            TransportHeader(
+                title = stringResource(R.string.transports_mtls),
+                help = stringResource(R.string.transports_mtls_help),
+                enabled = state.mtlsEnabled,
+                onToggle = viewModel::setMtlsEnabled,
+                toggleEnabled = true,
+                status = { EnforcedStatus(state.mtlsEnabled, false) },
+            )
             OutlinedTextField(
                 value = state.mtlsCaPem,
                 onValueChange = viewModel::setMtlsCaPem,
@@ -437,42 +634,41 @@ private fun TransportSaveStatus(state: ClientTransportsUiState) {
 }
 
 /** The reason a staged form is not applied yet, or null when it is complete. */
-private fun stagedTransportHint(state: ClientTransportsUiState): String? = when {
-    state.doqEnabled && state.doqAuth == "sni-token" && state.tokenDomain.isBlank() ->
-        "DoQ SNI-token mode needs a token domain."
-    state.doqEnabled && state.doqAuth == "sni-token" && state.tokens.isEmpty() ->
-        "DoQ SNI-token mode needs at least one token."
-    state.dotEnabled && state.dotAuth == "sni-token" && state.dotTokenDomain.isBlank() ->
-        "DoT SNI-token mode needs a token domain."
-    state.dotEnabled && state.dotAuth == "sni-token" && state.dotTokens.isEmpty() ->
-        "DoT SNI-token mode needs at least one token."
-    state.mtlsEnabled && state.mtlsCaPem.isBlank() ->
-        "Paste the client CA bundle to enable mTLS."
+private fun stagedTransportHint(state: ClientTransportsUiState): String? =
+    doqTokenHint(state) ?: dotTokenHint(state) ?: mtlsHint(state)
+
+private fun doqTokenHint(state: ClientTransportsUiState): String? = when {
+    !state.doqEnabled || state.doqAuth != "sni-token" -> null
+    state.tokenDomain.isBlank() -> "DoQ SNI-token mode needs a token domain."
+    state.tokens.isEmpty() -> "DoQ SNI-token mode needs at least one token."
     else -> null
 }
+
+private fun dotTokenHint(state: ClientTransportsUiState): String? = when {
+    !state.dotEnabled || state.dotAuth != "sni-token" -> null
+    state.dotTokenDomain.isBlank() -> "DoT SNI-token mode needs a token domain."
+    state.dotTokens.isEmpty() -> "DoT SNI-token mode needs at least one token."
+    else -> null
+}
+
+private fun mtlsHint(state: ClientTransportsUiState): String? =
+    if (state.mtlsEnabled && state.mtlsCaPem.isBlank()) "Paste the client CA bundle to enable mTLS." else null
 
 private fun Modifier.saveTransportOnBlur(viewModel: ClientTransportsViewModel): Modifier =
     onFocusChanged { if (!it.isFocused) viewModel.autoSaveIfReady() }
 
 @Composable
 private fun DoqHeader(state: ClientTransportsUiState, viewModel: ClientTransportsViewModel) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.transports_doq), style = MaterialTheme.typography.titleSmall)
-            Text(
-                stringResource(R.string.transports_doq_help),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        TransportStatus(state.appliedDoqEnabled, state.doqListening, state.transportSaving, state.stagedDirty)
-        Spacer(Modifier.width(8.dp))
-        Switch(
-            checked = state.doqEnabled,
-            onCheckedChange = viewModel::setDoqEnabled,
-            enabled = !state.transportSaving && !state.doh3Saving,
-        )
-    }
+    TransportHeader(
+        title = stringResource(R.string.transports_doq),
+        help = stringResource(R.string.transports_doq_help),
+        enabled = state.doqEnabled,
+        onToggle = viewModel::setDoqEnabled,
+        toggleEnabled = true,
+        status = {
+            TransportStatus(state.doqEnabled, state.doqListening, false, false)
+        },
+    )
 }
 
 @Composable
@@ -560,15 +756,17 @@ private fun CertificateRow() {
 @Composable
 private fun DoqTokenEditor(state: ClientTransportsUiState, viewModel: ClientTransportsViewModel) {
     TokenEditor(
-        domain = state.tokenDomain,
+        model = TokenEditorModel(
+            domain = state.tokenDomain,
+            domainHint = stringResource(R.string.transports_token_domain_hint),
+            newToken = state.newToken,
+            tokens = state.tokens,
+            emptyLabel = stringResource(R.string.transports_no_tokens),
+        ),
         onDomainChange = viewModel::setTokenDomain,
-        domainHint = stringResource(R.string.transports_token_domain_hint),
-        newToken = state.newToken,
         onNewTokenChange = viewModel::setNewToken,
         onAdd = viewModel::addToken,
-        tokens = state.tokens,
         onRemove = viewModel::removeToken,
-        emptyLabel = stringResource(R.string.transports_no_tokens),
         onBlur = viewModel::autoSaveIfReady,
     )
     Text(
@@ -578,30 +776,34 @@ private fun DoqTokenEditor(state: ClientTransportsUiState, viewModel: ClientTran
     )
 }
 
+private data class TokenEditorModel(
+    val domain: String,
+    val domainHint: String,
+    val newToken: String,
+    val tokens: List<String>,
+    val emptyLabel: String,
+)
+
 @Composable
 private fun TokenEditor(
-    domain: String,
+    model: TokenEditorModel,
     onDomainChange: (String) -> Unit,
-    domainHint: String,
-    newToken: String,
     onNewTokenChange: (String) -> Unit,
     onAdd: () -> Unit,
-    tokens: List<String>,
     onRemove: (String) -> Unit,
-    emptyLabel: String,
     onBlur: () -> Unit,
 ) {
     OutlinedTextField(
-        value = domain,
+        value = model.domain,
         onValueChange = onDomainChange,
         label = { Text(stringResource(R.string.transports_token_domain)) },
-        placeholder = { Text(domainHint) },
+        placeholder = { Text(model.domainHint) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth().onFocusChanged { if (!it.isFocused) onBlur() },
     )
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(
-            value = newToken,
+            value = model.newToken,
             onValueChange = onNewTokenChange,
             label = { Text(stringResource(R.string.transports_new_token)) },
             singleLine = true,
@@ -612,9 +814,9 @@ private fun TokenEditor(
             Text(stringResource(R.string.transports_add_token))
         }
     }
-    if (tokens.isEmpty()) {
+    if (model.tokens.isEmpty()) {
         Text(
-            emptyLabel,
+            model.emptyLabel,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -626,7 +828,7 @@ private fun TokenEditor(
                 .heightIn(max = 88.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
-            tokens.forEach { token ->
+            model.tokens.forEach { token ->
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         token,

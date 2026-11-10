@@ -659,6 +659,7 @@ func main() {
 	// The DNSSEC card compares this startup snapshot with the saved record to
 	// report whether a restart is pending. It is set before listeners start.
 	webServer.SetDNSSECStatus(dnsHandler.DNSSECEnabled(), dnsSettings.DNSSECTrustAnchors)
+	webServer.SetDNSSECApplier(dnsHandler.SetDNSSEC)
 	webServer.SetProxyLeakProtectionSetter(dnsHandler.SetProxyLeakProtection)
 	webServer.SetIPv6PolicySetter(func(enabled bool, address string) {
 		dnsHandler.SetPublicIPv6(address)
@@ -816,21 +817,23 @@ func main() {
 	// port answers /dns-query and the public portal routes, and never the
 	// admin namespace (Mantis v2.1.0 finding #1).
 	dnsServer := dns.NewServer(dnsHandler, tlsConfig, webServer.BuildDoHHandler(), dohHandler, serverSettings.BindHost, dns.TransportConfig{
-		Port:            dnsSettings.Port,
-		DoTPort:         dnsSettings.DoTPort,
-		DoHPort:         dnsSettings.DoHPort,
-		DoQPort:         dnsSettings.DoQPort,
-		DoQEnabled:      dnsSettings.DoQEnabled,
-		DoQAuth:         dnsSettings.DoQAuth,
-		DoQTokenDomain:  dnsSettings.DoQTokenDomain,
-		DoH3Enabled:     dnsSettings.DoH3Enabled,
-		DoTDisabled:     dnsSettings.DoTDisabled,
-		DoTAuth:         dnsSettings.DoTAuth,
-		DoTTokenDomain:  dnsSettings.DoTTokenDomain,
-		MTLSEnabled:     dnsSettings.MTLSEnabled,
-		MTLSCAPEM:       dnsSettings.MTLSCAPEM,
-		DNSCryptEnabled: dnsSettings.DNSCryptEnabled,
-		DNSCryptPort:    dnsSettings.DNSCryptPort,
+		Port:             dnsSettings.Port,
+		DoTPort:          dnsSettings.DoTPort,
+		DoHPort:          dnsSettings.DoHPort,
+		DoQPort:          dnsSettings.DoQPort,
+		DoQEnabled:       dnsSettings.DoQEnabled,
+		DoQAuth:          dnsSettings.DoQAuth,
+		DoQTokenDomain:   dnsSettings.DoQTokenDomain,
+		DoH3Enabled:      true,
+		PlainDNSDisabled: dnsSettings.PlainDNSDisabled,
+		DoHDisabled:      dnsSettings.DoHDisabled,
+		DoTDisabled:      dnsSettings.DoTDisabled,
+		DoTAuth:          dnsSettings.DoTAuth,
+		DoTTokenDomain:   dnsSettings.DoTTokenDomain,
+		MTLSEnabled:      dnsSettings.MTLSEnabled,
+		MTLSCAPEM:        dnsSettings.MTLSCAPEM,
+		DNSCryptEnabled:  dnsSettings.DNSCryptEnabled,
+		DNSCryptPort:     dnsSettings.DNSCryptPort,
 	})
 	// Tokens are enforced per connection, but the listener must see them before
 	// Start or a boot with DoQ already enabled would refuse every connection.
@@ -856,21 +859,23 @@ func main() {
 		dnsServer.SetDoQTokens(tokens)
 		dnsServer.SetDoTTokens(cfg.DoTTokens)
 		return dnsServer.ApplyTransports(dns.TransportConfig{
-			Port:            cfg.Port,
-			DoTPort:         cfg.DoTPort,
-			DoHPort:         cfg.DoHPort,
-			DoQPort:         cfg.DoQPort,
-			DoQEnabled:      cfg.DoQEnabled,
-			DoQAuth:         cfg.DoQAuth,
-			DoQTokenDomain:  cfg.DoQTokenDomain,
-			DoH3Enabled:     cfg.DoH3Enabled,
-			DoTDisabled:     cfg.DoTDisabled,
-			DoTAuth:         cfg.DoTAuth,
-			DoTTokenDomain:  cfg.DoTTokenDomain,
-			MTLSEnabled:     cfg.MTLSEnabled,
-			MTLSCAPEM:       cfg.MTLSCAPEM,
-			DNSCryptEnabled: cfg.DNSCryptEnabled,
-			DNSCryptPort:    cfg.DNSCryptPort,
+			Port:             cfg.Port,
+			DoTPort:          cfg.DoTPort,
+			DoHPort:          cfg.DoHPort,
+			DoQPort:          cfg.DoQPort,
+			DoQEnabled:       cfg.DoQEnabled,
+			DoQAuth:          cfg.DoQAuth,
+			DoQTokenDomain:   cfg.DoQTokenDomain,
+			DoH3Enabled:      true,
+			PlainDNSDisabled: cfg.PlainDNSDisabled,
+			DoHDisabled:      cfg.DoHDisabled,
+			DoTDisabled:      cfg.DoTDisabled,
+			DoTAuth:          cfg.DoTAuth,
+			DoTTokenDomain:   cfg.DoTTokenDomain,
+			MTLSEnabled:      cfg.MTLSEnabled,
+			MTLSCAPEM:        cfg.MTLSCAPEM,
+			DNSCryptEnabled:  cfg.DNSCryptEnabled,
+			DNSCryptPort:     cfg.DNSCryptPort,
 		})
 	})
 	webServer.SetDNSCryptApplier(func(rc *dnscryptlib.ResolverConfig, cert *dnscryptlib.Cert) error {
@@ -879,6 +884,18 @@ func main() {
 	})
 	webServer.SetDNSCryptStatusSource(dnsServer.DNSCryptStatus)
 	webServer.SetTransportStatusSource(dnsServer.TransportStatus)
+	webServer.SetTransportListenerSource(func() internalWeb.TransportListeners {
+		doh3, doq, _ := dnsServer.TransportStatus()
+		dnscryptListening, _, _ := dnsServer.DNSCryptStatus()
+		return internalWeb.TransportListeners{
+			PlainDNS: dnsServer.PlainDNSListening(),
+			DoT:      dnsServer.DoTListening(),
+			DoH:      dnsServer.DoHListening(),
+			DoH3:     doh3,
+			DoQ:      doq,
+			DNSCrypt: dnscryptListening,
+		}
+	})
 	webServer.SetTransportMetricsSource(func() internalWeb.TransportMetrics {
 		m := dnsServer.TransportMetrics()
 		return internalWeb.TransportMetrics{
@@ -1064,18 +1081,39 @@ func summaryLines(srv *database.ServerSettings, dns *database.DNSSettings, sni *
 		// retired route would send the operator to a 404.
 		fmt.Sprintf(" DigitDNS Dashboard : %s://%s/%s/dash/", scheme,
 			net.JoinHostPort(reachable, strconv.Itoa(srv.WebPort)), srv.AdminPath),
-		fmt.Sprintf(" Standard DNS       : %s (UDP/TCP)", net.JoinHostPort(reachable, strconv.Itoa(dns.Port))),
-		fmt.Sprintf(" DNS-over-TLS (DoT) : %s (TCP/TLS)", net.JoinHostPort(doTHost, strconv.Itoa(dns.DoTPort))),
+	}
+	if dns.PlainDNSDisabled {
+		lines = append(lines, " Standard DNS       : disabled")
+	} else {
+		plainPort := dns.Port
+		if plainPort == 0 {
+			plainPort = 53
+		}
+		lines = append(lines, fmt.Sprintf(" Standard DNS       : %s (UDP/TCP)", net.JoinHostPort(reachable, strconv.Itoa(plainPort))))
+	}
+	if dns.DoTDisabled {
+		lines = append(lines, " DNS-over-TLS (DoT) : disabled")
+	} else {
+		dotPort := dns.DoTPort
+		if dotPort == 0 {
+			dotPort = 853
+		}
+		lines = append(lines, fmt.Sprintf(" DNS-over-TLS (DoT) : %s (TCP/TLS)", net.JoinHostPort(doTHost, strconv.Itoa(dotPort))))
 	}
 	// Port 443 is the scheme default, so carrying it in the URL would be noise
 	// — the same suppression the dashboard's doh_url field applies.
-	doh := "https://" + net.JoinHostPort(doTHost, strconv.Itoa(dns.DoHPort)) + "/dns-query"
-	if dns.DoHPort == 443 {
+	dohPort := dns.DoHPort
+	if dohPort == 0 {
+		dohPort = 8443
+	}
+	doh := "https://" + net.JoinHostPort(doTHost, strconv.Itoa(dohPort)) + "/dns-query"
+	if dohPort == 443 {
 		doh = "https://" + doTHost + "/dns-query"
 	}
-	lines = append(lines, fmt.Sprintf(" DNS-over-HTTPS     : %s", doh))
-	if dns.DoH3Enabled {
-		lines = append(lines, fmt.Sprintf(" DNS-over-HTTPS/3   : %s (HTTP/3, UDP %d)", doh, dns.DoHPort))
+	if dns.DoHDisabled {
+		lines = append(lines, " DNS-over-HTTPS     : disabled")
+	} else {
+		lines = append(lines, fmt.Sprintf(" DNS-over-HTTPS     : %s", doh))
 	}
 	if dns.DoQEnabled {
 		doqPort := dns.DoQPort
@@ -1083,6 +1121,24 @@ func summaryLines(srv *database.ServerSettings, dns *database.DNSSettings, sni *
 			doqPort = 853
 		}
 		lines = append(lines, fmt.Sprintf(" DNS-over-QUIC      : quic://%s (UDP)", net.JoinHostPort(doTHost, strconv.Itoa(doqPort))))
+	} else {
+		lines = append(lines, " DNS-over-QUIC      : disabled")
+	}
+	// DoH3 shares the DoH port and is always on.
+	lines = append(lines, fmt.Sprintf(" DNS-over-HTTPS/3   : %s (HTTP/3, UDP %d)", doh, dohPort))
+	if dns.DNSCryptEnabled {
+		dnscryptPort := dns.DNSCryptPort
+		if dnscryptPort == 0 {
+			dnscryptPort = 5443
+		}
+		lines = append(lines, fmt.Sprintf(" DNSCrypt           : %s (UDP/TCP)", net.JoinHostPort(reachable, strconv.Itoa(dnscryptPort))))
+	} else {
+		lines = append(lines, " DNSCrypt           : disabled")
+	}
+	if dns.MTLSEnabled {
+		lines = append(lines, " Client mTLS        : enforced (DoT, DoH, DoQ)")
+	} else {
+		lines = append(lines, " Client mTLS        : off")
 	}
 
 	if sni.Enabled {

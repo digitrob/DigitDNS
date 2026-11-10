@@ -97,11 +97,21 @@ func (ws *WebServer) dnscryptStamp(st database.DNSCryptSettings, port int) strin
 		ResolverSk:   st.ResolverSk,
 		EsVersion:    dnscryptlib.CryptoConstruction(st.EsVersion),
 	}
-	host := ws.settings.GetPublicIP()
+	// Only Plain DNS is advertised by IP. Every certificate-backed transport,
+	// including DNSCrypt, uses the configured domain so the stamp survives an
+	// address change and matches the name clients already use.
+	host := ""
+	if ws.tlsSettings != nil {
+		host = safeHostDisplay(ws.tlsSettings.GetDoTDomain())
+		if host == "" {
+			host = safeHostDisplay(ws.tlsSettings.GetDomain())
+		}
+	}
 	if strings.TrimSpace(host) == "" {
-		// A domain-only install still has a name clients can reach; a stamp
-		// pointing at loopback would be unusable on every other device.
 		host = ws.effectivePanelDomain()
+	}
+	if strings.TrimSpace(host) == "" {
+		host = ws.settings.GetPublicIP()
 	}
 	if strings.TrimSpace(host) == "" {
 		host = "127.0.0.1"

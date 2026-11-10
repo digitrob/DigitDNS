@@ -58,9 +58,6 @@ interface SettingsApi {
     suspend fun getTransports(): TransportSettingsDto
 
     @POST("settings/transports")
-    suspend fun saveDoh3(@Body body: Doh3SettingsSave): TransportSettingsDto
-
-    @POST("settings/transports")
     suspend fun saveTransports(@Body body: TransportSettingsSave): TransportSettingsDto
 }
 
@@ -123,7 +120,16 @@ data class TransportSettingsDto(
     @SerialName("doq_listening") val doqListening: Boolean = false,
     @SerialName("ip_allowlist") val ipAllowlist: TransportIpAllowlistDto = TransportIpAllowlistDto(),
     @SerialName("last_error") val lastError: String = "",
+    @SerialName("plain_dns_enabled") val plainDNSEnabled: Boolean = true,
+    @SerialName("plain_dns_port") val plainDNSPort: Int = 53,
+    @SerialName("plain_dns_listening") val plainDNSListening: Boolean = false,
+    @SerialName("server_host") val serverHost: String = "",
+    @SerialName("dot_host") val dotHost: String = "",
+    @SerialName("doh_enabled") val dohEnabled: Boolean = true,
+    @SerialName("doh_port") val dohPort: Int = 8443,
+    @SerialName("doh_listening") val dohListening: Boolean = false,
     @SerialName("dot_enabled") val dotEnabled: Boolean = true,
+    @SerialName("dot_listening") val dotListening: Boolean = false,
     @SerialName("dot_auth") val dotAuth: String = "ip",
     @SerialName("dot_port") val dotPort: Int = 853,
     @SerialName("dot_token_domain") val dotTokenDomain: String = "",
@@ -151,27 +157,38 @@ data class TransportIpAllowlistDto(
     @SerialName("resolver_entries") val resolverEntries: Int = 0,
 )
 
-@Serializable
-data class Doh3SettingsSave(
-    @SerialName("doh3_enabled") val doh3Enabled: Boolean,
-)
-
+/**
+ * Every transport switch and port must be emitted on every save.
+ *
+ * kotlinx.serialization omits properties that equal their default unless the
+ * Json instance sets encodeDefaults. A defaulted `dnscrypt_enabled = false`
+ * therefore disappeared from the body, the server kept its previous `true`, and
+ * the Android switch snapped back on. The same bug made DoT impossible to turn
+ * back on (`true` was the default and was omitted). These fields deliberately
+ * have no defaults, like StatsSettingsSave.
+ */
 @Serializable
 data class TransportSettingsSave(
+    @SerialName("doh3_enabled") val doh3Enabled: Boolean,
     @SerialName("doq_enabled") val doqEnabled: Boolean,
     @SerialName("doq_port") val doqPort: Int,
     @SerialName("doq_auth") val doqAuth: String,
     @SerialName("doq_token_domain") val doqTokenDomain: String,
     @SerialName("doq_tokens") val doqTokens: List<String>,
-    @SerialName("dnscrypt_enabled") val dnscryptEnabled: Boolean = false,
-    @SerialName("dnscrypt_port") val dnscryptPort: Int = 5443,
-    @SerialName("dnscrypt_provider_name") val dnscryptProviderName: String = "",
-    @SerialName("dot_enabled") val dotEnabled: Boolean = true,
-    @SerialName("dot_auth") val dotAuth: String = "ip",
-    @SerialName("dot_token_domain") val dotTokenDomain: String = "",
-    @SerialName("dot_tokens") val dotTokens: List<String> = emptyList(),
-    @SerialName("mtls_enabled") val mtlsEnabled: Boolean = false,
-    @SerialName("mtls_ca_pem") val mtlsCaPem: String = "",
+    @SerialName("dnscrypt_enabled") val dnscryptEnabled: Boolean,
+    @SerialName("dnscrypt_port") val dnscryptPort: Int,
+    @SerialName("dnscrypt_provider_name") val dnscryptProviderName: String,
+    @SerialName("plain_dns_enabled") val plainDNSEnabled: Boolean,
+    @SerialName("plain_dns_port") val plainDNSPort: Int,
+    @SerialName("doh_enabled") val dohEnabled: Boolean,
+    @SerialName("doh_port") val dohPort: Int,
+    @SerialName("dot_enabled") val dotEnabled: Boolean,
+    @SerialName("dot_port") val dotPort: Int,
+    @SerialName("dot_auth") val dotAuth: String,
+    @SerialName("dot_token_domain") val dotTokenDomain: String,
+    @SerialName("dot_tokens") val dotTokens: List<String>,
+    @SerialName("mtls_enabled") val mtlsEnabled: Boolean,
+    @SerialName("mtls_ca_pem") val mtlsCaPem: String,
 )
 
 /**

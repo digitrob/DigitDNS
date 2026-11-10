@@ -2,6 +2,7 @@
 
 package com.digitrob.digitdns.ui.rules
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,13 +13,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -40,10 +44,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.CountryFlag
 import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
-import com.digitrob.digitdns.ui.components.PanelDialog
+import com.digitrob.digitdns.ui.components.PanelWideDialog
+import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
 
 /** One row in a relay chooser. [id] is what gets written to the rules map. */
@@ -170,20 +176,18 @@ internal fun RelayChoiceDialog(
     onPick: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    PanelDialog(
+    PanelWideDialog(
         onDismissRequest = onDismiss,
         solid = true,
-        title = { Text(title) },
+        title = { Text(title, style = MaterialTheme.typography.titleLarge) },
         text = {
-            Column(
-                modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()),
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     body,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 6.dp),
                 )
-                Spacer(Modifier.width(2.dp))
                 options.forEach { option ->
                     RelayChoiceRow(
                         option = option,
@@ -204,23 +208,31 @@ private fun RelayChoiceRow(option: RelayChoice, selected: Boolean, onClick: () -
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (selected) DigitDnsTheme.colors.success.copy(alpha = 0.10f) else Color.Transparent,
+            )
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(vertical = 4.dp),
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (selected) {
-            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-        } else {
-            Spacer(Modifier.width(16.dp))
-        }
-        Spacer(Modifier.width(6.dp))
-        CountryFlag(country = option.country, width = 18.dp, height = 14.dp)
-        Spacer(Modifier.width(8.dp))
+        Icon(
+            if (selected) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (selected) {
+                DigitDnsTheme.colors.success
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.size(24.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        CountryFlag(country = option.country, width = 26.dp, height = 19.dp)
+        Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 option.label,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -228,9 +240,12 @@ private fun RelayChoiceRow(option: RelayChoice, selected: Boolean, onClick: () -
             if (option.detail.isNotBlank() && option.detail != option.label) {
                 Text(
                     option.detail,
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = PanelMono,
+                        fontSize = 12.sp,
+                    ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -268,7 +283,7 @@ internal fun ServiceDefaultRelayField(
                 onClick = { expanded = true },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                CountryFlag(country = current.country, width = 18.dp, height = 14.dp)
+                CountryFlag(country = current.country, width = 24.dp, height = 18.dp)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     current.label,
@@ -282,21 +297,31 @@ internal fun ServiceDefaultRelayField(
                 Column(
                     modifier = Modifier
                         .heightIn(max = 280.dp)
-                        .width(240.dp)
+                        .widthIn(min = 280.dp, max = 360.dp)
                         .verticalScroll(rememberScrollState()),
                 ) {
                     options.forEach { option ->
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CountryFlag(country = option.country, width = 18.dp, height = 14.dp)
+                                    CountryFlag(country = option.country, width = 24.dp, height = 18.dp)
                                     Spacer(Modifier.width(8.dp))
-                                    Text(option.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                option.label,
+                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                                 }
                             },
                             trailingIcon = {
                                 if (option.id == current.id) {
-                                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Icon(
+                                        Icons.Filled.CheckCircle,
+                                        contentDescription = null,
+                                        tint = DigitDnsTheme.colors.success,
+                                        modifier = Modifier.size(20.dp),
+                                    )
                                 }
                             },
                             onClick = {
@@ -327,7 +352,7 @@ internal fun RelayRowIcon(
     val relayDescription = stringResource(R.string.relay_row_content, label)
     Box(
         modifier = modifier
-            .size(26.dp)
+            .size(30.dp)
             .clip(RoundedCornerShape(5.dp))
             .clickable(role = Role.Button, onClick = onClick)
             .semantics {
@@ -337,8 +362,8 @@ internal fun RelayRowIcon(
     ) {
         CountryFlag(
             country = country,
-            width = 16.dp,
-            height = 12.dp,
+            width = 20.dp,
+            height = 15.dp,
             // The touchable Box owns the full description; the flag itself is
             // decorative, so a screen reader does not hear the country twice.
             modifier = Modifier.clearAndSetSemantics {},

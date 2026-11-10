@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"digitdns/internal/core/upstream"
 	"digitdns/internal/database"
 )
 
@@ -50,6 +51,40 @@ func storedDNS(t *testing.T, db *database.DB) *database.DNSSettings {
 		t.Fatalf("reading the dns record back: %v", err)
 	}
 	return got
+}
+
+func TestUpstreamPresetsEndpointIsReadOnlyAndComplete(t *testing.T) {
+	_, h, tok, cleanup := authedServer(t)
+	defer cleanup()
+
+	w := authedGet(t, h, "/api/upstreams/presets", tok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/upstreams/presets = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Providers []upstream.PresetProvider `json:"providers"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode preset response: %v", err)
+	}
+	if len(body.Providers) != 10 {
+		t.Fatalf("providers = %d, want 10", len(body.Providers))
+	}
+	for _, provider := range body.Providers {
+		if provider.ID == "" || provider.Name == "" || len(provider.Servers) == 0 {
+			t.Errorf("incomplete provider in response: %+v", provider)
+		}
+		for _, server := range provider.Servers {
+			if server.Address == "" || server.Protocol == "" {
+				t.Errorf("%s has an incomplete server: %+v", provider.ID, server)
+			}
+		}
+	}
+
+	post := authedRequest(t, h, http.MethodPost, "/api/upstreams/presets", tok)
+	if post.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /api/upstreams/presets = %d, want 405", post.Code)
+	}
 }
 
 // TestAddUpstreamKeepsTheRestOfTheRecord is the regression. The handler used to

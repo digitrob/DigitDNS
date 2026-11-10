@@ -26,14 +26,25 @@ type ResponseValidator interface {
 	Validate(ctx context.Context, q dns.Question, resp *dns.Msg) dnssec.Result
 }
 
-// EnableDNSSEC turns on chain validation. anchors are optional DS/DNSKEY
-// records in zone-file form; an empty slice keeps the built-in IANA root
-// anchors. Call it during startup, before the listeners accept traffic.
-// DNSSECEnabled reports whether this process installed a validator at startup.
-func (h *Handler) DNSSECEnabled() bool {
-	return h.validator != nil
+type validatorSlot struct{ v ResponseValidator }
+
+func (h *Handler) currentValidator() ResponseValidator {
+	if p := h.validator.Load(); p != nil {
+		return p.v
+	}
+	return nil
 }
 
+// DNSSECEnabled reports whether validation is installed right now.
+func (h *Handler) DNSSECEnabled() bool {
+	return h.currentValidator() != nil
+}
+
+// EnableDNSSEC turns on chain validation. anchors are optional DS/DNSKEY
+// records in zone-file form; an empty slice keeps the built-in IANA root
+// anchors. It is safe to call on a running server: the query path swaps the
+// validator pointer atomically, and the cache is flushed so answers validated
+// under the previous policy cannot outlive it.
 func (h *Handler) EnableDNSSEC(anchors []string) error {
 	if h.upstreams == nil {
 		return errors.New("dnssec: no upstream pool")
@@ -44,8 +55,30 @@ func (h *Handler) EnableDNSSEC(anchors []string) error {
 			return err
 		}
 	}
-	h.validator = v
+	h.validator.Store(&validatorSlot{v: v})
+	if h.cache != nil {
+		h.cache.Flush()
+	}
 	return nil
+}
+
+// DisableDNSSEC turns validation off without a restart.
+func (h *Handler) DisableDNSSEC() {
+	h.validator.Store(nil)
+	if h.cache != nil {
+		h.cache.Flush()
+	}
+}
+
+// SetDNSSEC applies a saved policy to the running resolver. The settings card
+// uses this immediately after persisting, so the running badge changes without
+// a service restart.
+func (h *Handler) SetDNSSEC(enabled bool, anchors []string) error {
+	if !enabled {
+		h.DisableDNSSEC()
+		return nil
+	}
+	return h.EnableDNSSEC(anchors)
 }
 
 // poolFetcher asks the configured pool for raw DNSSEC records. CD=1 is
@@ -84,14 +117,15 @@ func (f poolFetcher) Fetch(_ context.Context, name string, qtype uint16) (*dns.M
 // Error when the client sent OPT so a diagnosing client can tell a broken zone
 // from a broken resolver.
 func (h *Handler) validateUpstream(q dns.Question, resp *dns.Msg) dnssec.Result {
-	if h.validator == nil || resp == nil {
+	validator := h.currentValidator()
+	if validator == nil || resp == nil {
 		return dnssec.Result{Status: dnssec.Insecure}
 	}
 	resp.AuthenticatedData = false
 
 	ctx, cancel := context.WithTimeout(context.Background(), dnssecValidationTimeout)
 	defer cancel()
-	result := h.validator.Validate(ctx, q, resp)
+	result := validator.Validate(ctx, q, resp)
 	if result.Status == dnssec.Secure {
 		resp.AuthenticatedData = true
 	}

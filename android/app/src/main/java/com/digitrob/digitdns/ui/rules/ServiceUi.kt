@@ -21,12 +21,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.PublicOff
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -55,6 +56,7 @@ import coil.compose.SubcomposeAsyncImage
 import timber.log.Timber
 import com.digitrob.digitdns.domain.model.serviceDisplayIcon
 import com.digitrob.digitdns.ui.components.PanelDialog
+import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
 import java.util.Locale
 
@@ -63,6 +65,7 @@ import java.util.Locale
  * panel's Services column: one dropdown, with the same three kinds of entry
  * (all, unlabelled, each named service) and a count per entry.
  */
+@Suppress("LongMethod") // Menu entries share one selection pictogram block.
 @Composable
 internal fun ServiceFilterDropdown(
     state: RulesUiState,
@@ -109,7 +112,12 @@ internal fun ServiceFilterDropdown(
                 text = { Text("${stringResource(R.string.services_all)} (${state.totalCount})") },
                 leadingIcon = { ServiceIcon(null, Modifier.size(20.dp)) },
                 trailingIcon = {
-                    if (selected == null) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    if (selected == null) Icon(
+                                        Icons.Filled.CheckCircle,
+                                        contentDescription = null,
+                                        tint = DigitDnsTheme.colors.success,
+                                        modifier = Modifier.size(20.dp),
+                                    )
                 },
                 onClick = { expanded = false; onSelect(null) },
             )
@@ -117,7 +125,12 @@ internal fun ServiceFilterDropdown(
                 text = { Text("${stringResource(R.string.services_none)} (${state.noServiceCount})") },
                 leadingIcon = { ServiceIcon(null, Modifier.size(20.dp), noService = true) },
                 trailingIcon = {
-                    if (selected == NO_SERVICE) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    if (selected == NO_SERVICE) Icon(
+                                        Icons.Filled.CheckCircle,
+                                        contentDescription = null,
+                                        tint = DigitDnsTheme.colors.success,
+                                        modifier = Modifier.size(20.dp),
+                                    )
                 },
                 onClick = { expanded = false; onSelect(NO_SERVICE) },
             )
@@ -128,7 +141,12 @@ internal fun ServiceFilterDropdown(
                         text = { Text("$name (${state.serviceCounts[id] ?: 0})", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         leadingIcon = { ServiceIcon(state.lists.serviceIcons[id], Modifier.size(20.dp)) },
                         trailingIcon = {
-                            if (selected == id) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                            if (selected == id) Icon(
+                                        Icons.Filled.CheckCircle,
+                                        contentDescription = null,
+                                        tint = DigitDnsTheme.colors.success,
+                                        modifier = Modifier.size(20.dp),
+                                    )
                         },
                         onClick = { expanded = false; onSelect(id) },
                     )
@@ -386,9 +404,19 @@ private fun ServiceChoiceRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (selected) {
-            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+            Icon(
+                Icons.Filled.CheckCircle,
+                contentDescription = null,
+                tint = DigitDnsTheme.colors.success,
+                modifier = Modifier.size(20.dp),
+            )
         } else {
-            Spacer(Modifier.width(16.dp))
+            Icon(
+                Icons.Outlined.RadioButtonUnchecked,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
         }
         Spacer(Modifier.width(6.dp))
         ServiceIcon(iconUrl, Modifier.size(20.dp), noService)
@@ -495,7 +523,12 @@ internal fun SortDropdown(selected: DomainSort, onSelect: (DomainSort) -> Unit) 
                     text = { Text(stringResource(sort.labelRes)) },
                     trailingIcon = {
                         if (sort == selected) {
-                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(
+                                        Icons.Filled.CheckCircle,
+                                        contentDescription = null,
+                                        tint = DigitDnsTheme.colors.success,
+                                        modifier = Modifier.size(20.dp),
+                                    )
                         }
                     },
                     onClick = {

@@ -2017,7 +2017,8 @@ function renderConfig(cfg) {
   }
   const guideDoH3Note = document.getElementById('guide-doh3-note');
   if (guideDoH3Note) {
-    guideDoH3Note.classList.toggle('hidden', !(cfg.transports && cfg.transports.doh3_enabled));
+    // DoH3 shares the DoH port and is always on.
+    guideDoH3Note.classList.remove('hidden');
   }
   const guideDoQCard = document.getElementById('guide-doq-card');
   if (guideDoQCard) {
@@ -2255,7 +2256,6 @@ function renderList(containerId, items, removeClass) {
 // state lives in currentConfig.transports; transportDraft holds the in-progress
 // form so a DoH3 auto-save cannot commit it by accident.
 let transportDraft = null;
-let doh3Saving = false;
 let transportSaving = false;
 let transportInlineError = '';
 // Global notice state. The upstream health set is refreshed from /api/stats; the
@@ -2265,11 +2265,12 @@ let upstreamHealthSignature = '';
 let lastGlobalNoticeSignature = '';
 
 function normalizeTransportSettings(cfg) {
-  if (!cfg) return { doq_enabled: false, doh3_enabled: false, doq_port: 853, doq_auth: 'ip', doq_token_domain: '', doq_tokens: [], doh3_listening: false, doq_listening: false, dot_auth: 'ip', dot_port: 853, dot_token_domain: '', dot_tokens: [], dnscrypt_enabled: false, dnscrypt_port: 5443, dnscrypt_provider_name: '2.dnscrypt-cert.digitdns.local', dnscrypt_stamp: '', dnscrypt_cert_not_after: 0, dnscrypt_listening: false, mtls_enabled: false, mtls_ca_pem: '', ip_allowlist: { allow_all: false, client_accounts: 0, client_entries: 0, resolver_entries: 0 }, last_error: '' };
+  if (!cfg) return { plain_dns_enabled: true, plain_dns_port: 53, plain_dns_listening: false, doh_enabled: true, doh_port: 8443, doh_listening: false, doq_enabled: false, doh3_enabled: true, doq_port: 853, doq_auth: 'ip', doq_token_domain: '', doq_tokens: [], doh3_listening: false, doq_listening: false, dot_enabled: true, dot_listening: false, dot_auth: 'ip', dot_port: 853, dot_token_domain: '', dot_tokens: [], dnscrypt_enabled: false, dnscrypt_port: 5443, dnscrypt_provider_name: '2.dnscrypt-cert.digitdns.local', dnscrypt_stamp: '', dnscrypt_cert_not_after: 0, dnscrypt_listening: false, mtls_enabled: false, mtls_ca_pem: '', ip_allowlist: { allow_all: false, client_accounts: 0, client_entries: 0, resolver_entries: 0 }, last_error: '' };
   if (!cfg.transports || typeof cfg.transports !== 'object') cfg.transports = {};
   const t = cfg.transports;
   t.doq_enabled = !!t.doq_enabled;
-  t.doh3_enabled = !!t.doh3_enabled;
+  // DoH3 shares the DoH port; it is always on and its switch is read-only.
+  t.doh3_enabled = true;
   t.doq_port = Number.isFinite(Number(t.doq_port)) && Number(t.doq_port) > 0 ? Number(t.doq_port) : 853;
   t.doq_auth = t.doq_auth === 'sni-token' ? 'sni-token' : 'ip';
   t.doq_token_domain = typeof t.doq_token_domain === 'string' ? t.doq_token_domain : '';
@@ -2278,6 +2279,8 @@ function normalizeTransportSettings(cfg) {
   t.doq_listening = !!t.doq_listening;
   t.doh3_port = Number.isFinite(Number(t.doh3_port)) && Number(t.doh3_port) > 0 ? Number(t.doh3_port) : 8443;
   t.dot_auth = t.dot_auth === 'sni-token' ? 'sni-token' : 'ip';
+  t.dot_port = Number.isFinite(Number(t.dot_port)) && Number(t.dot_port) > 0 ? Number(t.dot_port) : 853;
+  t.dot_listening = !!t.dot_listening;
   t.dot_enabled = t.dot_enabled !== false;
   t.dot_port = Number.isFinite(Number(t.dot_port)) && Number(t.dot_port) > 0 ? Number(t.dot_port) : 853;
   t.dot_token_domain = typeof t.dot_token_domain === 'string' ? t.dot_token_domain : '';
@@ -2288,6 +2291,12 @@ function normalizeTransportSettings(cfg) {
   t.dnscrypt_stamp = typeof t.dnscrypt_stamp === 'string' ? t.dnscrypt_stamp : '';
   t.dnscrypt_cert_not_after = Number(t.dnscrypt_cert_not_after) || 0;
   t.dnscrypt_listening = !!t.dnscrypt_listening;
+  t.plain_dns_enabled = t.plain_dns_enabled !== false;
+  t.plain_dns_port = Number.isFinite(Number(t.plain_dns_port)) && Number(t.plain_dns_port) > 0 ? Number(t.plain_dns_port) : 53;
+  t.plain_dns_listening = !!t.plain_dns_listening;
+  t.doh_enabled = t.doh_enabled !== false;
+  t.doh_port = Number.isFinite(Number(t.doh_port)) && Number(t.doh_port) > 0 ? Number(t.doh_port) : (Number(t.doh3_port) || 8443);
+  t.doh_listening = !!t.doh_listening;
   t.mtls_enabled = !!t.mtls_enabled;
   t.mtls_ca_pem = typeof t.mtls_ca_pem === 'string' ? t.mtls_ca_pem : '';
   const al = (t.ip_allowlist && typeof t.ip_allowlist === 'object') ? t.ip_allowlist : {};
@@ -2303,18 +2312,24 @@ function normalizeTransportSettings(cfg) {
 
 function copyTransportDraft(t) {
   return {
+    doh3_enabled: !!t.doh3_enabled,
     doq_enabled: !!t.doq_enabled,
     doq_port: t.doq_port || 853,
     doq_auth: t.doq_auth === 'sni-token' ? 'sni-token' : 'ip',
     doq_token_domain: t.doq_token_domain || '',
     doq_tokens: (t.doq_tokens || []).slice(),
     dot_enabled: t.dot_enabled !== false,
+    dot_port: t.dot_port || 853,
     dot_auth: t.dot_auth === 'sni-token' ? 'sni-token' : 'ip',
     dot_token_domain: t.dot_token_domain || '',
     dot_tokens: (t.dot_tokens || []).slice(),
     dnscrypt_enabled: !!t.dnscrypt_enabled,
     dnscrypt_port: t.dnscrypt_port || 5443,
     dnscrypt_provider_name: t.dnscrypt_provider_name || '',
+    plain_dns_enabled: t.plain_dns_enabled !== false,
+    plain_dns_port: t.plain_dns_port || 53,
+    doh_enabled: t.doh_enabled !== false,
+    doh_port: t.doh_port || 8443,
     mtls_enabled: !!t.mtls_enabled,
     mtls_ca_pem: t.mtls_ca_pem || '',
   };
@@ -2337,6 +2352,18 @@ function withTransportDraft(mutate) {
 // enforces, kept here so an incomplete SNI-token or mTLS edit stays local
 // instead of bouncing off a 400.
 function transportDraftProblem(draft) {
+  const plainPort = Number(draft.plain_dns_port);
+  if (!Number.isInteger(plainPort) || plainPort < 1 || plainPort > 65535) {
+    return 'Plain DNS port must be between 1 and 65535.';
+  }
+  const dohPort = Number(draft.doh_port);
+  if (!Number.isInteger(dohPort) || dohPort < 1 || dohPort > 65535) {
+    return 'DoH port must be between 1 and 65535.';
+  }
+  const dotPort = Number(draft.dot_port);
+  if (!Number.isInteger(dotPort) || dotPort < 1 || dotPort > 65535) {
+    return 'DoT port must be between 1 and 65535.';
+  }
   const doqPort = Number(draft.doq_port);
   if (!Number.isInteger(doqPort) || doqPort < 1 || doqPort > 65535) {
     return 'DoQ port must be between 1 and 65535.';
@@ -2361,6 +2388,12 @@ function transportDraftProblem(draft) {
 
 function transportSaveBody(draft) {
   return {
+    plain_dns_enabled: !!draft.plain_dns_enabled,
+    plain_dns_port: Number(draft.plain_dns_port),
+    doh_enabled: !!draft.doh_enabled,
+    doh_port: Number(draft.doh_port),
+    dot_port: Number(draft.dot_port),
+    doh3_enabled: true,
     doq_enabled: !!draft.doq_enabled,
     doq_port: Number(draft.doq_port),
     doq_auth: draft.doq_auth,
@@ -2385,161 +2418,243 @@ function transportDraftDirty(applied, draft) {
     draft.doq_token_domain !== applied.doq_token_domain ||
     JSON.stringify(draft.doq_tokens) !== JSON.stringify(applied.doq_tokens) ||
     draft.dot_enabled !== applied.dot_enabled ||
+    Number(draft.dot_port) !== Number(applied.dot_port) ||
     draft.dot_auth !== applied.dot_auth ||
     draft.dot_token_domain !== applied.dot_token_domain ||
     JSON.stringify(draft.dot_tokens) !== JSON.stringify(applied.dot_tokens) ||
     draft.dnscrypt_enabled !== applied.dnscrypt_enabled ||
     Number(draft.dnscrypt_port) !== Number(applied.dnscrypt_port) ||
     draft.dnscrypt_provider_name !== applied.dnscrypt_provider_name ||
+    draft.plain_dns_enabled !== applied.plain_dns_enabled ||
+    Number(draft.plain_dns_port) !== Number(applied.plain_dns_port) ||
+    draft.doh_enabled !== applied.doh_enabled ||
+    Number(draft.doh_port) !== Number(applied.doh_port) ||
     draft.mtls_enabled !== applied.mtls_enabled ||
     draft.mtls_ca_pem !== applied.mtls_ca_pem;
 }
 
 function transportGuideHost() {
   const cfg = currentConfig || {};
-  return (cfg.tls && (cfg.tls.dot_domain || cfg.tls.domain)) || (cfg.server && cfg.server.public_ip) || '';
+  // Plain DNS is addressed by IP: an operator can paste it into any client
+  // without DNS. Domain names remain the fallback only when no address exists.
+  return (cfg.server && cfg.server.public_ip) ||
+    (cfg.tls && (cfg.tls.dot_domain || cfg.tls.domain)) || '';
+}
+
+function transportCertHost() {
+  const cfg = currentConfig || {};
+  // DoT/DoH/DoH3/DoQ validate the certificate against the SNI, so those cards
+  // advertise the certificate's domain, not the public IP.
+  return (cfg.tls && (cfg.tls.dot_domain || cfg.tls.domain)) || transportGuideHost();
+}
+
+function setTransportText(el, text) {
+  if (!el) return;
+  if (el.textContent !== text) el.textContent = text;
 }
 
 function renderTransportEndpoints(applied, draft) {
   const host = transportGuideHost();
   const cfg = currentConfig || {};
-  const doh3Port = applied.doh3_port || 8443;
-  const doh3PortEl = document.getElementById('doh3-port');
-  if (doh3PortEl) doh3PortEl.innerText = doh3Port;
-  const doh3El = document.getElementById('doh3-endpoint');
-  if (doh3El) {
-    doh3El.innerText = (typeof cfg.doh_url === 'string' && cfg.doh_url)
-      ? cfg.doh_url
-      : (host ? `https://${host}:${doh3Port}/dns-query` : 'Configure a domain and certificate first');
-  }
-  const port = draft.doq_port || 853;
-  const doqEl = document.getElementById('doq-endpoint');
-  if (doqEl) {
-    doqEl.innerText = (draft.doq_auth === 'sni-token' && draft.doq_token_domain)
-      ? `quic://<token>.${draft.doq_token_domain}:${port}`
-      : ((typeof cfg.doq_url === 'string' && cfg.doq_url) || (host ? `quic://${host}:${port}` : 'Configure a domain and certificate first'));
-  }
+  const missingHost = 'Configure a domain and certificate first';
 
-  const dotPort = applied.dot_port || 853;
+  const plainPort = draft.plain_dns_port || 53;
+  const plainEl = document.getElementById('plain-endpoint');
+  setTransportText(plainEl, host ? `${host}:${plainPort}` : missingHost);
+
+  const dotPort = draft.dot_port || 853;
   const dotEl = document.getElementById('dot-endpoint');
   if (dotEl) {
-    const dotHost = draft.dot_auth === 'sni-token' && draft.dot_token_domain
+    // The DoT certificate is issued for the DoH/DoT domain, and Android
+    // Private DNS validates it against the SNI. Show that name, not the IP;
+    // fall back to the address only when no domain is configured.
+    const dotBase = (cfg.tls && (cfg.tls.dot_domain || cfg.tls.domain)) || host;
+    const dotName = draft.dot_auth === 'sni-token' && draft.dot_token_domain
       ? `<token>.${draft.dot_token_domain}`
-      : (host || 'Configure a domain and certificate first');
-    dotEl.innerText = host ? `tls://${dotHost}:${dotPort}` : 'Configure a domain and certificate first';
+      : (dotBase || missingHost);
+    setTransportText(dotEl, dotBase ? `tls://${dotName}:${dotPort}` : missingHost);
   }
 
-  const doh3Status = document.getElementById('doh3-status');
-  if (doh3Status) {
-    if (doh3Saving) {
-      doh3Status.innerText = 'Saving…';
-      doh3Status.className = 'font-mono text-slate-400';
-    } else if (applied.doh3_listening) {
-      doh3Status.innerText = `Listening on UDP ${doh3Port}`;
-      doh3Status.className = 'font-mono text-emerald-300';
-    } else if (applied.doh3_enabled) {
-      doh3Status.innerText = 'Enabled — not listening';
-      doh3Status.className = 'font-mono text-amber-300';
+  const dohPort = draft.doh_port || 8443;
+  const certHost = transportCertHost();
+  const dohEl = document.getElementById('doh-endpoint');
+  if (!certHost) {
+    setTransportText(dohEl, missingHost);
+  } else {
+    const authority = dohPort === 443 ? certHost : `${certHost}:${dohPort}`;
+    setTransportText(dohEl, `https://${authority}/dns-query`);
+  }
+
+  const doqPort = draft.doq_port || 853;
+  const doqEl = document.getElementById('doq-endpoint');
+  setTransportText(doqEl, (draft.doq_auth === 'sni-token' && draft.doq_token_domain)
+    ? `quic://<token>.${draft.doq_token_domain}:${doqPort}`
+    : (certHost ? `quic://${certHost}:${doqPort}` : missingHost));
+
+  const doh3PortEl = document.getElementById('doh3-port-input');
+  if (doh3PortEl && doh3PortEl.value !== String(dohPort)) doh3PortEl.value = dohPort;
+  const doh3El = document.getElementById('doh3-endpoint');
+  if (!certHost) {
+    setTransportText(doh3El, missingHost);
+  } else {
+    const authority = dohPort === 443 ? certHost : `${certHost}:${dohPort}`;
+    setTransportText(doh3El, `h3://${authority}/dns-query`);
+  }
+
+  const statusClass = (tone) => `transport-state font-mono text-[10px] ${tone}`;
+  // Only change a status label when its text/tone actually changes. A blanket
+  // rewrite on every render makes all six cards flash while one switch saves.
+  const writeStatus = (el, text, tone) => {
+    if (!el) return;
+    if (el.innerText !== text) el.innerText = text;
+    const cls = statusClass(tone);
+    if (el.className !== cls) el.className = cls;
+  };
+  const setSimpleStatus = (id, enabled, listening, portText) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (!enabled) {
+      writeStatus(el, 'Off', 'text-slate-500');
+    } else if (listening) {
+      writeStatus(el, `Listening · ${portText}`, 'text-emerald-300');
     } else {
-      doh3Status.innerText = 'Off';
-      doh3Status.className = 'font-mono text-slate-300';
+      writeStatus(el, 'Enabled — not listening', 'text-amber-300');
+    }
+  };
+
+  setSimpleStatus('plain-status', draft.plain_dns_enabled, applied.plain_dns_listening, `UDP+TCP ${applied.plain_dns_port}`);
+  setSimpleStatus('doh-status', draft.doh_enabled, applied.doh_listening, `TCP ${applied.doh_port}`);
+  setSimpleStatus('doh3-status', true, applied.doh3_listening, `UDP ${applied.doh_port}`);
+
+  const dotStatus = document.getElementById('dot-status');
+  if (dotStatus) {
+    const dotNeedsInput = draft.dot_enabled && draft.dot_auth === 'sni-token' &&
+      (!draft.dot_token_domain || !draft.dot_tokens.length);
+    if (!draft.dot_enabled) {
+      writeStatus(dotStatus, 'Off', 'text-slate-500');
+    } else if (dotNeedsInput) {
+      writeStatus(dotStatus, 'Needs input', 'text-amber-300');
+    } else if (applied.dot_listening) {
+      writeStatus(dotStatus, `Listening · TCP ${applied.dot_port}`, 'text-emerald-300');
+    } else {
+      writeStatus(dotStatus, 'Enabled — not listening', 'text-amber-300');
     }
   }
 
   const doqStatus = document.getElementById('doq-status');
   if (doqStatus) {
-    const doqNeedsInput = draft.doq_auth === 'sni-token' &&
+    const doqNeedsInput = draft.doq_enabled && draft.doq_auth === 'sni-token' &&
       (!draft.doq_token_domain || !draft.doq_tokens.length);
-    if (transportSaving) {
-      doqStatus.innerText = 'Saving…';
-      doqStatus.className = 'font-mono text-slate-400';
+    if (!draft.doq_enabled) {
+      writeStatus(doqStatus, 'Off', 'text-slate-500');
     } else if (doqNeedsInput) {
-      doqStatus.innerText = 'Needs input';
-      doqStatus.className = 'font-mono text-amber-300';
-    } else if (transportDraftDirty(applied, draft)) {
-      doqStatus.innerText = 'Applying…';
-      doqStatus.className = 'font-mono text-amber-300';
+      writeStatus(doqStatus, 'Needs input', 'text-amber-300');
     } else if (applied.doq_listening) {
-      doqStatus.innerText = `Listening on UDP ${applied.doq_port}`;
-      doqStatus.className = 'font-mono text-emerald-300';
-    } else if (applied.doq_enabled) {
-      doqStatus.innerText = 'Enabled — not listening';
-      doqStatus.className = 'font-mono text-amber-300';
+      writeStatus(doqStatus, `Listening · UDP ${applied.doq_port}`, 'text-emerald-300');
     } else {
-      doqStatus.innerText = 'Off';
-      doqStatus.className = 'font-mono text-slate-300';
+      writeStatus(doqStatus, 'Enabled — not listening', 'text-amber-300');
     }
-  }
-
-  const dotStatus = document.getElementById('dot-status');
-  if (dotStatus) {
-    dotStatus.innerText = draft.dot_enabled
-      ? `${draft.dot_auth === 'sni-token' ? 'SNI token' : 'IP allowlist'} · TCP ${dotPort}`
-      : 'Off';
-    dotStatus.className = draft.dot_enabled ? 'font-mono text-[10px] text-slate-300' : 'font-mono text-[10px] text-slate-500';
   }
 
   const dnscryptStatus = document.getElementById('dnscrypt-status');
   if (dnscryptStatus) {
-    if (transportSaving) {
-      dnscryptStatus.innerText = 'Saving…';
-      dnscryptStatus.className = 'font-mono text-slate-400';
+    if (!draft.dnscrypt_enabled) {
+      writeStatus(dnscryptStatus, 'Off', 'text-slate-500');
     } else if (applied.dnscrypt_listening) {
-      dnscryptStatus.innerText = `Listening on UDP + TCP ${applied.dnscrypt_port}`;
-      dnscryptStatus.className = 'font-mono text-emerald-300';
-    } else if (applied.dnscrypt_enabled) {
-      dnscryptStatus.innerText = 'Enabled — not listening';
-      dnscryptStatus.className = 'font-mono text-amber-300';
+      writeStatus(dnscryptStatus, `Listening · UDP+TCP ${applied.dnscrypt_port}`, 'text-emerald-300');
     } else {
-      dnscryptStatus.innerText = 'Off';
-      dnscryptStatus.className = 'font-mono text-slate-300';
+      writeStatus(dnscryptStatus, 'Enabled — not listening', 'text-amber-300');
     }
   }
+
+  const mtlsStatus = document.getElementById('mtls-status');
+  if (mtlsStatus) {
+    if (draft.mtls_enabled) {
+      writeStatus(mtlsStatus, 'Enforced', 'text-emerald-300');
+    } else {
+      writeStatus(mtlsStatus, 'Off', 'text-slate-500');
+    }
+  }
+
   const stampEl = document.getElementById('dnscrypt-stamp');
   if (stampEl) {
     const stamp = applied.dnscrypt_stamp || '';
-    stampEl.innerText = stamp || 'Enable DNSCrypt to generate a stamp';
+    setTransportText(stampEl, stamp || 'Enable DNSCrypt to generate a stamp');
     // The full stamp is long; the box truncates it, so expose it on hover and
     // leave textContent intact for the copy button.
-    stampEl.title = stamp || '';
+    if (stampEl.title !== (stamp || '')) stampEl.title = stamp || '';
   }
   const expiryEl = document.getElementById('dnscrypt-cert-expiry');
   if (expiryEl) {
-    expiryEl.innerText = applied.dnscrypt_cert_not_after
+    setTransportText(expiryEl, applied.dnscrypt_cert_not_after
       ? `expires ${new Date(applied.dnscrypt_cert_not_after * 1000).toLocaleDateString()}`
-      : '';
+      : '');
   }
+}
+
+function setTransportBadge(el, text, className, title, visible) {
+  if (!el) return;
+  // Compare with textContent: innerText reflects CSS text-transform, so the
+  // uppercase badge always looked "different" and was rewritten on every
+  // render, which made the transport names flash.
+  if (el.textContent !== text) el.textContent = text;
+  if (el.className !== className) el.className = className;
+  if (el.title !== title) el.title = title;
+  el.classList.toggle('hidden', !visible);
 }
 
 function updateTransportBadge(applied) {
   const badge = document.getElementById('transports-state-badge');
   if (!badge) return;
-  const draftDirty = transportDraft ? transportDraftDirty(applied, transportDraft) : false;
   const states = [
-    { on: applied.doh3_listening, want: applied.doh3_enabled, name: 'DoH3' },
-    { on: applied.doq_listening, want: applied.doq_enabled, name: 'DoQ' },
-    { on: applied.dnscrypt_listening, want: applied.dnscrypt_enabled, name: 'DNSCrypt' },
+    { on: applied.plain_dns_enabled && applied.plain_dns_listening, name: 'Plain DNS' },
+    { on: applied.dot_enabled && applied.dot_listening, name: 'DoT' },
+    { on: applied.doh_enabled && applied.doh_listening, name: 'DoH' },
+    { on: applied.doq_enabled && applied.doq_listening, name: 'DoQ' },
+    { on: applied.doh3_listening, name: 'DoH3' },
+    { on: applied.dnscrypt_enabled && applied.dnscrypt_listening, name: 'DNSCrypt' },
   ];
-  const running = states.filter(s => s.on);
-  const missing = states.some(s => s.want && !s.on);
+  const running = states.filter(s => s.on).map(s => s.name);
+  const missing = states.filter(s => !s.on).map(s => s.name);
+  const offBadge = document.getElementById('transports-off-badge');
   const failed = !!(transportInlineError || applied.last_error);
-  const text = (doh3Saving || transportSaving) ? 'Saving…'
-    : failed ? 'Failed'
-    : draftDirty ? 'Unsaved'
-    : missing ? (running.length > 0 ? 'Partial' : 'Not listening')
-    : (running.length === states.length ? 'All on' : running.length > 0 ? `${running.map(s => s.name).join(' + ')} on` : 'Off');
-  const cls = (doh3Saving || transportSaving || draftDirty || missing || failed)
-    ? 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30'
-    : (running.length > 0
-      ? 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-      : 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700');
-  badge.innerText = text;
-  badge.className = cls;
+
+  // Deliberately no "Saving…" replacement: the badges keep the last applied
+  // names until the response lands. Otherwise every autosave erased the names
+  // and repainted them, which read as the transport text flickering.
+  if (running.length > 0) {
+    const text = running.length === states.length ? 'All Transports On' : `On: ${running.join(', ')}`;
+    setTransportBadge(
+      badge,
+      text,
+      'badge badge-direct',
+      failed ? 'A transport change failed; see the error below.' : `Transports on: ${running.join(', ')}`,
+      true,
+    );
+  } else {
+    badge.classList.add('hidden');
+  }
+
+  if (missing.length > 0) {
+    setTransportBadge(
+      offBadge,
+      `Off: ${missing.join(', ')}`,
+      'badge badge-cached',
+      `Transports off: ${missing.join(', ')}`,
+      true,
+    );
+  } else if (offBadge) {
+    offBadge.classList.add('hidden');
+  }
 }
 
 function renderDoQTokens(draft) {
   const list = document.getElementById('doq-tokens-list');
   if (!list) return;
+  // Rebuilding an unchanged list makes its text flash on every autosave.
+  const signature = draft.doq_tokens.join('|');
+  if (list.dataset.signature === signature) return;
+  list.dataset.signature = signature;
   list.innerHTML = '';
   if (!draft.doq_tokens.length) {
     list.innerHTML = '<div class="text-slate-500 text-xs py-1">No DoQ tokens yet</div>';
@@ -2562,6 +2677,10 @@ function renderDoQTokens(draft) {
 function renderDoTTokens(draft) {
   const list = document.getElementById('dot-tokens-list');
   if (!list) return;
+  // Rebuilding an unchanged list makes its text flash on every autosave.
+  const signature = draft.dot_tokens.join('|');
+  if (list.dataset.signature === signature) return;
+  list.dataset.signature = signature;
   list.innerHTML = '';
   if (!draft.dot_tokens.length) {
     list.innerHTML = '<div class="text-slate-500 text-xs py-1">No DoT tokens yet</div>';
@@ -2587,18 +2706,18 @@ function renderDoqIpAllowlist(applied) {
   if (!counts || !warning) return;
   const al = applied.ip_allowlist;
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  counts.innerText = [
+  setTransportText(counts, [
     plural(al.client_accounts, 'client', 'clients'),
     plural(al.client_entries, 'client IP/CIDR', 'client IPs/CIDRs'),
     plural(al.resolver_entries, 'resolver range', 'resolver ranges'),
-  ].join(' · ');
+  ].join(' · '));
   let message = '';
   if (al.allow_all) {
     message = 'Public Mode is on — any source can use the IP-authenticated transports (DoQ, DoT, DNSCrypt), so the allowlist is not restricting access. Switch Access Mode to whitelist to enforce it.';
   } else if (al.client_entries === 0 && al.resolver_entries === 0) {
     message = 'No IPs are allowlisted — IP-authenticated transports will refuse every source. Add addresses in Clients → Allowed IPs or the Server-wide Resolver Allowlist.';
   }
-  warning.innerText = message;
+  setTransportText(warning, message);
   warning.classList.toggle('hidden', !message);
 }
 
@@ -2606,7 +2725,7 @@ function renderDoqIpAllowlist(applied) {
 // touching the staged transport draft. Client and access-mode saves change
 // those counts, and the card is often visible in the same settings page.
 async function refreshTransportView() {
-  if (!currentConfig || !authToken || doh3Saving || transportSaving) return;
+  if (!currentConfig || !authToken || transportSaving) return;
   try {
     const res = await fetch(api('/api/settings/transports'), {
       headers: { 'Authorization': `Bearer ${authToken}` }
@@ -2648,7 +2767,7 @@ function renderGlobalNotices() {
   const t = currentConfig?.transports;
   if (t) {
     const down = [];
-    if (t.doh3_enabled && !t.doh3_listening) down.push('DoH3');
+    if (!t.doh3_listening) down.push('DoH3');
     if (t.doq_enabled && !t.doq_listening) down.push('DoQ');
     if (down.length) {
       const reason = String(t.last_error || '').trim();
@@ -2711,15 +2830,28 @@ function renderTransportSettings() {
   const applied = normalizeTransportSettings(currentConfig);
   const draft = ensureTransportDraft(applied);
 
+  const plainEnabled = document.getElementById('plain-enabled-input');
+  if (plainEnabled) {
+    if (plainEnabled.checked !== !!draft.plain_dns_enabled) plainEnabled.checked = !!draft.plain_dns_enabled;
+  }
+  const plainPort = document.getElementById('plain-port-input');
+  if (plainPort) plainPort.value = draft.plain_dns_port || 53;
+
+  const dohEnabled = document.getElementById('doh-enabled-input');
+  if (dohEnabled) {
+    if (dohEnabled.checked !== !!draft.doh_enabled) dohEnabled.checked = !!draft.doh_enabled;
+  }
+  const dohPort = document.getElementById('doh-port-input');
+  if (dohPort) dohPort.value = draft.doh_port || 8443;
+
   const doh3 = document.getElementById('doh3-enabled-input');
   if (doh3) {
-    doh3.checked = applied.doh3_enabled;
-    doh3.disabled = doh3Saving || transportSaving;
+    if (!doh3.checked) doh3.checked = true;
+    doh3.disabled = true;
   }
   const doq = document.getElementById('doq-enabled-input');
   if (doq) {
-    doq.checked = !!draft.doq_enabled;
-    doq.disabled = transportSaving;
+    if (doq.checked !== !!draft.doq_enabled) doq.checked = !!draft.doq_enabled;
   }
   const auth = document.getElementById('doq-auth-select');
   if (auth) auth.value = draft.doq_auth;
@@ -2734,7 +2866,11 @@ function renderTransportSettings() {
   if (warning) warning.classList.toggle('hidden', draft.doq_auth !== 'sni-token');
 
   const dotEnabled = document.getElementById('dot-enabled-input');
-  if (dotEnabled) dotEnabled.checked = !!draft.dot_enabled;
+  if (dotEnabled) {
+    if (dotEnabled.checked !== !!draft.dot_enabled) dotEnabled.checked = !!draft.dot_enabled;
+  }
+  const dotPort = document.getElementById('dot-port-input');
+  if (dotPort) dotPort.value = draft.dot_port || 853;
   const dotAuth = document.getElementById('dot-auth-select');
   if (dotAuth) dotAuth.value = draft.dot_auth;
   const dotDomain = document.getElementById('dot-token-domain-input');
@@ -2744,8 +2880,7 @@ function renderTransportSettings() {
 
   const dnscryptEnabled = document.getElementById('dnscrypt-enabled-input');
   if (dnscryptEnabled) {
-    dnscryptEnabled.checked = !!draft.dnscrypt_enabled;
-    dnscryptEnabled.disabled = transportSaving;
+    if (dnscryptEnabled.checked !== !!draft.dnscrypt_enabled) dnscryptEnabled.checked = !!draft.dnscrypt_enabled;
   }
   const dnscryptPort = document.getElementById('dnscrypt-port-input');
   if (dnscryptPort) dnscryptPort.value = draft.dnscrypt_port || 5443;
@@ -2758,8 +2893,7 @@ function renderTransportSettings() {
 
   const mtlsEnabled = document.getElementById('mtls-enabled-input');
   if (mtlsEnabled) {
-    mtlsEnabled.checked = !!draft.mtls_enabled;
-    mtlsEnabled.disabled = transportSaving;
+    if (mtlsEnabled.checked !== !!draft.mtls_enabled) mtlsEnabled.checked = !!draft.mtls_enabled;
   }
   const mtlsCA = document.getElementById('mtls-ca-input');
   if (mtlsCA) mtlsCA.value = draft.mtls_ca_pem || '';
@@ -2770,7 +2904,7 @@ function renderTransportSettings() {
   if (saveStatus) {
     const problem = transportDraftProblem(draft);
     const dirty = transportDraftDirty(applied, draft);
-    if (transportSaving || doh3Saving) {
+    if (transportSaving) {
       saveStatus.innerText = 'Saving…';
       saveStatus.className = 'text-[11px] text-slate-400 ms-auto';
     } else if (problem) {
@@ -2800,41 +2934,14 @@ function renderTransportSettings() {
   renderGlobalNotices();
 }
 
-async function saveDoh3(enabled) {
-  if (doh3Saving || transportSaving || !currentConfig) return;
-  doh3Saving = true;
-  transportInlineError = '';
-  renderTransportSettings();
-  try {
-    const res = await fetch(api('/api/settings/transports'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-      body: JSON.stringify({ doh3_enabled: !!enabled })
-    });
-    if (!res.ok) {
-      transportInlineError = await errorMessage(res, 'Could not apply the DoH3 setting.');
-      doh3Saving = false;
-      renderTransportSettings();
-      showToast(transportInlineError, 'error');
-      return;
-    }
-    currentConfig.transports = normalizeTransportSettings({ transports: await res.json() });
-    doh3Saving = false;
-    renderTransportSettings();
-    showToast(enabled ? 'DoH3 enabled' : 'DoH3 disabled', 'success');
-  } catch (e) {
-    transportInlineError = 'Could not apply the DoH3 setting.';
-    doh3Saving = false;
-    renderTransportSettings();
-    showToast(transportInlineError, 'error');
-  }
-}
-
 async function autoSaveTransportDraft() {
-  if (transportSaving || doh3Saving || !currentConfig || !authToken) return;
+  if (transportSaving || !currentConfig || !authToken) return;
   const applied = normalizeTransportSettings(currentConfig);
   const draft = ensureTransportDraft(applied);
-  if (!transportDraftDirty(applied, draft)) return;
+  if (!transportDraftDirty(applied, draft) && !transportInlineError && !applied.last_error) {
+    renderTransportSettings();
+    return;
+  }
   if (transportDraftProblem(draft)) {
     // Incomplete SNI-token or mTLS state stays local; the footer says what is
     // missing and the next completed edit applies it.
@@ -3508,10 +3615,10 @@ async function saveDNSSECSettings() {
     }
     dnssecSettings = normalizeDNSSECSettings(await res.json());
     syncDNSSECControls();
-    if (status) status.textContent = dnssecSettings.restart_required ? 'Saved — restart required.' : 'Saved.';
+    if (status) status.textContent = dnssecSettings.restart_required ? 'Saved — restart required.' : 'Applied.';
     showToast(dnssecSettings.restart_required
       ? 'DNSSEC settings saved — restart to apply'
-      : 'DNSSEC settings saved', 'success');
+      : 'DNSSEC settings applied', 'success');
   } catch (e) {
     if (status) status.textContent = '';
     showToast('Could not save the DNSSEC settings', 'error');
@@ -5120,6 +5227,257 @@ let lastUpstreamsAddresses = '';
 // only after a moment (adding an upstream writes both, but not atomically).
 let lastResolutionSyncAt = 0;
 
+// Public-provider browser state. The catalogue is fetched once and then cached;
+// the add/delete endpoints remain the only writers.
+let upstreamPresetProviders = null;
+let upstreamPresetLoaded = false;
+let upstreamPresetLoading = false;
+let upstreamPresetError = '';
+let upstreamPresetExpanded = new Set();
+let upstreamPresetAdded = new Set();
+let upstreamPresetAdding = '';
+let upstreamPresetOpen = false;
+
+const UPSTREAM_PROTO_CLASSES = {
+  UDP: 'proto-udp',
+  TCP: 'proto-tcp',
+  DOT: 'proto-dot',
+  DOH: 'proto-doh',
+  DOQ: 'proto-doq',
+  DOH3: 'proto-doh3',
+  DNSCRYPT: 'proto-dnscrypt',
+};
+
+function upstreamProtoClass(protocol) {
+  return UPSTREAM_PROTO_CLASSES[String(protocol || '').toUpperCase()] || 'proto-other';
+}
+
+// The server validates the typed value; this is only the coloured label shown
+// before the POST, so an unknown scheme stays neutral instead of claiming UDP.
+function upstreamCustomProtocol(address) {
+  const v = String(address || '').trim().toLowerCase();
+  if (v.startsWith('sdns://')) return 'DNSCrypt';
+  if (v.startsWith('tls://')) return 'DoT';
+  if (v.startsWith('https://')) return 'DoH';
+  if (v.startsWith('quic://') || v.startsWith('doq://')) return 'DoQ';
+  if (v.startsWith('h3://') || v.startsWith('doh3://')) return 'DoH3';
+  if (v.startsWith('tcp://')) return 'TCP';
+  return 'UDP';
+}
+
+function renderUpstreamPresetPanel() {
+  const panel = document.getElementById('upstream-preset-panel');
+  const list = document.getElementById('upstream-preset-list');
+  const input = document.getElementById('new-upstream-input');
+  if (!panel || !list) return;
+  panel.classList.toggle('hidden', !upstreamPresetOpen);
+  if (input) input.setAttribute('aria-expanded', upstreamPresetOpen ? 'true' : 'false');
+  if (!upstreamPresetOpen) return;
+
+  if (upstreamPresetLoading && !upstreamPresetLoaded) {
+    list.innerHTML = '<div class="upstream-preset-loading">Loading providers…</div>';
+    return;
+  }
+  if (upstreamPresetError && !upstreamPresetLoaded) {
+    list.innerHTML = `<div class="upstream-preset-empty">${escapeHTML(upstreamPresetError)} <button type="button" data-preset-retry class="font-bold text-cyan-300">Retry</button></div>`;
+    return;
+  }
+
+  const providers = upstreamPresetProviders || [];
+  const query = (input ? input.value : '').trim();
+  const q = query.toLowerCase();
+  let html = '';
+  const exactPreset = q && providers.some(p => (p.servers || []).some(s => s.address.toLowerCase() === q));
+
+  if (query && !exactPreset) {
+    const proto = upstreamCustomProtocol(query);
+    html += `<button type="button" class="upstream-preset-server upstream-preset-custom" data-custom="1">
+      <span class="upstream-preset-addr" title="${escapeHTML(query)}">Use custom: ${escapeHTML(query)}</span>
+      <span class="upstream-preset-proto ${escapeHTML(upstreamProtoClass(proto))}">${escapeHTML(protocolLabel(proto))}</span>
+      <span class="upstream-preset-action">+</span>
+    </button>`;
+  }
+
+  let shown = 0;
+  providers.forEach(provider => {
+    const nameMatch = !q || provider.name.toLowerCase().includes(q) || String(provider.id || '').toLowerCase().includes(q);
+    let servers = Array.isArray(provider.servers) ? provider.servers : [];
+    if (q && !nameMatch) {
+      servers = servers.filter(s => s.address.toLowerCase().includes(q)
+        || String(s.label || '').toLowerCase().includes(q)
+        || String(s.protocol || '').toLowerCase().includes(q));
+    }
+    if (!servers.length) return;
+    shown++;
+    const expanded = !!q || upstreamPresetExpanded.has(provider.id);
+    html += `<button type="button" class="upstream-preset-provider" data-provider="${escapeHTML(provider.id)}" aria-expanded="${escapeHTML(expanded ? 'true' : 'false')}">
+      <img class="upstream-preset-logo" src="${escapeHTML(api(`/img/providers/${encodeURIComponent(provider.id)}.png`))}" alt="">
+      <span class="upstream-preset-provider-name">${escapeHTML(provider.name)}</span>
+      <span class="upstream-preset-count">${servers.length}</span>
+      <span class="upstream-preset-chevron" aria-hidden="true">›</span>
+    </button>`;
+    if (!expanded) return;
+    html += '<div class="upstream-preset-servers">';
+    servers.forEach(server => {
+      const added = upstreamPresetAdded.has(server.address);
+      const adding = upstreamPresetAdding === server.address;
+      html += `<button type="button" class="upstream-preset-server${escapeHTML(added ? ' is-added' : '')}" data-addr="${escapeHTML(server.address)}" title="${escapeHTML(server.address)}"${added || adding ? ' disabled' : ''}>
+        <span class="upstream-preset-addr">${escapeHTML(server.label || server.address)}</span>
+        <span class="upstream-preset-proto ${escapeHTML(upstreamProtoClass(server.protocol))}">${escapeHTML(protocolLabel(server.protocol))}</span>
+        <span class="upstream-preset-action">${added ? '✓' : adding ? '…' : '+'}</span>
+      </button>`;
+    });
+    html += '</div>';
+    if (provider.note) {
+      html += `<div class="upstream-preset-note">${escapeHTML(provider.note)}</div>`;
+    }
+  });
+
+  if (!shown) {
+    html += `<div class="upstream-preset-empty">${query ? 'No matching provider or server.' : 'No providers available.'}</div>`;
+  }
+  list.innerHTML = html;
+}
+
+async function loadUpstreamPresets() {
+  if (upstreamPresetLoading || upstreamPresetLoaded) return;
+  upstreamPresetLoading = true;
+  upstreamPresetError = '';
+  renderUpstreamPresetPanel();
+  try {
+    const res = await fetch(api('/api/upstreams/presets'), {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (!res.ok) throw new Error('provider list unavailable');
+    const data = await res.json();
+    upstreamPresetProviders = Array.isArray(data.providers) ? data.providers : [];
+    upstreamPresetLoaded = true;
+    if (upstreamPresetProviders.length && upstreamPresetExpanded.size === 0) {
+      upstreamPresetExpanded.add(upstreamPresetProviders[0].id);
+    }
+  } catch (e) {
+    upstreamPresetError = 'Could not load the provider list. You can still type a resolver address.';
+  } finally {
+    upstreamPresetLoading = false;
+    renderUpstreamPresetPanel();
+  }
+}
+
+// addUpstreamAddress is shared by the custom Add button, Enter, and every
+// preset row. Preset adds keep the browser open and the filter text intact so
+// several endpoints can be added in one visit.
+async function addUpstreamAddress(raw, opts = {}) {
+  const input = document.getElementById('new-upstream-input');
+  const addr = String(raw || '').trim();
+  if (!addr) return false;
+  upstreamPresetAdding = addr;
+  renderUpstreamPresetPanel();
+  try {
+    const res = await fetch(api('/api/upstreams/add'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ address: addr })
+    });
+    if (!res.ok) {
+      let reason = 'Invalid upstream address';
+      try {
+        const body = await res.json();
+        if (body && body.error) reason = body.error;
+      } catch (_) { /* non-JSON error body */ }
+      if (res.status === 409) upstreamPresetAdded.add(addr);
+      showToast(reason, 'error');
+      return false;
+    }
+    const body = await res.json().catch(() => ({}));
+    if (Array.isArray(body.upstreams)) upstreamPresetAdded = new Set(body.upstreams);
+    if (input && !opts.keepText) input.value = '';
+    showToast(opts.preset ? `Added ${addr}` : 'Upstream resolver added & tested!', 'success');
+    loadResolutionSettings();
+    updateStats();
+    return true;
+  } catch (e) {
+    showToast('Failed to add upstream', 'error');
+    return false;
+  } finally {
+    upstreamPresetAdding = '';
+    renderUpstreamPresetPanel();
+  }
+}
+
+function initUpstreamPresetBrowser() {
+  const wrap = document.getElementById('upstream-add-wrap');
+  const input = document.getElementById('new-upstream-input');
+  const panel = document.getElementById('upstream-preset-panel');
+  const list = document.getElementById('upstream-preset-list');
+  if (!wrap || !input || !panel || !list || wrap.dataset.presetsWired === '1') return;
+  wrap.dataset.presetsWired = '1';
+
+  const open = () => {
+    upstreamPresetOpen = true;
+    renderUpstreamPresetPanel();
+    if (!upstreamPresetLoaded) void loadUpstreamPresets();
+  };
+  input.addEventListener('focus', open);
+  input.addEventListener('input', open);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      upstreamPresetOpen = false;
+      renderUpstreamPresetPanel();
+      input.blur();
+    } else if (e.key === 'Enter' && input.value.trim()) {
+      e.preventDefault();
+      void addUpstreamAddress(input.value, { preset: true, keepText: true });
+    } else if (e.key === 'ArrowDown') {
+      const first = list.querySelector('.upstream-preset-server:not(:disabled)');
+      if (first) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  });
+
+  panel.addEventListener('click', (e) => {
+    const retry = e.target.closest('[data-preset-retry]');
+    if (retry) {
+      upstreamPresetLoaded = false;
+      upstreamPresetError = '';
+      void loadUpstreamPresets();
+      return;
+    }
+    const providerBtn = e.target.closest('[data-provider]');
+    if (providerBtn) {
+      const id = providerBtn.dataset.provider;
+      if (upstreamPresetExpanded.has(id)) upstreamPresetExpanded.delete(id);
+      else upstreamPresetExpanded.add(id);
+      renderUpstreamPresetPanel();
+      return;
+    }
+    const custom = e.target.closest('[data-custom]');
+    if (custom) {
+      void addUpstreamAddress(input.value, { preset: true, keepText: true });
+      return;
+    }
+    const serverBtn = e.target.closest('[data-addr]');
+    if (serverBtn && !serverBtn.disabled) {
+      void addUpstreamAddress(serverBtn.dataset.addr, { preset: true, keepText: true });
+    }
+  });
+
+  document.getElementById('close-upstream-presets')?.addEventListener('click', () => {
+    upstreamPresetOpen = false;
+    renderUpstreamPresetPanel();
+  });
+  document.addEventListener('click', (e) => {
+    // A provider/server click re-renders the list, so by the time this bubbles
+    // here its target is detached from the DOM. Treat that as an inside click,
+    // not as the operator clicking away, or the panel closes after every add.
+    if (upstreamPresetOpen && e.target.isConnected && !wrap.contains(e.target)) {
+      upstreamPresetOpen = false;
+      renderUpstreamPresetPanel();
+    }
+  });
+}
+
 // updateUpstreamAddrHint toggles the fade on the edges the address can still be
 // scrolled towards. It runs after a render and on every scroll of the span.
 function updateUpstreamAddrHint(el) {
@@ -5169,6 +5527,13 @@ function renderUpstreams(upstreams) {
   const container = document.getElementById('upstreams-list');
   if (!container) return;
   lastUpstreamsPayload = upstreams || [];
+  const addedNow = new Set((upstreams || []).map(u => u.address));
+  const addedChanged = addedNow.size !== upstreamPresetAdded.size
+    || [...addedNow].some(addr => !upstreamPresetAdded.has(addr));
+  if (addedChanged) {
+    upstreamPresetAdded = addedNow;
+    if (upstreamPresetOpen) renderUpstreamPresetPanel();
+  }
 
   // If the settings snapshot is unavailable, the pickers are built from this
   // live list. Rebuild them once when the pool changes.
@@ -7892,7 +8257,7 @@ function renderIconResults(ids) {
   }
   box.innerHTML = urls.map((url) =>
     `<button type="button" class="service-icon-choice" data-icon-url="${escapeHTML(url)}" title="Use this icon">
-       <img src="${escapeHTML(url)}" alt="" width="22" height="22" loading="lazy">
+       <img src="${escapeHTML(url)}" alt="" width="22" height="22">
      </button>`).join('');
   box.classList.remove('hidden');
 }
@@ -9482,6 +9847,7 @@ function initAdminPathControls() {
 
 function initEventListeners() {
   initUpstreamAddressScroll();
+  initUpstreamPresetBrowser();
   initServices();
   initAgentPage();
   // Tabs Navigation (Sidebar & Mobile Bottom Bar)
@@ -9579,35 +9945,7 @@ function initEventListeners() {
   if (addUpstreamBtn) {
     addUpstreamBtn.onclick = async () => {
       const input = document.getElementById('new-upstream-input');
-      const addr = input ? input.value.trim() : '';
-      if (!addr) return;
-
-      try {
-        const res = await fetch(api('/api/upstreams/add'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-          body: JSON.stringify({ address: addr })
-        });
-        if (res.ok) {
-          if (input) input.value = '';
-          showToast('Upstream resolver added & tested!', 'success');
-          loadResolutionSettings();
-          updateStats();
-        } else {
-          // The handler rejects a value it cannot canonicalise and says why
-          // (unknown scheme, bad port, not a host). Showing its message beats
-          // the old silence, where an add that never happened looked like a
-          // no-op and the operator retyped the same bad address.
-          let reason = 'Invalid upstream address';
-          try {
-            const body = await res.json();
-            if (body && body.error) reason = body.error;
-          } catch (_) { /* non-JSON error body */ }
-          showToast(reason, 'error');
-        }
-      } catch (e) {
-        showToast('Failed to add upstream', 'error');
-      }
+      if (input) await addUpstreamAddress(input.value);
     };
   }
 
@@ -10203,7 +10541,25 @@ function initEventListeners() {
   // applies immediately; incomplete SNI-token and mTLS states stay local until
   // their required inputs are present.
   document.getElementById('doh3-enabled-input')?.addEventListener('change', (e) => {
-    saveDoh3(!!e.target.checked);
+    withTransportDraft(d => { d.doh3_enabled = true; });
+  });
+  document.getElementById('plain-enabled-input')?.addEventListener('change', (e) => {
+    withTransportDraft(d => { d.plain_dns_enabled = !!e.target.checked; });
+  });
+  document.getElementById('plain-port-input')?.addEventListener('change', (e) => {
+    withTransportDraft(d => {
+      const n = Number(e.target.value);
+      d.plain_dns_port = Number.isFinite(n) && n > 0 ? n : 53;
+    });
+  });
+  document.getElementById('doh-enabled-input')?.addEventListener('change', (e) => {
+    withTransportDraft(d => { d.doh_enabled = !!e.target.checked; });
+  });
+  document.getElementById('doh-port-input')?.addEventListener('change', (e) => {
+    withTransportDraft(d => {
+      const n = Number(e.target.value);
+      d.doh_port = Number.isFinite(n) && n > 0 ? n : 8443;
+    });
   });
   document.getElementById('doq-enabled-input')?.addEventListener('change', (e) => {
     withTransportDraft(d => { d.doq_enabled = !!e.target.checked; });
@@ -10239,6 +10595,12 @@ function initEventListeners() {
 
   document.getElementById('dot-enabled-input')?.addEventListener('change', (e) => {
     withTransportDraft(d => { d.dot_enabled = !!e.target.checked; });
+  });
+  document.getElementById('dot-port-input')?.addEventListener('change', (e) => {
+    withTransportDraft(d => {
+      const n = Number(e.target.value);
+      d.dot_port = Number.isFinite(n) && n > 0 ? n : 853;
+    });
   });
   document.getElementById('dot-auth-select')?.addEventListener('change', (e) => {
     withTransportDraft(d => { d.dot_auth = e.target.value === 'sni-token' ? 'sni-token' : 'ip'; });

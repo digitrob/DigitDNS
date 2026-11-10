@@ -3,8 +3,10 @@ package web
 import (
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"digitdns/internal/httpx"
@@ -22,7 +24,21 @@ type transportSettingsView struct {
 	DoQTokenDomain string   `json:"doq_token_domain"`
 	DoH3Enabled    bool     `json:"doh3_enabled"`
 	DoQTokens      []string `json:"doq_tokens"`
-	DoH3Port       int      `json:"doh3_port"`
+	// DoHPort is the HTTPS/DoH/portal port. DoH3Port is the legacy alias kept
+	// for older clients; both carry the same value.
+	DoHPort  int `json:"doh_port"`
+	DoH3Port int `json:"doh3_port"`
+	// Plain DNS and DoH policy.
+	PlainDNSEnabled   bool   `json:"plain_dns_enabled"`
+	PlainDNSPort      int    `json:"plain_dns_port"`
+	PlainDNSListening bool   `json:"plain_dns_listening"`
+	DoHEnabled        bool   `json:"doh_enabled"`
+	DoHListening      bool   `json:"doh_listening"`
+	ServerHost        string `json:"server_host"`
+	// DotHost is the name the DoT certificate is issued for. Android Private
+	// DNS and TLS clients validate the certificate against the SNI, so DoT
+	// advertises the domain rather than the public IP.
+	DotHost string `json:"dot_host"`
 	// DNSCrypt policy and read-only identity. The keys are never returned; the
 	// stamp is the client-facing form of the provider public key.
 	DNSCryptEnabled      bool   `json:"dnscrypt_enabled"`
@@ -33,6 +49,7 @@ type transportSettingsView struct {
 	DNSCryptListening    bool   `json:"dnscrypt_listening"`
 	// DoT policy and the global mTLS gate.
 	DoTEnabled     bool     `json:"dot_enabled"`
+	DoTListening   bool     `json:"dot_listening"`
 	DoTAuth        string   `json:"dot_auth"`
 	DoTPort        int      `json:"dot_port"`
 	DoTTokenDomain string   `json:"dot_token_domain"`
@@ -74,15 +91,21 @@ func (ws *WebServer) transportSettingsView() transportSettingsView {
 	ws.dnsMu.Lock()
 	cfg := ws.mutableDNSLocked()
 	view := transportSettingsView{
-		DoQEnabled:           cfg.DoQEnabled,
-		DoQPort:              cfg.DoQPort,
-		DoQAuth:              cfg.DoQAuth,
-		DoQTokenDomain:       cfg.DoQTokenDomain,
-		DoH3Enabled:          cfg.DoH3Enabled,
+		DoQEnabled:     cfg.DoQEnabled,
+		DoQPort:        cfg.DoQPort,
+		DoQAuth:        cfg.DoQAuth,
+		DoQTokenDomain: cfg.DoQTokenDomain,
+		// DoH3 shares the DoH listener's port and is always available over UDP;
+		// the card shows it on and non-changeable.
+		DoH3Enabled:          true,
 		DoH3Port:             cfg.DoHPort,
 		DNSCryptEnabled:      cfg.DNSCryptEnabled,
 		DNSCryptPort:         cfg.DNSCryptPort,
 		DNSCryptProviderName: cfg.DNSCryptProviderName,
+		PlainDNSEnabled:      !cfg.PlainDNSDisabled,
+		PlainDNSPort:         cfg.Port,
+		DoHEnabled:           !cfg.DoHDisabled,
+		DoHPort:              cfg.DoHPort,
 		DoTEnabled:           !cfg.DoTDisabled,
 		DoTAuth:              cfg.DoTAuth,
 		DoTPort:              cfg.DoTPort,
@@ -96,9 +119,13 @@ func (ws *WebServer) transportSettingsView() transportSettingsView {
 	if view.DoQPort == 0 {
 		view.DoQPort = defaultDoQPort
 	}
-	if view.DoH3Port == 0 {
-		view.DoH3Port = 8443
+	if view.PlainDNSPort == 0 {
+		view.PlainDNSPort = 53
 	}
+	if view.DoHPort == 0 {
+		view.DoHPort = 8443
+	}
+	view.DoH3Port = view.DoHPort
 	if view.DNSCryptPort == 0 {
 		view.DNSCryptPort = defaultDNSCryptPort
 	}
@@ -108,6 +135,27 @@ func (ws *WebServer) transportSettingsView() transportSettingsView {
 	if view.DNSCryptProviderName == "" {
 		view.DNSCryptProviderName = "2.dnscrypt-cert.digitdns.local"
 	}
+	// Prefer the public IP so every endpoint in the card is directly usable;
+	// fall back to the DoT/panel domain only when no address is configured.
+	host := ws.settings.GetPublicIP()
+	if host == "" && ws.tlsSettings != nil {
+		host = safeHostDisplay(ws.tlsSettings.GetDoTDomain())
+		if host == "" {
+			host = safeHostDisplay(ws.tlsSettings.GetDomain())
+		}
+	}
+	view.ServerHost = host
+	dotHost := ""
+	if ws.tlsSettings != nil {
+		dotHost = safeHostDisplay(ws.tlsSettings.GetDoTDomain())
+		if dotHost == "" {
+			dotHost = safeHostDisplay(ws.tlsSettings.GetDomain())
+		}
+	}
+	if dotHost == "" {
+		dotHost = host
+	}
+	view.DotHost = dotHost
 	st := ws.loadDNSCryptSettings()
 	view.DNSCryptStamp = ws.dnscryptStamp(st, view.DNSCryptPort)
 	view.DNSCryptCertNotAfter = st.CertNotAfter
@@ -133,6 +181,15 @@ func (ws *WebServer) transportSettingsView() transportSettingsView {
 	var listenerErr string
 	if ws.transportStatus != nil {
 		view.DoH3Listening, view.DoQListening, listenerErr = ws.transportStatus()
+	}
+	if ws.transportListeners != nil {
+		listeners := ws.transportListeners()
+		view.PlainDNSListening = listeners.PlainDNS
+		view.DoTListening = listeners.DoT
+		view.DoHListening = listeners.DoH
+		view.DoH3Listening = listeners.DoH3
+		view.DoQListening = listeners.DoQ
+		view.DNSCryptListening = listeners.DNSCrypt
 	}
 	if ws.dnscryptStatus != nil {
 		var dnscryptErr string
@@ -227,6 +284,11 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		DoQTokenDomain       *string   `json:"doq_token_domain"`
 		DoH3Enabled          *bool     `json:"doh3_enabled"`
 		DoQTokens            *[]string `json:"doq_tokens"`
+		PlainDNSEnabled      *bool     `json:"plain_dns_enabled"`
+		PlainDNSPort         *int      `json:"plain_dns_port"`
+		DoHEnabled           *bool     `json:"doh_enabled"`
+		DoHPort              *int      `json:"doh_port"`
+		DoTPort              *int      `json:"dot_port"`
 		DoTEnabled           *bool     `json:"dot_enabled"`
 		DNSCryptEnabled      *bool     `json:"dnscrypt_enabled"`
 		DNSCryptPort         *int      `json:"dnscrypt_port"`
@@ -254,6 +316,63 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 	ws.dnsMu.Unlock()
 
 	next := before
+
+	plainEnabled := !before.PlainDNSDisabled
+	if req.PlainDNSEnabled != nil {
+		plainEnabled = *req.PlainDNSEnabled
+	}
+	plainPort := before.Port
+	if plainPort == 0 {
+		plainPort = 53
+	}
+	if req.PlainDNSPort != nil {
+		plainPort = *req.PlainDNSPort
+		if plainPort == 0 {
+			plainPort = 53
+		}
+		if plainPort < 1 || plainPort > 65535 {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "plain_dns_port must be between 1 and 65535")
+			return
+		}
+	}
+
+	dohEnabled := !before.DoHDisabled
+	if req.DoHEnabled != nil {
+		dohEnabled = *req.DoHEnabled
+	}
+	dohPort := before.DoHPort
+	if dohPort == 0 {
+		dohPort = 8443
+	}
+	if req.DoHPort != nil {
+		dohPort = *req.DoHPort
+		if dohPort == 0 {
+			dohPort = 8443
+		}
+		if dohPort < 1 || dohPort > 65535 {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "doh_port must be between 1 and 65535")
+			return
+		}
+	}
+
+	// DoH3 shares the DoH port and stays on; the switch is read-only in the
+	// card. Ignore a client that still sends false.
+	doh3Enabled := true
+
+	dotPort := before.DoTPort
+	if dotPort == 0 {
+		dotPort = 853
+	}
+	if req.DoTPort != nil {
+		dotPort = *req.DoTPort
+		if dotPort == 0 {
+			dotPort = 853
+		}
+		if dotPort < 1 || dotPort > 65535 {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "dot_port must be between 1 and 65535")
+			return
+		}
+	}
 
 	auth := normalizeDoQAuth(before.DoQAuth)
 	if req.DoQAuth != nil {
@@ -414,10 +533,25 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	next.DoQEnabled = doqEnabled
-	if req.DoH3Enabled != nil {
-		next.DoH3Enabled = *req.DoH3Enabled
+	if problem := transportPortConflict(
+		plainEnabled, plainPort,
+		dotEnabled, dotPort,
+		dohPort,
+		doh3Enabled,
+		doqEnabled, port,
+		dnscryptEnabled, dnscryptPort,
+	); problem != "" {
+		httpx.WriteJSONError(w, http.StatusBadRequest, problem)
+		return
 	}
+
+	next.Port = plainPort
+	next.PlainDNSDisabled = !plainEnabled
+	next.DoHDisabled = !dohEnabled
+	next.DoHPort = dohPort
+	next.DoTPort = dotPort
+	next.DoQEnabled = doqEnabled
+	next.DoH3Enabled = doh3Enabled
 	next.DoQPort = port
 	next.DoQAuth = auth
 	next.DoQTokenDomain = tokenDomain
@@ -511,6 +645,11 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 	current.DNSCryptEnabled = next.DNSCryptEnabled
 	current.DNSCryptPort = next.DNSCryptPort
 	current.DNSCryptProviderName = next.DNSCryptProviderName
+	current.Port = next.Port
+	current.PlainDNSDisabled = next.PlainDNSDisabled
+	current.DoHDisabled = next.DoHDisabled
+	current.DoHPort = next.DoHPort
+	current.DoTPort = next.DoTPort
 	current.DoTDisabled = next.DoTDisabled
 	current.DoTAuth = next.DoTAuth
 	current.DoTTokenDomain = next.DoTTokenDomain
@@ -529,6 +668,11 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		current.DNSCryptEnabled = before.DNSCryptEnabled
 		current.DNSCryptPort = before.DNSCryptPort
 		current.DNSCryptProviderName = before.DNSCryptProviderName
+		current.Port = before.Port
+		current.PlainDNSDisabled = before.PlainDNSDisabled
+		current.DoHDisabled = before.DoHDisabled
+		current.DoHPort = before.DoHPort
+		current.DoTPort = before.DoTPort
 		current.DoTDisabled = before.DoTDisabled
 		current.DoTAuth = before.DoTAuth
 		current.DoTTokenDomain = before.DoTTokenDomain
@@ -569,4 +713,62 @@ func normalizeDoTTokens(raw []string) ([]string, string) {
 		out = []string{}
 	}
 	return out, ""
+}
+
+// transportPortConflict catches two enabled listeners that would bind the same
+// protocol and port before the save reaches the DNS server. The DoH port is
+// always reserved for TCP because the HTTPS listener also serves the subscriber
+// portal, even when the DoH endpoint itself is switched off.
+func transportPortConflict(
+	plainEnabled bool, plainPort int,
+	dotEnabled bool, dotPort int,
+	dohPort int,
+	doh3Enabled bool,
+	doqEnabled bool, doqPort int,
+	dnscryptEnabled bool, dnscryptPort int,
+) string {
+	used := map[string]string{}
+	claim := func(proto string, port int, name string) string {
+		key := proto + ":" + strconv.Itoa(port)
+		if other, ok := used[key]; ok {
+			return fmt.Sprintf("%s and %s both need %s port %d", other, name, proto, port)
+		}
+		used[key] = name
+		return ""
+	}
+	if plainEnabled {
+		if p := claim("tcp", plainPort, "Plain DNS"); p != "" {
+			return p
+		}
+		if p := claim("udp", plainPort, "Plain DNS"); p != "" {
+			return p
+		}
+	}
+	if dotEnabled {
+		if p := claim("tcp", dotPort, "DoT"); p != "" {
+			return p
+		}
+	}
+	if p := claim("tcp", dohPort, "DoH/portal"); p != "" {
+		return p
+	}
+	if doh3Enabled {
+		if p := claim("udp", dohPort, "DoH3"); p != "" {
+			return p
+		}
+	}
+	if doqEnabled {
+		if p := claim("udp", doqPort, "DoQ"); p != "" {
+			return p
+		}
+	}
+	if dnscryptEnabled {
+		if p := claim("udp", dnscryptPort, "DNSCrypt"); p != "" {
+			return p
+		}
+		if p := claim("tcp", dnscryptPort, "DNSCrypt"); p != "" {
+			return p
+		}
+	}
+	return ""
 }

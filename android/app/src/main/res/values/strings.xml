@@ -172,7 +172,8 @@
     <string name="dashboard_relay_total_clean">Total %1$s · no refusals</string>
     <string name="dashboard_relay_unreadable">%1$s unreadable</string>
     <string name="dashboard_cores">%1$d cores</string>
-    <string name="dashboard_system_percent">System %1$s</string>
+    <string name="dashboard_ram_server">Server: %1$s / %2$s</string>
+    <string name="dashboard_ram_server_usage">Server usage: %1$s</string>
     <string name="dashboard_traffic_total">Total · ↓ %1$s · ↑ %2$s</string>
     <string name="dashboard_samples">Last %1$d samples, every 3s</string>
     <string name="dashboard_no_observations">No observations yet.</string>
@@ -346,10 +347,31 @@
     <string name="subscriber_doh3">DoH3 (HTTP/3)</string>
     <string name="subscriber_doq">DoQ (QUIC)</string>
     <string name="subscriber_dot">DoT</string>
-    <string name="transports_help">Optional DoH3, DoQ and DNSCrypt endpoints, DoT client authentication, and mTLS. DoT, DoH, DoH3 and DoQ reuse the SSL/TLS Manager certificate; DNSCrypt and mTLS use their own keys.</string>
+    <string name="transports_all_on">All Transports On</string>
+    <string name="transports_status_loading">Loading…</string>
+    <string name="transports_on">On: %1$s</string>
+    <string name="transports_off">Off: %1$s</string>
+    <string name="settings_loading">Loading…</string>
+    <string name="transports_help">All client transports. Changes apply as you edit.</string>
+    <string name="transports_plain">Plain DNS</string>
+    <string name="transports_plain_help">Traditional UDP + TCP resolver for every client that does not encrypt.</string>
+    <string name="transports_plain_port">UDP + TCP port</string>
+    <string name="transports_plain_hint">Open UDP and TCP on this port. Disabling it leaves the encrypted transports running.</string>
+    <string name="transports_copy_plain">Copy plain DNS address</string>
+    <string name="transports_doh">DoH (DNS-over-HTTPS)</string>
+    <string name="transports_doh_help">RFC 8484 over HTTP/2 and HTTP/1.1, with optional bearer tokens.</string>
+    <string name="transports_doh_port">HTTPS port</string>
+    <string name="transports_doh_portal_note">The subscriber portal shares this listener; changing the port moves the portal with it. Tokens are managed in the DoH Secret Tokens card.</string>
+    <string name="transports_copy_doh">Copy DoH URL</string>
+    <string name="transports_copy_doh3">Copy DoH3 URL</string>
+    <string name="transports_copy_doq">Copy DoQ URL</string>
+    <string name="transports_copy_dot">Copy DoT URL</string>
+    <string name="transports_tcp_port">TCP port</string>
     <string name="transports_doh3">DoH3 (HTTP/3)</string>
-    <string name="transports_doh3_help">Same DoH URL, negotiated over QUIC automatically.</string>
-    <string name="transports_doh3_port">UDP %1$d</string>
+    <string name="transports_doh3_help">Shares the DoH port over UDP. Always on while DoH is configured.</string>
+    <string name="transports_doh3_port">UDP %1$s</string>
+    <string name="transports_doh3_port_shared">UDP port (shared with DoH)</string>
+    <string name="transports_doh3_shared_note">DoH3 shares the DoH port over UDP; change it on the DoH card. TCP DoH advertises this endpoint with Alt-Svc.</string>
     <string name="transports_doq">DoQ (DNS-over-QUIC)</string>
     <string name="transports_doq_help">RFC 9250 for clients and routers that support QUIC.</string>
     <string name="transports_port">UDP port</string>
@@ -368,8 +390,8 @@
     <string name="transports_doq_ip_public_warning">Public Mode is on — any source can use the IP-authenticated transports (DoQ, DoT, DNSCrypt); the allowlist is not enforced.</string>
     <string name="transports_doq_ip_empty_warning">No IPs allowlisted — IP-authenticated transports will refuse every source.</string>
     <string name="transports_dot">DoT (DNS-over-TLS)</string>
-    <string name="transports_dot_help">Android Private DNS. Uses the DoH/DoT certificate, TCP %1$d.</string>
-    <string name="transports_dot_firewall">Open TCP %1$d in the firewall.</string>
+    <string name="transports_dot_help">Android Private DNS. Uses the DoH/DoT certificate, TCP %1$s.</string>
+    <string name="transports_dot_firewall">Open TCP %1$s in the firewall.</string>
     <string name="transports_dnscrypt">DNSCrypt</string>
     <string name="transports_dnscrypt_help">A stamp-based resolver endpoint with its own provider keys.</string>
     <string name="transports_dnscrypt_port">UDP + TCP port</string>
@@ -386,6 +408,7 @@
     <string name="transports_mtls_ca_required">A CA bundle is required when mTLS is on.</string>
     <string name="transports_mtls_note">The CA verifies client certificates only; it is not a server certificate. DoT refuses the handshake without a verified certificate. DoH and DoQ enforce it only on the DNS query path, so the subscriber portal stays reachable.</string>
     <string name="transports_save_all">Save transport settings</string>
+    <string name="transports_enforced">Enforced</string>
     <string name="transports_certificate">Certificate</string>
     <string name="transports_certificate_manager">SSL/TLS Manager</string>
     <string name="transports_status">Status</string>
@@ -394,7 +417,7 @@
     <string name="transports_status_listening">Listening</string>
     <string name="transports_status_pending">Enabled, not listening</string>
     <string name="transports_status_saving">Saving…</string>
-    <string name="transports_status_unsaved">Unsaved — press Save transport settings</string>
+    <string name="transports_status_unsaved">Unsaved changes</string>
     <string name="transports_firewall">Open the UDP port in the firewall.</string>
     <string name="transports_cert_warning">SNI-token mode needs a certificate covering the token hostnames; the built-in ACME client cannot issue wildcards.</string>
 
@@ -665,7 +688,7 @@
     <string name="history_settings_top_clients_error">Top clients must be between 50 and 5,000.</string>
     <string name="history_settings_exclude_error">Excluded clients cannot contain more than 500 entries.</string>
 
-    <!-- DNSSEC policy. Server-wide and startup-only, like Traffic History. -->
+    <!-- DNSSEC policy. Server-wide and applied to the running validator on save. -->
     <string name="dnssec_settings_title">DNSSEC Validation</string>
     <string name="dnssec_settings_help">Validate DS/DNSKEY chains and NSEC/NSEC3 proofs. Bogus answers return SERVFAIL.</string>
     <string name="dnssec_settings_enabled">Enable DNSSEC validation</string>
@@ -676,19 +699,21 @@
     <string name="dnssec_settings_defaults_show">Show built-in root anchors</string>
     <string name="dnssec_settings_defaults_hide">Hide built-in root anchors</string>
     <string name="dnssec_settings_builtin">Built-in anchors</string>
-    <string name="dnssec_settings_save">Save DNSSEC settings</string>
-    <string name="dnssec_settings_saved">Saved.</string>
+    <string name="dnssec_settings_save">Save &amp; Apply DNSSEC Settings</string>
+    <string name="dnssec_settings_saved">Applied.</string>
     <string name="dnssec_settings_saved_restart">Saved. Restart to apply.</string>
-    <string name="dnssec_settings_restart_note">Startup-only; restart to apply.</string>
+    <string name="dnssec_settings_restart_note">Changes apply to the running validator immediately.</string>
     <string name="dnssec_settings_restart_pending">Restart required to apply the saved policy.</string>
     <string name="dnssec_settings_unsupported">This server does not expose DNSSEC settings.</string>
     <string name="dnssec_settings_loading">Loading DNSSEC settings…</string>
+    <string name="dnssec_settings_loading_short">Loading…</string>
 
     <!-- Proxy leak protection. Live and server-wide; the switch saves immediately. -->
     <string name="proxy_leak_settings_title">Proxy Leak Protection</string>
     <string name="proxy_leak_settings_help">Withhold HTTPS and SVCB answers for proxied names so clients cannot discover QUIC or the origin\'s real addresses.</string>
     <string name="proxy_leak_settings_enabled">Enable proxy leak protection</string>
     <string name="proxy_leak_settings_status_on">ACTIVE</string>
+    <string name="proxy_leak_settings_loading_short">Loading…</string>
     <string name="proxy_leak_settings_status_off">OFF</string>
     <string name="proxy_leak_settings_https">HTTPS / SVCB</string>
     <string name="proxy_leak_settings_https_value">withheld</string>

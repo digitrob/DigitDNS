@@ -391,6 +391,9 @@
       "get": {"tags": ["upstreams"], "summary": "List upstreams", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Items"}}}}}},
       "post": {"tags": ["upstreams"], "summary": "Add an upstream", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["address"], "properties": {"address": {"type": "string"}}}}}}, "responses": {"201": {"description": "Created"}, "400": {"$ref": "#/components/responses/BadRequest"}, "409": {"$ref": "#/components/responses/Problem"}}}
     },
+    "/api/v3/upstreams/presets": {
+      "get": {"tags": ["upstreams"], "summary": "List curated public DNS providers and their supported transports", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Items"}}}}}}
+    },
     "/api/v3/upstreams/{id}": {
       "delete": {"tags": ["upstreams"], "summary": "Remove an upstream (id is the address)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}, "404": {"$ref": "#/components/responses/NotFound"}}}
     },

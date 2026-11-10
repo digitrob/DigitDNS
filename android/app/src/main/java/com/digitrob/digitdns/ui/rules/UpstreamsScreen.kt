@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.ui.rules
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,21 +9,27 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,23 +39,31 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import kotlin.math.roundToInt
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.PanelScreenHeader
 import com.digitrob.digitdns.ui.components.PanelSnackbarHost
+import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
+import com.digitrob.digitdns.ui.components.UpstreamPresetBrowser
+import com.digitrob.digitdns.ui.components.UpstreamPresetBrowserActions
+import com.digitrob.digitdns.ui.components.UpstreamPresetBrowserState
 import com.digitrob.digitdns.ui.components.SwipeToDeleteRow
 import com.digitrob.digitdns.ui.components.showPanelToast
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
+import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * The upstream resolver pool, most-preferred first. Add, reorder and remove; a removal
@@ -86,14 +101,50 @@ fun UpstreamsScreen(viewModel: UpstreamsViewModel = hiltViewModel()) {
                     value = state.newAddress,
                     onValueChange = viewModel::onNewAddressChange,
                     label = { Text("Add address") },
-                    placeholder = { Text("8.8.8.8, tls://dns.google") },
+                    placeholder = { Text("Search providers or type an address") },
                     singleLine = true,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { focus -> if (focus.isFocused) viewModel.openPresets() },
+                    trailingIcon = {
+                        IconButton(onClick = viewModel::togglePresets) {
+                            Icon(
+                                Icons.Filled.ArrowDropDown,
+                                contentDescription = if (state.presetsOpen) "Hide DNS providers" else "Browse DNS providers",
+                                modifier = Modifier.rotate(if (state.presetsOpen) 180f else 0f),
+                            )
+                        }
+                    },
                 )
                 Spacer(Modifier.width(8.dp))
                 Button(onClick = viewModel::add, enabled = !state.isSaving && state.newAddress.isNotBlank()) {
                     Text("Add")
                 }
+            }
+
+            if (state.presetsOpen) {
+                UpstreamPresetBrowser(
+                    state = UpstreamPresetBrowserState(
+                        providers = state.presets,
+                        query = state.newAddress,
+                        added = state.upstreams.toSet(),
+                        expanded = state.expandedPresetProviders,
+                        loading = state.presetsLoading,
+                        loaded = state.presetsLoaded,
+                        error = state.presetError,
+                        adding = state.addingPresetAddress,
+                    ),
+                    actions = UpstreamPresetBrowserActions(
+                        onToggleProvider = viewModel::togglePresetProvider,
+                        onAdd = { address ->
+                            if (address == state.newAddress.trim()) viewModel.add()
+                            else viewModel.addPreset(address)
+                        },
+                        onRemove = viewModel::remove,
+                        onClose = viewModel::closePresets,
+                    ),
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
             }
 
             UpstreamList(state = state, viewModel = viewModel)
@@ -114,9 +165,7 @@ private fun UpstreamList(state: UpstreamsUiState, viewModel: UpstreamsViewModel)
         modifier = Modifier.fillMaxSize(),
     ) {
         when {
-            state.isLoading && state.upstreams.isEmpty() -> CenterBox {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
+            state.isLoading && state.upstreams.isEmpty() -> SettingsLoadingSkeleton(cards = 2)
             state.upstreams.isEmpty() -> CenterBox {
                 Text("No upstreams configured.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

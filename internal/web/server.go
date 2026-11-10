@@ -169,6 +169,9 @@ type WebServer struct {
 	// is still pending; both are startup-only, so writes happen before listeners.
 	dnssecActive  atomic.Bool
 	dnssecAnchors atomic.Pointer[[]string]
+	// dnssecApplier applies a saved policy to the running validator. Nil in test
+	// harnesses, where a save remains a persisted-only change.
+	dnssecApplier func(enabled bool, anchors []string) error
 
 	// proxyLeakSetter applies a proxy leak-protection change to the running
 	// resolver. Installed during startup; nil leaves the card read-only in the
@@ -183,6 +186,9 @@ type WebServer struct {
 	// plus the reason one that is enabled is not. Nil in harnesses that never
 	// build a DNS server.
 	transportStatus func() (doh3 bool, doq bool, listenerErr string)
+	// transportListeners reports every transport listener, including the plain,
+	// DoT and DoH listeners the older status source did not cover.
+	transportListeners func() TransportListeners
 	// transportMetrics reports the QUIC listener counters. Nil means all zero.
 	transportMetrics func() TransportMetrics
 	// dnscryptApplier installs the generated provider keys on the running DNS
@@ -311,6 +317,15 @@ func (ws *WebServer) SetControlState(benchmark *service.BenchmarkRunner, lockout
 // SetSubscriptionSettings attaches the subscription record after construction.
 // It exists for the test harness, which builds servers without a database
 // record; main passes it in through the same call.
+// SetDNSSECApplier installs the live validator hook. Call it during startup,
+// after the DNS handler exists.
+func (ws *WebServer) SetDNSSECApplier(fn func(enabled bool, anchors []string) error) {
+	if ws == nil {
+		return
+	}
+	ws.dnssecApplier = fn
+}
+
 // SetDNSSECStatus records what the running process actually installed. The
 // DNSSEC settings card compares this snapshot with the saved record so it can
 // say "restart required" instead of implying a live toggle. Call it during
@@ -349,6 +364,25 @@ func (ws *WebServer) SetTransportStatusSource(fn func() (doh3 bool, doq bool, li
 		return
 	}
 	ws.transportStatus = fn
+}
+
+// TransportListeners is the live listener state shown on the transport card.
+type TransportListeners struct {
+	PlainDNS bool
+	DoT      bool
+	DoH      bool
+	DoH3     bool
+	DoQ      bool
+	DNSCrypt bool
+}
+
+// SetTransportListenerSource installs the full listener-state source. Call it
+// during startup, after the DNS server exists.
+func (ws *WebServer) SetTransportListenerSource(fn func() TransportListeners) {
+	if ws == nil {
+		return
+	}
+	ws.transportListeners = fn
 }
 
 // SetTransportMetricsSource installs the QUIC counter source. Call it during
@@ -1018,6 +1052,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/auth/2fa/disable", ws.requireAuth(ws.handleAuth2FADisable))
 	mux.HandleFunc("/api/auth/sse-ticket", ws.requireAuth(ws.handleSSETicket))
 	mux.HandleFunc("/api/benchmark", ws.requireAuth(ws.handleBenchmark))
+	mux.HandleFunc("/api/upstreams/presets", ws.requireAuth(ws.handleUpstreamPresets))
 	mux.HandleFunc("/api/upstreams/add", ws.requireAuth(ws.handleUpstreamsAdd))
 	mux.HandleFunc("/api/settings/resolution", ws.requireAuth(ws.handleResolutionSettings))
 	mux.HandleFunc("/api/settings/dnssec", ws.requireAuth(ws.handleDNSSECSettings))
@@ -3074,6 +3109,19 @@ func (ws *WebServer) removeUpstream(addr string) (list []string, errMsg string, 
 		return nil, "Could not persist the upstream list", http.StatusInternalServerError
 	}
 	return slices.Clone(remaining), "", 0
+}
+
+// handleUpstreamPresets serves the curated public-resolver catalogue used by
+// the web and Android add-resolver browsers. It is read-only and deliberately
+// keeps the provider logos out of the response: each client maps the stable
+// provider ID to a bundled asset, so no third-party favicon request is made.
+func (ws *WebServer) handleUpstreamPresets(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"providers": upstream.PresetProviders()})
 }
 
 // handleUpstreamsAdd registers a new upstream DNS resolver at runtime

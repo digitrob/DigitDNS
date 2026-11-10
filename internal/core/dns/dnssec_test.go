@@ -30,7 +30,8 @@ func TestValidateUpstreamSetsADOnlyOnSecure(t *testing.T) {
 		{name: "bogus", result: dnssec.Result{Status: dnssec.Bogus}, wantAD: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h := &Handler{validator: stubValidator{result: tc.result}}
+			h := &Handler{}
+			h.validator.Store(&validatorSlot{v: stubValidator{result: tc.result}})
 			resp := new(dns.Msg)
 			resp.SetQuestion(q.Name, q.Qtype)
 			resp.AuthenticatedData = true // an upstream's claim must not survive

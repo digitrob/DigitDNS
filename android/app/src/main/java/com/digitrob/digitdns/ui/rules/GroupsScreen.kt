@@ -38,6 +38,7 @@ import com.digitrob.digitdns.domain.model.GroupAction
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
+import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.components.SwipeToDeleteRow
 import com.digitrob.digitdns.ui.components.clickableText
@@ -81,7 +82,7 @@ fun GroupsScreen(viewModel: GroupsViewModel = hiltViewModel()) {
         ) {
             when {
                 state.isLoading && state.groups.isEmpty() -> CenterBox {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    SettingsLoadingSkeleton(cards = 2)
                 }
                 state.groups.isEmpty() -> CenterBox {
                     Text("No custom groups yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)

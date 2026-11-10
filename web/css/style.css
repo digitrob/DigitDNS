@@ -714,6 +714,12 @@ body::before {
   gap: 4px;
 }
 
+/* .badge sets inline-flex, so the plain .hidden utility can lose the cascade.
+   A two-class selector is deliberate: a hidden status chip must never render. */
+.badge.hidden {
+  display: none;
+}
+
 .badge-proxy {
   background: rgba(0, 240, 255, 0.15);
   color: var(--accent-cyan);
@@ -1394,6 +1400,23 @@ input:checked + .slider:before {
 .switch-amber { --switch-on: rgb(245 158 11); }
 .switch-sky { --switch-on: rgb(14 165 233); }
 
+/* Reserve one width for the state label in every card. Without it, "Off",
+   "Saving…" and "Listening · UDP+TCP 5443" each pull the switch to a different
+   x position as the state changes. */
+.transport-state {
+  display: inline-block;
+  width: 10.75rem;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 480px) {
+  .transport-state {
+    width: 8.5rem;
+  }
+}
+
 .transport-status-row {
   display: flex;
   align-items: center;
@@ -1834,6 +1857,183 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .upstream-addr:focus-visible {
   outline: 2px solid var(--accent-cyan);
   outline-offset: 2px;
+}
+
+/* Inline provider browser under the add row. It sits in the normal flow so the
+   dashboard's scroll container and the card's own height constraints keep it
+   usable on a phone; a fixed popover would be clipped by the card. */
+.upstream-add-wrap {
+  margin-bottom: 0.75rem;
+}
+.upstream-preset-panel {
+  margin-top: 0.5rem;
+  padding: 4px;
+  border: 1px solid var(--border-color, rgb(var(--c-slate-700)));
+  border-radius: 10px;
+  background: rgb(var(--c-slate-950));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  max-height: 17rem;
+  overflow-y: auto;
+}
+.upstream-preset-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 6px 6px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.upstream-preset-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+}
+.upstream-preset-close:hover {
+  background: rgba(148, 163, 184, 0.12);
+  color: rgb(var(--c-slate-200));
+}
+.upstream-preset-provider {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  color: rgb(var(--c-slate-200));
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+}
+.upstream-preset-provider:hover {
+  background: rgba(148, 163, 184, 0.10);
+}
+.upstream-preset-logo {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  border-radius: 4px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.06);
+}
+.upstream-preset-provider-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upstream-preset-count {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+}
+.upstream-preset-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+.upstream-preset-provider[aria-expanded="true"] .upstream-preset-chevron {
+  transform: rotate(90deg);
+}
+.upstream-preset-servers {
+  padding: 0 0 4px 26px;
+}
+.upstream-preset-server {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgb(var(--c-slate-300));
+  font-size: 11px;
+  text-align: left;
+}
+.upstream-preset-server:hover {
+  background: rgba(34, 211, 238, 0.08);
+}
+.upstream-preset-server:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.upstream-preset-server.is-added {
+  color: rgb(var(--c-slate-400));
+}
+.upstream-preset-addr {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.upstream-preset-proto {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.proto-udp { color: rgb(34 211 238); }
+.proto-tcp { color: rgb(96 165 250); }
+.proto-dot { color: rgb(52 211 153); }
+.proto-doh { color: rgb(192 132 252); }
+.proto-doq { color: rgb(251 191 36); }
+.proto-doh3 { color: rgb(251 146 60); }
+.proto-dnscrypt { color: rgb(232 121 249); }
+.proto-other { color: var(--text-muted); }
+.upstream-preset-action {
+  flex-shrink: 0;
+  width: 18px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+.upstream-preset-server:hover .upstream-preset-action {
+  color: var(--accent-cyan);
+}
+.upstream-preset-server.is-added .upstream-preset-action {
+  color: rgb(52 211 153);
+}
+.upstream-preset-custom {
+  margin: 2px 4px 4px;
+  border: 1px dashed rgba(34, 211, 238, 0.35);
+}
+.upstream-preset-custom .upstream-preset-addr {
+  color: var(--accent-cyan);
+}
+.upstream-preset-empty,
+.upstream-preset-loading {
+  padding: 10px 8px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.upstream-preset-note {
+  padding: 0 8px 5px;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.35;
+}
+@media (max-width: 480px) {
+  .upstream-preset-panel { max-height: 14rem; }
+  .upstream-preset-servers { padding-left: 18px; }
 }
 
 .upstream-list {

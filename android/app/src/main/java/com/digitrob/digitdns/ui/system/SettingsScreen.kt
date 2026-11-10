@@ -28,6 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
@@ -42,7 +43,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     PanelRefreshBox(
-        isRefreshing = state.isLoading,
+        isRefreshing = false,
         onRefresh = viewModel::load,
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -66,7 +67,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         }
 
         if (state.isLoading) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            SettingsLoadingSkeleton(cards = 3)
             return@Column
         }
 

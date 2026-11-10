@@ -1,51 +1,61 @@
-# DigitDNS v5.4.3 — faster dashboard and clearer state
+# DigitDNS v5.5.0 — client transports, DNSCrypt and mTLS
 
-**A performance and UX patch: less JavaScript and network on the dashboard, and
-the panel now names what is wrong when a listener or upstream is unhealthy.**
+**One place for every client-facing transport, with independent switches,
+token authentication, DNSCrypt and mTLS, plus a faster and steadier web and
+Android panel.**
 
-No resolver, API or database schema changes are required. Existing settings,
-clients, blocklists and certificates are preserved.
+Existing settings, clients, blocklists, certificates and API keys are preserved.
+No manual database migration is required.
 
-## Dashboard performance
+## Client Transports
 
-- **API responses are gzip-compressed** when the client accepts it. On a live
-  install this cut `/api/filtering` from ~22 KB to ~5.3 KB, `/api/metrics` from
-  ~7.7 KB to ~1.7 KB, and `/api/config` from ~2.2 KB to ~0.9 KB. Responses under
-  512 bytes stay identity-encoded, so tiny bodies do not grow.
-- **Minified dashboard assets** are served under the existing
-  `/js/app.js` and `/css/style.css` URLs. `app.js` drops from 551 KB to 298 KB
-  raw and from ~153 KB to ~80 KB gzipped; `style.css` drops from 134 KB to
-  58 KB raw and ~39 KB to ~11.8 KB gzipped. The readable source stays embedded
-  and a source-hash test catches stale minified output.
-- **Chart.js is deferred** until the first stats poll instead of loading on
-  `DOMContentLoaded`. The login page no longer loads it at all.
-- **Less layout work per poll:** the stats tiles and latency figures use
-  `textContent` rather than `innerText`, and the QPS chart repaints at most once
-  per ~1.5 seconds instead of every second.
+- **Plain DNS, DoT, DoH, DoQ, DoH3, DNSCrypt and mTLS** now live in one card on
+  web and Android. Each has a port, a copyable endpoint and a switch.
+- **Plain DNS and DoH can be disabled independently.** The DoH switch gates only
+  `/dns-query`; the subscriber portal keeps serving on the DoH port.
+- **DoT has its own enable switch** and defaults to on, so existing installs keep
+  serving port 853 after the upgrade.
+- **DoH3 stays on** and shares the DoH port over UDP; its switch is read-only.
+- **Transport edits autosave** on web and Android. Incomplete SNI-token or mTLS
+  forms stay local until their required inputs are present.
+- **Endpoints match their certificates:** Plain DNS and the DNSCrypt stamp use
+  the public IP; DoT, DoH, DoH3 and DoQ use the DoH/DoT certificate domain.
+  SNI-token modes continue to use the token hostname.
 
-## Clearer state
+## Authentication and encryption
 
-- **Global listener notice:** if DoH3 or DoQ is enabled but not listening, every
-  tab now shows the listener name, the server's `last_error`, and an
-  **Open transports** action.
-- **Global upstream notice:** degraded upstream resolvers are named at the top
-  of the panel, with a **Review upstreams** action. This uses the same health
-  predicate as the monitor: open circuit, failed latest probe, or a recent error
-  rate of at least 10% over 20 queries.
-- **“Why was this blocked?”** A blocked query-log row now shows the exact source
-  under the domain, for example `Blocked by Custom Block · ads.example.com` or
-  `Blocked by Blocklist: <list> · <pattern>`. It is visible on phones, where the
-  separate RULE column is hidden.
-- **Access-mode reporting fixed:** `/api/config/access` now reports the live
-  access mode instead of an older `access.allow_all` copy. The dashboard and the
-  resolver can no longer disagree about whether public mode is on.
-- The full-width public-mode banner was removed; the Clients page owns that
-  switch, and the persistent banner duplicated it across the panel.
+- **DNSCrypt server** on **UDP and TCP 5443**, with encrypted provider keys,
+  a signed certificate, a copyable stamp and live listener status.
+- **DoH bearer tokens:** `/dns-query` accepts `Authorization: Bearer <token>` as
+  well as the historical `?token=` parameter.
+- **DoT SNI-token authentication:** the ServerName becomes
+  `<token>.<token domain>`, checked before any query is read.
+- **mTLS for DoT, DoH, DoH3 and DoQ** from an operator-supplied client CA. DoT
+  requires a verified certificate at the handshake; DoH and DoQ enforce
+  verification on the DNS query path so the subscriber portal stays reachable.
+- **Metrics:** `digitdns_dnscrypt_queries_total` and
+  `digitdns_dnscrypt_errors_total`.
 
-## Android
+## DNS and panel behaviour
 
-Android only carries the version bump to **5.4.3 (540)**. No Android behaviour
-changes are included in this patch.
+- **DNSSEC saves apply live.** The validator is swapped in the running handler
+  and the cache is flushed, so `RUNNING` changes in the same request. The button
+  is now **Save & Apply DNSSEC Settings**.
+- **Web Client Transports no longer flickers** when a switch is moved. Status
+  labels, endpoints, the stamp, token lists and the status badge update only
+  when their value changes.
+- **Android settings pages open with card skeletons** instead of a full-screen
+  spinner or blank screen. Initial loads no longer run the pull-to-refresh arc.
+- **Android transport switches stay put.** Every field is included in the save
+  request, and status plus switch share a fixed right-aligned slot.
+- **RAM cards lead with the instance's own allocation** on web and Android, with
+  machine-wide server RAM and usage as secondary lines.
+- **Public DNS provider presets:** the upstream add box searches a curated
+  top-ten catalogue, grouped by provider with bundled logos and every supported
+  transport; typing a custom resolver address still works. The same browser is
+  on the Android dashboard's Upstream Resolvers card.
+- **Android relay and service pickers** use full-width rows with larger flags
+  and text, plus consistent check-circle/radio selection pictograms.
 
 ## Upgrade
 
@@ -59,25 +69,26 @@ docker compose up -d
 Pinned versions:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.4.3
-docker pull ghcr.io/digitrob/digitdns-agent:5.4.3
-docker pull robmeister/digitdns:5.4.3
-docker pull robmeister/digitdns-agent:5.4.3
+docker pull ghcr.io/digitrob/digitdns:5.5.0
+docker pull ghcr.io/digitrob/digitdns-agent:5.5.0
+docker pull robmeister/digitdns:5.5.0
+docker pull robmeister/digitdns-agent:5.5.0
 ```
 
 systemd:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.0/scripts/install.sh | sudo bash
 ```
 
 ## Assets
 
 - `digitdns-linux-amd64`, `digitdns-linux-arm64`
 - `digitdns-agent-linux-amd64`, `digitdns-agent-linux-arm64`
-- `digitdns-agent-5.4.3-linux-arm64-image.tar.gz` and `.sha256`
+- `digitdns-agent-5.5.0-linux-arm64-image.tar.gz` and `.sha256`
 - `digitdns-offline-bundle.tar.gz`, `digitdns-offline-bundle.zip`
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-The Android APKs are attached to this release from the `android-v5.4.3` tag.
+The Android APKs are attached to this release from the `android-v5.5.0` tag.
+The app version is **5.5.0 (541)**.

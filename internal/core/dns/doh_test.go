@@ -418,3 +418,22 @@ func TestDoHTokenAcceptsQueryAndBearer(t *testing.T) {
 		t.Fatalf("missing token = %d, want 401", missingRec.Code)
 	}
 }
+
+// The DoH switch gates only /dns-query. The listener and portal routes share
+// the port and must keep serving when DoH is off.
+func TestDoHDisabledReturnsNotFound(t *testing.T) {
+	h := newDoHHandler(t, &dummyAccess{})
+	req := httptest.NewRequest(http.MethodPost, "/dns-query", bytes.NewReader(dohQuery(t, "pin.internal.test.")))
+	req.Header.Set("Content-Type", "application/dns-message")
+	rec := httptest.NewRecorder()
+	h.SetEnabled(false)
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("disabled DoH = %d, want 404", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	h.SetEnabled(true)
+	h.ServeHTTP(rec, req)
+	dohReply(t, rec)
+}

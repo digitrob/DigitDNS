@@ -39,11 +39,21 @@ type DoHHandler struct {
 	// portal on the same listener remains reachable, and requires a verified
 	// chain here for /dns-query.
 	mtlsRequire atomic.Bool
+	// enabled gates the TCP DoH endpoint. The listener also serves the
+	// subscriber portal, so disabling DoH must not stop it. HTTP/3 is a separate
+	// listener and is not affected: DoH3 keeps working when TCP DoH is off.
+	enabled atomic.Bool
 }
 
 func NewDoHHandler(h *Handler) *DoHHandler {
-	return &DoHHandler{dnsHandler: h}
+	doh := &DoHHandler{dnsHandler: h}
+	doh.enabled.Store(true)
+	return doh
 }
+
+// SetEnabled turns the TCP DoH endpoint on or off. The HTTPS listener and the
+// subscriber portal routes sharing its port stay up either way.
+func (h *DoHHandler) SetEnabled(enabled bool) { h.enabled.Store(enabled) }
 
 // SetDoHTokens installs the operator's DoH bearer tokens. An empty list
 // disables token checking. Wired from the "access" record (dashboard card and
@@ -111,6 +121,10 @@ func (h *DoHHandler) DoH3Requests() uint64 { return h.doh3Requests.Load() }
 func (h *DoHHandler) SetMTLSRequire(require bool) { h.mtlsRequire.Store(require) }
 
 func (h *DoHHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.ProtoMajor != 3 && !h.enabled.Load() {
+		http.NotFound(w, r)
+		return
+	}
 	// No CORS headers (v2.1.0 A-05 remediation): RFC 8484 clients — browsers via
 	// the standard API, stub resolvers — issue no preflighted cross-origin reads
 	// that need them, and an open wildcard let any third-party website use this

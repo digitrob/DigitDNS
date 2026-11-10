@@ -126,3 +126,41 @@ func TestDNSSECSettingsSplitsPastedBlock(t *testing.T) {
 		t.Fatalf("anchors = %v, want both lines from the pasted block", view.TrustAnchors)
 	}
 }
+
+// With a live applier installed, the save changes the running badge in the same
+// response and no restart is requested.
+func TestDNSSECSettingsApplyLive(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+	seedDNSRecord(t, ws.db)
+	ws.SetDNSSECStatus(false, nil)
+
+	var appliedEnabled bool
+	var appliedAnchors []string
+	ws.SetDNSSECApplier(func(enabled bool, anchors []string) error {
+		appliedEnabled = enabled
+		appliedAnchors = append([]string(nil), anchors...)
+		return nil
+	})
+
+	anchor := dnssec.DefaultTrustAnchorRecords()[0]
+	body := fmt.Sprintf(`{"enabled":true,"trust_anchors":[%q]}`, anchor)
+	rec, view := callDNSSEC(t, ws, http.MethodPost, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !appliedEnabled || len(appliedAnchors) != 1 || appliedAnchors[0] != anchor {
+		t.Fatalf("applier got enabled=%v anchors=%v", appliedEnabled, appliedAnchors)
+	}
+	if !view.Enabled || !view.Running || view.RestartRequired {
+		t.Fatalf("view after live apply = %+v, want enabled, running, no restart", view)
+	}
+
+	rec, view = callDNSSEC(t, ws, http.MethodPost, `{"enabled":false,"trust_anchors":[]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("disable status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if view.Enabled || view.Running || view.RestartRequired {
+		t.Fatalf("view after live disable = %+v, want off and no restart", view)
+	}
+}

@@ -103,15 +103,11 @@ private fun HistoryPolicyHeader(state: HistorySettingsUiState) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     if (state.isLoading && !state.isSaving) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(modifier = Modifier.height(18.dp).width(18.dp), strokeWidth = 2.dp)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = stringResource(R.string.history_settings_loading),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Text(
+            text = stringResource(R.string.history_settings_loading),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

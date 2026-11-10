@@ -87,14 +87,16 @@ type TransportConfig struct {
 	DoQAuth        string
 	DoQTokenDomain string
 	DoH3Enabled    bool
-	// DoT is enabled unless DoTDisabled is set, matching the database field's
-	// backward-compatible default. DoT tokens use the same <token>.<domain>
-	// shape as DoQ; mTLS applies to DoT, DoH and DoQ.
-	DoTDisabled    bool
-	DoTAuth        string
-	DoTTokenDomain string
-	MTLSEnabled    bool
-	MTLSCAPEM      string
+	// Plain DNS, DoH and DoT are enabled unless their negative flags are set,
+	// matching the database fields' backward-compatible default. DoT tokens use
+	// the same <token>.<domain> shape as DoQ; mTLS applies to DoT, DoH and DoQ.
+	PlainDNSDisabled bool
+	DoHDisabled      bool
+	DoTDisabled      bool
+	DoTAuth          string
+	DoTTokenDomain   string
+	MTLSEnabled      bool
+	MTLSCAPEM        string
 	// DNSCrypt provider keys live in the separate dnscrypt setting and are
 	// installed with SetDNSCryptConfig before ApplyTransports.
 	DNSCryptEnabled bool
@@ -111,6 +113,7 @@ type Server struct {
 	dohHandler *DoHHandler
 	udpServer  *dns.Server
 	tcpServer  *dns.Server
+	plainMu    sync.Mutex
 	dotServer  *dns.Server
 	dohServer  *http.Server
 	doh3Server *http3.Server
@@ -257,48 +260,9 @@ func idle(d time.Duration) func() time.Duration {
 // swallowed inside a goroutine. Plain DNS on :53 is mandatory and produces an
 // error; the optional DoT/DoH listeners only warn.
 func (s *Server) Start() error {
-	udpAddr := s.addr(s.port)
-	pc, err := net.ListenPacket("udp", udpAddr)
-	if err != nil {
-		return fmt.Errorf("bind DNS UDP %s: %w", udpAddr, err)
+	if err := s.startPlainDNS(); err != nil {
+		return err
 	}
-	s.udpServer = &dns.Server{PacketConn: pc, Handler: s.handler}
-	// Capture the server in a local for the closure (v2.1.0 B-05 remediation):
-	// the goroutine read the shared field, and the TCP-bind failure path below
-	// nils it — a race whose loser dereferenced nil and took the whole process
-	// down during startup error handling. The local never changes, so the
-	// goroutine is immune to whatever happens to the field afterwards.
-	udpSrv := s.udpServer
-	go func() {
-		log.Printf("[DNS] Starting UDP listener on %s", udpAddr)
-		if err := udpSrv.ActivateAndServe(); err != nil {
-			log.Printf("[DNS] UDP server stopped: %v", err)
-		}
-	}()
-
-	tcpAddr := s.addr(s.port)
-	tcpLn, err := net.Listen("tcp", tcpAddr)
-	if err != nil {
-		// The UDP goroutine holds its own reference, so shutting down through
-		// the captured server is safe and the field is simply left pointing at
-		// the (now shut-down) server instead of being nilled under it.
-		_ = udpSrv.Shutdown()
-		_ = pc.Close()
-		return fmt.Errorf("bind DNS TCP %s: %w", tcpAddr, err)
-	}
-	s.tcpServer = &dns.Server{
-		Listener:      netutil.LimitListener(tcpLn, maxTCPConns),
-		Handler:       s.handler,
-		IdleTimeout:   idle(tcpIdleTimeout),
-		MaxTCPQueries: -1,
-	}
-	go func() {
-		log.Printf("[DNS] Starting TCP listener on %s (idle %s)", tcpAddr, tcpIdleTimeout)
-		if err := s.tcpServer.ActivateAndServe(); err != nil {
-			log.Printf("[DNS] TCP server stopped: %v", err)
-		}
-	}()
-
 	s.startDoT()
 	s.startHTTPS()
 	if err := s.startDoH3Locked(); err != nil {
@@ -311,6 +275,96 @@ func (s *Server) Start() error {
 		log.Printf("[DNS] Warning: %v", err)
 	}
 	return nil
+}
+
+// startPlainDNS binds UDP and TCP for the traditional resolver. Unlike the
+// optional listeners its bind failure is fatal at boot: a configured plain
+// transport that cannot serve is not a working resolver.
+func (s *Server) startPlainDNS() error {
+	s.plainMu.Lock()
+	defer s.plainMu.Unlock()
+	if s.transportCfg.PlainDNSDisabled {
+		return nil
+	}
+	return s.startPlainDNSLocked(s.port)
+}
+
+// startPlainDNSLocked binds and starts both plain-DNS listeners. The caller
+// holds plainMu. A partial bind is unwound so a failed attempt never leaves one
+// protocol serving while the other is down.
+func (s *Server) startPlainDNSLocked(port int) error {
+	udpAddr := s.addr(port)
+	pc, err := net.ListenPacket("udp", udpAddr)
+	if err != nil {
+		return fmt.Errorf("bind DNS UDP %s: %w", udpAddr, err)
+	}
+	udpSrv := &dns.Server{PacketConn: pc, Handler: s.handler}
+	s.udpServer = udpSrv
+	s.port = port
+	// Capture the server in a local: a port change nils the field while this
+	// goroutine is starting, and reading the shared field here would panic.
+	go func() {
+		log.Printf("[DNS] Starting UDP listener on %s", udpAddr)
+		if err := udpSrv.ActivateAndServe(); err != nil {
+			log.Printf("[DNS] UDP server stopped: %v", err)
+		}
+	}()
+
+	tcpAddr := s.addr(port)
+	tcpLn, err := net.Listen("tcp", tcpAddr)
+	if err != nil {
+		_ = udpSrv.Shutdown()
+		_ = pc.Close()
+		s.udpServer = nil
+		return fmt.Errorf("bind DNS TCP %s: %w", tcpAddr, err)
+	}
+	tcpSrv := &dns.Server{
+		Listener:      netutil.LimitListener(tcpLn, maxTCPConns),
+		Handler:       s.handler,
+		IdleTimeout:   idle(tcpIdleTimeout),
+		MaxTCPQueries: -1,
+	}
+	s.tcpServer = tcpSrv
+	go func() {
+		log.Printf("[DNS] Starting TCP listener on %s (idle %s)", tcpAddr, tcpIdleTimeout)
+		if err := tcpSrv.ActivateAndServe(); err != nil {
+			log.Printf("[DNS] TCP server stopped: %v", err)
+		}
+	}()
+	return nil
+}
+
+// stopPlainDNSLocked detaches and shuts down both plain-DNS listeners. The
+// caller holds plainMu. UDP and TCP goroutines only log, so waiting for their
+// shutdown here cannot deadlock on this mutex.
+func (s *Server) stopPlainDNSLocked() {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+	defer cancel()
+	udpSrv, tcpSrv := s.udpServer, s.tcpServer
+	s.udpServer, s.tcpServer = nil, nil
+	if udpSrv != nil {
+		// Close the socket before waiting for the serve loop: ShutdownContext
+		// signals the loop, which closes the socket in its own defer, so a
+		// rebind that waited only on the shutdown channel could still race the
+		// old bind a few microseconds later.
+		if udpSrv.PacketConn != nil {
+			_ = udpSrv.PacketConn.Close()
+		}
+		_ = udpSrv.ShutdownContext(ctx)
+	}
+	if tcpSrv != nil {
+		if tcpSrv.Listener != nil {
+			_ = tcpSrv.Listener.Close()
+		}
+		_ = tcpSrv.ShutdownContext(ctx)
+	}
+}
+
+// PlainDNSListening reports whether both plain-DNS listeners are installed.
+func (s *Server) PlainDNSListening() bool {
+	s.plainMu.Lock()
+	defer s.plainMu.Unlock()
+	return s.udpServer != nil && s.tcpServer != nil
 }
 
 // startDoT brings up the optional DNS-over-TLS listener. At boot a failure
@@ -499,6 +553,7 @@ func (s *Server) startHTTPS() error {
 	}
 	if s.dohHandler != nil {
 		s.dohHandler.SetMTLSRequire(s.transportCfg.MTLSEnabled)
+		s.dohHandler.SetEnabled(!s.transportCfg.DoHDisabled)
 	}
 
 	dohSrv := &http.Server{
@@ -836,6 +891,21 @@ func (s *Server) TransportMetrics() TransportMetrics {
 	return m
 }
 
+// DoTListening reports whether the DNS-over-TLS listener is installed.
+func (s *Server) DoTListening() bool {
+	s.tlsMu.Lock()
+	defer s.tlsMu.Unlock()
+	return s.dotServer != nil
+}
+
+// DoHListening reports whether the HTTPS listener that carries DoH (and the
+// subscriber portal) is installed. It is independent of the DoH switch.
+func (s *Server) DoHListening() bool {
+	s.tlsMu.Lock()
+	defer s.tlsMu.Unlock()
+	return s.dohServer != nil
+}
+
 func (s *Server) doqConnectionCount() int {
 	s.doqMu.Lock()
 	defer s.doqMu.Unlock()
@@ -870,6 +940,23 @@ func (s *Server) ApplyTransports(cfg TransportConfig) error {
 	cfg.DoTAuth = dotAuth
 	cfg.DoTTokenDomain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(cfg.DoTTokenDomain), "."))
 
+	// Plain DNS has its own lifecycle, outside tlsMu and the QUIC listeners.
+	// A port change stops and rebinds both protocols; a failed bind is returned
+	// to the caller, which rolls the previous configuration back.
+	// A zero Port means this save did not touch plain DNS (the test harnesses
+	// construct TransportConfig by hand); production always supplies it.
+	s.plainMu.Lock()
+	if cfg.PlainDNSDisabled {
+		s.stopPlainDNSLocked()
+	} else if cfg.Port != 0 && (s.udpServer == nil || s.tcpServer == nil || s.port != cfg.Port) {
+		s.stopPlainDNSLocked()
+		if err := s.startPlainDNSLocked(cfg.Port); err != nil {
+			s.plainMu.Unlock()
+			return err
+		}
+	}
+	s.plainMu.Unlock()
+
 	s.tlsMu.Lock()
 	defer s.tlsMu.Unlock()
 
@@ -894,18 +981,26 @@ func (s *Server) ApplyTransports(cfg TransportConfig) error {
 	// real change triggers it: the DoT gate's mode/domain and the mTLS gate.
 	// DoT's port change is only meaningful when a port was supplied.
 	dotPortChanged := cfg.DoTPort != 0 && s.dotPort != cfg.DoTPort
+	// The HTTPS listener also carries the subscriber portal, so a DoH port
+	// change moves the portal with it. DoH's switch only gates /dns-query.
+	dohPortChanged := s.dohPort != cfg.DoHPort
 	needTLSRebind := prevDoTAuth != cfg.DoTAuth ||
 		s.transportCfg.DoTDisabled != cfg.DoTDisabled ||
 		s.transportCfg.DoTTokenDomain != cfg.DoTTokenDomain ||
 		s.transportCfg.MTLSEnabled != cfg.MTLSEnabled ||
 		s.transportCfg.MTLSCAPEM != cfg.MTLSCAPEM ||
-		dotPortChanged
+		s.transportCfg.DoHDisabled != cfg.DoHDisabled ||
+		dotPortChanged ||
+		dohPortChanged
 	s.transportCfg = cfg
 	if cfg.DoTPort != 0 {
 		s.dotPort = cfg.DoTPort
 	}
 	s.dohPort = cfg.DoHPort
 	s.doqPort = cfg.DoQPort
+	if s.dohHandler != nil {
+		s.dohHandler.SetEnabled(!cfg.DoHDisabled)
+	}
 	if needTLSRebind {
 		if err := s.rebindTLSListenersLocked(); err != nil {
 			return err
@@ -930,14 +1025,11 @@ func (s *Server) ApplyTransports(cfg TransportConfig) error {
 }
 
 func (s *Server) Stop() {
+	s.plainMu.Lock()
+	s.stopPlainDNSLocked()
+	s.plainMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
-
-	for _, srv := range []*dns.Server{s.udpServer, s.tcpServer} {
-		if srv != nil {
-			_ = srv.ShutdownContext(ctx)
-		}
-	}
 	// The TLS listeners' fields are mutated under tlsMu (RebindTLS); shutdown
 	// reads them under the same lock so a concurrent rebind cannot leave a
 	// freshly rebound listener that nothing ever closes.

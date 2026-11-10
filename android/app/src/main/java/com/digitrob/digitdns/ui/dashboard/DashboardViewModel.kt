@@ -10,6 +10,7 @@ import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.core.network.StatsSeries
 import com.digitrob.digitdns.core.network.StatsSummary
 import com.digitrob.digitdns.core.network.StatsTop
+import com.digitrob.digitdns.core.network.UpstreamPresetProvider
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.ConnectionStore
@@ -108,6 +109,7 @@ data class DashboardUiState(
  * aggregate metrics (CPU, RAM, uptime, totals) are not on the stream, so those still
  * poll `/stats`, at the panel's own three-second cadence. Both stop with the ViewModel.
  */
+@Suppress("TooManyFunctions")
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val statsRepository: StatsRepository,
@@ -492,6 +494,17 @@ class DashboardViewModel @Inject constructor(
                 _state.update { it.copy(isBenchmarking = false) }
             }
         }
+    }
+
+    /** The shared public-provider catalogue for the racer card's add dropdown. */
+    suspend fun loadUpstreamPresets(): List<UpstreamPresetProvider>? = try {
+        upstreamsRepository.presets()
+    } catch (e: ApiException) {
+        Timber.d(e, "upstream presets failed")
+        null
+    } catch (e: java.io.IOException) {
+        Timber.d(e, "upstream presets failed")
+        null
     }
 
     /** Add an upstream by address, then refresh the racer. */

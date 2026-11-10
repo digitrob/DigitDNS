@@ -33,6 +33,14 @@ interface UpstreamsApi {
     @POST("upstreams")
     suspend fun add(@Body body: UpstreamAddRequest): UpstreamsResponse
 
+    /**
+     * `GET /upstreams/presets`. The curated public-provider catalogue, shared
+     * with the web add-resolver browser. Provider logos are bundled; only the
+     * stable provider id comes over the wire.
+     */
+    @GET("upstreams/presets")
+    suspend fun presets(): UpstreamPresetsResponse
+
     /** `POST /upstreams/delete`. Removes the canonical match for [body]'s address. */
     @POST("upstreams/delete")
     suspend fun delete(@Body body: UpstreamDeleteRequest): UpstreamsResponse
@@ -114,6 +122,26 @@ data class UpstreamStat(
         consecutiveFailures == 0 &&
         !(recentSamples > 0 && recentErrorRate >= 0.1)
 }
+
+@Serializable
+data class UpstreamPresetsResponse(
+    val providers: List<UpstreamPresetProvider> = emptyList(),
+)
+
+@Serializable
+data class UpstreamPresetProvider(
+    val id: String = "",
+    val name: String = "",
+    val note: String = "",
+    val servers: List<UpstreamPresetServer> = emptyList(),
+)
+
+@Serializable
+data class UpstreamPresetServer(
+    val address: String = "",
+    val label: String = "",
+    val protocol: String = "",
+)
 
 @Serializable
 data class UpstreamAddRequest(

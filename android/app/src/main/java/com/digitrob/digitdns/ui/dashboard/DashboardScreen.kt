@@ -83,6 +83,7 @@ import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.LatencySnapshot
 import com.digitrob.digitdns.core.network.LiveStats
 import com.digitrob.digitdns.core.network.ResolutionSettings
+import com.digitrob.digitdns.core.network.UpstreamPresetProvider
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.data.DashboardCard
 import com.digitrob.digitdns.domain.model.HistoryRange
@@ -118,6 +119,7 @@ import kotlin.math.abs
  * The cards are drawn in the operator's saved order ({@link DashboardCard}), so a
  * phone can hide the metrics it never watches and put the ones it does at the top.
  */
+@Suppress("LongMethod") // Header, refresh shell and server switcher share one screen state.
 @Composable
 fun DashboardScreen(
     onAddServer: () -> Unit,
@@ -198,10 +200,13 @@ fun DashboardScreen(
             ) {
                 DashboardGrid(
                     state = state,
-                    onBenchmark = viewModel::benchmarkUpstreams,
-                    onAddUpstream = viewModel::addUpstream,
-                    onRemoveUpstream = viewModel::removeUpstream,
-                    onResolutionChange = viewModel::saveResolution,
+                    actions = DashboardActions(
+                        onBenchmark = viewModel::benchmarkUpstreams,
+                        onAddUpstream = viewModel::addUpstream,
+                        onRemoveUpstream = viewModel::removeUpstream,
+                        onLoadUpstreamPresets = viewModel::loadUpstreamPresets,
+                        onResolutionChange = viewModel::saveResolution,
+                    ),
                 )
             }
         }
@@ -515,13 +520,18 @@ private fun Modifier.privacySwipe(threshold: Float, onToggle: () -> Unit): Modif
         )
     }
 
+private data class DashboardActions(
+    val onBenchmark: () -> Unit,
+    val onAddUpstream: suspend (String) -> String?,
+    val onRemoveUpstream: suspend (String) -> String?,
+    val onLoadUpstreamPresets: suspend () -> List<UpstreamPresetProvider>?,
+    val onResolutionChange: (ResolutionSettings) -> Unit,
+)
+
 @Composable
 private fun DashboardGrid(
     state: DashboardUiState,
-    onBenchmark: () -> Unit,
-    onAddUpstream: suspend (String) -> String?,
-    onRemoveUpstream: suspend (String) -> String?,
-    onResolutionChange: (ResolutionSettings) -> Unit,
+    actions: DashboardActions,
 ) {
     // The grid state is hoisted for one reason: the racer card's swipe-to-delete has
     // to know a scroll is in flight, or a diagonal scroll can settle as a swipe and pop
@@ -543,10 +553,7 @@ private fun DashboardGrid(
                     card = card,
                     state = state,
                     swipeEnabled = !gridState.isScrollInProgress,
-                    onBenchmark = onBenchmark,
-                    onAddUpstream = onAddUpstream,
-                    onRemoveUpstream = onRemoveUpstream,
-                    onResolutionChange = onResolutionChange,
+                    actions = actions,
                 )
             }
         }
@@ -562,10 +569,7 @@ private fun LazyGridScope.liveCard(
     card: DashboardCard,
     state: DashboardUiState,
     swipeEnabled: Boolean,
-    onBenchmark: () -> Unit,
-    onAddUpstream: suspend (String) -> String?,
-    onRemoveUpstream: suspend (String) -> String?,
-    onResolutionChange: (ResolutionSettings) -> Unit,
+    actions: DashboardActions,
 ) {
     when (card) {
         DashboardCard.QUERY_RATE -> item { QueryRateCard(state.stats) }
@@ -581,13 +585,16 @@ private fun LazyGridScope.liveCard(
             UpstreamRacersCard(
                 upstreams = state.upstreams,
                 isBenchmarking = state.isBenchmarking,
-                onBenchmark = onBenchmark,
-                onAdd = onAddUpstream,
-                onRemove = onRemoveUpstream,
+                onBenchmark = actions.onBenchmark,
+                actions = UpstreamActions(
+                    onAdd = actions.onAddUpstream,
+                    onRemove = actions.onRemoveUpstream,
+                    onLoadPresets = actions.onLoadUpstreamPresets,
+                ),
                 swipeEnabled = swipeEnabled,
                 resolutionControls = ResolutionControls(
                     settings = state.resolution,
-                    onChange = onResolutionChange,
+                    onChange = actions.onResolutionChange,
                 ),
             )
         }
@@ -810,13 +817,22 @@ private fun RamUsageCard(stats: LiveStats?) {
     MetricCard {
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
             CardLabel(DashboardCard.RAM_USAGE, R.string.dashboard_ram_usage)
+            // The daemon's own allocation is the headline; machine-wide server
+            // RAM is useful context and stays underneath it.
             MetricValue(
                 text = stats?.let { formatBytes((it.ramUsageMb * 1024 * 1024).toLong()) } ?: "—",
                 color = colors.info,
             )
+            val serverUsed = stats?.let { formatBytes((it.systemMemUsedMb * 1024 * 1024).toLong()) } ?: "—"
+            val serverTotal = stats?.let { formatBytes((it.systemMemTotalMb * 1024 * 1024).toLong()) } ?: "—"
+            Text(
+                text = stringResource(R.string.dashboard_ram_server, serverUsed, serverTotal),
+                style = MetricMeta,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             val sysPct = stats?.systemMemPercent ?: 0.0
             Text(
-                text = stringResource(R.string.dashboard_system_percent, String.format(Locale.US, "%.0f%%", sysPct)),
+                text = stringResource(R.string.dashboard_ram_server_usage, String.format(Locale.US, "%.0f%%", sysPct)),
                 style = MetricMeta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

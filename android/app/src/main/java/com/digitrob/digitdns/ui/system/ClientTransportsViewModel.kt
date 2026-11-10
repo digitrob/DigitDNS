@@ -21,7 +21,15 @@ private const val NO_PORT = 0
 private const val MAX_PORT_DIGITS = 5
 
 data class ClientTransportsUiState(
-    val doh3Enabled: Boolean = false,
+    val plainDNSEnabled: Boolean = true,
+    val plainDNSPort: String = "53",
+    val plainDNSListening: Boolean = false,
+    val serverHost: String = "",
+    val dotHost: String = "",
+    val dohEnabled: Boolean = true,
+    val dohPort: String = "8443",
+    val dohListening: Boolean = false,
+    val doh3Enabled: Boolean = true,
     val appliedDoh3Enabled: Boolean = false,
     val doh3Port: Int = 8443,
     val doqEnabled: Boolean = false,
@@ -38,8 +46,9 @@ data class ClientTransportsUiState(
     val dnscryptCertNotAfter: Long = 0,
     val dnscryptListening: Boolean = false,
     val dotEnabled: Boolean = true,
+    val dotListening: Boolean = false,
     val dotAuth: String = "ip",
-    val dotPort: Int = 853,
+    val dotPort: String = "853",
     val dotTokenDomain: String = "",
     val dotTokens: List<String> = emptyList(),
     val newDotToken: String = "",
@@ -55,16 +64,16 @@ data class ClientTransportsUiState(
     val loaded: Boolean = false,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
-    val doh3Saving: Boolean = false,
     val transportSaving: Boolean = false,
     val error: String? = null,
 )
 
 /**
- * Android parity for the web's Client Encrypted Transports card. DoH3 applies
- * as soon as its switch moves. DoQ, DNSCrypt, DoT authentication and mTLS are
- * staged because their fields must be valid together, so they share one save.
+ * Android parity for the web's Client Transports card. Every switch and
+ * completed field applies as it is edited; incomplete SNI-token or mTLS forms
+ * stay local until their required inputs are present.
  */
+@Suppress("TooManyFunctions")
 @HiltViewModel
 class ClientTransportsViewModel @Inject constructor(
     private val repository: SettingsRepository,
@@ -108,41 +117,26 @@ class ClientTransportsViewModel @Inject constructor(
     }
 
     /** DoH3 is a single switch, so it applies immediately; failure reverts it. */
-    fun setDoh3Enabled(value: Boolean) {
-        val current = _state.value
-        if (current.doh3Saving || current.transportSaving || !current.loaded) return
-        _state.update { it.copy(doh3Enabled = value, doh3Saving = true, error = null) }
-        viewModelScope.launch {
-            try {
-                val saved = repository.saveDoh3(value)
-                _state.update {
-                    it.copy(
-                        appliedDoh3Enabled = saved.doh3Enabled,
-                        doh3Enabled = saved.doh3Enabled,
-                        doh3Port = saved.doh3Port,
-                        doh3Listening = saved.doh3Listening,
-                        doh3Saving = false,
-                        error = saved.lastError.ifBlank { null },
-                    )
-                }
-            } catch (e: ApiException) {
-                _state.update {
-                    it.copy(
-                        doh3Enabled = it.appliedDoh3Enabled,
-                        doh3Saving = false,
-                        error = e.userMessage,
-                    )
-                }
-            } catch (e: IOException) {
-                _state.update {
-                    it.copy(
-                        doh3Enabled = it.appliedDoh3Enabled,
-                        doh3Saving = false,
-                        error = e.message ?: "Could not apply the DoH3 setting.",
-                    )
-                }
-            }
-        }
+    fun setPlainDNSEnabled(value: Boolean) {
+        _state.update { it.copy(plainDNSEnabled = value, stagedDirty = true, error = null) }
+        autoSaveIfReady()
+    }
+
+    fun setPlainDNSPort(value: String) = _state.update {
+        it.copy(plainDNSPort = value.digits(), stagedDirty = true, error = null)
+    }
+
+    fun setDohEnabled(value: Boolean) {
+        _state.update { it.copy(dohEnabled = value, stagedDirty = true, error = null) }
+        autoSaveIfReady()
+    }
+
+    fun setDohPort(value: String) = _state.update {
+        it.copy(dohPort = value.digits(), stagedDirty = true, error = null)
+    }
+
+    fun setDotPort(value: String) = _state.update {
+        it.copy(dotPort = value.digits(), stagedDirty = true, error = null)
     }
 
     fun setDoqEnabled(value: Boolean) {
@@ -269,30 +263,39 @@ class ClientTransportsViewModel @Inject constructor(
      *  state stays local until its required inputs are present. */
     fun autoSaveIfReady() {
         val current = _state.value
-        if (!current.loaded || current.transportSaving || current.doh3Saving) return
-        if (!current.stagedDirty) return
-        val doqPort = current.doqPort.toIntOrNull() ?: return
-        val dnscryptPort = current.dnscryptPort.toIntOrNull() ?: return
-        if (transportProblem(current, doqPort, dnscryptPort) != null) return
-        saveTransports()
+        if (!current.loaded || current.transportSaving || !current.stagedDirty) return
+        val ports = current.ports()
+        if (ports != null && transportProblem(current, ports) == null) saveTransports()
     }
 
     /** The staged transports are multi-field, so they are committed together. */
     fun saveTransports() {
         val current = _state.value
-        if (current.transportSaving || current.doh3Saving || !current.loaded) return
-        val doqPort = current.doqPort.toIntOrNull() ?: NO_PORT
-        val dnscryptPort = current.dnscryptPort.toIntOrNull() ?: NO_PORT
-        val problem = transportProblem(current, doqPort, dnscryptPort)
+        if (current.transportSaving || !current.loaded) return
+        val ports = current.ports() ?: TransportPorts(NO_PORT, NO_PORT, NO_PORT, NO_PORT, NO_PORT)
+        val plainPort = ports.plain
+        val dohPort = ports.doh
+        val dotPort = ports.dot
+        val doqPort = ports.doq
+        val dnscryptPort = ports.dnscrypt
+        val problem = transportProblem(current, ports)
         if (problem != null) {
             _state.update { it.copy(error = problem) }
             return
         }
+        val snapshot = current
         _state.update { it.copy(transportSaving = true, error = null) }
         viewModelScope.launch {
             try {
                 val saved = repository.saveTransports(
                     TransportSettingsSave(
+                        plainDNSEnabled = current.plainDNSEnabled,
+                        plainDNSPort = plainPort,
+                        dohEnabled = current.dohEnabled,
+                        dohPort = dohPort,
+                        doh3Enabled = true,
+                        dotEnabled = current.dotEnabled,
+                        dotPort = dotPort,
                         doqEnabled = current.doqEnabled,
                         doqPort = doqPort,
                         doqAuth = current.doqAuth,
@@ -301,7 +304,6 @@ class ClientTransportsViewModel @Inject constructor(
                         dnscryptEnabled = current.dnscryptEnabled,
                         dnscryptPort = dnscryptPort,
                         dnscryptProviderName = dnscryptSuffix(current.dnscryptProviderName),
-                        dotEnabled = current.dotEnabled,
                         dotAuth = current.dotAuth,
                         dotTokenDomain = current.dotTokenDomain,
                         dotTokens = current.dotTokens,
@@ -309,7 +311,33 @@ class ClientTransportsViewModel @Inject constructor(
                         mtlsCaPem = current.mtlsCaPem,
                     ),
                 )
-                _state.update { it.apply(saved).copy(transportSaving = false) }
+                _state.update { latest ->
+                    if (!latest.editableEquals(snapshot)) {
+                        // A switch moved while this request was in flight. Keep
+                        // the newer staged form, refresh only the listener
+                        // state, and send the newer form next.
+                        latest.copy(
+                            plainDNSListening = saved.plainDNSListening,
+                            dotListening = saved.dotListening,
+                            dohListening = saved.dohListening,
+                            doqListening = saved.doqListening,
+                            doh3Listening = saved.doh3Listening,
+                            dnscryptListening = saved.dnscryptListening,
+                            dnscryptStamp = saved.dnscryptStamp,
+                            dnscryptCertNotAfter = saved.dnscryptCertNotAfter,
+                            serverHost = saved.serverHost,
+                            dotHost = saved.dotHost.ifBlank { saved.serverHost },
+                            doh3Enabled = true,
+                            appliedDoh3Enabled = true,
+                            appliedDoqEnabled = saved.doqEnabled,
+                            transportSaving = false,
+                            stagedDirty = true,
+                        )
+                    } else {
+                        latest.apply(saved).copy(transportSaving = false)
+                    }
+                }
+                if (!_state.value.editableEquals(snapshot)) autoSaveIfReady()
             } catch (e: ApiException) {
                 revertAfterFailure(e.userMessage)
             } catch (e: IOException) {
@@ -325,26 +353,70 @@ class ClientTransportsViewModel @Inject constructor(
         _state.update { it.copy(transportSaving = false, stagedDirty = true, error = message) }
     }
 
-    private fun transportProblem(
-        current: ClientTransportsUiState,
-        doqPort: Int,
-        dnscryptPort: Int,
-    ): String? = when {
-        doqPort !in 1..MAX_PORT -> "DoQ port must be between 1 and $MAX_PORT."
-        dnscryptPort !in 1..MAX_PORT -> "DNSCrypt port must be between 1 and $MAX_PORT."
-        current.doqEnabled && current.doqAuth == "sni-token" && current.tokenDomain.isBlank() ->
-            "Token domain is required for DoQ SNI-token mode."
-        current.doqEnabled && current.doqAuth == "sni-token" && current.tokens.isEmpty() ->
-            "Add at least one DoQ token for SNI-token mode."
-        current.dotEnabled && current.dotAuth == "sni-token" && current.dotTokenDomain.isBlank() ->
-            "Token domain is required for DoT SNI-token mode."
-        current.dotEnabled && current.dotAuth == "sni-token" && current.dotTokens.isEmpty() ->
-            "Add at least one DoT token for SNI-token mode."
-        current.mtlsEnabled && current.mtlsCaPem.isBlank() ->
-            "Paste the client CA bundle to enable mTLS."
+    private fun transportProblem(current: ClientTransportsUiState, ports: TransportPorts): String? =
+        portProblem("Plain DNS", ports.plain)
+            ?: portProblem("DoH", ports.doh)
+            ?: portProblem("DoT", ports.dot)
+            ?: portProblem("DoQ", ports.doq)
+            ?: portProblem("DNSCrypt", ports.dnscrypt)
+            ?: transportAuthProblem(current)
+
+    private fun portProblem(label: String, port: Int): String? =
+        if (port !in 1..MAX_PORT) "$label port must be between 1 and $MAX_PORT." else null
+
+    private fun transportAuthProblem(current: ClientTransportsUiState): String? =
+        doqAuthProblem(current) ?: dotAuthProblem(current) ?: mtlsAuthProblem(current)
+
+    private fun doqAuthProblem(current: ClientTransportsUiState): String? = when {
+        !current.doqEnabled || current.doqAuth != "sni-token" -> null
+        current.tokenDomain.isBlank() -> "Token domain is required for DoQ SNI-token mode."
+        current.tokens.isEmpty() -> "Add at least one DoQ token for SNI-token mode."
         else -> null
     }
+
+    private fun dotAuthProblem(current: ClientTransportsUiState): String? = when {
+        !current.dotEnabled || current.dotAuth != "sni-token" -> null
+        current.dotTokenDomain.isBlank() -> "Token domain is required for DoT SNI-token mode."
+        current.dotTokens.isEmpty() -> "Add at least one DoT token for SNI-token mode."
+        else -> null
+    }
+
+    private fun mtlsAuthProblem(current: ClientTransportsUiState): String? =
+        if (current.mtlsEnabled && current.mtlsCaPem.isBlank()) {
+            "Paste the client CA bundle to enable mTLS."
+        } else {
+            null
+        }
 }
+
+private data class TransportPorts(val plain: Int, val doh: Int, val dot: Int, val doq: Int, val dnscrypt: Int)
+
+private fun ClientTransportsUiState.ports(): TransportPorts? {
+    val parts = listOf(plainDNSPort, dohPort, dotPort, doqPort, dnscryptPort).map { it.toIntOrNull() }
+    if (parts.any { it == null }) return null
+    return TransportPorts(
+        plain = parts.component1()!!,
+        doh = parts.component2()!!,
+        dot = parts.component3()!!,
+        doq = parts.component4()!!,
+        dnscrypt = parts.component5()!!,
+    )
+}
+
+/** Compares only the fields the operator can edit. Listener flags and stamps
+ *  are response state and must not mask an edit made while a save was running. */
+private fun ClientTransportsUiState.editableEquals(other: ClientTransportsUiState): Boolean =
+    editableForm() == other.editableForm()
+
+/** The operator-editable fields, excluding listener flags and response stamps. */
+private fun ClientTransportsUiState.editableForm(): List<Any?> = listOf(
+    plainDNSEnabled, plainDNSPort,
+    dohEnabled, dohPort,
+    dotEnabled, dotPort, dotAuth, dotTokenDomain, dotTokens,
+    doqEnabled, doqPort, doqAuth, tokenDomain, tokens,
+    dnscryptEnabled, dnscryptPort, dnscryptProviderName,
+    mtlsEnabled, mtlsCaPem,
+)
 
 private fun String.digits(): String = filter(Char::isDigit).take(MAX_PORT_DIGITS)
 
@@ -357,9 +429,18 @@ private fun dnscryptSuffix(name: String): String {
 }
 
 private fun ClientTransportsUiState.apply(settings: TransportSettingsDto): ClientTransportsUiState = copy(
-    doh3Enabled = settings.doh3Enabled,
-    appliedDoh3Enabled = settings.doh3Enabled,
-    doh3Port = settings.doh3Port,
+    plainDNSEnabled = settings.plainDNSEnabled,
+    plainDNSPort = settings.plainDNSPort.takeIf { it > 0 }?.toString() ?: "53",
+    plainDNSListening = settings.plainDNSListening,
+    serverHost = settings.serverHost,
+    dotHost = settings.dotHost.ifBlank { settings.serverHost },
+    dohEnabled = settings.dohEnabled,
+    dohPort = settings.dohPort.takeIf { it > 0 }?.toString() ?: "8443",
+    dohListening = settings.dohListening,
+    // DoH3 shares the DoH port and cannot be switched off.
+    doh3Enabled = true,
+    appliedDoh3Enabled = true,
+    doh3Port = settings.dohPort.takeIf { it > 0 } ?: 8443,
     doqEnabled = settings.doqEnabled,
     appliedDoqEnabled = settings.doqEnabled,
     doqPort = settings.doqPort.takeIf { it > 0 }?.toString() ?: "853",
@@ -374,8 +455,9 @@ private fun ClientTransportsUiState.apply(settings: TransportSettingsDto): Clien
     dnscryptCertNotAfter = settings.dnscryptCertNotAfter,
     dnscryptListening = settings.dnscryptListening,
     dotEnabled = settings.dotEnabled,
+    dotListening = settings.dotListening,
     dotAuth = if (settings.dotAuth == "sni-token") "sni-token" else "ip",
-    dotPort = settings.dotPort.takeIf { it > 0 } ?: 853,
+    dotPort = settings.dotPort.takeIf { it > 0 }?.toString() ?: "853",
     dotTokenDomain = settings.dotTokenDomain,
     dotTokens = settings.dotTokens,
     newDotToken = "",

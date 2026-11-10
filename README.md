@@ -41,6 +41,32 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.5.0
+
+**Every client-facing transport in one place, with DNSCrypt, mTLS and token
+authentication — plus a steadier web and Android panel.**
+
+- **Client Transports card** on web and Android: Plain DNS, DoT, DoH, DoQ,
+  DoH3, DNSCrypt and the mTLS policy, each with a port, endpoint and switch.
+  Plain DNS and DoH can be disabled independently; DoT defaults to on; DoH3
+  stays on and shares the DoH port.
+- **DNSCrypt server** on UDP and TCP 5443, with encrypted provider keys, a
+  signed certificate, a copyable stamp and live status.
+- **DoH bearer tokens**, **DoT SNI-token authentication**, and **mTLS** for
+  DoT, DoH, DoH3 and DoQ from an operator-supplied client CA.
+- **Transport edits autosave** on web and Android; the global Save button is
+  gone. Incomplete token or mTLS forms stay local until they are valid.
+- **DNSSEC saves apply live** and the cache is flushed; the button is now
+  **Save & Apply DNSSEC Settings**.
+- **Web transport switches no longer flicker**, and Android settings pages load
+  with card skeletons instead of a full-screen spinner. Android transport
+  switches now save reliably and keep a fixed right-aligned slot.
+- **RAM cards lead with the instance's own allocation**; machine-wide server
+  RAM and usage are secondary on web and Android.
+- **Public DNS provider presets:** the upstream add box searches a curated
+  top-ten list, grouped by provider with bundled logos and every supported
+  transport; a custom address can still be typed directly.
+
 ## What's new in 5.4.3
 
 **A faster dashboard and clearer health/blocking state.**
@@ -477,7 +503,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -528,7 +554,7 @@ and no domain or certificate. It is Linux amd64/arm64. The hub keeps all other
 requirements. Full manual: [docs/AGENT.md](docs/AGENT.md).
 
 DNSCrypt, DoQ and DoH3 are also **upstream transports**. As client listeners
-they are opt-in under **Settings → Client Encrypted Transports**, together with
+they are opt-in under **Settings → Client Transports**, together with
 DoT SNI-token authentication and mTLS. Open the same ports in the firewall.
 
 ---
@@ -540,7 +566,7 @@ DoT SNI-token authentication and mTLS. Open the same ports in the firewall.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -623,7 +649,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.4.3` | API gzip, minified assets, deferred chart, health/blocked notices (latest) |
+| `5.5.0` | Client Transports with DNSCrypt, mTLS and token auth; live DNSSEC apply; steadier web/Android panels (latest) |
+| `5.4.3` | API gzip, minified assets, deferred chart, health/blocked notices (older) |
 | `5.4.2` | Compact adaptive Android Transports screen; no server changes (older) |
 | `5.4.1` | Transport hardening, QUIC limits/metrics, DoQ allowlist clarity, upstream health check (older) |
 | `5.4.0` | Client-facing DoH3 and DoQ (opt-in), web/Android transport controls, SNI-token auth, QUIC metrics (older) |
@@ -686,7 +713,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.4.3/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.5.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1025,7 +1052,7 @@ Client DoT/DoH need a valid certificate, so they require a domain. The server
 keeps upstream connections alive between queries to cut handshake latency.
 
 Client-facing **DoQ**, **DoH3** and **DNSCrypt** are opt-in under **Settings →
-Client Encrypted Transports**. DoQ and DoH3 share the DoH/DoT certificate and
+Client Transports**. DoQ and DoH3 share the DoH/DoT certificate and
 the same access allowlist; open **UDP 853**, **UDP 8443** and **5443/UDP+TCP**
 in the firewall. DoQ and DoT can authenticate by client IP or by an SNI token
 (`quic://<token>.doq.example.com:853`, `tls://<token>.dot.example.com:853`);
@@ -1146,7 +1173,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.4.3`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.5.0`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

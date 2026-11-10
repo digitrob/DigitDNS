@@ -99,10 +99,12 @@ type Handler struct {
 	// for it. Nil keeps the historical null-IP answer.
 	blockPolicy func() (mode string, ttl uint32)
 
-	// validator is installed during startup by EnableDNSSEC. While it is nil the
+	// validator is installed by EnableDNSSEC and may be replaced live by the
+	// dashboard's DNSSEC card. A pointer keeps the query path lock-free while an
+	// operator switches it on or off. While it is nil the
 	// resolver behaves exactly as before: upstream AD is passed through and no
 	// chain is walked.
-	validator ResponseValidator
+	validator atomic.Pointer[validatorSlot]
 }
 
 func NewHandler(
@@ -172,7 +174,8 @@ func (h *Handler) refreshUpstream(q dns.Question, opts cache.QueryOptions) (*dns
 	m.RecursionDesired = true
 	m.CheckingDisabled = opts.CD
 
-	validating := h.validator != nil && !opts.CD
+	validator := h.currentValidator()
+	validating := validator != nil && !opts.CD
 	if opts.EDNS || validating {
 		m.SetEdns0(dns.DefaultMsgSize, opts.DO || validating)
 	}
@@ -182,7 +185,7 @@ func (h *Handler) refreshUpstream(q dns.Question, opts cache.QueryOptions) (*dns
 	if err != nil || resp == nil {
 		return resp, err
 	}
-	if h.validator == nil {
+	if validator == nil {
 		return resp, nil
 	}
 
@@ -192,7 +195,7 @@ func (h *Handler) refreshUpstream(q dns.Question, opts cache.QueryOptions) (*dns
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), dnssecValidationTimeout)
 	defer cancel()
-	result := h.validator.Validate(ctx, q, resp)
+	result := validator.Validate(ctx, q, resp)
 	switch result.Status {
 	case dnssec.Secure:
 		resp.AuthenticatedData = true
@@ -904,7 +907,8 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	// With validation on, ask upstream for DNSSEC records even when the client
 	// did not. A DO=0 client still gets the protection; the signatures are
 	// stripped again after validation.
-	validating := h.validator != nil && !cacheOpts.CD
+	validator := h.currentValidator()
+	validating := validator != nil && !cacheOpts.CD
 	upstreamQuery := r
 	if validating {
 		upstreamQuery = r.Copy()
@@ -922,7 +926,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	// DNSSEC: clear any AD the upstream volunteered, then set it only when the
 	// chain of trust and the answer's signatures verify here. A truncated
 	// answer cannot be validated; it is left for the transport retry path.
-	if h.validator != nil && resp != nil {
+	if validator != nil && resp != nil {
 		if !validating || resp.Truncated {
 			resp.AuthenticatedData = false
 		} else if result := h.validateUpstream(q, resp); result.Status == dnssec.Bogus {
@@ -952,7 +956,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	// Validation forced DO=1 upstream. Put the client's own EDNS/DO view back
 	// before the answer leaves, including removing the OPT record entirely from
 	// a reply to a client that never sent one.
-	if h.validator != nil {
+	if validator != nil {
 		capDNSSECLifetime(resp)
 		normalizeForClient(resp, cacheOpts, q.Qtype)
 	}

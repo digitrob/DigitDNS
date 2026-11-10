@@ -49,7 +49,7 @@ fun Ipv6SettingsScreen(viewModel: Ipv6SettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     PanelRefreshBox(
-        isRefreshing = state.isLoading,
+        isRefreshing = false,
         onRefresh = viewModel::load,
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -78,18 +78,11 @@ private fun Ipv6LoadingCard(state: Ipv6SettingsUiState, onRetry: () -> Unit) {
                 style = MaterialTheme.typography.titleMedium,
             )
             if (state.error == null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.height(18.dp).width(18.dp),
-                        strokeWidth = 2.dp,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.ipv6_settings_loading),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.ipv6_settings_loading),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             } else {
                 Text(
                     text = state.error,

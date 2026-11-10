@@ -30,6 +30,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.PanelSnackbarHost
 import com.digitrob.digitdns.ui.components.clickableText
@@ -63,7 +64,7 @@ fun RestApiScreen(
     Scaffold(snackbarHost = { PanelSnackbarHost(snackbar) }, contentWindowInsets = WindowInsets(0)) { scaffoldPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(scaffoldPadding)) {
         PanelRefreshBox(
-            isRefreshing = state.isLoading,
+            isRefreshing = false,
             onRefresh = viewModel::load,
             modifier = Modifier.fillMaxSize(),
         ) {
@@ -98,9 +99,9 @@ fun RestApiScreen(
             }
 
             if (state.isLoading) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                return@Column
-            }
+            SettingsLoadingSkeleton(cards = 3)
+            return@Column
+        }
 
             MasterKeyCard(
                 apiKey = state.apiKey,

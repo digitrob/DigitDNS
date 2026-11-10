@@ -6,13 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## 🏷️ [Unreleased] — client transport authentication, DNSCrypt and mTLS
+## 🏷️ [v5.5.0] — client transport authentication, DNSCrypt and mTLS
 
 ### Added
 - **DNSCrypt server** on UDP and TCP **5443**, with encrypted provider keys stored
   in their own setting, a signed certificate, a copyable stamp and live listener
   status. The default port avoids TCP 443, which the SNI proxy owns. Enable it in
-  **Settings → Client Encrypted Transports**; the Android Transports screen has
+  **Settings → Client Transports**; the Android Transports screen has
   the same controls.
 - **DoH bearer tokens:** `/dns-query` accepts `Authorization: Bearer <token>` as
   well as the historical `?token=` parameter, so the credential stays out of
@@ -24,6 +24,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   DoT requires a verified certificate at the TLS handshake; DoH and DoQ request
   one and enforce verification on the DNS query path so the subscriber portal on
   the DoH port stays reachable.
+- **Plain DNS and DoH switches:** plain UDP+TCP and the DoH endpoint can be
+  disabled independently, and both expose their port. The DoH switch gates only
+  `/dns-query`; the subscriber portal keeps serving on that port.
+- **A complete Client Transports card:** Plain DNS, DoT, DoH, DoQ, DoH3,
+  DNSCrypt and the mTLS policy tile in one place, each with a port, a copyable
+  endpoint and the switch in the same position. DoH3 shows the DoH port as
+  read-only because they share it over UDP.
+- **Public DNS provider browser:** the upstream card's add box now searches a
+  curated top-ten provider catalogue (Cloudflare, Google, Quad9, OpenDNS,
+  AdGuard, Control D, DNS.SB, Yandex, NextDNS and CleanBrowsing), grouped by
+  provider with bundled logos and every supported transport. A `+` adds one
+  endpoint; typing a custom address still works. The same catalogue is served
+  to Android.
 - **Prometheus:** `digitdns_dnscrypt_queries_total` and
   `digitdns_dnscrypt_errors_total`.
 
@@ -36,11 +49,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Transport edits autosave:** switches and completed fields apply as they are
   edited, and the global Save button is gone on web and Android. Incomplete
   SNI-token or mTLS forms stay local until their required inputs are present.
+- **The web card is named Client Transports**; Android keeps its Transports
+  label. The startup summary now lists every transport, including disabled
+  ones, and DNSCrypt and mTLS.
+- **Endpoints tell the truth about their certificates:** Plain DNS and the
+  DNSCrypt stamp use the public IP, while DoT, DoH, DoH3 and DoQ use the
+  DoH/DoT certificate domain (SNI-token modes still use the token hostname).
+  The card's top-right badge names every transport that is not on.
+- **DoH3 is always on** and shares the DoH port; its switch is read-only on web
+  and Android.
+- **DNSSEC saves apply live.** The validator is swapped in the running handler
+  and the cache is flushed, so the RUNNING badge changes in the same request.
+  The save button is now **Save & Apply DNSSEC Settings**.
+- **Android DNSSEC/Proxy Leak first paint** no longer runs the pull-to-refresh
+  arc during the initial request, and the cards keep their layout while the
+  values load.
 - Changing DoT authentication or the mTLS gate rebinds the TLS listeners; an
   unrelated socket change does not. A rebind closes the old listening socket
   before binding the new one.
 - DoT and DoH now capture their server in the serve goroutine, removing a
   nil-dereference race during a live rebind.
+
+### Fixed
+- **Web Client Transports no longer flickers while a switch is saved.** Card
+  status labels, endpoints, the DNSCrypt stamp, token lists and the status badge
+  are updated only when their value changes; the old `Saving…` rewrite made all
+  six cards repaint on every autosave. The badge comparison uses `textContent`,
+  because CSS uppercasing made every `innerText` comparison look different.
+- **Android transport switches stay in place.** The save request now emits every
+  transport field, so a switch can no longer bounce back because an omitted
+  default was read as "leave the old value". Status badges and switches share a
+  fixed, right-aligned slot that does not move when the status changes.
+- **Android settings pages no longer open behind a full-screen spinner.** Card
+  skeletons fill the first paint on Settings, Security, REST API, Subscription,
+  Client Transports, Diagnostics, IPv6, DNSSEC/Proxy Leak, History, Relay Agents,
+  Access, Upstreams, Ad Blocking, Groups, Policies and Connect; initial loads no
+  longer run the pull-to-refresh arc.
+- **The Android RAM card leads with the instance's own allocation**, with
+  machine-wide server RAM and usage moved to the secondary lines. The web RAM
+  card follows the same order.
+- **Android relay selection uses the full dialog width**, with larger country
+  flags, relay names and detail text. Service and relay pickers now use the same
+  check-circle/radio pictograms as the provider browser, and a selected relay row
+  is tinted.
 
 ---
 

@@ -91,3 +91,35 @@ func TestApplyTransportsStartsDNSCryptUDPAndTCP(t *testing.T) {
 		t.Errorf("DNSCrypt queries = %d, want at least 2", m.DNSCryptQueries)
 	}
 }
+
+// Plain DNS has its own lifecycle now: disabling it must stop both protocols,
+// and re-enabling must bring them back without touching the encrypted listeners.
+func TestApplyTransportsDisablesAndReenablesPlainDNS(t *testing.T) {
+	port := freeDNSCryptPort(t)
+	s := &Server{
+		handler:      testDoQHandler(t),
+		bindHost:     "127.0.0.1",
+		port:         port,
+		transportCfg: TransportConfig{Port: port, PlainDNSDisabled: true},
+	}
+	t.Cleanup(s.Stop)
+
+	if err := s.ApplyTransports(TransportConfig{Port: port, PlainDNSDisabled: false}); err != nil {
+		t.Fatalf("enable plain DNS: %v", err)
+	}
+	if !s.PlainDNSListening() {
+		t.Fatal("plain DNS did not start when enabled")
+	}
+	if err := s.ApplyTransports(TransportConfig{Port: port, PlainDNSDisabled: true}); err != nil {
+		t.Fatalf("disable plain DNS: %v", err)
+	}
+	if s.PlainDNSListening() {
+		t.Fatal("plain DNS listeners survived the disable")
+	}
+	if err := s.ApplyTransports(TransportConfig{Port: port, PlainDNSDisabled: false}); err != nil {
+		t.Fatalf("re-enable plain DNS: %v", err)
+	}
+	if !s.PlainDNSListening() {
+		t.Fatal("plain DNS did not come back when re-enabled")
+	}
+}

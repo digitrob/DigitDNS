@@ -213,20 +213,31 @@ fun StatusBadge(
     text: String,
     color: Color,
     modifier: Modifier = Modifier,
+    maxLines: Int = 1,
 ) {
+    // Match the web's .badge chip: 20px radius, 4x8 padding, 10px bold
+    // uppercase text with the same 0.5px tracking.
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(999.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(color.copy(alpha = 0.15f))
-            .border(1.dp, color.copy(alpha = 0.4f), RoundedCornerShape(999.dp))
-            .padding(horizontal = 10.dp, vertical = 3.dp),
+            .border(1.dp, color.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+            text = text.uppercase(),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp,
+                lineHeight = 12.sp,
+                letterSpacing = 0.5.sp,
+            ),
             color = color,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
     }
 }
@@ -409,4 +420,42 @@ fun PanelSectionTitle(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/**
+ * First-paint placeholder for server-backed settings pages. It draws the card
+ * shapes the page is about to fill instead of a centred spinner, so the screen
+ * never looks empty and the layout does not jump when the response lands.
+ */
+@Composable
+fun SettingsLoadingSkeleton(
+    modifier: Modifier = Modifier,
+    cards: Int = 3,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        repeat(cards) {
+            PanelCard(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SkeletonLine(widthFraction = 0.45f, height = 14.dp)
+                    SkeletonLine(widthFraction = 0.92f, height = 10.dp)
+                    SkeletonLine(widthFraction = 0.78f, height = 10.dp)
+                    SkeletonLine(widthFraction = 0.64f, height = 10.dp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SkeletonLine(widthFraction: Float, height: Dp) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(widthFraction)
+            .height(height)
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    )
 }

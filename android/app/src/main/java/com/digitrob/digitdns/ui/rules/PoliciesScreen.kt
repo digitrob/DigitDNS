@@ -35,6 +35,7 @@ import com.digitrob.digitdns.domain.model.Policy
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
+import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.components.clickableText
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
@@ -77,7 +78,7 @@ fun PoliciesScreen(viewModel: PoliciesViewModel = hiltViewModel()) {
         ) {
             when {
                 state.isLoading && state.policies.isEmpty() -> CenterBox {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    SettingsLoadingSkeleton(cards = 2)
                 }
                 state.policies.isEmpty() -> CenterBox {
                     Text("No stored policies.", color = MaterialTheme.colorScheme.onSurfaceVariant)

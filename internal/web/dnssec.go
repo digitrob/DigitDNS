@@ -104,6 +104,14 @@ func (ws *WebServer) saveDNSSEC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if ws.dnssecApplier != nil {
+		if applyErr := ws.dnssecApplier(body.Enabled, anchors); applyErr != nil {
+			httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not apply the DNSSEC settings: "+applyErr.Error())
+			return
+		}
+		ws.SetDNSSECStatus(body.Enabled, anchors)
+	}
+
 	ws.writeDNSSEC(w)
 }
 

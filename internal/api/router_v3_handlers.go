@@ -891,6 +891,16 @@ func (a *API) handleV3UpstreamStats(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"items": stats})
 }
 
+// handleV3UpstreamPresets: GET the curated public-resolver catalogue. The
+// response is shared by the web browser and the Android add-resolver panel.
+func (a *API) handleV3UpstreamPresets(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"providers": upstream.PresetProviders()})
+}
+
 func (a *API) handleV3Upstreams(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:

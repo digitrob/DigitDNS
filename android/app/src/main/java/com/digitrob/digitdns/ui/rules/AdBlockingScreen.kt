@@ -69,6 +69,7 @@ import com.digitrob.digitdns.ui.formatCount
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
+import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.PanelSectionTitle
 import com.digitrob.digitdns.ui.components.PanelSnackbarHost
 import com.digitrob.digitdns.ui.components.PanelSwitch
@@ -119,7 +120,7 @@ fun AdBlockingScreen(viewModel: AdBlockingViewModel = hiltViewModel()) {
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             PanelRefreshBox(
-                isRefreshing = state.isLoading,
+                isRefreshing = state.isLoading && (state.groups.isNotEmpty() || state.customLists.isNotEmpty()),
                 onRefresh = viewModel::refresh,
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -166,13 +167,7 @@ private fun Roster(
     openUrl: (String) -> Unit,
 ) {
     if (state.isLoading && state.groups.isEmpty() && state.customLists.isEmpty()) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-        }
+        SettingsLoadingSkeleton(cards = 3)
         return
     }
 

@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
+import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.QrCode
 import com.digitrob.digitdns.ui.components.clickableText
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
@@ -41,7 +42,7 @@ fun ConnectScreen(viewModel: ConnectViewModel = hiltViewModel()) {
     val clipboard = LocalClipboardManager.current
 
     PanelRefreshBox(
-        isRefreshing = state.isLoading,
+        isRefreshing = false,
         onRefresh = viewModel::load,
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -53,7 +54,7 @@ fun ConnectScreen(viewModel: ConnectViewModel = hiltViewModel()) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
         when {
-            state.isLoading -> CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            state.isLoading -> SettingsLoadingSkeleton(cards = 2)
             state.error != null -> Text(state.error!!, color = DigitDnsTheme.colors.danger)
             else -> {
                 if (state.clients.isEmpty()) {

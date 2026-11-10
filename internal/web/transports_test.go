@@ -46,8 +46,11 @@ func TestTransportSettingsDefaultsAndRoundTrip(t *testing.T) {
 	defer cleanup()
 
 	initial := getTransportSettings(t, ws)
-	if initial.DoQEnabled || initial.DoH3Enabled {
-		t.Errorf("QUIC transports should default off: %#v", initial)
+	if initial.DoQEnabled {
+		t.Errorf("DoQ should default off: %#v", initial)
+	}
+	if !initial.DoH3Enabled {
+		t.Errorf("DoH3 shares the DoH port and should always be on: %#v", initial)
 	}
 	if initial.DoQPort != 853 || initial.DoQAuth != "ip" {
 		t.Errorf("defaults = port %d auth %q, want 853/ip", initial.DoQPort, initial.DoQAuth)
@@ -91,7 +94,7 @@ func TestTransportSettingsDefaultsAndRoundTrip(t *testing.T) {
 		t.Fatalf("partial POST = %d: %s", w.Code, w.Body.String())
 	}
 	got = getTransportSettings(t, ws)
-	if !got.DoQEnabled || got.DoH3Enabled || got.DoQAuth != "sni-token" || len(got.DoQTokens) != 2 {
+	if !got.DoQEnabled || !got.DoH3Enabled || got.DoQAuth != "sni-token" || len(got.DoQTokens) != 2 {
 		t.Errorf("partial save lost state: %#v", got)
 	}
 }
@@ -514,5 +517,79 @@ func TestTransportSettingsDoTToggle(t *testing.T) {
 	}
 	if saved.DoTDisabled {
 		t.Error("dot_disabled stayed set after re-enabling")
+	}
+}
+
+func TestTransportSettingsPlainDNSAndDoH(t *testing.T) {
+	ws, db, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	initial := getTransportSettings(t, ws)
+	if !initial.PlainDNSEnabled || initial.PlainDNSPort != 53 {
+		t.Errorf("plain DNS defaults = enabled %v port %d, want true/53", initial.PlainDNSEnabled, initial.PlainDNSPort)
+	}
+	if !initial.DoHEnabled || initial.DoHPort != 8443 {
+		t.Errorf("DoH defaults = enabled %v port %d, want true/8443", initial.DoHEnabled, initial.DoHPort)
+	}
+
+	w := postTransportJSON(t, ws, map[string]any{
+		"plain_dns_enabled": false,
+		"plain_dns_port":    1053,
+		"doh_enabled":       false,
+		"doh_port":          9443,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST plain/DoH = %d: %s", w.Code, w.Body.String())
+	}
+	var saved database.DNSSettings
+	if err := db.GetSetting("dns", &saved); err != nil {
+		t.Fatalf("GetSetting(dns): %v", err)
+	}
+	if !saved.PlainDNSDisabled || saved.Port != 1053 {
+		t.Errorf("plain DNS saved = disabled %v port %d", saved.PlainDNSDisabled, saved.Port)
+	}
+	if !saved.DoHDisabled || saved.DoHPort != 9443 {
+		t.Errorf("DoH saved = disabled %v port %d", saved.DoHDisabled, saved.DoHPort)
+	}
+
+	got := getTransportSettings(t, ws)
+	if got.PlainDNSEnabled || got.PlainDNSPort != 1053 || got.DoHEnabled || got.DoHPort != 9443 {
+		t.Errorf("view after save = %#v", got)
+	}
+
+	// A partial save keeps the new switches and ports.
+	w = postTransportSettings(t, ws, `{"doq_port":9853}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("partial POST = %d: %s", w.Code, w.Body.String())
+	}
+	got = getTransportSettings(t, ws)
+	if got.PlainDNSEnabled || got.PlainDNSPort != 1053 || got.DoHEnabled || got.DoHPort != 9443 {
+		t.Errorf("partial save lost plain/DoH state: %#v", got)
+	}
+	if got.DoH3Port != 9443 {
+		t.Errorf("doh3_port alias = %d, want the shared DoH port 9443", got.DoH3Port)
+	}
+}
+
+func TestTransportSettingsRejectsPortConflicts(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	for _, body := range []map[string]any{
+		// Plain DNS and the DoH/portal listener both need TCP.
+		{"plain_dns_port": 8443},
+		// DoH and DoT both need TCP by default.
+		{"doh_port": 853},
+		// Plain DNS and DNSCrypt both need TCP/UDP.
+		{"dnscrypt_enabled": true, "dnscrypt_port": 53},
+		// DoT and plain DNS both need TCP.
+		{"dot_port": 53},
+		// DoQ and plain DNS both need UDP.
+		{"doq_enabled": true, "doq_port": 53},
+	} {
+		w := postTransportJSON(t, ws, body)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("body %v = %d, want 400: %s", body, w.Code, w.Body.String())
+		}
 	}
 }

@@ -55,7 +55,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     PanelRefreshBox(
-        isRefreshing = state.isLoading,
+        isRefreshing = false,
         onRefresh = viewModel::load,
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -84,7 +84,11 @@ private fun DiagnosticsBody(state: DiagnosticsUiState, viewModel: DiagnosticsVie
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Servers", style = MaterialTheme.typography.titleMedium)
             if (state.isLoading) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                Text(
+                    text = stringResource(R.string.settings_loading),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             } else if (state.targets.isEmpty()) {
                 Text(
                     text = stringResource(R.string.diag_no_servers),

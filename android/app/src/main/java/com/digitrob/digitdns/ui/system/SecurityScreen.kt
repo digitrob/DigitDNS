@@ -38,6 +38,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.QrCode
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
@@ -53,7 +54,7 @@ fun SecurityScreen(viewModel: SecurityViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     PanelRefreshBox(
-        isRefreshing = state.isLoading,
+        isRefreshing = false,
         onRefresh = viewModel::loadStatus,
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -95,7 +96,7 @@ fun SecurityScreen(viewModel: SecurityViewModel = hiltViewModel()) {
         }
 
         if (state.isLoading) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            SettingsLoadingSkeleton(cards = 2)
             return@Column
         }
 

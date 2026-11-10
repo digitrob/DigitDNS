@@ -29,6 +29,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
@@ -44,7 +45,7 @@ fun SubscriptionScreen(viewModel: SubscriptionViewModel = hiltViewModel()) {
 
     Column(modifier = Modifier.fillMaxSize()) {
         PanelRefreshBox(
-            isRefreshing = state.isLoading,
+            isRefreshing = false,
             onRefresh = viewModel::load,
             modifier = Modifier.fillMaxSize(),
         ) {
@@ -71,9 +72,9 @@ fun SubscriptionScreen(viewModel: SubscriptionViewModel = hiltViewModel()) {
                 }
 
                 if (state.isLoading) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    return@Column
-                }
+            SettingsLoadingSkeleton(cards = 2)
+            return@Column
+        }
 
                 ToggleCard(state, viewModel)
                 PortalFields(state, viewModel)

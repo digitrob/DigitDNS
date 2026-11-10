@@ -3,6 +3,7 @@ package com.digitrob.digitdns.data
 import com.digitrob.digitdns.core.network.UpstreamAddRequest
 import com.digitrob.digitdns.core.network.UpstreamDeleteRequest
 import com.digitrob.digitdns.core.network.UpstreamReorderRequest
+import com.digitrob.digitdns.core.network.UpstreamPresetProvider
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.core.network.UpstreamsApi
 import javax.inject.Inject
@@ -23,6 +24,9 @@ class UpstreamsRepository @Inject constructor(
     suspend fun stats(): List<UpstreamStat> = api.stats().items
 
     suspend fun add(address: String): List<String> = api.add(UpstreamAddRequest(address)).items
+
+    /** Curated public-provider catalogue used by the add-resolver browser. */
+    suspend fun presets(): List<UpstreamPresetProvider> = api.presets().providers
 
     /** Remove the canonical match for [address]; returns the remaining pool. */
     suspend fun remove(address: String): List<String> =

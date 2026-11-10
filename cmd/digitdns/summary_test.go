@@ -109,3 +109,30 @@ func TestDaemonBannerEndsWithNewline(t *testing.T) {
 		t.Errorf("daemon banner write is unterminated; the log driver would hide its last lines: %q", b[len(b)-30:])
 	}
 }
+
+func TestSummaryLinesListsDisabledTransports(t *testing.T) {
+	srv := &database.ServerSettings{PublicIP: "192.0.2.10", WebPort: 8080, AdminPath: "a"}
+	dns := &database.DNSSettings{
+		Port:             53,
+		PlainDNSDisabled: true,
+		DoTDisabled:      true,
+		DoHDisabled:      true,
+		DoQEnabled:       false,
+		DoH3Enabled:      false,
+		DNSCryptEnabled:  false,
+	}
+	joined := strings.Join(summaryLines(srv, dns, &database.SNIProxySettings{}, &database.TLSSettings{}), "\n")
+
+	for _, want := range []string{
+		" Standard DNS       : disabled",
+		" DNS-over-TLS (DoT) : disabled",
+		" DNS-over-HTTPS     : disabled",
+		" DNS-over-QUIC      : disabled",
+		" DNSCrypt           : disabled",
+		" Client mTLS        : off",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("summary lost %q:\n%s", want, joined)
+		}
+	}
+}

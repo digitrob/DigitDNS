@@ -3,6 +3,7 @@ package com.digitrob.digitdns.ui.rules
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
+import com.digitrob.digitdns.core.network.UpstreamPresetProvider
 import com.digitrob.digitdns.data.UpstreamsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +21,13 @@ data class UpstreamsUiState(
     val isSaving: Boolean = false,
     val error: String? = null,
     val message: String? = null,
+    val presets: List<UpstreamPresetProvider> = emptyList(),
+    val presetsOpen: Boolean = false,
+    val presetsLoading: Boolean = false,
+    val presetsLoaded: Boolean = false,
+    val presetError: String? = null,
+    val expandedPresetProviders: Set<String> = emptySet(),
+    val addingPresetAddress: String? = null,
 )
 
 /**
@@ -59,6 +67,84 @@ class UpstreamsViewModel @Inject constructor(
     fun onNewAddressChange(v: String) = _state.update { it.copy(newAddress = v) }
     fun dismissMessage() = _state.update { it.copy(message = null) }
 
+    /** Open the inline provider dropdown; fetch the catalogue only once. */
+    fun openPresets() {
+        _state.update { it.copy(presetsOpen = true) }
+        if (!_state.value.presetsLoaded) loadPresets()
+    }
+
+    fun closePresets() = _state.update { it.copy(presetsOpen = false) }
+
+    fun togglePresets() {
+        if (_state.value.presetsOpen) closePresets() else openPresets()
+    }
+
+    fun togglePresetProvider(id: String) {
+        _state.update { current ->
+            val expanded = current.expandedPresetProviders
+            current.copy(
+                expandedPresetProviders = if (expanded.contains(id)) expanded - id else expanded + id,
+            )
+        }
+    }
+
+    /** Fetch the curated catalogue. A failure leaves custom entry working. */
+    fun loadPresets() {
+        if (_state.value.presetsLoading) return
+        _state.update { it.copy(presetsLoading = true, presetError = null) }
+        viewModelScope.launch {
+            try {
+                val providers = repository.presets()
+                _state.update {
+                    it.copy(
+                        presets = providers,
+                        presetsLoading = false,
+                        presetsLoaded = true,
+                        expandedPresetProviders = providers.firstOrNull()
+                            ?.let { first -> setOf(first.id) } ?: emptySet(),
+                    )
+                }
+            } catch (e: ApiException) {
+                _state.update { it.copy(presetsLoading = false, presetsLoaded = true, presetError = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update {
+                    it.copy(
+                        presetsLoading = false,
+                        presetsLoaded = true,
+                        presetError = e.message ?: "Could not load the provider list.",
+                    )
+                }
+            }
+        }
+    }
+
+    /** Add one endpoint from the provider browser, keeping the browser open. */
+    fun addPreset(address: String) {
+        if (address.isBlank() || _state.value.addingPresetAddress != null) return
+        viewModelScope.launch {
+            _state.update { it.copy(addingPresetAddress = address, error = null) }
+            try {
+                val list = repository.add(address)
+                _state.update {
+                    it.copy(
+                        upstreams = list,
+                        addingPresetAddress = null,
+                        message = "Added $address.",
+                    )
+                }
+            } catch (e: ApiException) {
+                _state.update { it.copy(addingPresetAddress = null, error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update {
+                    it.copy(
+                        addingPresetAddress = null,
+                        error = e.message ?: "Could not add the upstream.",
+                    )
+                }
+            }
+        }
+    }
+
     fun add() {
         val address = _state.value.newAddress.trim()
         if (address.isEmpty()) return
@@ -67,7 +153,13 @@ class UpstreamsViewModel @Inject constructor(
             try {
                 val list = repository.add(address)
                 _state.update {
-                    it.copy(upstreams = list, isSaving = false, newAddress = "", message = "Added $address.")
+                    it.copy(
+                        upstreams = list,
+                        isSaving = false,
+                        newAddress = "",
+                        presetsOpen = false,
+                        message = "Added $address.",
+                    )
                 }
             } catch (e: ApiException) {
                 _state.update { it.copy(isSaving = false, error = e.userMessage) }
