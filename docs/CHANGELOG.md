@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.4.2] — compact Android Transports screen
+
+### Changed
+- Android **Settings → Transports** now uses an adaptive layout:
+  - on panels 700 dp and wider, DoH3 and DoQ sit side by side;
+  - on phones the cards stack, with the intro card replaced by one muted line,
+    the listener status moved into each card header, and the authentication
+    label removed.
+- The DoQ IP-allowlist summary, counts and Public Mode warning are combined into
+  one compact note.
+- The SNI-token list is capped at 88 dp and scrolls internally, so a large token
+  set no longer stretches the card.
+- The outer scroll remains only as a safety net for very short screens or the
+  SNI-token editor. The standard IP-auth screen fits without scrolling on a
+  411 × 914 dp phone and a 1280 × 720 dp tablet.
+
+### Fixed
+- Removed four unused Android strings left over from the old Transports layout.
+
+### Operations
+- Android-only UI patch. Resolver, API, database and server transport behaviour
+  are unchanged. No migration is required.
+
 ## 🏷️ [v5.4.1] — transport hardening and allowlist clarity
 
 ### Added

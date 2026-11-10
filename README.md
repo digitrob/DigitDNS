@@ -41,6 +41,21 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.4.2
+
+**The Android Transports screen fits without scrolling.** This is an Android
+UI patch; the resolver, API, database and transport behaviour are unchanged.
+
+- On wide displays, DoH3 and DoQ sit **side by side**; on phones the cards
+  stack in a much shorter layout.
+- The listener status badge moved into each card header, the redundant intro
+  card is now one muted line, and the separate authentication label is gone.
+- The DoQ IP-allowlist summary, counts and Public Mode warning are one compact
+  note.
+- The SNI-token list is height-capped and scrolls inside the card.
+- The standard IP-auth screen fits without scrolling on a 411 × 914 dp phone
+  and a 1280 × 720 dp tablet.
+
 ## What's new in 5.4.1
 
 **Safer transport changes, QUIC limits, and a DoQ access screen that explains
@@ -443,7 +458,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.2/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -502,7 +517,7 @@ listeners. Clients use plain DNS, DoT or DoH.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.4.2/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -585,7 +600,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.4.1` | Transport hardening, QUIC limits/metrics, DoQ allowlist clarity, upstream health check (latest) |
+| `5.4.2` | Compact adaptive Android Transports screen; no server changes (latest) |
+| `5.4.1` | Transport hardening, QUIC limits/metrics, DoQ allowlist clarity, upstream health check (older) |
 | `5.4.0` | Client-facing DoH3 and DoQ (opt-in), web/Android transport controls, SNI-token auth, QUIC metrics (older) |
 | `5.3.3` | Accurate SNI proxy drop counters; scanner flood attempts excluded from web and Android headlines (older) |
 | `5.3.2` | Balanced Settings cards; Server Location fills the left column and Subscription Portal pairs with the SSL/TLS Manager on wide panels (older) |
@@ -646,7 +662,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.4.1/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.4.2/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1104,7 +1120,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.4.1`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.4.2`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

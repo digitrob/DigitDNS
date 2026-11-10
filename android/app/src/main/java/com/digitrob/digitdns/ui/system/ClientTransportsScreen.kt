@@ -1,11 +1,13 @@
 package com.digitrob.digitdns.ui.system
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -54,30 +56,36 @@ fun ClientTransportsScreen(viewModel: ClientTransportsViewModel = hiltViewModel(
         onRefresh = viewModel::load,
         modifier = Modifier.fillMaxSize(),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            PanelCard(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(stringResource(R.string.transports_title), style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        stringResource(R.string.transports_help),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            when {
-                state.isLoading -> CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                else -> {
-                    Doh3Card(state, viewModel)
-                    DoqCard(state, viewModel)
-
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            // On a wide panel the two cards sit side by side, which is what makes
+            // the whole screen fit without scrolling. Phones keep the stacked
+            // layout; the scroll remains as a safety net for short screens and
+            // the SNI-token editor, not as the normal path.
+            val wide = maxWidth >= 700.dp
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                TransportsIntro()
+                if (state.isLoading) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                } else {
+                    if (wide) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Doh3Card(state, viewModel, Modifier.weight(1f))
+                            DoqCard(state, viewModel, Modifier.weight(1f))
+                        }
+                    } else {
+                        Doh3Card(state, viewModel)
+                        DoqCard(state, viewModel)
+                    }
                     state.error?.let {
                         Text(it, color = DigitDnsTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
                     }
@@ -87,26 +95,44 @@ fun ClientTransportsScreen(viewModel: ClientTransportsViewModel = hiltViewModel(
     }
 }
 
+// The tab header already says Transports; a full card repeating the title only
+// cost vertical space. One muted line keeps the certificate dependency visible.
 @Composable
-private fun Doh3Card(state: ClientTransportsUiState, viewModel: ClientTransportsViewModel) {
-    PanelCard(modifier = Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun TransportsIntro() {
+    Text(
+        stringResource(R.string.transports_help),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun Doh3Card(
+    state: ClientTransportsUiState,
+    viewModel: ClientTransportsViewModel,
+    modifier: Modifier = Modifier,
+) {
+    PanelCard(modifier = modifier.fillMaxWidth(), contentPadding = 12.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.transports_doh3), style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        stringResource(R.string.transports_doh3_help),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    stringResource(R.string.transports_doh3),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                TransportStatus(state.appliedDoh3Enabled, state.doh3Listening, state.doh3Saving, false)
+                Spacer(Modifier.width(8.dp))
                 Switch(
                     checked = state.doh3Enabled,
                     onCheckedChange = viewModel::setDoh3Enabled,
                     enabled = !state.doh3Saving && !state.doqSaving,
                 )
             }
-            TransportStatus(state.appliedDoh3Enabled, state.doh3Listening, state.doh3Saving, false)
+            Text(
+                stringResource(R.string.transports_doh3_help),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(
                 stringResource(R.string.transports_doh3_port, state.doh3Port),
                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
@@ -117,16 +143,19 @@ private fun Doh3Card(state: ClientTransportsUiState, viewModel: ClientTransports
 }
 
 @Composable
-private fun DoqCard(state: ClientTransportsUiState, viewModel: ClientTransportsViewModel) {
-    PanelCard(modifier = Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun DoqCard(
+    state: ClientTransportsUiState,
+    viewModel: ClientTransportsViewModel,
+    modifier: Modifier = Modifier,
+) {
+    PanelCard(modifier = modifier.fillMaxWidth(), contentPadding = 12.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             DoqHeader(state, viewModel)
             DoqPortAndAuth(state, viewModel)
             DoqIpAllowlistNote(state)
             if (state.doqAuth == "sni-token") {
                 DoqTokenEditor(state, viewModel)
             }
-            TransportStatus(state.appliedDoqEnabled, state.doqListening, state.doqSaving, state.doqDirty)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -178,6 +207,8 @@ private fun DoqHeader(state: ClientTransportsUiState, viewModel: ClientTransport
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        TransportStatus(state.appliedDoqEnabled, state.doqListening, state.doqSaving, state.doqDirty)
+        Spacer(Modifier.width(8.dp))
         Switch(
             checked = state.doqEnabled,
             onCheckedChange = viewModel::setDoqEnabled,
@@ -196,7 +227,6 @@ private fun DoqPortAndAuth(state: ClientTransportsUiState, viewModel: ClientTran
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = Modifier.fillMaxWidth(),
     )
-    Text(stringResource(R.string.transports_auth), style = MaterialTheme.typography.labelMedium)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FilterChip(
             selected = state.doqAuth != "sni-token",
@@ -213,20 +243,15 @@ private fun DoqPortAndAuth(state: ClientTransportsUiState, viewModel: ClientTran
 
 @Composable
 private fun DoqIpAllowlistNote(state: ClientTransportsUiState) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            stringResource(R.string.transports_doq_ip_sources),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
             stringResource(
-                R.string.transports_doq_ip_counts,
+                R.string.transports_doq_ip_summary,
                 state.allowlistClientAccounts,
                 state.allowlistClientEntries,
                 state.allowlistResolverEntries,
             ),
-            style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         when {
@@ -274,16 +299,24 @@ private fun DoqTokenEditor(state: ClientTransportsUiState, viewModel: ClientTran
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     } else {
-        state.tokens.forEach { token ->
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    token,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                IconButton(onClick = { viewModel.removeToken(token) }) {
-                    Icon(Icons.Filled.Close, contentDescription = "Remove $token")
+        // Bounded so ten tokens do not turn the DoQ card into a page of its own.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 88.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            state.tokens.forEach { token ->
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        token,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    IconButton(onClick = { viewModel.removeToken(token) }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Remove $token")
+                    }
                 }
             }
         }
