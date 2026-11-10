@@ -108,6 +108,16 @@ type staticServer struct {
 	loginCSP string
 }
 
+// minifiedAliases maps the public dashboard URL to the pre-minified copy built
+// by scripts/build-web-assets.sh. The source files stay embedded for the Go
+// source-contract tests and for emergencies; browsers get the smaller bytes under
+// the URL the document already references, so no route, CSP hash or bookmark
+// changes. A test pins the sha256 banner to the source.
+var minifiedAliases = map[string]string{
+	"js/app.js":     "js/app.min.js",
+	"css/style.css": "css/style.min.css",
+}
+
 // newStaticServer reads the whole asset tree once. A file that cannot be read is
 // skipped rather than fatal: a missing icon should not stop the resolver from
 // starting, and the handler answers 404 for it like any other unknown path.
@@ -128,6 +138,15 @@ func newStaticServer(fsys fs.FS) *staticServer {
 		s.assets[p] = newStaticAsset(p, body)
 		return nil
 	})
+
+	// Serve the minified bytes under the canonical URL. Test fixtures with no
+	// minified companion simply keep their source bytes.
+	for public, minified := range minifiedAliases {
+		if a := s.assets[minified]; a != nil {
+			s.assets[public] = newStaticAsset(public, a.body)
+			delete(s.assets, minified)
+		}
+	}
 
 	s.index = s.assets["index.html"]
 	s.version = assetVersion(s.assets)

@@ -3766,3 +3766,14 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 [data-theme="grey"] [data-theme-toggle]:hover {
   color: rgb(var(--c-slate-200));
 }
+
+/* The global notices' action is a text button, not a Tailwind .underline
+   utility: keeping the definition here means the class inventory treats it as a
+   custom class and the button stays styled even if the purge output changes. */
+.global-notice-btn {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.global-notice-btn:hover {
+  text-decoration-thickness: 2px;
+}

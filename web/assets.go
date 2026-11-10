@@ -54,8 +54,10 @@ import "embed"
 //go:embed login.html
 //go:embed css/tailwind.purged.css
 //go:embed css/style.css
+//go:embed css/style.min.css
 //go:embed css/portal.css
 //go:embed js/app.js
+//go:embed js/app.min.js
 //go:embed js/i18n.js
 //go:embed js/modules/twofa.js
 //go:embed swagger/swagger-ui.css

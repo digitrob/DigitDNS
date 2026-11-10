@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.4.3] — faster dashboard and clearer state
+
+### Performance
+- **API gzip:** authenticated JSON/text responses are compressed when the client
+  accepts it. `/api/filtering` ~22 KB → ~5.3 KB, `/api/metrics` ~7.7 KB →
+  ~1.7 KB, `/api/config` ~2.2 KB → ~0.9 KB. Bodies under 512 bytes remain
+  identity-encoded.
+- **Minified assets:** `app.js` 551 KB → 298 KB raw (~153 KB → ~80 KB gzip) and
+  `style.css` 134 KB → 58 KB raw (~39 KB → ~11.8 KB gzip), served under the
+  existing URLs. A source-hash test prevents stale minified output.
+- **Chart.js deferred:** no longer loaded on `DOMContentLoaded`; it loads after
+  the first stats poll, and not on the login page.
+- **Less per-poll layout work:** `textContent` replaces `innerText` for stats and
+  latency updates; the QPS chart repaints at most once per ~1.5 seconds.
+
+### Added
+- **Global listener notice:** DoH3/DoQ enabled but not listening is shown on
+  every tab with the server's `last_error` and an **Open transports** action.
+- **Global upstream notice:** degraded resolvers are named with a
+  **Review upstreams** action, using the monitor's health predicate.
+- **“Why was this blocked?”** Blocked query-log rows show `Blocked by …` with
+  the custom rule or blocklist source and the matched pattern, including on
+  phones where the RULE column is hidden.
+
+### Fixed
+- `/api/config/access` now reports the live access mode instead of a stale
+  `access.allow_all` copy, so the dashboard and resolver can no longer disagree
+  about whether public mode is on.
+- Removed the full-width public-mode banner; the Clients page owns that switch.
+
+### Operations
+- No resolver, API or database schema migration. Existing settings, clients,
+  blocklists and certificates are preserved.
+- Android carries only the **5.4.3 (540)** version bump; no Android behaviour
+  changes.
+
 ## 🏷️ [v5.4.2] — compact Android Transports screen
 
 ### Changed

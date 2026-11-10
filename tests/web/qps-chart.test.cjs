@@ -11,8 +11,11 @@ const routingCode = source.slice(source.indexOf('const tabRoutes ='), source.ind
 function fixture() {
   const chart = { data: { datasets: [{ data: Array(60).fill(0) }] }, updates: 0,
     update(mode) { assert.equal(mode, 'none'); this.updates++; } };
+  let clock = 0;
   const context = vm.createContext({
     qpsChart: chart, activeDashTab: '', ADMIN_BASE: '/test', DASH_BASE: '/test/dash',
+    qpsChartLastDraw: 0, QPS_CHART_REDRAW_MS: 1500,
+    performance: { now: () => (clock += 1000) },
     window: { location: { pathname: '/test/dash/home' } },
     document: { querySelectorAll: () => [], getElementById: () => null },
     safeFeatherReplace() {}, initChart() { throw new Error('Unexpected initialization'); },
@@ -42,5 +45,17 @@ test('invalid samples leave gaps; zero is a valid sample', () => {
   const { chart, run } = fixture();
   run('handleRouteFromURL(); [undefined, NaN, Infinity, -1, "4", 0].forEach(pushChartData)');
   assert.deepEqual(chart.data.datasets[0].data.slice(-6), [null, null, null, null, null, 0]);
-  assert.equal(chart.updates, 6);
+  // Paint is capped at one per redraw interval; the clock advances 1 s per
+  // sample, so the six samples produce three paints.
+  assert.equal(chart.updates, 3);
+});
+
+test('chart paints are capped to the redraw interval', () => {
+  const { chart, run } = fixture();
+  run('handleRouteFromURL(); pushChartData(1)');
+  assert.equal(chart.updates, 1);
+  run('pushChartData(2)');
+  assert.equal(chart.updates, 1);
+  run('pushChartData(3)');
+  assert.equal(chart.updates, 2);
 });

@@ -91,7 +91,7 @@ func (ws *WebServer) adminPasswordNeedsAttention() bool {
 // requireAuth gates dashboard APIs behind a valid session token (Bearer header
 // or X-API-Key) or the master REST API key.
 func (ws *WebServer) requireAuth(next http.HandlerFunc) http.HandlerFunc {
-	return ws.authGate(next, false)
+	return ws.withGzip(ws.authGate(next, false))
 }
 
 // requireAuthStream is requireAuth plus ?token=, which only EventSource needs
@@ -169,7 +169,7 @@ func (ws *WebServer) tokenAuthorizedWithMasterKey(token string) bool {
 // requireAuthWithMasterKey is requireAuth plus the master-key acceptance
 // above. One route may use it; everything else uses requireAuth.
 func (ws *WebServer) requireAuthWithMasterKey(next http.HandlerFunc) http.HandlerFunc {
-	return ws.authGateWith(ws.tokenAuthorizedWithMasterKey, next, false)
+	return ws.withGzip(ws.authGateWith(ws.tokenAuthorizedWithMasterKey, next, false))
 }
 
 func (ws *WebServer) authGateWith(authorized func(string) bool, next http.HandlerFunc, allowQueryToken bool) http.HandlerFunc {

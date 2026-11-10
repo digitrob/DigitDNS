@@ -1819,6 +1819,11 @@ type accessConfig struct {
 func (ws *WebServer) loadAccessConfig() accessConfig {
 	acc := accessConfig{AllowAll: ws.clients.IsAllowAll(), DoHTokens: []string{}, DoQTokens: []string{}}
 	_ = ws.db.GetSetting("access", &acc)
+	// allow_all is persisted under its own key by the dedicated /api/access/mode
+	// route. The "access" record may still carry an older copy from before that
+	// split; letting it win made the dashboard report one mode while the live
+	// client service enforced the other. The live value is authoritative.
+	acc.AllowAll = ws.clients.IsAllowAll()
 	if acc.DoHTokens == nil {
 		acc.DoHTokens = []string{}
 	}

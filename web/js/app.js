@@ -434,7 +434,10 @@ function applyRememberedLogin() {
 
 document.addEventListener('DOMContentLoaded', () => {
   safeFeatherReplace();
-  try { initChart(); } catch (e) {}
+  // Chart.js is not loaded here. The first successful stats poll reaches
+  // pushChartData, which calls initChart after the dashboard has painted. Loading
+  // its 201 KB on DOMContentLoaded also did so on the login page, where no chart
+  // exists. The tiles and the rest of the shell are useful without it.
   // Before checkAuthAndBoot, which unhides the login overlay synchronously: the observers
   // inside have to be watching already or they miss the modal that is up first.
   initModalA11y();
@@ -1047,6 +1050,9 @@ async function loadConfig() {
     const weak = !!(meData.password_weak || meData.is_default_password);
     currentConfig = cfgData;
     renderConfig(currentConfig);
+    // The transport listener state is not in /api/config; fetch it once so the
+    // card and the global listener notice reflect what is actually listening.
+    refreshTransportView();
     // Settings and agent data are loaded by the tab that needs them, not on
     // every dashboard boot. The four calls that used to be here put four extra
     // round trips in front of the panel for screens the operator may never open.
@@ -2251,6 +2257,11 @@ let transportDraft = null;
 let doh3Saving = false;
 let doqSaving = false;
 let transportInlineError = '';
+// Global notice state. The upstream health set is refreshed from /api/stats; the
+// signature lets the banner repaint only when the set actually changes.
+let degradedUpstreams = [];
+let upstreamHealthSignature = '';
+let lastGlobalNoticeSignature = '';
 
 function normalizeTransportSettings(cfg) {
   if (!cfg) return { doq_enabled: false, doh3_enabled: false, doq_port: 853, doq_auth: 'ip', doq_token_domain: '', doq_tokens: [], doh3_listening: false, doq_listening: false, ip_allowlist: { allow_all: false, client_accounts: 0, client_entries: 0, resolver_entries: 0 }, last_error: '' };
@@ -2441,6 +2452,94 @@ async function refreshTransportView() {
   } catch (ignore) { /* keep the last known card state */ }
 }
 
+// noteUpstreamHealth feeds the global banner from the stats poll without making
+// the banner part of the per-second DOM work: the set of degraded addresses is
+// compared first, and renderGlobalNotices is called only on a change.
+function upstreamIsDegraded(u) {
+  if (!u) return false;
+  if (u.circuit_open) return true;
+  if (u.last_probe_at && !u.last_probe_ok) return true;
+  return Number(u.recent_samples) >= 20 && Number(u.recent_error_rate) >= 0.10;
+}
+
+function noteUpstreamHealth(upstreams) {
+  const bad = (upstreams || []).filter(upstreamIsDegraded);
+  const signature = bad.map((u) => String(u.address || '')).sort().join('|');
+  if (signature === upstreamHealthSignature) return;
+  upstreamHealthSignature = signature;
+  degradedUpstreams = bad;
+  renderGlobalNotices();
+}
+
+// renderGlobalNotices is the one place the shell explains listener and upstream
+// state that applies to every tab. Public access mode deliberately has no banner:
+// the Clients page already owns that switch, and a persistent banner duplicated
+// it across the whole panel.
+function renderGlobalNotices() {
+  const el = document.getElementById('global-notices');
+  if (!el) return;
+  const notices = [];
+
+  const t = currentConfig?.transports;
+  if (t) {
+    const down = [];
+    if (t.doh3_enabled && !t.doh3_listening) down.push('DoH3');
+    if (t.doq_enabled && !t.doq_listening) down.push('DoQ');
+    if (down.length) {
+      const reason = String(t.last_error || '').trim();
+      notices.push({
+        tone: 'error',
+        text: `${down.join(' and ')} ${down.length === 1 ? 'is' : 'are'} enabled but not listening.${reason ? ' ' + reason : ''}`,
+        action: 'transports',
+        label: 'Open transports',
+      });
+    }
+  }
+
+  if (degradedUpstreams.length) {
+    const names = degradedUpstreams.slice(0, 3).map((u) => String(u.address || '')).join(', ');
+    const more = degradedUpstreams.length > 3 ? ` +${degradedUpstreams.length - 3} more` : '';
+    notices.push({
+      tone: 'warn',
+      text: `${degradedUpstreams.length} upstream resolver${degradedUpstreams.length === 1 ? '' : 's'} degraded: ${names}${more}.`,
+      action: 'upstreams',
+      label: 'Review upstreams',
+    });
+  }
+
+  const signature = JSON.stringify(notices);
+  if (signature === lastGlobalNoticeSignature) return;
+  lastGlobalNoticeSignature = signature;
+  if (notices.length === 0) {
+    el.innerHTML = '';
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+  el.innerHTML = notices.map((n) => {
+    const tone = n.tone === 'error'
+      ? 'border-red-500/30 bg-red-500/10 text-red-300'
+      : 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+    return `<div class="rounded-lg border ${tone} px-3 py-2 text-[11px] flex items-start gap-2">
+      <span class="flex-1">${escapeHTML(n.text)}</span>
+      <button type="button" class="global-notice-btn shrink-0 font-bold" data-notice-action="${escapeHTML(n.action)}">${escapeHTML(n.label)}</button>
+    </div>`;
+  }).join('');
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.global-notice-btn');
+  if (!btn) return;
+  const action = btn.dataset.noticeAction;
+  if (action === 'transports') {
+    switchTab('settings', false);
+    requestAnimationFrame(() => document.getElementById('transports-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+  } else if (action === 'upstreams') {
+    switchTab('dashboard', false);
+    requestAnimationFrame(() => document.querySelector('[data-dash-card="upstream"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+  }
+});
+
 function renderTransportSettings() {
   const card = document.getElementById('transports-card');
   if (!card || !currentConfig) return;
@@ -2496,6 +2595,7 @@ function renderTransportSettings() {
   renderDoQTokens(draft);
   renderDoqIpAllowlist(applied);
   updateTransportBadge(applied);
+  renderGlobalNotices();
 }
 
 async function saveDoh3(enabled) {
@@ -4519,11 +4619,11 @@ async function updateStats() {
 
     const setTxt = (id, txt) => {
       const el = document.getElementById(id);
-      // Only touch the DOM when the text actually changes. A steady value (an
-      // idle QPS, a flat cache ratio) would otherwise rewrite innerText every
-      // poll, and each write invalidates the blurred backdrop of the glass
-      // panel it sits in — which Chromium re-rasterizes on the whole viewport.
-      if (el && el.innerText !== txt) el.innerText = txt;
+      // textContent, not innerText: reading innerText forces a layout, and this
+      // runs on every one-second poll even when the value never changes. The
+      // comparison still avoids invalidating the glass backdrop, but now it is
+      // a string compare rather than a forced reflow.
+      if (el && el.textContent !== txt) el.textContent = txt;
     };
 
     // Every tile below used to read `data.field.toFixed(1)` straight. The endpoint
@@ -4563,6 +4663,10 @@ async function updateStats() {
 
     // Render upstreams list
     renderUpstreams(data.upstreams);
+
+    // Fold the same health data into the global banner; this only repaints when
+    // the set of degraded resolvers changes.
+    noteUpstreamHealth(data.upstreams);
 
     // Push QPS point to chart
     pushChartData(data.qps);
@@ -4659,7 +4763,7 @@ function renderRateLimit(qps, dropped) {
 function renderLatency(miss, all) {
   const setTxt = (id, txt) => {
     const el = document.getElementById(id);
-    if (el) el.innerText = txt;
+    if (el && el.textContent !== txt) el.textContent = txt;
   };
   // Sub-10 ms readings need two decimals to be worth showing at all; past that
   // the tenth of a millisecond is noise.
@@ -5551,6 +5655,13 @@ function queryRowHTML(q) {
   const upstreamLine = upstream
     ? `<div class="text-[10px] text-slate-500 truncate" title="${escapeHTML(upstream)}">via ${escapeHTML(upstream)}</div>`
     : '';
+  const matchedPattern = String(q.matched_pattern || '').trim();
+  // On a phone the RULE column is hidden, so the block source has to live under
+  // the domain. It is also the answer to "why was this blocked?" on every width:
+  // Custom Block, or the exact adblock list that matched, plus the pattern.
+  const blockDetail = action === 'BLOCK'
+    ? `<div class="text-[10px] text-red-300 truncate" title="${escapeHTML(ruleStr + (matchedPattern ? ' · ' + matchedPattern : ''))}">Blocked by ${escapeHTML(ruleStr)}${matchedPattern ? ` · ${escapeHTML(matchedPattern)}` : ''}</div>`
+    : upstreamLine;
 
   return `
     <td class="stream-col-time py-2.5 px-2 sm:px-3 text-slate-400 whitespace-nowrap">${timeStr}</td>
@@ -5558,7 +5669,7 @@ function queryRowHTML(q) {
     <td class="stream-col-proto py-2.5 px-2 sm:px-3 ${protoClass} font-bold hidden sm:table-cell" title="${escapeHTML(protoTitle)}">${escapeHTML(protoStr)}</td>
     <td class="stream-col-domain py-2.5 px-2 sm:px-3">
       <div class="text-cyan-300 font-semibold truncate" title="${escapeHTML(domain)}">${escapeHTML(domain)}</div>
-      ${upstreamLine}
+      ${blockDetail}
     </td>
     <td class="stream-col-rule py-2.5 px-2 sm:px-3 text-slate-400 hidden sm:table-cell">${escapeHTML(ruleStr)}</td>
     <td class="stream-col-relay py-2.5 px-2 sm:px-3">${relayCell}</td>
@@ -6180,6 +6291,12 @@ async function clearQueryStream() {
 // pushChartData is called exactly once per poll, the width of its window in seconds.
 // It is tied to STATS_POLL_MS: change one and the other stops meaning what it says.
 const QPS_CHART_POINTS = 60;
+// Chart.js repaints the whole canvas for each update. The data still advances at
+// the poll's 1 Hz, but the paint is capped at roughly 1.5 s: two points per
+// redraw is visually indistinguishable on a 60-second line and halves the
+// canvas work on the low-power VPS this panel usually runs on.
+const QPS_CHART_REDRAW_MS = 1500;
+let qpsChartLastDraw = 0;
 
 // Chart.js paints onto a canvas, and a canvas is the one surface in this panel that CSS
 // cannot re-colour: every stroke is a literal string baked in at construction time. So the
@@ -6323,6 +6440,7 @@ async function initChart() {
         }
       }
     });
+    qpsChartLastDraw = 0;
   } catch (e) {
     console.warn('Chart init error:', e);
   }
@@ -6346,7 +6464,11 @@ function pushChartData(val) {
     const d = qpsChart.data.datasets[0].data;
     d.shift();
     d.push(point);
-    qpsChart.update('none');
+    const now = performance.now();
+    if (qpsChartLastDraw === 0 || now - qpsChartLastDraw >= QPS_CHART_REDRAW_MS) {
+      qpsChart.update('none');
+      qpsChartLastDraw = now;
+    }
   } catch (e) {}
 }
 
