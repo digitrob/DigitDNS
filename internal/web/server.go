@@ -32,6 +32,7 @@ import (
 	"digitdns/internal/service"
 	"digitdns/internal/service/acme"
 	"digitdns/internal/version"
+	dnscryptlib "github.com/ameshkov/dnscrypt/v2"
 )
 
 type WebServer struct {
@@ -184,6 +185,11 @@ type WebServer struct {
 	transportStatus func() (doh3 bool, doq bool, listenerErr string)
 	// transportMetrics reports the QUIC listener counters. Nil means all zero.
 	transportMetrics func() TransportMetrics
+	// dnscryptApplier installs the generated provider keys on the running DNS
+	// server. Nil in test harnesses, where only persistence is exercised.
+	dnscryptApplier func(*dnscryptlib.ResolverConfig, *dnscryptlib.Cert) error
+	// dnscryptStatus reports the live DNSCrypt listener and certificate expiry.
+	dnscryptStatus func() (listening bool, certNotAfter int64, listenerErr string)
 	// transportSaveMu serializes transport saves so a rapid switch toggle cannot
 	// interleave two apply/persist transactions.
 	transportSaveMu sync.Mutex
@@ -352,6 +358,23 @@ func (ws *WebServer) SetTransportMetricsSource(fn func() TransportMetrics) {
 		return
 	}
 	ws.transportMetrics = fn
+}
+
+// SetDNSCryptApplier installs the hook that loads generated DNSCrypt keys into
+// the running DNS server. Call it during startup, before the first save.
+func (ws *WebServer) SetDNSCryptApplier(fn func(*dnscryptlib.ResolverConfig, *dnscryptlib.Cert) error) {
+	if ws == nil {
+		return
+	}
+	ws.dnscryptApplier = fn
+}
+
+// SetDNSCryptStatusSource installs the live DNSCrypt listener/certificate state.
+func (ws *WebServer) SetDNSCryptStatusSource(fn func() (bool, int64, string)) {
+	if ws == nil {
+		return
+	}
+	ws.dnscryptStatus = fn
 }
 
 // SetIPv6PolicySetter installs the live-resolver hook used by the server

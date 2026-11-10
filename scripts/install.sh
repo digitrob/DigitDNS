@@ -228,12 +228,13 @@ echo -e "${CYAN}${BOLD}DigitDNS uses these ports:${NC}"
 echo -e "  ${BOLD}53/udp,53/tcp${NC}  DNS resolver (plain)      ${BOLD}853${NC}  DoT (DNS-over-TLS)"
 echo -e "  ${BOLD}443${NC}          SNI relay / HTTPS          ${BOLD}8443${NC} DoH (DNS-over-HTTPS)"
 echo -e "  ${BOLD}853/udp${NC}      DoQ (DNS-over-QUIC)        ${BOLD}8443/udp${NC} DoH3 (HTTP/3)"
+echo -e "  ${BOLD}5443/udp+tcp${NC} DNSCrypt (opt-in)"
 echo -e "  ${BOLD}80${NC}           SNI relay + ACME HTTP-01   ${BOLD}(panel port is random, shown below)${NC}"
 _port_lister=""
 if command -v ss >/dev/null 2>&1; then _port_lister="ss"; elif command -v netstat >/dev/null 2>&1; then _port_lister="netstat"; fi
 if [ -n "${_port_lister}" ]; then
     _conflicts=""
-    for _rp in 53 80 443 853 8443; do
+    for _rp in 53 80 443 853 8443 5443; do
         if [ "${_port_lister}" = "ss" ]; then
             _row="$(ss -H -ltnup "sport = :${_rp}" 2>/dev/null || true)"
         else
@@ -681,7 +682,7 @@ fi
 # STEP 3: FIREWALL RULES CONFIGURATION
 # ==============================================================================
 echo -e "${CYAN}${BOLD}[3/6] Configuring Firewall Rules for Gaming & DNS...${NC}"
-PORTS=(53 80 443 853 2099 5222 5223 8393 8443)
+PORTS=(53 80 443 853 2099 5222 5223 8393 8443 5443)
 # The panel's port joins the fixed set when this install chose one at random
 # (v2.2.0). An upgrade with no PANEL_PORT (or the default 8080, already in the
 # installed set from before) adds nothing. The rule is recorded like the

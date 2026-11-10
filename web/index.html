@@ -2650,26 +2650,26 @@ async function onBuySubscription(ctx, username) {
         </div>
         </div>
 
-        <!-- Client-facing QUIC transports: opt-in HTTP/3 and DNS-over-QUIC.
-             Sits directly after the TLS manager because both reuse its
-             certificate; the two columns keep a full-width row from becoming
-             one tall stack on a wide panel. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 settings-wide" id="transports-card">
+        <!-- Client-facing encrypted transports: DoH3, DoQ, DoT, DNSCrypt and
+             mTLS. Sits directly after the TLS manager because the TLS
+             transports reuse its certificate. The two equal columns keep the
+             cards aligned on a wide panel; mTLS spans both. -->
+        <div class="glass-panel panel-card p-5 sm:p-6 settings-wide space-y-4" id="transports-card">
           <div class="flex items-start justify-between gap-3 flex-wrap">
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3 flex-1 min-w-0">
               <div class="p-2 rounded-xl bg-sky-500/20 text-sky-400">
                 <i data-feather="zap" class="w-5 h-5"></i>
               </div>
               <div>
                 <h3 class="panel-card-title">Client Encrypted Transports</h3>
-                <p class="text-[11px] text-slate-400">Optional HTTP/3 and DNS-over-QUIC endpoints. Both are off until enabled and use the certificate above.</p>
+                <p class="text-[11px] text-slate-400">Optional DoH3, DoQ and DNSCrypt endpoints, DoT client authentication, and mTLS. DoT, DoH, DoH3 and DoQ reuse the SSL/TLS Manager certificate; DNSCrypt and mTLS use their own keys. Changes apply as you edit.</p>
               </div>
             </div>
             <span id="transports-state-badge" class="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700">Off</span>
           </div>
 
           <div class="transport-grid">
-            <section class="rounded-xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+            <section class="transport-card">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <h4 class="text-xs font-bold text-white font-heading">DoH3 (HTTP/3)</h4>
@@ -2679,24 +2679,23 @@ async function onBuySubscription(ctx, username) {
                   <input type="checkbox" id="doh3-enabled-input" class="accent-cyan-500 w-4 h-4"> Enabled
                 </label>
               </div>
-              <div class="text-[11px] text-slate-400 space-y-1">
-                <div>UDP port <span id="doh3-port" class="font-mono text-slate-200">8443</span></div>
-                <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doh3-endpoint" aria-label="Copy DoH3 URL">
-                  <span id="doh3-endpoint" class="font-mono text-cyan-300 break-all">—</span>
-                  <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
-                </button>
+              <div class="text-[11px] text-slate-400">UDP port <span id="doh3-port" class="font-mono text-slate-200">8443</span></div>
+              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doh3-endpoint" aria-label="Copy DoH3 URL">
+                <span id="doh3-endpoint" class="font-mono text-cyan-300 break-all">—</span>
+                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
+              </button>
+              <div class="transport-status-row">
+                <span>Status</span>
+                <span id="doh3-status" class="font-mono text-slate-300">Off</span>
               </div>
-              <div class="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-1.5 text-[10px] text-slate-400">
-                <div class="flex items-center justify-between gap-2">
-                  <span>Status</span>
-                  <span id="doh3-status" class="font-mono text-slate-300">Off</span>
-                </div>
-                <p>When on, TCP DoH advertises this endpoint with <code>Alt-Svc</code>; browsers upgrade automatically and clients that cannot use QUIC fall back to TCP DoH.</p>
-                <p>Uses the DoH/DoT certificate above; no extra domain is needed.</p>
+              <div class="transport-status-row">
+                <span>Certificate</span>
+                <span class="font-mono text-slate-300">SSL/TLS Manager</span>
               </div>
+              <p class="transport-hint">When on, TCP DoH advertises this endpoint with <code>Alt-Svc</code>, so capable clients upgrade and the rest fall back to TCP DoH.</p>
             </section>
 
-            <section class="rounded-xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+            <section class="transport-card">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <h4 class="text-xs font-bold text-white font-heading">DoQ (DNS-over-QUIC)</h4>
@@ -2730,33 +2729,127 @@ async function onBuySubscription(ctx, username) {
                 </div>
                 <div id="doq-tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">No DoQ tokens yet</div></div>
               </div>
-              <div class="text-[11px] text-slate-400 space-y-1">
-                <div>Endpoint</div>
-                <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doq-endpoint" aria-label="Copy DoQ URL">
-                  <span id="doq-endpoint" class="font-mono text-emerald-300 break-all">—</span>
-                  <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
-                </button>
-                <p class="text-[10px] text-slate-500">In SNI-token mode each client uses its own token in place of <code>&lt;token&gt;</code>.</p>
-              </div>
-              <div id="doq-ip-note" class="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-[10px] leading-relaxed text-slate-400 space-y-1">
-                <p>IP authentication accepts a source from <span class="font-semibold text-slate-200">Clients → Allowed IPs</span> or <span class="font-semibold text-slate-200">Settings → Access → Server-wide Resolver Allowlist</span>. The same lists govern every other transport.</p>
-                <p id="doq-ip-counts" class="font-mono text-slate-300"></p>
-                <p id="doq-ip-warning" class="hidden text-amber-300"></p>
-              </div>
-              <div class="flex items-center justify-between gap-2 text-[10px] text-slate-400">
+              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doq-endpoint" aria-label="Copy DoQ URL">
+                <span id="doq-endpoint" class="font-mono text-emerald-300 break-all">—</span>
+                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
+              </button>
+              <div class="transport-status-row">
                 <span>Status</span>
                 <span id="doq-status" class="font-mono text-slate-300">Off</span>
               </div>
               <p id="doq-cert-warning" class="hidden text-[10px] text-amber-300 leading-relaxed">SNI-token mode requires a certificate covering <span class="font-mono">*.&lt;token domain&gt;</span> or every token hostname. The built-in ACME client cannot issue wildcard certificates.</p>
-              <p class="text-[10px] text-slate-500">Open UDP 853 in the firewall. DoQ is not used by Android Private DNS; that remains DoT.</p>
-              <div class="flex items-center gap-3 flex-wrap pt-2">
-                <button type="button" id="save-doq-btn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition">Save DoQ</button>
-                <span id="doq-save-status" class="text-[11px] text-slate-400"></span>
+              <p class="transport-hint">Open UDP 853. In SNI-token mode each client uses its own label in place of <code>&lt;token&gt;</code>.</p>
+            </section>
+
+            <section class="transport-card">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h4 class="text-xs font-bold text-white font-heading">DoT (DNS-over-TLS)</h4>
+                  <p class="text-[10px] text-slate-500 mt-0.5">The transport Android Private DNS uses. Always on with the DoH/DoT certificate.</p>
+                </div>
+                <span id="dot-status" class="font-mono text-[10px] text-slate-300 shrink-0">TCP 853</span>
+              </div>
+              <div>
+                <label for="dot-auth-select" class="block text-[10px] font-semibold text-slate-400 mb-1">Authentication</label>
+                <select id="dot-auth-select" class="panel-field w-full text-xs focus:border-sky-400">
+                  <option value="ip">IP allowlist</option>
+                  <option value="sni-token">SNI token</option>
+                </select>
+              </div>
+              <div id="dot-token-fields" class="space-y-2">
+                <div>
+                  <label for="dot-token-domain-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Token domain</label>
+                  <input type="text" id="dot-token-domain-input" placeholder="dot.example.com" class="panel-field w-full font-mono text-xs focus:border-sky-400">
+                </div>
+                <div class="flex gap-2">
+                  <input type="text" id="new-dot-token-input" aria-label="New DoT token label" placeholder="token label (e.g. phone)" class="panel-field flex-1 min-w-0 font-mono text-xs focus:border-sky-400">
+                  <button type="button" id="add-dot-token-btn" class="shrink-0 px-3 py-2 bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold rounded-lg text-[11px] font-heading transition">Add</button>
+                </div>
+                <div id="dot-tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">No DoT tokens yet</div></div>
+              </div>
+              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="dot-endpoint" aria-label="Copy DoT URL">
+                <span id="dot-endpoint" class="font-mono text-sky-300 break-all">—</span>
+                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
+              </button>
+              <div class="transport-status-row">
+                <span>Certificate</span>
+                <span class="font-mono text-slate-300">SSL/TLS Manager</span>
+              </div>
+              <p class="transport-hint">Open TCP 853. SNI-token mode replaces <code>&lt;token&gt;</code> with each client's label and rejects every other ServerName before a query is read.</p>
+            </section>
+
+            <section class="transport-card">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h4 class="text-xs font-bold text-white font-heading">DNSCrypt</h4>
+                  <p class="text-[10px] text-slate-500 mt-0.5">A stamp-based resolver endpoint with its own provider keys.</p>
+                </div>
+                <label class="inline-flex items-center gap-2 text-xs text-slate-300 shrink-0">
+                  <input type="checkbox" id="dnscrypt-enabled-input" class="accent-fuchsia-500 w-4 h-4"> Enabled
+                </label>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label for="dnscrypt-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">UDP + TCP port</label>
+                  <input type="number" id="dnscrypt-port-input" min="1" max="65535" step="1" value="5443" aria-label="DNSCrypt port" class="panel-field w-full font-mono text-xs focus:border-fuchsia-400">
+                </div>
+                <div>
+                  <label for="dnscrypt-provider-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Provider name</label>
+                  <input type="text" id="dnscrypt-provider-input" placeholder="digitdns.local" class="panel-field w-full font-mono text-xs focus:border-fuchsia-400">
+                </div>
+              </div>
+              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="dnscrypt-stamp" aria-label="Copy DNSCrypt stamp">
+                <span id="dnscrypt-stamp" class="font-mono text-fuchsia-300 truncate min-w-0" title="—">—</span>
+                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
+              </button>
+              <div class="transport-status-row">
+                <span>Status</span>
+                <span class="flex items-center gap-2 min-w-0">
+                  <span id="dnscrypt-status" class="font-mono text-slate-300">Off</span>
+                  <span id="dnscrypt-cert-expiry" class="font-mono text-slate-500 truncate">—</span>
+                </span>
+              </div>
+              <p class="transport-hint">Open 5443 UDP+TCP; TCP 443 is the SNI proxy. The provider certificate is generated automatically, not by Let's Encrypt.</p>
+            </section>
+
+            <section class="transport-card transport-span">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h4 class="text-xs font-bold text-white font-heading">mTLS (client certificates)</h4>
+                  <p class="text-[10px] text-slate-500 mt-0.5">Require a certificate signed by your CA on DoT, DoH and DoQ.</p>
+                </div>
+                <label class="inline-flex items-center gap-2 text-xs text-slate-300 shrink-0">
+                  <input type="checkbox" id="mtls-enabled-input" class="accent-amber-500 w-4 h-4"> Enabled
+                </label>
+              </div>
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+                <div>
+                  <label for="mtls-ca-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Client CA bundle (PEM)</label>
+                  <textarea id="mtls-ca-input" rows="3" spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----" class="panel-field w-full font-mono text-[10px] focus:border-amber-400"></textarea>
+                  <p id="mtls-warning" class="hidden text-[10px] text-amber-300 mt-1">A CA bundle is required when mTLS is on.</p>
+                </div>
+                <div class="transport-note">
+                  <p>The CA verifies client certificates only; it is not a server certificate.</p>
+                  <p>DoT refuses the TLS handshake without a verified client certificate.</p>
+                  <p>DoH and DoQ request one but enforce it only on the DNS query path, so the subscriber portal on the DoH port stays reachable.</p>
+                </div>
               </div>
             </section>
           </div>
 
-          <p id="transports-last-error" class="hidden text-[11px] text-red-300 leading-relaxed"></p>
+          <div id="doq-ip-note" class="transport-note">
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <span class="font-semibold text-slate-200">IP authentication</span>
+              <span id="doq-ip-counts" class="font-mono text-slate-300"></span>
+            </div>
+            <p>Shared by DoQ, DoT and DNSCrypt: a source is accepted when it appears in <span class="font-semibold text-slate-200">Clients → Allowed IPs</span> or <span class="font-semibold text-slate-200">Settings → Access → Server-wide Resolver Allowlist</span>.</p>
+            <p id="doq-ip-warning" class="hidden text-amber-300"></p>
+          </div>
+
+          <div class="transport-footer">
+            <p id="transports-last-error" class="hidden text-[11px] text-red-300 leading-relaxed"></p>
+            <span id="transports-save-status" class="text-[11px] text-slate-400 ms-auto">All changes saved</span>
+          </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 settings-wide">

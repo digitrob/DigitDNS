@@ -69,6 +69,10 @@ func (s *Server) startDoQ() error {
 	doqCfg := s.tlsConfig.Clone()
 	doqCfg.NextProtos = []string{alpnDoQ}
 	applyDOTCertSource(doqCfg, s.dotCertSource)
+	if err := s.applyMTLS(doqCfg, false); err != nil {
+		s.setDoQError("configure DoQ mTLS: " + err.Error())
+		return fmt.Errorf("configure DoQ mTLS: %w", err)
+	}
 
 	limiter := newQUICHandshakeLimiter()
 	quicCfg := &quic.Config{
@@ -120,6 +124,21 @@ func (s *Server) startDoQ() error {
 // list it is about to enforce. Tokens are lower-cased and de-duplicated because
 // they are matched against the leftmost DNS label of the SNI.
 func (s *Server) SetDoQTokens(tokens []string) {
+	s.doqTokensMu.Lock()
+	s.doqTokens = normalizeTransportTokens(tokens)
+	s.doqTokensMu.Unlock()
+}
+
+// SetDoTTokens installs the DoT SNI-token list. The same label rules and
+// constant-time comparison as DoQ apply; the list is independent so rotating
+// one transport's tokens does not silently change the other.
+func (s *Server) SetDoTTokens(tokens []string) {
+	s.dotTokensMu.Lock()
+	s.dotTokens = normalizeTransportTokens(tokens)
+	s.dotTokensMu.Unlock()
+}
+
+func normalizeTransportTokens(tokens []string) []string {
 	seen := make(map[string]bool, len(tokens))
 	out := make([]string, 0, len(tokens))
 	for _, entry := range tokens {
@@ -130,9 +149,7 @@ func (s *Server) SetDoQTokens(tokens []string) {
 		seen[token] = true
 		out = append(out, token)
 	}
-	s.doqTokensMu.Lock()
-	s.doqTokens = out
-	s.doqTokensMu.Unlock()
+	return out
 }
 
 func (s *Server) doqTokenList() []string {
@@ -147,6 +164,28 @@ func (s *Server) doqTokenList() []string {
 func (s *Server) doqSNIAllowed(conn *quic.Conn) bool {
 	base := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(s.transportCfg.DoQTokenDomain), "."))
 	sni := strings.ToLower(strings.TrimSuffix(conn.ConnectionState().TLS.ServerName, "."))
+	return sniTokenAllowed(sni, base, s.doqTokenList())
+}
+
+// dotSNIAllowed is the DoT counterpart, called after the TLS handshake and
+// before the connection reaches the DNS server.
+func (s *Server) dotSNIAllowed(serverName string) bool {
+	base := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(s.transportCfg.DoTTokenDomain), "."))
+	sni := strings.ToLower(strings.TrimSuffix(serverName, "."))
+	return sniTokenAllowed(sni, base, s.dotTokenList())
+}
+
+func (s *Server) dotTokenList() []string {
+	s.dotTokensMu.RLock()
+	defer s.dotTokensMu.RUnlock()
+	return append([]string(nil), s.dotTokens...)
+}
+
+// sniTokenAllowed checks the <token>.<domain> shape against a token list. The
+// token is never logged; only the rejection and source address are.
+func sniTokenAllowed(sni, base string, allowedTokens []string) bool {
+	sni = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(sni), "."))
+	base = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(base), "."))
 	if base == "" || sni == "" {
 		return false
 	}
@@ -158,7 +197,7 @@ func (s *Server) doqSNIAllowed(conn *quic.Conn) bool {
 	if token == "" || strings.Contains(token, ".") {
 		return false
 	}
-	for _, allowed := range s.doqTokenList() {
+	for _, allowed := range allowedTokens {
 		if subtle.ConstantTimeCompare([]byte(token), []byte(allowed)) == 1 {
 			return true
 		}
@@ -236,6 +275,12 @@ func (s *Server) handleDoQConn(ctx context.Context, conn *quic.Conn) {
 	clientIP, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
 		clientIP = conn.RemoteAddr().String()
+	}
+	if s.transportCfg.MTLSEnabled && !verifiedClientCert(conn.ConnectionState().TLS) {
+		s.doqAuthFail.Add(1)
+		log.Printf("[DNS] DoQ rejected connection from %s: client certificate required", clientIP)
+		_ = conn.CloseWithError(quic.ApplicationErrorCode(doqProtocolError), "client certificate required")
+		return
 	}
 	if strings.EqualFold(strings.TrimSpace(s.transportCfg.DoQAuth), "sni-token") && !s.doqSNIAllowed(conn) {
 		s.doqAuthFail.Add(1)

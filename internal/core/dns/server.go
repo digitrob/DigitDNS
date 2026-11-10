@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"digitdns/internal/netutil"
+	dnscryptlib "github.com/ameshkov/dnscrypt/v2"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -86,6 +87,16 @@ type TransportConfig struct {
 	DoQAuth        string
 	DoQTokenDomain string
 	DoH3Enabled    bool
+	// DoT authentication and mTLS are listener-level gates. DoT tokens use the
+	// same <token>.<domain> shape as DoQ; mTLS applies to DoT, DoH and DoQ.
+	DoTAuth        string
+	DoTTokenDomain string
+	MTLSEnabled    bool
+	MTLSCAPEM      string
+	// DNSCrypt provider keys live in the separate dnscrypt setting and are
+	// installed with SetDNSCryptConfig before ApplyTransports.
+	DNSCryptEnabled bool
+	DNSCryptPort    int
 }
 
 type Server struct {
@@ -139,6 +150,20 @@ type Server struct {
 	// established-connection cap that closes a conn with EXCESSIVE_LOAD.
 	doqHandshakeRejects atomic.Uint64
 	doqProtoErrors      atomic.Uint64
+	// DoT SNI-token list and DNSCrypt listener state. The DNSCrypt keys are
+	// installed by SetDNSCryptConfig; the listener itself is lifecycle-managed
+	// under tlsMu like the other encrypted transports.
+	dotTokens         []string
+	dotTokensMu       sync.RWMutex
+	dnscryptServer    *dnscryptlib.Server
+	dnscryptUDP       *net.UDPConn
+	dnscryptTCP       net.Listener
+	dnscryptRC        *dnscryptlib.ResolverConfig
+	dnscryptCert      *dnscryptlib.Cert
+	dnscryptQueries   atomic.Uint64
+	dnscryptErrors    atomic.Uint64
+	dnscryptListening atomic.Bool
+	dnscryptErr       string
 	// quicRejectLogAt rate-limits the "handshake refused" log line. A flood is
 	// exactly when it would otherwise write once per packet.
 	quicRejectLogAt atomic.Int64
@@ -184,6 +209,9 @@ func NewServer(
 	}
 	if cfg.DoQPort == 0 {
 		cfg.DoQPort = 853
+	}
+	if cfg.DNSCryptPort == 0 {
+		cfg.DNSCryptPort = defaultDNSCryptPort
 	}
 	if cfg.DoQAuth == "" {
 		cfg.DoQAuth = "ip"
@@ -277,6 +305,9 @@ func (s *Server) Start() error {
 	if err := s.startDoQ(); err != nil {
 		log.Printf("[DNS] Warning: %v", err)
 	}
+	if err := s.startDNSCryptLocked(); err != nil {
+		log.Printf("[DNS] Warning: %v", err)
+	}
 	return nil
 }
 
@@ -301,24 +332,60 @@ func (s *Server) startDoT() error {
 	dotCfg := s.tlsConfig.Clone()
 	dotCfg.NextProtos = []string{alpnDoT}
 	applyDOTCertSource(dotCfg, s.dotCertSource)
+	if err := s.applyMTLS(dotCfg, true); err != nil {
+		log.Printf("[DNS] Warning: DoT mTLS: %v", err)
+		return fmt.Errorf("configure DoT mTLS: %w", err)
+	}
+
+	auth := strings.ToLower(strings.TrimSpace(s.transportCfg.DoTAuth))
+	if auth == "" {
+		auth = "ip"
+	}
+	switch auth {
+	case "ip":
+	case "sni-token":
+		if strings.TrimSpace(s.transportCfg.DoTTokenDomain) == "" {
+			return errors.New("DoT SNI-token authentication requires a token domain")
+		}
+		if len(s.dotTokenList()) == 0 {
+			return errors.New("DoT SNI-token authentication requires at least one token")
+		}
+	default:
+		return fmt.Errorf("invalid DoT authentication mode %q", auth)
+	}
 
 	dotLn, err := tls.Listen("tcp", dotAddr, dotCfg)
 	if err != nil {
 		log.Printf("[DNS] Warning: could not bind DoT on %s: %v", dotAddr, err)
 		return fmt.Errorf("bind DoT %s: %w", dotAddr, err)
 	}
-	s.dotServer = &dns.Server{
-		Listener:      netutil.LimitListener(dotLn, maxDoTConns),
+	var listener net.Listener = dotLn
+	if auth == "sni-token" {
+		listener = &sniTokenListener{Listener: dotLn, check: s.dotSNIAllowed}
+	}
+	dotSrv := &dns.Server{
+		Listener:      netutil.LimitListener(listener, maxDoTConns),
 		Net:           "tcp-tls",
 		TLSConfig:     dotCfg,
 		Handler:       s.handler.ServeWithProto("DoT"),
 		IdleTimeout:   idle(dotIdleTimeout),
 		MaxTCPQueries: -1,
 	}
+	s.dotServer = dotSrv
+	// Capture the server in a local: a rebind nils s.dotServer while this
+	// goroutine is still starting, and reading the field here would panic on a
+	// nil dereference (the same hazard the port-53 listeners document above).
 	go func() {
 		log.Printf("[DNS] Starting DoT (DNS-over-TLS) on %s (idle %s, max %d conns)", dotAddr, dotIdleTimeout, maxDoTConns)
-		if err := s.dotServer.ActivateAndServe(); err != nil {
-			log.Printf("[DNS] DoT listener stopped: %v", err)
+		if err := dotSrv.ActivateAndServe(); err != nil {
+			// A deliberate rebind closes the listener; only a listener that
+			// died while still installed is news.
+			s.tlsMu.Lock()
+			current := s.dotServer == dotSrv
+			s.tlsMu.Unlock()
+			if current {
+				log.Printf("[DNS] DoT listener stopped: %v", err)
+			}
 		}
 	}()
 	return nil
@@ -357,15 +424,29 @@ func (s *Server) SetDOTCertSource(src CertSource) {
 func (s *Server) RebindTLS() error {
 	s.tlsMu.Lock()
 	defer s.tlsMu.Unlock()
+	return s.rebindTLSListenersLocked()
+}
+
+// rebindTLSListenersLocked restarts DoT, DoH, DoH3 and DoQ from the current
+// transportCfg. The caller holds tlsMu. DNSCrypt is independent of TLS and is
+// left alone.
+func (s *Server) rebindTLSListenersLocked() error {
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
-	if s.dotServer != nil {
-		_ = s.dotServer.ShutdownContext(ctx)
+	if dotSrv := s.dotServer; dotSrv != nil {
 		s.dotServer = nil
+		// Close the listening socket before waiting for the serve loop: the
+		// shutdown channel is closed just before serveTCP's deferred listener
+		// close, so waiting alone can hand the rebind a port that is still in
+		// use for a few microseconds.
+		if ln := dotSrv.Listener; ln != nil {
+			_ = ln.Close()
+		}
+		_ = dotSrv.ShutdownContext(ctx)
 	}
-	if s.dohServer != nil {
-		_ = s.dohServer.Close()
+	if dohSrv := s.dohServer; dohSrv != nil {
 		s.dohServer = nil
+		_ = dohSrv.Close()
 	}
 	s.stopDoH3Locked()
 	s.stopDoQ()
@@ -407,8 +488,15 @@ func (s *Server) startHTTPS() error {
 	dohCfg := s.tlsConfig.Clone()
 	dohCfg.NextProtos = []string{"h2", "http/1.1"}
 	applyDOTCertSource(dohCfg, s.dotCertSource)
+	if err := s.applyMTLS(dohCfg, false); err != nil {
+		log.Printf("[DNS] Warning: DoH mTLS: %v", err)
+		return fmt.Errorf("configure DoH mTLS: %w", err)
+	}
+	if s.dohHandler != nil {
+		s.dohHandler.SetMTLSRequire(s.transportCfg.MTLSEnabled)
+	}
 
-	s.dohServer = &http.Server{
+	dohSrv := &http.Server{
 		Handler:           s.webMux,
 		TLSConfig:         dohCfg,
 		ReadHeaderTimeout: httpsHeaderTimeout,
@@ -419,9 +507,10 @@ func (s *Server) startHTTPS() error {
 		WriteTimeout: 0,
 		IdleTimeout:  httpsIdleTimeout,
 	}
+	s.dohServer = dohSrv
 	go func() {
 		log.Printf("[DNS] Starting DoH & public portal on https://%s/dns-query", dohAddr)
-		if err := s.dohServer.ServeTLS(netutil.LimitListener(dohLn, maxHTTPSConns), "", ""); err != nil && err != http.ErrServerClosed {
+		if err := dohSrv.ServeTLS(netutil.LimitListener(dohLn, maxHTTPSConns), "", ""); err != nil && err != http.ErrServerClosed {
 			log.Printf("[DNS] HTTPS/DoH TLS server stopped: %v", err)
 		}
 	}()
@@ -457,6 +546,14 @@ func (s *Server) startDoH3Locked() error {
 	h3Cfg := s.tlsConfig.Clone()
 	h3Cfg.NextProtos = []string{"h3"}
 	applyDOTCertSource(h3Cfg, s.dotCertSource)
+	if err := s.applyMTLS(h3Cfg, false); err != nil {
+		err = fmt.Errorf("configure DoH3 mTLS: %w", err)
+		s.setDoH3Error(err.Error())
+		return err
+	}
+	if s.dohHandler != nil {
+		s.dohHandler.SetMTLSRequire(s.transportCfg.MTLSEnabled)
+	}
 
 	limiter := newQUICHandshakeLimiter()
 	s.doh3ConnsMu.Lock()
@@ -709,6 +806,9 @@ type TransportMetrics struct {
 	DoQAuthFailures     uint64
 	DoQProtocolErrors   uint64
 	DoQHandshakeRejects uint64
+
+	DNSCryptQueries uint64
+	DNSCryptErrors  uint64
 }
 
 func (s *Server) TransportMetrics() TransportMetrics {
@@ -726,6 +826,8 @@ func (s *Server) TransportMetrics() TransportMetrics {
 	m.DoQAuthFailures = s.doqAuthFail.Load()
 	m.DoQProtocolErrors = s.doqProtoErrors.Load()
 	m.DoQHandshakeRejects = s.doqHandshakeRejects.Load()
+	m.DNSCryptQueries = s.dnscryptQueries.Load()
+	m.DNSCryptErrors = s.dnscryptErrors.Load()
 	return m
 }
 
@@ -742,6 +844,9 @@ func (s *Server) ApplyTransports(cfg TransportConfig) error {
 	if cfg.DoQPort == 0 {
 		cfg.DoQPort = 853
 	}
+	if cfg.DNSCryptPort == 0 {
+		cfg.DNSCryptPort = defaultDNSCryptPort
+	}
 	auth := strings.ToLower(strings.TrimSpace(cfg.DoQAuth))
 	if auth == "" {
 		auth = "ip"
@@ -750,6 +855,15 @@ func (s *Server) ApplyTransports(cfg TransportConfig) error {
 		return fmt.Errorf("invalid DoQ authentication mode %q", auth)
 	}
 	cfg.DoQAuth = auth
+	dotAuth := strings.ToLower(strings.TrimSpace(cfg.DoTAuth))
+	if dotAuth == "" {
+		dotAuth = "ip"
+	}
+	if dotAuth != "ip" && dotAuth != "sni-token" {
+		return fmt.Errorf("invalid DoT authentication mode %q", dotAuth)
+	}
+	cfg.DoTAuth = dotAuth
+	cfg.DoTTokenDomain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(cfg.DoTTokenDomain), "."))
 
 	s.tlsMu.Lock()
 	defer s.tlsMu.Unlock()
@@ -763,10 +877,34 @@ func (s *Server) ApplyTransports(cfg TransportConfig) error {
 	if !cfg.DoQEnabled || (s.doqListener != nil && (s.doqPort != cfg.DoQPort || s.transportCfg.DoQAuth != auth)) {
 		s.stopDoQ()
 	}
+	if !cfg.DNSCryptEnabled || (s.dnscryptServer != nil && s.transportCfg.DNSCryptPort != cfg.DNSCryptPort) {
+		s.stopDNSCryptLocked()
+	}
 
+	prevDoTAuth := strings.ToLower(strings.TrimSpace(s.transportCfg.DoTAuth))
+	if prevDoTAuth == "" {
+		prevDoTAuth = "ip"
+	}
+	// A TLS listener rebind tears down every encrypted connection, so only a
+	// real change triggers it: the DoT gate's mode/domain and the mTLS gate.
+	// DoT's port change is only meaningful when a port was supplied.
+	dotPortChanged := cfg.DoTPort != 0 && s.dotPort != cfg.DoTPort
+	needTLSRebind := prevDoTAuth != cfg.DoTAuth ||
+		s.transportCfg.DoTTokenDomain != cfg.DoTTokenDomain ||
+		s.transportCfg.MTLSEnabled != cfg.MTLSEnabled ||
+		s.transportCfg.MTLSCAPEM != cfg.MTLSCAPEM ||
+		dotPortChanged
 	s.transportCfg = cfg
+	if cfg.DoTPort != 0 {
+		s.dotPort = cfg.DoTPort
+	}
 	s.dohPort = cfg.DoHPort
 	s.doqPort = cfg.DoQPort
+	if needTLSRebind {
+		if err := s.rebindTLSListenersLocked(); err != nil {
+			return err
+		}
+	}
 	if cfg.DoH3Enabled && !s.doh3IsReady() {
 		if err := s.startDoH3Locked(); err != nil {
 			return err
@@ -774,6 +912,11 @@ func (s *Server) ApplyTransports(cfg TransportConfig) error {
 	}
 	if cfg.DoQEnabled && s.doqListener == nil {
 		if err := s.startDoQ(); err != nil {
+			return err
+		}
+	}
+	if cfg.DNSCryptEnabled && s.dnscryptServer == nil {
+		if err := s.startDNSCryptLocked(); err != nil {
 			return err
 		}
 	}
@@ -797,6 +940,7 @@ func (s *Server) Stop() {
 	s.dotServer, s.dohServer = nil, nil
 	s.stopDoH3Locked()
 	s.stopDoQ()
+	s.stopDNSCryptLocked()
 	s.tlsMu.Unlock()
 	if dotServer != nil {
 		_ = dotServer.ShutdownContext(ctx)

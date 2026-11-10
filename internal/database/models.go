@@ -213,18 +213,32 @@ type DNSSettings struct {
 	// only UDP/TCP, DoT and DoH until the operator enables them. DoQAuth is
 	// "ip" (client allowlist) or "sni-token" (the leftmost SNI label names a
 	// token; the certificate must cover the token hostnames).
-	DoQEnabled     bool          `json:"doq_enabled"`
-	DoQPort        int           `json:"doq_port"`
-	DoQAuth        string        `json:"doq_auth"`
-	DoQTokenDomain string        `json:"doq_token_domain"`
-	DoH3Enabled    bool          `json:"doh3_enabled"`
-	Upstreams      []string      `json:"upstreams"`
-	CacheSize      int           `json:"cache_size"`
-	CacheMinTTL    uint32        `json:"cache_min_ttl"`
-	CacheMaxTTL    uint32        `json:"cache_max_ttl"`
-	QueryTimeout   time.Duration `json:"query_timeout"`
-	FastestRacing  bool          `json:"fastest_racing"`
-	ECSClientIP    string        `json:"ecs_client_ip"`
+	DoQEnabled     bool   `json:"doq_enabled"`
+	DoQPort        int    `json:"doq_port"`
+	DoQAuth        string `json:"doq_auth"`
+	DoQTokenDomain string `json:"doq_token_domain"`
+	DoH3Enabled    bool   `json:"doh3_enabled"`
+	// DNSCrypt is the third opt-in client transport. Its provider/resolver keys
+	// live in the separate "dnscrypt" setting; these fields carry only the
+	// operator-visible policy.
+	DNSCryptEnabled      bool   `json:"dnscrypt_enabled"`
+	DNSCryptPort         int    `json:"dnscrypt_port"`
+	DNSCryptProviderName string `json:"dnscrypt_provider_name"`
+	// DoT authentication: "ip" (the client allowlist) or "sni-token".
+	DoTAuth        string   `json:"dot_auth"`
+	DoTTokenDomain string   `json:"dot_token_domain"`
+	DoTTokens      []string `json:"dot_tokens"`
+	// mTLS is an additional listener gate for DoT/DoH/DoQ. DoH enforces it only
+	// on /dns-query so the subscriber portal on the same listener stays reachable.
+	MTLSEnabled   bool          `json:"mtls_enabled"`
+	MTLSCAPEM     string        `json:"mtls_ca_pem"`
+	Upstreams     []string      `json:"upstreams"`
+	CacheSize     int           `json:"cache_size"`
+	CacheMinTTL   uint32        `json:"cache_min_ttl"`
+	CacheMaxTTL   uint32        `json:"cache_max_ttl"`
+	QueryTimeout  time.Duration `json:"query_timeout"`
+	FastestRacing bool          `json:"fastest_racing"`
+	ECSClientIP   string        `json:"ecs_client_ip"`
 
 	// ServeStaleSeconds is how long past its expiry an answer may still be served
 	// while a fresh one is fetched behind it (RFC 8767). Zero turns serve-stale off
@@ -271,6 +285,20 @@ type DNSSettings struct {
 	// Profiles carries the per-domain resolution overrides, limited to names in
 	// the proxied lists. A missing map means every name follows the defaults.
 	Profiles map[string]resolution.Profile `json:"resolution_profiles,omitempty"`
+}
+
+// DNSCryptSettings is the persisted key material for the DNSCrypt server. It is
+// stored separately from the "dns" policy record so the dashboard view can read
+// the policy without ever decoding the provider private key. The database layer
+// encrypts setting values with the master key.
+type DNSCryptSettings struct {
+	ProviderName string `json:"provider_name"`
+	PublicKey    string `json:"public_key"`
+	PrivateKey   string `json:"private_key"`
+	ResolverPk   string `json:"resolver_public"`
+	ResolverSk   string `json:"resolver_secret"`
+	EsVersion    int    `json:"es_version"`
+	CertNotAfter int64  `json:"cert_not_after"`
 }
 
 // EffectiveTransport collapses the legacy encrypted_only switch into the

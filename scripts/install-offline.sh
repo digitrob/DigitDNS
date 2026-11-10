@@ -457,7 +457,7 @@ fi
 # STEP 3: FIREWALL RULES CONFIGURATION
 # ==============================================================================
 echo -e "${CYAN}${BOLD}[3/6] Configuring Firewall Rules for Gaming & DNS...${NC}"
-PORTS=(53 80 443 853 2099 5222 5223 8393 8443)
+PORTS=(53 80 443 853 2099 5222 5223 8393 8443 5443)
 # The panel's port joins the fixed set when this install chose one at random
 # (v2.2.0). An upgrade with no PANEL_PORT (or the default 8080, already in the
 # installed set from before) adds nothing. The rule is recorded like the

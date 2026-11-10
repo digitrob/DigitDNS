@@ -1297,9 +1297,9 @@ input:checked + .slider:before {
   }
 }
 
-/* The client-facing QUIC card is full width but reads best as two compact
-   sections: DoH3 is a toggle and an endpoint, DoQ carries the auth and token
-   controls. Below the split they stack as normal cards. */
+/* Client-facing encrypted transports. Equal columns on a wide panel, mTLS
+   spanning both, and cards stretched to the same height per row so the grid
+   never leaves a gap beside a shorter card. */
 .transport-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1307,9 +1307,60 @@ input:checked + .slider:before {
 }
 @media (min-width: 1024px) {
   .transport-grid {
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-    align-items: start;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
   }
+  .transport-grid > .transport-span {
+    grid-column: 1 / -1;
+  }
+}
+.transport-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-main);
+}
+.transport-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.transport-hint {
+  margin-top: auto;
+  font-size: 10px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.transport-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background: var(--bg-card);
+  font-size: 10px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.transport-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border-color);
 }
 
 /* The Settings tab is a card grid, not one long stack. Cards marked

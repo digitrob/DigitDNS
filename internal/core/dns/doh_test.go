@@ -375,3 +375,46 @@ func TestMinAnswerTTLIsTheShortestRecordAcrossEverySection(t *testing.T) {
 		})
 	}
 }
+
+// DoH tokens are accepted from the historical ?token= query parameter and from
+// an Authorization: Bearer header. The header form keeps the credential out of
+// access logs and browser history.
+func TestDoHTokenAcceptsQueryAndBearer(t *testing.T) {
+	const subscriber = "203.0.113.50"
+	h := newDoHHandler(t, &oneSubscriberAccess{allowed: subscriber})
+	h.SetDoHTokens([]string{"alpha"})
+
+	makeReq := func() *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/dns-query", bytes.NewReader(dohQuery(t, "pin.internal.test.")))
+		req.Header.Set("Content-Type", "application/dns-message")
+		req.RemoteAddr = subscriber + ":51000"
+		return req
+	}
+
+	queryReq := makeReq()
+	queryReq.URL.RawQuery = "token=alpha"
+	queryRec := httptest.NewRecorder()
+	h.ServeHTTP(queryRec, queryReq)
+	dohReply(t, queryRec)
+
+	bearerReq := makeReq()
+	bearerReq.Header.Set("Authorization", "Bearer alpha")
+	bearerRec := httptest.NewRecorder()
+	h.ServeHTTP(bearerRec, bearerReq)
+	dohReply(t, bearerRec)
+
+	wrongReq := makeReq()
+	wrongReq.Header.Set("Authorization", "Bearer beta")
+	wrongRec := httptest.NewRecorder()
+	h.ServeHTTP(wrongRec, wrongReq)
+	if wrongRec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong bearer token = %d, want 401", wrongRec.Code)
+	}
+
+	missingReq := makeReq()
+	missingRec := httptest.NewRecorder()
+	h.ServeHTTP(missingRec, missingReq)
+	if missingRec.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token = %d, want 401", missingRec.Code)
+	}
+}

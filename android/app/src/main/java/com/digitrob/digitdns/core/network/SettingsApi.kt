@@ -61,7 +61,7 @@ interface SettingsApi {
     suspend fun saveDoh3(@Body body: Doh3SettingsSave): TransportSettingsDto
 
     @POST("settings/transports")
-    suspend fun saveDoq(@Body body: DoqSettingsSave): TransportSettingsDto
+    suspend fun saveTransports(@Body body: TransportSettingsSave): TransportSettingsDto
 }
 
 /**
@@ -123,6 +123,18 @@ data class TransportSettingsDto(
     @SerialName("doq_listening") val doqListening: Boolean = false,
     @SerialName("ip_allowlist") val ipAllowlist: TransportIpAllowlistDto = TransportIpAllowlistDto(),
     @SerialName("last_error") val lastError: String = "",
+    @SerialName("dot_auth") val dotAuth: String = "ip",
+    @SerialName("dot_port") val dotPort: Int = 853,
+    @SerialName("dot_token_domain") val dotTokenDomain: String = "",
+    @SerialName("dot_tokens") val dotTokens: List<String> = emptyList(),
+    @SerialName("dnscrypt_enabled") val dnscryptEnabled: Boolean = false,
+    @SerialName("dnscrypt_port") val dnscryptPort: Int = 5443,
+    @SerialName("dnscrypt_provider_name") val dnscryptProviderName: String = "",
+    @SerialName("dnscrypt_stamp") val dnscryptStamp: String = "",
+    @SerialName("dnscrypt_cert_not_after") val dnscryptCertNotAfter: Long = 0,
+    @SerialName("dnscrypt_listening") val dnscryptListening: Boolean = false,
+    @SerialName("mtls_enabled") val mtlsEnabled: Boolean = false,
+    @SerialName("mtls_ca_pem") val mtlsCaPem: String = "",
 )
 
 /**
@@ -144,12 +156,20 @@ data class Doh3SettingsSave(
 )
 
 @Serializable
-data class DoqSettingsSave(
+data class TransportSettingsSave(
     @SerialName("doq_enabled") val doqEnabled: Boolean,
     @SerialName("doq_port") val doqPort: Int,
     @SerialName("doq_auth") val doqAuth: String,
     @SerialName("doq_token_domain") val doqTokenDomain: String,
     @SerialName("doq_tokens") val doqTokens: List<String>,
+    @SerialName("dnscrypt_enabled") val dnscryptEnabled: Boolean = false,
+    @SerialName("dnscrypt_port") val dnscryptPort: Int = 5443,
+    @SerialName("dnscrypt_provider_name") val dnscryptProviderName: String = "",
+    @SerialName("dot_auth") val dotAuth: String = "ip",
+    @SerialName("dot_token_domain") val dotTokenDomain: String = "",
+    @SerialName("dot_tokens") val dotTokens: List<String> = emptyList(),
+    @SerialName("mtls_enabled") val mtlsEnabled: Boolean = false,
+    @SerialName("mtls_ca_pem") val mtlsCaPem: String = "",
 )
 
 /**

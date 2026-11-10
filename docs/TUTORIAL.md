@@ -53,6 +53,9 @@
    | **443** | TCP | SNI proxy HTTPS (the actual game traffic) |
    | **853** | TCP | DNS-over-TLS (Android "Private DNS", iOS) |
    | **8443** | TCP | DNS-over-HTTPS |
+   | **853** | UDP | DNS-over-QUIC (opt-in) |
+   | **8443** | UDP | DoH over HTTP/3 (opt-in) |
+   | **5443** | UDP + TCP | DNSCrypt (opt-in) |
    | **8080** | TCP | The admin dashboard |
 
    If your provider has a cloud firewall (Hetzner/OVH/Vultr security groups),

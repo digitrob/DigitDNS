@@ -1,12 +1,14 @@
 package web
 
 import (
+	"crypto/x509"
 	"encoding/json"
 	"log"
 	"net/http"
 	"strings"
 
 	"digitdns/internal/httpx"
+	dnscryptlib "github.com/ameshkov/dnscrypt/v2"
 )
 
 // transportSettingsView is the encrypted-DNS card's state for the two
@@ -21,6 +23,21 @@ type transportSettingsView struct {
 	DoH3Enabled    bool     `json:"doh3_enabled"`
 	DoQTokens      []string `json:"doq_tokens"`
 	DoH3Port       int      `json:"doh3_port"`
+	// DNSCrypt policy and read-only identity. The keys are never returned; the
+	// stamp is the client-facing form of the provider public key.
+	DNSCryptEnabled      bool   `json:"dnscrypt_enabled"`
+	DNSCryptPort         int    `json:"dnscrypt_port"`
+	DNSCryptProviderName string `json:"dnscrypt_provider_name"`
+	DNSCryptStamp        string `json:"dnscrypt_stamp"`
+	DNSCryptCertNotAfter int64  `json:"dnscrypt_cert_not_after"`
+	DNSCryptListening    bool   `json:"dnscrypt_listening"`
+	// DoT authentication and the global mTLS gate.
+	DoTAuth        string   `json:"dot_auth"`
+	DoTPort        int      `json:"dot_port"`
+	DoTTokenDomain string   `json:"dot_token_domain"`
+	DoTTokens      []string `json:"dot_tokens"`
+	MTLSEnabled    bool     `json:"mtls_enabled"`
+	MTLSCAPEM      string   `json:"mtls_ca_pem"`
 	// Actual listener state. A saved toggle is the desired state; these say
 	// whether the bind succeeded, so a failed start is visible instead of
 	// looking like a running endpoint.
@@ -56,12 +73,21 @@ func (ws *WebServer) transportSettingsView() transportSettingsView {
 	ws.dnsMu.Lock()
 	cfg := ws.mutableDNSLocked()
 	view := transportSettingsView{
-		DoQEnabled:     cfg.DoQEnabled,
-		DoQPort:        cfg.DoQPort,
-		DoQAuth:        cfg.DoQAuth,
-		DoQTokenDomain: cfg.DoQTokenDomain,
-		DoH3Enabled:    cfg.DoH3Enabled,
-		DoH3Port:       cfg.DoHPort,
+		DoQEnabled:           cfg.DoQEnabled,
+		DoQPort:              cfg.DoQPort,
+		DoQAuth:              cfg.DoQAuth,
+		DoQTokenDomain:       cfg.DoQTokenDomain,
+		DoH3Enabled:          cfg.DoH3Enabled,
+		DoH3Port:             cfg.DoHPort,
+		DNSCryptEnabled:      cfg.DNSCryptEnabled,
+		DNSCryptPort:         cfg.DNSCryptPort,
+		DNSCryptProviderName: cfg.DNSCryptProviderName,
+		DoTAuth:              cfg.DoTAuth,
+		DoTPort:              cfg.DoTPort,
+		DoTTokenDomain:       cfg.DoTTokenDomain,
+		DoTTokens:            append([]string(nil), cfg.DoTTokens...),
+		MTLSEnabled:          cfg.MTLSEnabled,
+		MTLSCAPEM:            cfg.MTLSCAPEM,
 	}
 	ws.dnsMu.Unlock()
 
@@ -71,7 +97,25 @@ func (ws *WebServer) transportSettingsView() transportSettingsView {
 	if view.DoH3Port == 0 {
 		view.DoH3Port = 8443
 	}
+	if view.DNSCryptPort == 0 {
+		view.DNSCryptPort = defaultDNSCryptPort
+	}
+	if view.DoTPort == 0 {
+		view.DoTPort = 853
+	}
+	if view.DNSCryptProviderName == "" {
+		view.DNSCryptProviderName = "2.dnscrypt-cert.digitdns.local"
+	}
+	st := ws.loadDNSCryptSettings()
+	view.DNSCryptStamp = ws.dnscryptStamp(st, view.DNSCryptPort)
+	view.DNSCryptCertNotAfter = st.CertNotAfter
 	view.DoQAuth = normalizeDoQAuth(view.DoQAuth)
+	if view.DoTAuth == "" {
+		view.DoTAuth = "ip"
+	}
+	if view.DoTTokens == nil {
+		view.DoTTokens = []string{}
+	}
 	access := ws.loadAccessConfig()
 	view.DoQTokens = access.DoQTokens
 	if view.DoQTokens == nil {
@@ -87,6 +131,17 @@ func (ws *WebServer) transportSettingsView() transportSettingsView {
 	var listenerErr string
 	if ws.transportStatus != nil {
 		view.DoH3Listening, view.DoQListening, listenerErr = ws.transportStatus()
+	}
+	if ws.dnscryptStatus != nil {
+		var dnscryptErr string
+		view.DNSCryptListening, view.DNSCryptCertNotAfter, dnscryptErr = ws.dnscryptStatus()
+		if dnscryptErr != "" {
+			if listenerErr == "" {
+				listenerErr = dnscryptErr
+			} else {
+				listenerErr += "; " + dnscryptErr
+			}
+		}
 	}
 	ws.transportErrMu.Lock()
 	view.LastError = ws.transportLastError
@@ -164,12 +219,20 @@ func (ws *WebServer) writeTransportSettings(w http.ResponseWriter) {
 
 func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		DoQEnabled     *bool     `json:"doq_enabled"`
-		DoQPort        *int      `json:"doq_port"`
-		DoQAuth        *string   `json:"doq_auth"`
-		DoQTokenDomain *string   `json:"doq_token_domain"`
-		DoH3Enabled    *bool     `json:"doh3_enabled"`
-		DoQTokens      *[]string `json:"doq_tokens"`
+		DoQEnabled           *bool     `json:"doq_enabled"`
+		DoQPort              *int      `json:"doq_port"`
+		DoQAuth              *string   `json:"doq_auth"`
+		DoQTokenDomain       *string   `json:"doq_token_domain"`
+		DoH3Enabled          *bool     `json:"doh3_enabled"`
+		DoQTokens            *[]string `json:"doq_tokens"`
+		DNSCryptEnabled      *bool     `json:"dnscrypt_enabled"`
+		DNSCryptPort         *int      `json:"dnscrypt_port"`
+		DNSCryptProviderName *string   `json:"dnscrypt_provider_name"`
+		DoTAuth              *string   `json:"dot_auth"`
+		DoTTokenDomain       *string   `json:"dot_token_domain"`
+		DoTTokens            *[]string `json:"dot_tokens"`
+		MTLSEnabled          *bool     `json:"mtls_enabled"`
+		MTLSCAPEM            *string   `json:"mtls_ca_pem"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
 	dec.DisallowUnknownFields()
@@ -247,6 +310,99 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	dnscryptEnabled := before.DNSCryptEnabled
+	if req.DNSCryptEnabled != nil {
+		dnscryptEnabled = *req.DNSCryptEnabled
+	}
+	dnscryptPort := before.DNSCryptPort
+	if dnscryptPort == 0 {
+		dnscryptPort = defaultDNSCryptPort
+	}
+	if req.DNSCryptPort != nil {
+		dnscryptPort = *req.DNSCryptPort
+		if dnscryptPort == 0 {
+			dnscryptPort = defaultDNSCryptPort
+		}
+		if dnscryptPort < 1 || dnscryptPort > 65535 {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "dnscrypt_port must be between 1 and 65535")
+			return
+		}
+	}
+	dnscryptProvider := normalizeDNSCryptProviderName(before.DNSCryptProviderName)
+	if req.DNSCryptProviderName != nil {
+		suffix := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(*req.DNSCryptProviderName)), "2.dnscrypt-cert.")
+		if suffix == "" {
+			suffix = "digitdns.local"
+		}
+		if _, err := validACMEDomain(suffix); err != nil {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "dnscrypt_provider_name: "+err.Error())
+			return
+		}
+		dnscryptProvider = "2.dnscrypt-cert." + suffix
+	}
+
+	dotAuth := strings.ToLower(strings.TrimSpace(before.DoTAuth))
+	if dotAuth == "" {
+		dotAuth = "ip"
+	}
+	if req.DoTAuth != nil {
+		dotAuth = strings.ToLower(strings.TrimSpace(*req.DoTAuth))
+	}
+	if dotAuth != "ip" && dotAuth != "sni-token" {
+		httpx.WriteJSONError(w, http.StatusBadRequest, "dot_auth must be \"ip\" or \"sni-token\"")
+		return
+	}
+	dotDomain := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(before.DoTTokenDomain), "."))
+	if req.DoTTokenDomain != nil {
+		dotDomain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(*req.DoTTokenDomain), "."))
+		if dotDomain != "" {
+			normalized, err := validACMEDomain(dotDomain)
+			if err != nil {
+				httpx.WriteJSONError(w, http.StatusBadRequest, "dot_token_domain: "+err.Error())
+				return
+			}
+			dotDomain = normalized
+		}
+	}
+	dotTokens := append([]string(nil), before.DoTTokens...)
+	if req.DoTTokens != nil {
+		normalized, problem := normalizeDoTTokens(*req.DoTTokens)
+		if problem != "" {
+			httpx.WriteJSONError(w, http.StatusBadRequest, problem)
+			return
+		}
+		dotTokens = normalized
+	}
+	if dotAuth == "sni-token" {
+		if dotDomain == "" {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "dot_token_domain is required when dot_auth is \"sni-token\"")
+			return
+		}
+		if len(dotTokens) == 0 {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "at least one DoT token is required when dot_auth is \"sni-token\"")
+			return
+		}
+	}
+	mtlsEnabled := before.MTLSEnabled
+	if req.MTLSEnabled != nil {
+		mtlsEnabled = *req.MTLSEnabled
+	}
+	mtlsCA := strings.TrimSpace(before.MTLSCAPEM)
+	if req.MTLSCAPEM != nil {
+		mtlsCA = strings.TrimSpace(*req.MTLSCAPEM)
+	}
+	if mtlsEnabled {
+		if mtlsCA == "" {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "mtls_ca_pem is required when mTLS is enabled")
+			return
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM([]byte(mtlsCA)) {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "mtls_ca_pem contains no valid certificates")
+			return
+		}
+	}
+
 	if req.DoQEnabled != nil {
 		next.DoQEnabled = *req.DoQEnabled
 	}
@@ -256,14 +412,64 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 	next.DoQPort = port
 	next.DoQAuth = auth
 	next.DoQTokenDomain = tokenDomain
+	next.DNSCryptEnabled = dnscryptEnabled
+	next.DNSCryptPort = dnscryptPort
+	next.DNSCryptProviderName = dnscryptProvider
+	next.DoTAuth = dotAuth
+	next.DoTTokenDomain = dotDomain
+	next.DoTTokens = dotTokens
+	next.MTLSEnabled = mtlsEnabled
+	next.MTLSCAPEM = mtlsCA
+
+	oldDNSCrypt := ws.loadDNSCryptSettings()
+	oldRC, oldCert := ws.dnscryptRuntime()
+	var newRC *dnscryptlib.ResolverConfig
+	var newCert *dnscryptlib.Cert
+	var err error
+	keysChanged := false
+	if dnscryptEnabled {
+		if oldRC != nil && oldDNSCrypt.ProviderName == dnscryptProvider {
+			// Same identity: reuse it. Re-signing a certificate and rewriting
+			// the key record on every unrelated transport save would churn the
+			// database and briefly stop a healthy listener.
+			newRC, newCert = oldRC, oldCert
+		} else {
+			_, newRC, newCert, err = ws.ensureDNSCrypt(dnscryptProvider)
+			if err != nil {
+				httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not prepare the DNSCrypt keys: "+err.Error())
+				return
+			}
+			keysChanged = true
+		}
+	}
+	dnscryptRunning := false
+	if dnscryptEnabled && ws.dnscryptStatus != nil {
+		dnscryptRunning, _, _ = ws.dnscryptStatus()
+	}
 
 	rollback := func(reason string) {
 		ws.setTransportLastError(reason)
 		log.Printf("[Transports] %s", reason)
+		if ws.dnscryptApplier != nil {
+			if oldRC != nil {
+				_ = ws.dnscryptApplier(oldRC, oldCert)
+			} else {
+				_ = ws.dnscryptApplier(nil, nil)
+			}
+		}
+		_ = ws.db.SetSetting("dnscrypt", oldDNSCrypt)
 		if ws.transportApplier != nil {
 			if err := ws.transportApplier(before, beforeTokens); err != nil {
 				log.Printf("[Transports] rollback failed: %v", err)
 			}
+		}
+	}
+
+	if newRC != nil && ws.dnscryptApplier != nil && (!dnscryptRunning || keysChanged) {
+		if err := ws.dnscryptApplier(newRC, newCert); err != nil {
+			rollback("could not install the DNSCrypt keys: " + err.Error())
+			httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not install the DNSCrypt keys")
+			return
 		}
 	}
 
@@ -292,7 +498,15 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 	current.DoQPort = next.DoQPort
 	current.DoQAuth = next.DoQAuth
 	current.DoQTokenDomain = next.DoQTokenDomain
-	err := ws.db.SetSetting("dns", current)
+	current.DNSCryptEnabled = next.DNSCryptEnabled
+	current.DNSCryptPort = next.DNSCryptPort
+	current.DNSCryptProviderName = next.DNSCryptProviderName
+	current.DoTAuth = next.DoTAuth
+	current.DoTTokenDomain = next.DoTTokenDomain
+	current.DoTTokens = next.DoTTokens
+	current.MTLSEnabled = next.MTLSEnabled
+	current.MTLSCAPEM = next.MTLSCAPEM
+	err = ws.db.SetSetting("dns", current)
 	ws.dnsMu.Unlock()
 	if err != nil {
 		ws.dnsMu.Lock()
@@ -301,6 +515,14 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		current.DoQPort = before.DoQPort
 		current.DoQAuth = before.DoQAuth
 		current.DoQTokenDomain = before.DoQTokenDomain
+		current.DNSCryptEnabled = before.DNSCryptEnabled
+		current.DNSCryptPort = before.DNSCryptPort
+		current.DNSCryptProviderName = before.DNSCryptProviderName
+		current.DoTAuth = before.DoTAuth
+		current.DoTTokenDomain = before.DoTTokenDomain
+		current.DoTTokens = before.DoTTokens
+		current.MTLSEnabled = before.MTLSEnabled
+		current.MTLSCAPEM = before.MTLSCAPEM
 		ws.dnsMu.Unlock()
 		if req.DoQTokens != nil {
 			_ = ws.db.SetSetting("access", access)
@@ -312,4 +534,27 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 
 	ws.setTransportLastError("")
 	ws.writeTransportSettings(w)
+}
+
+func normalizeDoTTokens(raw []string) ([]string, string) {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(raw))
+	for _, entry := range raw {
+		token := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(entry, ".")))
+		if token == "" {
+			continue
+		}
+		if err := validACMELabel(token); err != nil {
+			return nil, "invalid DoT token " + strings.TrimSpace(entry) + ": " + err.Error()
+		}
+		if seen[token] {
+			continue
+		}
+		seen[token] = true
+		out = append(out, token)
+	}
+	if out == nil {
+		out = []string{}
+	}
+	return out, ""
 }

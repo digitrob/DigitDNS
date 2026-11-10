@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [Unreleased] — client transport authentication, DNSCrypt and mTLS
+
+### Added
+- **DNSCrypt server** on UDP and TCP **5443**, with encrypted provider keys stored
+  in their own setting, a signed certificate, a copyable stamp and live listener
+  status. The default port avoids TCP 443, which the SNI proxy owns. Enable it in
+  **Settings → Client Encrypted Transports**; the Android Transports screen has
+  the same controls.
+- **DoH bearer tokens:** `/dns-query` accepts `Authorization: Bearer <token>` as
+  well as the historical `?token=` parameter, so the credential stays out of
+  access logs and browser history.
+- **DoT SNI-token authentication:** the ServerName becomes
+  `<token>.<token domain>`, checked before any query is read. DoT keeps its own
+  token list, independent of DoQ's.
+- **mTLS** for DoT, DoH, DoH3 and DoQ from an operator-supplied client CA bundle.
+  DoT requires a verified certificate at the TLS handshake; DoH and DoQ request
+  one and enforce verification on the DNS query path so the subscriber portal on
+  the DoH port stays reachable.
+- **Prometheus:** `digitdns_dnscrypt_queries_total` and
+  `digitdns_dnscrypt_errors_total`.
+
+### Changed
+- `/api/settings/transports` reads and writes the DNSCrypt, DoT-authentication
+  and mTLS fields. A save still applies before it persists, and a failed apply
+  rolls the listeners and the generated DNSCrypt keys back.
+- Changing DoT authentication or the mTLS gate rebinds the TLS listeners; an
+  unrelated socket change does not. A rebind closes the old listening socket
+  before binding the new one.
+- DoT and DoH now capture their server in the serve goroutine, removing a
+  nil-dereference race during a live rebind.
+
+---
+
+
 ## 🏷️ [v5.4.3] — faster dashboard and clearer state
 
 ### Performance

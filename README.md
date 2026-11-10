@@ -449,7 +449,7 @@ theme chosen on the login screen survives sign-in and app restarts.
 - **Built for paying subscribers.** Per-client quotas, expiry, device limits,
   traffic accounting, a private portal link, a registration secret and an
   Android client area.
-- **Encrypted DNS where it matters.** DoT, DoH, DoH3 and DoQ for clients; DoT, DoH, DoQ, DoH3 and DNSCrypt for upstreams.
+- **Encrypted DNS where it matters.** DoT, DoH, DoH3, DoQ and DNSCrypt for clients; DoT, DoH, DoQ, DoH3 and DNSCrypt for upstreams.
 - **DNSSEC validation when you want it.** Optional chain-of-trust validation
   with built-in root anchors, NSEC/NSEC3 denial proofs, `AD` on validated answers
   and `SERVFAIL` for bogus zones.
@@ -515,7 +515,10 @@ dig @YOUR_SERVER_IP example.com A
 | 80 | TCP | ACME HTTP-01 challenge and the HTTP relay |
 | 443 | TCP | HTTPS relay for proxied domains |
 | 853 | TCP | DNS-over-TLS (when TLS is configured) |
+| 853 | UDP | DNS-over-QUIC (opt-in) |
 | 8443 | TCP | DNS-over-HTTPS at `/dns-query` (when TLS is configured) |
+| 8443 | UDP | DoH over HTTP/3 (opt-in) |
+| 5443 | UDP + TCP | DNSCrypt (opt-in; avoids TCP 443, which the SNI proxy owns) |
 | random 20000–60000 | TCP | Web dashboard; chosen at install and printed in the URL |
 
 **Relay agent (optional)**
@@ -524,8 +527,9 @@ An agent needs a public IPv4, inbound TCP **80/443**, outbound HTTPS to the hub,
 and no domain or certificate. It is Linux amd64/arm64. The hub keeps all other
 requirements. Full manual: [docs/AGENT.md](docs/AGENT.md).
 
-DoQ, DoH3 and DNSCrypt are **upstream transports**, not client-facing
-listeners. Clients use plain DNS, DoT or DoH.
+DNSCrypt, DoQ and DoH3 are also **upstream transports**. As client listeners
+they are opt-in under **Settings → Client Encrypted Transports**, together with
+DoT SNI-token authentication and mTLS. Open the same ports in the firewall.
 
 ---
 
@@ -1015,18 +1019,20 @@ Android, the same surface natively:
 | DoH | Clients and upstreams | Client listener on 8443/TCP `/dns-query` (HTTP/2); upstream `https://host/dns-query` |
 | DoQ | Clients and upstreams | Client listener on 853/UDP (opt-in); upstream `quic://host` |
 | DoH3 | Clients and upstreams | Client listener on 8443/UDP (opt-in, advertised with `Alt-Svc`); upstream `h3://host/dns-query` |
-| DNSCrypt | Upstreams | `sdns://…` stamp |
+| DNSCrypt | Clients and upstreams | Client listener on 5443/UDP+TCP (opt-in); upstream `sdns://…` stamp |
 
 Client DoT/DoH need a valid certificate, so they require a domain. The server
 keeps upstream connections alive between queries to cut handshake latency.
 
-Client-facing **DoQ** and **DoH3** are opt-in under **Settings → Client
-Encrypted Transports**. They share the DoH/DoT certificate and the same access
-allowlist; open **UDP 853** and **UDP 8443** in the firewall. DoQ can
-authenticate by client IP or by an SNI token
-(`quic://<token>.doq.example.com:853`); SNI-token mode requires a certificate
-covering the token hostnames, and the built-in ACME client issues HTTP-01
-certificates only, so a wildcard/multi-SAN pair must be supplied separately.
+Client-facing **DoQ**, **DoH3** and **DNSCrypt** are opt-in under **Settings →
+Client Encrypted Transports**. DoQ and DoH3 share the DoH/DoT certificate and
+the same access allowlist; open **UDP 853**, **UDP 8443** and **5443/UDP+TCP**
+in the firewall. DoQ and DoT can authenticate by client IP or by an SNI token
+(`quic://<token>.doq.example.com:853`, `tls://<token>.dot.example.com:853`);
+SNI-token mode requires a certificate covering the token hostnames, and the
+built-in ACME client issues HTTP-01 certificates only, so a wildcard/multi-SAN
+pair must be supplied separately. mTLS can additionally require a client
+certificate on DoT, DoH and DoQ.
 
 ### DNSSEC validation
 

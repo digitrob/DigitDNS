@@ -70,6 +70,8 @@ scrape_configs:
 | `digitdns_doq_connections_total` | counter | DNS-over-QUIC connections accepted since start. |
 | `digitdns_doq_auth_failures_total` | counter | DoQ connections rejected by SNI-token authentication. |
 | `digitdns_doq_protocol_errors_total` | counter | DoQ streams closed for a protocol violation (bad length, query framing or nonzero transaction ID). |
+| `digitdns_dnscrypt_queries_total` | counter | DNSCrypt queries served since start. |
+| `digitdns_dnscrypt_errors_total` | counter | DNSCrypt queries that could not be answered or written. |
 | `digitdns_quic_handshake_rejected_total` | counter | QUIC handshake attempts refused before TLS, by `transport` (`doh3`/`doq`). Covers the per-source rate limit and the 1,024-connection cap. |
 | `digitdns_cpu_percent` | gauge | Process CPU usage. |
 | `digitdns_system_cpu_percent` | gauge | Machine-wide CPU usage. |

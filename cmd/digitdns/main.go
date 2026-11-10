@@ -39,6 +39,7 @@ import (
 	"digitdns/internal/version"
 	internalWeb "digitdns/internal/web"
 	webAssets "digitdns/web"
+	dnscryptlib "github.com/ameshkov/dnscrypt/v2"
 )
 
 func main() {
@@ -815,19 +816,26 @@ func main() {
 	// port answers /dns-query and the public portal routes, and never the
 	// admin namespace (Mantis v2.1.0 finding #1).
 	dnsServer := dns.NewServer(dnsHandler, tlsConfig, webServer.BuildDoHHandler(), dohHandler, serverSettings.BindHost, dns.TransportConfig{
-		Port:           dnsSettings.Port,
-		DoTPort:        dnsSettings.DoTPort,
-		DoHPort:        dnsSettings.DoHPort,
-		DoQPort:        dnsSettings.DoQPort,
-		DoQEnabled:     dnsSettings.DoQEnabled,
-		DoQAuth:        dnsSettings.DoQAuth,
-		DoQTokenDomain: dnsSettings.DoQTokenDomain,
-		DoH3Enabled:    dnsSettings.DoH3Enabled,
+		Port:            dnsSettings.Port,
+		DoTPort:         dnsSettings.DoTPort,
+		DoHPort:         dnsSettings.DoHPort,
+		DoQPort:         dnsSettings.DoQPort,
+		DoQEnabled:      dnsSettings.DoQEnabled,
+		DoQAuth:         dnsSettings.DoQAuth,
+		DoQTokenDomain:  dnsSettings.DoQTokenDomain,
+		DoH3Enabled:     dnsSettings.DoH3Enabled,
+		DoTAuth:         dnsSettings.DoTAuth,
+		DoTTokenDomain:  dnsSettings.DoTTokenDomain,
+		MTLSEnabled:     dnsSettings.MTLSEnabled,
+		MTLSCAPEM:       dnsSettings.MTLSCAPEM,
+		DNSCryptEnabled: dnsSettings.DNSCryptEnabled,
+		DNSCryptPort:    dnsSettings.DNSCryptPort,
 	})
 	// Tokens are enforced per connection, but the listener must see them before
 	// Start or a boot with DoQ already enabled would refuse every connection.
 	// The dashboard applier keeps them current after this initial seed.
 	dnsServer.SetDoQTokens(accessSettings.DoQTokens)
+	dnsServer.SetDoTTokens(dnsSettings.DoTTokens)
 	if dotHolder != nil {
 		dnsServer.SetDOTCertSource(dotHolder)
 	}
@@ -845,17 +853,29 @@ func main() {
 	// rebuilding the DoH3 listener.
 	webServer.SetTransportApplier(func(cfg database.DNSSettings, tokens []string) error {
 		dnsServer.SetDoQTokens(tokens)
+		dnsServer.SetDoTTokens(cfg.DoTTokens)
 		return dnsServer.ApplyTransports(dns.TransportConfig{
-			Port:           cfg.Port,
-			DoTPort:        cfg.DoTPort,
-			DoHPort:        cfg.DoHPort,
-			DoQPort:        cfg.DoQPort,
-			DoQEnabled:     cfg.DoQEnabled,
-			DoQAuth:        cfg.DoQAuth,
-			DoQTokenDomain: cfg.DoQTokenDomain,
-			DoH3Enabled:    cfg.DoH3Enabled,
+			Port:            cfg.Port,
+			DoTPort:         cfg.DoTPort,
+			DoHPort:         cfg.DoHPort,
+			DoQPort:         cfg.DoQPort,
+			DoQEnabled:      cfg.DoQEnabled,
+			DoQAuth:         cfg.DoQAuth,
+			DoQTokenDomain:  cfg.DoQTokenDomain,
+			DoH3Enabled:     cfg.DoH3Enabled,
+			DoTAuth:         cfg.DoTAuth,
+			DoTTokenDomain:  cfg.DoTTokenDomain,
+			MTLSEnabled:     cfg.MTLSEnabled,
+			MTLSCAPEM:       cfg.MTLSCAPEM,
+			DNSCryptEnabled: cfg.DNSCryptEnabled,
+			DNSCryptPort:    cfg.DNSCryptPort,
 		})
 	})
+	webServer.SetDNSCryptApplier(func(rc *dnscryptlib.ResolverConfig, cert *dnscryptlib.Cert) error {
+		dnsServer.SetDNSCryptConfig(rc, cert)
+		return nil
+	})
+	webServer.SetDNSCryptStatusSource(dnsServer.DNSCryptStatus)
 	webServer.SetTransportStatusSource(dnsServer.TransportStatus)
 	webServer.SetTransportMetricsSource(func() internalWeb.TransportMetrics {
 		m := dnsServer.TransportMetrics()
@@ -870,6 +890,8 @@ func main() {
 			DoQAuthFailures:      m.DoQAuthFailures,
 			DoQProtocolErrors:    m.DoQProtocolErrors,
 			DoQHandshakeRejects:  m.DoQHandshakeRejects,
+			DNSCryptQueries:      m.DNSCryptQueries,
+			DNSCryptErrors:       m.DNSCryptErrors,
 		}
 	})
 
@@ -898,6 +920,11 @@ func main() {
 	}
 
 	if dnsSettings.Enabled {
+		if dnsSettings.DNSCryptEnabled {
+			if err := webServer.PrepareDNSCrypt(dnsSettings.DNSCryptProviderName); err != nil {
+				log.Printf("[DNS] DNSCrypt keys unavailable: %v", err)
+			}
+		}
 		if err := dnsServer.Start(); err != nil {
 			cleanupControlAfterStartupFailure(controlServer)
 			log.Fatalf("[Main] Failed to start DNS Server: %v", err)

@@ -27,6 +27,9 @@ type TransportMetrics struct {
 	DoQAuthFailures     uint64
 	DoQProtocolErrors   uint64
 	DoQHandshakeRejects uint64
+
+	DNSCryptQueries uint64
+	DNSCryptErrors  uint64
 }
 
 // Metrics is the Prometheus scrape surface. It is scratch-built rather than
@@ -113,6 +116,8 @@ func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	writeMetric("digitdns_doq_connections_total", "DNS-over-QUIC connections accepted since start.", "counter", tm.DoQConnectionsTotal)
 	writeMetric("digitdns_doq_auth_failures_total", "DNS-over-QUIC connections rejected by SNI-token authentication.", "counter", tm.DoQAuthFailures)
 	writeMetric("digitdns_doq_protocol_errors_total", "DNS-over-QUIC streams closed for a protocol violation.", "counter", tm.DoQProtocolErrors)
+	writeMetric("digitdns_dnscrypt_queries_total", "DNSCrypt queries served since start.", "counter", tm.DNSCryptQueries)
+	writeMetric("digitdns_dnscrypt_errors_total", "DNSCrypt queries that could not be answered or written.", "counter", tm.DNSCryptErrors)
 	b.WriteString("# HELP digitdns_quic_handshake_rejected_total New QUIC handshake attempts refused before TLS, by transport.\n")
 	b.WriteString("# TYPE digitdns_quic_handshake_rejected_total counter\n")
 	fmt.Fprintf(&b, "digitdns_quic_handshake_rejected_total{transport=%q} %d\n", "doh3", tm.DoH3HandshakeRejects)

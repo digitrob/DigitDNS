@@ -1,14 +1,23 @@
 package web
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"digitdns/internal/database"
+	dnscryptlib "github.com/ameshkov/dnscrypt/v2"
 )
 
 func getTransportSettings(t *testing.T, ws *WebServer) transportSettingsView {
@@ -250,5 +259,199 @@ func TestAccessConfigPreservesDoQTokens(t *testing.T) {
 	}
 	if len(acc.DoQTokens) != 1 || acc.DoQTokens[0] != "alpha" {
 		t.Errorf("DoQ tokens were not preserved: %#v", acc.DoQTokens)
+	}
+}
+
+// testClientCAPEM returns a self-signed CA in PEM, which is what an operator
+// pastes into the mTLS field.
+func testClientCAPEM(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("CA GenerateKey: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "DigitDNS mTLS Test CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("CA CreateCertificate: %v", err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
+func postTransportJSON(t *testing.T, ws *WebServer, body map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	return postTransportSettings(t, ws, string(raw))
+}
+
+func TestTransportSettingsDNSCryptDoTAndMTLS(t *testing.T) {
+	ws, db, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	var applied database.DNSSettings
+	ws.SetTransportApplier(func(cfg database.DNSSettings, tokens []string) error {
+		applied = cfg
+		return nil
+	})
+	var installedProvider string
+	ws.SetDNSCryptApplier(func(rc *dnscryptlib.ResolverConfig, cert *dnscryptlib.Cert) error {
+		installedProvider = rc.ProviderName
+		return nil
+	})
+
+	ca := testClientCAPEM(t)
+	w := postTransportJSON(t, ws, map[string]any{
+		"dnscrypt_enabled":       true,
+		"dnscrypt_port":          5443,
+		"dnscrypt_provider_name": "resolver.example.net",
+		"dot_auth":               "sni-token",
+		"dot_token_domain":       "dot.example.com",
+		"dot_tokens":             []string{"Alpha", " alpha ", "beta"},
+		"mtls_enabled":           true,
+		"mtls_ca_pem":            ca,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST DNSCrypt/DoT/mTLS = %d: %s", w.Code, w.Body.String())
+	}
+
+	var saved database.DNSSettings
+	if err := db.GetSetting("dns", &saved); err != nil {
+		t.Fatalf("GetSetting(dns): %v", err)
+	}
+	if !saved.DNSCryptEnabled || saved.DNSCryptPort != 5443 {
+		t.Errorf("DNSCrypt settings = %#v", saved)
+	}
+	if saved.DNSCryptProviderName != "2.dnscrypt-cert.resolver.example.net" {
+		t.Errorf("provider name = %q", saved.DNSCryptProviderName)
+	}
+	if saved.DoTAuth != "sni-token" || saved.DoTTokenDomain != "dot.example.com" {
+		t.Errorf("DoT settings = auth %q domain %q", saved.DoTAuth, saved.DoTTokenDomain)
+	}
+	if len(saved.DoTTokens) != 2 || saved.DoTTokens[0] != "alpha" || saved.DoTTokens[1] != "beta" {
+		t.Errorf("DoT tokens = %#v, want [alpha beta]", saved.DoTTokens)
+	}
+	if !saved.MTLSEnabled || saved.MTLSCAPEM != strings.TrimSpace(ca) {
+		t.Errorf("mTLS settings were not saved")
+	}
+	if !applied.DNSCryptEnabled || applied.DoTAuth != "sni-token" || !applied.MTLSEnabled {
+		t.Errorf("applied config = %#v", applied)
+	}
+	if installedProvider != "2.dnscrypt-cert.resolver.example.net" {
+		t.Errorf("DNSCrypt applier got provider %q", installedProvider)
+	}
+
+	// The keys must be generated and persisted without ever leaving the server.
+	var keys database.DNSCryptSettings
+	if err := db.GetSetting("dnscrypt", &keys); err != nil {
+		t.Fatalf("GetSetting(dnscrypt): %v", err)
+	}
+	if keys.PublicKey == "" || keys.PrivateKey == "" || keys.CertNotAfter == 0 {
+		t.Errorf("DNSCrypt key material = %#v", keys)
+	}
+
+	got := getTransportSettings(t, ws)
+	if got.DNSCryptStamp == "" {
+		t.Error("view did not expose a DNSCrypt stamp")
+	}
+	if got.DNSCryptCertNotAfter == 0 {
+		t.Error("view did not expose the DNSCrypt certificate expiry")
+	}
+	if got.DNSCryptProviderName != "2.dnscrypt-cert.resolver.example.net" {
+		t.Errorf("view provider = %q", got.DNSCryptProviderName)
+	}
+	if len(got.DoTTokens) != 2 || got.DoTAuth != "sni-token" || !got.MTLSEnabled {
+		t.Errorf("view = %#v", got)
+	}
+
+	// A partial save keeps the token list and the CA.
+	w = postTransportJSON(t, ws, map[string]any{"mtls_enabled": false})
+	if w.Code != http.StatusOK {
+		t.Fatalf("partial POST = %d: %s", w.Code, w.Body.String())
+	}
+	got = getTransportSettings(t, ws)
+	if len(got.DoTTokens) != 2 || got.MTLSCAPEM == "" {
+		t.Errorf("partial save lost state: %#v", got)
+	}
+}
+
+func TestTransportSettingsDNSCryptDoTMTLSValidation(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	for _, body := range []map[string]any{
+		{"dnscrypt_port": 70000},
+		{"dnscrypt_provider_name": "not a domain"},
+		{"dot_auth": "token"},
+		{"dot_auth": "sni-token", "dot_tokens": []string{"alpha"}},
+		{"dot_auth": "sni-token", "dot_token_domain": "dot.example.com", "dot_tokens": []string{}},
+		{"dot_auth": "sni-token", "dot_token_domain": "not a domain", "dot_tokens": []string{"alpha"}},
+		{"dot_tokens": []string{"-bad"}},
+		{"mtls_enabled": true},
+		{"mtls_enabled": true, "mtls_ca_pem": "not a certificate"},
+	} {
+		w := postTransportJSON(t, ws, body)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("body %v = %d, want 400: %s", body, w.Code, w.Body.String())
+		}
+	}
+}
+
+// A failed listener apply must roll the DNSCrypt keys and the DNS policy back.
+func TestTransportSettingsDNSCryptRollback(t *testing.T) {
+	ws, db, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	ws.SetDNSCryptApplier(func(*dnscryptlib.ResolverConfig, *dnscryptlib.Cert) error { return nil })
+	ws.SetTransportApplier(func(database.DNSSettings, []string) error {
+		return errors.New("dnscrypt port busy")
+	})
+
+	w := postTransportJSON(t, ws, map[string]any{
+		"dnscrypt_enabled": true,
+		"dnscrypt_port":    5443,
+	})
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("failed apply = %d, want 500: %s", w.Code, w.Body.String())
+	}
+	got := getTransportSettings(t, ws)
+	if got.DNSCryptEnabled {
+		t.Error("DNSCrypt stayed enabled after the apply failed")
+	}
+	if !strings.Contains(got.LastError, "dnscrypt port busy") {
+		t.Errorf("last_error = %q", got.LastError)
+	}
+	var keys database.DNSCryptSettings
+	if err := db.GetSetting("dnscrypt", &keys); err != nil {
+		t.Fatalf("GetSetting(dnscrypt): %v", err)
+	}
+	if keys.PublicKey != "" {
+		t.Error("generated keys survived a rolled-back save")
+	}
+}
+
+func TestTransportViewSurfacesDNSCryptStatus(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	ws.SetDNSCryptStatusSource(func() (bool, int64, string) {
+		return false, 0, "DNSCrypt UDP listener stopped: boom"
+	})
+	got := getTransportSettings(t, ws)
+	if got.DNSCryptListening {
+		t.Error("dnscrypt_listening = true, want false")
+	}
+	if !strings.Contains(got.LastError, "DNSCrypt UDP listener stopped: boom") {
+		t.Errorf("last_error = %q, want the DNSCrypt failure", got.LastError)
 	}
 }

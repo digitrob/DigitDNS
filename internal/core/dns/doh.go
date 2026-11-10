@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -33,6 +34,11 @@ type DoHHandler struct {
 	// already contributes to the query and protocol aggregates; this counter
 	// answers "is anyone actually using the QUIC listener?".
 	doh3Requests atomic.Uint64
+	// mtlsRequire is the DoH/DoH3 half of the global mTLS gate. DoT enforces it
+	// at the TLS handshake; DoH requests a certificate at the handshake so the
+	// portal on the same listener remains reachable, and requires a verified
+	// chain here for /dns-query.
+	mtlsRequire atomic.Bool
 }
 
 func NewDoHHandler(h *Handler) *DoHHandler {
@@ -54,8 +60,10 @@ func (h *DoHHandler) SetDoHTokens(tokens []string) {
 	h.mu.Unlock()
 }
 
-// tokenOK reports whether the request's ?token= is accepted. Constant-time
-// per entry so a wrong guess reveals nothing about which prefix matched.
+// tokenOK reports whether the request's token is accepted. The token may be
+// supplied as ?token= (the historical form for clients that cannot set headers)
+// or as Authorization: Bearer. Constant-time per entry so a wrong guess reveals
+// nothing about which prefix matched.
 func (h *DoHHandler) tokenOK(r *http.Request) bool {
 	h.mu.RLock()
 	tokens := h.tokens
@@ -64,6 +72,11 @@ func (h *DoHHandler) tokenOK(r *http.Request) bool {
 		return true
 	}
 	given := r.URL.Query().Get("token")
+	if given == "" {
+		if auth := r.Header.Get("Authorization"); len(auth) > 7 && strings.EqualFold(auth[:7], "Bearer ") {
+			given = strings.TrimSpace(auth[7:])
+		}
+	}
 	if given == "" {
 		return false
 	}
@@ -93,6 +106,10 @@ func (h *DoHHandler) altSvcValue() string {
 
 func (h *DoHHandler) DoH3Requests() uint64 { return h.doh3Requests.Load() }
 
+// SetMTLSRequire turns the DoH/DoH3 client-certificate gate on or off. The
+// listener must already have been configured to request a certificate.
+func (h *DoHHandler) SetMTLSRequire(require bool) { h.mtlsRequire.Store(require) }
+
 func (h *DoHHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// No CORS headers (v2.1.0 A-05 remediation): RFC 8484 clients — browsers via
 	// the standard API, stub resolvers — issue no preflighted cross-origin reads
@@ -107,6 +124,13 @@ func (h *DoHHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if alt := h.altSvcValue(); alt != "" {
 		w.Header().Set("Alt-Svc", alt)
+	}
+
+	if h.mtlsRequire.Load() {
+		if r.TLS == nil || !verifiedClientCert(*r.TLS) {
+			http.Error(w, "Client certificate required", http.StatusForbidden)
+			return
+		}
 	}
 
 	clientIP := netutil.ClientIP(r)

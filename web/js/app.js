@@ -2249,13 +2249,14 @@ function renderList(containerId, items, removeClass) {
 
 // ---- Client-facing QUIC transports -----------------------------------------
 //
-// DoH3 applies as soon as its switch moves. DoQ keeps a Save button because its
-// port, auth mode, token domain and token list must be valid together. The
-// applied state lives in currentConfig.transports; transportDraft holds the
-// unsaved DoQ form so a DoH3 auto-save cannot commit it by accident.
+// Every transport in this card saves as it changes. Switches apply at once;
+// text fields apply on blur; the SNI-token and mTLS modes stay staged until
+// their required fields are present, then apply automatically. The applied
+// state lives in currentConfig.transports; transportDraft holds the in-progress
+// form so a DoH3 auto-save cannot commit it by accident.
 let transportDraft = null;
 let doh3Saving = false;
-let doqSaving = false;
+let transportSaving = false;
 let transportInlineError = '';
 // Global notice state. The upstream health set is refreshed from /api/stats; the
 // signature lets the banner repaint only when the set actually changes.
@@ -2264,7 +2265,7 @@ let upstreamHealthSignature = '';
 let lastGlobalNoticeSignature = '';
 
 function normalizeTransportSettings(cfg) {
-  if (!cfg) return { doq_enabled: false, doh3_enabled: false, doq_port: 853, doq_auth: 'ip', doq_token_domain: '', doq_tokens: [], doh3_listening: false, doq_listening: false, ip_allowlist: { allow_all: false, client_accounts: 0, client_entries: 0, resolver_entries: 0 }, last_error: '' };
+  if (!cfg) return { doq_enabled: false, doh3_enabled: false, doq_port: 853, doq_auth: 'ip', doq_token_domain: '', doq_tokens: [], doh3_listening: false, doq_listening: false, dot_auth: 'ip', dot_port: 853, dot_token_domain: '', dot_tokens: [], dnscrypt_enabled: false, dnscrypt_port: 5443, dnscrypt_provider_name: '2.dnscrypt-cert.digitdns.local', dnscrypt_stamp: '', dnscrypt_cert_not_after: 0, dnscrypt_listening: false, mtls_enabled: false, mtls_ca_pem: '', ip_allowlist: { allow_all: false, client_accounts: 0, client_entries: 0, resolver_entries: 0 }, last_error: '' };
   if (!cfg.transports || typeof cfg.transports !== 'object') cfg.transports = {};
   const t = cfg.transports;
   t.doq_enabled = !!t.doq_enabled;
@@ -2276,6 +2277,18 @@ function normalizeTransportSettings(cfg) {
   t.doh3_listening = !!t.doh3_listening;
   t.doq_listening = !!t.doq_listening;
   t.doh3_port = Number.isFinite(Number(t.doh3_port)) && Number(t.doh3_port) > 0 ? Number(t.doh3_port) : 8443;
+  t.dot_auth = t.dot_auth === 'sni-token' ? 'sni-token' : 'ip';
+  t.dot_port = Number.isFinite(Number(t.dot_port)) && Number(t.dot_port) > 0 ? Number(t.dot_port) : 853;
+  t.dot_token_domain = typeof t.dot_token_domain === 'string' ? t.dot_token_domain : '';
+  if (!Array.isArray(t.dot_tokens)) t.dot_tokens = [];
+  t.dnscrypt_enabled = !!t.dnscrypt_enabled;
+  t.dnscrypt_port = Number.isFinite(Number(t.dnscrypt_port)) && Number(t.dnscrypt_port) > 0 ? Number(t.dnscrypt_port) : 5443;
+  t.dnscrypt_provider_name = typeof t.dnscrypt_provider_name === 'string' ? t.dnscrypt_provider_name : '';
+  t.dnscrypt_stamp = typeof t.dnscrypt_stamp === 'string' ? t.dnscrypt_stamp : '';
+  t.dnscrypt_cert_not_after = Number(t.dnscrypt_cert_not_after) || 0;
+  t.dnscrypt_listening = !!t.dnscrypt_listening;
+  t.mtls_enabled = !!t.mtls_enabled;
+  t.mtls_ca_pem = typeof t.mtls_ca_pem === 'string' ? t.mtls_ca_pem : '';
   const al = (t.ip_allowlist && typeof t.ip_allowlist === 'object') ? t.ip_allowlist : {};
   t.ip_allowlist = {
     allow_all: !!al.allow_all,
@@ -2287,27 +2300,95 @@ function normalizeTransportSettings(cfg) {
   return t;
 }
 
-function copyDoqDraft(t) {
+function copyTransportDraft(t) {
   return {
     doq_enabled: !!t.doq_enabled,
     doq_port: t.doq_port || 853,
     doq_auth: t.doq_auth === 'sni-token' ? 'sni-token' : 'ip',
     doq_token_domain: t.doq_token_domain || '',
     doq_tokens: (t.doq_tokens || []).slice(),
+    dot_auth: t.dot_auth === 'sni-token' ? 'sni-token' : 'ip',
+    dot_token_domain: t.dot_token_domain || '',
+    dot_tokens: (t.dot_tokens || []).slice(),
+    dnscrypt_enabled: !!t.dnscrypt_enabled,
+    dnscrypt_port: t.dnscrypt_port || 5443,
+    dnscrypt_provider_name: t.dnscrypt_provider_name || '',
+    mtls_enabled: !!t.mtls_enabled,
+    mtls_ca_pem: t.mtls_ca_pem || '',
   };
 }
 
 function ensureTransportDraft(applied) {
-  if (!transportDraft) transportDraft = copyDoqDraft(applied);
+  if (!transportDraft) transportDraft = copyTransportDraft(applied);
   return transportDraft;
 }
 
-function doqDraftDirty(applied, draft) {
+function withTransportDraft(mutate) {
+  const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
+  mutate(draft);
+  renderTransportSettings();
+  void autoSaveTransportDraft();
+}
+
+// transportDraftProblem returns the reason the staged form cannot be applied
+// yet; empty means it is safe to send. These are the same rules the server
+// enforces, kept here so an incomplete SNI-token or mTLS edit stays local
+// instead of bouncing off a 400.
+function transportDraftProblem(draft) {
+  const doqPort = Number(draft.doq_port);
+  if (!Number.isInteger(doqPort) || doqPort < 1 || doqPort > 65535) {
+    return 'DoQ port must be between 1 and 65535.';
+  }
+  const dnscryptPort = Number(draft.dnscrypt_port);
+  if (!Number.isInteger(dnscryptPort) || dnscryptPort < 1 || dnscryptPort > 65535) {
+    return 'DNSCrypt port must be between 1 and 65535.';
+  }
+  if (draft.doq_auth === 'sni-token') {
+    if (!draft.doq_token_domain) return 'DoQ SNI-token mode needs a token domain.';
+    if (!draft.doq_tokens.length) return 'DoQ SNI-token mode needs at least one token.';
+  }
+  if (draft.dot_auth === 'sni-token') {
+    if (!draft.dot_token_domain) return 'DoT SNI-token mode needs a token domain.';
+    if (!draft.dot_tokens.length) return 'DoT SNI-token mode needs at least one token.';
+  }
+  if (draft.mtls_enabled && !draft.mtls_ca_pem.trim()) {
+    return 'Paste the client CA bundle to enable mTLS.';
+  }
+  return '';
+}
+
+function transportSaveBody(draft) {
+  return {
+    doq_enabled: !!draft.doq_enabled,
+    doq_port: Number(draft.doq_port),
+    doq_auth: draft.doq_auth,
+    doq_token_domain: draft.doq_token_domain,
+    doq_tokens: draft.doq_tokens,
+    dnscrypt_enabled: !!draft.dnscrypt_enabled,
+    dnscrypt_port: Number(draft.dnscrypt_port),
+    dnscrypt_provider_name: draft.dnscrypt_provider_name,
+    dot_auth: draft.dot_auth,
+    dot_token_domain: draft.dot_token_domain,
+    dot_tokens: draft.dot_tokens,
+    mtls_enabled: !!draft.mtls_enabled,
+    mtls_ca_pem: draft.mtls_ca_pem,
+  };
+}
+
+function transportDraftDirty(applied, draft) {
   return draft.doq_enabled !== applied.doq_enabled ||
     Number(draft.doq_port) !== Number(applied.doq_port) ||
     draft.doq_auth !== applied.doq_auth ||
     draft.doq_token_domain !== applied.doq_token_domain ||
-    JSON.stringify(draft.doq_tokens) !== JSON.stringify(applied.doq_tokens);
+    JSON.stringify(draft.doq_tokens) !== JSON.stringify(applied.doq_tokens) ||
+    draft.dot_auth !== applied.dot_auth ||
+    draft.dot_token_domain !== applied.dot_token_domain ||
+    JSON.stringify(draft.dot_tokens) !== JSON.stringify(applied.dot_tokens) ||
+    draft.dnscrypt_enabled !== applied.dnscrypt_enabled ||
+    Number(draft.dnscrypt_port) !== Number(applied.dnscrypt_port) ||
+    draft.dnscrypt_provider_name !== applied.dnscrypt_provider_name ||
+    draft.mtls_enabled !== applied.mtls_enabled ||
+    draft.mtls_ca_pem !== applied.mtls_ca_pem;
 }
 
 function transportGuideHost() {
@@ -2335,6 +2416,15 @@ function renderTransportEndpoints(applied, draft) {
       : ((typeof cfg.doq_url === 'string' && cfg.doq_url) || (host ? `quic://${host}:${port}` : 'Configure a domain and certificate first'));
   }
 
+  const dotPort = applied.dot_port || 853;
+  const dotEl = document.getElementById('dot-endpoint');
+  if (dotEl) {
+    const dotHost = draft.dot_auth === 'sni-token' && draft.dot_token_domain
+      ? `<token>.${draft.dot_token_domain}`
+      : (host || 'Configure a domain and certificate first');
+    dotEl.innerText = host ? `tls://${dotHost}:${dotPort}` : 'Configure a domain and certificate first';
+  }
+
   const doh3Status = document.getElementById('doh3-status');
   if (doh3Status) {
     if (doh3Saving) {
@@ -2354,11 +2444,16 @@ function renderTransportEndpoints(applied, draft) {
 
   const doqStatus = document.getElementById('doq-status');
   if (doqStatus) {
-    if (doqSaving) {
+    const doqNeedsInput = draft.doq_auth === 'sni-token' &&
+      (!draft.doq_token_domain || !draft.doq_tokens.length);
+    if (transportSaving) {
       doqStatus.innerText = 'Saving…';
       doqStatus.className = 'font-mono text-slate-400';
-    } else if (doqDraftDirty(applied, draft)) {
-      doqStatus.innerText = 'Unsaved — press Save DoQ';
+    } else if (doqNeedsInput) {
+      doqStatus.innerText = 'Needs input';
+      doqStatus.className = 'font-mono text-amber-300';
+    } else if (transportDraftDirty(applied, draft)) {
+      doqStatus.innerText = 'Applying…';
       doqStatus.className = 'font-mono text-amber-300';
     } else if (applied.doq_listening) {
       doqStatus.innerText = `Listening on UDP ${applied.doq_port}`;
@@ -2371,24 +2466,64 @@ function renderTransportEndpoints(applied, draft) {
       doqStatus.className = 'font-mono text-slate-300';
     }
   }
+
+  const dotStatus = document.getElementById('dot-status');
+  if (dotStatus) {
+    dotStatus.innerText = `${applied.dot_auth === 'sni-token' ? 'SNI token' : 'IP allowlist'} · TCP ${dotPort}`;
+  }
+
+  const dnscryptStatus = document.getElementById('dnscrypt-status');
+  if (dnscryptStatus) {
+    if (transportSaving) {
+      dnscryptStatus.innerText = 'Saving…';
+      dnscryptStatus.className = 'font-mono text-slate-400';
+    } else if (applied.dnscrypt_listening) {
+      dnscryptStatus.innerText = `Listening on UDP + TCP ${applied.dnscrypt_port}`;
+      dnscryptStatus.className = 'font-mono text-emerald-300';
+    } else if (applied.dnscrypt_enabled) {
+      dnscryptStatus.innerText = 'Enabled — not listening';
+      dnscryptStatus.className = 'font-mono text-amber-300';
+    } else {
+      dnscryptStatus.innerText = 'Off';
+      dnscryptStatus.className = 'font-mono text-slate-300';
+    }
+  }
+  const stampEl = document.getElementById('dnscrypt-stamp');
+  if (stampEl) {
+    const stamp = applied.dnscrypt_stamp || '';
+    stampEl.innerText = stamp || 'Enable DNSCrypt to generate a stamp';
+    // The full stamp is long; the box truncates it, so expose it on hover and
+    // leave textContent intact for the copy button.
+    stampEl.title = stamp || '';
+  }
+  const expiryEl = document.getElementById('dnscrypt-cert-expiry');
+  if (expiryEl) {
+    expiryEl.innerText = applied.dnscrypt_cert_not_after
+      ? `expires ${new Date(applied.dnscrypt_cert_not_after * 1000).toLocaleDateString()}`
+      : '';
+  }
 }
 
 function updateTransportBadge(applied) {
   const badge = document.getElementById('transports-state-badge');
   if (!badge) return;
-  const draftDirty = transportDraft ? doqDraftDirty(applied, transportDraft) : false;
-  const on = [applied.doh3_listening, applied.doq_listening].filter(Boolean).length;
-  const desired = applied.doh3_enabled || applied.doq_enabled;
-  const missing = (applied.doh3_enabled && !applied.doh3_listening) || (applied.doq_enabled && !applied.doq_listening);
+  const draftDirty = transportDraft ? transportDraftDirty(applied, transportDraft) : false;
+  const states = [
+    { on: applied.doh3_listening, want: applied.doh3_enabled, name: 'DoH3' },
+    { on: applied.doq_listening, want: applied.doq_enabled, name: 'DoQ' },
+    { on: applied.dnscrypt_listening, want: applied.dnscrypt_enabled, name: 'DNSCrypt' },
+  ];
+  const running = states.filter(s => s.on);
+  const missing = states.some(s => s.want && !s.on);
   const failed = !!(transportInlineError || applied.last_error);
-  const text = (doh3Saving || doqSaving) ? 'Saving…'
+  const text = (doh3Saving || transportSaving) ? 'Saving…'
     : failed ? 'Failed'
     : draftDirty ? 'Unsaved'
-    : missing ? (on > 0 ? 'Partial' : 'Not listening')
-    : (on === 2 ? 'Both on' : on === 1 ? (applied.doh3_listening ? 'DoH3 on' : 'DoQ on') : 'Off');
-  const cls = (doh3Saving || doqSaving || draftDirty || missing || failed)
+    : missing ? (running.length > 0 ? 'Partial' : 'Not listening')
+    : (running.length === states.length ? 'All on' : running.length > 0 ? `${running.map(s => s.name).join(' + ')} on` : 'Off');
+  const cls = (doh3Saving || transportSaving || draftDirty || missing || failed)
     ? 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30'
-    : (on > 0
+    : (running.length > 0
       ? 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
       : 'px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700');
   badge.innerText = text;
@@ -2417,7 +2552,30 @@ function renderDoQTokens(draft) {
   safeFeatherReplace();
 }
 
-function renderDoqIpAllowlist(applied) {  const counts = document.getElementById('doq-ip-counts');
+function renderDoTTokens(draft) {
+  const list = document.getElementById('dot-tokens-list');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!draft.dot_tokens.length) {
+    list.innerHTML = '<div class="text-slate-500 text-xs py-1">No DoT tokens yet</div>';
+    return;
+  }
+  draft.dot_tokens.forEach(token => {
+    const row = document.createElement('div');
+    row.className = 'flex items-center justify-between py-1.5 px-3 rounded-lg bg-slate-950/60 border border-slate-800 text-xs';
+    row.innerHTML = `
+      <span class="font-mono text-sky-300">${escapeHTML(token)}</span>
+      <button class="remove-dot-token inline-flex items-center justify-center w-6 h-6 shrink-0 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition" data-val="${escapeHTML(token)}" aria-label="Remove ${escapeHTML(token)}">
+        <i data-feather="x" class="w-3.5 h-3.5"></i>
+      </button>
+    `;
+    list.appendChild(row);
+  });
+  safeFeatherReplace();
+}
+
+function renderDoqIpAllowlist(applied) {
+  const counts = document.getElementById('doq-ip-counts');
   const warning = document.getElementById('doq-ip-warning');
   if (!counts || !warning) return;
   const al = applied.ip_allowlist;
@@ -2429,19 +2587,19 @@ function renderDoqIpAllowlist(applied) {  const counts = document.getElementById
   ].join(' · ');
   let message = '';
   if (al.allow_all) {
-    message = 'Public Mode is on — any source can use DoQ, so the IP allowlist is not restricting access. Switch Access Mode to whitelist to enforce it.';
+    message = 'Public Mode is on — any source can use the IP-authenticated transports (DoQ, DoT, DNSCrypt), so the allowlist is not restricting access. Switch Access Mode to whitelist to enforce it.';
   } else if (al.client_entries === 0 && al.resolver_entries === 0) {
-    message = 'No IPs are allowlisted — DoQ will refuse every source. Add addresses in Clients → Allowed IPs or the Server-wide Resolver Allowlist.';
+    message = 'No IPs are allowlisted — IP-authenticated transports will refuse every source. Add addresses in Clients → Allowed IPs or the Server-wide Resolver Allowlist.';
   }
   warning.innerText = message;
   warning.classList.toggle('hidden', !message);
 }
 
 // refreshTransportView re-reads the listener state and allowlist counts without
-// touching the staged DoQ draft. Client and access-mode saves change those
-// counts, and the card is often visible in the same settings page.
+// touching the staged transport draft. Client and access-mode saves change
+// those counts, and the card is often visible in the same settings page.
 async function refreshTransportView() {
-  if (!currentConfig || !authToken || doh3Saving || doqSaving) return;
+  if (!currentConfig || !authToken || doh3Saving || transportSaving) return;
   try {
     const res = await fetch(api('/api/settings/transports'), {
       headers: { 'Authorization': `Bearer ${authToken}` }
@@ -2549,12 +2707,12 @@ function renderTransportSettings() {
   const doh3 = document.getElementById('doh3-enabled-input');
   if (doh3) {
     doh3.checked = applied.doh3_enabled;
-    doh3.disabled = doh3Saving || doqSaving;
+    doh3.disabled = doh3Saving || transportSaving;
   }
   const doq = document.getElementById('doq-enabled-input');
   if (doq) {
     doq.checked = !!draft.doq_enabled;
-    doq.disabled = doqSaving;
+    doq.disabled = transportSaving;
   }
   const auth = document.getElementById('doq-auth-select');
   if (auth) auth.value = draft.doq_auth;
@@ -2568,19 +2726,53 @@ function renderTransportSettings() {
   const warning = document.getElementById('doq-cert-warning');
   if (warning) warning.classList.toggle('hidden', draft.doq_auth !== 'sni-token');
 
-  const save = document.getElementById('save-doq-btn');
-  if (save) save.disabled = doqSaving || doh3Saving;
-  const saveStatus = document.getElementById('doq-save-status');
+  const dotAuth = document.getElementById('dot-auth-select');
+  if (dotAuth) dotAuth.value = draft.dot_auth;
+  const dotDomain = document.getElementById('dot-token-domain-input');
+  if (dotDomain) dotDomain.value = draft.dot_token_domain || '';
+  const dotFields = document.getElementById('dot-token-fields');
+  if (dotFields) dotFields.classList.toggle('hidden', draft.dot_auth !== 'sni-token');
+
+  const dnscryptEnabled = document.getElementById('dnscrypt-enabled-input');
+  if (dnscryptEnabled) {
+    dnscryptEnabled.checked = !!draft.dnscrypt_enabled;
+    dnscryptEnabled.disabled = transportSaving;
+  }
+  const dnscryptPort = document.getElementById('dnscrypt-port-input');
+  if (dnscryptPort) dnscryptPort.value = draft.dnscrypt_port || 5443;
+  const dnscryptProvider = document.getElementById('dnscrypt-provider-input');
+  if (dnscryptProvider) {
+    // The 2.dnscrypt-cert. prefix is mandatory and would push the meaningful
+    // part out of the field; show the suffix and let the server add it back.
+    dnscryptProvider.value = (draft.dnscrypt_provider_name || '').replace(/^2\.dnscrypt-cert\./i, '');
+  }
+
+  const mtlsEnabled = document.getElementById('mtls-enabled-input');
+  if (mtlsEnabled) {
+    mtlsEnabled.checked = !!draft.mtls_enabled;
+    mtlsEnabled.disabled = transportSaving;
+  }
+  const mtlsCA = document.getElementById('mtls-ca-input');
+  if (mtlsCA) mtlsCA.value = draft.mtls_ca_pem || '';
+  const mtlsWarning = document.getElementById('mtls-warning');
+  if (mtlsWarning) mtlsWarning.classList.toggle('hidden', !(draft.mtls_enabled && !draft.mtls_ca_pem.trim()));
+
+  const saveStatus = document.getElementById('transports-save-status');
   if (saveStatus) {
-    if (doqSaving) {
+    const problem = transportDraftProblem(draft);
+    const dirty = transportDraftDirty(applied, draft);
+    if (transportSaving || doh3Saving) {
       saveStatus.innerText = 'Saving…';
-      saveStatus.className = 'text-[11px] text-slate-400';
-    } else if (doqDraftDirty(applied, draft)) {
-      saveStatus.innerText = 'Unsaved changes — press Save DoQ';
-      saveStatus.className = 'text-[11px] text-amber-300';
-    } else if (!applied.last_error) {
-      saveStatus.innerText = '';
-      saveStatus.className = 'text-[11px] text-slate-400';
+      saveStatus.className = 'text-[11px] text-slate-400 ms-auto';
+    } else if (problem) {
+      saveStatus.innerText = problem;
+      saveStatus.className = 'text-[11px] text-amber-300 ms-auto';
+    } else if (dirty) {
+      saveStatus.innerText = 'Applying…';
+      saveStatus.className = 'text-[11px] text-slate-400 ms-auto';
+    } else {
+      saveStatus.innerText = 'All changes saved';
+      saveStatus.className = 'text-[11px] text-emerald-300 ms-auto';
     }
   }
 
@@ -2593,13 +2785,14 @@ function renderTransportSettings() {
 
   renderTransportEndpoints(applied, draft);
   renderDoQTokens(draft);
+  renderDoTTokens(draft);
   renderDoqIpAllowlist(applied);
   updateTransportBadge(applied);
   renderGlobalNotices();
 }
 
 async function saveDoh3(enabled) {
-  if (doh3Saving || doqSaving || !currentConfig) return;
+  if (doh3Saving || transportSaving || !currentConfig) return;
   doh3Saving = true;
   transportInlineError = '';
   renderTransportSettings();
@@ -2628,61 +2821,49 @@ async function saveDoh3(enabled) {
   }
 }
 
-async function saveDoq() {
-  if (doqSaving || doh3Saving || !currentConfig) return;
+async function autoSaveTransportDraft() {
+  if (transportSaving || doh3Saving || !currentConfig || !authToken) return;
   const applied = normalizeTransportSettings(currentConfig);
   const draft = ensureTransportDraft(applied);
-  const port = Number(draft.doq_port);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    transportInlineError = 'DoQ port must be between 1 and 65535.';
+  if (!transportDraftDirty(applied, draft)) return;
+  if (transportDraftProblem(draft)) {
+    // Incomplete SNI-token or mTLS state stays local; the footer says what is
+    // missing and the next completed edit applies it.
+    transportInlineError = '';
     renderTransportSettings();
     return;
   }
-  if (draft.doq_auth === 'sni-token') {
-    if (!draft.doq_token_domain) {
-      transportInlineError = 'Token domain is required for SNI-token mode.';
-      renderTransportSettings();
-      return;
-    }
-    if (!draft.doq_tokens.length) {
-      transportInlineError = 'Add at least one token for SNI-token mode.';
-      renderTransportSettings();
-      return;
-    }
-  }
 
-  doqSaving = true;
+  transportSaving = true;
   transportInlineError = '';
   renderTransportSettings();
   try {
     const res = await fetch(api('/api/settings/transports'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-      body: JSON.stringify({
-        doq_enabled: !!draft.doq_enabled,
-        doq_port: port,
-        doq_auth: draft.doq_auth,
-        doq_token_domain: draft.doq_token_domain,
-        doq_tokens: draft.doq_tokens,
-      })
+      body: JSON.stringify(transportSaveBody(draft))
     });
     if (!res.ok) {
-      transportInlineError = await errorMessage(res, 'Could not save the DoQ settings.');
-      draft.doq_enabled = applied.doq_enabled;
-      doqSaving = false;
+      transportInlineError = await errorMessage(res, 'Could not apply the transport settings.');
+      transportSaving = false;
+      // The server rolled back to the previous listeners. Keep the draft so the
+      // operator can correct the field that failed, but re-read listener state.
+      await refreshTransportView();
       renderTransportSettings();
       showToast(transportInlineError, 'error');
       return;
     }
     currentConfig.transports = normalizeTransportSettings({ transports: await res.json() });
-    transportDraft = null;
-    doqSaving = false;
+    transportSaving = false;
+    // An edit made while the request was in flight is not in the response;
+    // keep the draft and send it now that the first save is done.
+    const stillDirty = transportDraft && transportDraftDirty(normalizeTransportSettings(currentConfig), transportDraft);
+    if (!stillDirty) transportDraft = null;
     renderTransportSettings();
-    showToast('DoQ settings saved', 'success');
+    if (stillDirty) void autoSaveTransportDraft();
   } catch (e) {
-    transportInlineError = 'Could not save the DoQ settings.';
-    draft.doq_enabled = applied.doq_enabled;
-    doqSaving = false;
+    transportInlineError = 'Could not apply the transport settings.';
+    transportSaving = false;
     renderTransportSettings();
     showToast(transportInlineError, 'error');
   }
@@ -10009,33 +10190,26 @@ function initEventListeners() {
     }
   });
 
-  // Client-facing QUIC transport card. DoH3 applies immediately; DoQ is staged
-  // in transportDraft and committed by Save DoQ because its fields must be valid
-  // together.
-  document.getElementById('save-doq-btn')?.addEventListener('click', saveDoq);
+  // Client-facing encrypted transport card. Every switch and completed field
+  // applies immediately; incomplete SNI-token and mTLS states stay local until
+  // their required inputs are present.
   document.getElementById('doh3-enabled-input')?.addEventListener('change', (e) => {
     saveDoh3(!!e.target.checked);
   });
   document.getElementById('doq-enabled-input')?.addEventListener('change', (e) => {
-    const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
-    draft.doq_enabled = !!e.target.checked;
-    renderTransportSettings();
+    withTransportDraft(d => { d.doq_enabled = !!e.target.checked; });
   });
   document.getElementById('doq-auth-select')?.addEventListener('change', (e) => {
-    const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
-    draft.doq_auth = e.target.value === 'sni-token' ? 'sni-token' : 'ip';
-    renderTransportSettings();
+    withTransportDraft(d => { d.doq_auth = e.target.value === 'sni-token' ? 'sni-token' : 'ip'; });
   });
   document.getElementById('doq-token-domain-input')?.addEventListener('change', (e) => {
-    const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
-    draft.doq_token_domain = (e.target.value || '').trim().toLowerCase();
-    renderTransportSettings();
+    withTransportDraft(d => { d.doq_token_domain = (e.target.value || '').trim().toLowerCase(); });
   });
   document.getElementById('doq-port-input')?.addEventListener('change', (e) => {
-    const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
-    const n = Number(e.target.value);
-    draft.doq_port = Number.isFinite(n) && n > 0 ? n : 853;
-    renderTransportSettings();
+    withTransportDraft(d => {
+      const n = Number(e.target.value);
+      d.doq_port = Number.isFinite(n) && n > 0 ? n : 853;
+    });
   });
   document.getElementById('add-doq-token-btn')?.addEventListener('click', () => {
     const input = document.getElementById('new-doq-token-input');
@@ -10050,9 +10224,51 @@ function initEventListeners() {
       showToast(`${val} is already listed`, 'info');
       return;
     }
-    draft.doq_tokens.push(val);
     if (input) input.value = '';
-    renderTransportSettings();
+    withTransportDraft(d => { d.doq_tokens.push(val); });
+  });
+
+  document.getElementById('dot-auth-select')?.addEventListener('change', (e) => {
+    withTransportDraft(d => { d.dot_auth = e.target.value === 'sni-token' ? 'sni-token' : 'ip'; });
+  });
+  document.getElementById('dot-token-domain-input')?.addEventListener('change', (e) => {
+    withTransportDraft(d => { d.dot_token_domain = (e.target.value || '').trim().toLowerCase(); });
+  });
+  document.getElementById('add-dot-token-btn')?.addEventListener('click', () => {
+    const input = document.getElementById('new-dot-token-input');
+    const val = (input ? input.value : '').trim().toLowerCase();
+    if (!val || !currentConfig) return;
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(val)) {
+      showToast('A DoT token must be a single DNS label (letters, digits, hyphens).', 'error');
+      return;
+    }
+    const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
+    if (draft.dot_tokens.includes(val)) {
+      showToast(`${val} is already listed`, 'info');
+      return;
+    }
+    if (input) input.value = '';
+    withTransportDraft(d => { d.dot_tokens.push(val); });
+  });
+
+  document.getElementById('dnscrypt-enabled-input')?.addEventListener('change', (e) => {
+    withTransportDraft(d => { d.dnscrypt_enabled = !!e.target.checked; });
+  });
+  document.getElementById('dnscrypt-port-input')?.addEventListener('change', (e) => {
+    withTransportDraft(d => {
+      const n = Number(e.target.value);
+      d.dnscrypt_port = Number.isFinite(n) && n > 0 ? n : 5443;
+    });
+  });
+  document.getElementById('dnscrypt-provider-input')?.addEventListener('change', (e) => {
+    withTransportDraft(d => { d.dnscrypt_provider_name = (e.target.value || '').trim().toLowerCase(); });
+  });
+
+  document.getElementById('mtls-enabled-input')?.addEventListener('change', (e) => {
+    withTransportDraft(d => { d.mtls_enabled = !!e.target.checked; });
+  });
+  document.getElementById('mtls-ca-input')?.addEventListener('change', (e) => {
+    withTransportDraft(d => { d.mtls_ca_pem = (e.target.value || '').trim(); });
   });
 
   // Add Custom Record
@@ -10157,9 +10373,12 @@ function initEventListeners() {
     } else if (btn.classList.contains('remove-doq-token')) {
       const val = btn.dataset.val;
       if (currentConfig) {
-        const draft = ensureTransportDraft(normalizeTransportSettings(currentConfig));
-        draft.doq_tokens = draft.doq_tokens.filter(x => x !== val);
-        renderTransportSettings();
+        withTransportDraft(d => { d.doq_tokens = d.doq_tokens.filter(x => x !== val); });
+      }
+    } else if (btn.classList.contains('remove-dot-token')) {
+      const val = btn.dataset.val;
+      if (currentConfig) {
+        withTransportDraft(d => { d.dot_tokens = d.dot_tokens.filter(x => x !== val); });
       }
     } else if (btn.classList.contains('remove-record')) {
       const dom = btn.dataset.dom;
