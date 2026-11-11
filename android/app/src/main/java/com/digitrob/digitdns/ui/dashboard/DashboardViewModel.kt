@@ -12,6 +12,7 @@ import com.digitrob.digitdns.core.network.StatsSummary
 import com.digitrob.digitdns.core.network.StatsTop
 import com.digitrob.digitdns.core.network.UpstreamPresetProvider
 import com.digitrob.digitdns.core.network.UpstreamStat
+import com.digitrob.digitdns.core.network.normalizedResolutionStrategy
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.ConnectionStore
 import com.digitrob.digitdns.data.DashboardCard
@@ -90,9 +91,12 @@ data class DashboardUiState(
     val serverDomain: String = "",
     /** Global resolution defaults and per-domain overrides, when loaded. */
     val resolution: ResolutionSettings? = null,
+    /** Last resolver chosen in Single Server mode, remembered across Pool toggles. */
+    val lastSingleUpstream: String = "",
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val isBenchmarking: Boolean = false,
+    val isAdaptiveRunning: Boolean = false,
     val error: String? = null,
 ) {
     /** The cache-miss latency distribution, the one that moves when an upstream slows. */
@@ -140,6 +144,11 @@ class DashboardViewModel @Inject constructor(
         loadServerIp()
         loadResolution()
         observeServerSwitch(connectionStore)
+        viewModelScope.launch {
+            appPreferences.lastSingleUpstream.collect { address ->
+                _state.update { it.copy(lastSingleUpstream = address) }
+            }
+        }
     }
 
     /**
@@ -359,16 +368,23 @@ class DashboardViewModel @Inject constructor(
      */
     private fun syncResolutionWithPool(upstreams: List<UpstreamStat>) {
         val current = _state.value.resolution
-        if (current == null) {
-            // A load that failed at startup used to leave the card permanently on
-            // defaults. Retry on the 3 s cadence, throttled to one attempt per 10 s
-            // so an unreachable settings endpoint is not hammered.
-            if (System.currentTimeMillis() - lastResolutionAttemptAt > RESOLUTION_RETRY_MS) loadResolution()
-            return
-        }
         val polled = upstreams.map { it.address }.sorted()
-        if (polled.isEmpty()) return
-        if (polled != current.upstreams.sorted()) loadResolution()
+        val now = System.currentTimeMillis()
+        when {
+            current == null -> {
+                // A load that failed at startup used to leave the card permanently
+                // on defaults. Retry on the 3 s cadence, throttled to one attempt
+                // per 10 s so an unreachable settings endpoint is not hammered.
+                if (now - lastResolutionAttemptAt > RESOLUTION_RETRY_MS) loadResolution()
+            }
+            polled.isEmpty() -> Unit
+            polled != current.upstreams.sorted() -> loadResolution()
+            // Adaptive's last-run/current fields change on the server's schedule.
+            // Refresh them periodically so the green "current" row follows the
+            // scheduler without a manual pull.
+            normalizedResolutionStrategy(current.defaultStrategy) == "adaptive" &&
+                now - lastResolutionAttemptAt > RESOLUTION_ADAPTIVE_REFRESH_MS -> loadResolution()
+        }
     }
 
     /** Persist the global defaults (and the untouched profile map) and mirror the answer. */
@@ -381,12 +397,18 @@ class DashboardViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
+            if (next.defaultUpstream.isNotBlank()) {
+                appPreferences.setLastSingleUpstream(next.defaultUpstream)
+            }
             runCatching {
                 settingsRepository.saveResolution(
                     ResolutionSaveRequest(
                         transport = next.transport,
+                        transports = next.transports,
                         defaultUpstream = next.defaultUpstream,
                         defaultStrategy = next.defaultStrategy,
+                        adaptiveIntervalMinutes = next.adaptiveIntervalMinutes
+                            .takeIf { next.defaultStrategy == "adaptive" },
                         profiles = next.profiles,
                     ),
                 )
@@ -496,6 +518,30 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Force one Adaptive benchmark/selection cycle. The server runs it
+     * synchronously and returns the updated settings, so the card's last-run
+     * line and the selected resolver update without waiting for the interval.
+     */
+    fun runAdaptiveNow() {
+        if (_state.value.isAdaptiveRunning) return
+        viewModelScope.launch {
+            _state.update { it.copy(isAdaptiveRunning = true) }
+            try {
+                val saved = settingsRepository.runAdaptive()
+                _state.update { it.copy(resolution = saved) }
+                runCatching { upstreamsRepository.stats() }
+                    .onSuccess { upstreams -> _state.update { it.copy(upstreams = upstreams) } }
+            } catch (e: ApiException) {
+                _state.update { it.copy(error = e.userMessage) }
+            } catch (e: java.io.IOException) {
+                Timber.d(e, "adaptive check failed")
+            } finally {
+                _state.update { it.copy(isAdaptiveRunning = false) }
+            }
+        }
+    }
+
     /** The shared public-provider catalogue for the racer card's add dropdown. */
     suspend fun loadUpstreamPresets(): List<UpstreamPresetProvider>? = try {
         upstreamsRepository.presets()
@@ -557,6 +603,8 @@ class DashboardViewModel @Inject constructor(
         const val HISTORY_EVERY_TICKS = 10
         /** Do not hammer a failing settings endpoint; one retry per ten seconds. */
         const val RESOLUTION_RETRY_MS = 10_000L
+        /** Adaptive's server-side choice changes on its own schedule; refresh it periodically. */
+        const val RESOLUTION_ADAPTIVE_REFRESH_MS = 30_000L
         const val QPS_HISTORY_POINTS = 60
         const val BENCHMARK_FOLLOW_UPS = 8
         const val BENCHMARK_STEP_MS = 800L

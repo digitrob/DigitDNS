@@ -141,6 +141,7 @@ type V3Backend interface {
 	// answers 401 to that credential.
 	ResolutionSettings() (map[string]any, error)
 	SaveResolution(r *http.Request, body map[string]any) (map[string]any, error)
+	RunAdaptive() (map[string]any, error)
 
 	// DnssecSettings and SaveDnssecSettings mirror the dashboard's startup-only
 	// DNSSEC policy and trust-anchor list. Like resolution, they are mounted on
@@ -229,6 +230,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	// Settings.
 	mux.HandleFunc("/api/v3/settings", a.SecurityMiddlewareV3(a.handleV3Settings))
 	mux.HandleFunc("/api/v3/settings/resolution", a.SecurityMiddlewareV3(a.handleV3Resolution))
+	mux.HandleFunc("/api/v3/settings/resolution/run-adaptive", a.SecurityMiddlewareV3(a.handleV3AdaptiveRun))
 	mux.HandleFunc("/api/v3/settings/dnssec", a.SecurityMiddlewareV3(a.handleV3DnssecSettings))
 	mux.HandleFunc("/api/v3/settings/transports", a.SecurityMiddlewareV3(a.handleV3TransportSettings))
 	mux.HandleFunc("/api/v3/settings/proxy-leak", a.SecurityMiddlewareV3(a.handleV3ProxyLeakSettings))

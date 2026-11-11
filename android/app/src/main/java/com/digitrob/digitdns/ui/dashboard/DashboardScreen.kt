@@ -206,6 +206,7 @@ fun DashboardScreen(
                         onRemoveUpstream = viewModel::removeUpstream,
                         onLoadUpstreamPresets = viewModel::loadUpstreamPresets,
                         onResolutionChange = viewModel::saveResolution,
+                        onRunAdaptive = viewModel::runAdaptiveNow,
                     ),
                 )
             }
@@ -526,6 +527,7 @@ private data class DashboardActions(
     val onRemoveUpstream: suspend (String) -> String?,
     val onLoadUpstreamPresets: suspend () -> List<UpstreamPresetProvider>?,
     val onResolutionChange: (ResolutionSettings) -> Unit,
+    val onRunAdaptive: () -> Unit,
 )
 
 @Composable
@@ -595,6 +597,9 @@ private fun LazyGridScope.liveCard(
                 resolutionControls = ResolutionControls(
                     settings = state.resolution,
                     onChange = actions.onResolutionChange,
+                    isAdaptiveRunning = state.isAdaptiveRunning,
+                    onRunAdaptive = actions.onRunAdaptive,
+                    lastSingleUpstream = state.lastSingleUpstream,
                 ),
             )
         }

@@ -144,15 +144,111 @@ func TestNormalizedRetiresTheFailureFallback(t *testing.T) {
 }
 
 func TestValidStrategy(t *testing.T) {
-	for _, v := range []string{"", StrategyFastest, StrategySequential, StrategyHedged, StrategyBestKnown} {
+	for _, v := range []string{"", StrategyFastest, StrategySequential, StrategyHedged, StrategyBestKnown, StrategyAdaptive} {
 		if !ValidStrategy(v) {
 			t.Errorf("%q should be a valid strategy", v)
 		}
 	}
-	for _, v := range []string{"race", "random", "Fastest"} {
+	for _, v := range []string{"race", "random"} {
 		if ValidStrategy(v) {
 			t.Errorf("%q should be rejected", v)
 		}
+	}
+}
+
+func TestNormalizeStrategyRetiresTheLegacyValues(t *testing.T) {
+	cases := []struct {
+		value string
+		want  string
+	}{
+		{"", StrategyAdaptive},
+		{StrategyFastest, StrategyHedged},
+		{StrategySequential, StrategySequential},
+		{StrategyHedged, StrategyHedged},
+		{StrategyBestKnown, StrategyBestKnown},
+		{StrategyAdaptive, StrategyAdaptive},
+		{"  ADAPTIVE  ", StrategyAdaptive},
+	}
+	for _, c := range cases {
+		if got := NormalizeStrategy(c.value); got != c.want {
+			t.Errorf("NormalizeStrategy(%q) = %q, want %q", c.value, got, c.want)
+		}
+	}
+}
+
+func TestNormalizeProfileStrategyKeepsInherit(t *testing.T) {
+	if got := NormalizeProfileStrategy(""); got != "" {
+		t.Fatalf("empty profile strategy = %q, want inherit", got)
+	}
+	if got := NormalizeProfileStrategy(StrategyFastest); got != StrategyHedged {
+		t.Fatalf("fastest profile strategy = %q, want %q", got, StrategyHedged)
+	}
+	if got := NormalizeProfileStrategy(StrategyAdaptive); got != "" {
+		t.Fatalf("adaptive profile strategy = %q, want inherit", got)
+	}
+}
+
+func TestAdaptiveIntervalChoices(t *testing.T) {
+	for _, v := range AdaptiveIntervalChoices {
+		if !ValidAdaptiveInterval(v) {
+			t.Errorf("%d should be a valid adaptive interval", v)
+		}
+	}
+	for _, v := range []int{-1, 0, 1, 10, 59, 61, 1441} {
+		if ValidAdaptiveInterval(v) {
+			t.Errorf("%d should be rejected", v)
+		}
+	}
+	if got := NormalizeAdaptiveInterval(0); got != DefaultAdaptiveIntervalMinutes {
+		t.Errorf("NormalizeAdaptiveInterval(0) = %d, want %d", got, DefaultAdaptiveIntervalMinutes)
+	}
+	if got := NormalizeAdaptiveInterval(15); got != 15 {
+		t.Errorf("NormalizeAdaptiveInterval(15) = %d, want 15", got)
+	}
+}
+
+func TestProtocolClassification(t *testing.T) {
+	cases := map[string]string{
+		"1.1.1.1:53":                    ProtocolPlain,
+		"tcp://9.9.9.9:53":              ProtocolPlain,
+		"tls://dns.google:853":          ProtocolDoT,
+		"https://dns.google/dns-query":  ProtocolDoH,
+		"h3://dns.google/dns-query":     ProtocolDoH3,
+		"quic://dns.adguard.com:853":    ProtocolDoQ,
+		"sdns://AQcAAAAAAAA":            ProtocolDNSCrypt,
+		"  TLS://ONE.ONE.ONE.ONE:853  ": ProtocolDoT,
+	}
+	for address, want := range cases {
+		if got := Protocol(address); got != want {
+			t.Errorf("Protocol(%q) = %q, want %q", address, got, want)
+		}
+	}
+}
+
+func TestNormalizeProtocolsAndLegacyTransport(t *testing.T) {
+	all := NormalizeProtocols(nil)
+	if len(all) != len(AllProtocols) {
+		t.Fatalf("empty protocols = %v, want all", all)
+	}
+	got := NormalizeProtocols([]string{"doh", "plain", "doh", "bogus"})
+	want := []string{ProtocolPlain, ProtocolDoH}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("NormalizeProtocols = %v, want %v", got, want)
+	}
+	if !ValidProtocols([]string{"dot", "doh"}) {
+		t.Fatal("valid protocol set was rejected")
+	}
+	if ValidProtocols(nil) || ValidProtocols([]string{"bogus"}) {
+		t.Fatal("empty/unknown protocol set was accepted")
+	}
+	if got := LegacyTransportFor([]string{ProtocolPlain}); got != TransportRegular {
+		t.Fatalf("plain legacy transport = %q, want %q", got, TransportRegular)
+	}
+	if got := LegacyTransportFor([]string{ProtocolDoT, ProtocolDoH}); got != TransportEncrypted {
+		t.Fatalf("encrypted legacy transport = %q, want %q", got, TransportEncrypted)
+	}
+	if got := LegacyTransportFor([]string{ProtocolPlain, ProtocolDoH}); got != TransportAny {
+		t.Fatalf("mixed legacy transport = %q, want %q", got, TransportAny)
 	}
 }
 

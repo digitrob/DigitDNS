@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
 
@@ -42,7 +43,17 @@ fun AppLockScreen(
     authenticating: Boolean,
     onUnlock: () -> Unit,
     onSignOut: () -> Unit,
+    onShown: () -> Unit = {},
 ) {
+    // Opening the app with the lock engaged should raise the system prompt at
+    // once. Wait for RESUMED: BiometricPrompt is a fragment transaction and is
+    // not safe to start during the initial composition. The ViewModel
+    // de-duplicates this so rotation and recomposition do not prompt twice.
+    LifecycleResumeEffect(Unit) {
+        onShown()
+        onPauseOrDispose { }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()

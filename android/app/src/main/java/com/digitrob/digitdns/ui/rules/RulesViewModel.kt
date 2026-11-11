@@ -427,8 +427,11 @@ class RulesViewModel @Inject constructor(
                 settingsRepository.saveResolution(
                     ResolutionSaveRequest(
                         transport = current.transport,
+                        transports = current.transports,
                         defaultUpstream = current.defaultUpstream,
                         defaultStrategy = current.defaultStrategy,
+                        adaptiveIntervalMinutes = current.adaptiveIntervalMinutes
+                            .takeIf { current.defaultStrategy == "adaptive" },
                         profiles = profiles,
                     ),
                 )

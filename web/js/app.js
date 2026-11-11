@@ -3455,17 +3455,46 @@ async function assignRelayToDomain(domain, id) {
 // exist for a name that is in that list.
 let resolutionSettings = {
   transport: 'any',
+  transports: ['plain', 'dot', 'doh', 'doh3', 'doq', 'dnscrypt'],
   loaded: false,
   encrypted_available: false,
   encrypted_upstreams: [],
   encrypted_only: false,
   default_upstream: '',
-  default_strategy: '',
+  default_strategy: 'adaptive',
+  adaptive_interval_minutes: 60,
+  adaptive_last_run: '',
+  adaptive_current: '',
+  adaptive_last_latency_ms: 0,
+  adaptive_last_note: '',
   profiles: {},
   upstreams: []
 };
 
 let resolutionLoading = false;
+let adaptiveRunInFlight = false;
+
+function singleServerStorageKey() {
+  const adminPath = window.location.pathname.split('/').filter(Boolean)[0] || 'root';
+  return `digitdns:last-single-server:${adminPath}`;
+}
+
+function rememberedSingleServer() {
+  try {
+    return localStorage.getItem(singleServerStorageKey()) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function rememberSingleServer(address) {
+  if (!address) return;
+  try {
+    localStorage.setItem(singleServerStorageKey(), address);
+  } catch (e) { /* private mode / storage denied: the pin still works */ }
+}
+let adaptiveFlash = false;
+let adaptiveFlashTimer = null;
 
 // The DNSSEC card in Settings mirrors /api/settings/dnssec. The endpoint is
 // startup-only: saving writes the "dns" record, and restart_required tells the
@@ -3795,6 +3824,23 @@ async function loadResolutionSettings() {
   finally { resolutionLoading = false; }
 }
 
+// normalizeStrategyValue maps retired spellings onto the four strategies the
+// panel offers. "fastest" and the old implicit empty value are Hedged now; an
+// unknown value also falls back to Hedged rather than leaving the select blank.
+function normalizeStrategyValue(value) {
+  const v = String(value || '').trim().toLowerCase();
+  if (v === 'adaptive' || v === 'sequential' || v === 'best') return v;
+  // Empty is the legacy "never chose" value and now means the adaptive default;
+  // "fastest" is the retired race-every-resolver mode and reads as Hedged.
+  if (v === '') return 'adaptive';
+  return 'hedged';
+}
+
+function normalizeAdaptiveInterval(value) {
+  const n = Number(value);
+  return [5, 15, 60, 360, 1440].includes(n) ? n : 60;
+}
+
 // normalizeResolutionSettings fills the fields an older server may omit, so the
 // controls never bind to undefined.
 function normalizeResolutionSettings(settings) {
@@ -3806,7 +3852,13 @@ function normalizeResolutionSettings(settings) {
   out.profiles = out.profiles || {};
   out.upstreams = out.upstreams || [];
   out.default_upstream = out.default_upstream || '';
-  out.default_strategy = out.default_strategy || '';
+  out.default_strategy = normalizeStrategyValue(out.default_strategy);
+  out.transports = normalizeTransports(out.transports, out.transport);
+  out.adaptive_interval_minutes = normalizeAdaptiveInterval(out.adaptive_interval_minutes);
+  out.adaptive_last_run = out.adaptive_last_run || '';
+  out.adaptive_current = out.adaptive_current || '';
+  out.adaptive_last_latency_ms = Number(out.adaptive_last_latency_ms) || 0;
+  out.adaptive_last_note = out.adaptive_last_note || '';
   return out;
 }
 
@@ -3820,6 +3872,55 @@ function looksEncrypted(address) {
 
 function upstreamIsEncrypted(address) {
   return (resolutionSettings.encrypted_upstreams || []).includes(address) || looksEncrypted(address);
+}
+
+const ALL_TRANSPORTS = ['plain', 'dot', 'doh', 'doh3', 'doq', 'dnscrypt'];
+
+function protocolsForTransport(transport) {
+  if (transport === 'encrypted') return ['dot', 'doh', 'doh3', 'doq', 'dnscrypt'];
+  if (transport === 'regular') return ['plain'];
+  return [...ALL_TRANSPORTS];
+}
+
+function normalizeTransports(value, legacyTransport) {
+  const list = Array.isArray(value) ? value : [];
+  const seen = new Set(list.map(v => String(v || '').toLowerCase()).filter(v => ALL_TRANSPORTS.includes(v)));
+  if (!seen.size) return protocolsForTransport(legacyTransport);
+  return ALL_TRANSPORTS.filter(p => seen.has(p));
+}
+
+function upstreamProtocolKey(address) {
+  const a = String(address || '').trim().toLowerCase();
+  if (a.startsWith('tls://')) return 'dot';
+  if (a.startsWith('https://')) return 'doh';
+  if (a.startsWith('h3://')) return 'doh3';
+  if (a.startsWith('quic://')) return 'doq';
+  if (a.startsWith('sdns://')) return 'dnscrypt';
+  return 'plain';
+}
+
+function upstreamProtocolEnabled(address) {
+  return (resolutionSettings.transports || ALL_TRANSPORTS).includes(upstreamProtocolKey(address));
+}
+
+// Provider marks use the bundled images, never a remote favicon request. The
+// address patterns cover the public resolvers the preset catalogue ships with.
+function providerIdForUpstream(address) {
+  const a = String(address || '').trim().toLowerCase();
+  if (a.includes('cloudflare') || a.includes('1.1.1.1') || a.includes('1.0.0.1') || a.includes('one.one.one.one')) return 'cloudflare';
+  if (a.includes('google') || a.includes('8.8.8.8') || a.includes('8.8.4.4')) return 'google';
+  if (a.includes('quad9') || a.includes('9.9.9.9') || a.includes('149.112.112.112')) return 'quad9';
+  if (a.includes('adguard') || a.includes('94.140.14.14') || a.includes('94.140.15.15')) return 'adguard';
+  return '';
+}
+
+function providerFaviconMarkup(address, extraClass = '') {
+  const id = providerIdForUpstream(address);
+  const cls = `resolver-favicon${extraClass ? ' ' + extraClass : ''}`;
+  if (id) {
+    return `<img class="${escapeHTML(cls)}" src="${escapeHTML(api(`/img/providers/${encodeURIComponent(id)}.png`))}" alt="">`;
+  }
+  return `<span class="${escapeHTML(cls)} resolver-favicon-generic" aria-hidden="true">${FEATHER_GLOBE_SVG}</span>`;
 }
 
 // availableUpstreams prefers the settings list and falls back to the last
@@ -3860,61 +3961,156 @@ function transportLabel(mode) {
 // ignores an ineligible pin too, so it must not dim the rest of the list.
 function activePin(transport) {
   const pinned = resolutionSettings.default_upstream || '';
-  if (!pinned || transportExcludes(pinned, transport)) return '';
+  if (!pinned || !upstreamProtocolEnabled(pinned) || transportExcludes(pinned, transport)) return '';
   return pinned;
 }
 
 function upstreamDimmed(address, transport) {
+  if (!upstreamProtocolEnabled(address)) return true;
   if (transportExcludes(address, transport)) return true;
   const pin = activePin(transport);
   return !!pin && pin !== address;
 }
 
-// syncResolutionControls fills the three global controls in the resolver card.
-// The encrypted choice is disabled when the resolver list holds no DoT/DoH/DoQ
-// upstream, because selecting it would leave the pool with no candidates.
+// syncAdaptiveControls keeps the interval row and its status line in the grid at
+// all times. Only the enabled state and the text change, so selecting Adaptive
+// does not push the card taller or make the controls below it jump.
+function syncAdaptiveControls() {
+  const adaptive = normalizeStrategyValue(resolutionSettings.default_strategy) === 'adaptive';
+  const single = !!resolutionSettings.default_upstream;
+  const interval = normalizeAdaptiveInterval(resolutionSettings.adaptive_interval_minutes);
+
+  document.querySelectorAll('.resolver-chip-block').forEach(block => {
+    block.classList.toggle('is-disabled', single);
+  });
+  document.querySelectorAll('#resolution-strategy-chips [data-strategy]').forEach(button => {
+    button.disabled = single;
+    button.setAttribute('aria-pressed', button.dataset.strategy === normalizeStrategyValue(resolutionSettings.default_strategy) ? 'true' : 'false');
+  });
+  document.querySelectorAll('#resolution-interval-chips [data-interval]').forEach(button => {
+    button.disabled = single || !adaptive;
+    button.setAttribute('aria-pressed', Number(button.dataset.interval) === interval ? 'true' : 'false');
+  });
+
+  const run = document.getElementById('resolution-adaptive-run');
+  if (run) {
+    run.disabled = single || !adaptive || adaptiveRunInFlight;
+    run.classList.toggle('is-running', adaptiveRunInFlight);
+    run.classList.toggle('is-success', adaptiveFlash && !single);
+    run.setAttribute('aria-busy', adaptiveRunInFlight ? 'true' : 'false');
+  }
+  const forceLabel = document.getElementById('resolution-adaptive-force-label');
+  if (forceLabel) {
+    forceLabel.classList.toggle('resolution-adaptive-disabled', single || !adaptive);
+  }
+
+  const note = document.getElementById('resolution-adaptive-note');
+  if (!note) return;
+  if (single || !adaptive) {
+    // A single upstream bypasses the strategy/interval/transport controls;
+    // keep the reserved line blank rather than adding more text.
+    note.textContent = '';
+    note.title = '';
+    return;
+  }
+
+  const current = resolutionSettings.adaptive_current || '';
+  const lastRun = resolutionSettings.adaptive_last_run || '';
+  if (!lastRun) {
+    note.textContent = 'No benchmark yet.';
+    note.title = '';
+    return;
+  }
+  const when = new Date(lastRun);
+  const stamp = Number.isNaN(when.getTime()) ? lastRun : when.toLocaleString();
+  note.textContent = `Last run ${stamp} · using ${current || 'no healthy resolver selected'}`;
+  note.title = '';
+}
+
+function syncTransportChips() {
+  const transports = normalizeTransports(resolutionSettings.transports, resolutionSettings.transport);
+  const single = !!resolutionSettings.default_upstream;
+  document.querySelectorAll('#resolution-transport-chips [data-transport]').forEach(button => {
+    const on = transports.includes(button.dataset.transport);
+    button.setAttribute('aria-pressed', on ? 'true' : 'false');
+    // The last enabled chip cannot be turned off: the pool would have no
+    // candidates. A single upstream bypasses the protocol filter entirely.
+    button.disabled = single || (on && transports.length === 1);
+  });
+}
+
+function syncSingleUpstream() {
+  const button = document.getElementById('resolution-single-upstream');
+  const icon = document.getElementById('resolution-single-icon');
+  const label = document.getElementById('resolution-single-label');
+  const toggle = document.getElementById('resolution-single-switch');
+  const mode = document.querySelector('.resolver-mode-switch');
+  const pinned = resolutionSettings.default_upstream || '';
+  const available = availableUpstreams();
+  if (pinned) rememberSingleServer(pinned);
+  if (icon) icon.innerHTML = providerFaviconMarkup(pinned);
+  if (label) label.textContent = pinned || 'Pool (automatic)';
+  if (toggle) {
+    toggle.checked = !!pinned;
+    toggle.disabled = available.length === 0;
+  }
+  if (mode) mode.classList.toggle('is-disabled', available.length === 0);
+  if (button) {
+    button.disabled = !pinned;
+    button.classList.toggle('is-dimmed', !pinned);
+    button.title = pinned
+      ? 'Choose the resolver used instead of the pool'
+      : 'Turn on Single Server to choose one resolver';
+  }
+}
+
+const PROTOCOL_CHIP_LABELS = {
+  plain: 'Plain',
+  dot: 'DoT',
+  doh: 'DoH',
+  doh3: 'DoH3',
+  doq: 'DoQ',
+  dnscrypt: 'DNSCrypt',
+};
+
+function renderSingleUpstreamMenu() {
+  const menu = document.getElementById('resolution-single-menu');
+  if (!menu) return;
+  const pinned = resolutionSettings.default_upstream || '';
+  const upstreams = availableUpstreams();
+  if (pinned && !upstreams.includes(pinned)) upstreams.push(pinned);
+  const items = [];
+  for (const address of upstreams) {
+    const protocol = upstreamProtocolKey(address);
+    items.push(`<button type="button" class="resolver-single-item" role="option" aria-selected="${escapeHTML(address === pinned ? 'true' : 'false')}" data-upstream="${escapeHTML(address)}">
+      ${providerFaviconMarkup(address)}
+      <span class="resolver-single-label">${escapeHTML(address)}</span>
+      <span class="resolver-single-proto proto-${escapeHTML(protocol)}">${escapeHTML(PROTOCOL_CHIP_LABELS[protocol] || protocol)}</span>
+    </button>`);
+  }
+  menu.innerHTML = items.join('');
+}
+
+function setSingleUpstreamMenu(open) {
+  const menu = document.getElementById('resolution-single-menu');
+  const button = document.getElementById('resolution-single-upstream');
+  if (!menu || !button) return;
+  if (open) renderSingleUpstreamMenu();
+  menu.classList.toggle('hidden', !open);
+  button.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function closeSingleUpstreamMenu() {
+  setSingleUpstreamMenu(false);
+}
+
+// syncResolutionControls repaints every chip and the Single Upstream picker.
+// It also forces the resolver list to repaint, because a changed protocol or pin
+// changes which rows are dimmed and which one is the current Adaptive choice.
 function syncResolutionControls() {
-  const encAvailable = hasEncryptedUpstream();
-  const regAvailable = hasRegularUpstream();
-  const transport = document.getElementById('resolution-transport');
-  if (transport) {
-    const encrypted = transport.querySelector('option[value="encrypted"]');
-    const regular = transport.querySelector('option[value="regular"]');
-    if (encrypted) encrypted.disabled = !encAvailable;
-    if (regular) regular.disabled = !regAvailable;
-    transport.value = resolutionSettings.transport || 'any';
-  }
-
-  const strategy = document.getElementById('resolution-default-strategy');
-  if (strategy) strategy.value = resolutionSettings.default_strategy || '';
-
-  const currentTransport = resolutionSettings.transport || 'any';
-  const upstreamSel = document.getElementById('resolution-default-upstream');
-  if (upstreamSel) {
-    // A pin is a preference, not a policy override: the pool ignores one the
-    // transport excludes, so the operator must still be able to choose it.
-    const options = ['<option value="">Pool Default</option>'].concat(
-      availableUpstreams().map(u => `<option value="${escapeHTML(u)}">${escapeHTML(u)}</option>`)
-    );
-    upstreamSel.innerHTML = options.join('');
-    upstreamSel.value = resolutionSettings.default_upstream || '';
-  }
-
-  // A pin the active transport excludes is ignored by the pool; say so instead
-  // of letting the disabled entry look like a working selection.
-  const pinNote = document.getElementById('resolution-pin-note');
-  if (pinNote) {
-    const pinned = resolutionSettings.default_upstream || '';
-    const ignored = !!pinned && transportExcludes(pinned, currentTransport);
-    pinNote.classList.toggle('hidden', !ignored);
-    if (ignored) {
-      const kind = upstreamIsEncrypted(pinned) ? 'encrypted' : 'regular DNS';
-      pinNote.textContent = `Default upstream ${pinned} is ${kind} and is ignored while ${transportLabel(currentTransport)} is active.`;
-    }
-  }
-
-  // Repaint the resolver list at once: selecting a transport or a pin changes
-  // which resolvers are dimmed, without waiting for the next stats tick.
+  syncTransportChips();
+  syncAdaptiveControls();
+  syncSingleUpstream();
   if (lastUpstreamsPayload) {
     lastUpstreamsSig = '';
     renderUpstreams(lastUpstreamsPayload);
@@ -3932,8 +4128,10 @@ async function saveResolutionSettings(overrides, message) {
   }
   const payload = Object.assign({
     transport: resolutionSettings.transport || 'any',
+    transports: normalizeTransports(resolutionSettings.transports, resolutionSettings.transport),
     default_upstream: resolutionSettings.default_upstream || '',
-    default_strategy: resolutionSettings.default_strategy || '',
+    default_strategy: normalizeStrategyValue(resolutionSettings.default_strategy),
+    adaptive_interval_minutes: normalizeAdaptiveInterval(resolutionSettings.adaptive_interval_minutes),
     profiles: resolutionSettings.profiles || {}
   }, overrides || {});
   try {
@@ -3957,6 +4155,43 @@ async function saveResolutionSettings(overrides, message) {
   }
 }
 
+// Force one Adaptive benchmark/selection cycle instead of waiting for the
+// interval. The server runs the probe synchronously and returns the updated
+// settings, so the card can show the new resolver immediately.
+async function runAdaptiveNow() {
+  if (adaptiveRunInFlight) return;
+  if (normalizeStrategyValue(resolutionSettings.default_strategy) !== 'adaptive') return;
+  adaptiveRunInFlight = true;
+  adaptiveFlash = false;
+  if (adaptiveFlashTimer) clearTimeout(adaptiveFlashTimer);
+  syncAdaptiveControls();
+  try {
+    const res = await fetch(api('/api/settings/resolution/run-adaptive'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (!res.ok) {
+      showToast(await errorMessage(res, 'Could not run the adaptive check'), 'error');
+      return;
+    }
+    resolutionSettings = normalizeResolutionSettings(await res.json());
+    adaptiveFlash = true;
+    syncResolutionControls();
+    renderProxiedList();
+    showToast('Adaptive check complete', 'success');
+    if (adaptiveFlashTimer) clearTimeout(adaptiveFlashTimer);
+    adaptiveFlashTimer = setTimeout(() => {
+      adaptiveFlash = false;
+      syncAdaptiveControls();
+    }, 1600);
+  } catch (e) {
+    showToast('Could not run the adaptive check', 'error');
+  } finally {
+    adaptiveRunInFlight = false;
+    syncAdaptiveControls();
+  }
+}
+
 // The transport option markup shared by the dialog. Availability is expressed
 // by disabling, never by an "unavailable" label.
 function transportOptionsMarkup(selected) {
@@ -3972,6 +4207,8 @@ function transportOptionsMarkup(selected) {
 // fixed: the list that opened it owns the rule.
 function openResolutionDialog(domain) {
   const saved = resolutionSettings.profiles[domain] || {};
+  // Fastest is retired; a saved legacy rule reads as Hedged in this dialog.
+  const savedStrategy = saved.strategy === 'fastest' ? 'hedged' : (saved.strategy || '');
   // The resolver decides the transport. An old rule with a conflicting pair is
   // shown in the consistent form the pool can actually honour.
   const savedTransport = saved.upstream
@@ -3999,18 +4236,16 @@ function openResolutionDialog(domain) {
         <label class="block">
           <span class="block text-[11px] font-semibold text-slate-400 mb-1">Strategy</span>
           <select id="resolution-strategy" title="Hedged starts the next resolver after 50 ms; Best Known uses the fastest measured resolver" class="w-full bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
-            <option value="" ${saved.strategy ? '' : 'selected'}>Inherit Global</option>
-            <option value="fastest" ${saved.strategy === 'fastest' ? 'selected' : ''}>Fastest Wins</option>
-            <option value="sequential" ${saved.strategy === 'sequential' ? 'selected' : ''}>In Order</option>
-            <option value="hedged" ${saved.strategy === 'hedged' ? 'selected' : ''}>Hedged</option>
-            <option value="best" ${saved.strategy === 'best' ? 'selected' : ''}>Best Known</option>
+            <option value="" ${savedStrategy ? '' : 'selected'}>Inherit Global</option>
+            <option value="sequential" ${savedStrategy === 'sequential' ? 'selected' : ''}>In Order</option>
+            <option value="hedged" ${savedStrategy === 'hedged' ? 'selected' : ''}>Hedged</option>
+            <option value="best" ${savedStrategy === 'best' ? 'selected' : ''}>Best Known</option>
           </select>
         </label>
         <label class="block">
           <span class="block text-[11px] font-semibold text-slate-400 mb-1">Transports</span>
           <select id="resolution-dialog-transport" class="w-full bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">${transportOptions}</select>
         </label>
-        <p class="text-[10px] text-slate-500">Fallback: Pool Default</p>
       </div>
       <div class="flex gap-2 mt-5">
         <button id="resolution-cancel" class="flex-1 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-sm font-semibold hover:bg-slate-700 transition">Cancel</button>
@@ -5211,6 +5446,8 @@ function renderProxyDrops(data) {
 // would substitute, so nothing changes visually.
 const FEATHER_TRASH_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
 
+const FEATHER_GLOBE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>';
+
 // Signature of the last rendered upstream set: the poll repaints the list
 // unconditionally and most ticks change nothing (latency only moves when the
 // racer re-measures). Skipping identical payloads removes the innerHTML
@@ -5640,6 +5877,14 @@ function renderUpstreams(upstreams) {
     lastResolutionSyncAt = Date.now();
     loadResolutionSettings();
   }
+  // Adaptive's last-run/current fields change on the server's schedule, not on
+  // a pool edit. Refresh them occasionally so the card does not show yesterday's
+  // benchmark forever.
+  if (resolutionSettings.default_strategy === 'adaptive' && !resolutionLoading &&
+      Date.now() - lastResolutionSyncAt > 30000) {
+    lastResolutionSyncAt = Date.now();
+    loadResolutionSettings();
+  }
 
   if (!upstreams || upstreams.length === 0) {
     if (lastUpstreamsSig !== 'empty') {
@@ -5652,8 +5897,10 @@ function renderUpstreams(upstreams) {
   // The policy is part of the signature: a changed transport or pin dims a
   // different set of rows even when the upstreams themselves did not move.
   const policySig = [
-    resolutionSettings.transport || 'any',
+    (resolutionSettings.transports || []).join(','),
     resolutionSettings.default_upstream || '',
+    normalizeStrategyValue(resolutionSettings.default_strategy),
+    resolutionSettings.adaptive_current || '',
     (resolutionSettings.encrypted_upstreams || []).join(','),
   ].join('~');
   const sig = upstreams.map(u => [
@@ -5756,12 +6003,15 @@ function renderUpstreams(upstreams) {
     // A resolver the active transport excludes, or one a valid pin bypasses, is
     // dimmed but stays removable: the list is also the place removals happen.
     const dimmed = upstreamDimmed(u.address, resolutionSettings.transport || 'any');
+    const adaptiveCurrent = normalizeStrategyValue(resolutionSettings.default_strategy) === 'adaptive'
+      && resolutionSettings.adaptive_current === u.address;
     let row = upstreamRowMap.get(u.address);
     if (!row) {
       row = document.createElement('div');
       row.dataset.addr = u.address;
       row.className = 'upstream-row flex items-center justify-between py-1.5 px-3 rounded-lg bg-slate-950/70 border border-slate-800 text-xs'
-        + (dimmed ? ' is-dimmed' : '');
+        + (dimmed ? ' is-dimmed' : '')
+        + (adaptiveCurrent ? ' is-adaptive-current' : '');
       // The left half is `min-w-0 truncate`: a flex item's default min-width:auto
       // resolves to its content width, so a long DoH URL (https://dns.google/dns-query)
       // would refuse to shrink and crush the latency badge on the right into a
@@ -5770,6 +6020,7 @@ function renderUpstreams(upstreams) {
       row.innerHTML = `
         <div class="flex items-center gap-2 min-w-0 flex-1">
           <span class="upstream-dot shrink-0 ${dotClass}" aria-hidden="true"></span>
+          ${providerFaviconMarkup(u.address)}
           <div class="min-w-0">
             <!-- The address is its own horizontal scroll area, not a clipped ellipsis:
                  a DoH URL is routinely wider than this column and the operator needs
@@ -5795,6 +6046,7 @@ function renderUpstreams(upstreams) {
       upstreamRowMap.set(u.address, row);
     } else {
       row.classList.toggle('is-dimmed', dimmed);
+      row.classList.toggle('is-adaptive-current', adaptiveCurrent);
       const dot = row.querySelector('.upstream-dot');
       if (dot) dot.className = 'upstream-dot shrink-0 ' + dotClass;
       const badge = row.querySelector('.upstream-latency-badge');
@@ -10394,14 +10646,66 @@ function initEventListeners() {
     if (!saved) e.target.checked = !want;
   });
   initProxyIPv6Events();
-  document.getElementById('resolution-transport')?.addEventListener('change', (e) => {
-    saveResolutionSettings({ transport: e.target.value }, 'Resolution defaults saved');
+  document.getElementById('resolution-strategy-chips')?.addEventListener('click', (e) => {
+    const button = e.target.closest('[data-strategy]');
+    if (!button) return;
+    saveResolutionSettings({ default_strategy: button.dataset.strategy }, 'Strategy saved');
   });
-  document.getElementById('resolution-default-strategy')?.addEventListener('change', (e) => {
-    saveResolutionSettings({ default_strategy: e.target.value }, 'Resolution defaults saved');
+  document.getElementById('resolution-interval-chips')?.addEventListener('click', (e) => {
+    const button = e.target.closest('[data-interval]');
+    if (!button || button.disabled) return;
+    saveResolutionSettings({ adaptive_interval_minutes: Number(button.dataset.interval) }, 'Adaptive interval saved');
   });
-  document.getElementById('resolution-default-upstream')?.addEventListener('change', (e) => {
-    saveResolutionSettings({ default_upstream: e.target.value }, 'Resolution defaults saved');
+  document.getElementById('resolution-transport-chips')?.addEventListener('click', (e) => {
+    const button = e.target.closest('[data-transport]');
+    if (!button || button.disabled) return;
+    const current = normalizeTransports(resolutionSettings.transports, resolutionSettings.transport);
+    const protocol = button.dataset.transport;
+    const next = current.includes(protocol)
+      ? current.filter(value => value !== protocol)
+      : [...current, protocol];
+    if (!next.length) {
+      showToast('Keep at least one transport enabled', 'warning');
+      return;
+    }
+    saveResolutionSettings({ transports: normalizeTransports(next, 'any') }, 'Transports saved');
+  });
+  document.getElementById('resolution-adaptive-run')?.addEventListener('click', runAdaptiveNow);
+  document.getElementById('resolution-single-upstream')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const menu = document.getElementById('resolution-single-menu');
+    setSingleUpstreamMenu(!!menu && menu.classList.contains('hidden'));
+  });
+  document.getElementById('resolution-single-switch')?.addEventListener('change', async (e) => {
+    const available = availableUpstreams();
+    if (e.target.checked) {
+      const remembered = rememberedSingleServer();
+      const chosen = available.includes(remembered) ? remembered : available[0];
+      if (!chosen) {
+        e.target.checked = false;
+        showToast('Add an upstream resolver first', 'warning');
+        return;
+      }
+      rememberSingleServer(chosen);
+      const ok = await saveResolutionSettings({ default_upstream: chosen }, 'Single server enabled');
+      if (!ok) e.target.checked = false;
+    } else {
+      const ok = await saveResolutionSettings({ default_upstream: '' }, 'Pool mode enabled');
+      if (!ok) e.target.checked = true;
+    }
+  });
+  document.getElementById('resolution-single-menu')?.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-upstream]');
+    if (!item) return;
+    closeSingleUpstreamMenu();
+    rememberSingleServer(item.dataset.upstream);
+    saveResolutionSettings({ default_upstream: item.dataset.upstream }, 'Single server saved');
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.resolver-single-control')) closeSingleUpstreamMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSingleUpstreamMenu();
   });
   document.getElementById('server-update-check-btn')?.addEventListener('click', checkServerUpdate);
   document.getElementById('server-update-apply-btn')?.addEventListener('click', applyServerUpdate);

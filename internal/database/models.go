@@ -2,6 +2,7 @@ package database
 
 import (
 	"digitdns/internal/core/resolution"
+	"slices"
 	"sync"
 	"time"
 )
@@ -282,15 +283,29 @@ type DNSSettings struct {
 	// (DoT/DoH/DoQ/DoH3/DNSCrypt) or "regular" (plain UDP/TCP). A per-domain
 	// profile can override it. Empty means "any".
 	Transport string `json:"transport,omitempty"`
+	// Transports is the authoritative global protocol set (plain, dot, doh,
+	// doh3, doq, dnscrypt). Transport above is the legacy single-value spelling
+	// kept for older clients and derived from this set on every save.
+	Transports []string `json:"resolution_transports,omitempty"`
 	// EncryptedOnly is the pre-transport switch. It is read for records written
 	// by 3.4.11 and earlier and rewritten as Transport on the next save.
 	EncryptedOnly bool `json:"encrypted_only,omitempty"`
 	// DefaultUpstream pins resolution to one resolver for every name without a
 	// profile. Empty means "use the configured pool".
 	DefaultUpstream string `json:"resolution_default_upstream,omitempty"`
-	// DefaultStrategy overrides the pool's constructed racing setting
-	// ("fastest" or "sequential"). Empty keeps FastestRacing.
+	// DefaultStrategy is the global resolution strategy. Empty is the legacy
+	// form and reads as the adaptive default; explicit choices are preserved.
 	DefaultStrategy string `json:"resolution_default_strategy,omitempty"`
+	// AdaptiveIntervalMinutes is how often the Adaptive strategy re-benchmarks
+	// the pool. It is only meaningful while DefaultStrategy is "adaptive".
+	AdaptiveIntervalMinutes int `json:"resolution_adaptive_interval_minutes,omitempty"`
+	// AdaptiveLastRun, AdaptiveCurrent and the two result fields are the
+	// scheduler's persisted state. Storing them means a restart does not
+	// re-benchmark immediately or forget which resolver is in use.
+	AdaptiveLastRun       string  `json:"resolution_adaptive_last_run,omitempty"`
+	AdaptiveCurrent       string  `json:"resolution_adaptive_current,omitempty"`
+	AdaptiveLastLatencyMs float64 `json:"resolution_adaptive_last_latency_ms,omitempty"`
+	AdaptiveLastNote      string  `json:"resolution_adaptive_last_note,omitempty"`
 	// Profiles carries the per-domain resolution overrides, limited to names in
 	// the proxied lists. A missing map means every name follows the defaults.
 	Profiles map[string]resolution.Profile `json:"resolution_profiles,omitempty"`
@@ -321,6 +336,56 @@ func (s DNSSettings) EffectiveTransport() string {
 		return resolution.TransportEncrypted
 	}
 	return resolution.TransportAny
+}
+
+// NormalizeResolution rewrites retired strategy spellings and fills the
+// adaptive interval default. It reports whether anything changed so the caller
+// can persist the migrated record once instead of rewriting it on every boot.
+func (s *DNSSettings) NormalizeResolution() bool {
+	if s == nil {
+		return false
+	}
+	changed := false
+	normalized := resolution.NormalizeStrategy(s.DefaultStrategy)
+	if normalized != s.DefaultStrategy {
+		s.DefaultStrategy = normalized
+		changed = true
+	}
+	if s.DefaultStrategy == resolution.StrategyAdaptive {
+		interval := resolution.NormalizeAdaptiveInterval(s.AdaptiveIntervalMinutes)
+		if interval != s.AdaptiveIntervalMinutes {
+			s.AdaptiveIntervalMinutes = interval
+			changed = true
+		}
+	}
+	transports := s.Transports
+	if len(transports) == 0 {
+		transports = resolution.ProtocolsForTransport(s.EffectiveTransport())
+	}
+	normalizedTransports := resolution.NormalizeProtocols(transports)
+	if !slices.Equal(normalizedTransports, s.Transports) {
+		s.Transports = normalizedTransports
+		changed = true
+	}
+	legacyTransport := resolution.LegacyTransportFor(normalizedTransports)
+	if s.Transport != legacyTransport {
+		s.Transport = legacyTransport
+		changed = true
+	}
+	encryptedOnly := legacyTransport == resolution.TransportEncrypted
+	if s.EncryptedOnly != encryptedOnly {
+		s.EncryptedOnly = encryptedOnly
+		changed = true
+	}
+	for key, profile := range s.Profiles {
+		normalizedProfile := resolution.NormalizeProfileStrategy(profile.Strategy)
+		if normalizedProfile != profile.Strategy {
+			profile.Strategy = normalizedProfile
+			s.Profiles[key] = profile
+			changed = true
+		}
+	}
+	return changed
 }
 
 // SNIProxySettings holds reverse proxy and fragmentation parameters

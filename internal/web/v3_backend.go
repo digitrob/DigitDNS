@@ -260,6 +260,21 @@ func (b *v3Backend) SaveResolution(r *http.Request, body map[string]any) (map[st
 	return b.delegateBody(post, body, b.ws.handleResolutionSettings)
 }
 
+// RunAdaptive forces one Adaptive benchmark/selection cycle. The panel and the
+// app call the same helper, so the button and the scheduler cannot drift.
+func (b *v3Backend) RunAdaptive() (map[string]any, error) {
+	if b.ws.upstreams == nil {
+		return nil, api.V3Error(api.ErrV3Unavailable, "no upstream pool configured")
+	}
+	if _, err := b.ws.runAdaptiveNow(); err != nil {
+		if errors.Is(err, errAdaptiveNotSelected) || errors.Is(err, errAdaptiveBusy) {
+			return nil, api.V3Error(api.ErrV3Conflict, err.Error())
+		}
+		return nil, err
+	}
+	return b.ResolutionSettings()
+}
+
 // DnssecSettings is the dashboard's DNSSEC policy view. The Android client uses
 // the v3 route because its credential can be the master API key.
 func (b *v3Backend) DnssecSettings() (map[string]any, error) {

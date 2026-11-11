@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -22,11 +23,17 @@ import (
 // still read.
 type resolutionView struct {
 	Transport          string                        `json:"transport"`
+	Transports         []string                      `json:"transports"`
 	EncryptedOnly      bool                          `json:"encrypted_only"`
 	EncryptedAvailable bool                          `json:"encrypted_available"`
 	EncryptedUpstreams []string                      `json:"encrypted_upstreams"`
 	DefaultUpstream    string                        `json:"default_upstream"`
 	DefaultStrategy    string                        `json:"default_strategy"`
+	AdaptiveInterval   int                           `json:"adaptive_interval_minutes"`
+	AdaptiveLastRun    string                        `json:"adaptive_last_run"`
+	AdaptiveCurrent    string                        `json:"adaptive_current"`
+	AdaptiveLatencyMs  float64                       `json:"adaptive_last_latency_ms"`
+	AdaptiveLastNote   string                        `json:"adaptive_last_note"`
 	Profiles           map[string]resolution.Profile `json:"profiles"`
 	Upstreams          []string                      `json:"upstreams"`
 }
@@ -49,12 +56,15 @@ func (ws *WebServer) handleResolutionSettings(w http.ResponseWriter, r *http.Req
 func (ws *WebServer) writeResolution(w http.ResponseWriter) {
 	ws.dnsMu.Lock()
 	cfg := ws.mutableDNSLocked()
-	transport := cfg.EffectiveTransport()
+	transports := resolution.NormalizeProtocols(cfg.Transports)
+	transport := resolution.LegacyTransportFor(transports)
 	defaultUpstream := canonicalUpstream(cfg.DefaultUpstream)
-	defaultStrategy := cfg.DefaultStrategy
+	defaultStrategy := resolution.NormalizeStrategy(cfg.DefaultStrategy)
+	adaptiveInterval := resolution.NormalizeAdaptiveInterval(cfg.AdaptiveIntervalMinutes)
 	profiles := make(map[string]resolution.Profile, len(cfg.Profiles))
 	for k, v := range cfg.Profiles {
 		v = v.Normalized()
+		v.Strategy = resolution.NormalizeProfileStrategy(v.Strategy)
 		v.Upstream = canonicalUpstream(v.Upstream)
 		profiles[k] = v
 	}
@@ -75,25 +85,63 @@ func (ws *WebServer) writeResolution(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resolutionView{
 		Transport:          transport,
+		Transports:         transports,
 		EncryptedOnly:      transport == resolution.TransportEncrypted,
 		EncryptedAvailable: len(encrypted) > 0,
 		EncryptedUpstreams: encrypted,
 		DefaultUpstream:    defaultUpstream,
 		DefaultStrategy:    defaultStrategy,
+		AdaptiveInterval:   adaptiveInterval,
+		AdaptiveLastRun:    cfg.AdaptiveLastRun,
+		AdaptiveCurrent:    cfg.AdaptiveCurrent,
+		AdaptiveLatencyMs:  cfg.AdaptiveLastLatencyMs,
+		AdaptiveLastNote:   cfg.AdaptiveLastNote,
 		Profiles:           profiles,
 		Upstreams:          upstreams,
 	})
 }
 
+// handleResolutionAdaptiveRun forces one Adaptive cycle now instead of waiting
+// for the interval. The benchmark is synchronous so the response carries the
+// resolver the server actually switched to.
+func (ws *WebServer) handleResolutionAdaptiveRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		httpx.WriteMethodNotAllowed(w, "POST")
+		return
+	}
+	if ws.upstreams == nil {
+		httpx.WriteJSONError(w, http.StatusServiceUnavailable, "No upstream pool configured")
+		return
+	}
+	if _, err := ws.runAdaptiveNow(); err != nil {
+		switch {
+		case errors.Is(err, errAdaptiveNotSelected):
+			httpx.WriteJSONError(w, http.StatusConflict, "Select Adaptive (fastest) before running a check")
+		case errors.Is(err, errAdaptiveBusy):
+			httpx.WriteJSONError(w, http.StatusConflict, "A benchmark is already in progress")
+		default:
+			httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not complete the adaptive check")
+		}
+		return
+	}
+	ws.writeResolution(w)
+}
+
 func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Transport string `json:"transport"`
+		// Transports is the authoritative multi-select protocol set. Nil means
+		// an older client omitted it; an explicit empty list is rejected.
+		Transports []string `json:"transports"`
 		// EncryptedOnly is accepted from clients built before the transport
 		// choice existed; it only applies when Transport is absent.
-		EncryptedOnly   *bool                         `json:"encrypted_only"`
-		DefaultUpstream string                        `json:"default_upstream"`
-		DefaultStrategy string                        `json:"default_strategy"`
-		Profiles        map[string]resolution.Profile `json:"profiles"`
+		EncryptedOnly   *bool  `json:"encrypted_only"`
+		DefaultUpstream string `json:"default_upstream"`
+		DefaultStrategy string `json:"default_strategy"`
+		// AdaptiveIntervalMinutes is a pointer so an older client that does not
+		// know the field preserves the stored interval instead of resetting it.
+		AdaptiveIntervalMinutes *int                          `json:"adaptive_interval_minutes"`
+		Profiles                map[string]resolution.Profile `json:"profiles"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	dec.DisallowUnknownFields()
@@ -109,16 +157,21 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSONError(w, http.StatusBadRequest, "Unknown transport")
 		return
 	}
-	transport := resolution.TransportAny
-	if body.Transport != "" {
-		transport = resolution.NormalizeTransport(body.Transport)
-	} else if body.EncryptedOnly != nil && *body.EncryptedOnly {
-		transport = resolution.TransportEncrypted
+	if body.Transports != nil && !resolution.ValidProtocols(body.Transports) {
+		httpx.WriteJSONError(w, http.StatusBadRequest, "Select at least one valid transport protocol")
+		return
 	}
 	if !resolution.ValidStrategy(body.DefaultStrategy) {
 		httpx.WriteJSONError(w, http.StatusBadRequest, "Unknown default strategy")
 		return
 	}
+	if body.AdaptiveIntervalMinutes != nil && !resolution.ValidAdaptiveInterval(*body.AdaptiveIntervalMinutes) {
+		httpx.WriteJSONError(w, http.StatusBadRequest, "Unknown adaptive interval")
+		return
+	}
+	// Empty and the retired "fastest" value both normalise onto the strategy
+	// this release actually runs.
+	normalizedStrategy := resolution.NormalizeStrategy(body.DefaultStrategy)
 	defaultUpstream := strings.TrimSpace(body.DefaultUpstream)
 	if defaultUpstream != "" {
 		canonical, ok := upstream.NormalizeUpstream(defaultUpstream)
@@ -154,6 +207,11 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 			}
 			p.Upstream = canonical
 		}
+		if strings.EqualFold(strings.TrimSpace(p.Strategy), resolution.StrategyAdaptive) {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "Adaptive is a global strategy; a per-domain rule cannot carry its own interval")
+			return
+		}
+		p.Strategy = resolution.NormalizeProfileStrategy(p.Strategy)
 		if !resolution.ValidStrategy(p.Strategy) {
 			httpx.WriteJSONError(w, http.StatusBadRequest, "Unknown strategy in the rule for "+key)
 			return
@@ -169,14 +227,48 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 
 	ws.dnsMu.Lock()
 	cfg := ws.mutableDNSLocked()
-	cfg.Transport = transport
+	transports := cfg.Transports
+	switch {
+	case body.Transports != nil:
+		transports = body.Transports
+	case body.Transport != "":
+		transports = resolution.ProtocolsForTransport(body.Transport)
+	case body.EncryptedOnly != nil && *body.EncryptedOnly:
+		transports = resolution.ProtocolsForTransport(resolution.TransportEncrypted)
+	}
+	transports = resolution.NormalizeProtocols(transports)
+	cfg.Transports = transports
+	cfg.Transport = resolution.LegacyTransportFor(transports)
 	// Keep the legacy flag in step so a downgrade to 3.4.11 still means the
 	// same thing for the one choice that release understands.
-	cfg.EncryptedOnly = transport == resolution.TransportEncrypted
+	cfg.EncryptedOnly = cfg.Transport == resolution.TransportEncrypted
 	cfg.DefaultUpstream = defaultUpstream
-	cfg.DefaultStrategy = body.DefaultStrategy
+	cfg.DefaultStrategy = normalizedStrategy
+	if body.AdaptiveIntervalMinutes != nil {
+		cfg.AdaptiveIntervalMinutes = *body.AdaptiveIntervalMinutes
+	}
+	if cfg.AdaptiveIntervalMinutes <= 0 {
+		cfg.AdaptiveIntervalMinutes = resolution.DefaultAdaptiveIntervalMinutes
+	}
 	cfg.Profiles = clean
+	adaptiveCleared := false
+	if cfg.AdaptiveCurrent != "" {
+		allowedCurrent := false
+		for _, protocol := range transports {
+			if resolution.Protocol(cfg.AdaptiveCurrent) == protocol {
+				allowedCurrent = true
+				break
+			}
+		}
+		if !allowedCurrent {
+			cfg.AdaptiveCurrent = ""
+			cfg.AdaptiveLastNote = "current resolver disabled by the transport chips"
+			adaptiveCleared = true
+		}
+	}
 	err := ws.db.SetSetting("dns", cfg)
+	adaptiveCurrent := cfg.AdaptiveCurrent
+	legacyTransport := cfg.Transport
 	ws.dnsMu.Unlock()
 	if err != nil {
 		httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not persist the resolution settings")
@@ -184,14 +276,20 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ws.upstreams.SetPolicy(upstream.Policy{
-		Transport:       transport,
+		Transport:       legacyTransport,
+		Transports:      transports,
 		DefaultUpstream: defaultUpstream,
-		DefaultStrategy: body.DefaultStrategy,
+		DefaultStrategy: normalizedStrategy,
+		AdaptiveCurrent: adaptiveCurrent,
 		Profiles:        clean,
 	})
+	if adaptiveCleared {
+		ws.upstreams.SetAdaptiveCurrent("")
+	}
 	if ws.cache != nil {
 		ws.cache.Flush()
 	}
+	ws.nudgeAdaptive()
 	ws.writeResolution(w)
 }
 
@@ -241,8 +339,10 @@ func (ws *WebServer) applyResolutionPolicy() {
 	cfg := ws.mutableDNSLocked()
 	policy := upstream.Policy{
 		Transport:       cfg.EffectiveTransport(),
+		Transports:      cfg.Transports,
 		DefaultUpstream: cfg.DefaultUpstream,
 		DefaultStrategy: cfg.DefaultStrategy,
+		AdaptiveCurrent: cfg.AdaptiveCurrent,
 		Profiles:        cfg.Profiles,
 	}
 	ws.dnsMu.Unlock()

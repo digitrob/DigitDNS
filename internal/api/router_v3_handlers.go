@@ -1199,6 +1199,26 @@ func (a *API) handleV3Resolution(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleV3AdaptiveRun forces one Adaptive benchmark/selection cycle. It is
+// synchronous so the app can update the last-run/current fields from the
+// response instead of polling.
+func (a *API) handleV3AdaptiveRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	resp, err := a.v3Backend.RunAdaptive()
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 // handleV3DnssecSettings mirrors the dashboard's startup-only DNSSEC policy.
 // The Android client authenticates with the master API key, which the panel's
 // session-only gate rejects, so the route lives on the v3 router.

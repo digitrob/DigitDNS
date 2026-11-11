@@ -116,6 +116,9 @@ private val GreyScheme = darkColorScheme(
 /** Whether the app is currently rendering the light scheme. */
 val LocalIsLightTheme = staticCompositionLocalOf { false }
 
+/** Whether the app is currently rendering the Graphite/grey scheme. */
+val LocalIsGreyTheme = staticCompositionLocalOf { false }
+
 @Composable
 fun DigitDnsTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -132,6 +135,7 @@ fun DigitDnsTheme(
     CompositionLocalProvider(
         LocalExtendedColors provides extended,
         LocalIsLightTheme provides !darkTheme,
+        LocalIsGreyTheme provides greyTheme,
     ) {
         MaterialTheme(
             colorScheme = scheme,

@@ -1427,6 +1427,108 @@ func TestBestKnownStartsWithFastestMeasured(t *testing.T) {
 	}
 }
 
+func TestPolicyProtocolsFilterCandidates(t *testing.T) {
+	plain := "1.1.1.1:53"
+	dot := "tls://dns.google:853"
+	doh := "https://dns.google/dns-query"
+	p := newTestPool(t, []string{plain, dot, doh}, time.Second, false, "")
+	p.SetPolicy(Policy{Transports: []string{resolution.ProtocolPlain, resolution.ProtocolDoH}})
+
+	snap := p.snap.Load()
+	if got := snap.candidates(resolution.TransportAny); len(got) != 2 || got[0] != plain || got[1] != doh {
+		t.Fatalf("enabled candidates = %v, want [%s %s]", got, plain, doh)
+	}
+	if got := snap.candidates(resolution.TransportEncrypted); len(got) != 1 || got[0] != doh {
+		t.Fatalf("encrypted candidates = %v, want [%s]", got, doh)
+	}
+	if got := snap.candidates(resolution.TransportRegular); len(got) != 1 || got[0] != plain {
+		t.Fatalf("regular candidates = %v, want [%s]", got, plain)
+	}
+}
+
+func TestSingleUpstreamBypassesProtocolChips(t *testing.T) {
+	first := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.91"}), nil)
+	second := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.92"}), nil)
+	p := newTestPool(t, []string{first.addr, second.addr}, time.Second, false, "")
+	p.SetPolicy(Policy{
+		Transports:      []string{resolution.ProtocolDoH},
+		DefaultUpstream: first.addr,
+	})
+
+	resp, _, addr, err := p.ExchangeFor(query(probeName), "")
+	if err != nil {
+		t.Fatalf("ExchangeFor: %v", err)
+	}
+	if addr != first.addr || firstA(resp) != "203.0.113.91" {
+		t.Fatalf("single upstream was not authoritative: addr=%s answer=%q", addr, firstA(resp))
+	}
+}
+
+func TestAdaptiveUsesPersistedCurrent(t *testing.T) {
+	slow := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.61"}), nil)
+	fast := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.62"}), nil)
+
+	p := newTestPool(t, []string{slow.addr, fast.addr}, 2*time.Second, false, "")
+	setMeasuredLatency(t, p, slow.addr, 90*time.Millisecond)
+	setMeasuredLatency(t, p, fast.addr, 10*time.Millisecond)
+	p.SetPolicy(Policy{DefaultStrategy: resolution.StrategyAdaptive, AdaptiveCurrent: slow.addr})
+
+	resp, _, addr, err := p.ExchangeFor(query(probeName), "")
+	if err != nil {
+		t.Fatalf("ExchangeFor: %v", err)
+	}
+	if addr != slow.addr || firstA(resp) != "203.0.113.61" {
+		t.Fatalf("adaptive ignored the persisted resolver: addr=%s answer=%q", addr, firstA(resp))
+	}
+
+	// The scheduler's next run moves the choice; the query path must follow it
+	// without rebuilding the policy.
+	p.SetAdaptiveCurrent(fast.addr)
+	resp, _, addr, err = p.ExchangeFor(query(probeName), "")
+	if err != nil {
+		t.Fatalf("ExchangeFor after switch: %v", err)
+	}
+	if addr != fast.addr || firstA(resp) != "203.0.113.62" {
+		t.Fatalf("adaptive did not follow the new choice: addr=%s answer=%q", addr, firstA(resp))
+	}
+}
+
+func TestAdaptiveSelectionAppliesHysteresis(t *testing.T) {
+	first := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.71"}), nil)
+	second := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.72"}), nil)
+
+	p := newTestPool(t, []string{first.addr, second.addr}, 2*time.Second, false, "")
+	setMeasuredLatency(t, p, first.addr, 200*time.Millisecond)
+	setMeasuredLatency(t, p, second.addr, 190*time.Millisecond)
+
+	// A 5% edge is noise at these latencies; the current resolver stays.
+	d := p.SelectAdaptiveFastest(first.addr, 0)
+	if d.Changed || d.Current != first.addr {
+		t.Fatalf("adaptive flapped on noise: %+v", d)
+	}
+
+	// A 50% edge clears the 12% hysteresis and switches.
+	setMeasuredLatency(t, p, second.addr, 100*time.Millisecond)
+	d = p.SelectAdaptiveFastest(first.addr, 0)
+	if !d.Changed || d.Current != second.addr {
+		t.Fatalf("adaptive did not switch to a meaningfully faster resolver: %+v", d)
+	}
+	if d.Fastest != second.addr || d.FastestLatency == 0 {
+		t.Fatalf("decision did not report the fastest resolver: %+v", d)
+	}
+}
+
+func TestAdaptiveSelectionReplacesAStaleChoice(t *testing.T) {
+	first := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.81"}), nil)
+	p := newTestPool(t, []string{first.addr}, 2*time.Second, false, "")
+	setMeasuredLatency(t, p, first.addr, 15*time.Millisecond)
+
+	d := p.SelectAdaptiveFastest("192.0.2.99:53", 0)
+	if d.Current != first.addr || !d.Changed {
+		t.Fatalf("adaptive kept a resolver that is no longer in the pool: %+v", d)
+	}
+}
+
 func TestBestKnownFallsThroughOnFailure(t *testing.T) {
 	refuser := newTestResolver(t, always(answer{rcode: dns.RcodeRefused}), nil)
 	answerer := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.23"}), nil)

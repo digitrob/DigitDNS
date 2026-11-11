@@ -83,6 +83,7 @@ import java.io.ByteArrayOutputStream
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.core.network.ResolutionProfileDto
 import com.digitrob.digitdns.core.network.ResolutionSettings
+import com.digitrob.digitdns.core.network.normalizedResolutionStrategy
 import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.dashboard.resolverExcludedByTransport
@@ -404,7 +405,9 @@ private fun ResolutionDialogHost(
 private class ResolutionDraft(profile: ResolutionProfileDto?) {
     private val pinned = profile?.upstream.orEmpty()
     var upstream by mutableStateOf(pinned)
-    var strategy by mutableStateOf(profile?.strategy ?: "")
+    var strategy by mutableStateOf(
+        profile?.strategy?.takeIf { it.isNotBlank() }?.let { normalizedResolutionStrategy(it) } ?: "",
+    )
 
     // The transport follows the resolver: a stored rule that pins one resolver
     // and carries a conflicting transport is normalised to the resolver's type on
@@ -554,7 +557,6 @@ private fun ResolutionFields(
         value = draft.strategy,
         choices = listOf(
             "" to stringResource(R.string.domains_inherit_global),
-            "fastest" to stringResource(R.string.strategy_fastest),
             "sequential" to stringResource(R.string.strategy_sequential),
             "hedged" to stringResource(R.string.strategy_hedged),
             "best" to stringResource(R.string.strategy_best),
@@ -576,11 +578,6 @@ private fun ResolutionFields(
             // no longer be saved in a contradictory state.
             draft.upstream = upstreamForTransport(choice, choices, draft.upstream)
         },
-    )
-    Text(
-        text = stringResource(R.string.domains_fallback),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 

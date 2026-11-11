@@ -15,6 +15,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.sse.EventSource
 import timber.log.Timber
 import java.io.IOException
@@ -33,6 +36,43 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val BASE_BACKOFF_MS = 1_000L
+private const val MAX_BACKOFF_MS = 30_000L
+private const val MAX_BACKOFF_SHIFT = 5
+
+/** A stalled credential retries slowly: no point storming a refused session. */
+private const val AUTH_BACKOFF_MS = 60_000L
+
+/** Exponential backoff capped at [MAX_BACKOFF_MS]: 1s, 2s, 4s, … 30s. */
+private fun backoffMillis(attempt: Int): Long {
+    val base = BASE_BACKOFF_MS shl (attempt - 1).coerceIn(0, MAX_BACKOFF_SHIFT)
+    return base.coerceAtMost(MAX_BACKOFF_MS)
+}
+
+/**
+ * Sleep for [millis], but return true immediately when [wake] is signalled. The
+ * caller resets its attempt counter on a wake so the next failure starts a
+ * fresh 1 s backoff rather than continuing a 30 s one.
+ */
+private suspend fun waitBackoff(wake: ReceiveChannel<Unit>, millis: Long): Boolean =
+    withTimeoutOrNull(millis) { wake.receive() } != null
+
+/**
+ * The auth-failure branch of the reconnect loop, kept out of the loop so the
+ * when/while nesting stays readable: try the silent re-login, then park in
+ * AUTH_FAILED and back off slowly.
+ */
+private suspend fun handleAuthFailure(
+    attempt: Int,
+    refresh: suspend () -> Boolean,
+    wake: ReceiveChannel<Unit>,
+    onStalled: () -> Unit,
+): Int {
+    if (refresh()) return 0
+    onStalled()
+    return if (waitBackoff(wake, AUTH_BACKOFF_MS)) 0 else attempt + 1
+}
 
 /** How the shared stream is doing, for a live indicator. */
 enum class StreamStatus {
@@ -147,6 +187,38 @@ class LiveQueryStream @Inject constructor(
     fun reconnect() {
         if (reconnectRequested) return
         reconnectRequested = true
+        retryWake.trySend(Unit)
+        stream?.cancel()
+        closeSignal.complete(Unit)
+    }
+
+    /**
+     * Called when the app returns to the foreground. A process that was suspended
+     * can wake with a dead socket and a retry loop still inside its backoff, which
+     * is exactly the "Reconnecting" badge the operator sees after leaving the app
+     * idle. Refresh the socket immediately instead of waiting out the backoff.
+     *
+     * The reconnect is unconditional once the stream has been open for a while:
+     * an idle SSE connection produces no data frames, so there is no positive
+     * signal that the socket survived Doze. A fresh ticket is cheap and the
+     * server's history snapshot re-seeds the log.
+     */
+    fun onForeground() {
+        if (consumers.get() <= 0) return
+        val status = _status.value
+        val stale = openedAtNanos == 0L ||
+            System.nanoTime() - openedAtNanos >= FOREGROUND_RECONNECT_AFTER_NANOS
+        if (status == StreamStatus.LIVE && !stale) return
+        // Returning from Doze should not flash Connecting when the app already
+        // had a working socket: the install is reachable, and the refresh below
+        // either re-opens the stream or drops back to Retrying on a real failure.
+        if (openedAtNanos != 0L &&
+            (status == StreamStatus.RETRYING || status == StreamStatus.CONNECTING)
+        ) {
+            _status.value = StreamStatus.LIVE
+        }
+        Timber.i("foreground: refreshing live stream (status=%s)", status)
+        retryWake.trySend(Unit)
         stream?.cancel()
         closeSignal.complete(Unit)
     }
@@ -177,8 +249,23 @@ class LiveQueryStream @Inject constructor(
     private suspend fun watchReachability() {
         reachability.hits.collect {
             val current = _status.value
-            if (current == StreamStatus.IDLE || current == StreamStatus.CONNECTING) {
-                _status.value = StreamStatus.LIVE
+            when (current) {
+                StreamStatus.IDLE, StreamStatus.CONNECTING -> _status.value = StreamStatus.LIVE
+                StreamStatus.RETRYING -> {
+                    // A successful authenticated call proves the install is
+                    // reachable. Wake the loop, but throttle it: the dashboard
+                    // polls every second, and a genuine SSE outage must still
+                    // respect the backoff rather than become a retry storm.
+                    val now = System.nanoTime()
+                    if (now - lastAttemptAtNanos >= REACHABILITY_RETRY_AFTER_NANOS) {
+                        // The install answered an authenticated call, so the
+                        // badge is Online even while the SSE socket is being
+                        // re-opened in the background.
+                        _status.value = StreamStatus.LIVE
+                        retryWake.trySend(Unit)
+                    }
+                }
+                else -> Unit
             }
         }
     }
@@ -209,19 +296,18 @@ class LiveQueryStream @Inject constructor(
                     // Try the one silent re-login the rest of the app uses; only if that
                     // fails do we park in AUTH_FAILED and slow the retry right down, so a
                     // dead credential cannot become a ticket-minting storm.
-                    if (sessionRefresher.refresh()) {
-                        attempt = 0
-                    } else {
-                        _status.value = StreamStatus.AUTH_FAILED
-                        attempt++
-                        delay(AUTH_BACKOFF_MS)
-                    }
+                    attempt = handleAuthFailure(
+                        attempt = attempt,
+                        refresh = sessionRefresher::refresh,
+                        wake = retryWake,
+                        onStalled = { _status.value = StreamStatus.AUTH_FAILED },
+                    )
                 }
 
                 OpenOutcome.RETRYABLE_FAIL -> {
                     attempt++
                     _status.value = StreamStatus.RETRYING
-                    delay(backoffMillis(attempt))
+                    attempt = if (waitBackoff(retryWake, backoffMillis(attempt))) 0 else attempt
                 }
             }
         }
@@ -240,6 +326,21 @@ class LiveQueryStream @Inject constructor(
     /** Completed by onClosed, reconnect() or teardown() to wake the reconnect loop. */
     @Volatile private var closeSignal = CompletableDeferred<Unit>()
 
+    /**
+     * Wakes the reconnect loop out of an exponential backoff. Android suspends a
+     * backgrounded process, so by the time the app returns the socket may be dead
+     * and the loop may be sleeping for up to 30 s. A successful REST call or a
+     * foreground transition proves the install is reachable and should not wait
+     * out a backoff that was earned while the network was asleep.
+     */
+    private val retryWake = Channel<Unit>(Channel.CONFLATED)
+
+    /** When the current socket opened, used to refresh a long-idle connection on foreground. */
+    @Volatile private var openedAtNanos = 0L
+
+    /** When the last connect attempt started, to throttle reachability-triggered wakes. */
+    @Volatile private var lastAttemptAtNanos = 0L
+
     private suspend fun openOnce(): OpenOutcome {
         // A manual reconnect re-enters through a stream that was already live. Do not
         // flash "Connecting" for that; the feed is already anchored, so the badge only
@@ -248,6 +349,7 @@ class LiveQueryStream @Inject constructor(
         if (!wasLive) {
             _status.value = StreamStatus.CONNECTING
         }
+        lastAttemptAtNanos = System.nanoTime()
         val connection = connectionStore.connection.firstOrNull()
         val ticket = mintTicket()
         return when {
@@ -319,6 +421,7 @@ class LiveQueryStream @Inject constructor(
         latch.await(CONNECT_LATCH_SECONDS, TimeUnit.SECONDS)
         if (opened) {
             retryAllowed = true
+            openedAtNanos = System.nanoTime()
             _status.value = StreamStatus.LIVE
         }
         // Never opened: a 4xx from the stream route (a spent ticket, a revoked session)
@@ -413,23 +516,25 @@ class LiveQueryStream @Inject constructor(
         _status.value = StreamStatus.STOPPED
     }
 
-    /** Exponential backoff capped at [MAX_BACKOFF_MS]: 1s, 2s, 4s, … 30s. */
-    private fun backoffMillis(attempt: Int): Long {
-        val base = BASE_BACKOFF_MS shl (attempt - 1).coerceIn(0, MAX_BACKOFF_SHIFT)
-        return base.coerceAtMost(MAX_BACKOFF_MS)
-    }
-
     private companion object {
         /** The ring the log renders. Matches the panel's recent-log depth. */
         const val BUFFER_LIMIT = 200
 
         const val CONNECT_LATCH_SECONDS = 20L
-        const val BASE_BACKOFF_MS = 1_000L
-        const val MAX_BACKOFF_MS = 30_000L
-        const val MAX_BACKOFF_SHIFT = 5
 
-        /** A stalled credential retries slowly: no point storming a refused session. */
-        const val AUTH_BACKOFF_MS = 60_000L
+        /**
+         * A reachability hit may cut a backoff short, but only after this long.
+         * The dashboard polls every second; without the throttle a reachable
+         * install whose SSE route is broken would be retried every second.
+         */
+        const val REACHABILITY_RETRY_AFTER_NANOS = 5_000_000_000L
+
+        /**
+         * A socket older than this is refreshed on foreground even if its status
+         * still says LIVE. An idle SSE stream sends no data frames, so Doze can
+         * leave a dead socket looking healthy until the next query.
+         */
+        const val FOREGROUND_RECONNECT_AFTER_NANOS = 120_000_000_000L
 
         /** UI coalescing window: enough to batch a burst, short enough to feel live. */
         const val UI_PUBLISH_INTERVAL_MS = 250L

@@ -53,6 +53,7 @@ import com.digitrob.digitdns.data.AuthRepository
 import com.digitrob.digitdns.data.SubscriberSession
 import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.core.network.AuthState
+import com.digitrob.digitdns.data.stream.LiveQueryStream
 import com.digitrob.digitdns.ui.auth.LoginScreen
 import com.digitrob.digitdns.ui.clients.ClientsScreen
 import com.digitrob.digitdns.ui.dashboard.DashboardScreen
@@ -90,12 +91,17 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var appPreferences: AppPreferences
     @Inject lateinit var subscriberSession: SubscriberSession
     @Inject lateinit var authState: AuthState
+    @Inject lateinit var liveStream: LiveQueryStream
 
     private val lockViewModel: AppLockViewModel by viewModels()
 
     override fun onStart() {
         super.onStart()
         lockViewModel.onForeground()
+        // A suspended process can return with a dead SSE socket and a retry
+        // loop still in its backoff; refresh it before the badge can settle on
+        // "Reconnecting".
+        liveStream.onForeground()
     }
 
     override fun onStop() {
@@ -163,6 +169,7 @@ class MainActivity : FragmentActivity() {
                                 authenticating = authenticating,
                                 onUnlock = { lockViewModel.unlock(this@MainActivity) },
                                 onSignOut = { lockViewModel.signOut() },
+                                onShown = { lockViewModel.onLockShown(this@MainActivity) },
                             )
                         } else {
                             // A subscriber session wins over the admin shortcut: it was

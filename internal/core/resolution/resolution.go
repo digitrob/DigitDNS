@@ -12,9 +12,13 @@ import (
 	"strings"
 )
 
-// Strategy values accepted in a profile. Empty means inherit the pool's global
-// racing setting.
+// Strategy values accepted by the resolution settings. Empty means inherit the
+// pool's global racing setting. Adaptive is a global strategy in this release;
+// per-domain profiles cannot carry it.
 const (
+	// StrategyFastest is the pre-5.5.7 race-every-resolver strategy. It is
+	// retired from the UI and normalised to Hedged, but remains accepted so an
+	// older client can still save a settings record.
 	StrategyFastest    = "fastest"
 	StrategySequential = "sequential"
 	// StrategyHedged starts with the fastest measured resolver and launches the
@@ -23,7 +27,44 @@ const (
 	// StrategyBestKnown uses the fastest measured resolver, then falls through
 	// the remaining resolvers in latency order on failure.
 	StrategyBestKnown = "best"
+	// StrategyAdaptive benchmarks the pool on a schedule and keeps using the
+	// fastest healthy resolver until the next run. Unlike Hedged/Best Known it
+	// is a stable, periodically re-evaluated choice rather than a per-query
+	// latency sort.
+	StrategyAdaptive = "adaptive"
 )
+
+// Adaptive interval choices, in minutes. They are deliberately a small fixed
+// set: an adaptive run is a real benchmark, so a free-form interval would let
+// an operator turn it into a query amplifier.
+const (
+	DefaultAdaptiveIntervalMinutes = 60
+	MinAdaptiveIntervalMinutes     = 5
+	MaxAdaptiveIntervalMinutes     = 1440
+)
+
+// AdaptiveIntervalChoices is the ordered set the panel and the app offer.
+var AdaptiveIntervalChoices = []int{5, 15, 60, 360, 1440}
+
+// ValidAdaptiveInterval reports whether minutes is one of the offered choices.
+func ValidAdaptiveInterval(minutes int) bool {
+	for _, choice := range AdaptiveIntervalChoices {
+		if minutes == choice {
+			return true
+		}
+	}
+	return false
+}
+
+// NormalizeAdaptiveInterval maps a stored/requested value onto an offered
+// choice. Zero (the zero value of a field added to an old record) and anything
+// unknown become the one-hour default rather than a surprising value.
+func NormalizeAdaptiveInterval(minutes int) int {
+	if ValidAdaptiveInterval(minutes) {
+		return minutes
+	}
+	return DefaultAdaptiveIntervalMinutes
+}
 
 // Fallback values accepted in a profile. Empty means FallbackPool.
 const (
@@ -38,6 +79,132 @@ const (
 	TransportEncrypted = "encrypted"
 	TransportRegular   = "regular"
 )
+
+// Per-upstream protocols. The global policy is a set of these, so an install
+// can allow, say, plain DNS and DoH while excluding DoT and DoQ. The order is
+// the one the UI presents and the one NormalizeProtocols returns.
+const (
+	ProtocolPlain    = "plain"
+	ProtocolDoT      = "dot"
+	ProtocolDoH      = "doh"
+	ProtocolDoH3     = "doh3"
+	ProtocolDoQ      = "doq"
+	ProtocolDNSCrypt = "dnscrypt"
+)
+
+// AllProtocols is the canonical order used by the settings view and the chips.
+var AllProtocols = []string{
+	ProtocolPlain,
+	ProtocolDoT,
+	ProtocolDoH,
+	ProtocolDoH3,
+	ProtocolDoQ,
+	ProtocolDNSCrypt,
+}
+
+// ValidProtocol reports whether value names an upstream protocol.
+func ValidProtocol(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case ProtocolPlain, ProtocolDoT, ProtocolDoH, ProtocolDoH3, ProtocolDoQ, ProtocolDNSCrypt:
+		return true
+	}
+	return false
+}
+
+// ValidProtocols reports whether a non-empty protocol set contains only known
+// names. The global policy must keep at least one protocol enabled; an empty
+// set would leave the pool with no candidates.
+func ValidProtocols(values []string) bool {
+	if len(values) == 0 {
+		return false
+	}
+	for _, value := range values {
+		if !ValidProtocol(value) {
+			return false
+		}
+	}
+	return true
+}
+
+// NormalizeProtocols deduplicates a protocol set and returns it in canonical
+// order. Empty/invalid input becomes all protocols, which is the pre-chips
+// behaviour and the safe default for an old record.
+func NormalizeProtocols(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		if ValidProtocol(value) {
+			seen[strings.ToLower(strings.TrimSpace(value))] = true
+		}
+	}
+	if len(seen) == 0 {
+		return append([]string(nil), AllProtocols...)
+	}
+	out := make([]string, 0, len(seen))
+	for _, protocol := range AllProtocols {
+		if seen[protocol] {
+			out = append(out, protocol)
+		}
+	}
+	return out
+}
+
+// ProtocolsForTransport maps the legacy any/encrypted/regular choice onto the
+// equivalent protocol set. It is the migration path for records saved before
+// the transport chips existed.
+func ProtocolsForTransport(transport string) []string {
+	switch NormalizeTransport(transport) {
+	case TransportEncrypted:
+		return []string{ProtocolDoT, ProtocolDoH, ProtocolDoH3, ProtocolDoQ, ProtocolDNSCrypt}
+	case TransportRegular:
+		return []string{ProtocolPlain}
+	default:
+		return append([]string(nil), AllProtocols...)
+	}
+}
+
+// LegacyTransportFor collapses a protocol set onto the single value older
+// clients and profile rules understand. A mixed set has no legacy spelling, so
+// it reads as "any" while the protocol set remains authoritative.
+func LegacyTransportFor(protocols []string) string {
+	normalized := NormalizeProtocols(protocols)
+	plain, encrypted := false, false
+	for _, protocol := range normalized {
+		if protocol == ProtocolPlain {
+			plain = true
+		} else {
+			encrypted = true
+		}
+	}
+	switch {
+	case plain && !encrypted:
+		return TransportRegular
+	case encrypted && !plain:
+		return TransportEncrypted
+	default:
+		return TransportAny
+	}
+}
+
+// Protocol classifies one canonical upstream address. Anything that is not one
+// of the encrypted schemes is plain UDP/TCP, matching NormalizeUpstream's
+// fallback for a bare host or tcp://.
+func Protocol(upstream string) string {
+	lower := strings.ToLower(strings.TrimSpace(upstream))
+	switch {
+	case strings.HasPrefix(lower, "tls://"):
+		return ProtocolDoT
+	case strings.HasPrefix(lower, "https://"):
+		return ProtocolDoH
+	case strings.HasPrefix(lower, "h3://"):
+		return ProtocolDoH3
+	case strings.HasPrefix(lower, "quic://"):
+		return ProtocolDoQ
+	case strings.HasPrefix(lower, "sdns://"):
+		return ProtocolDNSCrypt
+	default:
+		return ProtocolPlain
+	}
+}
 
 // NormalizeTransport maps a stored value onto one of the three choices. An
 // unknown value falls back to "any" so a hand-edited config can never leave the
@@ -104,13 +271,56 @@ func (p Profile) TransportFor(global string) string {
 }
 
 // ValidStrategy reports whether value is an accepted racing strategy (or empty,
-// meaning the pool's configured default).
+// meaning the pool's configured default). StrategyFastest is accepted for
+// backwards compatibility but NormalizeStrategy turns it into Hedged.
 func ValidStrategy(value string) bool {
-	switch value {
-	case "", StrategyFastest, StrategySequential, StrategyHedged, StrategyBestKnown:
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", StrategyFastest, StrategySequential, StrategyHedged, StrategyBestKnown, StrategyAdaptive:
 		return true
 	}
 	return false
+}
+
+// NormalizeStrategy turns a stored/requested strategy into the strategy the
+// current release actually runs. Empty is the out-of-the-box default and now
+// means Adaptive (fastest); Fastest is the retired race-every-resolver mode and
+// aliases Hedged.
+func NormalizeStrategy(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case StrategyAdaptive:
+		return StrategyAdaptive
+	case StrategySequential:
+		return StrategySequential
+	case StrategyHedged:
+		return StrategyHedged
+	case StrategyBestKnown:
+		return StrategyBestKnown
+	case StrategyFastest:
+		return StrategyHedged
+	case "":
+		return StrategyAdaptive
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+// NormalizeProfileStrategy normalises a per-domain override without turning an
+// empty value into an inherited default: empty still means "inherit global".
+// Fastest is retired here too and becomes Hedged.
+func NormalizeProfileStrategy(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "":
+		return ""
+	case StrategyFastest:
+		return StrategyHedged
+	case StrategyAdaptive:
+		// Adaptive is a global strategy in this release. A profile that asks
+		// for it inherits the global default instead of carrying a second
+		// scheduler.
+		return ""
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
 }
 
 // Normalized rewrites the legacy encrypted_only flag as the equivalent

@@ -1,6 +1,10 @@
 package com.digitrob.digitdns.ui.dashboard
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -16,12 +20,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Podcasts
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
@@ -29,9 +36,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +48,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
@@ -46,12 +56,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.digitrob.digitdns.R
+import com.digitrob.digitdns.core.network.ALL_TRANSPORTS
 import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.core.network.UpstreamPresetProvider
 import com.digitrob.digitdns.core.network.UpstreamStat
+import com.digitrob.digitdns.core.network.normalizedAdaptiveIntervalMinutes
+import com.digitrob.digitdns.core.network.normalizedResolutionStrategy
+import com.digitrob.digitdns.core.network.normalizedTransports
 import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRowDefaults
@@ -62,8 +79,14 @@ import com.digitrob.digitdns.ui.components.UpstreamPresetBrowserState
 import com.digitrob.digitdns.ui.formatCount
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.ExtendedColors
+import com.digitrob.digitdns.ui.theme.LocalIsGreyTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 /**
  * The Upstream Racers tile: the resolver pool ranked by latency, with the panel's two
@@ -95,6 +118,10 @@ internal fun UpstreamRacersCard(
 
             val policy = poolPolicy(resolutionControls.settings, upstreams)
             val ordered = orderedResolvers(upstreams, policy)
+            val adaptiveCurrent = resolutionControls.settings
+                ?.takeIf { normalizedResolutionStrategy(it.defaultStrategy) == "adaptive" }
+                ?.adaptiveCurrent
+                .orEmpty()
 
             if (upstreams.isEmpty()) {
                 Text(
@@ -118,8 +145,10 @@ internal fun UpstreamRacersCard(
                             UpstreamRow(
                                 stat = stat,
                                 swipeEnabled = swipeEnabled,
-                                dimmed = resolverExcludedByTransport(stat.address, policy.transport, policy.encrypted) ||
+                                dimmed = upstreamProtocolKey(stat.address) !in policy.transports ||
+                                    resolverExcludedByTransport(stat.address, policy.transport, policy.encrypted) ||
                                     (policy.pinActive && stat.address != policy.pinned),
+                                isAdaptiveCurrent = stat.address == adaptiveCurrent,
                                 onRemove = {
                                     scope.launch { removeError = actions.onRemove(stat.address) }
                                 },
@@ -142,6 +171,9 @@ internal fun UpstreamRacersCard(
                 resolution = resolutionControls.settings,
                 configured = upstreams.map { it.address },
                 onChange = resolutionControls.onChange,
+                isAdaptiveRunning = resolutionControls.isAdaptiveRunning,
+                onRunAdaptive = resolutionControls.onRunAdaptive,
+                lastSingleUpstream = resolutionControls.lastSingleUpstream,
             )
         }
     }
@@ -274,6 +306,7 @@ data class UpstreamActions(
 /** The effective pool policy used for dimming one resolver list. */
 private data class PoolPolicy(
     val transport: String,
+    val transports: Set<String>,
     val encrypted: Set<String>,
     val pinned: String,
     val pinActive: Boolean,
@@ -288,31 +321,49 @@ private fun poolPolicy(
         .ifEmpty { addresses.filter { resolverLooksEncrypted(it) }.toSet() }
     val pinned = resolution?.defaultUpstream.orEmpty()
     val transport = resolution?.transport ?: "any"
+    val transports = normalizedTransports(resolution?.transports ?: ALL_TRANSPORTS).toSet()
     return PoolPolicy(
         transport = transport,
+        transports = transports,
         encrypted = encrypted,
         pinned = pinned,
         pinActive = pinned.isNotEmpty() &&
+            upstreamProtocolKey(pinned) in transports &&
             !resolverExcludedByTransport(pinned, transport, encrypted),
     )
 }
 
-/** A selected transport puts the resolvers it allows first, preserving latency order. */
+/** Enabled protocols first, then the legacy encrypted/regular filter, preserving latency order. */
 private fun orderedResolvers(
     upstreams: List<UpstreamStat>,
     policy: PoolPolicy,
 ): List<UpstreamStat> {
-    if (policy.transport != "encrypted" && policy.transport != "regular") return upstreams
     val (active, excluded) = upstreams.partition {
-        !resolverExcludedByTransport(it.address, policy.transport, policy.encrypted)
+        upstreamProtocolKey(it.address) in policy.transports &&
+            !resolverExcludedByTransport(it.address, policy.transport, policy.encrypted)
     }
     return active + excluded
+}
+
+private fun upstreamProtocolKey(address: String): String {
+    val a = address.trim().lowercase()
+    return when {
+        a.startsWith("tls://") -> "dot"
+        a.startsWith("https://") -> "doh"
+        a.startsWith("h3://") -> "doh3"
+        a.startsWith("quic://") -> "doq"
+        a.startsWith("sdns://") -> "dnscrypt"
+        else -> "plain"
+    }
 }
 
 /** The pair the resolver card needs to render and save the global resolution defaults. */
 data class ResolutionControls(
     val settings: ResolutionSettings? = null,
     val onChange: (ResolutionSettings) -> Unit = {},
+    val isAdaptiveRunning: Boolean = false,
+    val onRunAdaptive: () -> Unit = {},
+    val lastSingleUpstream: String = "",
 )
 
 /**
@@ -325,59 +376,419 @@ private fun ResolutionDefaults(
     resolution: ResolutionSettings?,
     configured: List<String>,
     onChange: (ResolutionSettings) -> Unit,
+    isAdaptiveRunning: Boolean,
+    onRunAdaptive: () -> Unit,
+    lastSingleUpstream: String,
 ) {
     val base = resolution ?: ResolutionSettings()
-    val encrypted = base.encryptedUpstreams.toSet()
-        .ifEmpty { configured.filter { resolverLooksEncrypted(it) }.toSet() }
-    val hasEncrypted = base.encryptedAvailable || encrypted.isNotEmpty()
-    val hasRegular = configured.any { !resolverLooksEncrypted(it) }
-    val excluded = configured.filter {
-        resolverExcludedByTransport(it, base.transport, encrypted)
-    }.toSet()
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        ResolutionPicker(
-            label = stringResource(R.string.domains_transports),
-            value = base.transport.ifEmpty { "any" },
-            choices = transportChoices(),
-            unavailable = buildSet {
-                if (!hasEncrypted) add("encrypted")
-                if (configured.isNotEmpty() && !hasRegular) add("regular")
-            },
-            onSelect = { onChange(base.copy(transport = it)) },
-        )
-        ResolutionPicker(
-            label = stringResource(R.string.upstream_default),
-            value = base.defaultUpstream,
-            // A pin is a preference, not a policy override: the pool ignores one
-            // the transport excludes, so the UI must still let it be chosen.
-            choices = listOf("" to stringResource(R.string.upstream_pool_default)) + configured.map { it to it },
-            onSelect = { onChange(base.copy(defaultUpstream = it)) },
-        )
-        if (base.defaultUpstream.isNotEmpty() && base.defaultUpstream in excluded) {
-            Text(
-                text = stringResource(R.string.upstream_excluded, base.defaultUpstream),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.tertiary,
-            )
+    val strategy = normalizedResolutionStrategy(base.defaultStrategy)
+    val single = base.defaultUpstream.isNotEmpty()
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ChipBlock(label = stringResource(R.string.domains_strategy), dimmed = single) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                listOf(
+                    "adaptive" to stringResource(R.string.strategy_adaptive),
+                    "sequential" to stringResource(R.string.strategy_sequential),
+                    "hedged" to stringResource(R.string.strategy_hedged),
+                    "best" to stringResource(R.string.strategy_best),
+                ).forEach { (value, label) ->
+                    ResolverChip(
+                        label = label,
+                        selected = strategy == value,
+                        enabled = !single,
+                        onClick = { onChange(base.copy(defaultStrategy = value)) },
+                    )
+                }
+            }
         }
-        ResolutionPicker(
-            label = stringResource(R.string.domains_strategy),
-            value = base.defaultStrategy,
-            choices = listOf(
-                "" to stringResource(R.string.upstream_pool_default_lower),
-                "fastest" to stringResource(R.string.strategy_fastest),
-                "sequential" to stringResource(R.string.strategy_sequential),
-                "hedged" to stringResource(R.string.strategy_hedged),
-                "best" to stringResource(R.string.strategy_best),
-            ),
-            onSelect = { onChange(base.copy(defaultStrategy = it)) },
+        AdaptiveIntervalChips(
+            base = base,
+            strategy = strategy,
+            enabled = !single,
+            onChange = onChange,
+            isRunning = isAdaptiveRunning,
+            onRunAdaptive = onRunAdaptive,
         )
-        Text(
-            text = stringResource(R.string.domains_fallback),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        TransportChips(base = base, enabled = !single, onChange = onChange)
+        SingleServerRow(
+            base = base,
+            configured = configured,
+            lastSingleUpstream = lastSingleUpstream,
+            onChange = onChange,
         )
     }
+}
+
+@Suppress("CyclomaticComplexMethod") // selected/disabled/theme colour matrix is one unit
+@Composable
+private fun ResolverChip(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    accent: Color? = null,
+    onClick: () -> Unit,
+) {
+    val colors = DigitDnsTheme.colors
+    val grey = LocalIsGreyTheme.current
+    val primary = MaterialTheme.colorScheme.primary
+    val color = accent ?: primary
+    val fullGreySelection = selected && grey && accent == null
+    val background = when {
+        fullGreySelection -> primary
+        selected -> color.copy(alpha = 0.14f)
+        else -> colors.bgTile
+    }
+    val foreground = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+        fullGreySelection -> MaterialTheme.colorScheme.onPrimary
+        selected -> color
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val borderColor = when {
+        !selected -> colors.borderColor
+        fullGreySelection -> primary
+        else -> color.copy(alpha = 0.5f)
+    }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(7.dp))
+            .background(background)
+            .border(1.dp, borderColor, RoundedCornerShape(7.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.38f)
+            .padding(horizontal = 3.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontSize = 12.sp,
+                lineHeight = 14.sp,
+                fontWeight = FontWeight.Bold,
+            ),
+            color = foreground,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun ChipBlock(
+    label: String,
+    dimmed: Boolean = false,
+    footer: (@Composable () -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    Column {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp, lineHeight = 14.sp),
+                color = if (dimmed) {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.width(76.dp),
+            )
+            Box(modifier = Modifier.weight(1f)) {
+                content()
+            }
+        }
+        footer?.let {
+            Box(modifier = Modifier.padding(start = 78.dp, top = 2.dp)) {
+                it()
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdaptiveIntervalChips(
+    base: ResolutionSettings,
+    strategy: String,
+    enabled: Boolean,
+    onChange: (ResolutionSettings) -> Unit,
+    isRunning: Boolean,
+    onRunAdaptive: () -> Unit,
+) {
+    val colors = DigitDnsTheme.colors
+    val adaptive = strategy == "adaptive" && enabled
+    val selectedInterval = normalizedAdaptiveIntervalMinutes(base.adaptiveIntervalMinutes)
+    var flash by remember { mutableStateOf(false) }
+    var wasRunning by remember { mutableStateOf(false) }
+    LaunchedEffect(isRunning) {
+        if (isRunning) {
+            wasRunning = true
+        } else if (wasRunning) {
+            wasRunning = false
+            flash = true
+            delay(1500)
+            flash = false
+        }
+    }
+    ChipBlock(
+        label = stringResource(R.string.adaptive_interval),
+        dimmed = !enabled,
+        footer = {
+            Text(
+                text = when {
+                    !adaptive -> ""
+                    base.adaptiveLastRun.isBlank() -> stringResource(R.string.adaptive_last_run_empty)
+                    else -> stringResource(
+                        R.string.adaptive_last_run,
+                        formatAdaptiveRun(base.adaptiveLastRun),
+                        base.adaptiveCurrent.ifBlank { "—" },
+                    )
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                minLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                listOf(
+                    5 to stringResource(R.string.adaptive_interval_5m),
+                    15 to stringResource(R.string.adaptive_interval_15m),
+                    60 to stringResource(R.string.adaptive_interval_1h),
+                    360 to stringResource(R.string.adaptive_interval_6h),
+                    1440 to stringResource(R.string.adaptive_interval_24h),
+                ).forEach { (minutes, label) ->
+                    ResolverChip(
+                        label = label,
+                        selected = adaptive && selectedInterval == minutes,
+                        enabled = adaptive,
+                        onClick = { onChange(base.copy(adaptiveIntervalMinutes = minutes)) },
+                    )
+                }
+            }
+            AdaptiveForceButton(
+                enabled = adaptive,
+                isRunning = isRunning,
+                flash = flash,
+                onClick = onRunAdaptive,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdaptiveForceButton(
+    enabled: Boolean,
+    isRunning: Boolean,
+    flash: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = DigitDnsTheme.colors
+    IconButton(
+        onClick = onClick,
+        enabled = enabled && !isRunning,
+        modifier = Modifier.size(32.dp),
+    ) {
+        if (isRunning) {
+            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+        } else {
+            Icon(
+                Icons.Filled.Refresh,
+                contentDescription = stringResource(R.string.adaptive_check_now),
+                modifier = Modifier.size(14.dp),
+                tint = if (flash) colors.success else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+    Spacer(Modifier.width(2.dp))
+    Text(
+        text = stringResource(R.string.adaptive_check_now),
+        style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+        color = if (enabled) {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+        },
+    )
+}
+
+private val TRANSPORT_COLORS = mapOf(
+    "plain" to Color(0xFF22D3EE),
+    "dot" to Color(0xFF34D399),
+    "doh" to Color(0xFFC084FC),
+    "doh3" to Color(0xFFFB923C),
+    "doq" to Color(0xFFFBBF24),
+    "dnscrypt" to Color(0xFFE879F9),
+)
+
+@Composable
+private fun TransportChips(
+    base: ResolutionSettings,
+    enabled: Boolean,
+    onChange: (ResolutionSettings) -> Unit,
+) {
+    val transports = normalizedTransports(base.transports)
+    ChipBlock(label = stringResource(R.string.domains_transports), dimmed = !enabled) {
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ALL_TRANSPORTS.forEach { protocol ->
+                val selected = protocol in transports
+                val color = TRANSPORT_COLORS[protocol] ?: MaterialTheme.colorScheme.primary
+                val label = when (protocol) {
+                    "plain" -> stringResource(R.string.transport_plain)
+                    "dot" -> stringResource(R.string.transport_dot)
+                    "doh" -> stringResource(R.string.transport_doh)
+                    "doh3" -> stringResource(R.string.transport_doh3)
+                    "doq" -> stringResource(R.string.transport_doq)
+                    else -> stringResource(R.string.transport_dnscrypt)
+                }
+                ResolverChip(
+                    label = label,
+                    selected = selected,
+                    enabled = enabled && !(selected && transports.size == 1),
+                    accent = color,
+                    onClick = {
+                        val next = if (selected) transports - protocol else transports + protocol
+                        if (next.isNotEmpty()) onChange(base.copy(transports = normalizedTransports(next)))
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SingleServerRow(
+    base: ResolutionSettings,
+    configured: List<String>,
+    lastSingleUpstream: String,
+    onChange: (ResolutionSettings) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val pinned = base.defaultUpstream
+    val single = pinned.isNotEmpty()
+    val choices = if (pinned.isNotEmpty() && pinned !in configured) configured + pinned else configured
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(stringResource(R.string.upstream_mode_pool), style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp))
+        Switch(
+            checked = single,
+            onCheckedChange = { on ->
+                if (on) {
+                    val remembered = configured.firstOrNull { it == lastSingleUpstream }
+                    val chosen = remembered ?: configured.firstOrNull()
+                    if (chosen != null) onChange(base.copy(defaultUpstream = chosen))
+                } else {
+                    onChange(base.copy(defaultUpstream = ""))
+                }
+            },
+            enabled = configured.isNotEmpty(),
+        )
+        Text(stringResource(R.string.upstream_mode_single), style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp))
+        Box(modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+                onClick = { expanded = true },
+                enabled = single,
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                ProviderMark(pinned, 16.dp)
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = pinned.ifBlank { stringResource(R.string.upstream_pool_default) },
+                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp, fontFamily = PanelMono),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+            }
+            DigitDnsDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.width(320.dp),
+            ) {
+                choices.forEach { address ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                address,
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, fontFamily = PanelMono),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        leadingIcon = { ProviderMark(address, 16.dp) },
+                        trailingIcon = {
+                            if (address == pinned) {
+                                Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            }
+                        },
+                        onClick = {
+                            expanded = false
+                            onChange(base.copy(defaultUpstream = address))
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderMark(address: String, size: Dp) {
+    val drawable = providerDrawable(address)
+    if (drawable != null) {
+        Image(
+            painter = painterResource(drawable),
+            contentDescription = null,
+            modifier = Modifier.size(size),
+        )
+    } else {
+        Icon(
+            Icons.Filled.Public,
+            contentDescription = null,
+            modifier = Modifier.size(size),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private val PROVIDER_MATCHES = listOf(
+    listOf("cloudflare", "1.1.1.1", "1.0.0.1", "one.one.one.one") to R.drawable.provider_cloudflare,
+    listOf("google", "8.8.8.8", "8.8.4.4") to R.drawable.provider_google,
+    listOf("quad9", "9.9.9.9", "149.112.112.112") to R.drawable.provider_quad9,
+    listOf("adguard", "94.140.14.14", "94.140.15.15") to R.drawable.provider_adguard,
+)
+
+private fun providerDrawable(address: String): Int? {
+    val a = address.trim().lowercase()
+    return PROVIDER_MATCHES.firstOrNull { (needles, _) -> needles.any { a.contains(it) } }?.second
+}
+
+/** The server stores RFC3339; the card shows the same localized time as the rest of the app. */
+private fun formatAdaptiveRun(raw: String): String {
+    val instant = runCatching { Instant.parse(raw) }.getOrNull() ?: return raw
+    return DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
+        .withZone(ZoneId.systemDefault())
+        .format(instant)
 }
 
 /**
@@ -411,60 +822,6 @@ internal fun resolverLooksEncrypted(address: String): Boolean {
     val a = address.trim().lowercase()
     return a.startsWith("tls://") || a.startsWith("https://") || a.startsWith("quic://") ||
         a.startsWith("h3://") || a.startsWith("sdns://")
-}
-
-@Composable
-private fun ResolutionPicker(
-    label: String,
-    value: String,
-    choices: List<Pair<String, String>>,
-    onSelect: (String) -> Unit,
-    unavailable: Set<String> = emptySet(),
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val selected = choices.firstOrNull { it.first == value }?.second ?: choices.first().second
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).padding(end = 4.dp),
-        )
-        Box {
-            OutlinedButton(
-                onClick = { expanded = true },
-                modifier = Modifier.width(200.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    text = selected,
-                    style = MaterialTheme.typography.labelMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
-            }
-            DigitDnsDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.width(240.dp),
-            ) {
-                choices.forEach { (key, text) ->
-                    DropdownMenuItem(
-                        text = { Text(text, style = MaterialTheme.typography.bodySmall) },
-                        enabled = key !in unavailable,
-                        trailingIcon = {
-                            if (key == value) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                        },
-                        onClick = { expanded = false; onSelect(key) },
-                    )
-                }
-            }
-        }
-    }
 }
 
 /** The racer card's title row: icon, label and Benchmark action (or its spinner). */
@@ -550,9 +907,11 @@ private fun UpstreamRow(
     stat: UpstreamStat,
     swipeEnabled: Boolean,
     dimmed: Boolean,
+    isAdaptiveCurrent: Boolean,
     onRemove: () -> Unit,
 ) {
     val colors = DigitDnsTheme.colors
+    val greyTheme = LocalIsGreyTheme.current
     SwipeToDeleteRow(
         onDelete = onRemove,
         confirmTitle = stringResource(R.string.upstream_remove_title),
@@ -570,7 +929,15 @@ private fun UpstreamRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = PanelRowDefaults.height)
-                .background(MaterialTheme.colorScheme.surface)
+                .background(
+                    when {
+                        !isAdaptiveCurrent -> MaterialTheme.colorScheme.surface
+                        // Graphite keeps green for health; the current-row wash
+                        // uses a neutral highlight so it matches the theme.
+                        greyTheme -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+                        else -> colors.success.copy(alpha = 0.14f)
+                    },
+                )
                 .alpha(if (dimmed) 0.45f else 1f)
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -585,7 +952,9 @@ private fun UpstreamRow(
                     .clip(CircleShape)
                     .background(racerDotColor(stat, colors)),
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(6.dp))
+            ProviderMark(stat.address, 14.dp)
+            Spacer(Modifier.width(6.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stat.address,

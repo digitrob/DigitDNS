@@ -1027,11 +1027,27 @@
         "properties": {
           "transport": {
             "type": "string",
-            "description": "any or encrypted.",
+            "description": "Legacy single-value form of transports. any, encrypted or regular.",
             "enum": [
               "any",
-              "encrypted"
+              "encrypted",
+              "regular"
             ]
+          },
+          "transports": {
+            "type": "array",
+            "description": "Enabled upstream protocols. At least one must be present.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "plain",
+                "dot",
+                "doh",
+                "doh3",
+                "doq",
+                "dnscrypt"
+              ]
+            }
           },
           "encrypted_only": {
             "type": "boolean",
@@ -1053,7 +1069,46 @@
           },
           "default_strategy": {
             "type": "string",
-            "description": "fastest, first or random."
+            "description": "adaptive (periodic fastest, the default), sequential (in order), hedged or best (Best Known). The retired fastest value is accepted and normalised to hedged; an empty value now reads as adaptive.",
+            "enum": [
+              "sequential",
+              "hedged",
+              "best",
+              "adaptive",
+              "fastest"
+            ]
+          },
+          "adaptive_interval_minutes": {
+            "type": "integer",
+            "description": "How often Adaptive re-benchmarks the pool. Defaults to 60.",
+            "enum": [
+              5,
+              15,
+              60,
+              360,
+              1440
+            ]
+          },
+          "adaptive_last_run": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "description": "When the last Adaptive benchmark completed."
+          },
+          "adaptive_current": {
+            "type": "string",
+            "readOnly": true,
+            "description": "The resolver Adaptive is using until the next run."
+          },
+          "adaptive_last_latency_ms": {
+            "type": "number",
+            "readOnly": true,
+            "description": "Measured latency of the Adaptive choice at the last run."
+          },
+          "adaptive_last_note": {
+            "type": "string",
+            "readOnly": true,
+            "description": "Why the last Adaptive run kept or changed the resolver."
           },
           "profiles": {
             "type": "object",
@@ -3909,13 +3964,26 @@
                 },
                 "example": {
                   "transport": "any",
+                  "transports": [
+                    "plain",
+                    "dot",
+                    "doh",
+                    "doh3",
+                    "doq",
+                    "dnscrypt"
+                  ],
                   "encrypted_only": false,
                   "encrypted_available": true,
                   "encrypted_upstreams": [
                     "tls://1.1.1.1"
                   ],
                   "default_upstream": "",
-                  "default_strategy": "fastest",
+                  "default_strategy": "adaptive",
+                  "adaptive_interval_minutes": 60,
+                  "adaptive_last_run": "2026-11-11T13:47:36Z",
+                  "adaptive_current": "1.1.1.1:53",
+                  "adaptive_last_latency_ms": 8.4,
+                  "adaptive_last_note": "current resolver is still the fastest",
                   "profiles": {},
                   "upstreams": [
                     "1.1.1.1",
@@ -3952,7 +4020,13 @@
               },
               "example": {
                 "transport": "any",
-                "default_strategy": "fastest",
+                "transports": [
+                  "plain",
+                  "dot",
+                  "doh"
+                ],
+                "default_strategy": "hedged",
+                "adaptive_interval_minutes": 60,
                 "default_upstream": "",
                 "profiles": {}
               }
@@ -4017,6 +4091,34 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v3/settings/resolution/run-adaptive": {
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Run an Adaptive check now",
+        "description": "Benchmarks the pool, applies the Adaptive hysteresis, installs the chosen resolver and returns the updated resolution settings. Requires default_strategy=adaptive.",
+        "operationId": "postSettingsResolutionRunAdaptive",
+        "responses": {
+          "200": {
+            "description": "The updated resolution view.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolutionSettings"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "description": "No upstream pool"
           }
         }
       }

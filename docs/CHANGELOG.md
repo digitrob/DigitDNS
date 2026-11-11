@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.5.7] — adaptive upstreams and transport chips
+
+### Added
+- **Adaptive (fastest) strategy.** The pool is benchmarked every 5 minutes,
+  15 minutes, 1 hour, 6 hours or 24 hours. The fastest healthy resolver is
+  selected with 12% hysteresis, and the current resolver plus last-run details
+  are persisted. **Force** runs the same check immediately.
+- **Multi-select transport chips.** Plain, DoT, DoH, DoH3, DoQ and DNSCrypt can
+  be enabled together; the resolver pool only uses the selected protocols.
+- **Pool / Single Server switch.** Pool mode uses the configured strategy and
+  transport chips. Single Server bypasses them, uses one resolver, and remembers
+  the last selected server across Pool toggles.
+- **Provider favicons** in the active resolver list and Single Server dropdown.
+- **Current-resolver highlight**, using a neutral wash in the Graphite theme.
+- **Forced adaptive-run API** at `/api/v3/settings/resolution/run-adaptive`.
+
+### Changed
+- **Retired strategy aliases.** “Pool default” is removed; an empty saved
+  strategy now reads as Adaptive. “Fastest wins” is hidden and legacy `fastest`
+  saves normalise to Hedged.
+- **Reworked resolver card** in the web panel and Android app: strategy,
+  interval and transport chips, abbreviated interval labels, one-row chip groups,
+  two-line last-run text and the new switch row.
+- **Android online status.** Returning from a long background period now reports
+  **Online** while the SSE socket refreshes, instead of flashing **Connecting**.
+
+### Fixed
+- **Android background status.** A successful authenticated call during a stream
+  retry now reports Online rather than Connecting.
+- **Long single-server names** no longer collide with the next setting row.
+
+### Android
+- Version **5.5.7 (548)**.
+- Biometric prompt is raised automatically when the lock screen opens.
+
+### API
+- Resolution settings now include `transports`, `adaptive_interval_minutes`,
+  `adaptive_last_run`, `adaptive_current`, `adaptive_last_latency_ms` and
+  `adaptive_last_note`.
+- No database schema migration is required; existing records are normalised on
+  load and save.
+
+---
+
 ## 🏷️ [v5.5.6] — biometric login and a tighter dashboard
 
 ### Added

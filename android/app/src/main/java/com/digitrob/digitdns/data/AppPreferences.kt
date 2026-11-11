@@ -137,6 +137,7 @@ class AppPreferences @Inject constructor(
         val appMode = stringPreferencesKey("app_mode")
         val subscriberActive = booleanPreferencesKey("subscriber_active")
         val biometricEnabled = booleanPreferencesKey("biometric_enabled")
+        val lastSingleUpstream = stringPreferencesKey("last_single_upstream")
     }
 
     val appMode: Flow<AppMode> = context.appPrefsDataStore.data.map { prefs ->
@@ -164,6 +165,17 @@ class AppPreferences @Inject constructor(
     suspend fun setBiometricEnabled(enabled: Boolean) {
         context.appPrefsDataStore.edit { prefs ->
             prefs[Keys.biometricEnabled] = enabled
+        }
+    }
+
+    /** The resolver last chosen in Single Server mode, so toggling Pool does not lose it. */
+    val lastSingleUpstream: Flow<String> = context.appPrefsDataStore.data.map { prefs ->
+        prefs[Keys.lastSingleUpstream] ?: ""
+    }
+
+    suspend fun setLastSingleUpstream(address: String) {
+        context.appPrefsDataStore.edit { prefs ->
+            prefs[Keys.lastSingleUpstream] = address
         }
     }
 

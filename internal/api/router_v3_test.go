@@ -52,6 +52,10 @@ func (f *fakeV3Backend) SaveResolution(r *http.Request, body map[string]any) (ma
 	return f.resolution, nil
 }
 
+func (f *fakeV3Backend) RunAdaptive() (map[string]any, error) {
+	return f.resolution, nil
+}
+
 func (f *fakeV3Backend) DnssecSettings() (map[string]any, error) {
 	if f.dnssec == nil {
 		return map[string]any{"enabled": false}, nil

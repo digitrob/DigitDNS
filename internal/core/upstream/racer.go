@@ -44,6 +44,10 @@ type UpstreamPool struct {
 	// like the list itself, so a settings save takes effect on the next query
 	// without a restart.
 	policy Policy
+	// adaptiveCurrent is the resolver the Adaptive strategy is using until its
+	// next scheduled benchmark. It is guarded by mu and copied into the
+	// immutable query snapshot so a query never takes the settings lock.
+	adaptiveCurrent string
 	// profileIndex is the compiled form of policy.Profiles. It is rebuilt by
 	// SetPolicy and read on the query path, so the hot path never scans every
 	// configured pattern.
@@ -77,39 +81,53 @@ type UpstreamPool struct {
 // poolSnapshot is the read-only query-path state. Every field is immutable once
 // published; a settings save builds a new snapshot and swaps the pointer.
 type poolSnapshot struct {
-	upstreams    []string
-	policy       Policy
-	profileIndex *resolution.ProfileIndex
-	racing       bool
-	all          []string
-	encrypted    []string
-	regular      []string
+	upstreams       []string
+	policy          Policy
+	profileIndex    *resolution.ProfileIndex
+	adaptiveCurrent string
+	racing          bool
+	all             []string
+	enabled         []string
+	encrypted       []string
+	regular         []string
+	enabledEnc      []string
+	enabledReg      []string
 }
 
-// candidates returns the pre-filtered list for a transport. The returned slice
-// is owned by the snapshot and must not be modified by the caller.
+// candidates returns the pre-filtered list for a profile's legacy transport
+// choice. The global protocol chips have already been applied: "any" means the
+// enabled set, and encrypted/regular narrow it further. The returned slice is
+// owned by the snapshot and must not be modified by the caller.
 func (s *poolSnapshot) candidates(transport string) []string {
 	switch resolution.NormalizeTransport(transport) {
 	case resolution.TransportEncrypted:
-		return s.encrypted
+		return s.enabledEnc
 	case resolution.TransportRegular:
-		return s.regular
+		return s.enabledReg
 	default:
-		return s.all
+		return s.enabled
 	}
 }
 
 // Policy is the resolution policy installed by the settings layer.
 type Policy struct {
-	// Transport filters the pool: "any", "encrypted" (DoT/DoH/DoQ/DNSCrypt) or
-	// "regular" (plain UDP/TCP). Empty means "any".
+	// Transport is the legacy single-value filter ("any", "encrypted" or
+	// "regular"). It is kept for old clients and profile inheritance; the
+	// authoritative global filter is Transports.
 	Transport string
+	// Transports is the enabled protocol set (plain, dot, doh, doh3, doq,
+	// dnscrypt). Empty migrates from Transport, then defaults to all.
+	Transports []string
 	// DefaultUpstream pins every name to one resolver unless a profile overrides
 	// it. Empty means "use the pool".
 	DefaultUpstream string
-	// DefaultStrategy is "fastest" or "sequential"; empty keeps the pool's
-	// constructed racing setting.
+	// DefaultStrategy is the global resolution strategy. Empty is the adaptive
+	// default; retired values are normalised by SetPolicy.
 	DefaultStrategy string
+	// AdaptiveCurrent is the resolver the Adaptive strategy should use until
+	// the next scheduled benchmark. Empty lets the first query fall back to the
+	// latency order while the scheduler selects one.
+	AdaptiveCurrent string
 	// Profiles are the per-domain overrides, keyed by domain or "*.domain".
 	Profiles map[string]resolution.Profile
 }
@@ -1071,41 +1089,51 @@ func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.
 	}
 
 	profile, hasProfile := profileIndex.Match(domain)
-	effectiveTransport := policy.Transport
+	// The global protocol chips are always the outer filter. A profile's
+	// encrypted/regular override narrows that set; it never widens it.
+	effectiveTransport := resolution.TransportAny
 	if hasProfile {
-		effectiveTransport = profile.TransportFor(policy.Transport)
+		effectiveTransport = profile.TransportFor(resolution.TransportAny)
 	}
 
 	// The fallback pool is the globally eligible one, never the raw list and
 	// never the pinned default — "fall back" means the ordinary pool. It never
-	// bypasses the global transport either: an encrypted-only install stays
+	// bypasses the global protocol set either: an encrypted-only install stays
 	// encrypted-only even when a profile's own candidates fail.
-	fallbackCandidates := p.availableCandidates(snap.candidates(policy.Transport))
+	fallbackCandidates := p.availableCandidates(snap.candidates(resolution.TransportAny))
 
 	candidates := p.availableCandidates(snap.candidates(effectiveTransport))
 	strategy := poolStrategy(racing)
 	switch policy.DefaultStrategy {
 	case resolution.StrategyFastest, resolution.StrategySequential,
-		resolution.StrategyHedged, resolution.StrategyBestKnown:
+		resolution.StrategyHedged, resolution.StrategyBestKnown, resolution.StrategyAdaptive:
 		strategy = policy.DefaultStrategy
 	}
 
 	// A profile pin outranks the global default; the global default outranks the
-	// pool. The transport is the policy and a pin only narrows it: a pin the
-	// transport excludes is ignored rather than used, so "encrypted only" can
-	// never be bypassed by a stale or hand-written pin. The UI disables such a
-	// choice, and the card warns when an existing pin is being ignored.
+	// pool. A Single Upstream (the global default) is authoritative: the UI
+	// greys out strategy/interval/protocol controls, so this path uses that
+	// resolver directly. A per-domain pin still respects the protocol filter,
+	// because the profile is a narrower policy rather than a global override.
 	pinned := ""
+	globalPin := false
 	if hasProfile && profile.Upstream != "" {
 		pinned = profile.Upstream
 	} else if policy.DefaultUpstream != "" {
 		pinned = policy.DefaultUpstream
+		globalPin = true
 	}
-	candidates = pinCandidate(candidates, pinned)
+	if globalPin && slices.Contains(snap.upstreams, pinned) {
+		// A Single Upstream is authoritative: the strategy, interval and
+		// protocol chips are bypassed for names without their own profile.
+		candidates = []string{pinned}
+	} else {
+		candidates = pinCandidate(candidates, pinned)
+	}
 	if hasProfile {
 		switch profile.Strategy {
 		case resolution.StrategyFastest, resolution.StrategySequential,
-			resolution.StrategyHedged, resolution.StrategyBestKnown:
+			resolution.StrategyHedged, resolution.StrategyBestKnown, resolution.StrategyAdaptive:
 			strategy = profile.Strategy
 		}
 	}
@@ -1117,7 +1145,7 @@ func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.
 		lastErr      error
 	)
 	if len(candidates) > 0 {
-		resp, dur, upstream, err := p.exchangeWith(queryMsg, candidates, strategy, timeout)
+		resp, dur, upstream, err := p.exchangeWith(queryMsg, candidates, strategy, snap.adaptiveCurrent, timeout)
 		if err == nil && usableRcode(resp) {
 			return resp, dur, upstream, nil
 		}
@@ -1151,7 +1179,7 @@ func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.
 		return nil, 0, "", lastErr
 	}
 
-	resp, dur, upstream, err := p.exchangeWith(queryMsg, fallbackCandidates, poolStrategy(racing), timeout)
+	resp, dur, upstream, err := p.exchangeWith(queryMsg, fallbackCandidates, poolStrategy(racing), "", timeout)
 	if err == nil {
 		return resp, dur, upstream, nil
 	}
@@ -1169,8 +1197,9 @@ func poolStrategy(racing bool) string {
 	return resolution.StrategySequential
 }
 
-// exchangeWith runs one attempt list under the requested strategy.
-func (p *UpstreamPool) exchangeWith(req *dns.Msg, upstreams []string, strategy string, timeout time.Duration) (*dns.Msg, time.Duration, string, error) {
+// exchangeWith runs one attempt list under the requested strategy. adaptiveCurrent
+// is only consulted for StrategyAdaptive; every other caller passes "".
+func (p *UpstreamPool) exchangeWith(req *dns.Msg, upstreams []string, strategy, adaptiveCurrent string, timeout time.Duration) (*dns.Msg, time.Duration, string, error) {
 	if len(upstreams) == 0 {
 		return nil, 0, "", errors.New("no upstream resolvers configured")
 	}
@@ -1184,6 +1213,8 @@ func (p *UpstreamPool) exchangeWith(req *dns.Msg, upstreams []string, strategy s
 		return p.exchangeSequential(req, upstreams, timeout)
 	case resolution.StrategyBestKnown:
 		return p.exchangeBestKnown(req, upstreams, timeout)
+	case resolution.StrategyAdaptive:
+		return p.exchangeAdaptive(req, upstreams, adaptiveCurrent, timeout)
 	default:
 		if len(upstreams) > 1 {
 			return p.exchangeRacing(req, upstreams, timeout)
@@ -1242,6 +1273,167 @@ func (p *UpstreamPool) orderedByLatency(upstreams []string) []string {
 // against Hedged's early second query.
 func (p *UpstreamPool) exchangeBestKnown(req *dns.Msg, upstreams []string, timeout time.Duration) (*dns.Msg, time.Duration, string, error) {
 	return p.exchangeSequential(req, p.orderedByLatency(upstreams), timeout)
+}
+
+// adaptiveHysteresis is the relative latency improvement required before an
+// Adaptive run moves to a new resolver. Without it a 5-minute schedule would
+// flap between two resolvers whose measured latency differs by noise.
+const adaptiveHysteresis = 0.12
+
+// AdaptiveDecision is the outcome of one Adaptive selection run.
+type AdaptiveDecision struct {
+	// Current is the resolver to use until the next run.
+	Current string
+	// Fastest is the fastest healthy resolver the benchmark found (empty when
+	// nothing measured was healthy).
+	Fastest string
+	// CurrentLatency is the chosen resolver's measured latency.
+	CurrentLatency time.Duration
+	// FastestLatency is the fastest healthy resolver's measured latency.
+	FastestLatency time.Duration
+	// Changed reports whether the chosen resolver differs from the previous one.
+	Changed bool
+	// Note is a short operator-facing explanation of the decision.
+	Note string
+}
+
+// exchangeAdaptive sends to the persisted Adaptive resolver first, then falls
+// through the remaining resolvers in latency order. Falling through matters: a
+// scheduled choice must not turn one resolver's outage into SERVFAIL for the
+// whole interval. Before the first run there is no choice, so it behaves like
+// Best Known and starts with the fastest measured resolver.
+func (p *UpstreamPool) exchangeAdaptive(req *dns.Msg, upstreams []string, current string, timeout time.Duration) (*dns.Msg, time.Duration, string, error) {
+	order := p.orderedByLatency(upstreams)
+	if current == "" {
+		return p.exchangeSequential(req, order, timeout)
+	}
+	out := make([]string, 0, len(order))
+	found := false
+	for _, u := range order {
+		if u == current {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return p.exchangeSequential(req, order, timeout)
+	}
+	out = append(out, current)
+	for _, u := range order {
+		if u != current {
+			out = append(out, u)
+		}
+	}
+	return p.exchangeSequential(req, out, timeout)
+}
+
+// SelectAdaptiveFastest runs the selection half of an Adaptive interval: read
+// the latest measurements, ignore unhealthy/unmeasured resolvers, and switch
+// only when the new fastest is meaningfully faster than the current one. It
+// does not run the benchmark; the caller does that first so this remains cheap
+// and testable.
+func (p *UpstreamPool) SelectAdaptiveFastest(current string, minImprovement float64) AdaptiveDecision {
+	if minImprovement <= 0 {
+		minImprovement = adaptiveHysteresis
+	}
+	if minImprovement > 0.5 {
+		minImprovement = 0.5
+	}
+
+	snap := p.snap.Load()
+	if snap == nil {
+		return AdaptiveDecision{Current: current, Note: "upstream pool is not initialized"}
+	}
+	allowed := make(map[string]struct{}, len(snap.enabled))
+	for _, u := range snap.enabled {
+		allowed[u] = struct{}{}
+	}
+
+	stats := p.GetUpstreamStats()
+	var (
+		bestAddr      string
+		bestLatency   time.Duration
+		currentLat    time.Duration
+		currentHealth bool
+	)
+	for _, s := range stats {
+		if _, ok := allowed[s.Address]; !ok {
+			continue
+		}
+		latency := adaptiveLatency(s)
+		if s.Address == current {
+			currentLat = latency
+			currentHealth = adaptiveHealthy(s)
+		}
+		if !adaptiveHealthy(s) {
+			continue
+		}
+		if bestAddr == "" || latency < bestLatency {
+			bestAddr = s.Address
+			bestLatency = latency
+		}
+	}
+
+	decision := AdaptiveDecision{
+		Current:        current,
+		Fastest:        bestAddr,
+		CurrentLatency: currentLat,
+		FastestLatency: bestLatency,
+	}
+	if _, ok := allowed[current]; !ok && bestAddr == "" {
+		// The persisted choice was removed from the pool and nothing measured
+		// is healthy yet. Do not keep advertising a resolver that cannot answer.
+		decision.Current = ""
+	}
+	switch {
+	case bestAddr == "":
+		decision.Note = "no healthy measured resolver; keeping the current choice"
+	case current == "" || !currentHealth:
+		decision.Current = bestAddr
+		decision.CurrentLatency = bestLatency
+		decision.Changed = current != bestAddr
+		decision.Note = "selected the fastest healthy resolver"
+	case bestAddr == current:
+		decision.Note = "current resolver is still the fastest"
+	case float64(bestLatency) < float64(currentLat)*(1-minImprovement):
+		decision.Current = bestAddr
+		decision.CurrentLatency = bestLatency
+		decision.Changed = true
+		decision.Note = "switched to a meaningfully faster resolver"
+	default:
+		decision.Note = "kept the current resolver; the fastest is not meaningfully faster"
+	}
+	return decision
+}
+
+// adaptiveLatency prefers the warm benchmark median when the latest probe
+// succeeded. The Adaptive scheduler has just run that probe, so it is the fresh
+// number the decision is supposed to use; a long-lived live p50 can lag a real
+// change and would make the benchmark decorative.
+func adaptiveLatency(s UpstreamStat) time.Duration {
+	if s.LastProbeOK && s.LastProbeMs > 0 {
+		return time.Duration(s.LastProbeMs * float64(time.Millisecond))
+	}
+	return time.Duration(s.LatencyNs)
+}
+
+// adaptiveHealthy applies the same health rules the dashboard uses, minus the
+// "never probed" false positive: an unmeasured resolver cannot win an Adaptive
+// run, and an open/half-open circuit or a failed latest probe cannot either.
+func adaptiveHealthy(s UpstreamStat) bool {
+	if !s.Measured || s.LatencyNs <= 0 {
+		return false
+	}
+	if s.CircuitOpen || s.CircuitState == "open" || s.CircuitState == "half-open" {
+		return false
+	}
+	if s.LastProbeAt != "" && !s.LastProbeOK {
+		return false
+	}
+	if s.RecentSamples >= upstreamHealthMinSamples && s.RecentErrorRate >= upstreamHealthErrorRate {
+		return false
+	}
+	return true
 }
 
 // exchangeHedged starts the fastest measured resolver, then starts the next one
@@ -1981,8 +2173,15 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 // SetPolicy installs the global defaults and the per-domain profiles. It copies
 // the map, so callers may keep and mutate their own after the call.
 func (p *UpstreamPool) SetPolicy(policy Policy) {
+	policy.DefaultStrategy = resolution.NormalizeStrategy(policy.DefaultStrategy)
+	if len(policy.Transports) == 0 {
+		policy.Transports = resolution.ProtocolsForTransport(policy.Transport)
+	}
+	policy.Transports = resolution.NormalizeProtocols(policy.Transports)
+	policy.Transport = resolution.LegacyTransportFor(policy.Transports)
 	copied := make(map[string]resolution.Profile, len(policy.Profiles))
 	for k, v := range policy.Profiles {
+		v.Strategy = resolution.NormalizeProfileStrategy(v.Strategy)
 		copied[k] = v
 	}
 	policy.Profiles = copied
@@ -1990,25 +2189,71 @@ func (p *UpstreamPool) SetPolicy(policy Policy) {
 	p.mu.Lock()
 	p.policy = policy
 	p.profileIndex = index
+	if policy.AdaptiveCurrent != "" {
+		p.adaptiveCurrent = policy.AdaptiveCurrent
+	}
 	p.rebuildSnapshotLocked()
 	p.mu.Unlock()
+}
+
+// SetAdaptiveCurrent installs the resolver chosen by the latest Adaptive run.
+// It is separate from SetPolicy so the scheduler can update the choice without
+// rebuilding the whole settings record or resetting the other defaults.
+func (p *UpstreamPool) SetAdaptiveCurrent(current string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	if p.adaptiveCurrent == current {
+		p.mu.Unlock()
+		return
+	}
+	p.adaptiveCurrent = current
+	p.rebuildSnapshotLocked()
+	p.mu.Unlock()
+}
+
+// AdaptiveCurrent returns the resolver the Adaptive strategy is using.
+func (p *UpstreamPool) AdaptiveCurrent() string {
+	if p == nil {
+		return ""
+	}
+	snap := p.snap.Load()
+	if snap == nil {
+		return ""
+	}
+	return snap.adaptiveCurrent
 }
 
 // rebuildSnapshotLocked publishes a new immutable query-path snapshot. Callers
 // hold p.mu.
 func (p *UpstreamPool) rebuildSnapshotLocked() {
 	snap := &poolSnapshot{
-		upstreams:    append([]string(nil), p.upstreams...),
-		policy:       p.policy,
-		profileIndex: p.profileIndex,
-		racing:       p.racing,
+		upstreams:       append([]string(nil), p.upstreams...),
+		policy:          p.policy,
+		profileIndex:    p.profileIndex,
+		adaptiveCurrent: p.adaptiveCurrent,
+		racing:          p.racing,
 	}
 	snap.all = snap.upstreams
+	enabledProtocols := make(map[string]bool, len(p.policy.Transports))
+	for _, protocol := range resolution.NormalizeProtocols(p.policy.Transports) {
+		enabledProtocols[protocol] = true
+	}
 	for _, u := range snap.upstreams {
 		if resolution.Encrypted(u) {
 			snap.encrypted = append(snap.encrypted, u)
 		} else {
 			snap.regular = append(snap.regular, u)
+		}
+		if !enabledProtocols[resolution.Protocol(u)] {
+			continue
+		}
+		snap.enabled = append(snap.enabled, u)
+		if resolution.Encrypted(u) {
+			snap.enabledEnc = append(snap.enabledEnc, u)
+		} else {
+			snap.enabledReg = append(snap.enabledReg, u)
 		}
 	}
 	if snap.encrypted == nil {
@@ -2016,6 +2261,15 @@ func (p *UpstreamPool) rebuildSnapshotLocked() {
 	}
 	if snap.regular == nil {
 		snap.regular = []string{}
+	}
+	if snap.enabled == nil {
+		snap.enabled = []string{}
+	}
+	if snap.enabledEnc == nil {
+		snap.enabledEnc = []string{}
+	}
+	if snap.enabledReg == nil {
+		snap.enabledReg = []string{}
 	}
 	p.snap.Store(snap)
 }
@@ -2037,6 +2291,11 @@ func (p *UpstreamPool) SetUpstreams(list []string) {
 	}
 
 	p.upstreams = normalized
+	if p.adaptiveCurrent != "" {
+		if _, ok := keep[p.adaptiveCurrent]; !ok {
+			p.adaptiveCurrent = ""
+		}
+	}
 	for _, u := range p.upstreams {
 		if _, ok := p.stats[u]; !ok {
 			p.stats[u] = &upstreamStatInternal{lastUpdated: time.Now()}

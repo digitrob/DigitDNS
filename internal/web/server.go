@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -23,6 +24,7 @@ import (
 	"digitdns/internal/api"
 	"digitdns/internal/core/cache"
 	"digitdns/internal/core/matcher"
+	"digitdns/internal/core/resolution"
 	"digitdns/internal/core/upstream"
 	"digitdns/internal/database"
 	"digitdns/internal/geoip"
@@ -94,7 +96,13 @@ type WebServer struct {
 	api           *api.API
 	loginLimiter  *service.LoginAttemptTracker
 	benchmark     *service.BenchmarkRunner
-	sseTickets    *sseTicketStore
+	// adaptiveCancel stops the one background Adaptive scheduler. adaptiveWake
+	// is a conflated nudge used when a save changes the strategy or interval, so
+	// the operator does not wait for the next periodic check.
+	adaptiveMu     sync.Mutex
+	adaptiveCancel context.CancelFunc
+	adaptiveWake   chan struct{}
+	sseTickets     *sseTicketStore
 	// statsCache shares one encoded /api/stats document between every open
 	// dashboard for a second. The payload is identical for all of them, and the
 	// dashboard polls it every couple of seconds.
@@ -282,24 +290,25 @@ func NewWebServer(
 	apiInst := api.NewAPI(db, clients, stats, cache, matcher, upstreams, settings, tlsSettings, sessions)
 
 	ws := &WebServer{
-		db:          db,
-		clients:     clients,
-		stats:       stats,
-		cache:       cache,
-		matcher:     matcher,
-		upstreams:   upstreams,
-		dohHandler:  dohHandler,
-		settings:    settings,
-		tlsSettings: tlsSettings,
-		dnsCfg:      dnsCfg,
-		sessions:    sessions,
-		staticFS:    staticFS,
-		api:         apiInst,
-		sseTickets:  newSSETicketStore(),
-		kdfGate:     make(chan struct{}, kdfConcurrency()),
-		totpReplay:  newTOTPReplayGuard(),
-		statsCache:  httpx.NewResponseCache(time.Second, 2),
-		agentNotify: newAgentConfigNotifier(),
+		db:           db,
+		clients:      clients,
+		stats:        stats,
+		cache:        cache,
+		matcher:      matcher,
+		upstreams:    upstreams,
+		dohHandler:   dohHandler,
+		settings:     settings,
+		tlsSettings:  tlsSettings,
+		dnsCfg:       dnsCfg,
+		sessions:     sessions,
+		staticFS:     staticFS,
+		api:          apiInst,
+		sseTickets:   newSSETicketStore(),
+		kdfGate:      make(chan struct{}, kdfConcurrency()),
+		totpReplay:   newTOTPReplayGuard(),
+		statsCache:   httpx.NewResponseCache(time.Second, 2),
+		agentNotify:  newAgentConfigNotifier(),
+		adaptiveWake: make(chan struct{}, 1),
 	}
 	// Resume the persisted control-plane counter. The ETag also carries the
 	// build hash, so an upgrade invalidates it while a plain restart does not —
@@ -342,6 +351,187 @@ func (ws *WebServer) SetControlState(benchmark *service.BenchmarkRunner, lockout
 	if lockouts != nil {
 		ws.loginLimiter = lockouts
 	}
+}
+
+// StartAdaptiveScheduler starts the one goroutine that re-benchmarks the pool
+// for the Adaptive strategy. It is explicit rather than a constructor side
+// effect: the lighter test harnesses never start it, and main starts it only
+// once every settings source and the benchmark gate are installed.
+func (ws *WebServer) StartAdaptiveScheduler() {
+	if ws == nil || ws.upstreams == nil {
+		return
+	}
+	ws.adaptiveMu.Lock()
+	defer ws.adaptiveMu.Unlock()
+	if ws.adaptiveCancel != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	ws.adaptiveCancel = cancel
+	go ws.adaptiveLoop(ctx)
+}
+
+func (ws *WebServer) stopAdaptiveScheduler() {
+	if ws == nil {
+		return
+	}
+	ws.adaptiveMu.Lock()
+	cancel := ws.adaptiveCancel
+	ws.adaptiveCancel = nil
+	ws.adaptiveMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// nudgeAdaptive wakes the scheduler after a settings save. The channel is
+// conflated: ten rapid saves produce one extra check, not ten benchmarks.
+func (ws *WebServer) nudgeAdaptive() {
+	if ws == nil || ws.adaptiveWake == nil {
+		return
+	}
+	select {
+	case ws.adaptiveWake <- struct{}{}:
+	default:
+	}
+}
+
+func (ws *WebServer) adaptiveLoop(ctx context.Context) {
+	// A short first delay lets the startup benchmark finish and avoids adding a
+	// second immediate benchmark on every boot.
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ws.adaptiveWake:
+		case <-timer.C:
+		}
+		ws.runAdaptiveIfDue(ctx)
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(30 * time.Second)
+	}
+}
+
+var (
+	errAdaptiveNotSelected = errors.New("adaptive strategy is not selected")
+	errAdaptiveBusy        = errors.New("a benchmark is already in progress")
+)
+
+// runAdaptiveNow performs one complete Adaptive cycle: benchmark the pool, pick
+// the fastest healthy resolver with hysteresis, install it, and persist the
+// result. It is shared by the scheduler and the panel/app "Check now" button.
+// The benchmark runs outside dnsMu so a slow resolver cannot block a settings
+// save; the record is re-read afterwards so a strategy change during the probe
+// wins.
+func (ws *WebServer) runAdaptiveNow() (upstream.AdaptiveDecision, error) {
+	if ws == nil || ws.upstreams == nil || ws.db == nil {
+		return upstream.AdaptiveDecision{}, errAdaptiveNotSelected
+	}
+
+	ws.dnsMu.Lock()
+	cfg := ws.mutableDNSLocked()
+	if resolution.NormalizeStrategy(cfg.DefaultStrategy) != resolution.StrategyAdaptive {
+		ws.dnsMu.Unlock()
+		return upstream.AdaptiveDecision{}, errAdaptiveNotSelected
+	}
+	current := cfg.AdaptiveCurrent
+	ws.dnsMu.Unlock()
+
+	// Share the daemon's benchmark gate: a manual run, a scheduled run and the
+	// forced check must never probe the same pool at the same time.
+	if ws.benchmark != nil {
+		if !ws.benchmark.Run() {
+			return upstream.AdaptiveDecision{}, errAdaptiveBusy
+		}
+	} else {
+		ws.upstreams.BenchmarkAll()
+	}
+
+	ws.dnsMu.Lock()
+	cfg = ws.mutableDNSLocked()
+	if resolution.NormalizeStrategy(cfg.DefaultStrategy) != resolution.StrategyAdaptive {
+		ws.dnsMu.Unlock()
+		return upstream.AdaptiveDecision{}, errAdaptiveNotSelected
+	}
+	// A save during the benchmark may have changed the persisted choice.
+	current = cfg.AdaptiveCurrent
+	ws.dnsMu.Unlock()
+
+	decision := ws.upstreams.SelectAdaptiveFastest(current, 0)
+	ws.upstreams.SetAdaptiveCurrent(decision.Current)
+
+	now := time.Now().UTC()
+	ws.dnsMu.Lock()
+	cfg = ws.mutableDNSLocked()
+	if resolution.NormalizeStrategy(cfg.DefaultStrategy) != resolution.StrategyAdaptive {
+		ws.dnsMu.Unlock()
+		return decision, errAdaptiveNotSelected
+	}
+	cfg.AdaptiveCurrent = decision.Current
+	cfg.AdaptiveLastRun = now.Format(time.RFC3339)
+	cfg.AdaptiveLastLatencyMs = float64(decision.CurrentLatency) / 1e6
+	cfg.AdaptiveLastNote = decision.Note
+	err := ws.db.SetSetting("dns", cfg)
+	ws.dnsMu.Unlock()
+	if err != nil {
+		return decision, err
+	}
+
+	chosen := decision.Current
+	if chosen == "" {
+		chosen = "none"
+	}
+	log.Printf("[Resolution] Adaptive benchmark: using %s (%.1f ms) — %s",
+		chosen, float64(decision.CurrentLatency)/1e6, decision.Note)
+	return decision, nil
+}
+
+// runAdaptiveIfDue is one scheduler tick. The due check is separate from the
+// run so a forced check can reuse the same implementation without waiting.
+func (ws *WebServer) runAdaptiveIfDue(ctx context.Context) {
+	if ws == nil || ws.upstreams == nil || ws.db == nil {
+		return
+	}
+
+	ws.dnsMu.Lock()
+	cfg := ws.mutableDNSLocked()
+	strategy := resolution.NormalizeStrategy(cfg.DefaultStrategy)
+	interval := time.Duration(resolution.NormalizeAdaptiveInterval(cfg.AdaptiveIntervalMinutes)) * time.Minute
+	lastRun := parseAdaptiveLastRun(cfg.AdaptiveLastRun)
+	ws.dnsMu.Unlock()
+
+	if strategy != resolution.StrategyAdaptive {
+		return
+	}
+	if !lastRun.IsZero() && time.Since(lastRun) < interval {
+		return
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	if _, err := ws.runAdaptiveNow(); err != nil && !errors.Is(err, errAdaptiveBusy) {
+		log.Printf("[Resolution] Adaptive run failed: %v", err)
+	}
+}
+
+func parseAdaptiveLastRun(value string) time.Time {
+	if value == "" {
+		return time.Time{}
+	}
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		return t
+	}
+	if t, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return t
+	}
+	return time.Time{}
 }
 
 // SetSubscriptionSettings attaches the subscription record after construction.
@@ -1087,6 +1277,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/upstreams/presets", ws.requireAuth(ws.handleUpstreamPresets))
 	mux.HandleFunc("/api/upstreams/add", ws.requireAuth(ws.handleUpstreamsAdd))
 	mux.HandleFunc("/api/settings/resolution", ws.requireAuth(ws.handleResolutionSettings))
+	mux.HandleFunc("/api/settings/resolution/run-adaptive", ws.requireAuth(ws.handleResolutionAdaptiveRun))
 	mux.HandleFunc("/api/settings/dnssec", ws.requireAuth(ws.handleDNSSECSettings))
 	mux.HandleFunc("/api/settings/transports", ws.requireAuth(ws.handleTransportSettings))
 	mux.HandleFunc("/api/settings/proxy-leak", ws.requireAuth(ws.handleProxyLeakSettings))
@@ -1617,6 +1808,7 @@ func (ws *WebServer) panelHTTPS() bool {
 }
 
 func (ws *WebServer) Stop() {
+	ws.stopAdaptiveScheduler()
 	// Cancel the server base context FIRST (v2.1.0 B-22 remediation): SSE
 	// handlers watch r.Context() and return the moment it is cancelled, so
 	// Shutdown's drain no longer waits on streams that would otherwise only
@@ -3110,6 +3302,9 @@ func (ws *WebServer) PersistUpstreams(list []string) error {
 	defer ws.dnsMu.Unlock()
 	cfg := ws.mutableDNSLocked()
 	cfg.Upstreams = slices.Clone(list)
+	if cfg.AdaptiveCurrent != "" && !slices.Contains(cfg.Upstreams, cfg.AdaptiveCurrent) {
+		cfg.AdaptiveCurrent = ""
+	}
 	return ws.db.SetSetting("dns", cfg)
 }
 
@@ -3155,9 +3350,14 @@ func (ws *WebServer) removeUpstream(addr string) (list []string, errMsg string, 
 		return nil, "Cannot remove the last upstream resolver", http.StatusBadRequest
 	}
 	previous := cfg.Upstreams
+	previousAdaptive := cfg.AdaptiveCurrent
 	cfg.Upstreams = remaining
+	if cfg.AdaptiveCurrent == addr {
+		cfg.AdaptiveCurrent = ""
+	}
 	if err := ws.db.SetSetting("dns", cfg); err != nil {
 		cfg.Upstreams = previous
+		cfg.AdaptiveCurrent = previousAdaptive
 		return nil, "Could not persist the upstream list", http.StatusInternalServerError
 	}
 	return slices.Clone(remaining), "", 0

@@ -24,7 +24,7 @@ maintained by [Digitrob](https://github.com/digitrob). It is free, open source
 dependency. Use it only on servers and networks you are allowed to operate.
 
 <p align="center">
-  <img src="docs/screenshots/v5-web-dashboard.jpg" alt="DigitDNS web dashboard" width="100%">
+  <img src="docs/screenshots/v557-web-dashboard.jpg" alt="DigitDNS web dashboard" width="100%">
 </p>
 
 <p align="center">
@@ -40,6 +40,29 @@ dependency. Use it only on servers and networks you are allowed to operate.
 </p>
 
 ---
+
+## What's new in 5.5.7
+
+**Adaptive upstreams, real transport chips and a resolver card that uses the space.**
+
+- **Adaptive (fastest) is the new default strategy.** The pool is benchmarked on
+  a 5 min / 15 min / 1 hr / 6 hr / 24 hr schedule, the fastest healthy resolver
+  is selected with 12% hysteresis, and the choice plus last run are persisted.
+  A **Force** action runs the same check immediately.
+- **Transport chips are real filters.** Plain, DoT, DoH, DoH3, DoQ and DNSCrypt
+  can be enabled together; the resolver pool only uses the selected protocols.
+- **Reworked upstream resolver card.** Strategy, interval and transport chips,
+  provider favicons, a highlighted current resolver, and a Pool / Single Server
+  switch with a remembered last server. Single Server bypasses the pool strategy
+  and transport chips.
+- **Retired strategy aliases.** “Pool default” is gone; an empty saved strategy
+  now means Adaptive. “Fastest wins” is hidden and legacy `fastest` saves
+  normalise to Hedged.
+- **Android parity.** The same compact resolver controls, abbreviated intervals,
+  one-row chip groups, automatic biometric prompt on open, and **Online** instead
+  of **Connecting** after returning from a long background period.
+- **API v3.** Resolution settings now carry `transports`, adaptive interval,
+  current resolver and last-run fields, plus a forced adaptive-run endpoint.
 
 ## What's new in 5.5.6
 
@@ -504,7 +527,7 @@ Live metrics, the sticky history toolbar, the 1h range and export actions. Cards
 can be moved and resized freely.
 
 <p align="center">
-  <img src="docs/screenshots/v5-web-dashboard.jpg" alt="DigitDNS web dashboard: live DNS metrics, 1h aggregate and CSV/JSON exports" width="100%">
+  <img src="docs/screenshots/v557-web-dashboard.jpg" alt="DigitDNS 5.5.7 web dashboard with adaptive upstream controls, transport chips and live DNS metrics" width="100%">
 </p>
 
 ### Web history
@@ -529,7 +552,7 @@ enabled lists pinned under **ACTIVE** at the top.
 
 | Dashboard | History | Ad blocking |
 | :---: | :---: | :---: |
-| <img src="docs/screenshots/v5-android-dashboard.png" alt="DigitDNS Android dashboard with range chips and updated clock" width="240"> | <img src="docs/screenshots/v5-android-history.png" alt="DigitDNS Android history summary and five-minute chart" width="240"> | <img src="docs/screenshots/v5-android-adblocking.png" alt="DigitDNS Android ad blocking with active blocklists" width="240"> |
+| <img src="docs/screenshots/v557-android-dashboard.png" alt="DigitDNS Android dashboard with adaptive resolver controls, transport chips and the Pool/Single Server switch" width="240"> | <img src="docs/screenshots/v5-android-history.png" alt="DigitDNS Android history summary and five-minute chart" width="240"> | <img src="docs/screenshots/v5-android-adblocking.png" alt="DigitDNS Android ad blocking with active blocklists" width="240"> |
 
 ### Graphite theme
 
@@ -592,7 +615,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.6/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.7/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -655,7 +678,7 @@ DoT SNI-token authentication and mTLS. Open the same ports in the firewall.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.6/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.7/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -738,7 +761,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.5.6` | Android biometric login, 12 px dashboard rhythm, compact stats, in-place upstream rows (latest) |
+| `5.5.7` | Adaptive upstreams, transport chips, reworked resolver card, Android parity, online status fix (latest) |
+| `5.5.6` | Android biometric login, 12 px dashboard rhythm, compact stats, in-place upstream rows (older) |
 | `5.5.5` | Lock-free matcher reads, faster client/agent/stats paths, gzip pooling, login branding (older) |
 | `5.5.4` | Working API docs, stable update card, 2FA cancel, first-run checklist, change previews (older) |
 | `5.5.3` | Removed degraded banner, faster agent recovery, event-driven Android stream, housekeeping (older) |
@@ -808,7 +832,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.5.6/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.5.7/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1268,7 +1292,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.5.6`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.5.7`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

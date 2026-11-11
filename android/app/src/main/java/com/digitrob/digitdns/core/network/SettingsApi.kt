@@ -42,6 +42,10 @@ interface SettingsApi {
     @POST("settings/resolution")
     suspend fun saveResolution(@Body body: ResolutionSaveRequest): ResolutionSettings
 
+    /** Force one Adaptive benchmark/selection cycle and return the updated settings. */
+    @POST("settings/resolution/run-adaptive")
+    suspend fun runAdaptive(): ResolutionSettings
+
     @GET("settings/dnssec")
     suspend fun getDnssec(): DnssecSettings
 
@@ -202,6 +206,44 @@ data class ResolutionProfileDto(
     val transport: String = "",
 )
 
+/** The strategy the app should show for a server value, including retired spellings. */
+fun normalizedResolutionStrategy(value: String): String = when (value.trim().lowercase()) {
+    "adaptive" -> "adaptive"
+    "sequential" -> "sequential"
+    "best" -> "best"
+    // "fastest" was retired in favour of Hedged. Empty is the legacy "never
+    // chose" value and now means the adaptive default.
+    "" -> "adaptive"
+    else -> "hedged"
+}
+
+private const val ADAPTIVE_INTERVAL_5M = 5
+private const val ADAPTIVE_INTERVAL_15M = 15
+private const val ADAPTIVE_INTERVAL_1H = 60
+private const val ADAPTIVE_INTERVAL_6H = 360
+private const val ADAPTIVE_INTERVAL_24H = 1440
+private val ADAPTIVE_INTERVALS = setOf(
+    ADAPTIVE_INTERVAL_5M,
+    ADAPTIVE_INTERVAL_15M,
+    ADAPTIVE_INTERVAL_1H,
+    ADAPTIVE_INTERVAL_6H,
+    ADAPTIVE_INTERVAL_24H,
+)
+
+/** The offered Adaptive interval, with the same one-hour default as the server. */
+fun normalizedAdaptiveIntervalMinutes(value: Int): Int =
+    if (value in ADAPTIVE_INTERVALS) value else ADAPTIVE_INTERVAL_1H
+
+/** Canonical upstream protocol order shared by the API and the chips. */
+val ALL_TRANSPORTS = listOf("plain", "dot", "doh", "doh3", "doq", "dnscrypt")
+
+/** Deduplicate a protocol set and return it in the canonical chip order. */
+fun normalizedTransports(value: List<String>): List<String> {
+    val valid = value.map { it.trim().lowercase() }.filter { it in ALL_TRANSPORTS }.toSet()
+    if (valid.isEmpty()) return ALL_TRANSPORTS
+    return ALL_TRANSPORTS.filter { it in valid }
+}
+
 /**
  * The global resolution defaults plus the saved overrides. `upstreams` is read-only:
  * the save body must not carry it (the server decodes with DisallowUnknownFields).
@@ -209,12 +251,19 @@ data class ResolutionProfileDto(
 @Serializable
 data class ResolutionSettings(
     val transport: String = "any",
+    /** Enabled upstream protocols: plain, dot, doh, doh3, doq, dnscrypt. */
+    val transports: List<String> = ALL_TRANSPORTS,
     /** False when the resolver list holds no DoT/DoH/DoQ upstream: the picker disables it. */
     @SerialName("encrypted_available") val encryptedAvailable: Boolean = false,
     /** The subset carried over DoT/DoH/DoQ/DNSCrypt, for disabling and dimming. */
     @SerialName("encrypted_upstreams") val encryptedUpstreams: List<String> = emptyList(),
     @SerialName("default_upstream") val defaultUpstream: String = "",
-    @SerialName("default_strategy") val defaultStrategy: String = "",
+    @SerialName("default_strategy") val defaultStrategy: String = "adaptive",
+    @SerialName("adaptive_interval_minutes") val adaptiveIntervalMinutes: Int = 60,
+    @SerialName("adaptive_last_run") val adaptiveLastRun: String = "",
+    @SerialName("adaptive_current") val adaptiveCurrent: String = "",
+    @SerialName("adaptive_last_latency_ms") val adaptiveLastLatencyMs: Double = 0.0,
+    @SerialName("adaptive_last_note") val adaptiveLastNote: String = "",
     val profiles: Map<String, ResolutionProfileDto> = emptyMap(),
     val upstreams: List<String> = emptyList(),
 )
@@ -222,8 +271,12 @@ data class ResolutionSettings(
 @Serializable
 data class ResolutionSaveRequest(
     val transport: String = "any",
+    /** Null keeps the stored set and keeps saves compatible with older servers. */
+    val transports: List<String>? = null,
     @SerialName("default_upstream") val defaultUpstream: String = "",
-    @SerialName("default_strategy") val defaultStrategy: String = "",
+    @SerialName("default_strategy") val defaultStrategy: String = "adaptive",
+    /** Null keeps the stored interval and keeps saves compatible with older servers. */
+    @SerialName("adaptive_interval_minutes") val adaptiveIntervalMinutes: Int? = null,
     val profiles: Map<String, ResolutionProfileDto> = emptyMap(),
 )
 

@@ -238,6 +238,16 @@ func main() {
 		log.Fatalf("[Main] Refusing to start with unreadable persisted settings: %v", err)
 	}
 
+	// Retired strategy spellings ("", "fastest") become the explicit strategy
+	// this release runs. Persist the migration once so every later read agrees
+	// with the pool, and so the panel does not keep showing a value it no longer
+	// offers.
+	if dnsSettings.NormalizeResolution() {
+		if err := db.SetSetting("dns", dnsSettings); err != nil {
+			log.Printf("[Main] Warning: could not persist the resolution strategy migration: %v", err)
+		}
+	}
+
 	// One-time v2.2.0 convergence: an upgrading database lands on the whitelist
 	// default. The load above already ran and holds the pre-migration value; the
 	// migration writes allow_all=false only when its marker is absent, so the
@@ -438,8 +448,10 @@ func main() {
 	u := upstream.NewUpstreamPool(dnsSettings.Upstreams, dnsSettings.QueryTimeout, dnsSettings.FastestRacing, dnsSettings.ECSClientIP)
 	u.SetPolicy(upstream.Policy{
 		Transport:       dnsSettings.EffectiveTransport(),
+		Transports:      dnsSettings.Transports,
 		DefaultUpstream: dnsSettings.DefaultUpstream,
 		DefaultStrategy: dnsSettings.DefaultStrategy,
+		AdaptiveCurrent: dnsSettings.AdaptiveCurrent,
 		Profiles:        dnsSettings.Profiles,
 	})
 	// Measure the pool once at startup. The constructor only seeds an estimate; this
@@ -957,6 +969,9 @@ func main() {
 		cleanupControlAfterStartupFailure(controlServer)
 		log.Fatalf("[Main] Failed to start Web Server: %v", err)
 	}
+	// The Adaptive strategy's one scheduler. It is independent of a browser
+	// session: an install with the panel closed still re-benchmarks and moves.
+	webServer.StartAdaptiveScheduler()
 
 	stopWatcher := clientService.StartExpirationWatcher(1 * time.Minute)
 	defer close(stopWatcher)

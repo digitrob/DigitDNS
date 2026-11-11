@@ -1252,7 +1252,7 @@
                ten-plus rows at ~36px each, with the footer pinned to the bottom and no
                inner scrollbar until the list grows past that. -->
           <div data-dash-card="upstream" class="glass-panel panel-card p-5 sm:p-6 flex flex-col upstream-col">
-            <div class="flex items-start justify-between mb-3 shrink-0">
+            <div class="flex items-center justify-between mb-3 shrink-0">
               <h3 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2 font-heading">
                 <i data-feather="radio" class="w-4 h-4 text-emerald-400"></i> Upstream Resolvers
               </h3>
@@ -1261,8 +1261,6 @@
                 <i data-feather="play" class="w-3 h-3"></i><span class="upstream-benchmark-label">Benchmark</span>
               </button>
             </div>
-            <p class="text-[11px] text-slate-400 mb-1 shrink-0">Parallel DNS queries across fastest global upstreams</p>
-            <p class="text-[10px] text-slate-500 mb-3 font-mono shrink-0">Plain <span class="text-slate-400">1.1.1.1</span> · DoT <span class="text-slate-400">tls://1.1.1.1</span> · DoH <span class="text-slate-400">https://dns.google/dns-query</span> · DoQ <span class="text-slate-400">quic://dns.adguard-dns.com</span> · DoH3 <span class="text-slate-400">h3://dns.google/dns-query</span> · DNSCrypt <span class="text-slate-400">sdns://…</span></p>
 
             <!-- Add Custom Upstream Input + Public DNS provider browser -->
             <!-- Same `min-w-0` + `shrink-0` pair as the four rules-tab rows: a `flex-1` form
@@ -1312,40 +1310,73 @@
               </div>
             </div>
 
-            <div class="mt-3 pt-2 border-t border-slate-800 space-y-1.5 shrink-0">
-              <!-- One grid for all three rows: the label column sizes itself to the
-                   longest label ("Default upstream"), so every select gets the same
-                   width. Separate flex rows left each select sized against its own
-                   label, which is why the Transports and Strategy menus were wider
-                   than the Default upstream one. -->
-              <div class="resolution-settings">
-                <label for="resolution-transport"
-                  class="resolution-setting-label text-[11px] text-slate-400">Transports</label>
-                <select id="resolution-transport" aria-label="Global transport policy"
-                  class="resolution-setting-select panel-field panel-field-sm font-mono">
-                  <option value="any">Any Transport</option>
-                  <option value="encrypted">Encrypted Only (DoT · DoH · DoQ)</option>
-                  <option value="regular">Regular DNS (UDP · TCP)</option>
-                </select>
-                <label for="resolution-default-upstream"
-                  class="resolution-setting-label text-[11px] text-slate-400">Default upstream</label>
-                <select id="resolution-default-upstream" aria-label="Default upstream"
-                  class="resolution-setting-select panel-field panel-field-sm font-mono"></select>
-                <p id="resolution-pin-note" class="resolution-setting-note hidden text-[10px] text-amber-400"></p>
-                <label for="resolution-default-strategy"
-                  class="resolution-setting-label text-[11px] text-slate-400">Strategy</label>
-                <select id="resolution-default-strategy" aria-label="Default resolution strategy"
-                  title="Hedged starts the next resolver after 50 ms; Best Known uses the fastest measured resolver"
-                  class="resolution-setting-select panel-field panel-field-sm font-mono">
-                  <option value="">Pool default</option>
-                  <option value="fastest">Fastest wins</option>
-                  <option value="sequential">In order</option>
-                  <option value="hedged">Hedged</option>
-                  <option value="best">Best Known</option>
-                </select>
+            <div class="mt-3 pt-3 border-t border-slate-800 space-y-2.5 shrink-0">
+              <div class="resolver-chip-block">
+                <span class="resolver-chip-label">Strategy</span>
+                <div id="resolution-strategy-chips" class="resolver-chip-row" role="group" aria-label="Resolution strategy">
+                  <button type="button" class="resolver-chip resolver-strategy-chip" data-strategy="adaptive" aria-pressed="true">Adaptive</button>
+                  <button type="button" class="resolver-chip resolver-strategy-chip" data-strategy="sequential" aria-pressed="false">In order</button>
+                  <button type="button" class="resolver-chip resolver-strategy-chip" data-strategy="hedged" aria-pressed="false">Hedged</button>
+                  <button type="button" class="resolver-chip resolver-strategy-chip" data-strategy="best" aria-pressed="false">Best Known</button>
+                </div>
               </div>
-              <p class="text-[10px] text-slate-500">Fallback: Pool Default</p>
-              <p class="text-[10px] text-slate-500">Per-domain overrides live in the Domains list.</p>
+
+              <div class="resolver-chip-block">
+                <span class="resolver-chip-label">Interval</span>
+                <div class="resolver-chip-row resolver-interval-row">
+                  <div id="resolution-interval-chips" class="resolver-chip-group" role="group" aria-label="Adaptive interval">
+                    <button type="button" class="resolver-chip" data-interval="5" aria-pressed="false">5m</button>
+                    <button type="button" class="resolver-chip" data-interval="15" aria-pressed="false">15m</button>
+                    <button type="button" class="resolver-chip" data-interval="60" aria-pressed="true">1h</button>
+                    <button type="button" class="resolver-chip" data-interval="360" aria-pressed="false">6h</button>
+                    <button type="button" class="resolver-chip" data-interval="1440" aria-pressed="false">24h</button>
+                  </div>
+                  <button id="resolution-adaptive-run" type="button"
+                    class="resolver-refresh-btn"
+                    aria-label="Force an adaptive check now"
+                    title="Benchmark now and switch to the fastest healthy resolver"
+                    disabled>
+                    <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i>
+                  </button>
+                  <span id="resolution-adaptive-force-label" class="resolver-force-label">Force</span>
+                </div>
+              </div>
+
+              <p id="resolution-adaptive-note"
+                class="resolution-adaptive-note text-[10px] text-slate-500"></p>
+
+              <div class="resolver-chip-block resolver-chip-block-transports">
+                <span class="resolver-chip-label">Transports</span>
+                <div id="resolution-transport-chips" class="resolver-chip-row" role="group" aria-label="Enabled upstream transports">
+                  <button type="button" class="resolver-chip resolver-transport-chip" data-transport="plain" aria-pressed="true">Plain</button>
+                  <button type="button" class="resolver-chip resolver-transport-chip" data-transport="dot" aria-pressed="true">DoT</button>
+                  <button type="button" class="resolver-chip resolver-transport-chip" data-transport="doh" aria-pressed="true">DoH</button>
+                  <button type="button" class="resolver-chip resolver-transport-chip" data-transport="doh3" aria-pressed="true">DoH3</button>
+                  <button type="button" class="resolver-chip resolver-transport-chip" data-transport="doq" aria-pressed="true">DoQ</button>
+                  <button type="button" class="resolver-chip resolver-transport-chip" data-transport="dnscrypt" aria-pressed="true">DNSCrypt</button>
+                </div>
+              </div>
+
+              <div class="resolver-single-row">
+                <div class="resolver-mode-switch">
+                  <span>Pool</span>
+                  <label class="switch">
+                    <input type="checkbox" id="resolution-single-switch">
+                    <span class="slider"></span>
+                  </label>
+                  <span>Single Server</span>
+                </div>
+                <div class="resolver-single-control">
+                  <button id="resolution-single-upstream" type="button"
+                    class="resolver-single-button"
+                    aria-haspopup="listbox" aria-expanded="false" disabled>
+                    <span id="resolution-single-icon" class="resolver-single-icon" aria-hidden="true"></span>
+                    <span id="resolution-single-label" class="resolver-single-label">Pool (automatic)</span>
+                    <i data-feather="chevron-down" class="w-3.5 h-3.5 shrink-0"></i>
+                  </button>
+                  <div id="resolution-single-menu" class="resolver-single-menu hidden" role="listbox" aria-label="Single server"></div>
+                </div>
+              </div>
             </div>
           </div>
 

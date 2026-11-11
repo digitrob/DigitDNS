@@ -49,6 +49,13 @@ class AppLockViewModel @Inject constructor(
     private var lastBackgroundAt = 0L
 
     /**
+     * The lock screen asks for one automatic prompt per lock event. It must not
+     * re-prompt on every recomposition or rotation, and a cancelled prompt leaves
+     * the manual Unlock button as the retry path.
+     */
+    private var autoPrompted = false
+
+    /**
      * Called once after the activity's bootstrap has loaded the active credential.
      * Idempotent: rotation and recomposition must not re-lock an unlocked app.
      */
@@ -58,6 +65,7 @@ class AppLockViewModel @Inject constructor(
         viewModelScope.launch {
             val enabled = preferences.biometricEnabled.first()
             if (enabled && hasProtectedSession()) {
+                autoPrompted = false
                 _locked.value = true
             }
         }
@@ -68,7 +76,6 @@ class AppLockViewModel @Inject constructor(
     }
 
     fun onForeground() {
-        if (_locked.value) return
         viewModelScope.launch {
             val enabled = preferences.biometricEnabled.first()
             if (!enabled || !hasProtectedSession()) {
@@ -76,10 +83,31 @@ class AppLockViewModel @Inject constructor(
                 return@launch
             }
             val awayFor = SystemClock.elapsedRealtime() - lastBackgroundAt
-            if (lastBackgroundAt > 0 && awayFor >= GRACE_MS) {
+            val longAway = lastBackgroundAt > 0 && awayFor >= GRACE_MS
+            if (_locked.value) {
+                // Returning to a lock screen that has been away long enough
+                // should offer the prompt again; a quick app switch (or the
+                // device-credential fallback pausing us briefly) should not.
+                if (longAway) autoPrompted = false
+                return@launch
+            }
+            if (longAway) {
+                autoPrompted = false
                 _locked.value = true
             }
         }
+    }
+
+    /**
+     * Called when the lock screen is first composed for a lock event. Opening the
+     * app should show the fingerprint prompt immediately rather than making the
+     * operator tap Unlock first. Rotation/recomposition is guarded by
+     * [autoPrompted]; a cancelled prompt leaves the button available.
+     */
+    fun onLockShown(activity: FragmentActivity) {
+        if (!_locked.value || _authenticating.value || autoPrompted) return
+        autoPrompted = true
+        unlock(activity)
     }
 
     fun unlock(activity: FragmentActivity) {
@@ -123,6 +151,7 @@ class AppLockViewModel @Inject constructor(
             preferences.setSubscriberActive(false)
             preferences.setAppMode(AppMode.ADMIN)
             _message.value = null
+            autoPrompted = false
             _locked.value = false
         }
     }

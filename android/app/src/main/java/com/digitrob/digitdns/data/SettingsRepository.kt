@@ -95,6 +95,9 @@ class SettingsRepository @Inject constructor(
     suspend fun saveResolution(request: ResolutionSaveRequest): ResolutionSettings =
         api.saveResolution(request)
 
+    /** Force one Adaptive check and return the settings with the new choice. */
+    suspend fun runAdaptive(): ResolutionSettings = api.runAdaptive()
+
     /** The saved DNSSEC policy, the built-in anchors and the running state. */
     suspend fun loadDnssec(): DnssecSettings = api.getDnssec()
 
