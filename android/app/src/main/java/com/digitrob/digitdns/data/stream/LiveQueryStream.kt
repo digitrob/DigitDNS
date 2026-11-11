@@ -10,6 +10,7 @@ import com.digitrob.digitdns.core.notifications.SseFrame
 import com.digitrob.digitdns.core.notifications.SseFrameParser
 import com.digitrob.digitdns.core.notifications.StreamEvent
 import com.digitrob.digitdns.data.ConnectionStore
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -147,6 +148,7 @@ class LiveQueryStream @Inject constructor(
         if (reconnectRequested) return
         reconnectRequested = true
         stream?.cancel()
+        closeSignal.complete(Unit)
     }
 
     /**
@@ -235,6 +237,9 @@ class LiveQueryStream @Inject constructor(
     /** Set when a manual refresh asks the socket to reopen and re-seed history. */
     @Volatile private var reconnectRequested = false
 
+    /** Completed by onClosed, reconnect() or teardown() to wake the reconnect loop. */
+    @Volatile private var closeSignal = CompletableDeferred<Unit>()
+
     private suspend fun openOnce(): OpenOutcome {
         // A manual reconnect re-enters through a stream that was already live. Do not
         // flash "Connecting" for that; the feed is already anchored, so the badge only
@@ -289,6 +294,8 @@ class LiveQueryStream @Inject constructor(
         opened = false
         retryAllowed = true
         val latch = CountDownLatch(1)
+        val signal = CompletableDeferred<Unit>()
+        closeSignal = signal
 
         val listener = object : LiveStreamClient.Listener {
             override fun onOpen() {
@@ -301,6 +308,7 @@ class LiveQueryStream @Inject constructor(
                 retryAllowed = retryable
                 if (reason != null) Timber.i("live stream closed: %s", reason)
                 latch.countDown()
+                signal.complete(Unit)
             }
         }
 
@@ -323,11 +331,9 @@ class LiveQueryStream @Inject constructor(
     }
 
     private suspend fun waitForClose() {
-        // Poll the retry signal: the listener flips retryAllowed when the stream ends,
-        // and there is no channel to await it on without extra machinery.
-        while (consumers.get() > 0 && retryAllowed && !reconnectRequested) {
-            delay(RECONNECT_PROBE_MS)
-        }
+        // onClosed, reconnect() and teardown() complete this signal, so the loop
+        // sleeps until something actually happens instead of polling every 500 ms.
+        closeSignal.await()
         if (reconnectRequested) {
             reconnectRequested = false
             Timber.i("live stream reconnect requested; reopening")
@@ -403,6 +409,7 @@ class LiveQueryStream @Inject constructor(
         boundConnectionId = null
         stream?.cancel()
         stream = null
+        closeSignal.complete(Unit)
         _status.value = StreamStatus.STOPPED
     }
 
@@ -416,7 +423,6 @@ class LiveQueryStream @Inject constructor(
         /** The ring the log renders. Matches the panel's recent-log depth. */
         const val BUFFER_LIMIT = 200
 
-        const val RECONNECT_PROBE_MS = 500L
         const val CONNECT_LATCH_SECONDS = 20L
         const val BASE_BACKOFF_MS = 1_000L
         const val MAX_BACKOFF_MS = 30_000L

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"golang.org/x/net/http2"
 	"os"
 	"path/filepath"
 	"time"
@@ -47,6 +49,13 @@ func NewHub(baseURL string) *Hub {
 	transport.IdleConnTimeout = 90 * time.Second
 	transport.TLSHandshakeTimeout = 5 * time.Second
 	transport.ForceAttemptHTTP2 = true
+	// A half-dead HTTP/2 connection can otherwise hold a heartbeat or long-poll
+	// until the 15/35 s request deadline. PING it while idle and close the
+	// connection when the peer stops answering.
+	if h2, err := http2.ConfigureTransports(transport); err == nil {
+		h2.ReadIdleTimeout = 30 * time.Second
+		h2.PingTimeout = 10 * time.Second
+	}
 
 	return &Hub{
 		BaseURL: baseURL,

@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.5.3] — quieter panel and faster agent recovery
+
+### Changed
+- **Removed the global upstream-degraded banner.** A single failed DoH3 probe
+  could push a page-wide warning across every tab. Per-resolver health remains
+  on the Upstream Resolvers card (dot, latency and tooltip); the listener
+  warning for a transport that is enabled but not listening stays.
+- **Agents recover from a long hub outage faster.** Heartbeat backoff is capped
+  at one minute instead of sharing the catalogue’s five-minute ceiling, so an
+  agent reappears promptly when the hub returns.
+- **HTTP/2 keepalive and GOAWAY handling** for the agent-hub client: idle
+  connections are pinged, and a GOAWAY re-arms the long-poll immediately.
+- **Android live-query reconnect is event-driven.** The 500 ms flag-polling loop
+  was replaced with a completion signal from the stream close/reconnect paths.
+
+### Removed
+- The unused **2.8 MB** legacy Tailwind stylesheet is gone from the source tree
+  and Docker context.
+- Visible documentation no longer advertises old v2.x version headings.
+
+---
+
 ## 🏷️ [v5.5.2] — trustworthy upstream latency
 
 ### Added

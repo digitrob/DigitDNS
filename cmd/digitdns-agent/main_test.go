@@ -2,6 +2,8 @@ package main
 
 import (
 	"testing"
+
+	"golang.org/x/net/http2"
 )
 
 func TestJitteredIntervalBounds(t *testing.T) {
@@ -11,6 +13,21 @@ func TestJitteredIntervalBounds(t *testing.T) {
 		if d < base*4/5 || d > base*6/5 {
 			t.Fatalf("jitteredInterval(%v, 0) = %v, want within ±20%%", base, d)
 		}
+	}
+}
+
+func TestHeartbeatBackoffCapsAtOneMinute(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		d := jitteredIntervalCapped(agentHeartbeatBase, 100, agentHeartbeatMaxBackoff)
+		if d < agentHeartbeatMaxBackoff*4/5 || d > agentHeartbeatMaxBackoff*6/5 {
+			t.Fatalf("heartbeat backoff = %v, want around %v", d, agentHeartbeatMaxBackoff)
+		}
+	}
+}
+
+func TestGoAwayIsATransportDrop(t *testing.T) {
+	if !isTransportDrop(http2.GoAwayError{}) {
+		t.Fatal("HTTP/2 GOAWAY must re-arm the long-poll immediately")
 	}
 }
 

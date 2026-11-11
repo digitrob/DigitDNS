@@ -403,14 +403,9 @@ func TestSPARoutesRevalidateThroughTheAssetServer(t *testing.T) {
 	}
 }
 
-// web/css/tailwind.min.css was compiled into every binary by a css/* embed pattern
-// and served to nobody: it is a Tailwind v2.2.19 build, and v2 has no slate palette
-// at all, so it could not have styled this dashboard even if something had linked
-// it. 2.9 MB of the shipped binary was that file, and in v2.1 the Play CDN JIT
-// engine (js/tailwind.js) went the same way, replaced by the committed purged
-// stylesheet. The embed list now names each asset explicitly, and this test is what
-// keeps a future wildcard from quietly
-// putting it back — a 404 here is the whole point.
+// An unpurged vendor stylesheet was once compiled into every binary by a css/*
+// embed pattern and served to nobody. The embed list now names each asset
+// explicitly, and this test keeps a future wildcard from quietly putting it back.
 func TestUnusableVendorStylesheetIsNotEmbedded(t *testing.T) {
 	ws, _, cleanup := setupTestWebServer(t)
 	defer cleanup()

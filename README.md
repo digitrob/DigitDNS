@@ -41,6 +41,19 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.5.3
+
+**Less noise, faster recovery, smaller source tree.**
+
+- The global “upstream resolvers degraded” banner was removed. Resolver health
+  stays on each row in the Upstream Resolvers card.
+- Agents recover from a long hub outage within a minute instead of waiting up
+  to five minutes, and use HTTP/2 keepalive plus GOAWAY detection.
+- The Android live-query stream reconnects on an event instead of polling every
+  500 ms.
+- Removed the unused 2.8 MB legacy Tailwind stylesheet and cleaned up old
+  version references in visible documentation.
+
 ## What's new in 5.5.2
 
 **Upstream latency you can trust, and a cleaner provider browser.**
@@ -526,7 +539,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.3/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -589,7 +602,7 @@ DoT SNI-token authentication and mTLS. Open the same ports in the firewall.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.3/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -672,7 +685,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.5.2` | Warm benchmark medians, auto-benchmark on add, stable live latency, upstream UI fixes (latest) |
+| `5.5.3` | Removed degraded banner, faster agent recovery, event-driven Android stream, housekeeping (latest) |
+| `5.5.2` | Warm benchmark medians, auto-benchmark on add, stable live latency, upstream UI fixes (older) |
 | `5.5.1` | DoQ FIN fix, offline installer firewall sync; client transports, DNSCrypt, mTLS and UI polish (older) |
 | `5.5.0` | Client Transports with DNSCrypt, mTLS and token auth; live DNSSEC apply; steadier web/Android panels (older) |
 | `5.4.3` | API gzip, minified assets, deferred chart, health/blocked notices (older) |
@@ -738,7 +752,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.5.2/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.5.3/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1198,7 +1212,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.5.2`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.5.3`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

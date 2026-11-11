@@ -82,10 +82,6 @@ Dockerfile
 docker-compose.yml
 .dockerignore
 
-# tailwind.min.css is 2.9 MB and is not one of the embedded assets — the binary
-# reads web/js/tailwind.js instead. It is pure upload time.
-web/css/tailwind.min.css
-
 # ------------------------------------------------------------------------------
 # 5. Prebuilt binaries. A stale one copied in would be shadowed by the one this
 #    build produces, but it is megabytes of context either way.

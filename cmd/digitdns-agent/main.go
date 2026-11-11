@@ -19,6 +19,8 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/http"
+
+	"golang.org/x/net/http2"
 	"os"
 	"os/signal"
 	"sort"
@@ -399,7 +401,7 @@ func main() {
 					_, _, _, _ = srv.Stats()
 				}
 			}
-			beatTimer.Reset(jitteredInterval(agentHeartbeatBase, heartbeatFailures))
+			beatTimer.Reset(jitteredIntervalCapped(agentHeartbeatBase, heartbeatFailures, agentHeartbeatMaxBackoff))
 
 		case <-syncTick:
 			if syncInFlight {
@@ -464,17 +466,23 @@ func isTransportDrop(err error) bool {
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
+	var goAway http2.GoAwayError
+	if errors.As(err, &goAway) {
+		return true
+	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "goaway") ||
 		strings.Contains(msg, "use of closed network connection")
 }
 
 const (
-	agentHeartbeatBase    = 30 * time.Second
-	agentFullSyncInterval = 30 * time.Minute
-	agentSyncBase         = 60 * time.Second
-	agentSyncMaxBackoff   = 5 * time.Minute
-	agentSyncMaxShift     = 6
+	agentHeartbeatBase       = 30 * time.Second
+	agentHeartbeatMaxBackoff = 60 * time.Second
+	agentFullSyncInterval    = 30 * time.Minute
+	agentSyncBase            = 60 * time.Second
+	agentSyncMaxBackoff      = 5 * time.Minute
+	agentSyncMaxShift        = 6
 )
 
 // jitteredInterval spreads heartbeats and catalogue pulls by ±20%, and backs
@@ -482,6 +490,14 @@ const (
 // running when the hub restarted reconnects on the same tick and the control
 // plane sees a self-inflicted stampede.
 func jitteredInterval(base time.Duration, failures int) time.Duration {
+	return jitteredIntervalCapped(base, failures, agentSyncMaxBackoff)
+}
+
+// jitteredIntervalCapped is the same jitter/backoff curve with a caller-specific
+// ceiling. The catalogue can back off to five minutes because the cached list
+// keeps serving, but heartbeats must retry sooner: after a long hub outage an
+// agent should reappear within a minute of the hub coming back, not five.
+func jitteredIntervalCapped(base time.Duration, failures int, max time.Duration) time.Duration {
 	d := base
 	if failures > 0 {
 		shift := failures
@@ -489,8 +505,8 @@ func jitteredInterval(base time.Duration, failures int) time.Duration {
 			shift = agentSyncMaxShift
 		}
 		d = base << shift
-		if d > agentSyncMaxBackoff {
-			d = agentSyncMaxBackoff
+		if d > max {
+			d = max
 		}
 	}
 	spread := d / 5

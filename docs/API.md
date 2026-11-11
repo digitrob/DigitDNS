@@ -1209,7 +1209,7 @@ curl -s -X POST "http://127.0.0.1:8080/api/v1/cache/flush" -H "X-API-Key: $KEY"
 
 Sorting on `expires_at` as text is exact while the server's clock is UTC, which a VPS almost always is; the field is serialized with whatever offset the host runs in, so on a machine set to a local zone treat that ordering as approximate and compare the parsed dates instead. Do not try to spot a spent account by dividing `traffic_used_bytes` by `traffic_limit_gb` — `quota_exceeded` is the same test the resolver refuses queries with, and a rounded 100% is not the cut-off.
 
-### `POST /api/auth/unlock` — Clear Login Lockouts (v2.1.0-beta3+)
+### `POST /api/auth/unlock` — Clear Login Lockouts
 
 Clears the per-address login lockouts the panel's brute-force guard recorded. The
 tracker lives in the daemon's memory, so this endpoint is the only way to lift a
@@ -1237,7 +1237,7 @@ Lockouts)."*
 
 ---
 
-### `POST /ip/<token>` — Subscriber IP Registration API (v2.1.0-beta3+)
+### `POST /ip/<token>` — Subscriber IP Registration API
 
 The subscriber's one write. Phase B moved binding off the portal page: **no GET
 anywhere can move an account's address any more** — opening `/sub/<token>`

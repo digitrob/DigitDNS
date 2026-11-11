@@ -2,20 +2,13 @@ package web
 
 import "embed"
 
-// The asset list is written out file by file rather than as css/* js/*, and the
-// reason is not tidiness. The wildcard form compiled every file that happened to
-// be sitting in those directories into the binary, and one of them —
-// css/tailwind.min.css, 2.9 MB — is a Tailwind v2.2.19 build that this dashboard
-// cannot use at all: v2 has no slate palette, so every bg-slate-*, text-slate-*
-// and border-slate-* class in index.html would be undefined by it. Nothing links
-// it, nothing can link it, and it was still shipped inside every binary and
-// written to every VPS.
-//
-// Naming each file makes that class of mistake impossible to repeat quietly: a new
-// asset has to be added here to be served, and a stale one stops being carried the
-// moment it is dropped from the list. The build fails loudly if a named file is
-// missing, which is the failure mode to want — an asset silently absent from the
-// binary is a dashboard that half-renders in production.
+// The asset list is written out file by file rather than as css/* js/*. A wildcard
+// used to compile every file sitting in those directories into the binary, including
+// unused vendor stylesheets. Naming each file makes that class of mistake impossible
+// to repeat quietly: a new asset has to be added here to be served, and a stale one
+// stops being carried the moment it is dropped from the list. The build fails loudly
+// if a named file is missing, which is the failure mode to want — an asset silently
+// absent from the binary is a dashboard that half-renders in production.
 //
 // css/portal.css and js/portal.js are the subscriber portal's two assets. They are
 // separate from the dashboard's pair on purpose: the portal is the page a reseller's

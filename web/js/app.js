@@ -2260,8 +2260,6 @@ let transportSaving = false;
 let transportInlineError = '';
 // Global notice state. The upstream health set is refreshed from /api/stats; the
 // signature lets the banner repaint only when the set actually changes.
-let degradedUpstreams = [];
-let upstreamHealthSignature = '';
 let lastGlobalNoticeSignature = '';
 
 function normalizeTransportSettings(cfg) {
@@ -2736,27 +2734,9 @@ async function refreshTransportView() {
   } catch (ignore) { /* keep the last known card state */ }
 }
 
-// noteUpstreamHealth feeds the global banner from the stats poll without making
-// the banner part of the per-second DOM work: the set of degraded addresses is
-// compared first, and renderGlobalNotices is called only on a change.
-function upstreamIsDegraded(u) {
-  if (!u) return false;
-  if (u.circuit_open) return true;
-  if (u.last_probe_at && !u.last_probe_ok) return true;
-  return Number(u.recent_samples) >= 20 && Number(u.recent_error_rate) >= 0.10;
-}
-
-function noteUpstreamHealth(upstreams) {
-  const bad = (upstreams || []).filter(upstreamIsDegraded);
-  const signature = bad.map((u) => String(u.address || '')).sort().join('|');
-  if (signature === upstreamHealthSignature) return;
-  upstreamHealthSignature = signature;
-  degradedUpstreams = bad;
-  renderGlobalNotices();
-}
-
-// renderGlobalNotices is the one place the shell explains listener and upstream
-// state that applies to every tab. Public access mode deliberately has no banner:
+// renderGlobalNotices is the one place the shell explains listener state that
+// applies to every tab. Per-resolver health stays in the Upstream Resolvers card;
+// a page-wide banner for a single probe failure broke the layout. Public access mode deliberately has no banner:
 // the Clients page already owns that switch, and a persistent banner duplicated
 // it across the whole panel.
 function renderGlobalNotices() {
@@ -2778,17 +2758,6 @@ function renderGlobalNotices() {
         label: 'Open transports',
       });
     }
-  }
-
-  if (degradedUpstreams.length) {
-    const names = degradedUpstreams.slice(0, 3).map((u) => String(u.address || '')).join(', ');
-    const more = degradedUpstreams.length > 3 ? ` +${degradedUpstreams.length - 3} more` : '';
-    notices.push({
-      tone: 'warn',
-      text: `${degradedUpstreams.length} upstream resolver${degradedUpstreams.length === 1 ? '' : 's'} degraded: ${names}${more}.`,
-      action: 'upstreams',
-      label: 'Review upstreams',
-    });
   }
 
   const signature = JSON.stringify(notices);
@@ -4963,7 +4932,6 @@ async function updateStats() {
 
     // Fold the same health data into the global banner; this only repaints when
     // the set of degraded resolvers changes.
-    noteUpstreamHealth(data.upstreams);
 
     // Push QPS point to chart
     pushChartData(data.qps);
