@@ -95,6 +95,11 @@ func (ws *WebServer) agentRevision() string {
 // allowlists, agent details and the global IPv6 policy.
 func (ws *WebServer) agentConfigChanged() {
 	rev := ws.agentRev.Add(1)
+	// The per-agent encoded catalogues are revision-scoped; drop them so the
+	// next poll builds from the new inputs instead of retaining old bodies.
+	ws.agentCatBodyMu.Lock()
+	ws.agentCatBodies = nil
+	ws.agentCatBodyMu.Unlock()
 	// Persist synchronously so a restart cannot reuse a counter an agent has
 	// already matched. Every caller is a panel mutation that has finished its
 	// own database write; this must not be called from inside a bbolt write

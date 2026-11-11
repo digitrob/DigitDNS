@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.5.5] — faster resolver and dashboard paths
+
+### Changed
+- **Lock-free matcher reads.** The DNS query path loads an immutable rule
+  snapshot instead of taking an RWMutex read lock on every query. Rule rebuilds
+  publish a new snapshot atomically.
+- **Client list from the in-memory index.** `ListClients` no longer decrypts
+  every record from bbolt on each dashboard poll; it snapshots the service's
+  existing index and adds the live traffic/query deltas.
+- **Agent catalogue body cache.** Encoded catalogues are cached per agent and
+  control-plane revision, so a fleet does not repeat the assignment walk and
+  JSON encode for the same revision.
+- **Gzip writer pooling** for API responses, and a one-second cache for the v3
+  upstream-stats endpoint.
+- The quota-refusal log reuses the already-parsed DNS question.
+- Login page branding now reads **SmartDNS · SNI Proxy · Ad Blocking**.
+
+### Android
+- Version **5.5.5 (546)**. No functional Android changes; the backend changes
+  are transparent to the existing v3 API.
+
+---
+
 ## 🏷️ [v5.5.4] — setup checklist, change previews and working API docs
 
 ### Added

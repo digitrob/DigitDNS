@@ -1111,10 +1111,31 @@ func (s *ClientService) LookupByToken(token string) (*database.Client, error) {
 // ListClients returns every stored client with its live traffic total, so the
 // dashboard shows usage as it accrues rather than as of the last flush.
 func (s *ClientService) ListClients() ([]database.Client, error) {
-	clients, err := s.db.ListClients()
-	if err != nil {
-		return nil, err
+	// The service already keeps every decoded client in idMap for the resolver's
+	// hot path. Reading the database here meant decrypting every record on each
+	// dashboard poll, even though the index holds the same records.
+	s.mu.RLock()
+	clients := make([]database.Client, 0, len(s.idMap))
+	for _, c := range s.idMap {
+		if c != nil {
+			clients = append(clients, *c)
+		}
 	}
+	s.mu.RUnlock()
+
+	if len(clients) == 0 {
+		// An empty index is either a genuinely empty install or a reload that
+		// failed at startup. Fall back to the store so a failed index cannot
+		// present the operator with an empty client list.
+		var err error
+		clients, err = s.db.ListClients()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// The store lists by client key; keep that stable order for the dashboard.
+	slices.SortFunc(clients, func(a, b database.Client) int { return strings.Compare(a.ID, b.ID) })
 	for i := range clients {
 		clients[i].TrafficUsedBytes += s.traffic.get(clients[i].ID)
 		clients[i].TotalQueries += s.queries.get(clients[i].ID)

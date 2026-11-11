@@ -284,6 +284,14 @@ func (ws *WebServer) agentIPv6Effective(agent database.Agent) bool {
 	return ws.settings.Snapshot().ProxyIPv6Enabled
 }
 
+// agentCatalogueCacheKey scopes an encoded catalogue to the revision and the
+// per-agent fields that change its body. The revision covers the global rules,
+// clients and assignments; country and the effective IPv6 flag cover the rest.
+func (ws *WebServer) agentCatalogueCacheKey(agent database.Agent, revision string) string {
+	return revision + "|" + agent.ID + "|" + agent.Country + "|" +
+		strconv.FormatBool(agent.IPv6Enabled) + "|" + strconv.FormatBool(ws.agentIPv6Effective(agent))
+}
+
 // agentFromRequest authenticates an agent by its key.
 func (ws *WebServer) agentFromRequest(r *http.Request) (database.Agent, bool) {
 	raw := r.Header.Get(agentKeyHeader)
@@ -432,15 +440,30 @@ func (ws *WebServer) handleAgentCatalogue(w http.ResponseWriter, r *http.Request
 				httpx.WriteJSONError(w, http.StatusUnauthorized, "agent key is not valid")
 				return
 			}
-			cat, err := ws.buildAgentCatalogue(fresh)
-			if err != nil {
-				httpx.WriteJSONError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			body, err := json.Marshal(cat)
-			if err != nil {
-				httpx.WriteJSONError(w, http.StatusInternalServerError, "could not encode catalogue")
-				return
+			cacheKey := ws.agentCatalogueCacheKey(fresh, etag)
+			ws.agentCatBodyMu.Lock()
+			body := ws.agentCatBodies[cacheKey]
+			ws.agentCatBodyMu.Unlock()
+			if body == nil {
+				cat, err := ws.buildAgentCatalogue(fresh)
+				if err != nil {
+					httpx.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+				body, err = json.Marshal(cat)
+				if err != nil {
+					httpx.WriteJSONError(w, http.StatusInternalServerError, "could not encode catalogue")
+					return
+				}
+				ws.agentCatBodyMu.Lock()
+				if ws.agentCatBodies == nil {
+					ws.agentCatBodies = make(map[string][]byte)
+				}
+				if len(ws.agentCatBodies) > 512 {
+					ws.agentCatBodies = make(map[string][]byte)
+				}
+				ws.agentCatBodies[cacheKey] = body
+				ws.agentCatBodyMu.Unlock()
 			}
 			w.Header().Set("ETag", etag)
 			w.Header().Set("Cache-Control", "no-cache")

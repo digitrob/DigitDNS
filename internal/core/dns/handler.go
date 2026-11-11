@@ -701,7 +701,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	if activeClient != nil && h.quota != nil && h.quota.QuotaExceeded(activeClient) {
 		m := new(dns.Msg)
 		m.SetRcode(r, dns.RcodeRefused)
-		h.logQuery(start, clientIP, accountName, proto, questionName(r), "Traffic quota exceeded", "QUOTA", false, "", "", q.Qtype, dns.RcodeRefused)
+		h.logQuery(start, clientIP, accountName, proto, q.Name, "Traffic quota exceeded", "QUOTA", false, "", "", q.Qtype, dns.RcodeRefused)
 		return m
 	}
 

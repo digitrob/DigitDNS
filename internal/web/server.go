@@ -108,6 +108,11 @@ type WebServer struct {
 	agentCatNotMod   atomic.Uint64
 	agentCatBuilds   atomic.Uint64
 	agentCatParked   atomic.Int64
+	// agentCatBodies caches the encoded catalogue per agent and revision. The
+	// global inputs are already shared; this removes the per-agent assignment
+	// walk and JSON encode when several agents poll the same revision.
+	agentCatBodyMu sync.Mutex
+	agentCatBodies map[string][]byte
 	// agentInputs caches the two global inputs to every agent catalogue (rules
 	// and the panel client list) for one control-plane revision. Without it, a
 	// single config change woke N agents and made each one re-read both from the

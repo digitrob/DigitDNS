@@ -2,15 +2,28 @@ package web
 
 import (
 	"compress/gzip"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // gzipMinAPIResponse is the point at which compressing an API response pays for
 // its own header and trailer. The JSON endpoints here are normally well above
 // it; a short error body or the empty client list is not.
 const gzipMinAPIResponse = 512
+
+// The wrapper and its gzip.Writer are created on every API response. The
+// dashboard polls several endpoints a second, so pooling both removes two
+// allocations per request without changing the buffering behaviour.
+var gzipResponsePool = sync.Pool{
+	New: func() any { return &gzipResponseWriter{} },
+}
+
+var gzipWriterPool = sync.Pool{
+	New: func() any { return gzip.NewWriter(io.Discard) },
+}
 
 // withGzip negotiates gzip for an authenticated API handler. Static assets have
 // their own pre-compressed representation and are not routed through here; the
@@ -24,8 +37,23 @@ func (ws *WebServer) withGzip(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 			return
 		}
-		gw := &gzipResponseWriter{ResponseWriter: w}
-		defer func() { _ = gw.Close() }()
+		gw := gzipResponsePool.Get().(*gzipResponseWriter)
+		gw.ResponseWriter = w
+		gw.buf = gw.buf[:0]
+		gw.status = 0
+		gw.wrote = false
+		gw.decided = false
+		gw.compress = false
+		gw.gz = nil
+		defer func() {
+			_ = gw.Close()
+			if cap(gw.buf) > 64<<10 {
+				gw.buf = nil
+			}
+			gw.ResponseWriter = nil
+			gw.gz = nil
+			gzipResponsePool.Put(gw)
+		}()
 		next(gw, r)
 	}
 }
@@ -94,7 +122,10 @@ func (w *gzipResponseWriter) Close() error {
 	if w.gz == nil {
 		return nil
 	}
-	return w.gz.Close()
+	err := w.gz.Close()
+	gzipWriterPool.Put(w.gz)
+	w.gz = nil
+	return err
 }
 
 // decide commits the status, headers and buffered prefix exactly once.
@@ -127,7 +158,9 @@ func (w *gzipResponseWriter) decide() {
 		h.Del("Content-Length")
 		addVary(h, "Accept-Encoding")
 		h.Set("Content-Encoding", "gzip")
-		w.gz = gzip.NewWriter(w.ResponseWriter)
+		gz := gzipWriterPool.Get().(*gzip.Writer)
+		gz.Reset(w.ResponseWriter)
+		w.gz = gz
 	} else if h.Get("Content-Length") == "" {
 		h.Set("Content-Length", strconv.Itoa(len(w.buf)))
 	}

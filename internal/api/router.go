@@ -46,6 +46,11 @@ type API struct {
 	// documents. The cache is an optimisation only — a miss simply recomputes.
 	statsCache   *httpx.ResponseCache
 	historyCache *httpx.ResponseCache
+	// upstreamStatsCache memoises the resolver-racer view for v3 clients. The
+	// web dashboard gets the same numbers through /api/stats, which is cached
+	// separately; this keeps an Android or script poll from recomputing every
+	// stat and its percentiles each second.
+	upstreamStatsCache *httpx.ResponseCache
 }
 
 // masterKeyMatches compares a token against the master REST key in constant time.
@@ -103,8 +108,9 @@ func NewAPI(
 		// The dashboard polls live stats every second or two; a one-second shared
 		// snapshot means N open panels cost one computation. History is heavier
 		// (summary, series and six top tables) and changes at most once per bucket.
-		statsCache:   httpx.NewResponseCache(time.Second, 4),
-		historyCache: httpx.NewResponseCache(5*time.Second, 32),
+		statsCache:         httpx.NewResponseCache(time.Second, 4),
+		historyCache:       httpx.NewResponseCache(5*time.Second, 32),
+		upstreamStatsCache: httpx.NewResponseCache(time.Second, 2),
 	}
 }
 

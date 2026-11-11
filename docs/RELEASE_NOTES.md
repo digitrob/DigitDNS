@@ -1,46 +1,50 @@
-# DigitDNS v5.5.4 — setup checklist, change previews and working API docs
+# DigitDNS v5.5.5 — faster resolver and dashboard paths
 
-A feature and polish release on top of v5.5.3. No resolver, API or database
-schema migration is required. Existing settings, clients, blocklists and
-certificates are preserved.
+A performance release on top of v5.5.4. No resolver, API or database schema
+migration is required. Existing settings, clients, blocklists and certificates
+are preserved.
+
+## Resolver
+
+- **Lock-free matcher reads.** The DNS query path now reads an immutable rule
+  snapshot instead of taking an RWMutex read lock for every query. Rule rebuilds
+  publish a new snapshot atomically, so a settings save no longer contends with
+  live traffic.
+- **Quota-refusal logging reuses the parsed question**, removing a second parse
+  on that path.
+
+Benchmark on the development machine:
+
+- `BenchmarkMatchParallel` — ~19–20 ns/op, 0 allocs/op
+- `BenchmarkMatchExactHit` — ~67 ns/op, 0 allocs/op
 
 ## Panel
 
-- **First-run checklist.** The dashboard now shows six live steps: replace the
-  default admin password, enable 2FA, set the panel domain/certificate, confirm
-  a DNS listener, add an upstream and create the first client. The state is read
-  from the running install, so a restore or manual change moves it automatically.
-- **Change preview before saving.** The explicit Save buttons for routing rules
-  and ad-blocking settings show a redacted before/after diff and ask for
-  confirmation. Background saves from per-domain toggles skip the modal.
-- **Server Update card stays expanded on Docker.** The GitHub check no longer
-  inherits the browser request's cancellation, results are cached for a minute,
-  and a failed check still returns `container`, `update_mode`,
-  `container_swap_active` and `container_image_version`.
-- **2FA enrollment can be cancelled.** An abandoned enrollment no longer leaves
-  the settings card expanded after a reload.
-- **Ad Blocking Rule Tester** sits directly below the settings card, at half
-  width on desktop and stacked on mobile.
+- **Client list from the in-memory index.** The dashboard no longer decrypts
+  every client record from the database on each poll; the service snapshots its
+  existing index and adds the live traffic/query deltas. The response shape and
+  order are unchanged.
+- **Gzip response pooling.** The API gzip writer and wrapper are pooled and
+  reset per request instead of allocated per response.
+- **Login branding** now reads **SmartDNS · SNI Proxy · Ad Blocking**.
+
+## Agents
+
+- **Catalogue body cache.** The hub caches each agent's encoded catalogue for
+  the current control-plane revision. A config change clears the cache; the key
+  also includes the agent's country and effective IPv6 flag.
 
 ## API
 
-- **The v3 docs button works on a loopback-only `api_bind`.** The docs page
-  accepts the dashboard's HttpOnly document cookie, inlines the spec, and loads
-  the Swagger bootstrap from an external file the CSP permits.
-- **The v3 spec now covers every router route**, with descriptions, request
-  bodies, examples and a route/spec drift test.
-- The v2 docs page uses the same inlined, CSP-safe bootstrap.
-
-## Branding
-
-- Startup splash, dashboard footer, About card, subscriber portal footer and
-  systemd unit now use the complete SmartDNS, SNI-proxy and ad-blocking wording.
-- Visible documentation no longer advertises old v2.x version headings.
+- **V3 upstream stats cache.** `/api/v3/upstreams/stats` is memoised for one
+  second, matching the dashboard's resolver-racer cadence. The response shape is
+  unchanged.
+- No DTO, auth, route or schema changes.
 
 ## Android
 
-- App version **5.5.4 (545)**. No functional Android changes in this release;
-  the APK is rebuilt so its version matches the server.
+- App version **5.5.5 (546)**. No functional Android changes; the app already
+  uses the same v3 endpoints and benefits from the faster backend.
 
 ## Upgrade
 
@@ -54,25 +58,24 @@ docker compose up -d
 Pinned versions:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.5.4
-docker pull ghcr.io/digitrob/digitdns-agent:5.5.4
-docker pull robmeister/digitdns:5.5.4
-docker pull robmeister/digitdns-agent:5.5.4
+docker pull ghcr.io/digitrob/digitdns:5.5.5
+docker pull ghcr.io/digitrob/digitdns-agent:5.5.5
+docker pull robmeister/digitdns:5.5.5
+docker pull robmeister/digitdns-agent:5.5.5
 ```
 
 systemd:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.4/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.5/scripts/install.sh | sudo bash
 ```
 
 ## Assets
 
 - `digitdns-linux-amd64`, `digitdns-linux-arm64`
 - `digitdns-agent-linux-amd64`, `digitdns-agent-linux-arm64`
-- `digitdns-agent-5.5.4-linux-arm64-image.tar.gz` and `.sha256`
 - `digitdns-offline-bundle.tar.gz`, `digitdns-offline-bundle.zip`
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-The Android APKs are attached to this release from the `android-v5.5.4` tag.
+The Android APKs are attached to this release from the `android-v5.5.5` tag.

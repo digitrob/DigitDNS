@@ -900,12 +900,23 @@ func (a *API) handleV3UpstreamStats(w http.ResponseWriter, r *http.Request) {
 		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
 		return
 	}
+	if entry, ok := a.upstreamStatsCache.Get("v3/upstreams/stats"); ok {
+		httpx.WriteCached(w, r, entry)
+		return
+	}
 	// GetUpstreamStats on a nil pool panics, and that panic would land on a poll.
 	stats := []upstream.UpstreamStat{}
 	if a.upstreams != nil {
 		stats = a.upstreams.GetUpstreamStats()
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"items": stats})
+	body, err := json.Marshal(map[string]any{"items": stats})
+	if err != nil {
+		writeProblemAt(w, r, http.StatusInternalServerError, "internal", "could not encode upstream stats")
+		return
+	}
+	const contentType = "application/json"
+	a.upstreamStatsCache.Set("v3/upstreams/stats", body, contentType)
+	httpx.WriteCached(w, r, httpx.CachedResponse{Body: body, ContentType: contentType})
 }
 
 // handleV3UpstreamPresets: GET the curated public-resolver catalogue. The

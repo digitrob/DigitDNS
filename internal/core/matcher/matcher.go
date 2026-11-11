@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"digitdns/internal/blocklist"
 )
@@ -148,10 +149,24 @@ func (rs *ruleSet) size() int {
 	return len(rs.wildcard)
 }
 
-// Matcher resolves a domain to an action against four indexed rule sets. Reads take
-// the read lock, so rules can be replaced at runtime while queries are served.
+// matcherSnapshot is the immutable view a query reads. Rule rebuilds happen
+// under mu and publish a whole new snapshot, so the query path never takes a
+// lock: it loads the current pointer once and works from it.
+type matcherSnapshot struct {
+	direct        *ruleSet
+	realtime      *ruleSet
+	blocked       *ruleSet
+	proxied       *ruleSet
+	customRecords map[string]string // domain -> IP override
+	blockIndex    *blocklist.Index
+}
+
+// Matcher resolves a domain to an action against four indexed rule sets. Reads
+// are lock-free against an immutable snapshot; writers serialize on mu and swap
+// the snapshot when the rebuild is complete.
 type Matcher struct {
-	mu            sync.RWMutex
+	mu            sync.Mutex
+	snapshot      atomic.Pointer[matcherSnapshot]
 	direct        *ruleSet
 	realtime      *ruleSet
 	blocked       *ruleSet
@@ -197,7 +212,8 @@ func NewMatcher() *Matcher {
 	return m
 }
 
-// rebuildLocked reindexes every rule set from scratch. Caller holds mu.
+// rebuildLocked reindexes every rule set from scratch and publishes the new
+// immutable snapshot. Caller holds mu.
 func (m *Matcher) rebuildLocked() {
 	m.direct = newRuleSet()
 	m.realtime = newRuleSet()
@@ -212,6 +228,21 @@ func (m *Matcher) rebuildLocked() {
 
 	m.applyCustomGroupsLocked()
 	m.applyCustomListsLocked()
+	m.publishLocked()
+}
+
+// publishLocked stores the current rule sets as the snapshot readers use. The
+// rule sets, customRecords map and block index are immutable after this point:
+// every writer replaces them with a new value rather than mutating them.
+func (m *Matcher) publishLocked() {
+	m.snapshot.Store(&matcherSnapshot{
+		direct:        m.direct,
+		realtime:      m.realtime,
+		blocked:       m.blocked,
+		proxied:       m.proxied,
+		customRecords: m.customRecords,
+		blockIndex:    m.blockIndex,
+	})
 }
 
 // applyCustomGroupsLocked indexes every enabled custom group into the ruleset for
@@ -307,8 +338,10 @@ func (m *Matcher) matchDetailLower(d string) (Action, string, string) {
 		return ActionDirect, "Direct", ""
 	}
 
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	snap := m.snapshot.Load()
+	if snap == nil {
+		return ActionDirect, "Direct", ""
+	}
 
 	// Precedence: the operator's whitelist, then blocks, then the forced-direct
 	// real-time plane, then proxy rules.
@@ -316,22 +349,22 @@ func (m *Matcher) matchDetailLower(d string) (Action, string, string) {
 	// Blocks outrank the real-time set on purpose. An operator who typed a name
 	// into Custom Block asked for it to stop resolving, which is a stronger
 	// statement than "do not proxy this".
-	if name, pattern, ok := m.direct.lookupPattern(d); ok {
+	if name, pattern, ok := snap.direct.lookupPattern(d); ok {
 		return ActionDirect, name, pattern
 	}
-	if name, pattern, ok := m.blocked.lookupPattern(d); ok {
+	if name, pattern, ok := snap.blocked.lookupPattern(d); ok {
 		return ActionBlock, name, pattern
 	}
 	// List blocks sit below the operator's own rules. A list exception returns
 	// blocked=false here, so it can suppress a list block without overriding an
 	// explicit Custom Block above or a proxy rule below.
-	if blocked, source, pattern := m.blockIndex.Match(d); blocked {
+	if blocked, source, pattern := snap.blockIndex.Match(d); blocked {
 		return ActionBlock, "Blocklist: " + source, pattern
 	}
-	if name, pattern, ok := m.realtime.lookupPattern(d); ok {
+	if name, pattern, ok := snap.realtime.lookupPattern(d); ok {
 		return ActionDirect, name, pattern
 	}
-	if name, pattern, ok := m.proxied.lookupPattern(d); ok {
+	if name, pattern, ok := snap.proxied.lookupPattern(d); ok {
 		return ActionProxy, name, pattern
 	}
 	return ActionDirect, "Direct", ""
@@ -340,17 +373,21 @@ func (m *Matcher) matchDetailLower(d string) (Action, string, string) {
 // GetCustomRecord returns the custom DNS answer configured for a domain, if any.
 func (m *Matcher) GetCustomRecord(domain string) (string, bool) {
 	d := normalizeDomain(domain)
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	ip, ok := m.customRecords[d]
+	snap := m.snapshot.Load()
+	if snap == nil {
+		return "", false
+	}
+	ip, ok := snap.customRecords[d]
 	return ip, ok
 }
 
 // RuleCounts is the number of distinct rule domains indexed per action.
 func (m *Matcher) RuleCounts() (direct, blocked, proxied int) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.direct.size() + m.realtime.size(), m.blocked.size(), m.proxied.size()
+	snap := m.snapshot.Load()
+	if snap == nil {
+		return 0, 0, 0
+	}
+	return snap.direct.size() + snap.realtime.size(), snap.blocked.size(), snap.proxied.size()
 }
 
 // SetCustomRules atomically rebuilds the operator's custom rule lists and custom A
@@ -363,8 +400,6 @@ func (m *Matcher) SetCustomRules(customProxied, customBlocked, customDirect []st
 	m.customBlocked = slices.Clone(customBlocked)
 	m.customDirect = slices.Clone(customDirect)
 
-	m.rebuildLocked()
-
 	m.customRecords = make(map[string]string, len(customRecords))
 	for d, ip := range customRecords {
 		// The lookup side normalizes the queried name, so the key must be
@@ -375,6 +410,7 @@ func (m *Matcher) SetCustomRules(customProxied, customBlocked, customDirect []st
 			m.customRecords[d] = ip
 		}
 	}
+	m.rebuildLocked()
 }
 
 // SetBlockIndex publishes a compiled blocklist snapshot. The index is immutable;
@@ -382,6 +418,7 @@ func (m *Matcher) SetCustomRules(customProxied, customBlocked, customDirect []st
 func (m *Matcher) SetBlockIndex(index *blocklist.Index) {
 	m.mu.Lock()
 	m.blockIndex = index
+	m.publishLocked()
 	m.mu.Unlock()
 }
 
