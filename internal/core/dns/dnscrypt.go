@@ -33,11 +33,14 @@ func (b *dnscryptBridge) ServeDNS(rw dnscryptlib.ResponseWriter, req *dns.Msg) e
 		b.s.dnscryptErrors.Add(1)
 		return errors.New("resolver returned no response")
 	}
+	// Count the query before writing the reply. The client can observe the
+	// response as soon as WriteMsg completes, so incrementing afterwards made
+	// the metric briefly lag the answer and the race-enabled test flaky.
+	b.s.dnscryptQueries.Add(1)
 	if err := rw.WriteMsg(resp); err != nil {
 		b.s.dnscryptErrors.Add(1)
 		return err
 	}
-	b.s.dnscryptQueries.Add(1)
 	return nil
 }
 
