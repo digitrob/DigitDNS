@@ -255,6 +255,30 @@ func (ws *WebServer) handleAuth2FADisable(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
 }
 
+// handleAuth2FACancel closes an enrollment that was started but never
+// confirmed. Without it the pending secret lived in the settings record
+// forever: the status endpoint kept reporting "enrolling", and the settings
+// card re-opened the (now empty) enrollment box on every reload.
+//
+// No password is demanded. Canceling only discards an unconfirmed secret; it
+// cannot enable, disable or weaken a confirmed second factor, and the session
+// that reaches it is already authenticated.
+func (ws *WebServer) handleAuth2FACancel(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		httpx.WriteMethodNotAllowed(w, "POST")
+		return
+	}
+	if err := ws.authSettings.CancelTOTP(func(a *database.AuthSettings) error {
+		return ws.db.SetSetting("auth", a)
+	}); err != nil {
+		httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not save the auth settings")
+		return
+	}
+	log.Printf("[Web] Two-factor enrollment cancelled")
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+}
+
 // handleAuth2FAStatus is the read-only view the settings panel renders. It
 // carries no secrets — that is enforced by the snapshot type itself.
 func (ws *WebServer) handleAuth2FAStatus(w http.ResponseWriter, r *http.Request) {

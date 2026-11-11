@@ -209,6 +209,23 @@ func (a *API) handleV32FADisable(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (a *API) handleV32FACancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	resp, err := a.v3Backend.Cancel2FA(r)
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (a *API) handleV3SSETicket(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")

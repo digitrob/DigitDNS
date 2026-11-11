@@ -1247,7 +1247,7 @@ to steal the binding cannot.
 - **Method:** `POST` — body `{"secret": "<registration secret>",
   "ip": "203.0.113.9" (optional)}`. With no `ip` the address the request was
   seen from is bound (the 1-click flow the portal page drives); with one, an
-  explicit address is bound for subscribers whose gaming device sits behind a
+  explicit address is bound for subscribers whose device sits behind a
   different NAT than the device holding the page.
 - **Credential:** the **registration secret**, a 24-hex-character value minted
   at account creation and shown in the operator's client modal (with a

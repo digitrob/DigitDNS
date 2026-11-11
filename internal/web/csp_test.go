@@ -193,7 +193,7 @@ func TestInlineScriptBlocksAreAccountedFor(t *testing.T) {
 // report it forever.
 var offOriginRe = regexp.MustCompile(`(?:src|href)\s*=\s*["'](?:https?:)?//[^"']+`)
 
-// "100% offline, zero external CDN" is a claim the project makes, and it is the
+// The dashboard must not depend on external CDNs, and this is the
 // operational requirement behind it that matters: this panel is served from a VPS
 // to a browser at home, and any third-party host in the critical path is a host
 // that is frequently unreachable from one end or the other. It is also a privacy

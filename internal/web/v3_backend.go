@@ -160,6 +160,10 @@ func (b *v3Backend) Disable2FA(r *http.Request, username, currentPassword, code 
 	return b.delegateBody(r, map[string]any{"username": username, "current_password": currentPassword, "code": code}, b.ws.handleAuth2FADisable)
 }
 
+func (b *v3Backend) Cancel2FA(r *http.Request) (map[string]any, error) {
+	return b.delegateBody(r, map[string]any{}, b.ws.handleAuth2FACancel)
+}
+
 func (b *v3Backend) Unlock(r *http.Request, ip string) (map[string]any, error) {
 	code := ""
 	return b.delegateBody(r, map[string]any{"ip": ip, "code": code}, b.ws.handleAuthUnlock)

@@ -45,15 +45,28 @@ type WebServer struct {
 	customGroups *service.CustomGroupService
 	// relayRouter is the live geo-agent assignment map shared with the DNS
 	// handler. Nil in the lighter test harnesses.
-	relayRouter  *service.RelayRouter
-	upstreams    *upstream.UpstreamPool
-	dohHandler   http.Handler
-	updater      *selfupdate.Updater
-	settings     *database.ServerSettings
-	tlsSettings  *database.TLSSettings
-	dnsCfg       *database.DNSSettings
-	subSettings  *database.SubscriptionSettings
-	authSettings *database.AuthSettings
+	relayRouter *service.RelayRouter
+	upstreams   *upstream.UpstreamPool
+	dohHandler  http.Handler
+	updater     *selfupdate.Updater
+	// updateCheck caches the last GitHub version check. The dashboard asks on
+	// every boot; without a cache a slow or blocked GitHub turns each page load
+	// into a 15 s wait, and a request cancelled mid-flight must not replace a
+	// good answer with an error.
+	updateCheckMu   sync.Mutex
+	updateCheckAt   time.Time
+	updateCheckSt   selfupdate.Status
+	updateCheckErr  error
+	updateCheckBusy bool
+	updateCheckDone chan struct{}
+	// updateCheckFn is the check implementation. Nil means ws.updater.Check;
+	// tests substitute a stub so they never reach GitHub.
+	updateCheckFn func(context.Context) (selfupdate.Status, error)
+	settings      *database.ServerSettings
+	tlsSettings   *database.TLSSettings
+	dnsCfg        *database.DNSSettings
+	subSettings   *database.SubscriptionSettings
+	authSettings  *database.AuthSettings
 	// geoIP resolves the server's public address to a country. Nil in the
 	// lighter test harnesses, where the settings card simply shows no flag.
 	geoIP *geoip.Service
@@ -1050,6 +1063,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/auth/2fa/setup", ws.requireAuth(ws.handleAuth2FASetup))
 	mux.HandleFunc("/api/auth/2fa/enable", ws.requireAuth(ws.handleAuth2FAEnable))
 	mux.HandleFunc("/api/auth/2fa/disable", ws.requireAuth(ws.handleAuth2FADisable))
+	mux.HandleFunc("/api/auth/2fa/cancel", ws.requireAuth(ws.handleAuth2FACancel))
 	mux.HandleFunc("/api/auth/sse-ticket", ws.requireAuth(ws.handleSSETicket))
 	mux.HandleFunc("/api/benchmark", ws.requireAuth(ws.handleBenchmark))
 	mux.HandleFunc("/api/upstreams/presets", ws.requireAuth(ws.handleUpstreamPresets))

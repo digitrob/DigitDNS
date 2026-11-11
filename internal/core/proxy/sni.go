@@ -285,8 +285,8 @@ func (s *Server) Start() error {
 	}{
 		{s.settings.HTTPSPort, true, "HTTPS SNI Proxy"},
 		{s.settings.HTTPPort, false, "HTTP Proxy"},
-		{s.settings.GameChatTLSPort, true, "Gaming Chat TLS"},
-		{s.settings.GameChatXMPPPort, false, "Gaming Chat XMPP"},
+		{s.settings.GameChatTLSPort, true, "Chat TLS"},
+		{s.settings.GameChatXMPPPort, false, "Chat XMPP"},
 		{s.settings.RiotRTMPort, true, "Riot PVP.net RTM"},
 		{s.settings.RiotPatcherPort, false, "Riot Patcher"},
 	}

@@ -7,9 +7,9 @@
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
-> This tutorial takes you from an empty VPS to a working gaming gateway with
+> This tutorial takes you from an empty VPS to a working DNS gateway with
 > subscribers, a branded subscriber portal on **your own domain**, and clients
-> connected. Every screen, field name and URL below is the real one in v2.2.0.
+> connected. Every screen, field name and URL below is the real one in the current release.
 
 ---
 
@@ -400,7 +400,7 @@ Changes apply to the live engine immediately; after a big change, hit **Flush Ca
 server handles, live, with the matched rule and the action taken:
 
 - `PROXY` — the answer was spoofed to the server so the SNI proxy grabs the
-  connection. This is the gaming-gateway behaviour.
+  connection. This is the gateway behaviour.
 - `DIRECT` — the real answer, untouched, raced between upstreams.
 - `BLOCK` — sinkholed.
 - `DIRECT · Game & App Downloads` — the downloads veto in action (see step 9).

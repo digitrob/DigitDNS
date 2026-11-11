@@ -145,3 +145,24 @@ func TestAgentDockerCommandHasCopyButton(t *testing.T) {
 		t.Error("the Portainer stack is not generated or not copyable")
 	}
 }
+
+// The rule tester belongs to the Ad Blocking settings card, not to the page as
+// a full-width strip below both columns: it explains the policy directly above
+// it, and on desktop it should occupy that left column's width. A future
+// layout pass that lifts it back out would make the page read as three
+// unrelated cards.
+func TestRuleTesterSitsBelowAdBlockingSettings(t *testing.T) {
+	doc := readAsset(t, "index.html")
+	left := strings.Index(doc, `class="filtering-left-column"`)
+	settings := strings.Index(doc, `class="glass-panel panel-card filtering-settings-card"`)
+	tester := strings.Index(doc, `class="glass-panel panel-card filtering-rule-tester`)
+	lists := strings.Index(doc, `class="glass-panel panel-card filtering-lists-card"`)
+	if left < 0 || settings < 0 || tester < 0 || lists < 0 {
+		t.Fatalf("ad-blocking layout markers missing: left=%d settings=%d tester=%d lists=%d",
+			left, settings, tester, lists)
+	}
+	if !(left < settings && settings < tester && tester < lists) {
+		t.Errorf("rule tester is not inside the left column below settings and before blocklists: "+
+			"left=%d settings=%d tester=%d lists=%d", left, settings, tester, lists)
+	}
+}

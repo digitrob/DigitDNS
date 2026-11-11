@@ -15,7 +15,7 @@
        autofill dropdown) in the theme actually in force. Kept in sync with the
        data-theme attribute below by app.js. -->
   <meta name="color-scheme" content="dark light">
-  <title>DigitDNS — Anti-Sanction SmartDNS Controller</title>
+  <title>DigitDNS — Complete SmartDNS, SNI-proxy and Ad-Blocking Solution</title>
   <!-- A drawn mark rather than the ⚡ emoji this used to be. An emoji favicon is rendered
        by the platform's emoji font, so the tab showed a different glyph on every OS — flat
        yellow on Windows, a blue-grey bolt on macOS, nothing at all in some Linux builds —
@@ -1432,52 +1432,79 @@
       <section id="tab-filters" class="tab-content space-y-6 hidden">
 
         <div id="filtering-card" class="filtering-layout">
-          <div class="glass-panel panel-card filtering-settings-card">
-            <div class="filtering-card-head">
-              <h4 class="filtering-card-title">Ad blocking settings</h4>
-              <span id="filtering-summary" class="filtering-summary">—</span>
+          <div class="filtering-left-column">
+            <div class="glass-panel panel-card filtering-settings-card">
+              <div class="filtering-card-head">
+                <h4 class="filtering-card-title">Ad blocking settings</h4>
+                <span id="filtering-summary" class="filtering-summary">—</span>
+              </div>
+              <p class="filtering-card-help">Policy applied to every list. Changes take effect after Save.</p>
+
+              <label class="filtering-switch">
+                <span class="switch">
+                  <input type="checkbox" id="filtering-enabled-input">
+                  <span class="slider"></span>
+                </span>
+                <span>Enable ad blocking</span>
+              </label>
+
+              <div class="filtering-settings-grid">
+                <label class="filtering-field">Block response
+                  <select id="filtering-mode-select" class="panel-field mt-1 w-full">
+                    <option value="null_ip">0.0.0.0 (null IP)</option>
+                    <option value="nxdomain">NXDOMAIN</option>
+                    <option value="refused">REFUSED</option>
+                  </select>
+                </label>
+                <label class="filtering-field">Block TTL (s)
+                  <input type="number" id="filtering-ttl-input" min="1" max="3600" step="1"
+                    class="panel-field mt-1 w-full font-mono" aria-label="Block TTL seconds">
+                </label>
+                <label class="filtering-field">Update (hours)
+                  <input type="number" id="filtering-interval-input" min="1" max="168" step="1"
+                    class="panel-field mt-1 w-full font-mono" aria-label="Filter update interval hours">
+                </label>
+              </div>
+
+              <label class="filtering-field filtering-allowlist">Always allow (one domain per line)
+                <textarea id="filtering-allowlist-input" rows="3" spellcheck="false"
+                  class="panel-field mt-1 w-full font-mono text-xs"
+                  placeholder="example.com&#10;*.trusted.example"
+                  aria-label="Filtering allowlist"></textarea>
+              </label>
+
+              <div class="filtering-settings-actions">
+                <button type="button" id="filtering-save-settings-btn"
+                  class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition">
+                  Save ad blocking settings
+                </button>
+                <span id="filtering-settings-status" class="text-[11px] text-slate-400"></span>
+              </div>
             </div>
-            <p class="filtering-card-help">Policy applied to every list. Changes take effect after Save.</p>
 
-            <label class="filtering-switch">
-              <span class="switch">
-                <input type="checkbox" id="filtering-enabled-input">
-                <span class="slider"></span>
-              </span>
-              <span>Enable ad blocking</span>
-            </label>
-
-            <div class="filtering-settings-grid">
-              <label class="filtering-field">Block response
-                <select id="filtering-mode-select" class="panel-field mt-1 w-full">
-                  <option value="null_ip">0.0.0.0 (null IP)</option>
-                  <option value="nxdomain">NXDOMAIN</option>
-                  <option value="refused">REFUSED</option>
-                </select>
-              </label>
-              <label class="filtering-field">Block TTL (s)
-                <input type="number" id="filtering-ttl-input" min="1" max="3600" step="1"
-                  class="panel-field mt-1 w-full font-mono" aria-label="Block TTL seconds">
-              </label>
-              <label class="filtering-field">Update (hours)
-                <input type="number" id="filtering-interval-input" min="1" max="168" step="1"
-                  class="panel-field mt-1 w-full font-mono" aria-label="Filter update interval hours">
-              </label>
-            </div>
-
-            <label class="filtering-field filtering-allowlist">Always allow (one domain per line)
-              <textarea id="filtering-allowlist-input" rows="3" spellcheck="false"
-                class="panel-field mt-1 w-full font-mono text-xs"
-                placeholder="example.com&#10;*.trusted.example"
-                aria-label="Filtering allowlist"></textarea>
-            </label>
-
-            <div class="filtering-settings-actions">
-              <button type="button" id="filtering-save-settings-btn"
-                class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition">
-                Save ad blocking settings
-              </button>
-              <span id="filtering-settings-status" class="text-[11px] text-slate-400"></span>
+            <!-- Rule tester. Read-only: it asks the live matcher what it would do with
+                 a name, including which list and whether the match was exact or a
+                 parent wildcard. -->
+            <div class="glass-panel panel-card filtering-rule-tester space-y-3">
+              <div>
+                <h3 class="panel-card-header">
+                  <i data-feather="search" class="w-4 h-4"></i> Rule tester
+                </h3>
+                <p class="text-[11px] text-slate-400 mt-1">
+                  Check how the live rules classify a name before adding or debugging one.
+                  The result shows the action, the matching list and whether an exact entry
+                  or a parent wildcard applied.
+                </p>
+              </div>
+              <div class="flex gap-2">
+                <input type="text" id="filter-test-input" maxlength="253" autocomplete="off"
+                  spellcheck="false" placeholder="ads.example.com"
+                  class="panel-field flex-1 min-w-0 font-mono" aria-label="Domain to test">
+                <button type="button" id="filter-test-btn" class="panel-btn panel-btn-primary shrink-0">
+                  Test rule
+                </button>
+              </div>
+              <div id="filter-test-result" class="hidden" aria-live="polite"></div>
             </div>
           </div>
 
@@ -1540,30 +1567,6 @@
           </div>
         </div>
 
-        <!-- Rule tester. Read-only: it asks the live matcher what it would do with
-             a name, including which list and whether the match was exact or a
-             parent wildcard. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 space-y-3">
-          <div>
-            <h3 class="panel-card-header">
-              <i data-feather="search" class="w-4 h-4"></i> Rule tester
-            </h3>
-            <p class="text-[11px] text-slate-400 mt-1">
-              Check how the live rules classify a name before adding or debugging one.
-              The result shows the action, the matching list and whether an exact entry
-              or a parent wildcard applied.
-            </p>
-          </div>
-          <div class="flex gap-2">
-            <input type="text" id="filter-test-input" maxlength="253" autocomplete="off"
-              spellcheck="false" placeholder="ads.example.com"
-              class="panel-field flex-1 min-w-0 font-mono" aria-label="Domain to test">
-            <button type="button" id="filter-test-btn" class="panel-btn panel-btn-primary shrink-0">
-              Test rule
-            </button>
-          </div>
-          <div id="filter-test-result" class="hidden" aria-live="polite"></div>
-        </div>
       </section>
 
       <!-- ============================================== -->
@@ -2346,6 +2349,20 @@ async function onBuySubscription(ctx, username) {
                 Start Enrollment
               </button>
             </div>
+            <!-- Shown when an enrollment is open but the secret is not in this
+                 page (a reload, or another tab started it). The full box below
+                 only renders while the setup response is present, so the card
+                 never grows to hold an empty secret it cannot display. -->
+            <div id="twofa-enrolling-box" class="hidden space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+              <p class="text-[11px] text-amber-200">
+                An enrollment is already open. Enter your password and press Start Enrollment
+                for a fresh secret, or cancel the pending enrollment.
+              </p>
+              <button id="twofa-cancel-pending-btn" type="button"
+                class="panel-btn panel-btn-neutral">
+                Cancel enrollment
+              </button>
+            </div>
             <div id="twofa-enroll-box" class="hidden space-y-3 border border-sky-500/30 rounded-lg p-3">
               <!-- The confirm step re-asks the password on purpose — a hijacked
                    session must not be able to finish an enrollment with the code
@@ -2368,6 +2385,10 @@ async function onBuySubscription(ctx, username) {
                 <button id="twofa-confirm-btn" type="button"
                   class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
                   Confirm & Enable
+                </button>
+                <button id="twofa-cancel-btn" type="button"
+                  class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
+                  Cancel enrollment
                 </button>
               </div>
             </div>
@@ -3358,7 +3379,7 @@ async function onBuySubscription(ctx, username) {
             <i data-feather="info" class="w-4 h-4 text-cyan-400"></i> About &amp; Legal
           </h3>
           <p class="text-[11px] text-slate-400 leading-relaxed">
-            <strong class="text-slate-200">DigitDNS</strong> Smart Controller · <span id="about-version" class="font-mono">—</span>
+            <strong class="text-slate-200">DigitDNS</strong> — Complete SmartDNS, SNI-proxy and Ad-Blocking Solution · <span id="about-version" class="font-mono">—</span>
           </p>
           <p class="text-[11px] text-slate-400 leading-relaxed">
             Copyright © 2026 Digitrob. Free software under the
@@ -3486,7 +3507,7 @@ async function onBuySubscription(ctx, username) {
 
     <!-- FOOTER (Clean desktop footer) -->
     <footer class="hidden md:block border-t border-slate-800/60 bg-slate-950/40 py-4 text-center text-xs text-slate-500 font-mono">
-      <span>DigitDNS Smart Controller — Low-Latency SmartDNS Engine · <span id="app-version-footer">—</span></span>
+      <span>DigitDNS — Complete SmartDNS, SNI-proxy and Ad-Blocking Solution · <span id="app-version-footer">—</span></span>
       <span class="footer-legal">© 2026 Digitrob · AGPL-3.0 · Based on HyperDNS by HyperRAIN · Source: github.com/digitrob/DigitDNS</span>
     </footer>
     </main>

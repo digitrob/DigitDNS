@@ -231,7 +231,7 @@ func (ws *WebServer) serverDNSForDisplay(r *http.Request) string {
 //
 // Body (JSON): {"secret": "...", "ip": "203.0.113.9" (optional)}. With no "ip"
 // the caller's own address is bound — the 1-click flow the portal page drives;
-// with one, an explicit address is bound for subscribers whose gaming device
+// with one, an explicit address is bound for subscribers whose device
 // sits behind a different NAT than the device holding the page.
 //
 // The gates run in this order, deliberately: token+secret first (a caller that
@@ -943,7 +943,7 @@ const portalPageHTML = `<!DOCTYPE html>
 
       <!-- The custom-address row (v3.1.0). With no address the button binds the
            caller's own address — the 1-click flow. With one, the server binds the
-           address typed here, for a gaming device behind a different NAT than the
+           address typed here, for a device behind a different NAT than the
            phone showing the page. It posts to the same /ip/<token> endpoint and
            carries the same out-of-band secret, so nothing here weakens C-03. -->
       <div class="label">{{.T.LabelCustomIP}}</div>
@@ -1273,7 +1273,7 @@ const portalPageHTML = `<!DOCTYPE html>
          data-msg-reason-conflict="{{.T.MsgRegisterConflict}}"></div>
 
     <div class="footer">
-      DigitDNS Smart Controller • UDP/TCP SmartDNS &amp; Transparent SNI Proxy Engine
+      DigitDNS • Complete SmartDNS, SNI-proxy and Ad-Blocking Solution
     </div>
 
   </div>

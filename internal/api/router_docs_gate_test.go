@@ -5,6 +5,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"digitdns/internal/service"
 )
 
 // gatedDocsPaths is every documentation-style route. They are not public: the
@@ -105,5 +108,54 @@ func TestDocsReachableFromAllowedPeer(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Errorf("GET %s from loopback answered %d, want 200: %s", path, w.Code, w.Body.String())
 		}
+	}
+}
+
+// TestDocsAcceptTheDashboardDocumentCookie is the fix for the dashboard's API
+// Reference button on a loopback-only api_bind: a browser navigation carries no
+// Authorization header, but it does carry the HttpOnly document cookie the
+// panel set at login. The docs page is inlined, so this one request is the
+// whole flow.
+func TestDocsAcceptTheDashboardDocumentCookie(t *testing.T) {
+	apiInst, _, settings, cleanup := setupTestAPI(t)
+	defer cleanup()
+	setAPIBind(t, settings, "127.0.0.1")
+	mgr := service.NewSessionManager(time.Hour)
+	apiInst.sessions = mgr
+	token := mgr.Create()
+
+	mux := http.NewServeMux()
+	apiInst.RegisterRoutes(mux)
+
+	for _, path := range []string{"/api/v3/docs", "/api/v2/docs"} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "198.51.100.7:40000"
+		req.AddCookie(&http.Cookie{Name: dashboardDocumentCookie, Value: token})
+		mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %s with a live dashboard cookie answered %d, want 200: %s",
+				path, w.Code, w.Body.String())
+			continue
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `id="openapi-spec"`) {
+			t.Errorf("GET %s did not inline the spec; the page would need a second, gated fetch", path)
+		}
+		if !strings.Contains(body, "/js/api-docs.js") {
+			t.Errorf("GET %s does not load the external docs bootstrap; the CSP blocks an inline one", path)
+		}
+	}
+
+	// The cookie is not a master key: an unknown value still falls through to
+	// the exposure gate.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/docs", nil)
+	req.RemoteAddr = "198.51.100.7:40000"
+	req.AddCookie(&http.Cookie{Name: dashboardDocumentCookie, Value: "digitdns_session_bogus"})
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("GET /api/v3/docs with a bogus cookie answered %d, want 403", w.Code)
 	}
 }

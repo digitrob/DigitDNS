@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The Gaming Diagnostic Suite is the panel an operator opens to decide whether the VPS route
+// The Diagnostic Suite is the panel an operator opens to decide whether the VPS route
 // is good enough to play on, and it had the same two defects the live query stream had: a
 // control that can be pressed while it is already working, and a number left on screen after
 // it stopped being true.

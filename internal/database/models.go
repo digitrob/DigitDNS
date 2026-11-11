@@ -392,7 +392,7 @@ type TLSSettings struct {
 	RedirectPort int `json:"redirect_port"`
 }
 
-// DiagnosticTarget is one operator-defined endpoint the Gaming Diagnostic Suite
+// DiagnosticTarget is one operator-defined endpoint the Diagnostic Suite
 // dials. Name is the operator's label; Host is the address the probe connects to,
 // either a bare host (which the runner widens to :443) or an explicit host:port.
 // The list is wholly operator-owned — v3.1.0 removed the built-in game presets —

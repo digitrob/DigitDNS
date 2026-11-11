@@ -25,7 +25,7 @@ func repoFile(t *testing.T, name string) string {
 
 func TestDashboardIsBrandedDigitDNS(t *testing.T) {
 	html := readAsset(t, "index.html")
-	if !strings.Contains(html, "<title>DigitDNS — Anti-Sanction SmartDNS Controller</title>") {
+	if !strings.Contains(html, "<title>DigitDNS — Complete SmartDNS, SNI-proxy and Ad-Blocking Solution</title>") {
 		t.Error("index.html title is no longer the DigitDNS brand")
 	}
 	for _, marker := range []string{

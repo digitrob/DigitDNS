@@ -64,6 +64,8 @@ type V3Backend interface {
 	Setup2FA(r *http.Request, username, currentPassword string) (map[string]any, error)
 	Enable2FA(r *http.Request, username, currentPassword, code string) (map[string]any, error)
 	Disable2FA(r *http.Request, username, currentPassword, code string) (map[string]any, error)
+	// Cancel2FA discards an enrollment that was started but never confirmed.
+	Cancel2FA(r *http.Request) (map[string]any, error)
 	// Unlock clears login lockouts (empty ip clears all).
 	Unlock(r *http.Request, ip string) (map[string]any, error)
 	// SSETicket mints a one-time stream ticket bound to the caller's session key.
@@ -187,6 +189,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/auth/2fa/setup", a.SecurityMiddlewareV3(a.handleV32FASetup))
 	mux.HandleFunc("/api/v3/auth/2fa/enable", a.SecurityMiddlewareV3(a.handleV32FAEnable))
 	mux.HandleFunc("/api/v3/auth/2fa/disable", a.SecurityMiddlewareV3(a.handleV32FADisable))
+	mux.HandleFunc("/api/v3/auth/2fa/cancel", a.SecurityMiddlewareV3(a.handleV32FACancel))
 	mux.HandleFunc("/api/v3/auth/sse-ticket", a.SecurityMiddlewareV3(a.handleV3SSETicket))
 
 	// Clients.

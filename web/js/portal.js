@@ -251,7 +251,7 @@
   //   - #register-btn ("Update my IP") posts with no ip field, so the server binds
   //     the address it sees the request from — the 1-click flow after a modem reset.
   //   - #register-ip-btn posts the address typed into #register-ip, for a subscriber
-  //     whose gaming device sits behind a different NAT than the phone holding the
+  //     whose device sits behind a different NAT than the phone holding the
   //     page.
   //
   // Both read the same #register-secret field: the secret is the write credential

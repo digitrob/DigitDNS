@@ -30,6 +30,9 @@ function initTwoFactorControls() {
   const offBox = document.getElementById('twofa-off-box');
   const onBox = document.getElementById('twofa-on-box');
   const enrollBox = document.getElementById('twofa-enroll-box');
+  const enrollingBox = document.getElementById('twofa-enrolling-box');
+  const cancelBtn = document.getElementById('twofa-cancel-btn');
+  const cancelPendingBtn = document.getElementById('twofa-cancel-pending-btn');
   const secretEl = document.getElementById('twofa-secret-display');
   const uriEl = document.getElementById('twofa-uri-display');
   const beginBtn = document.getElementById('twofa-begin-btn');
@@ -57,15 +60,52 @@ function initTwoFactorControls() {
       }
       if (offBox) offBox.classList.toggle('hidden', enabled);
       if (onBox) onBox.classList.toggle('hidden', !enabled);
-      if (enrollBox) {
-        enrollBox.classList.toggle('hidden', !(enrolling && !enabled));
-        // The enrollment URI is rendered only from the setup response, which
-        // is password-gated. The status endpoint deliberately answers with a
-        // bare "present" marker instead of the URI — the URI embeds the
-        // shared secret, and status is readable with any live session.
-      }
+      // The full enrollment box only renders while this page holds the setup
+      // response. After a reload the status endpoint knows an enrollment is
+      // open but deliberately cannot re-send the secret, so the compact notice
+      // takes its place — and the card keeps its normal height instead of
+      // growing to hold an empty secret.
+      const showEnroll = enrolling && !enabled;
+      const hasSecret = !!(secretEl && secretEl.textContent.trim());
+      if (enrollBox) enrollBox.classList.toggle('hidden', !showEnroll || !hasSecret);
+      if (enrollingBox) enrollingBox.classList.toggle('hidden', !showEnroll || hasSecret);
     }).catch(() => {});
   };
+
+  // Cancel an enrollment that was started but never confirmed. Hiding the box
+  // locally is not enough: the pending secret lives in the settings record, so
+  // the status endpoint would re-open the card on the next reload.
+  async function cancelEnrollment(btn) {
+    if (!btn) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch(api('/api/auth/2fa/cancel'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken()}` },
+        body: '{}'
+      });
+      if (!res.ok) {
+        showToast(await errorMessage(res, 'Could not cancel the enrollment'), 'error');
+        return;
+      }
+      if (secretEl) secretEl.textContent = '';
+      if (uriEl) uriEl.textContent = '';
+      if (enableCode) enableCode.value = '';
+      const confirmPwd = document.getElementById('twofa-confirm-password');
+      if (confirmPwd) confirmPwd.value = '';
+      if (enrollBox) enrollBox.classList.add('hidden');
+      if (enrollingBox) enrollingBox.classList.add('hidden');
+      showToast('Enrollment cancelled.', 'success');
+      window.renderTwoFactor();
+    } catch (err) {
+      showToast('Could not reach the server.', 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  if (cancelBtn) cancelBtn.addEventListener('click', () => cancelEnrollment(cancelBtn));
+  if (cancelPendingBtn) cancelPendingBtn.addEventListener('click', () => cancelEnrollment(cancelPendingBtn));
 
   if (beginBtn) {
     beginBtn.addEventListener('click', async () => {

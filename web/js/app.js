@@ -13027,13 +13027,22 @@ let serverUpdateState = null;
 
 function serverUpdateStatusText(st) {
   if (!st) return 'Not checked yet.';
-  if (st.error) return 'Update check failed.';
+  if (st.error) {
+    return st.container
+      ? 'Could not check right now — Docker controls remain available.'
+      : 'Could not check right now.';
+  }
   if (st.update_available) return `Update available: v${st.current} → v${st.latest}`;
   return `Up to date (v${st.current}).`;
 }
 
 function serverUpdateMetaText(st) {
   if (!st) return 'Updates come from the GitHub release channel.';
+  if (st.error) {
+    return st.container
+      ? 'The update method below is unchanged; retry when GitHub is reachable.'
+      : 'Retry when the server can reach GitHub.';
+  }
   if (st.update_available && !st.supported) {
     return st.note || 'This install cannot apply it from the app.';
   }
@@ -13044,6 +13053,22 @@ function serverUpdateMetaText(st) {
 }
 
 function renderServerUpdate(st) {
+  const prev = serverUpdateState || {};
+  if (st && st.error) {
+    // A failed check must not erase what the previous answer established about
+    // this install. In particular container:true keeps the Docker update-method
+    // block open instead of collapsing the card on a transient GitHub failure.
+    st = {
+      ...prev,
+      ...st,
+      container: st.container !== undefined ? st.container : prev.container,
+      update_mode: st.update_mode || prev.update_mode,
+      container_swap_active: st.container_swap_active !== undefined
+        ? st.container_swap_active
+        : prev.container_swap_active,
+      container_image_version: st.container_image_version || prev.container_image_version,
+    };
+  }
   serverUpdateState = st;
   const statusEl = document.getElementById('server-update-status');
   if (statusEl) {
@@ -13140,7 +13165,10 @@ async function checkServerUpdate() {
   if (btn) btn.disabled = true;
   if (label) label.textContent = 'Checking…';
   try {
-    const res = await fetch(api('/api/update/check'), {
+    // force=1 bypasses the server's one-minute cache: this is the manual
+    // retry, and it must not repeat a stale failure after the operator fixed
+    // the network.
+    const res = await fetch(api('/api/update/check?force=1'), {
       headers: { 'Authorization': `Bearer ${authToken}` },
       cache: 'no-store',
     });
@@ -13149,7 +13177,14 @@ async function checkServerUpdate() {
     renderServerUpdate(st);
     if (st && st.update_available && st.supported) showUpdateAvailable(st);
   } catch (e) {
-    renderServerUpdate({ current: '', latest: '', update_available: false, supported: false, error: e.message || 'The update check failed.' });
+    renderServerUpdate({
+      ...(serverUpdateState || {}),
+      current: (serverUpdateState && serverUpdateState.current) || '',
+      latest: '',
+      update_available: false,
+      supported: false,
+      error: e.message || 'The update check failed.',
+    });
   } finally {
     if (btn) btn.disabled = false;
     if (label) label.textContent = 'Check for updates';

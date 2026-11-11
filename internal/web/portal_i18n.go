@@ -176,7 +176,7 @@ type portalText struct {
 	MsgRegisterOK     string
 	MsgRegisterFail   string
 	MsgRegisterDenied string
-	// The custom-address row (v3.1.0): the subscriber whose gaming device sits
+	// The custom-address row (v3.1.0): the subscriber whose device sits
 	// behind a different NAT than the phone holding the page types that device's
 	// address here. LabelCustomIP and PlaceholderCustomIP name the field; the
 	// button posts it with the same out-of-band secret.
@@ -200,7 +200,7 @@ type portalText struct {
 var portalEn = portalText{
 	DocTitle:     "Smart Subscription",
 	ErrDocTitle:  "Subscription Error",
-	Subtitle:     "DigitDNS %s • Low-Latency SmartDNS Engine",
+	Subtitle:     "DigitDNS %s • Complete SmartDNS, SNI-proxy and Ad-Blocking Solution",
 	PillActive:   "ACTIVE",
 	ThemeToLight: "Light mode",
 	ThemeToDark:  "Dark mode",

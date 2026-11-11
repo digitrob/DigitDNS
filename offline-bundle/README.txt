@@ -1,6 +1,6 @@
 ========================================================================
    DigitDNS v5.5.3 — OFFLINE INSTALLER
-   100% Standalone · Zero Internet Required · Single Binary
+   Standalone · Single Binary · Pre-packaged Assets
 ========================================================================
 
 WHAT'S IN THIS PACKAGE

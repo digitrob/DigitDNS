@@ -497,3 +497,58 @@ func TestTOTPCodeCannotBeReplayedAcrossGatedEndpoints(t *testing.T) {
 		t.Fatalf("a fresh code was refused: %d, want 200 — %s", w.Code, w.Body.String())
 	}
 }
+
+// TestTwoFactorCancelClearsAnOpenEnrollment: an enrollment that is started and
+// abandoned must not live in the settings record forever. The status endpoint
+// would keep saying "enrolling", and the settings card would re-open an empty
+// enrollment box (and stay tall) on every reload.
+func TestTwoFactorCancelClearsAnOpenEnrollment(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+	ws.SetAuthSettings(&database.AuthSettings{})
+	h := ws.buildAdminHandler()
+	tok := bearerFor(t, h)
+
+	post := func(path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w
+	}
+
+	w := post("/api/auth/2fa/setup", `{"username":"admin","current_password":"`+testAdminPassword+`"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("2fa setup = %d — %s", w.Code, w.Body.String())
+	}
+	if !ws.authSettings.Snapshot().TOTPEnrolling {
+		t.Fatal("setup did not leave an enrollment open")
+	}
+
+	w = post("/api/auth/2fa/cancel", `{}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("2fa cancel = %d — %s", w.Code, w.Body.String())
+	}
+	if ws.authSettings.Snapshot().TOTPEnrolling {
+		t.Error("cancel left the enrollment open; the card would re-open on reload")
+	}
+	if got := ws.authSettings.GetPendingSecret(); got != "" {
+		t.Errorf("cancel left a pending secret behind: %q", got)
+	}
+
+	// Idempotent: a second click is a success, not a 409 or a 500.
+	w = post("/api/auth/2fa/cancel", `{}`)
+	if w.Code != http.StatusOK {
+		t.Errorf("second cancel = %d, want 200", w.Code)
+	}
+
+	// The endpoint is POST-only, like the other credential mutations.
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/2fa/cancel", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET 2fa cancel = %d, want 405", w.Code)
+	}
+}

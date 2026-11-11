@@ -9,7 +9,7 @@ import (
 )
 
 // Every DNS query that reaches the resolver pays a Match. A clean domain — the
-// common case for a gaming client, since only auth/store/CDN names are proxied —
+// common case for a client, since only auth/store/CDN names are proxied —
 // is the worst case for the matcher: it can only return DIRECT after every rule
 // has been ruled out. These benchmarks measure that path specifically, because it
 // is the one that sits between the client's packet and the upstream race.

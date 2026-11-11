@@ -6,9 +6,9 @@
 [![Docker](https://img.shields.io/github/actions/workflow/status/digitrob/DigitDNS/docker.yml?branch=main&style=for-the-badge&label=Docker)](https://github.com/digitrob/DigitDNS/actions/workflows/docker.yml)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge&logo=gnu)](LICENSE)
 
-DigitDNS is a self-hosted SmartDNS resolver, a TLS pass-through relay, a DNS sink
-with ad blocking and a subscriber panel in one static binary. One install covers
-DNS resolution, geo-blocking bypass and ad blocking. Point a phone, console, TV or
+DigitDNS is a complete SmartDNS, SNI-proxy and Ad-Blocking Solution. It is a
+self-hosted SmartDNS resolver, a TLS pass-through relay, a DNS sink with ad
+blocking and a subscriber panel in one static binary. Point a phone, console, TV or
 router at it and each domain gets one of three answers: resolve normally, refuse
 or answer from the sink, or connect through your server. The panel manages rules,
 subscribers, blocklists, certificates and upstream resolvers; a customer portal

@@ -116,6 +116,25 @@ func (a *AuthSettings) SetTOTPPending(secret string, persist func(*AuthSettings)
 	return persist(a)
 }
 
+// CancelTOTP discards an open enrollment. It is idempotent: canceling when no
+// enrollment is pending is a success, not an error, so the dashboard's Cancel
+// button never reports a state the operator did not create.
+func (a *AuthSettings) CancelTOTP(persist func(*AuthSettings) error) error {
+	if a == nil {
+		return ErrAuthSettingsNil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.TOTPPending == "" {
+		return nil
+	}
+	a.TOTPPending = ""
+	if persist != nil {
+		return persist(a)
+	}
+	return nil
+}
+
 // ConfirmTOTP verifies a code against the pending secret and, on success,
 // promotes it: enabled on, secret set, pending cleared, timestamp recorded.
 // A wrong code leaves the enrollment open and changes nothing.

@@ -93,6 +93,9 @@ func (f *fakeV3Backend) Enable2FA(r *http.Request, u, p, c string) (map[string]a
 func (f *fakeV3Backend) Disable2FA(r *http.Request, u, p, c string) (map[string]any, error) {
 	return map[string]any{"success": true}, nil
 }
+func (f *fakeV3Backend) Cancel2FA(r *http.Request) (map[string]any, error) {
+	return map[string]any{"success": true}, nil
+}
 func (f *fakeV3Backend) Unlock(r *http.Request, ip string) (map[string]any, error) {
 	return map[string]any{"success": true, "cleared": 1}, nil
 }

@@ -3730,6 +3730,32 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   padding: 14px;
 }
 .filtering-settings-card { align-self: start; max-height: 100%; overflow-y: auto; }
+
+/* The left column holds the policy card and the rule tester. The tester sits
+ * directly below the settings it explains and shares their width, so it is half
+ * the page on desktop rather than a full-width strip under both cards. The
+ * column scrolls independently when the pair exceeds the viewport; the
+ * blocklist roster on the right keeps its own scroll. */
+.filtering-left-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+}
+.filtering-left-column > .filtering-settings-card {
+  align-self: stretch;
+  max-height: none;
+  overflow: visible;
+}
+.filtering-rule-tester {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  min-height: 0;
+}
 .filtering-lists-card { overflow: hidden; }
 .filtering-card-head {
   display: flex;
@@ -3840,6 +3866,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
     grid-template-columns: 1fr;
     height: auto;
   }
+  .filtering-left-column { overflow: visible; }
   .filtering-settings-card,
   .filtering-lists-card { overflow: visible; }
   .filtering-lists-card .filtering-presets { max-height: 60vh; }

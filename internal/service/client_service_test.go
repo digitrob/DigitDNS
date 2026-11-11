@@ -293,7 +293,7 @@ func TestRefreshClientIndexStoresAPrivateCopy(t *testing.T) {
 	seedClient(t, svc, db, database.Client{
 		ID: "c1", Name: "copy", Token: token,
 		AllowedIPs: []string{"203.0.113.80"}, Enabled: true,
-		CustomPolicies: []string{"gaming"},
+		CustomPolicies: []string{"custom"},
 	})
 
 	client, _, err := funcIP(svc, token, "203.0.113.81")
@@ -330,7 +330,7 @@ func TestRefreshClientIndexStoresAPrivateCopy(t *testing.T) {
 		t.Errorf("the indexed copy followed the caller's mutations: enabled=%v name=%q used=%d",
 			indexed.Enabled, indexed.Name, indexed.TrafficUsedBytes)
 	}
-	if len(indexed.CustomPolicies) != 1 || indexed.CustomPolicies[0] != "gaming" {
-		t.Errorf("indexed CustomPolicies = %v, want [gaming]", indexed.CustomPolicies)
+	if len(indexed.CustomPolicies) != 1 || indexed.CustomPolicies[0] != "custom" {
+		t.Errorf("indexed CustomPolicies = %v, want [custom]", indexed.CustomPolicies)
 	}
 }

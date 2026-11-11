@@ -182,6 +182,21 @@ func (a *API) BindGate(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// dashboardDocumentCookie is the HttpOnly cookie the dashboard sets at login to
+// gate browser navigations to the panel. The docs page is opened in a new tab,
+// so it carries this cookie but no Authorization header; accepting it here is
+// what lets the dashboard's API Reference button work on an install whose
+// api_bind is loopback-only. The name must match internal/web.
+const dashboardDocumentCookie = "hdns_doc_session"
+
+func (a *API) dashboardSessionAuthorized(r *http.Request) bool {
+	c, err := r.Cookie(dashboardDocumentCookie)
+	if err != nil || c.Value == "" || a.sessions == nil {
+		return false
+	}
+	return a.sessions.Validate(c.Value)
+}
+
 // BindGateDocs is BindGate for the documentation pages. It applies the same
 // exposure rule — the docs are NOT public — but answers a rejected browser with
 // an HTML page that explains the rule and how to satisfy it, instead of the raw
@@ -189,8 +204,19 @@ func (a *API) BindGate(next http.HandlerFunc) http.HandlerFunc {
 // is the caller here, and a wall of JSON tells them nothing actionable; the API
 // data routes keep the JSON 403, because their callers are scripts parsing a
 // body, not people reading a page.
+//
+// A live dashboard document cookie is accepted before the exposure rule: that
+// is the operator already authenticated to the panel, and the docs reveal the
+// API shape rather than any secret.
 func (a *API) BindGateDocs(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// A live dashboard session is the operator already looking at the panel.
+		// The docs reveal the API shape, not any secret, and the request is a
+		// same-site GET, so the document cookie is sufficient here.
+		if a.dashboardSessionAuthorized(r) {
+			next(w, r)
+			return
+		}
 		list, single := a.settings.GetAPIExposure()
 		if !apiExposureAllows(list, single, netutil.PeerIP(r)) {
 			a.writeDocsForbidden(w, apiExposureLabel(list, single))
@@ -313,64 +339,55 @@ func (a *API) handleRestart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleDocsV2(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	admin := adminServerURL(a.settings.GetAdminPath())
-	html := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DigitDNS API v2 Docs</title>
-  <link rel="stylesheet" type="text/css" href="%s/swagger/swagger-ui.css">
-  <style>
-    body { margin: 0; background: #0b1020; color: #e6e7eb; font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
-    .swagger-ui { filter: invert(88%%) hue-rotate(180deg); }
-  </style>
-</head>
-<body>
-  <div id="swagger-ui"></div>
-  <script src="%s/swagger/swagger-ui-bundle.js"></script>
-  <script>
-    var viewerLoaded = typeof SwaggerUIBundle === 'function';
-    if (viewerLoaded) SwaggerUIBundle({ dom_id: '#swagger-ui', url: '%s/api/v2/openapi.json', deepLinking: true, presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.presets.operations] });
-  </script>
-</body>
-</html>`, admin+"/swagger/swagger-ui.css", admin+"/swagger/swagger-ui-bundle.js", admin)
-	_, _ = w.Write([]byte(html))
+	a.writeDocsPage(w, r, "DigitDNS API v2 Docs", openAPIV2Spec)
 }
 
 func (a *API) handleDocsV3(w http.ResponseWriter, r *http.Request) {
+	a.writeDocsPage(w, r, "DigitDNS API v3 Docs", openAPIV3Spec)
+}
+
+// writeDocsPage renders the Swagger UI shell with the spec inlined.
+//
+// The spec is inlined rather than fetched from /api/vN/openapi.json for two
+// reasons: that endpoint sits behind the same api_bind gate, so a second
+// unauthenticated fetch would 403 even after the page loaded; and inlining
+// means one request, one credential check. The bootstrap lives in
+// /js/api-docs.js, an external file, because the dashboard CSP has no
+// 'unsafe-inline' in script-src — an inline init block is blocked and leaves a
+// blank page.
+func (a *API) writeDocsPage(w http.ResponseWriter, r *http.Request, title string, spec []byte) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	admin := adminServerURL(a.settings.GetAdminPath())
+	base := adminServerURL(a.settings.GetAdminPath())
+	if base == "/" {
+		base = ""
+	}
+	// JSON.parse accepts <\/ for /; escaping every closing tag keeps a spec
+	// description containing </script> from terminating the data block.
+	payload := strings.ReplaceAll(string(spec), "</", "<\\/")
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DigitDNS API v3 Docs</title>
+  <title>%s</title>
   <link rel="stylesheet" type="text/css" href="%s/swagger/swagger-ui.css">
   <style>
     body { margin: 0; background: #0b1020; color: #e6e7eb; font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
     .swagger-ui { filter: invert(88%%) hue-rotate(180deg); }
+    .swagger-ui .topbar { display: none; }
   </style>
 </head>
 <body>
   <div id="swagger-ui"></div>
+  <script id="openapi-spec" type="application/json">%s</script>
   <script src="%s/swagger/swagger-ui-bundle.js"></script>
-  <script>
-    var viewerLoaded = typeof SwaggerUIBundle === 'function';
-    if (viewerLoaded) SwaggerUIBundle({ dom_id: '#swagger-ui', url: '%s/api/v3/openapi.json', deepLinking: true, presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.presets.operations] });
-  </script>
+  <script src="%s/js/api-docs.js"></script>
 </body>
-</html>`, admin+"/swagger/swagger-ui.css", admin+"/swagger/swagger-ui-bundle.js", admin)
+</html>`, title, base, payload, base, base)
 	_, _ = w.Write([]byte(html))
 }
 

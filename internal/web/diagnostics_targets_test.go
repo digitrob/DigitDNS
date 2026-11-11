@@ -9,7 +9,7 @@ import (
 	"digitdns/internal/database"
 )
 
-// The Gaming Diagnostic Suite used to dial eight hardcoded game endpoints. v3.1.0
+// The Diagnostic Suite used to dial eight hardcoded game endpoints. v3.1.0
 // made the list wholly operator-owned, so /api/diagnostics/targets is the CRUD
 // surface: GET the list, POST add/edit, DELETE remove. Every write answers with
 // the full, server-normalised list so the panel renders what was stored rather

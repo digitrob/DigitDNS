@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# DigitDNS — 100% Offline Standalone Installer
-# Works with ZERO internet connection using pre-packaged binary & assets.
+# DigitDNS — Complete SmartDNS, SNI-proxy and Ad-Blocking Installer
+# Uses pre-packaged binary & assets.
 # Supported OS: Ubuntu 20.04+, Debian 11+, CentOS/RHEL/Alma/Rocky 8+
 # ==============================================================================
 
@@ -30,8 +30,8 @@ echo "  ██║  ██║██║██║  ███╗██║   ██�
 echo "  ██║  ██║██║██║   ██║██║   ██║   ██║  ██║██║╚██╗██║╚════██║"
 echo "  ██████╔╝██║╚██████╔╝██║   ██║   ██████╔╝██║ ╚████║███████║"
 echo "  ╚═════╝ ╚═╝ ╚═════╝ ╚═╝   ╚═╝   ╚═════╝ ╚═╝  ╚═══╝╚══════╝"
-echo -e "       ${PURPLE}⚡ Standalone Low-Latency SmartDNS & Anti-Sanction Gaming Gateway ⚡${NC}"
-echo -e "       ${YELLOW}Package: 100% OFFLINE INSTALLER · Single Binary · Go 1.26 · OWASP Hardened${NC}"
+echo -e "       ${PURPLE}⚡ Complete SmartDNS, SNI-proxy & Ad-Blocking Solution ⚡${NC}"
+echo -e "       ${YELLOW}Package: Standalone Installer · Single Binary · Go 1.26 · OWASP Hardened${NC}"
 echo -e "       ${CYAN}DigitDNS — a fork of HyperDNS by HyperRAIN · https://github.com/digitrob/DigitDNS${NC}"
 echo ""
 
@@ -456,7 +456,7 @@ fi
 # ==============================================================================
 # STEP 3: FIREWALL RULES CONFIGURATION
 # ==============================================================================
-echo -e "${CYAN}${BOLD}[3/6] Configuring Firewall Rules for Gaming & DNS...${NC}"
+echo -e "${CYAN}${BOLD}[3/6] Configuring Firewall Rules for DNS & Proxy...${NC}"
 PORTS=(53 80 443 853 2099 5222 5223 8393 8443 5443)
 # The panel's port joins the fixed set when this install chose one at random
 # (v2.2.0). An upgrade with no PANEL_PORT (or the default 8080, already in the
@@ -505,7 +505,7 @@ if command -v ufw >/dev/null 2>&1; then
             fi
         fi
     done
-    echo -e "  ${GREEN}✓ UFW firewall rules configured for all gaming & DNS ports.${NC}"
+    echo -e "  ${GREEN}✓ UFW firewall rules configured for all DNS & proxy ports.${NC}"
 elif command -v firewall-cmd >/dev/null 2>&1; then
     # No equivalent fix is needed here: --query-port reads the permanent configuration
     # directly and answers correctly whether or not firewalld is running, so a port the
@@ -667,7 +667,7 @@ fi
 echo -e "${CYAN}${BOLD}[5/6] Creating & Starting Systemd Background Service...${NC}"
 cat << 'EOF' > /etc/systemd/system/digitdns.service
 [Unit]
-Description=DigitDNS — Standalone SmartDNS & Gaming Gateway
+Description=DigitDNS — Complete SmartDNS, SNI-proxy and Ad-Blocking Solution
 Documentation=https://github.com/digitrob/DigitDNS
 After=network.target network-online.target
 Wants=network-online.target
