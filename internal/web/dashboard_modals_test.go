@@ -306,6 +306,8 @@ func modalPanelTag(t *testing.T, html, id string) string {
 var modalScrollExempt = map[string]string{
 	"diagnostics-modal": "the panel is flex flex-col and the scroll lives on #diag-items-list, so " +
 		"the header and the Run Test button stay put while the results move",
+	"diff-modal": "the panel is flex flex-col and the scroll lives on #diff-body, so the header " +
+		"and the confirm buttons stay put while the proposed change moves",
 }
 
 // Every modal panel is centred by its backdrop with flex items-center, and a centred box that is

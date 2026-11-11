@@ -41,6 +41,25 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.5.4
+
+**A setup checklist, change previews, and the API docs the dashboard button promised.**
+
+- The dashboard now carries a **first-run checklist** derived from the live
+  install: admin password, 2FA, panel TLS, DNS listener, upstreams and the first
+  client.
+- Saving **routing rules** or **ad-blocking settings** now shows a redacted
+  before/after diff first, so a destructive change is reviewable before it lands.
+- The **API v3 reference** opens from the dashboard on a loopback-only
+  `api_bind`, and the spec covers every v3 route.
+- The **Server Update card** stays expanded on Docker and no longer surfaces
+  `context canceled` from a browser reload.
+- **2FA enrollment can be cancelled**, returning the card to its normal height.
+- The **Ad Blocking Rule Tester** sits directly below the settings card at half
+  width.
+- Splash, footer, portal and systemd unit now use the complete SmartDNS,
+  SNI-proxy and ad-blocking wording.
+
 ## What's new in 5.5.3
 
 **Less noise, faster recovery, smaller source tree.**
@@ -539,7 +558,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.4/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -602,7 +621,7 @@ DoT SNI-token authentication and mTLS. Open the same ports in the firewall.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.4/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -685,7 +704,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.5.3` | Removed degraded banner, faster agent recovery, event-driven Android stream, housekeeping (latest) |
+| `5.5.4` | Working API docs, stable update card, 2FA cancel, first-run checklist, change previews (latest) |
+| `5.5.3` | Removed degraded banner, faster agent recovery, event-driven Android stream, housekeeping (older) |
 | `5.5.2` | Warm benchmark medians, auto-benchmark on add, stable live latency, upstream UI fixes (older) |
 | `5.5.1` | DoQ FIN fix, offline installer firewall sync; client transports, DNSCrypt, mTLS and UI polish (older) |
 | `5.5.0` | Client Transports with DNSCrypt, mTLS and token auth; live DNSSEC apply; steadier web/Android panels (older) |
@@ -752,7 +772,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.5.3/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.5.4/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1212,7 +1232,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.5.3`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.5.4`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

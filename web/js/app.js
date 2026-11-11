@@ -801,7 +801,7 @@ function hideChangePwdModal() {
 // button whenever the modal is forced, and modalCloseControl below returns null for a hidden
 // control — so Escape is a no-op in exactly the mode where cancelling is not offered, and the
 // two can never drift apart.
-const MODAL_IDS = ['login-modal', 'change-pwd-modal', 'diagnostics-modal', 'edit-client-modal', 'add-client-modal', 'client-created-modal', 'bulk-import-modal'];
+const MODAL_IDS = ['login-modal', 'change-pwd-modal', 'diagnostics-modal', 'edit-client-modal', 'add-client-modal', 'client-created-modal', 'bulk-import-modal', 'diff-modal'];
 
 // Every one of these modals is shown and hidden by toggling .hidden, so reading the class is
 // both the truth and cheap enough for a keydown handler.
@@ -977,6 +977,7 @@ async function bootDashboard() {
   }
   const authed = await loadConfig();
   if (!authed) return; // 401 -> login modal is already shown
+  loadOnboarding();
   // Load only the tab the URL asked for. Clients, agents, filtering and history
   // have their own loaders and are reached from switchTab; fetching the whole
   // client list here used to delay the first usable screen on every reload.
@@ -4732,6 +4733,15 @@ async function saveRules(silent = false) {
     service_agents: currentConfig.rules.service_agents || {}
   };
 
+  // A per-domain toggle saves silently; only the explicit Save button asks for
+  // confirmation. Compare only the fields this request will write, so the
+  // server-owned stamps do not appear as phantom changes.
+  if (!silent) {
+    const before = {};
+    for (const key of Object.keys(payload)) before[key] = currentConfig.rules[key];
+    if (!(await showDiffConfirm('Save routing rules?', before, payload, 'Save rules'))) return false;
+  }
+
   try {
     const res = await fetch(api('/api/config/rules'), {
       method: 'POST',
@@ -7635,6 +7645,7 @@ let filteringUpdating = new Set();
 let filteringAdding = new Set();
 let filteringCounting = false;
 let filteringCountTimer = null;
+let filteringSettings = null;
 
 function setFilteringStatus(message) {
   const el = document.getElementById('filtering-settings-status');
@@ -7670,6 +7681,7 @@ async function loadFiltering() {
 
 function renderFiltering(status) {
   const settings = status.settings || {};
+  filteringSettings = settings;
   const set = (id, value) => {
     const el = document.getElementById(id);
     if (el) el.value = value;
@@ -7931,6 +7943,28 @@ async function saveFilteringSettings() {
     showToast('Update interval must be between 1 and 168 hours.', 'error');
     return;
   }
+  const payload = {
+    enabled: !!enabled,
+    block_mode: mode,
+    block_ttl: ttl,
+    update_interval_hours: interval,
+    allowlist,
+  };
+  // Normalise the stored form before diffing: the server returns null for an
+  // empty allowlist while the form sends [], and a null-to-empty-list line is
+  // noise, not a change the operator made.
+  const beforeFiltering = {
+    enabled: !!(filteringSettings && filteringSettings.enabled),
+    block_mode: (filteringSettings && filteringSettings.block_mode) || 'null_ip',
+    block_ttl: (filteringSettings && filteringSettings.block_ttl) || 10,
+    update_interval_hours: (filteringSettings && filteringSettings.update_interval_hours) || 24,
+    allowlist: Array.isArray(filteringSettings && filteringSettings.allowlist)
+      ? filteringSettings.allowlist
+      : [],
+  };
+  if (!(await showDiffConfirm('Save ad-blocking settings?', beforeFiltering, payload, 'Save settings'))) {
+    return;
+  }
   const btn = document.getElementById('filtering-save-settings-btn');
   if (btn) btn.disabled = true;
   setFilteringStatus('Saving…');
@@ -7938,13 +7972,7 @@ async function saveFilteringSettings() {
     const res = await fetch(api('/api/filtering/settings'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-      body: JSON.stringify({
-        enabled: !!enabled,
-        block_mode: mode,
-        block_ttl: ttl,
-        update_interval_hours: interval,
-        allowlist,
-      }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(await errorMessage(res, 'Could not save ad blocking settings'));
     renderFiltering(await res.json());
@@ -9900,6 +9928,8 @@ function initEventListeners() {
   initUpstreamPresetBrowser();
   initServices();
   initAgentPage();
+  initOnboarding();
+  initDiffModal();
   // Tabs Navigation (Sidebar & Mobile Bottom Bar)
   document.querySelectorAll('.sidebar-nav-item, .nav-tab, .mobile-nav-item, .agent-nav-link').forEach(tab => {
     tab.onclick = (e) => {
@@ -13316,4 +13346,167 @@ function waitForServerBack() {
     } catch (e) { /* still restarting */ }
     if (tries > 40) { clearInterval(probe); location.reload(); }
   }, 3000);
+}
+
+// =======================================================
+// FIRST-RUN CHECKLIST
+// =======================================================
+// The state is derived server-side from the live configuration, so a restore or
+// a manual change moves the checklist without a stored "done" flag. Dismissal is
+// browser-local: it is a preference about the card, not a claim about the install.
+const ONBOARDING_DISMISSED_KEY = 'digitdns_onboarding_dismissed';
+
+function onboardingDismissed() {
+  try { return localStorage.getItem(ONBOARDING_DISMISSED_KEY) === '1'; } catch (e) { return false; }
+}
+
+async function loadOnboarding() {
+  const card = document.getElementById('onboarding-card');
+  if (!card) return;
+  if (onboardingDismissed()) {
+    card.classList.add('hidden');
+    return;
+  }
+  try {
+    const res = await fetch(api('/api/onboarding'), {
+      headers: { 'Authorization': 'Bearer ' + authToken },
+      cache: 'no-store',
+    });
+    if (!res.ok) return;
+    renderOnboarding(await res.json());
+  } catch (e) { /* the checklist is advisory, never a boot blocker */ }
+}
+
+function renderOnboarding(data) {
+  const card = document.getElementById('onboarding-card');
+  const stepsEl = document.getElementById('onboarding-steps');
+  const progress = document.getElementById('onboarding-progress');
+  if (!card || !stepsEl) return;
+  if (!data || data.all_done || onboardingDismissed()) {
+    card.classList.add('hidden');
+    return;
+  }
+  const steps = Array.isArray(data.steps) ? data.steps : [];
+  card.classList.remove('hidden');
+  if (progress) {
+    progress.textContent = `${data.completed || 0} of ${data.total || steps.length} steps complete`;
+  }
+  stepsEl.innerHTML = '';
+  for (const step of steps) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'onboarding-step' + (step.done ? ' done' : '');
+    btn.dataset.onboardingTab = step.tab || '';
+    btn.dataset.onboardingRoute = step.route || '';
+    btn.innerHTML = `<span class="onboarding-mark">${step.done ? '✓' : ''}</span>` +
+      `<span><span class="onboarding-step-title">${escapeHTML(step.title || '')}</span>` +
+      `<span class="onboarding-step-desc">${escapeHTML(step.description || '')}</span></span>`;
+    if (!step.done && step.tab) {
+      btn.addEventListener('click', () => switchTab(step.tab));
+    }
+    stepsEl.appendChild(btn);
+  }
+  safeFeatherReplace();
+}
+
+function initOnboarding() {
+  document.getElementById('onboarding-dismiss-btn')?.addEventListener('click', () => {
+    try { localStorage.setItem(ONBOARDING_DISMISSED_KEY, '1'); } catch (e) { /* private mode */ }
+    document.getElementById('onboarding-card')?.classList.add('hidden');
+  });
+}
+
+// =======================================================
+// CHANGE PREVIEW
+// =======================================================
+// The explicit Save buttons show a redacted line diff before the write leaves
+// the browser. The renderer is shared by every preview so a rules save and an
+// ad-blocking save read the same way.
+let diffResolve = null;
+
+function prettyJSON(value) {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value === 'string') {
+    try { return JSON.stringify(JSON.parse(value), null, 2); } catch (e) { return value; }
+  }
+  try { return JSON.stringify(value, null, 2); } catch (e) { return String(value); }
+}
+
+function diffLines(before, after) {
+  const A = before ? before.split('\n') : [];
+  const B = after ? after.split('\n') : [];
+  if (A.length > 400 || B.length > 400) {
+    const cap = 200;
+    const out = [];
+    A.slice(0, cap).forEach((l) => out.push({ t: 'del', l }));
+    if (A.length > cap) out.push({ t: 'ctx', l: `… ${A.length - cap} more line(s) in the previous value` });
+    B.slice(0, cap).forEach((l) => out.push({ t: 'add', l }));
+    if (B.length > cap) out.push({ t: 'ctx', l: `… ${B.length - cap} more line(s) in the new value` });
+    return out;
+  }
+  const dp = Array.from({ length: A.length + 1 }, () => new Array(B.length + 1).fill(0));
+  for (let i = A.length - 1; i >= 0; i--) {
+    for (let j = B.length - 1; j >= 0; j--) {
+      dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out = [];
+  let i = 0;
+  let j = 0;
+  while (i < A.length && j < B.length) {
+    if (A[i] === B[j]) { out.push({ t: 'ctx', l: A[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ t: 'del', l: A[i] }); i++; }
+    else { out.push({ t: 'add', l: B[j] }); j++; }
+  }
+  while (i < A.length) out.push({ t: 'del', l: A[i++] });
+  while (j < B.length) out.push({ t: 'add', l: B[j++] });
+  return out;
+}
+
+function diffHtml(before, after) {
+  return diffLines(before, after).map(({ t, l }) => {
+    const prefix = t === 'add' ? '+ ' : t === 'del' ? '- ' : '  ';
+    return `<span class="audit-diff-line ${escapeHTML(t)}">${escapeHTML(prefix + l)}</span>`;
+  }).join('');
+}
+
+
+function showDiffConfirm(title, before, after, confirmLabel = 'Save changes') {
+  const modal = document.getElementById('diff-modal');
+  const body = document.getElementById('diff-body');
+  if (!modal || !body) return Promise.resolve(true);
+  const beforeText = prettyJSON(before);
+  const afterText = prettyJSON(after);
+  if (beforeText === afterText) return Promise.resolve(true);
+
+  const lines = diffLines(beforeText, afterText);
+  const added = lines.filter((l) => l.t === 'add').length;
+  const removed = lines.filter((l) => l.t === 'del').length;
+  const titleEl = document.getElementById('diff-title');
+  const sub = document.getElementById('diff-subtitle');
+  const confirm = document.getElementById('diff-confirm-btn');
+  if (titleEl) titleEl.textContent = title || 'Review changes';
+  if (sub) {
+    sub.textContent = `${added} line${added === 1 ? '' : 's'} added · ${removed} line${removed === 1 ? '' : 's'} removed`;
+  }
+  body.innerHTML = '<div class="audit-diff"><div class="audit-diff-title">Proposed change</div>' +
+    `<pre class="audit-diff-body">${diffHtml(beforeText, afterText)}</pre></div>`;
+  if (confirm) confirm.textContent = confirmLabel || 'Save changes';
+  modal.classList.remove('hidden');
+  safeFeatherReplace();
+  return new Promise((resolve) => { diffResolve = resolve; });
+}
+
+function settleDiff(ok) {
+  const modal = document.getElementById('diff-modal');
+  if (modal) modal.classList.add('hidden');
+  const resolve = diffResolve;
+  diffResolve = null;
+  if (resolve) resolve(ok);
+}
+
+function initDiffModal() {
+  document.getElementById('diff-confirm-btn')?.addEventListener('click', () => settleDiff(true));
+  document.getElementById('diff-cancel-btn')?.addEventListener('click', () => settleDiff(false));
+  document.getElementById('diff-cancel-x')?.addEventListener('click', () => settleDiff(false));
 }

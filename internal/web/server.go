@@ -1021,6 +1021,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	// 6. Internal Dashboard Ajax APIs (all authenticated)
 	mux.HandleFunc("/api/icons/search", ws.requireAuth(ws.handleIconSearch))
 	mux.HandleFunc("/api/dashboard/layout", ws.requireAuth(ws.handleDashboardLayout))
+	mux.HandleFunc("/api/onboarding", ws.requireAuth(ws.handleOnboarding))
 	// Relay agents: panel routes require an admin session, the agent-facing
 	// routes require an agent key. They intentionally share no middleware.
 	mux.HandleFunc("/api/agents", ws.requireAuth(ws.handleAgents))

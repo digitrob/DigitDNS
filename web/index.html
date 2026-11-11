@@ -313,6 +313,35 @@
   <!-- EDIT CLIENT / USER MODAL (Advanced Client Management Layout). data-modal-close names the
        header × rather than the footer CANCEL: both only hide the modal, and the × is the one
        that is always in view in a panel this tall. -->
+  <!-- Change preview: the explicit Save buttons show a redacted line diff before
+       the write leaves the browser. Background saves (a per-domain toggle) skip
+       it so the modal is a confirmation, not a tax on every click. -->
+  <div id="diff-modal" role="dialog" aria-modal="true" aria-labelledby="diff-title"
+    data-modal-close="diff-cancel-btn"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md px-3 sm:px-4 hidden">
+    <div class="glass-panel p-4 sm:p-6 w-full max-w-3xl shadow-2xl max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-2.5 sm:gap-3">
+          <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-cyan-500/20 flex items-center justify-center text-cyan-400 border border-cyan-500/30">
+            <i data-feather="git-pull-request" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h2 id="diff-title" class="text-sm sm:text-base font-bold text-white font-heading">Review changes</h2>
+            <p id="diff-subtitle" class="text-[11px] text-slate-400"></p>
+          </div>
+        </div>
+        <button id="diff-cancel-x" aria-label="Close change preview" class="text-slate-400 hover:text-white p-1">
+          <i data-feather="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div id="diff-body" class="py-3 sm:py-4 flex-1 overflow-y-auto"></div>
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+        <button id="diff-cancel-btn" type="button" class="panel-btn panel-btn-neutral">Cancel</button>
+        <button id="diff-confirm-btn" type="button" class="panel-btn panel-btn-primary">Save changes</button>
+      </div>
+    </div>
+  </div>
+
   <div id="edit-client-modal" role="dialog" aria-modal="true" aria-labelledby="edit-client-title"
     data-modal-close="close-edit-client-btn"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md px-4 hidden">
@@ -1033,6 +1062,27 @@
           </div>
         </div>
         <div id="history-error" class="hidden text-[11px] text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-lg px-3 py-2" role="status"></div>
+
+        <!-- First-run checklist. It is derived from the live configuration, so a
+             restore or a manual change moves it without a stored "done" flag.
+             It sits outside every dashboard grid and is never draggable. -->
+        <div id="onboarding-card" class="glass-panel panel-card p-5 sm:p-6 hidden">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center justify-center">
+                <i data-feather="check-circle" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="panel-card-title">Finish setting up DigitDNS</h3>
+                <p id="onboarding-progress" class="text-[11px] text-slate-400 mt-0.5">Checking the install…</p>
+              </div>
+            </div>
+            <button type="button" id="onboarding-dismiss-btn" class="panel-btn panel-btn-ghost panel-btn-sm">
+              Dismiss
+            </button>
+          </div>
+          <div id="onboarding-steps" class="onboarding-steps"></div>
+        </div>
 
         <!-- 6 Telemetry Metric Cards (Responsive Grid). Six across only at 2xl: at
              xl the content column is still narrow enough that the QPS/SNI meta

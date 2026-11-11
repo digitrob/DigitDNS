@@ -4149,3 +4149,100 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .global-notice-btn:hover {
   text-decoration-thickness: 2px;
 }
+
+.audit-diff {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(2, 6, 23, 0.55);
+}
+.audit-diff-title {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.audit-diff-body {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 46vh;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.audit-diff-line { display: block; }
+.audit-diff-line.add { color: rgb(52 211 153); background: rgba(16, 185, 129, 0.08); }
+.audit-diff-line.del { color: rgb(248 113 113); background: rgba(239, 68, 68, 0.08); }
+.audit-diff-line.ctx { color: var(--text-muted); }
+
+/* First-run checklist: a compact progress strip above the dashboard grid. */
+.onboarding-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.onboarding-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.35);
+  text-align: start;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.onboarding-step:hover,
+.onboarding-step:focus-visible {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(8, 47, 73, 0.3);
+  outline: none;
+}
+.onboarding-step.done {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.06);
+  cursor: default;
+}
+.onboarding-step .onboarding-mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.onboarding-step.done .onboarding-mark {
+  border-color: rgba(16, 185, 129, 0.55);
+  background: rgba(16, 185, 129, 0.18);
+  color: rgb(52 211 153);
+}
+.onboarding-step-title {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+}
+.onboarding-step-desc {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}

@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.5.4] — setup checklist, change previews and working API docs
+
+### Added
+- **First-run checklist on the dashboard.** Six live steps — admin password,
+  2FA, panel TLS, DNS listener, upstreams and the first client — derived from the
+  running configuration rather than a stored "done" flag.
+- **Change preview before saving.** Routing rules and ad-blocking settings now
+  show a redacted before/after diff and require confirmation before the write.
+
+### Fixed
+- **API v3 documentation opens from the dashboard.** The docs page accepts the
+  dashboard document cookie, so it works with a loopback-only `api_bind`. The
+  spec is inlined and the Swagger bootstrap moved to an external file that the
+  CSP allows.
+- **Server Update card stays expanded on Docker.** The GitHub check no longer
+  inherits the browser request cancellation, results are cached for a minute,
+  and a failed check still carries the container fields.
+- **2FA enrollment can be cancelled**, so an abandoned enrollment no longer
+  leaves the settings card expanded after a reload.
+- **Ad Blocking Rule Tester** moved directly below the settings card at half
+  width on desktop and stacked on mobile.
+
+### Changed
+- API v3 spec expanded to cover every router route, with descriptions, request
+  bodies, examples and a drift test.
+- Splash, dashboard footer, About card, subscriber portal and systemd unit now
+  use the complete SmartDNS, SNI-proxy and ad-blocking wording.
+- Visible documentation no longer advertises old v2.x version headings.
+
+---
+
 ## 🏷️ [v5.5.3] — quieter panel and faster agent recovery
 
 ### Changed
