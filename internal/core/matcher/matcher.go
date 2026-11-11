@@ -358,7 +358,7 @@ func (m *Matcher) matchDetailLower(d string) (Action, string, string) {
 	// List blocks sit below the operator's own rules. A list exception returns
 	// blocked=false here, so it can suppress a list block without overriding an
 	// explicit Custom Block above or a proxy rule below.
-	if blocked, source, pattern := snap.blockIndex.Match(d); blocked {
+	if blocked, source, pattern := snap.blockIndex.MatchNormalized(d); blocked {
 		return ActionBlock, "Blocklist: " + source, pattern
 	}
 	if name, pattern, ok := snap.realtime.lookupPattern(d); ok {

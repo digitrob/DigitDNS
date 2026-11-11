@@ -1127,8 +1127,8 @@ function renderTLSCertDetails(cfg) {
 // DASH_LAYOUT_PURE_START
 const DASH_COLS = 12;
 const DASH_ROW_PX = 12;
-const DASH_COL_GAP = 16;
-const DASH_ROW_GAP = 8;
+const DASH_COL_GAP = 12;
+const DASH_ROW_GAP = 12;
 const DASH_MAX_ROWS = 240;
 const DASH_LAYOUT_VERSION = 3;
 const DASH_CARD_MIN = {
@@ -4840,6 +4840,8 @@ async function pollStatsOnce() {
 }
 
 function startStatsPolling() {
+  statsFull = null;
+  statsPollCount = 0;
   // Called once, from the post-login boot path. The listener is registered here rather
   // than at module scope so that a page which never logs in never installs it.
   document.addEventListener('visibilitychange', () => {
@@ -4874,7 +4876,8 @@ function startStatsPolling() {
 async function updateStats() {
   if (!authToken) return;
   try {
-    const res = await fetch(api('/api/stats'), {
+    const needFull = !statsFull || (statsPollCount++ % 5 === 0);
+    const res = await fetch(api('/api/stats') + (needFull ? '' : '?compact=1'), {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     if (res.status === 401) {
@@ -4891,7 +4894,14 @@ async function updateStats() {
       return;
     }
 
-    const data = await res.json();
+    let data = await res.json();
+    if (needFull) {
+      statsFull = data;
+    } else {
+      // Live fields override the last full document; slow fields (CPU, RAM,
+      // system memory, goroutines, agent counters) stay from the last full poll.
+      data = { ...statsFull, ...data };
+    }
 
     const setTxt = (id, txt) => {
       const el = document.getElementById(id);
@@ -4957,6 +4967,15 @@ async function updateStats() {
 
 // statsFailures counts consecutive failed polls so one blip does not repaint the badge.
 let statsFailures = 0;
+// The last full stats document. The 1 Hz poll asks for compact live fields and
+// merges them over this; every fifth poll refreshes the slow fields (CPU, RAM,
+// system memory, goroutines, agent counters).
+let statsFull = null;
+let statsPollCount = 0;
+// The last painted health state. A healthy poll used to rewrite the badge class,
+// dot class and title every second even when nothing changed; this makes the
+// healthy path a single string compare.
+let statsHealthState = '';
 
 // markStatsHealth is the only thing that makes the numbers on the overview page
 // trustworthy: without it a daemon that died two minutes ago is indistinguishable
@@ -4968,6 +4987,8 @@ function markStatsHealth(ok, reason) {
 
   if (ok) {
     statsFailures = 0;
+    if (statsHealthState === 'ok') return;
+    statsHealthState = 'ok';
     if (badge) {
       badge.className = 'text-[10px] font-mono text-cyan-400 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center gap-1.5';
       badge.title = 'The dashboard is receiving live telemetry';
@@ -4979,6 +5000,9 @@ function markStatsHealth(ok, reason) {
 
   statsFailures++;
   if (statsFailures < 2) return;
+  const failureState = 'bad:' + (reason || '');
+  if (statsHealthState === failureState) return;
+  statsHealthState = failureState;
 
   if (badge) {
     badge.className = 'text-[10px] font-mono text-amber-400 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center gap-1.5';
@@ -5195,6 +5219,11 @@ const FEATHER_TRASH_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="24" he
 // address into innerHTML; a bare template here would trip the raw-
 // interpolation scan for exactly the value it exists to protect.
 let lastUpstreamsSig = '';
+// Keyed rows for the resolver card. The list is polled at 1 Hz and latency
+// changes every time; rebuilding the DOM on each poll was the largest remaining
+// dashboard cost. New addresses get a row, existing rows update in place, and
+// rows are moved only when the order actually changes.
+let upstreamRowMap = new Map();
 // The last stats payload, kept so a policy change can repaint the list without
 // waiting for the next 1 Hz poll.
 let lastUpstreamsPayload = null;
@@ -5614,6 +5643,7 @@ function renderUpstreams(upstreams) {
 
   if (!upstreams || upstreams.length === 0) {
     if (lastUpstreamsSig !== 'empty') {
+      upstreamRowMap.clear();
       container.innerHTML = '<div class="text-slate-500 text-xs py-2">No upstreams configured</div>';
       lastUpstreamsSig = 'empty';
     }
@@ -5643,7 +5673,16 @@ function renderUpstreams(upstreams) {
         .concat(upstreams.filter(u => transportExcludes(u.address, renderTransport)))
     : upstreams;
 
-  container.innerHTML = '';
+  const desiredAddresses = new Set(ordered.map(u => u.address));
+  for (const [addr, row] of upstreamRowMap) {
+    if (!desiredAddresses.has(addr)) {
+      row.remove();
+      upstreamRowMap.delete(addr);
+    }
+  }
+  // Drop the empty-state placeholder once real rows exist.
+  Array.from(container.children).forEach(el => { if (!el.dataset.addr) el.remove(); });
+  const desiredRows = [];
 
   ordered.forEach(u => {
     // u.latency is nanoseconds, and it is absent until the racer has actually measured
@@ -5714,44 +5753,67 @@ function renderUpstreams(upstreams) {
       dotClass = 'w-2 h-2 rounded-full bg-amber-400';
     }
 
-    const row = document.createElement('div');
     // A resolver the active transport excludes, or one a valid pin bypasses, is
     // dimmed but stays removable: the list is also the place removals happen.
     const dimmed = upstreamDimmed(u.address, resolutionSettings.transport || 'any');
-    row.className = 'upstream-row flex items-center justify-between py-1.5 px-3 rounded-lg bg-slate-950/70 border border-slate-800 text-xs'
-      + (dimmed ? ' is-dimmed' : '');
-    // The left half is `min-w-0 truncate`: a flex item's default min-width:auto
-    // resolves to its content width, so a long DoH URL (https://dns.google/dns-query)
-    // would refuse to shrink and crush the latency badge on the right into a
-    // square. min-w-0 lets the name shrink, truncate ellipsizes it, and the
-    // badge keeps shrink-0 so it never wraps.
-    row.innerHTML = `
-      <div class="flex items-center gap-2 min-w-0 flex-1">
-        <span class="${dotClass} shrink-0" aria-hidden="true"></span>
-        <div class="min-w-0">
-          <!-- The address is its own horizontal scroll area, not a clipped ellipsis:
-               a DoH URL is routinely wider than this column and the operator needs
-               to read the whole host to know which resolver a latency belongs to.
-               Drag it, scroll it, or focus and use the arrow keys; the title is the
-               hover fallback. The dot and the latency/delete controls never move. -->
-          <span class="upstream-addr block min-w-0 font-mono text-slate-200" tabindex="0" title="${escapeHTML(u.address)}">${escapeHTML(u.address)}</span>
+    let row = upstreamRowMap.get(u.address);
+    if (!row) {
+      row = document.createElement('div');
+      row.dataset.addr = u.address;
+      row.className = 'upstream-row flex items-center justify-between py-1.5 px-3 rounded-lg bg-slate-950/70 border border-slate-800 text-xs'
+        + (dimmed ? ' is-dimmed' : '');
+      // The left half is `min-w-0 truncate`: a flex item's default min-width:auto
+      // resolves to its content width, so a long DoH URL (https://dns.google/dns-query)
+      // would refuse to shrink and crush the latency badge on the right into a
+      // square. min-w-0 lets the name shrink, truncate ellipsizes it, and the
+      // badge keeps shrink-0 so it never wraps.
+      row.innerHTML = `
+        <div class="flex items-center gap-2 min-w-0 flex-1">
+          <span class="upstream-dot shrink-0 ${dotClass}" aria-hidden="true"></span>
+          <div class="min-w-0">
+            <!-- The address is its own horizontal scroll area, not a clipped ellipsis:
+                 a DoH URL is routinely wider than this column and the operator needs
+                 to read the whole host to know which resolver a latency belongs to.
+                 Drag it, scroll it, or focus and use the arrow keys; the title is the
+                 hover fallback. The dot and the latency/delete controls never move. -->
+            <span class="upstream-addr block min-w-0 font-mono text-slate-200" tabindex="0" title="${escapeHTML(u.address)}">${escapeHTML(u.address)}</span>
+          </div>
         </div>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <span class="shrink-0 px-2 py-0.5 rounded border ${badgeClass} text-[10px] font-bold font-mono whitespace-nowrap" title="${latTitle}">${latText}</span>
-        <!-- 24x24, up from the 16x16 that a p-0.5 box around a 12px icon gave: this
-             deletes a resolver from the live racer set and it sat under the WCAG 2.2
-             SC 2.5.8 floor on the surface where it is only ever touched. Enlarging a
-             one-tap destructive control on its own would trade a target you cannot hit
-             for one you hit by mistake, so the handler now asks first — see the
-             confirmAction call in the click delegate. -->
-        <button class="remove-upstream inline-flex items-center justify-center w-6 h-6 shrink-0 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition" data-addr="${escapeHTML(u.address)}" title="Remove upstream" aria-label="Remove upstream ${escapeHTML(u.address)}">
-          ${FEATHER_TRASH_SVG}
-        </button>
-      </div>
-    `;
-    container.appendChild(row);
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="upstream-latency-badge shrink-0 px-2 py-0.5 rounded border ${badgeClass} text-[10px] font-bold font-mono whitespace-nowrap" title="${escapeHTML(latTitle)}">${latText}</span>
+          <!-- 24x24, up from the 16x16 that a p-0.5 box around a 12px icon gave: this
+               deletes a resolver from the live racer set and it sat under the WCAG 2.2
+               SC 2.5.8 floor on the surface where it is only ever touched. Enlarging a
+               one-tap destructive control on its own would trade a target you cannot hit
+               for one you hit by mistake, so the handler now asks first — see the
+               confirmAction call in the click delegate. -->
+          <button class="remove-upstream inline-flex items-center justify-center w-6 h-6 shrink-0 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition" data-addr="${escapeHTML(u.address)}" title="Remove upstream" aria-label="Remove upstream ${escapeHTML(u.address)}">
+            ${FEATHER_TRASH_SVG}
+          </button>
+        </div>
+      `;
+      upstreamRowMap.set(u.address, row);
+    } else {
+      row.classList.toggle('is-dimmed', dimmed);
+      const dot = row.querySelector('.upstream-dot');
+      if (dot) dot.className = 'upstream-dot shrink-0 ' + dotClass;
+      const badge = row.querySelector('.upstream-latency-badge');
+      if (badge) {
+        badge.className = 'upstream-latency-badge shrink-0 px-2 py-0.5 rounded border ' + badgeClass + ' text-[10px] font-bold font-mono whitespace-nowrap';
+        if (badge.textContent !== latText) badge.textContent = latText;
+        if (badge.title !== latTitle) badge.title = latTitle;
+      }
+    }
+    desiredRows.push(row);
   });
+
+  const existingRows = Array.from(container.children).filter(el => el.dataset.addr);
+  const sameOrder = existingRows.length === desiredRows.length
+    && existingRows.every((row, i) => row === desiredRows[i]);
+  if (!sameOrder) {
+    for (const row of desiredRows) container.appendChild(row);
+  }
+
   // A row is only scrollable when its address actually overflows; mark it so the
   // edge fade and the grab cursor do not appear on short names.
   requestAnimationFrame(() => {

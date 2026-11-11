@@ -1022,7 +1022,7 @@
       <!-- ============================================== -->
       <!-- TAB 1: DASHBOARD OVERVIEW -->
       <!-- ============================================== -->
-      <section id="tab-dashboard" class="tab-content space-y-6">
+      <section id="tab-dashboard" class="tab-content space-y-3">
         <!-- The pencil beside "Dashboard" in the sidebar is the only control.
              While editing, the hint and Reset layout are the only extra chrome. -->
         <div id="dash-edit-bar" class="dash-edit-bar hidden">
@@ -1087,7 +1087,7 @@
         <!-- 6 Telemetry Metric Cards (Responsive Grid). Six across only at 2xl: at
              xl the content column is still narrow enough that the QPS/SNI meta
              columns and the CPU line collide with their card padding. -->
-        <div class="grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-6 gap-3 sm:gap-4" data-dash-grid="metrics">
+        <div class="grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-6 gap-3" data-dash-grid="metrics">
           
           <!-- Card 1: QPS -->
           <div data-dash-card="qps" class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden">
@@ -1221,7 +1221,7 @@
              to show ten-plus resolvers without an inner scrollbar; the chart and the
              latency panel share the left two columns. On mobile the grid collapses to
              one column and stacks in source order: chart, racers, latency. -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6" data-dash-grid="main">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-3" data-dash-grid="main">
           
           <!-- Chart Column (2/3 width) -->
           <div data-dash-card="chart" class="glass-panel panel-card p-5 sm:p-6 lg:col-span-2">
@@ -1400,7 +1400,7 @@
              share the dashboard layout editor and can move to any grid; the
              range/export controls live in the fixed toolbar at the top. -->
         <div id="history-section">
-          <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4" data-dash-grid="history">
+          <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3" data-dash-grid="history">
             <div data-dash-card="history-total" class="glass-panel panel-card p-3.5 sm:p-4">
               <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="bar-chart-2" class="w-3 h-3 text-cyan-400"></i> Total queries</div>
               <div id="history-total" class="text-xl sm:text-2xl font-extrabold font-mono text-white mt-1">—</div>

@@ -136,6 +136,7 @@ class AppPreferences @Inject constructor(
         val dashboardDisabled = stringPreferencesKey("dashboard_disabled")
         val appMode = stringPreferencesKey("app_mode")
         val subscriberActive = booleanPreferencesKey("subscriber_active")
+        val biometricEnabled = booleanPreferencesKey("biometric_enabled")
     }
 
     val appMode: Flow<AppMode> = context.appPrefsDataStore.data.map { prefs ->
@@ -153,6 +154,17 @@ class AppPreferences @Inject constructor(
 
     suspend fun setSubscriberActive(active: Boolean) {
         context.appPrefsDataStore.edit { prefs -> prefs[Keys.subscriberActive] = active }
+    }
+
+    /** Whether opening the app requires a biometric or device-credential check. */
+    val biometricEnabled: Flow<Boolean> = context.appPrefsDataStore.data.map { prefs ->
+        prefs[Keys.biometricEnabled] ?: false
+    }
+
+    suspend fun setBiometricEnabled(enabled: Boolean) {
+        context.appPrefsDataStore.edit { prefs ->
+            prefs[Keys.biometricEnabled] = enabled
+        }
     }
 
     val themeMode: Flow<ThemeMode> = context.appPrefsDataStore.data.map { prefs ->

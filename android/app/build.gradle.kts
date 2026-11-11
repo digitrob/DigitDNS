@@ -14,8 +14,8 @@ plugins {
 // The app carries its own version, independent of the server's v3.2.x line: a
 // panel release and an app release are different products on different cadences,
 // and tying them would make every server patch look like an app release.
-val appVersionName: String = "5.5.5"
-val appVersionCode: Int = 546
+val appVersionName: String = "5.5.6"
+val appVersionCode: Int = 547
 
 android {
     namespace = "com.digitrob.digitdns"
@@ -153,6 +153,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.biometric)
 
     // Compose. The BOM pins every androidx.compose.* artifact to one tested set.
     implementation(platform(libs.compose.bom))

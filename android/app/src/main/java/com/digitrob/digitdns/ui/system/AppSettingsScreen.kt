@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -37,15 +38,18 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
+import com.digitrob.digitdns.core.security.BiometricAvailability
 import com.digitrob.digitdns.data.DashboardCard
 import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.security.findFragmentActivity
 
 /**
  * App-level settings: the theme choice, the dashboard card layout, and a pointer to the
@@ -59,6 +63,8 @@ import com.digitrob.digitdns.ui.components.PanelCard
 @Composable
 fun AppSettingsScreen(viewModel: AppSettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val activity = remember(context) { context.findFragmentActivity() }
 
     Column(
         modifier = Modifier
@@ -87,6 +93,13 @@ fun AppSettingsScreen(viewModel: AppSettingsViewModel = hiltViewModel()) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+
+                BiometricLoginRow(
+                    enabled = state.biometricEnabled,
+                    availability = state.biometricAvailability,
+                    message = state.biometricMessage,
+                    onToggle = { viewModel.setBiometricEnabled(activity, it) },
+                )
             }
         }
 
@@ -96,6 +109,56 @@ fun AppSettingsScreen(viewModel: AppSettingsViewModel = hiltViewModel()) {
             onToggle = viewModel::setCardEnabled,
             onMoveTo = viewModel::moveCardTo,
             onReset = viewModel::resetDashboardLayout,
+        )
+    }
+}
+
+/**
+ * The app-lock row. It sits directly below the theme choice; the switch is disabled
+ * when the device has no usable biometric or device credential, but remains usable
+ * to turn an already-enabled lock off if the hardware changed later.
+ */
+@Composable
+private fun BiometricLoginRow(
+    enabled: Boolean,
+    availability: BiometricAvailability,
+    message: String?,
+    onToggle: (Boolean) -> Unit,
+) {
+    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.settings_biometric),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                text = stringResource(R.string.settings_biometric_help),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (!enabled && availability != BiometricAvailability.AVAILABLE) {
+                Text(
+                    text = stringResource(R.string.settings_biometric_unavailable),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            message?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+        Switch(
+            checked = enabled,
+            onCheckedChange = onToggle,
+            enabled = availability == BiometricAvailability.AVAILABLE || enabled,
         )
     }
 }

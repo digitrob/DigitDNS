@@ -41,6 +41,25 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.5.6
+
+**Biometric login, a tighter dashboard and a lighter panel poll.**
+
+- **Android biometric login.** A new switch in Settings → App, directly below
+  the theme choice, requires a fingerprint, face or device PIN to open the app.
+  It locks on cold start and after a 60-second background grace period, with
+  device-PIN fallback and a sign-out escape.
+- **Uniform 12 px dashboard spacing.** Metrics, main and history grids and the
+  section stack now share one gap; the custom layout editor uses the same
+  12 px column and row gap.
+- **Compact stats polling.** The dashboard asks for the live fields every
+  second and the full document every fifth poll, merging CPU/RAM/system/agent
+  fields from the slower read.
+- **In-place upstream rows.** The resolver card updates latency, health and
+  tooltips without rebuilding the list.
+- **Backend trims.** The blocklist index no longer re-normalizes an already
+  normalized name; agent lists and Prometheus metrics are cached briefly.
+
 ## What's new in 5.5.5
 
 **A faster resolver path and lighter dashboard polling.**
@@ -573,7 +592,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.5/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.6/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -636,7 +655,7 @@ DoT SNI-token authentication and mTLS. Open the same ports in the firewall.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.5/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.6/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -719,7 +738,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.5.5` | Lock-free matcher reads, faster client/agent/stats paths, gzip pooling, login branding (latest) |
+| `5.5.6` | Android biometric login, 12 px dashboard rhythm, compact stats, in-place upstream rows (latest) |
+| `5.5.5` | Lock-free matcher reads, faster client/agent/stats paths, gzip pooling, login branding (older) |
 | `5.5.4` | Working API docs, stable update card, 2FA cancel, first-run checklist, change previews (older) |
 | `5.5.3` | Removed degraded banner, faster agent recovery, event-driven Android stream, housekeeping (older) |
 | `5.5.2` | Warm benchmark medians, auto-benchmark on add, stable live latency, upstream UI fixes (older) |
@@ -788,7 +808,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.5.5/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.5.6/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1248,7 +1268,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.5.5`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.5.6`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

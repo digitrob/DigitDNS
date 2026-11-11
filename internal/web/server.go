@@ -126,6 +126,18 @@ type WebServer struct {
 	agentFleetAt     time.Time
 	agentFleetOnline int
 	agentFleetTotal  int
+	// agentListBody caches the panel's agent list for two seconds. The agents tab
+	// polls it, and ListAgents walks the bucket while each view computes online
+	// and sync age. Mutations clear it so a create/delete is visible at once.
+	agentListMu   sync.Mutex
+	agentListAt   time.Time
+	agentListBody []byte
+	// metricsBody caches the Prometheus scrape for one second. A scrape is not
+	// hot, but several monitors hitting the same panel should not rebuild the
+	// same text each time.
+	metricsMu   sync.Mutex
+	metricsAt   time.Time
+	metricsBody []byte
 
 	// kdfGate bounds how many password verifications run at once. Verification is
 	// deliberately expensive and reachable without authentication, so without a
@@ -2328,7 +2340,12 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
 		return
 	}
-	if entry, ok := ws.statsCache.Get("web/stats"); ok {
+	compact := r.URL.Query().Get("compact") == "1"
+	cacheKey := "web/stats"
+	if compact {
+		cacheKey = "web/stats:compact"
+	}
+	if entry, ok := ws.statsCache.Get(cacheKey); ok {
 		httpx.WriteCached(w, r, entry)
 		return
 	}
@@ -2417,14 +2434,29 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 
 		"upstreams": upstreamStats,
 	}
+	// A compact poll carries the fields that move every second. CPU, RAM,
+	// goroutines, uptime and agent counters change slowly; the dashboard fetches
+	// the full document every fifth poll and merges these live fields over it.
+	if compact {
+		for _, key := range []string{
+			"ram_usage_mb", "cpu_usage", "alloc_memory_mb", "sys_memory_mb",
+			"cpu_usage_percent", "num_cpu", "num_goroutines", "uptime_sec",
+			"panics_total", "agent_catalogue_requests",
+			"agent_catalogue_not_modified", "agent_config_revision",
+			"system_cpu_percent", "system_mem_used_mb", "system_mem_total_mb",
+			"system_mem_percent",
+		} {
+			delete(resp, key)
+		}
+	}
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(resp); err != nil {
 		httpx.WriteJSONErrorFor(w, http.StatusInternalServerError, err)
 		return
 	}
 	const contentType = "application/json"
-	ws.statsCache.Set("web/stats", buf.Bytes(), contentType)
-	if entry, ok := ws.statsCache.Get("web/stats"); ok {
+	ws.statsCache.Set(cacheKey, buf.Bytes(), contentType)
+	if entry, ok := ws.statsCache.Get(cacheKey); ok {
 		httpx.WriteCached(w, r, entry)
 		return
 	}

@@ -1,50 +1,41 @@
-# DigitDNS v5.5.5 — faster resolver and dashboard paths
+# DigitDNS v5.5.6 — biometric login and a tighter dashboard
 
-A performance release on top of v5.5.4. No resolver, API or database schema
-migration is required. Existing settings, clients, blocklists and certificates
-are preserved.
-
-## Resolver
-
-- **Lock-free matcher reads.** The DNS query path now reads an immutable rule
-  snapshot instead of taking an RWMutex read lock for every query. Rule rebuilds
-  publish a new snapshot atomically, so a settings save no longer contends with
-  live traffic.
-- **Quota-refusal logging reuses the parsed question**, removing a second parse
-  on that path.
-
-Benchmark on the development machine:
-
-- `BenchmarkMatchParallel` — ~19–20 ns/op, 0 allocs/op
-- `BenchmarkMatchExactHit` — ~67 ns/op, 0 allocs/op
-
-## Panel
-
-- **Client list from the in-memory index.** The dashboard no longer decrypts
-  every client record from the database on each poll; the service snapshots its
-  existing index and adds the live traffic/query deltas. The response shape and
-  order are unchanged.
-- **Gzip response pooling.** The API gzip writer and wrapper are pooled and
-  reset per request instead of allocated per response.
-- **Login branding** now reads **SmartDNS · SNI Proxy · Ad Blocking**.
-
-## Agents
-
-- **Catalogue body cache.** The hub caches each agent's encoded catalogue for
-  the current control-plane revision. A config change clears the cache; the key
-  also includes the agent's country and effective IPv6 flag.
-
-## API
-
-- **V3 upstream stats cache.** `/api/v3/upstreams/stats` is memoised for one
-  second, matching the dashboard's resolver-racer cadence. The response shape is
-  unchanged.
-- No DTO, auth, route or schema changes.
+A feature and performance release on top of v5.5.5. No resolver, API or database
+schema migration is required. Existing settings, clients, blocklists and
+certificates are preserved.
 
 ## Android
 
-- App version **5.5.5 (546)**. No functional Android changes; the app already
-  uses the same v3 endpoints and benefits from the faster backend.
+- **Biometric login.** A new switch in **Settings → App**, directly below the
+  theme choice, requires a fingerprint, face or device PIN to open the app.
+  - Enabling it shows the prompt first; the preference is saved only after a
+    successful authentication.
+  - Locks on cold start and after a **60-second** background grace period.
+  - Device PIN/pattern is accepted as a fallback.
+  - The lock screen offers **Unlock** and **Sign out**.
+- App version **5.5.6 (547)**.
+
+## Panel
+
+- **Uniform 12 px dashboard spacing.** Metrics, main and history grids and the
+  section stack now share one gap. The custom layout editor uses the same 12 px
+  column and row gap, so spacing no longer changes with the viewport or a saved
+  layout.
+- **Compact stats polling.** The 1 Hz dashboard poll requests only the live
+  fields; the full document is fetched every fifth poll and the slow CPU, RAM,
+  system-memory and agent counters are merged from it.
+- **In-place upstream rows.** The resolver card updates latency, health dot and
+  tooltip without clearing and rebuilding the list every second.
+
+## Backend
+
+- **Blocklist match path.** The matcher passes an already-normalized name to the
+  blocklist index, which no longer lowercases and trims it a second time.
+- **Agent list cache.** The panel's agent list is cached for two seconds and
+  invalidated on create/update/delete/enable/disable.
+- **Metrics cache.** `/api/metrics` reuses the Prometheus text for one second.
+
+No DTO, auth, route or schema changes.
 
 ## Upgrade
 
@@ -58,16 +49,16 @@ docker compose up -d
 Pinned versions:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.5.5
-docker pull ghcr.io/digitrob/digitdns-agent:5.5.5
-docker pull robmeister/digitdns:5.5.5
-docker pull robmeister/digitdns-agent:5.5.5
+docker pull ghcr.io/digitrob/digitdns:5.5.6
+docker pull ghcr.io/digitrob/digitdns-agent:5.5.6
+docker pull robmeister/digitdns:5.5.6
+docker pull robmeister/digitdns-agent:5.5.6
 ```
 
 systemd:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.5/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.6/scripts/install.sh | sudo bash
 ```
 
 ## Assets
@@ -78,4 +69,4 @@ curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.5/scripts/in
 - `digitdns-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk` and `.sha256`
 - `checksums.txt`, `checksums.sig`
 
-The Android APKs are attached to this release from the `android-v5.5.5` tag.
+The Android APKs are attached to this release from the `android-v5.5.6` tag.

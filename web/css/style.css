@@ -2055,6 +2055,12 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 /* The resolver list is also a policy view: a pin dims the resolvers it
    bypasses, and Encrypted/Regular transport dims the ones it excludes. The row
    stays interactive — removal and inspection still work. */
+/* Stable hooks for the in-place resolver rows. The colour utilities on these
+ * elements are swapped on each poll; the element itself keeps one class so the
+ * update path can find it without rebuilding the row. */
+.upstream-dot { flex-shrink: 0; }
+.upstream-latency-badge { flex-shrink: 0; }
+
 .upstream-row.is-dimmed {
   opacity: 0.45;
 }

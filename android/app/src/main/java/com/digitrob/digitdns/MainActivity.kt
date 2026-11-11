@@ -1,8 +1,9 @@
 package com.digitrob.digitdns
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import androidx.fragment.app.FragmentActivity
 import androidx.annotation.StringRes
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -56,6 +57,8 @@ import com.digitrob.digitdns.ui.auth.LoginScreen
 import com.digitrob.digitdns.ui.clients.ClientsScreen
 import com.digitrob.digitdns.ui.dashboard.DashboardScreen
 import com.digitrob.digitdns.ui.rules.ProxiedDomainsScreen
+import com.digitrob.digitdns.ui.security.AppLockScreen
+import com.digitrob.digitdns.ui.security.AppLockViewModel
 import com.digitrob.digitdns.ui.stream.LiveQueryLogScreen
 import com.digitrob.digitdns.ui.subscriber.SubscriberScreen
 import com.digitrob.digitdns.ui.system.SettingsHubScreen
@@ -82,11 +85,23 @@ import javax.inject.Inject
  * the top-level tabs.
  */
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     @Inject lateinit var authRepository: AuthRepository
     @Inject lateinit var appPreferences: AppPreferences
     @Inject lateinit var subscriberSession: SubscriberSession
     @Inject lateinit var authState: AuthState
+
+    private val lockViewModel: AppLockViewModel by viewModels()
+
+    override fun onStart() {
+        super.onStart()
+        lockViewModel.onForeground()
+    }
+
+    override fun onStop() {
+        lockViewModel.onBackground()
+        super.onStop()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -138,20 +153,33 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     if (ready) {
-                        // A subscriber session wins over the admin shortcut: it was the
-                        // last surface the user opened. Otherwise a surviving admin
-                        // credential goes straight to the dashboard, and neither means
-                        // the login screen.
-                        val start = when {
-                            startSubscriber -> Routes.SUBSCRIBER
-                            authRepository.hasCredential() -> Routes.DASHBOARD
-                            else -> Routes.LOGIN
+                        lockViewModel.onReady()
+                        val locked by lockViewModel.locked.collectAsStateWithLifecycle()
+                        val lockMessage by lockViewModel.message.collectAsStateWithLifecycle()
+                        val authenticating by lockViewModel.authenticating.collectAsStateWithLifecycle()
+                        if (locked) {
+                            AppLockScreen(
+                                message = lockMessage,
+                                authenticating = authenticating,
+                                onUnlock = { lockViewModel.unlock(this@MainActivity) },
+                                onSignOut = { lockViewModel.signOut() },
+                            )
+                        } else {
+                            // A subscriber session wins over the admin shortcut: it was
+                            // the last surface the user opened. Otherwise a surviving
+                            // admin credential goes straight to the dashboard, and
+                            // neither means the login screen.
+                            val start = when {
+                                startSubscriber && subscriberSession.currentLink() != null -> Routes.SUBSCRIBER
+                                authRepository.hasCredential() -> Routes.DASHBOARD
+                                else -> Routes.LOGIN
+                            }
+                            DigitDnsNavHost(
+                                startDestination = start,
+                                sessionExpired = authState.sessionExpired,
+                                onReauthenticated = authState::clearSessionExpired,
+                            )
                         }
-                        DigitDnsNavHost(
-                            startDestination = start,
-                            sessionExpired = authState.sessionExpired,
-                            onReauthenticated = authState::clearSessionExpired,
-                        )
                     }
                 }
             }

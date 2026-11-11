@@ -53,6 +53,17 @@ func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ws.metricsMu.Lock()
+	if ws.metricsBody != nil && time.Since(ws.metricsAt) < time.Second {
+		body := ws.metricsBody
+		ws.metricsMu.Unlock()
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(body)
+		return
+	}
+	ws.metricsMu.Unlock()
+
 	st := ws.stats.GetLiveStats()
 	info := version.Get()
 
@@ -164,9 +175,14 @@ func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(&b, "digitdns_latency_ms_count %d\n", st.Latency.Count)
 	fmt.Fprintf(&b, "digitdns_latency_ms_sum %v\n", st.Latency.AvgMs*float64(st.Latency.Count))
 
+	body := []byte(b.String())
+	ws.metricsMu.Lock()
+	ws.metricsBody = body
+	ws.metricsAt = time.Now()
+	ws.metricsMu.Unlock()
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(b.String()))
+	_, _ = w.Write(body)
 }
 
 // agentFleetCounts reports how many configured agents are inside the same

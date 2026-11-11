@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.5.6] — biometric login and a tighter dashboard
+
+### Added
+- **Android biometric login.** A switch in Settings → App, below the theme
+  choice, locks the app behind fingerprint/face/device PIN. It prompts once to
+  enable, locks on cold start and after a 60-second background grace period, and
+  offers a sign-out fallback. Device credential is accepted, so a forgotten
+  fingerprint is not a lockout.
+
+### Changed
+- **Uniform 12 px dashboard spacing.** Metrics, main and history grids and the
+  section stack share one gap; the custom layout editor uses 12 px for both
+  column and row gaps.
+- **Compact stats polling.** The dashboard polls live fields every second and the
+  full document every fifth poll, merging the slow CPU/RAM/system/agent fields.
+- **In-place upstream rows.** The resolver card updates latency, health and
+  tooltips without clearing and rebuilding the list.
+- **Backend trims.** The blocklist index no longer re-normalizes an already
+  normalized name; the agent list and Prometheus metrics are cached briefly.
+
+### Android
+- Version **5.5.6 (547)**.
+
+---
+
 ## 🏷️ [v5.5.5] — faster resolver and dashboard paths
 
 ### Changed

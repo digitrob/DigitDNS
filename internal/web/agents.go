@@ -54,6 +54,15 @@ func (ws *WebServer) agentView(a database.Agent) agentView {
 func (ws *WebServer) handleAgents(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		ws.agentListMu.Lock()
+		if ws.agentListBody != nil && time.Since(ws.agentListAt) < 2*time.Second {
+			body := ws.agentListBody
+			ws.agentListMu.Unlock()
+			httpx.WriteJSONBytes(w, r, http.StatusOK, body, "application/json")
+			return
+		}
+		ws.agentListMu.Unlock()
+
 		agents, err := ws.db.ListAgents()
 		if err != nil {
 			httpx.WriteJSONError(w, http.StatusInternalServerError, err.Error())
@@ -68,6 +77,10 @@ func (ws *WebServer) handleAgents(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteJSONError(w, http.StatusInternalServerError, "could not encode agents")
 			return
 		}
+		ws.agentListMu.Lock()
+		ws.agentListBody = body
+		ws.agentListAt = time.Now()
+		ws.agentListMu.Unlock()
 		httpx.WriteJSONBytes(w, r, http.StatusOK, body, "application/json")
 
 	case http.MethodPost:
@@ -89,6 +102,7 @@ func (ws *WebServer) handleAgents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ws.refreshRelayAgents()
+		ws.invalidateAgentListCache()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		// The clear key is returned here and can be copied again through the
@@ -102,6 +116,13 @@ func (ws *WebServer) handleAgents(w http.ResponseWriter, r *http.Request) {
 	default:
 		httpx.WriteMethodNotAllowed(w, "GET, POST")
 	}
+}
+
+// invalidateAgentListCache drops the two-second list snapshot after a mutation.
+func (ws *WebServer) invalidateAgentListCache() {
+	ws.agentListMu.Lock()
+	ws.agentListBody = nil
+	ws.agentListMu.Unlock()
 }
 
 // handleAgentByID is the panel item endpoint. The path is /api/agents/<id> and
@@ -155,6 +176,7 @@ func (ws *WebServer) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		}
 		ws.pruneAgentAssignments(id)
 		ws.refreshRelayAgents()
+		ws.invalidateAgentListCache()
 		w.WriteHeader(http.StatusNoContent)
 
 	case http.MethodPost:
@@ -169,6 +191,7 @@ func (ws *WebServer) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			ws.refreshRelayAgents()
+			ws.invalidateAgentListCache()
 			w.WriteHeader(http.StatusNoContent)
 		case "rotate-key":
 			key, err := ws.db.RotateAgentKey(id)
@@ -243,6 +266,7 @@ func (ws *WebServer) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ws.refreshRelayAgents()
+		ws.invalidateAgentListCache()
 		agent, err := ws.db.GetAgent(id)
 		if err != nil {
 			httpx.WriteJSONError(w, http.StatusInternalServerError, err.Error())

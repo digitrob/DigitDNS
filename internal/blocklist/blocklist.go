@@ -92,6 +92,16 @@ func (i *Index) Match(domain string) (blocked bool, source, pattern string) {
 	if d == "" {
 		return false, "", ""
 	}
+	return i.MatchNormalized(d)
+}
+
+// MatchNormalized is Match for a name the caller has already lowercased and
+// trimmed. The resolver and matcher normalize once per query; this avoids a
+// second scan of the same bytes when a blocklist is installed.
+func (i *Index) MatchNormalized(d string) (blocked bool, source, pattern string) {
+	if i == nil || d == "" {
+		return false, "", ""
+	}
 	if _, ok := i.allowExact[d]; ok {
 		return false, "", ""
 	}
