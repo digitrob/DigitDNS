@@ -81,6 +81,7 @@ data class UpstreamStat(
     @SerialName("latency_p50_ms") val latencyP50Ms: Double = 0.0,
     @SerialName("latency_p95_ms") val latencyP95Ms: Double = 0.0,
     @SerialName("measured") val measured: Boolean? = null,
+    @SerialName("latency_is_probe") val latencyIsProbe: Boolean = false,
     @SerialName("samples") val samples: Long = 0,
     val hits: Long = 0,
     val errors: Long = 0,

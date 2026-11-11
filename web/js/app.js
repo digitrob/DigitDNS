@@ -5237,6 +5237,10 @@ let upstreamPresetExpanded = new Set();
 let upstreamPresetAdded = new Set();
 let upstreamPresetAdding = '';
 let upstreamPresetOpen = false;
+// Stats polls that were already in flight when a preset was added or removed
+// can land with the old pool. Ignore that snapshot briefly so the tick does not
+// flip back and forth while the mutation settles.
+let upstreamPresetMutationUntil = 0;
 
 const UPSTREAM_PROTO_CLASSES = {
   UDP: 'proto-udp',
@@ -5321,10 +5325,13 @@ function renderUpstreamPresetPanel() {
     servers.forEach(server => {
       const added = upstreamPresetAdded.has(server.address);
       const adding = upstreamPresetAdding === server.address;
-      html += `<button type="button" class="upstream-preset-server${escapeHTML(added ? ' is-added' : '')}" data-addr="${escapeHTML(server.address)}" title="${escapeHTML(server.address)}"${added || adding ? ' disabled' : ''}>
+      const title = added
+        ? `${server.address} — click to remove from the upstream list`
+        : server.address;
+      html += `<button type="button" class="upstream-preset-server${escapeHTML(added ? ' is-added' : '')}" data-addr="${escapeHTML(server.address)}" title="${escapeHTML(title)}"${adding ? ' disabled' : ''}>
         <span class="upstream-preset-addr">${escapeHTML(server.label || server.address)}</span>
         <span class="upstream-preset-proto ${escapeHTML(upstreamProtoClass(server.protocol))}">${escapeHTML(protocolLabel(server.protocol))}</span>
-        <span class="upstream-preset-action">${added ? '✓' : adding ? '…' : '+'}</span>
+        <span class="upstream-preset-action">${adding ? '…' : added ? '✓' : '+'}</span>
       </button>`;
     });
     html += '</div>';
@@ -5366,11 +5373,70 @@ async function loadUpstreamPresets() {
 // addUpstreamAddress is shared by the custom Add button, Enter, and every
 // preset row. Preset adds keep the browser open and the filter text intact so
 // several endpoints can be added in one visit.
+async function removeUpstreamAddress(raw) {
+  const addr = String(raw || '').trim();
+  if (!addr || upstreamPresetAdding) return false;
+  const wasAdded = upstreamPresetAdded.has(addr);
+  // Optimistic: uncheck immediately, keep the row locked with "…" until the
+  // server confirms. This is the half that used to look like the tick bouncing.
+  upstreamPresetAdding = addr;
+  upstreamPresetAdded.delete(addr);
+  upstreamPresetMutationUntil = Date.now() + 2500;
+  renderUpstreamPresetPanel();
+  try {
+    const res = await fetch(api('/api/upstreams/delete'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ address: addr })
+    });
+    if (!res.ok) {
+      if (wasAdded) upstreamPresetAdded.add(addr);
+      showToast(await errorMessage(res, 'Could not remove the upstream.'), 'error');
+      return false;
+    }
+    const body = await res.json().catch(() => ({}));
+    if (Array.isArray(body.upstreams)) upstreamPresetAdded = new Set(body.upstreams);
+    else upstreamPresetAdded.delete(addr);
+    showToast(`Removed ${addr}`, 'info');
+    loadResolutionSettings();
+    updateStats();
+    return true;
+  } catch (e) {
+    if (wasAdded) upstreamPresetAdded.add(addr);
+    showToast('Failed to remove upstream', 'error');
+    return false;
+  } finally {
+    upstreamPresetAdding = '';
+    upstreamPresetMutationUntil = Date.now() + 1500;
+    renderUpstreamPresetPanel();
+  }
+}
+
 async function addUpstreamAddress(raw, opts = {}) {
   const input = document.getElementById('new-upstream-input');
   const addr = String(raw || '').trim();
   if (!addr) return false;
+
+  // A bare provider name is not a resolver. Typing "quad9" and pressing Add
+  // used to become "quad9:53", an unresolvable host that kept the health banner
+  // permanently red. Point the operator at that provider's server list instead.
+  const bareName = /^[a-z0-9-]+$/i.test(addr);
+  const providerMatch = bareName && !opts.preset
+    ? (upstreamPresetProviders || []).find(p =>
+        String(p.id || '').toLowerCase() === addr.toLowerCase()
+        || String(p.name || '').toLowerCase() === addr.toLowerCase())
+    : null;
+  if (providerMatch) {
+    showToast(`Choose a server under ${providerMatch.name}, or enter a full DNS address.`, 'info');
+    return false;
+  }
+
+  const wasAdded = upstreamPresetAdded.has(addr);
+  // Optimistic check, then "…" until the add is confirmed. The mutation grace
+  // window stops an old stats payload from re-rendering the previous state.
   upstreamPresetAdding = addr;
+  upstreamPresetAdded.add(addr);
+  upstreamPresetMutationUntil = Date.now() + 2500;
   renderUpstreamPresetPanel();
   try {
     const res = await fetch(api('/api/upstreams/add'), {
@@ -5384,7 +5450,11 @@ async function addUpstreamAddress(raw, opts = {}) {
         const body = await res.json();
         if (body && body.error) reason = body.error;
       } catch (_) { /* non-JSON error body */ }
-      if (res.status === 409) upstreamPresetAdded.add(addr);
+      if (res.status === 409) {
+        upstreamPresetAdded.add(addr);
+      } else if (!wasAdded) {
+        upstreamPresetAdded.delete(addr);
+      }
       showToast(reason, 'error');
       return false;
     }
@@ -5396,10 +5466,12 @@ async function addUpstreamAddress(raw, opts = {}) {
     updateStats();
     return true;
   } catch (e) {
+    if (!wasAdded) upstreamPresetAdded.delete(addr);
     showToast('Failed to add upstream', 'error');
     return false;
   } finally {
     upstreamPresetAdding = '';
+    upstreamPresetMutationUntil = Date.now() + 1500;
     renderUpstreamPresetPanel();
   }
 }
@@ -5459,7 +5531,12 @@ function initUpstreamPresetBrowser() {
     }
     const serverBtn = e.target.closest('[data-addr]');
     if (serverBtn && !serverBtn.disabled) {
-      void addUpstreamAddress(serverBtn.dataset.addr, { preset: true, keepText: true });
+      const address = serverBtn.dataset.addr;
+      if (upstreamPresetAdded.has(address)) {
+        void removeUpstreamAddress(address);
+      } else {
+        void addUpstreamAddress(address, { preset: true, keepText: true });
+      }
     }
   });
 
@@ -5527,12 +5604,16 @@ function renderUpstreams(upstreams) {
   const container = document.getElementById('upstreams-list');
   if (!container) return;
   lastUpstreamsPayload = upstreams || [];
-  const addedNow = new Set((upstreams || []).map(u => u.address));
-  const addedChanged = addedNow.size !== upstreamPresetAdded.size
-    || [...addedNow].some(addr => !upstreamPresetAdded.has(addr));
-  if (addedChanged) {
-    upstreamPresetAdded = addedNow;
-    if (upstreamPresetOpen) renderUpstreamPresetPanel();
+  // A poll that started before an add/remove can finish after it. Leave the
+  // optimistic tick alone until that in-flight snapshot has drained.
+  if (Date.now() >= upstreamPresetMutationUntil) {
+    const addedNow = new Set((upstreams || []).map(u => u.address));
+    const addedChanged = addedNow.size !== upstreamPresetAdded.size
+      || [...addedNow].some(addr => !upstreamPresetAdded.has(addr));
+    if (addedChanged) {
+      upstreamPresetAdded = addedNow;
+      if (upstreamPresetOpen) renderUpstreamPresetPanel();
+    }
   }
 
   // If the settings snapshot is unavailable, the pickers are built from this
@@ -5616,15 +5697,16 @@ function renderUpstreams(upstreams) {
     // "not timed yet" and "timed at 0.4 ms" have to look different, and the title is
     // where the distinction is spelled out for whoever hovers it.
     const latText = measured ? `${latency.toFixed(1)} ms` : '—';
+    const latencyIsProbe = !!u.latency_is_probe;
     const recentRate = Number(u.recent_error_rate) || 0;
     const recentSamples = Number(u.recent_samples) || 0;
     const failing = (Number(u.consecutive_failures) || 0) > 0
       || (recentSamples > 0 && recentRate >= 0.1);
 
     let latTitle = measured
-      ? (Number(u.samples) > 0
-          ? `Median of the last ${Number(u.samples).toLocaleString()} live exchanges`
-          : 'Last successful probe — no live query has been timed yet')
+      ? (latencyIsProbe
+          ? 'Median of the latest warm benchmark probes — waiting for three live exchanges'
+          : `Median of the last ${Number(u.samples).toLocaleString()} live exchanges`)
       : 'Not measured yet — no answer has been timed from this upstream';
     if (measured && Number(u.latency_p95_ms) > 0) {
       latTitle += ` · p95 ${Number(u.latency_p95_ms).toFixed(1)} ms`;

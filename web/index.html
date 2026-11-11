@@ -1202,12 +1202,13 @@
                ten-plus rows at ~36px each, with the footer pinned to the bottom and no
                inner scrollbar until the list grows past that. -->
           <div data-dash-card="upstream" class="glass-panel panel-card p-5 sm:p-6 flex flex-col upstream-col">
-            <div class="flex items-center justify-between mb-3 shrink-0">
+            <div class="flex items-start justify-between mb-3 shrink-0">
               <h3 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2 font-heading">
                 <i data-feather="radio" class="w-4 h-4 text-emerald-400"></i> Upstream Resolvers
               </h3>
-              <button id="run-benchmark-btn" class="panel-btn panel-btn-sm panel-btn-soft">
-                <i data-feather="play" class="w-3 h-3"></i> Benchmark
+              <button id="run-benchmark-btn" class="panel-btn panel-btn-sm panel-btn-soft"
+                aria-label="Benchmark upstreams" title="Benchmark upstreams">
+                <i data-feather="play" class="w-3 h-3"></i><span class="upstream-benchmark-label">Benchmark</span>
               </button>
             </div>
             <p class="text-[11px] text-slate-400 mb-1 shrink-0">Parallel DNS queries across fastest global upstreams</p>
@@ -1219,10 +1220,18 @@
                  and would evict the Add button from the card instead of shrinking. -->
             <div class="upstream-add-wrap shrink-0" id="upstream-add-wrap">
               <div class="flex gap-1.5">
-                <input type="text" id="new-upstream-input" aria-label="New upstream resolver address"
+                <!-- Deliberately not named or labelled "address": Chrome reads that
+                     as a postal-address field and offers saved contacts/addresses even
+                     with autocomplete="off". new-password is the reliable opt-out for
+                     Chrome's address autofill, while aria-autocomplete="list" keeps the
+                     app's own provider suggestions. The data-* hints cover common
+                     password-manager extensions. -->
+                <input type="text" id="new-upstream-input" name="dns-upstream-resolver"
+                  aria-label="New upstream resolver"
                   role="combobox" aria-autocomplete="list" aria-controls="upstream-preset-panel" aria-expanded="false"
-                  autocomplete="off" spellcheck="false"
-                  placeholder="Search providers or type a DNS address…"
+                  autocomplete="new-password" autocorrect="off" autocapitalize="none" spellcheck="false"
+                  data-form-type="other" data-lpignore="true" data-1p-ignore
+                  placeholder="Search providers or enter a DNS server…"
                   class="panel-field panel-field-sm flex-1 min-w-0 font-mono">
                 <button id="add-upstream-btn" class="panel-btn panel-btn-sm panel-btn-primary shrink-0">Add</button>
               </div>

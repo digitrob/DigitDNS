@@ -829,13 +829,9 @@ func (p *UpstreamPool) availableCandidates(list []string) []string {
 // should not be recommending — and the same goes for one that answers a question
 // nobody asked.
 func (p *UpstreamPool) BenchmarkAll() {
-	m := new(dns.Msg)
-	m.SetQuestion("cloudflare.com.", dns.TypeA)
-
 	p.mu.RLock()
 	servers := make([]string, len(p.upstreams))
 	copy(servers, p.upstreams)
-	timeout := p.timeout
 	p.mu.RUnlock()
 
 	var wg sync.WaitGroup
@@ -843,19 +839,101 @@ func (p *UpstreamPool) BenchmarkAll() {
 		wg.Add(1)
 		go func(addr string) {
 			defer wg.Done()
-			defer safego.Recover("upstream.benchmark")
-			// Probe through the same per-scheme path a real query takes. Probing
-			// everything over UDP:53 used to send a DoT/DoH upstream's probe to a
-			// port that is not even listening, so it scored as broken.
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
-			resp, rtt, err := p.safeQueryOne(ctx, m, addr)
-			outcome, reason := classifyStat(resp, err)
-			// probe=true: this is a benchmark, not client traffic.
-			p.recordStat(addr, rtt, outcome, reason, true)
+			p.BenchmarkUpstream(addr)
 		}(s)
 	}
 	wg.Wait()
+}
+
+// benchmarkSamples is the number of warm measurements a benchmark takes. The
+// first query is a discarded warm-up: DoT/DoH/DoQ/DoH3 include a TCP/TLS/QUIC/
+// HTTP handshake, and reporting that cold round trip as the resolver's latency
+// made fresh benchmarks look much slower than the same resolver on a re-run.
+const benchmarkSamples = 3
+
+// BenchmarkUpstream probes one resolver through the same per-scheme path a live
+// query takes. It is used after an add so a newly configured resolver has a
+// latency on the next stats poll instead of staying "not measured" until the
+// next manual/startup benchmark.
+func (p *UpstreamPool) BenchmarkUpstream(addr string) {
+	if p == nil {
+		return
+	}
+	defer safego.Recover("upstream.benchmark")
+	canonical, ok := NormalizeUpstream(addr)
+	if !ok {
+		return
+	}
+
+	p.mu.RLock()
+	_, exists := p.stats[canonical]
+	timeout := p.timeout
+	p.mu.RUnlock()
+	if !exists {
+		// It was removed while the add response was being written; recording a
+		// stat for it would resurrect a resolver that is no longer configured.
+		return
+	}
+
+	m := new(dns.Msg)
+	m.SetQuestion("cloudflare.com.", dns.TypeA)
+
+	// Warm-up. Its result is deliberately not recorded; it only establishes the
+	// connection/caches that the measured probes should reuse.
+	p.benchmarkQuery(canonical, m, timeout)
+
+	samples := make([]time.Duration, 0, benchmarkSamples)
+	failures := 0
+	failureRTT := time.Duration(0)
+	failureOutcome := statTransportError
+	failureReason := "benchmark produced no usable answer"
+
+	for range benchmarkSamples {
+		rtt, outcome, reason := p.benchmarkQuery(canonical, m, timeout)
+		if outcome == statSuccess {
+			samples = append(samples, rtt)
+		} else {
+			failures++
+			failureRTT, failureOutcome, failureReason = rtt, outcome, reason
+		}
+	}
+
+	// Require a majority of the measured probes to answer. A single lucky packet
+	// must not hide a resolver that failed two of three attempts, and the last
+	// attempt being the lucky one must not turn the whole benchmark green.
+	if len(samples) < 2 {
+		p.recordStat(canonical, failureRTT, failureOutcome, failureReason, true)
+		return
+	}
+	if failures > 0 {
+		// Keep the partial-failure evidence in the probe counters, but the
+		// majority answer decides the probe verdict and latency.
+		p.recordStat(canonical, failureRTT, failureOutcome, failureReason, true)
+	}
+	p.recordStat(canonical, medianDuration(samples), statSuccess, "", true)
+}
+
+// benchmarkQuery sends one probe through the same per-scheme path a live query
+// takes, with its own timeout so a failed warm-up cannot consume the budget for
+// the measured samples.
+func (p *UpstreamPool) benchmarkQuery(addr string, m *dns.Msg, timeout time.Duration) (time.Duration, statOutcome, string) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	resp, rtt, err := p.safeQueryOne(ctx, m, addr)
+	outcome, reason := classifyStat(resp, err)
+	return rtt, outcome, reason
+}
+
+func medianDuration(values []time.Duration) time.Duration {
+	if len(values) == 0 {
+		return 0
+	}
+	slices.Sort(values)
+	middle := len(values) / 2
+	if len(values)%2 == 1 {
+		return values[middle]
+	}
+	return (values[middle-1] + values[middle]) / 2
 }
 
 func (p *UpstreamPool) Exchange(req *dns.Msg) (*dns.Msg, time.Duration, string, error) {
@@ -1709,15 +1787,19 @@ func (p *UpstreamPool) exchangeSequential(req *dns.Msg, upstreams []string, time
 // Measured is false when nothing has answered; clients must not render a
 // fabricated value in that case.
 type UpstreamStat struct {
-	Address             string  `json:"address"`
-	LatencyNs           int64   `json:"latency"` // nanoseconds (frontend divides by 1e6)
-	LatencyMs           float64 `json:"latency_ms"`
-	LatencyP50Ms        float64 `json:"latency_p50_ms"`
-	LatencyP95Ms        float64 `json:"latency_p95_ms"`
-	LatencyAvgMs        float64 `json:"latency_avg_ms"`
-	Measured            bool    `json:"measured"`
-	Samples             uint64  `json:"samples"`
-	LastMeasuredAt      string  `json:"last_measured_at,omitempty"`
+	Address        string  `json:"address"`
+	LatencyNs      int64   `json:"latency"` // nanoseconds (frontend divides by 1e6)
+	LatencyMs      float64 `json:"latency_ms"`
+	LatencyP50Ms   float64 `json:"latency_p50_ms"`
+	LatencyP95Ms   float64 `json:"latency_p95_ms"`
+	LatencyAvgMs   float64 `json:"latency_avg_ms"`
+	Measured       bool    `json:"measured"`
+	Samples        uint64  `json:"samples"`
+	LastMeasuredAt string  `json:"last_measured_at,omitempty"`
+	// LatencyIsProbe is true while the displayed number comes from the warm
+	// benchmark median because there are not yet enough live samples to trust a
+	// live p50. One slow live exchange must not dominate the card.
+	LatencyIsProbe      bool    `json:"latency_is_probe,omitempty"`
 	Hits                uint64  `json:"hits"`
 	Errors              uint64  `json:"errors"`
 	TransportErrors     uint64  `json:"transport_errors"`
@@ -1741,6 +1823,12 @@ type UpstreamStat struct {
 	LastProbeOK bool    `json:"last_probe_ok"`
 	LastProbeAt string  `json:"last_probe_at,omitempty"`
 }
+
+// minLiveLatencySamples is the number of successful live exchanges needed
+// before the card trusts a live p50 over the warm benchmark median. A single
+// slow query (TCP fallback, DNSSEC retry, one congested packet) otherwise made a
+// healthy resolver look broken until enough traffic arrived to move the median.
+const minLiveLatencySamples = 3
 
 // GetUpstreamStats returns a snapshot of latency/health stats for all upstreams, sorted by latency.
 func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
@@ -1828,7 +1916,8 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 				s.LastErrorAt = raw.lastErrorAt.UTC().Format(time.RFC3339)
 			}
 			s.Samples = raw.samples
-			if raw.samples > 0 {
+			switch {
+			case raw.samples >= minLiveLatencySamples:
 				s.Measured = true
 				s.LatencyNs = int64(raw.latency)
 				s.LatencyP50Ms = float64(raw.latency) / 1e6
@@ -1837,14 +1926,26 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 				if !raw.measuredAt.IsZero() {
 					s.LastMeasuredAt = raw.measuredAt.UTC().Format(time.RFC3339)
 				}
-			} else if raw.lastProbeOK && raw.lastProbeLatency > 0 {
-				// A real probe answered but no client query has yet: show the
-				// probe's round trip, marked as such by Samples == 0.
+			case raw.lastProbeOK && raw.lastProbeLatency > 0:
+				// Not enough live exchanges yet (or none): show the warm
+				// benchmark median. The UI marks it as a probe value.
 				s.Measured = true
+				s.LatencyIsProbe = true
 				s.LatencyNs = int64(raw.lastProbeLatency)
 				s.LatencyP50Ms = float64(raw.lastProbeLatency) / 1e6
 				s.LatencyP95Ms = s.LatencyP50Ms
 				s.LatencyAvgMs = s.LatencyP50Ms
+			case raw.samples > 0:
+				// No probe reference is available (older server / probe never
+				// succeeded), so fall back to the live median we do have.
+				s.Measured = true
+				s.LatencyNs = int64(raw.latency)
+				s.LatencyP50Ms = float64(raw.latency) / 1e6
+				s.LatencyP95Ms = float64(raw.latencyP95) / 1e6
+				s.LatencyAvgMs = float64(raw.latencyAvg) / 1e6
+				if !raw.measuredAt.IsZero() {
+					s.LastMeasuredAt = raw.measuredAt.UTC().Format(time.RFC3339)
+				}
 			}
 			s.RecentSamples = raw.recentLen
 			if raw.recentLen > 0 {

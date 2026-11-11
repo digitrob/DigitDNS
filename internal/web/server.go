@@ -3173,6 +3173,10 @@ func (ws *WebServer) handleUpstreamsAdd(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	ws.upstreams.SetUpstreams(list)
+	// Give a newly added resolver a latency before the next poll paints it as
+	// unmeasured. The probe is asynchronous so an unreachable address does not
+	// hold the add response for the full probe timeout.
+	go ws.upstreams.BenchmarkUpstream(addr)
 	_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "upstreams": list})
 }
 

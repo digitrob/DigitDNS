@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.5.2] — trustworthy upstream latency
+
+### Added
+- **Adding a resolver benchmarks it automatically.** The web and Android add
+  endpoints run a single-resolver probe asynchronously, so a new upstream gets a
+  latency on the next stats poll instead of staying “not measured”.
+- **`latency_is_probe` in the upstream stats API**, so clients can distinguish a
+  warm benchmark median from a live-query median.
+
+### Fixed
+- **Benchmarks warm up first and report the median of three measured queries.**
+  The discarded warm-up absorbs the DoT/DoH/DoQ/DoH3 handshake, which previously
+  made a freshly benchmarked resolver look much slower than the same resolver on
+  a re-run. A benchmark requires a majority of samples to answer.
+- **A single slow live query no longer dominates the latency card.** Live p50 is
+  used only after three successful live exchanges; until then the card shows the
+  stable benchmark median and labels it as a probe value.
+- **Web provider rows toggle cleanly.** Clicking a checked server removes it
+  from the card immediately, with an optimistic pending state and a short
+  mutation guard against stale stats polls.
+- **Web upstream field no longer triggers address autofill**, the dropdown uses
+  larger type, and the upstream card title is aligned with the chart card.
+- **Typing a bare provider name** such as `quad9` now asks the operator to choose
+  one of its servers instead of creating an invalid `quad9:53` host.
+
+---
+
 ## 🏷️ [v5.5.1] — DoQ completion and installer sync
 
 ### Fixed

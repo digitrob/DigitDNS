@@ -941,6 +941,9 @@ func (a *API) handleV3Upstreams(w http.ResponseWriter, r *http.Request) {
 		if !a.commitUpstreams(w, r, list) {
 			return
 		}
+		// Android's add must behave like the web's: probe only this resolver,
+		// asynchronously, so the next stats poll can show its latency.
+		go a.upstreams.BenchmarkUpstream(canonical)
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{"items": list})
 	default:

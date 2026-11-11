@@ -1882,7 +1882,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   gap: 8px;
   padding: 3px 6px 6px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1910,7 +1910,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   padding: 6px 8px;
   border-radius: 7px;
   color: rgb(var(--c-slate-200));
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   text-align: left;
 }
@@ -1937,7 +1937,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   flex-shrink: 0;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
 }
 .upstream-preset-chevron {
@@ -1962,7 +1962,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   border-radius: 6px;
   background: transparent;
   color: rgb(var(--c-slate-300));
-  font-size: 11px;
+  font-size: 12px;
   text-align: left;
 }
 .upstream-preset-server:hover {
@@ -1975,6 +1975,12 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .upstream-preset-server.is-added {
   color: rgb(var(--c-slate-400));
 }
+.upstream-preset-server.is-added:hover {
+  background: rgba(248, 113, 113, 0.10);
+}
+.upstream-preset-server.is-added:hover .upstream-preset-action {
+  color: rgb(248, 113, 113);
+}
 .upstream-preset-addr {
   flex: 1 1 auto;
   min-width: 0;
@@ -1986,7 +1992,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .upstream-preset-proto {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.04em;
 }
@@ -2000,9 +2006,9 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .proto-other { color: var(--text-muted); }
 .upstream-preset-action {
   flex-shrink: 0;
-  width: 18px;
+  width: 20px;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   text-align: center;
 }
@@ -2023,12 +2029,12 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .upstream-preset-loading {
   padding: 10px 8px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .upstream-preset-note {
   padding: 0 8px 5px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1.35;
 }
 @media (max-width: 480px) {
@@ -2062,6 +2068,24 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
     grid-row: span 2 / span 2;
     height: 100%;
     min-height: 0;
+  }
+}
+
+/* The racer card shares its first grid row with the chart. Its title used to
+   wrap to a second line because the Benchmark button took too much of the
+   narrow column, which made the two card names look vertically offset. Keep
+   the title on one line; below the widest breakpoint the button becomes the
+   play icon with its accessible label, leaving room for the full heading. */
+[data-dash-card="upstream"] h3 {
+  white-space: nowrap;
+}
+@media (max-width: 1535px) {
+  [data-dash-card="upstream"] #run-benchmark-btn {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  [data-dash-card="upstream"] #run-benchmark-btn .upstream-benchmark-label {
+    display: none;
   }
 }
 
