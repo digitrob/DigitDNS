@@ -77,7 +77,7 @@ type RelayTarget struct {
 
 // RelayLookup resolves a proxied name to a relay target. It always returns a
 // target; Kind "local" is the explicit no-assignment result.
-type RelayLookup func(domain string) RelayTarget
+type RelayLookup func(domain, clientIP string) RelayTarget
 
 type Handler struct {
 	access     AccessProvider
@@ -826,7 +826,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		// outbound dial changes. A fail-closed egress refuses to fall back.
 		target := RelayTarget{Kind: "local", IPv4: h.publicIPv4, IPv6: h.publicIPv6Addr}
 		if h.relayLookup != nil {
-			target = h.relayLookup(domain)
+			target = h.relayLookup(domain, clientIP)
 			if target.Kind == "" {
 				target.Kind = "local"
 			}

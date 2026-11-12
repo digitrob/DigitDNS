@@ -194,7 +194,7 @@ type RelayDialTarget struct {
 }
 
 // RelayTargetLookup resolves a hostname to a hub-side dial target.
-type RelayTargetLookup func(hostname string) RelayDialTarget
+type RelayTargetLookup func(hostname, clientIP string) RelayDialTarget
 
 // EgressDialer opens an origin connection through a configured egress. addrs
 // are the addresses the guard already resolved and vetted, so the egress can
@@ -743,7 +743,7 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 func (s *Server) dialTarget(ctx context.Context, hostname string, addrs []netip.Addr, port int, clientIP string) (net.Conn, error) {
 	target := RelayDialTarget{Kind: "local"}
 	if s.relayTarget != nil {
-		target = s.relayTarget(hostname)
+		target = s.relayTarget(hostname, clientIP)
 	}
 	if target.Kind != "egress" || s.egressDialer == nil {
 		return s.dialVetted(ctx, addrs, port)

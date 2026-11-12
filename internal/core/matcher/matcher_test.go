@@ -473,3 +473,29 @@ func TestBlocklistPrecedenceAndExceptions(t *testing.T) {
 		t.Fatalf("custom block did not win: (%v, %q)", action, rule)
 	}
 }
+
+func TestExplainShowsBlocklistAndAllowException(t *testing.T) {
+	m := NewMatcher()
+	index, _ := blocklist.Build([]blocklist.Source{{
+		Name:    "Test list",
+		Enabled: true,
+		Text:    "||ads.example^\n",
+	}}, []string{"allowed.example.com"})
+	m.SetBlockIndex(index)
+
+	blocked := m.Explain("ads.example")
+	if blocked.Action != "BLOCK" || blocked.BlocklistSource != "Test list" || blocked.BlocklistPattern != "ads.example" {
+		t.Fatalf("blocked explanation = %+v", blocked)
+	}
+
+	allowed := m.Explain("allowed.example.com")
+	if allowed.Action != "DIRECT" || allowed.AllowSource == "" {
+		t.Fatalf("allow explanation = %+v, want the allowlist source", allowed)
+	}
+
+	m.SetCustomRules(nil, nil, nil, map[string]string{"local.example": "203.0.113.9"})
+	record := m.Explain("local.example")
+	if record.Action != "CUSTOM" || record.CustomRecord != "203.0.113.9" {
+		t.Fatalf("custom record explanation = %+v", record)
+	}
+}

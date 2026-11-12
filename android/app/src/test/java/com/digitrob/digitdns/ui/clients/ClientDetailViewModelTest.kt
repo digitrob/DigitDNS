@@ -2,7 +2,9 @@ package com.digitrob.digitdns.ui.clients
 
 import com.digitrob.digitdns.core.network.ClientCreateRequest
 import com.digitrob.digitdns.core.network.ClientUpdateRequest
+import com.digitrob.digitdns.data.AgentsRepository
 import com.digitrob.digitdns.data.ClientsRepository
+import com.digitrob.digitdns.data.EgressesRepository
 import com.digitrob.digitdns.domain.model.Client
 import com.digitrob.digitdns.domain.model.ClientExpiry
 import com.digitrob.digitdns.domain.model.ClientLinks
@@ -36,11 +38,15 @@ class ClientDetailViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: ClientsRepository
+    private lateinit var agentsRepository: AgentsRepository
+    private lateinit var egressesRepository: EgressesRepository
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         repository = mockk(relaxed = true)
+        agentsRepository = mockk(relaxed = true)
+        egressesRepository = mockk(relaxed = true)
     }
 
     @After
@@ -68,7 +74,7 @@ class ClientDetailViewModelTest {
 
     @Test
     fun resetPrefillsThirtyDaysAndStaysInCreateMode() {
-        val viewModel = ClientDetailViewModel(repository)
+        val viewModel = ClientDetailViewModel(repository, agentsRepository, egressesRepository)
         viewModel.resetForNewClient()
 
         val state = viewModel.state.value
@@ -84,7 +90,7 @@ class ClientDetailViewModelTest {
         val request = slot<ClientCreateRequest>()
         coEvery { repository.create(capture(request)) } returns created
 
-        val viewModel = ClientDetailViewModel(repository)
+        val viewModel = ClientDetailViewModel(repository, agentsRepository, egressesRepository)
         viewModel.resetForNewClient()
         viewModel.onNameChange("New")
         viewModel.save()
@@ -105,7 +111,7 @@ class ClientDetailViewModelTest {
         val update = slot<ClientUpdateRequest>()
         coEvery { repository.update("client-1", capture(update)) } returns client()
 
-        val viewModel = ClientDetailViewModel(repository)
+        val viewModel = ClientDetailViewModel(repository, agentsRepository, egressesRepository)
         viewModel.open("client-1")
         testScheduler.advanceUntilIdle()
         viewModel.onExpiryChange("")

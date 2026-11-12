@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"digitdns/internal/database"
 	"digitdns/internal/service"
 )
 
@@ -154,6 +155,22 @@ func (f *fakeV3Backend) TLSAutoRenew(r *http.Request, b map[string]any) (map[str
 	return map[string]any{"success": true}, nil
 }
 func (f *fakeV3Backend) ACMEStatus() map[string]any { return map[string]any{"running": false} }
+func (f *fakeV3Backend) Explain(domain, clientIP string) (map[string]any, error) {
+	return map[string]any{"domain": domain, "client_ip": clientIP, "action": "DIRECT"}, nil
+}
+
+func (f *fakeV3Backend) AlertSettings() (map[string]any, error) {
+	return map[string]any{"alerts": map[string]any{}}, nil
+}
+
+func (f *fakeV3Backend) SaveAlertSettings(r *http.Request, body map[string]any) (map[string]any, error) {
+	return map[string]any{"alerts": body}, nil
+}
+
+func (f *fakeV3Backend) TestAlerts(r *http.Request) (map[string]any, error) {
+	return map[string]any{"ok": true, "errors": []string{}}, nil
+}
+
 func (f *fakeV3Backend) DiagnosticsTargets() map[string]any {
 	return map[string]any{"targets": []any{}}
 }
@@ -1034,4 +1051,15 @@ func (f *fakeV3Backend) AddFilteringList(r *http.Request) (map[string]any, error
 }
 func (f *fakeV3Backend) FilteringListItem(r *http.Request, rest string) (map[string]any, error) {
 	return map[string]any{"success": true, "rest": rest, "method": r.Method}, nil
+}
+
+func TestV3ClientDTOIncludesDefaultEgress(t *testing.T) {
+	dto := v3ViewToDTO(service.ClientView{Client: database.Client{
+		ID:            "c1",
+		Name:          "Alex",
+		DefaultEgress: "egress:egress-abc",
+	}})
+	if dto.DefaultEgress != "egress:egress-abc" {
+		t.Fatalf("default_egress = %q, want the stored value", dto.DefaultEgress)
+	}
 }

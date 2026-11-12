@@ -1,6 +1,7 @@
 package com.digitrob.digitdns.ui.clients
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -32,11 +33,15 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.SnackbarHostState
@@ -64,6 +69,9 @@ import com.digitrob.digitdns.R
 import com.digitrob.digitdns.domain.model.Client
 import com.digitrob.digitdns.domain.model.ClientAction
 import com.digitrob.digitdns.domain.model.ClientLinks
+import com.digitrob.digitdns.domain.model.EgressInfo
+import com.digitrob.digitdns.domain.model.RelayAgentInfo
+import com.digitrob.digitdns.ui.components.CountryFlag
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelSnackbarHost
@@ -220,7 +228,7 @@ private fun ClientDetailBody(
 ) {
     Box {
         Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (!loaded || state.isLoading) {
                 // Avoid showing loading spinner; open details as soon as possible
@@ -309,18 +317,17 @@ internal fun ClientForm(
     state: ClientDetailUiState,
     viewModel: ClientDetailViewModel,
 ) {
-    OutlinedTextField(
-        value = state.name,
-        onValueChange = viewModel::onNameChange,
-        label = { Text(stringResource(R.string.client_name)) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
+    ClientNameField(state = state, viewModel = viewModel)
     OutlinedTextField(
         value = state.allowedIps,
         onValueChange = viewModel::onAllowedIpsChange,
         label = { Text(stringResource(R.string.client_allowed_ips)) },
-        singleLine = true,
+        // A subscription can carry several addresses and CIDRs. A single-line
+        // field hid everything after the first comma; a short multi-line box
+        // makes the whole list visible and accepts newlines as separators too.
+        singleLine = false,
+        minLines = 2,
+        maxLines = 4,
         modifier = Modifier.fillMaxWidth(),
     )
     // The two numbers share a row so the form fits a single window; the labels
@@ -361,32 +368,182 @@ internal fun ClientForm(
             color = DigitDnsTheme.colors.danger,
         )
     }
-    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-        ResetCycleChips(selected = state.resetCycle, onSelect = viewModel::onResetCycleChange)
-        NoteField(
-            value = state.note,
-            onValueChange = viewModel::onNoteChange,
+    ClientEgressField(
+        value = state.defaultEgress,
+        agents = state.agents,
+        egresses = state.egresses,
+        onChange = viewModel::onDefaultEgressChange,
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = "Auto Reset",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        ResetCycleChips(
+            selected = state.resetCycle,
+            onSelect = viewModel::onResetCycleChange,
+            modifier = Modifier.weight(1f),
         )
     }
 }
 
-/**
- * A collapsible note field. The note is the form value least likely to be edited,
- * and the one whose text field is tall enough to push the rest of the popup into a
- * scroll on a phone, so it is behind a small toggle by default.
- */
+/** Name plus the compact note action. The note lives in a dialog instead of a
+ * full-width field so the card fits a phone without scrolling. */
 @Composable
-internal fun NoteField(
-    value: String,
-    onValueChange: (String) -> Unit,
+private fun ClientNameField(
+    state: ClientDetailUiState,
+    viewModel: ClientDetailViewModel,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(stringResource(R.string.client_note)) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
+    var showNoteEditor by remember { mutableStateOf(false) }
+    var noteDraft by remember { mutableStateOf("") }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(
+            value = state.name,
+            onValueChange = viewModel::onNameChange,
+            label = { Text(stringResource(R.string.client_name)) },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        OutlinedButton(
+            onClick = {
+                noteDraft = state.note
+                showNoteEditor = true
+            },
+            contentPadding = PaddingValues(0.dp),
+            modifier = Modifier.size(56.dp),
+        ) {
+            Icon(
+                Icons.Filled.Edit,
+                contentDescription = "Edit note",
+                tint = if (state.note.isBlank()) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+            )
+        }
+    }
+    if (showNoteEditor) {
+        PanelDialog(
+            onDismissRequest = { showNoteEditor = false },
+            title = { Text("Note") },
+            text = {
+                OutlinedTextField(
+                    value = noteDraft,
+                    onValueChange = { noteDraft = it },
+                    label = { Text("Note") },
+                    minLines = 3,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.onNoteChange(noteDraft)
+                    showNoteEditor = false
+                }) { Text(stringResource(R.string.action_save)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNoteEditor = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+}
+
+/** The account's fallback exit. Domain and service assignments still win, so
+ * this is a default for names no rule names rather than a routing override.
+ * It uses the same outlined field as the rest of the form, so the dialog keeps
+ * the layout it had before the field existed. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClientEgressField(
+    value: String,
+    agents: List<RelayAgentInfo>,
+    egresses: List<EgressInfo>,
+    onChange: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val label = when {
+        value.isBlank() -> "This Server"
+        else -> agents.firstOrNull { it.id == value }?.let { it.name.ifBlank { it.id } }
+            ?: egresses.firstOrNull { it.value == value }?.displayName
+            ?: "$value (unavailable)"
+    }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        OutlinedTextField(
+            value = label,
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            label = { Text("Default egress") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth(),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(DigitDnsTheme.colors.bgCard),
+        ) {
+            DropdownMenuItem(
+                text = { Text("This Server") },
+                onClick = { expanded = false; onChange("") },
+            )
+            if (agents.isNotEmpty()) {
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Relay Agents", style = MaterialTheme.typography.labelSmall) },
+                    onClick = {},
+                    enabled = false,
+                )
+                agents.forEach { agent ->
+                    DropdownMenuItem(
+                        text = { Text(agent.name.ifBlank { agent.id }) },
+                        leadingIcon = {
+                            CountryFlag(country = agent.country, width = 20.dp, height = 15.dp)
+                        },
+                        onClick = { expanded = false; onChange(agent.id) },
+                    )
+                }
+            }
+            listOf("socks5", "wireguard").forEach { kind ->
+                val items = egresses.filter { it.kind == kind }
+                if (items.isNotEmpty()) {
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (kind == "wireguard") "WireGuard" else "SOCKS5",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        },
+                        onClick = {},
+                        enabled = false,
+                    )
+                    items.forEach { egress ->
+                        DropdownMenuItem(
+                            text = { Text(egress.displayName) },
+                            leadingIcon = {
+                                CountryFlag(country = egress.country, width = 20.dp, height = 15.dp)
+                            },
+                            onClick = { expanded = false; onChange(egress.value) },
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -429,7 +586,10 @@ private fun ClientCredentials(
                 onCopy = onCopy,
                 trailing = {
                     if (client.registerSecret.isNotBlank()) {
-                        IconButton(onClick = { secretVisible = !secretVisible }) {
+                        IconButton(
+                            onClick = { secretVisible = !secretVisible },
+                            modifier = Modifier.size(32.dp),
+                        ) {
                             Icon(
                                 imageVector = if (secretVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
                                 contentDescription = if (secretVisible) "Hide secret" else "Show secret",
@@ -444,7 +604,7 @@ private fun ClientCredentials(
                 copyValue = client.uuid.takeIf { it.isNotBlank() },
                 onCopy = onCopy,
                 trailing = {
-                    IconButton(onClick = onEditUuid, modifier = Modifier.size(36.dp)) {
+                    IconButton(onClick = onEditUuid, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.Filled.Edit,
                             contentDescription = "Edit UUID",
@@ -538,7 +698,7 @@ private fun CredentialRow(
         if (copyValue != null) {
             IconButton(
                 onClick = { onCopy(copyValue, label) },
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(32.dp),
             ) {
                 Icon(
                     Icons.Filled.ContentCopy,
@@ -572,12 +732,16 @@ private fun InfoRow(label: String, value: String) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ResetCycleChips(selected: String, onSelect: (String) -> Unit) {
+private fun ResetCycleChips(
+    selected: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val options = listOf("" to "Never", "daily" to "Daily", "weekly" to "Weekly", "monthly" to "Monthly")
     // The row spans the full width and the chips sit centred in it; a flow row so
     // they wrap rather than run off the edge on a narrow screen.
     FlowRow(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {

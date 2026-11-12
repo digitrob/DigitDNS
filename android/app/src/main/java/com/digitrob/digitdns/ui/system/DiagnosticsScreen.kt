@@ -36,6 +36,7 @@ import com.digitrob.digitdns.R
 import com.digitrob.digitdns.domain.model.DiagnosticReport
 import com.digitrob.digitdns.domain.model.DiagnosticResult
 import com.digitrob.digitdns.domain.model.DiagnosticTarget
+import com.digitrob.digitdns.domain.model.ExplainResult
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRowDefaults
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
@@ -72,8 +73,128 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
 
         ReportCard(report = state.report, isRunning = state.isRunning, onRun = viewModel::run)
 
+        ExplainCard(state = state, viewModel = viewModel)
+
         DiagnosticsBody(state, viewModel)
     }
+    }
+}
+
+/** The support tool: one domain (and optional client IP) explained through the
+ * same precedence the resolver uses, including blocklist and egress details. */
+@Composable
+private fun ExplainCard(state: DiagnosticsUiState, viewModel: DiagnosticsViewModel) {
+    PanelCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Why blocked?", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = state.explainDomain,
+                onValueChange = viewModel::onExplainDomainChange,
+                label = { Text("Domain") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = state.explainClient,
+                onValueChange = viewModel::onExplainClientChange,
+                label = { Text("Client IP (optional)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = viewModel::explain,
+                enabled = !state.explaining && state.explainDomain.isNotBlank(),
+            ) {
+                if (state.explaining) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(if (state.explaining) "Checking…" else "Explain")
+            }
+            state.explainResult?.let { ExplainResultView(it) }
+        }
+    }
+}
+
+@Suppress("CyclomaticComplexMethod")
+@Composable
+private fun ExplainResultView(result: ExplainResult) {
+    val tone = when (result.action.uppercase()) {
+        "BLOCK" -> DigitDnsTheme.colors.danger
+        "PROXY" -> DigitDnsTheme.colors.info
+        "CUSTOM" -> DigitDnsTheme.colors.warning
+        else -> DigitDnsTheme.colors.success
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                result.action.uppercase(),
+                style = MaterialTheme.typography.labelMedium.copy(fontFamily = PanelMono),
+                color = tone,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                result.domain,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            if (!result.engine) {
+                Spacer(Modifier.width(8.dp))
+                Text("engine off", style = MaterialTheme.typography.labelSmall, color = DigitDnsTheme.colors.warning)
+            }
+        }
+        ExplainRow("Rule", result.rule)
+        ExplainRow("Pattern", result.pattern)
+        if (result.blocklistSource.isNotBlank()) {
+            ExplainRow("Blocklist", explainPair(result.blocklistSource, result.blocklistPattern))
+        }
+        if (result.allowSource.isNotBlank()) {
+            ExplainRow("Allowlist", explainPair(result.allowSource, result.allowPattern))
+        }
+        if (result.suppressedSource.isNotBlank()) {
+            ExplainRow("Suppressed block", explainPair(result.suppressedSource, result.suppressedPattern))
+        }
+        if (result.customRecord.isNotBlank()) ExplainRow("Custom record", result.customRecord)
+        result.target?.let { target ->
+            val suffix = buildString {
+                if (target.country.isNotBlank()) append(" · ").append(target.country)
+                if (!target.healthy) append(if (target.failClosed) " · fail-closed" else " · fallback")
+                if (target.fallbackReason.isNotBlank()) append(" · ").append(target.fallbackReason)
+            }
+            ExplainRow("Egress", result.targetLabel + suffix)
+        }
+        val client = listOf(result.account, result.clientIp).filter { it.isNotBlank() }.joinToString(" · ")
+        if (client.isNotBlank()) ExplainRow("Client", client)
+    }
+}
+
+private fun explainPair(first: String, second: String): String =
+    listOf(first, second).filter { it.isNotBlank() }.joinToString(" · ")
+
+@Composable
+private fun ExplainRow(label: String, value: String) {
+    if (value.isBlank()) return
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(96.dp),
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

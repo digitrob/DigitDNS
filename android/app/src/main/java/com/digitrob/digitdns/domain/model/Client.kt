@@ -27,6 +27,8 @@ data class Client(
     val note: String,
     val customPolicies: List<String>,
     val maxDevices: Int,
+    /** Fallback exit when no domain/service rule names one; empty = this server. */
+    val defaultEgress: String = "",
     val registerSecret: String,
     /** Queries served for this account since it was created. */
     val totalQueries: Long = 0,
@@ -94,6 +96,7 @@ data class Client(
             note = dto.note,
             customPolicies = dto.customPolicies,
             maxDevices = dto.maxDevices,
+            defaultEgress = dto.defaultEgress,
             registerSecret = dto.registerSecret,
             totalQueries = dto.totalQueries,
             // API 3.1 omits both when they have no value, so blank is "never" and

@@ -58,6 +58,8 @@ type WebServer struct {
 	engineState  func() bool
 	// systemLog is the bounded in-process log tail. Nil in harnesses.
 	systemLog *logbuffer.Buffer
+	// alerts evaluates relay/egress/client conditions and delivers transitions.
+	alerts *service.AlertManager
 	// relayMode lets this full instance act as a relay agent for another hub.
 	relayMode  *service.RelayModeManager
 	upstreams  *upstream.UpstreamPool
@@ -753,6 +755,11 @@ func (ws *WebServer) SetCustomGroupService(s *service.CustomGroupService) {
 	ws.customGroups = s
 }
 
+// SetAlertManager installs the alert evaluator and delivery manager.
+func (ws *WebServer) SetAlertManager(m *service.AlertManager) {
+	ws.alerts = m
+}
+
 // SetRelayRouter installs the live assignment map shared with the DNS handler.
 func (ws *WebServer) SetRelayRouter(r *service.RelayRouter) {
 	ws.relayRouter = r
@@ -1332,6 +1339,9 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/egresses", ws.requireAuth(ws.handleEgresses))
 	mux.HandleFunc("/api/egresses/", ws.requireAuth(ws.handleEgressByID))
 	mux.HandleFunc("/api/engine", ws.requireAuth(ws.handleEngine))
+	mux.HandleFunc("/api/explain", ws.requireAuth(ws.handleExplain))
+	mux.HandleFunc("/api/alerts", ws.requireAuth(ws.handleAlerts))
+	mux.HandleFunc("/api/alerts/test", ws.requireAuth(ws.handleAlertsTest))
 	mux.HandleFunc("/api/relay-mode", ws.requireAuth(ws.handleRelayMode))
 	mux.HandleFunc("/api/relay-mode/test", ws.requireAuth(ws.handleRelayModeTest))
 	mux.HandleFunc("/api/system-log", ws.requireAuth(ws.handleSystemLog))
@@ -2839,6 +2849,7 @@ func (ws *WebServer) handleClients(w http.ResponseWriter, r *http.Request) {
 			TrafficResetCycle string   `json:"traffic_reset_cycle"`
 			CustomPolicies    []string `json:"custom_policies"`
 			MaxDevices        int      `json:"max_devices"`
+			DefaultEgress     string   `json:"default_egress"`
 			Note              string   `json:"note"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
@@ -2873,6 +2884,7 @@ func (ws *WebServer) handleClients(w http.ResponseWriter, r *http.Request) {
 			TrafficResetCycle: req.TrafficResetCycle,
 			CustomPolicies:    req.CustomPolicies,
 			MaxDevices:        req.MaxDevices,
+			DefaultEgress:     req.DefaultEgress,
 
 			Note: req.Note,
 		})

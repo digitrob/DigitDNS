@@ -2101,9 +2101,14 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   border-color: rgb(var(--c-emerald-500) / 0.45);
   box-shadow: inset 3px 0 0 rgb(var(--c-emerald-500) / 0.8);
 }
-.upstream-fastest-badge {
+.upstream-fastest-wrap {
   display: none;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
   margin-top: 2px;
+}
+.upstream-fastest-badge {
   width: fit-content;
   padding: 0 5px;
   border-radius: 999px;
@@ -2116,7 +2121,15 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   letter-spacing: 0.06em;
   line-height: 1.5;
 }
-.upstream-row.is-adaptive-current .upstream-fastest-badge { display: inline-flex; }
+.upstream-fastest-age {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.upstream-row.is-adaptive-current .upstream-fastest-wrap { display: inline-flex; }
 
 /* Resolver card chips. The same compact shape as the history range buttons,
    with protocol chips carrying their own colour when enabled. */

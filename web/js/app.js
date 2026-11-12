@@ -2761,7 +2761,7 @@ function renderDoqIpAllowlist(applied) {
   if (al.allow_all) {
     message = 'Public Mode is on — any source can use the IP-authenticated transports (DoQ, DoT, DNSCrypt), so the allowlist is not restricting access. Switch Access Mode to whitelist to enforce it.';
   } else if (al.client_entries === 0 && al.resolver_entries === 0) {
-    message = 'No IPs are allowlisted — IP-authenticated transports will refuse every source. Add addresses in Clients → Allowed IPs or the Server-wide Resolver Allowlist.';
+    message = 'No IPs are allowlisted — IP-authenticated transports will refuse every source. Add addresses in Users → Allowed IPs or the Server-wide Resolver Allowlist.';
   }
   setTransportText(warning, message);
   warning.classList.toggle('hidden', !message);
@@ -3805,7 +3805,7 @@ function initProxyIPv6Events() {
         destructive: true,
         title: 'Turn off Proxy IPv6?',
         hint: 'PROXIED AAAA WILL BE WITHHELD',
-        message: 'Clients will be forced onto the IPv4 relay. HTTPS/SVCB hints stay blocked, and direct domains keep their normal AAAA.',
+        message: 'Users will be forced onto the IPv4 relay. HTTPS/SVCB hints stay blocked, and direct domains keep their normal AAAA.',
         confirmText: 'TURN OFF',
       });
       if (!ok) toggle.checked = true;
@@ -6147,6 +6147,10 @@ function renderUpstreams(upstreams) {
     const dimmed = upstreamDimmed(u.address, resolutionSettings.transport || 'any');
     const adaptiveCurrent = normalizeStrategyValue(resolutionSettings.default_strategy) === 'adaptive'
       && resolutionSettings.adaptive_current === u.address;
+    const fastestAge = upstreamCheckAge(u);
+    const fastestAgeTitle = fastestAge === '—'
+      ? 'No adaptive latency check yet'
+      : `Latency check ran ${fastestAge}`;
     let row = upstreamRowMap.get(u.address);
     if (!row) {
       row = document.createElement('div');
@@ -6170,7 +6174,10 @@ function renderUpstreams(upstreams) {
                  Drag it, scroll it, or focus and use the arrow keys; the title is the
                  hover fallback. The dot and the latency/delete controls never move. -->
             <span class="upstream-addr block min-w-0 font-mono text-slate-200" tabindex="0" title="${escapeHTML(u.address)}">${escapeHTML(u.address)}</span>
-            <span class="upstream-fastest-badge">FASTEST</span>
+            <span class="upstream-fastest-wrap">
+              <span class="upstream-fastest-badge">FASTEST</span>
+              <span class="upstream-fastest-age" title="${escapeHTML(fastestAgeTitle)}">${escapeHTML(fastestAge)}</span>
+            </span>
           </div>
         </div>
         <div class="flex items-center gap-2 shrink-0">
@@ -6198,6 +6205,11 @@ function renderUpstreams(upstreams) {
         if (badge.textContent !== latText) badge.textContent = latText;
         if (badge.title !== latTitle) badge.title = latTitle;
       }
+      const age = row.querySelector('.upstream-fastest-age');
+      if (age) {
+        if (age.textContent !== fastestAge) age.textContent = fastestAge;
+        if (age.title !== fastestAgeTitle) age.title = fastestAgeTitle;
+      }
     }
     desiredRows.push(row);
   });
@@ -6214,6 +6226,17 @@ function renderUpstreams(upstreams) {
   requestAnimationFrame(() => {
     container.querySelectorAll('.upstream-addr').forEach(updateUpstreamAddrHint);
   });
+}
+
+// The FASTEST badge answers "which resolver won"; the age beside it answers
+// "how stale is that decision". Force and the scheduled adaptive run both stamp
+// adaptive_last_run, so the timer resets when the operator re-checks. Older
+// servers may omit it, hence the per-upstream fallbacks.
+function upstreamCheckAge(u) {
+  const stamp = (resolutionSettings && resolutionSettings.adaptive_last_run)
+    || (u && (u.last_probe_at || u.last_measured_at))
+    || '';
+  return egressRelativeAge(stamp);
 }
 
 // =======================================================
@@ -9189,6 +9212,55 @@ function egressKindLabel(kind) {
   return kind === 'wireguard' ? 'WireGuard' : 'SOCKS5';
 }
 
+// The label for a stored egress value: "", an agent ID, or "egress:<id>".
+// Used by the client card and the editor's select so both name a target the
+// same way the Domains list does.
+function countryFlagEmoji(code) {
+  const cc = String(code || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return '';
+  return String.fromCodePoint(...[...cc].map((c) => 0x1F1E6 + c.charCodeAt(0) - 65));
+}
+
+function egressValueLabel(value) {
+  if (!value) return 'This Server';
+  const egress = egressForId(value);
+  if (egress) return egress.name || egress.id;
+  const agent = agentForId(value);
+  if (agent) return agent.name || agent.id;
+  return value;
+}
+
+// Populate a client egress <select> from the live agent and egress caches.
+// Rebuilt on every open so a newly added exit appears without a reload, and a
+// saved value that no longer exists stays visible as an unavailable option
+// instead of silently becoming "This Server" on the next save.
+function populateClientEgressSelect(select, value) {
+  if (!select) return;
+  const current = String(value || '');
+  const rows = ['<option value="">This Server</option>'];
+  if (agentsCache.length) {
+    rows.push('<optgroup label="Relay Agents">');
+    for (const a of agentsCache) {
+      rows.push(`<option value="${escapeHTML(a.id)}">${escapeHTML(countryFlagEmoji(a.country))} ${escapeHTML(a.name || a.id)} · ${escapeHTML(a.country || '')}</option>`);
+    }
+    rows.push('</optgroup>');
+  }
+  for (const kind of ['socks5', 'wireguard']) {
+    const items = egressesCache.filter((e) => e.kind === kind);
+    if (!items.length) continue;
+    rows.push(`<optgroup label="${escapeHTML(egressKindLabel(kind))}">`);
+    for (const e of items) {
+      rows.push(`<option value="${escapeHTML(egressValue(e))}">${escapeHTML(countryFlagEmoji(e.country))} ${escapeHTML(e.name || e.id)} · ${escapeHTML(e.country || '')}</option>`);
+    }
+    rows.push('</optgroup>');
+  }
+  if (current && !agentsCache.some((a) => a.id === current) && !egressForId(current)) {
+    rows.push(`<option value="${escapeHTML(current)}">${escapeHTML(current)} (unavailable)</option>`);
+  }
+  select.innerHTML = rows.join('');
+  select.value = current;
+}
+
 function egressFlagHTML(e, cls) {
   return e && e.country ? countryFlagHTML(e.country, cls) : '';
 }
@@ -11251,6 +11323,321 @@ function initSystemLogPage() {
   document.getElementById('system-log-export-btn')?.addEventListener('click', exportSystemLog);
 }
 
+// Why-blocked lookup: the API returns the ordered decision, this renders it as
+// labelled rows so a support reply can name the exact rule or blocklist.
+function explainRow(label, value, cls) {
+  if (!value) return '';
+  const toneClass = cls || 'text-slate-200';
+  return `<div class="flex items-start justify-between gap-3 py-1 border-b border-slate-800/60 last:border-0">
+    <span class="text-slate-500 shrink-0">${escapeHTML(label)}</span>
+    <span class="text-right min-w-0 break-words ${escapeHTML(toneClass)}">${escapeHTML(value)}</span>
+  </div>`;
+}
+
+function renderExplain(data) {
+  const el = document.getElementById('explain-result');
+  if (!el) return;
+  const action = String(data.action || 'DIRECT').toUpperCase();
+  const tone = action === 'BLOCK' ? 'text-red-400 bg-red-500/10 border-red-500/30'
+    : action === 'PROXY' ? 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30'
+    : action === 'CUSTOM' ? 'text-amber-300 bg-amber-500/10 border-amber-500/30'
+    : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+  const target = data.target || null;
+  let targetText = '';
+  if (target) {
+    if (target.kind === 'agent') targetText = `Relay agent ${target.name || target.agent_id || ''}${target.country ? ' · ' + target.country : ''}`;
+    else if (target.kind === 'egress') targetText = `${target.egress_kind || 'egress'} ${target.name || target.egress_id || ''}${target.country ? ' · ' + target.country : ''}`;
+    else targetText = 'This Server';
+    if (!target.healthy) targetText += target.fail_closed ? ' · fail-closed' : ' · fallback to local';
+    if (target.fallback_reason) targetText += ` · ${target.fallback_reason}`;
+  }
+  const rows = [
+    explainRow('Rule', data.rule || '—'),
+    explainRow('Pattern', data.pattern),
+    explainRow('Blocklist', data.blocklist_source ? `${data.blocklist_source}${data.blocklist_pattern ? ' · ' + data.blocklist_pattern : ''}` : ''),
+    explainRow('Allowlist', data.allow_source ? `${data.allow_source}${data.allow_pattern ? ' · ' + data.allow_pattern : ''}` : '', 'text-emerald-300'),
+    explainRow('Suppressed block', data.suppressed_source ? `${data.suppressed_source}${data.suppressed_pattern ? ' · ' + data.suppressed_pattern : ''}` : '', 'text-amber-300'),
+    explainRow('Custom record', data.custom_record, 'text-cyan-300 font-mono'),
+    explainRow('Egress', targetText, 'text-slate-200'),
+    explainRow('Client', data.account ? `${data.account}${data.client_ip ? ' · ' + data.client_ip : ''}` : data.client_ip),
+  ].join('');
+  el.className = 'text-xs text-slate-300';
+  el.innerHTML = `<div class="flex items-center gap-2 mb-2">
+      <span class="px-2 py-0.5 rounded border text-[10px] font-bold font-mono ${tone}">${escapeHTML(action)}</span>
+      <span class="font-mono text-slate-400 truncate">${escapeHTML(data.domain || '')}</span>
+      ${data.engine === false ? '<span class="text-[10px] text-amber-300">engine off</span>' : ''}
+    </div>${rows}`;
+}
+
+let explainInFlight = false;
+
+async function runExplain() {
+  if (explainInFlight) return;
+  explainInFlight = true;
+  const btn = document.getElementById('explain-btn');
+  if (btn) btn.disabled = true;
+  const domainEl = document.getElementById('explain-domain');
+  const clientEl = document.getElementById('explain-client');
+  const out = document.getElementById('explain-result');
+  const domain = (domainEl?.value || '').trim();
+  if (!domain) {
+    if (domainEl) domainEl.focus();
+    explainInFlight = false;
+    if (btn) btn.disabled = false;
+    return;
+  }
+  if (out) {
+    out.className = 'text-xs text-slate-500';
+    out.textContent = 'Checking…';
+  }
+  try {
+    const q = new URLSearchParams({ domain });
+    const client = (clientEl?.value || '').trim();
+    if (client) q.set('client', client);
+    const res = await fetch(api('/api/explain?' + q.toString()), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not explain that domain');
+    renderExplain(data);
+  } catch (e) {
+    if (out) {
+      out.className = 'text-xs text-red-400';
+      out.textContent = e.message || 'Could not explain that domain';
+    }
+  } finally {
+    explainInFlight = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+function initExplainTool() {
+  // onclick/onsubmit assignment, not addEventListener: this initialiser runs on
+  // every login and would otherwise stack duplicate handlers that each fire a
+  // request and repaint the result, which reads as the modal flickering.
+  const btn = document.getElementById('explain-btn');
+  if (btn) btn.onclick = runExplain;
+  const form = document.getElementById('explain-form');
+  if (form) form.onsubmit = (e) => {
+    e.preventDefault();
+    runExplain();
+  };
+}
+
+// ── Alerts ─────────────────────────────────────────────────────────────────
+// Channels are rendered as rows instead of a JSON textarea: the operator sees
+// exactly which fields each kind needs, and a redacted token round-trips without
+// overwriting the stored secret (the server merges it back by channel id).
+let alertsCache = { enabled: false, cooldown_minutes: 15, events: {}, channels: [] };
+
+const ALERT_KINDS = [
+  ['ntfy', 'ntfy'], ['telegram', 'Telegram'], ['discord', 'Discord'],
+  ['slack', 'Slack'], ['gotify', 'Gotify'], ['webhook', 'Webhook'],
+];
+
+function alertInput(value, placeholder, cls) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = value || '';
+  input.placeholder = placeholder || '';
+  input.className = cls || 'panel-field w-full text-xs';
+  return input;
+}
+
+function renderAlertChannels() {
+  const host = document.getElementById('alert-channels');
+  if (!host) return;
+  host.innerHTML = '';
+  if (!alertsCache.channels.length) {
+    const empty = document.createElement('p');
+    empty.className = 'text-xs text-slate-500';
+    empty.textContent = 'No channels yet — add one to receive alerts.';
+    host.appendChild(empty);
+    return;
+  }
+  alertsCache.channels.forEach((ch) => {
+    const row = document.createElement('div');
+    row.className = 'p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2';
+    row.dataset.alertId = ch.id || '';
+
+    const top = document.createElement('div');
+    top.className = 'flex items-center gap-2 flex-wrap';
+    const kind = document.createElement('select');
+    kind.className = 'panel-field text-xs w-32';
+    ALERT_KINDS.forEach(([value, label]) => {
+      const opt = document.createElement('option');
+      opt.value = value; opt.textContent = label;
+      if (value === ch.kind) opt.selected = true;
+      kind.appendChild(opt);
+    });
+    const name = alertInput(ch.name, 'Channel name', 'panel-field text-xs flex-1 min-w-[140px]');
+    const enabled = document.createElement('input');
+    enabled.type = 'checkbox'; enabled.checked = ch.enabled !== false;
+    enabled.className = 'w-4 h-4 accent-cyan-500';
+    enabled.title = 'Enabled';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'text-slate-500 hover:text-red-400 p-1 rounded transition';
+    remove.title = 'Remove channel';
+    remove.innerHTML = '<i data-feather="trash-2" class="w-3.5 h-3.5"></i>';
+    remove.onclick = () => {
+      alertsCache.channels = alertsCache.channels.filter((c) => c !== ch);
+      renderAlertChannels();
+      safeFeatherReplace();
+    };
+    top.append(kind, name, enabled, remove);
+
+    const fields = document.createElement('div');
+    fields.className = 'grid grid-cols-1 sm:grid-cols-3 gap-2';
+    const url = alertInput(ch.url, 'Webhook / ntfy / Gotify URL');
+    const token = alertInput('', ch.token ? 'Token saved — leave blank to keep' : 'Bot token (Telegram) / Gotify token');
+    token.type = 'password';
+    const chat = alertInput(ch.chat_id, 'Telegram chat ID');
+    fields.append(url, token, chat);
+
+    row.append(top, fields);
+    row._collect = () => ({
+      id: row.dataset.alertId || '',
+      kind: kind.value,
+      name: name.value.trim(),
+      url: url.value.trim(),
+      token: token.value.trim(),
+      chat_id: chat.value.trim(),
+      enabled: enabled.checked,
+    });
+    host.appendChild(row);
+  });
+  safeFeatherReplace();
+}
+
+function collectAlerts() {
+  const rows = [...document.querySelectorAll('#alert-channels [data-alert-id]')];
+  const events = {};
+  document.querySelectorAll('[data-alert-event]').forEach((el) => { events[el.value] = el.checked; });
+  return {
+    enabled: !!document.getElementById('alerts-enabled')?.checked,
+    cooldown_minutes: parseInt(document.getElementById('alerts-cooldown')?.value, 10) || 15,
+    events,
+    thresholds: {
+      agent_offline_minutes: parseInt(document.getElementById('alerts-agent-offline')?.value, 10) || 2,
+      egress_offline_minutes: parseInt(document.getElementById('alerts-egress-offline')?.value, 10) || 2,
+      cert_expiry_days: parseInt(document.getElementById('alerts-cert-days')?.value, 10) || 30,
+      upstream_error_percent: parseInt(document.getElementById('alerts-upstream-error')?.value, 10) || 50,
+    },
+    channels: rows.map((row) => row._collect()).filter((ch) => ch.name || ch.url || ch.token),
+  };
+}
+
+function renderAlertHistory(history) {
+  const host = document.getElementById('alerts-history');
+  if (!host) return;
+  if (!Array.isArray(history) || !history.length) {
+    host.textContent = 'No deliveries yet.';
+    return;
+  }
+  host.innerHTML = history.slice(0, 6).map((h) => {
+    const when = h.time ? new Date(h.time).toLocaleString() : '';
+    const tone = h.ok ? 'text-emerald-400' : 'text-red-400';
+    return `<div class="flex items-start justify-between gap-3 py-1 border-b border-slate-800/60 last:border-0">
+      <span class="min-w-0 truncate"><span class="${tone} font-mono">${h.ok ? 'OK' : 'FAIL'}</span> · ${escapeHTML(h.channel || '')} · ${escapeHTML(h.title || h.event || '')}</span>
+      <span class="shrink-0 text-slate-500 font-mono">${escapeHTML(when)}${h.attempts ? ' · ' + h.attempts + 'x' : ''}</span>
+    </div>${h.error ? `<div class="text-[10px] text-red-400 truncate">${escapeHTML(h.error)}</div>` : ''}`;
+  }).join('');
+}
+
+function renderAlerts(settings, history) {
+  alertsCache = settings || alertsCache;
+  const enabled = document.getElementById('alerts-enabled');
+  if (enabled) enabled.checked = !!alertsCache.enabled;
+  const cooldown = document.getElementById('alerts-cooldown');
+  if (cooldown) cooldown.value = alertsCache.cooldown_minutes || 15;
+  const t = alertsCache.thresholds || {};
+  const setNum = (id, value) => { const el = document.getElementById(id); if (el) el.value = value; };
+  setNum('alerts-agent-offline', t.agent_offline_minutes || 2);
+  setNum('alerts-egress-offline', t.egress_offline_minutes || 2);
+  setNum('alerts-cert-days', t.cert_expiry_days || 30);
+  setNum('alerts-upstream-error', t.upstream_error_percent || 50);
+  renderAlertHistory(history || []);
+  document.querySelectorAll('[data-alert-event]').forEach((el) => {
+    el.checked = alertsCache.events && Object.prototype.hasOwnProperty.call(alertsCache.events, el.value)
+      ? !!alertsCache.events[el.value]
+      : true;
+  });
+  renderAlertChannels();
+}
+
+async function loadAlerts() {
+  if (!authToken) return;
+  try {
+    const res = await fetch(api('/api/alerts'), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    if (res.status === 401) return;
+    if (!res.ok) return;
+    const data = await res.json();
+    renderAlerts(data.alerts || {}, data.history || []);
+  } catch (e) { /* the card keeps its last state */ }
+}
+
+async function saveAlerts(showToastOnSuccess = true) {
+  const status = document.getElementById('alerts-status');
+  const payload = collectAlerts();
+  try {
+    const res = await fetch(api('/api/alerts'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not save alerts');
+    renderAlerts(data.alerts || payload, data.history || []);
+    if (status) status.textContent = 'Saved.';
+    if (showToastOnSuccess) showToast('Alert settings saved.', 'success');
+    return true;
+  } catch (e) {
+    if (status) { status.textContent = e.message; status.className = 'text-[11px] text-red-400'; }
+    if (showToastOnSuccess) showToast(e.message, 'error');
+    return false;
+  }
+}
+
+async function testAlerts() {
+  const status = document.getElementById('alerts-status');
+  const btn = document.getElementById('test-alerts-btn');
+  if (btn) btn.disabled = true;
+  if (status) { status.textContent = 'Sending test…'; status.className = 'text-[11px] text-slate-400'; }
+  try {
+    if (!(await saveAlerts(false))) return;
+    const res = await fetch(api('/api/alerts/test'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      if (status) status.textContent = 'Test alert sent.';
+      showToast('Test alert sent.', 'success');
+      loadAlerts();
+    } else {
+      const message = (data.errors || []).join(' · ') || 'No enabled channel accepted the test.';
+      if (status) { status.textContent = message; status.className = 'text-[11px] text-red-400'; }
+      showToast(message, 'error');
+    }
+  } catch (e) {
+    if (status) { status.textContent = e.message; status.className = 'text-[11px] text-red-400'; }
+    showToast(e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function initAlerts() {
+  document.getElementById('add-alert-channel')?.addEventListener('click', () => {
+    alertsCache.channels = [...(alertsCache.channels || []), { kind: 'ntfy', name: '', url: '', token: '', chat_id: '', enabled: true }];
+    renderAlertChannels();
+  });
+  document.getElementById('save-alerts-btn')?.addEventListener('click', () => saveAlerts());
+  document.getElementById('test-alerts-btn')?.addEventListener('click', testAlerts);
+  loadAlerts();
+}
+
 function initEventListeners() {
   initUpstreamAddressScroll();
   initUpstreamPresetBrowser();
@@ -11258,6 +11645,8 @@ function initEventListeners() {
   initAgentPage();
   initShellControls();
   initSystemLogPage();
+  initExplainTool();
+  initAlerts();
   initOnboarding();
   initDiffModal();
   // Tabs Navigation (Sidebar & Mobile Bottom Bar)
@@ -12862,8 +13251,41 @@ function clientsPanelMessage(icon, title, body, titleClass = 'text-slate-300') {
 //
 // 401 is separated out because it is not a failure of this endpoint, it is an expired session,
 // and the answer to it is the login gate rather than an error inside a panel behind it.
+let clientEgressOptionsLoaded = false;
+
+// The Clients page can be the first tab opened after login, so its egress
+// pickers must not depend on the Egress Options page having been visited.
+// Fetch the two option lists once and refresh any picker already on screen.
+async function loadClientEgressOptions() {
+  if (clientEgressOptionsLoaded) return;
+  try {
+    const [agentsRes, egressesRes] = await Promise.all([
+      fetch(api('/api/agents'), { headers: { 'Authorization': `Bearer ${authToken}` } }),
+      fetch(api('/api/egresses'), { headers: { 'Authorization': `Bearer ${authToken}` } }),
+    ]);
+    if (agentsRes.ok) {
+      const data = await agentsRes.json();
+      agentsCache = Array.isArray(data.agents) ? data.agents : [];
+    }
+    if (egressesRes.ok) {
+      const data = await egressesRes.json();
+      egressesCache = Array.isArray(data.egresses) ? data.egresses : [];
+    }
+    clientEgressOptionsLoaded = true;
+    const edit = document.getElementById('edit-client-egress');
+    if (edit && !document.getElementById('edit-client-modal')?.classList.contains('hidden')) {
+      populateClientEgressSelect(edit, edit.value);
+    }
+    const add = document.getElementById('client-egress');
+    if (add && !document.getElementById('add-client-modal')?.classList.contains('hidden')) {
+      populateClientEgressSelect(add, add.value);
+    }
+  } catch (e) { /* the picker still offers This Server */ }
+}
+
 async function loadClients() {
   if (!authToken) return;
+  await loadClientEgressOptions();
 
   // Only when the grid holds no subscriber cards — the first load, or a retry after one that
   // failed. loadClients also runs after every mutation, and flashing the whole grid away each
@@ -12886,7 +13308,7 @@ async function loadClients() {
     }
     if (!res.ok) {
       const msg = await errorMessage(res, 'The server refused the request.');
-      clientsPanelMessage('alert-triangle', 'Could not load clients',
+      clientsPanelMessage('alert-triangle', 'Could not load users',
         `${escapeHTML(msg)} Nothing has been changed — this is a failed read, not an empty list.`,
         'text-amber-300');
       showToast(msg, 'error');
@@ -12902,7 +13324,7 @@ async function loadClients() {
     clientsPanelMessage('wifi-off', 'Could not reach the server',
       'The subscriber list could not be read. Nothing has been changed — this is a failed read, not an empty list.',
       'text-amber-300');
-    showToast('Could not reach the server to load the client list.', 'error');
+    showToast('Could not reach the server to load the user list.', 'error');
   }
 }
 
@@ -12927,7 +13349,7 @@ function renderClientsView(data) {
       modeBadge.innerHTML = '<i data-feather="lock" class="w-3 h-3"></i> WHITELIST ENFORCED';
     }
     if (modeText) {
-      modeText.innerText = 'Whitelist Mode (Only Registered Clients)';
+      modeText.innerText = 'Whitelist Mode (Only Registered Users)';
       modeText.className = 'text-xs font-mono text-cyan-400 font-bold';
     }
   } else {
@@ -12978,14 +13400,14 @@ function renderClientsView(data) {
     listContainer.innerHTML = allClients.length === 0 ? `
       <div class="clients-placeholder col-span-1 md:col-span-2 glass-panel panel-card p-8 text-center text-slate-400">
         <i data-feather="users" class="w-8 h-8 mx-auto text-slate-600 mb-2"></i>
-        <div class="font-bold text-slate-300 font-heading">No Clients Yet</div>
-        <p class="text-xs text-slate-500 mt-1">Click "Add New Client" above to create client accounts &amp; registration links.</p>
+        <div class="font-bold text-slate-300 font-heading">No Users Yet</div>
+        <p class="text-xs text-slate-500 mt-1">Click "Add New User" above to create user accounts &amp; registration links.</p>
       </div>
     ` : `
       <div class="clients-placeholder col-span-1 md:col-span-2 glass-panel panel-card p-8 text-center text-slate-400">
         <i data-feather="search" class="w-8 h-8 mx-auto text-slate-600 mb-2"></i>
         <div class="font-bold text-slate-300 font-heading">No Match</div>
-        <p class="text-xs text-slate-500 mt-1">None of your ${allClients.length} client(s) match &ldquo;${escapeHTML(searchVal)}&rdquo;. The search looks at the name, the ID and the registered IPs.</p>
+        <p class="text-xs text-slate-500 mt-1">None of your ${allClients.length} user(s) match &ldquo;${escapeHTML(searchVal)}&rdquo;. The search looks at the name, the ID and the registered IPs.</p>
         <button class="clear-client-search-btn mt-3 text-[11px] font-bold text-cyan-400 border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 rounded-lg hover:bg-cyan-500/20 transition">
           Clear search
         </button>
@@ -13180,13 +13602,13 @@ function renderClientsView(data) {
               <h4 class="text-sm font-bold text-white font-heading">${escapeHTML(c.name)}</h4>
               ${statusBadge}
             </div>
-            <div class="text-[10px] text-slate-400 font-mono mt-0.5 truncate" title="Code: ${escapeHTML(c.id)} · Slug: ${escapeHTML(c.token)}">
-              Code: <span class="text-amber-300 font-bold">${escapeHTML(c.id)}</span> · Slug: <span class="text-slate-500">${escapeHTML(c.token)}</span>
+            <div class="text-[10px] text-slate-400 font-mono mt-0.5 truncate" title="User ID: ${escapeHTML(c.id)} · Subscription token: ${escapeHTML(c.token)}">
+              User ID: <span class="text-amber-300 font-bold">${escapeHTML(c.id)}</span> · Subscription token: <span class="text-slate-500">${escapeHTML(c.token)}</span>
             </div>
           </div>
 
           <div class="flex items-center gap-1 shrink-0">
-            <button class="edit-client-btn p-1.5 rounded-lg bg-slate-900 hover:bg-cyan-500/20 text-slate-400 hover:text-cyan-300 border border-slate-800 transition" data-id="${escapeHTML(c.id)}" title="Edit Client">
+            <button class="edit-client-btn p-1.5 rounded-lg bg-slate-900 hover:bg-cyan-500/20 text-slate-400 hover:text-cyan-300 border border-slate-800 transition" data-id="${escapeHTML(c.id)}" title="Edit User">
               <i data-feather="edit-2" class="w-3.5 h-3.5"></i>
             </button>
             <button class="toggle-client-btn p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-cyan-400 border border-slate-800 transition" data-id="${escapeHTML(c.id)}" data-enabled="${!c.enabled}" title="${c.enabled ? 'Disable Client' : 'Enable Client'}">
@@ -13213,6 +13635,12 @@ function renderClientsView(data) {
             <i data-feather="copy" class="w-3 h-3"></i>
           </button>
         </div>
+
+        ${c.default_egress ? `
+        <div class="flex items-center justify-between text-[10px] font-mono bg-slate-950/80 px-2.5 py-1.5 rounded-lg border border-slate-800/80 mb-2.5">
+          <span class="text-slate-500 font-semibold">DEFAULT EGRESS:</span>
+          <span class="text-emerald-300 truncate max-w-[220px]" title="${escapeHTML(egressValueLabel(c.default_egress))}">${escapeHTML(egressValueLabel(c.default_egress))}</span>
+        </div>` : ''}
 
         <!-- Whitelisted IPs Row -->
         <!-- The 10px label gave this button a 15px-tall hit area — wide enough to hit by
@@ -13297,7 +13725,7 @@ function generateClientTelegramMessage(clientId, clientName, expStr, subUrl, reg
   const secretLine = secret ? secret : '(no secret on file — regenerate it in the panel)';
   return `🎮 Your SmartDNS account is ready
 
-🔹 Client ID : ${clientId}
+🔹 User ID : ${clientId}
 🔹 Plan expires : ${expStr}
 
 📄 Your subscription panel (status, usage and renewal):
@@ -13388,7 +13816,8 @@ function initClientEventListeners() {
             ips: initIPs,
             traffic_limit_gb: trafficGB,
             traffic_reset_cycle: cycle,
-            max_devices: maxDevices
+            max_devices: maxDevices,
+            default_egress: document.getElementById('client-egress')?.value || ''
           })
         });
 
@@ -13396,7 +13825,7 @@ function initClientEventListeners() {
           const client = await res.json().catch(() => ({}));
           addModal?.classList.add('hidden');
           resetAddClientForm();
-          showToast('Client account created!', 'success');
+          showToast('User account created!', 'success');
           // The create response is the one moment the register link id and the
           // registration secret are both in hand (Phase B: the link displays,
           // the secret writes). Hand them to the created-modal instead of
@@ -13540,7 +13969,7 @@ function initClientEventListeners() {
       const ip = cardBtn.dataset.ip;
       const msg = generateClientTelegramMessage(id, cardBtn.dataset.name, exp, subUrl, regApiUrl, secret, ip);
       copyText(msg, cardBtn);
-      showToast('Client card copied for Telegram!', 'success');
+      showToast('User card copied for Telegram!', 'success');
       return;
     }
 
@@ -13550,7 +13979,7 @@ function initClientEventListeners() {
       await clientAction(
         '/api/clients/renew',
         { id: renewBtn.dataset.id, extend_days: 30 },
-        'Client plan extended by 30 days!',
+        'User plan extended by 30 days!',
         'success'
       );
       return;
@@ -13583,7 +14012,7 @@ function initClientEventListeners() {
         confirmText: 'DELETE SUBSCRIBER',
       });
       if (!ok) return;
-      await clientAction('/api/clients/delete', { id: id }, 'Client deleted');
+      await clientAction('/api/clients/delete', { id: id }, 'User deleted');
       return;
     }
 
@@ -14280,6 +14709,7 @@ function showToast(msg, type = 'info') {
   function resetAddClientForm() {
     const form = document.getElementById('add-client-form');
     if (form) form.reset();
+    populateClientEgressSelect(document.getElementById('client-egress'), '');
     addDatePicker.applyDefaultDays(30);
   }
 
@@ -14413,6 +14843,7 @@ function showToast(msg, type = 'info') {
       }
       document.getElementById('edit-client-expiry').value = formatToDateTimeString(client.expires_at);
       document.getElementById('edit-client-note').value = client.note || '';
+      populateClientEgressSelect(document.getElementById('edit-client-egress'), client.default_egress || '');
 
       if (enabledCheckbox) {
         enabledCheckbox.checked = client.enabled !== false;
@@ -14491,7 +14922,7 @@ function showToast(msg, type = 'info') {
           headers: { 'Authorization': `Bearer ${authToken}` }
         });
         if (res.ok) {
-          showToast('Client traffic counter reset to 0!', 'success');
+          showToast('User traffic counter reset to 0!', 'success');
           loadClients();
         } else {
           showToast('Failed to reset traffic counter', 'error');
@@ -14559,7 +14990,8 @@ function showToast(msg, type = 'info') {
           traffic_reset_cycle: cycle,
           expires_at: expiresAtISO,
           enabled: isEnabled,
-          note: note
+          note: note,
+          default_egress: val('edit-client-egress')
         };
 
         const res = await fetch(api(`/api/clients/${clientId}`), {
@@ -14588,7 +15020,7 @@ function showToast(msg, type = 'info') {
               'warning'
             );
           } else {
-            showToast('Client configuration updated successfully!', 'success');
+            showToast('User configuration updated successfully!', 'success');
           }
           if (editClientModal) editClientModal.classList.add('hidden');
           await loadClients();
@@ -14600,7 +15032,7 @@ function showToast(msg, type = 'info') {
         }
       } catch (err) {
         console.error('Saving the client failed', err);
-        showToast('Could not save the client: ' + (err && err.message ? err.message : 'unexpected error'), 'error');
+        showToast('Could not save the user: ' + (err && err.message ? err.message : 'unexpected error'), 'error');
       } finally {
         editSaveInFlight = false;
       }

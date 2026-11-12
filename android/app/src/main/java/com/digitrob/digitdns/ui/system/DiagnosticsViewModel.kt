@@ -6,6 +6,7 @@ import com.digitrob.digitdns.core.network.ApiException
 import com.digitrob.digitdns.data.DiagnosticsRepository
 import com.digitrob.digitdns.domain.model.DiagnosticReport
 import com.digitrob.digitdns.domain.model.DiagnosticTarget
+import com.digitrob.digitdns.domain.model.ExplainResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +25,10 @@ data class DiagnosticsUiState(
     val newName: String = "",
     val newHost: String = "",
     val adding: Boolean = false,
+    val explainDomain: String = "",
+    val explainClient: String = "",
+    val explainResult: ExplainResult? = null,
+    val explaining: Boolean = false,
 )
 
 /**
@@ -52,6 +57,26 @@ class DiagnosticsViewModel @Inject constructor(
                 _state.update { it.copy(isLoading = false, error = e.userMessage) }
             } catch (e: IOException) {
                 _state.update { it.copy(isLoading = false, error = e.message ?: "Could not load targets.") }
+            }
+        }
+    }
+
+    fun onExplainDomainChange(v: String) = _state.update { it.copy(explainDomain = v) }
+    fun onExplainClientChange(v: String) = _state.update { it.copy(explainClient = v) }
+
+    fun explain() {
+        val s = _state.value
+        val domain = s.explainDomain.trim()
+        if (domain.isBlank() || s.explaining) return
+        viewModelScope.launch {
+            _state.update { it.copy(explaining = true, error = null) }
+            try {
+                val result = repository.explain(domain, s.explainClient.trim())
+                _state.update { it.copy(explainResult = result, explaining = false) }
+            } catch (e: ApiException) {
+                _state.update { it.copy(explaining = false, error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update { it.copy(explaining = false, error = e.message ?: "Could not explain that domain.") }
             }
         }
     }

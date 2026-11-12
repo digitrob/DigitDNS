@@ -51,6 +51,10 @@ type RelayRouter struct {
 	serviceAgents  map[string]string
 	domainServices assignmentIndex
 	egresses       *EgressRegistry
+	// clientEgress resolves a source address to that account's default exit.
+	// It reads the client service's in-memory index, so the DNS/SNI hot path
+	// stays a map lookup and never decrypts client records.
+	clientEgress func(ip string) string
 
 	onlineFor time.Duration
 	now       func() time.Time
@@ -135,6 +139,14 @@ const (
 	// before a two-minute outage.
 	AgentOnlineFor = 90 * time.Second
 )
+
+// SetClientEgressLookup installs the per-account default egress resolver.
+// Called once during wiring; the callback is safe for concurrent use.
+func (r *RelayRouter) SetClientEgressLookup(fn func(ip string) string) {
+	r.mu.Lock()
+	r.clientEgress = fn
+	r.mu.Unlock()
+}
 
 func (r *RelayRouter) SetEgressRegistry(e *EgressRegistry) {
 	r.mu.Lock()
@@ -279,6 +291,19 @@ func (r *RelayRouter) LookupFor(domain, clientIP string) (RelayTarget, bool) {
 	if d == "" {
 		return RelayTarget{Kind: "local", Healthy: true}, true
 	}
+	// Explicit domain/service assignments win. The account default is the
+	// fallback for names no rule names, and it still falls back to local when
+	// the target is missing, disabled or unhealthy.
+	clientTarget := ""
+	if clientIP != "" {
+		r.mu.RLock()
+		lookup := r.clientEgress
+		r.mu.RUnlock()
+		if lookup != nil {
+			clientTarget = strings.TrimSpace(lookup(clientIP))
+		}
+	}
+
 	r.mu.RLock()
 	targetID := r.domainAgents.lookup(d)
 	if targetID == "__inherit__" {
@@ -288,6 +313,9 @@ func (r *RelayRouter) LookupFor(domain, clientIP string) (RelayTarget, bool) {
 		if serviceID := r.domainServices.lookup(d); serviceID != "" {
 			targetID = r.serviceAgents[serviceID]
 		}
+	}
+	if targetID == "" {
+		targetID = clientTarget
 	}
 	agent, hasAgent := r.agents[targetID]
 	ipv4 := r.agentIPv4[targetID]

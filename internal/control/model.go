@@ -81,6 +81,7 @@ type ClientView struct {
 	Enabled               bool       `json:"enabled"`
 	Note                  string     `json:"note"`
 	CustomPolicies        []string   `json:"custom_policies"`
+	DefaultEgress         string     `json:"default_egress,omitempty"`
 	TrafficResetCycle     string     `json:"traffic_reset_cycle"`
 	TrafficResetAnchor    time.Time  `json:"traffic_reset_anchor"`
 	TrafficResetCount     uint64     `json:"traffic_reset_count"`

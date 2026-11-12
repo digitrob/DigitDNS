@@ -292,6 +292,24 @@
           </button>
         </div>
 
+        <!-- Why blocked: the resolver's ordered decision for one name and an
+             optional client IP, including the blocklist source and any allowlist
+             exception that suppressed it. -->
+        <div class="p-3 sm:p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+          <div class="text-[10px] text-slate-400 font-mono">WHY BLOCKED?</div>
+          <form id="explain-form" class="flex flex-col sm:flex-row gap-2">
+            <input type="text" id="explain-domain" placeholder="domain (e.g. ads.example.com)" autocomplete="off" spellcheck="false" aria-label="Domain to explain"
+              class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-slate-200 focus:border-cyan-500/50 outline-none">
+            <input type="text" id="explain-client" placeholder="client IP (optional)" autocomplete="off" spellcheck="false" aria-label="Client IP for egress selection"
+              class="sm:w-44 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-slate-200 focus:border-cyan-500/50 outline-none">
+            <button type="button" id="explain-btn"
+              class="px-3 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 rounded-lg text-xs font-bold font-heading flex items-center justify-center gap-1.5 transition whitespace-nowrap">
+              <i data-feather="search" class="w-3.5 h-3.5"></i> Explain
+            </button>
+          </form>
+          <div id="explain-result" class="text-xs text-slate-500">Enter a domain to see which rule, blocklist or egress answers it.</div>
+        </div>
+
         <!-- Target editor (v3.1.0): the operator owns the endpoint list, so it is
              added and removed here rather than shipped as hidden presets. -->
         <div class="p-3 sm:p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
@@ -358,7 +376,7 @@
             <i data-feather="edit-2" class="w-4 h-4"></i>
           </div>
           <div>
-            <h2 id="edit-client-title" class="text-base font-bold text-white font-heading">Edit Client</h2>
+            <h2 id="edit-client-title" class="text-base font-bold text-white font-heading">Edit User</h2>
             <p class="text-[11px] text-slate-400">Manage account properties, traffic limits & policy exceptions</p>
           </div>
         </div>
@@ -376,7 +394,7 @@
              what "50 GB monthly" quietly meant before the cycle was added. -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
-            <label for="edit-client-name" class="block text-[11px] font-semibold text-slate-400 mb-1"><span class="text-red-400 font-bold">*</span> Email / Client Name</label>
+            <label for="edit-client-name" class="block text-[11px] font-semibold text-slate-400 mb-1"><span class="text-red-400 font-bold">*</span> Email / User Name</label>
             <input type="text" id="edit-client-name" required placeholder="e.g. customer-alex"
               class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
           </div>
@@ -482,6 +500,18 @@
           </div>
         </div>
 
+        <!-- Default egress: the fallback exit for names no domain or service rule
+             names. A subscriber can be sold a country exit without changing the
+             operator's global routing. -->
+        <div>
+          <label for="edit-client-egress" class="block text-[11px] font-semibold text-slate-400 mb-1">Default Egress</label>
+          <select id="edit-client-egress"
+            class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
+            <option value="">This Server</option>
+          </select>
+          <p class="text-[10px] text-slate-500 mt-1">Used only when no domain override or service default names an exit. Domain and service rules still win.</p>
+        </div>
+
         <!-- Row 3: UUID with Regenerate -->
         <div>
           <div class="flex justify-between items-center mb-1">
@@ -575,8 +605,8 @@
             <i data-feather="user-plus" class="w-4 h-4"></i>
           </div>
           <div>
-            <h2 id="add-client-title" class="text-sm sm:text-base font-bold text-white font-heading">Add New Client Account</h2>
-            <p class="text-[11px] text-slate-400">Generate IP whitelist registration slug</p>
+            <h2 id="add-client-title" class="text-sm sm:text-base font-bold text-white font-heading">Add New User Account</h2>
+            <p class="text-[11px] text-slate-400">Generate an IP whitelist registration link</p>
           </div>
         </div>
         <button id="close-add-client-btn" aria-label="Close new subscriber form" class="text-slate-400 hover:text-white p-1">
@@ -590,7 +620,7 @@
              with no cycle has to be cleared by hand every period. -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
-            <label for="client-name-input" class="block text-[11px] font-semibold text-slate-400 mb-1"><span class="text-red-400 font-bold">*</span> CLIENT NAME / LABEL</label>
+            <label for="client-name-input" class="block text-[11px] font-semibold text-slate-400 mb-1"><span class="text-red-400 font-bold">*</span> USER NAME / LABEL</label>
             <input type="text" id="client-name-input" placeholder="e.g. Alex (PS5 &amp; Phone)" required
               class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
           </div>
@@ -687,8 +717,17 @@
             <label for="client-initial-ip" class="block text-[11px] font-semibold text-slate-400 mb-1">INITIAL IP ADDRESS / CIDR (OPTIONAL)</label>
             <input type="text" id="client-initial-ip" placeholder="e.g. 2.189.86.32, 203.0.113.0/24"
               class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
-            <p class="text-[10px] text-slate-500 mt-1">Comma- or space-separated. Accepts bare IPs and CIDR ranges. Leave blank to let the client self-register via their personal URL.</p>
+            <p class="text-[10px] text-slate-500 mt-1">Comma- or space-separated. Accepts bare IPs and CIDR ranges. Leave blank to let the user self-register via their personal URL.</p>
           </div>
+        </div>
+
+        <div>
+          <label for="client-egress" class="block text-[11px] font-semibold text-slate-400 mb-1">DEFAULT EGRESS</label>
+          <select id="client-egress"
+            class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
+            <option value="">This Server</option>
+          </select>
+          <p class="text-[10px] text-slate-500 mt-1">Fallback exit for this account when no domain or service rule names one.</p>
         </div>
 
         <button type="submit"
@@ -716,7 +755,7 @@
             <i data-feather="check-circle" class="w-4 h-4"></i>
           </div>
           <div>
-            <h2 id="client-created-title" class="text-sm sm:text-base font-bold text-white font-heading">Client Account Created</h2>
+            <h2 id="client-created-title" class="text-sm sm:text-base font-bold text-white font-heading">User Account Created</h2>
             <p class="text-[11px] text-slate-400">Copy the credentials now — the secret is not shown again</p>
           </div>
         </div>
@@ -732,39 +771,37 @@
         </div>
 
         <div>
-          <div class="flex items-center justify-between mb-1">
-            <label for="created-register-link" class="block text-[11px] font-semibold text-slate-400">Subscription Link (portal page)</label>
-            <button type="button" id="copy-created-link-btn"
-              class="inline-flex items-center gap-1 px-2 py-1 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] font-semibold transition">
-              <i data-feather="copy" class="w-3 h-3"></i> Copy
+          <label for="created-register-link" class="block text-[11px] font-semibold text-slate-400 mb-1">Subscription Link (portal page)</label>
+          <div class="relative flex items-center">
+            <input type="text" id="created-register-link" readonly
+              class="w-full ps-3 pe-9 py-2 rounded-lg bg-slate-950/60 border border-slate-800 text-cyan-300 text-xs font-mono">
+            <button type="button" id="copy-created-link-btn" aria-label="Copy subscription link" title="Copy subscription link"
+              class="absolute end-1.5 inline-flex items-center justify-center w-6 h-6 rounded text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 transition">
+              <i data-feather="copy" class="w-3.5 h-3.5"></i>
             </button>
           </div>
-          <input type="text" id="created-register-link" readonly
-            class="w-full px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-800 text-cyan-300 text-xs font-mono">
           <p class="text-[10px] text-slate-500 mt-1">The subscriber's portal page — status, quota and IP registration. The registration password below is what they type there to bind their IP.</p>
         </div>
 
         <div>
-          <div class="flex items-center justify-between mb-1">
-            <label for="created-register-secret" class="block text-[11px] font-semibold text-amber-300">Registration Secret</label>
-            <div class="flex items-center gap-1.5">
-              <button type="button" id="toggle-created-secret-btn" aria-label="Show or hide the registration secret"
-                class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[10px] font-semibold transition">Show</button>
-              <button type="button" id="copy-created-secret-btn"
-                class="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold transition">
-                <i data-feather="copy" class="w-3 h-3"></i> Copy
+          <label for="created-register-secret" class="block text-[11px] font-semibold text-amber-300 mb-1">Registration Secret</label>
+          <div class="flex items-center gap-2">
+            <form id="created-secret-form" class="relative flex-1 min-w-0">
+              <!-- The secret is a password field so the value stays masked; it is read-only
+                   and never submitted. Chrome warned it was "not contained in a form", so it
+                   lives in a no-op form with a hidden username to satisfy autofill and
+                   accessibility without changing the masking behaviour. -->
+              <input type="text" name="username" autocomplete="username" hidden aria-hidden="true" tabindex="-1">
+              <input type="password" id="created-register-secret" readonly
+                class="w-full ps-3 pe-9 py-2 rounded-lg bg-slate-950/60 border border-amber-500/30 text-amber-300 text-xs font-mono">
+              <button type="button" id="copy-created-secret-btn" aria-label="Copy registration secret" title="Copy registration secret"
+                class="absolute end-1.5 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-6 h-6 rounded text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition">
+                <i data-feather="copy" class="w-3.5 h-3.5"></i>
               </button>
-            </div>
+            </form>
+            <button type="button" id="toggle-created-secret-btn" aria-label="Show or hide the registration secret"
+              class="shrink-0 px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[10px] font-semibold transition">Show</button>
           </div>
-          <form id="created-secret-form">
-            <!-- The secret is a password field so the value stays masked; it is read-only
-                 and never submitted. Chrome warned it was "not contained in a form", so it
-                 lives in a no-op form with a hidden username to satisfy autofill and
-                 accessibility without changing the masking behaviour. -->
-            <input type="text" name="username" autocomplete="username" hidden aria-hidden="true" tabindex="-1">
-            <input type="password" id="created-register-secret" readonly
-              class="w-full px-3 py-2 rounded-lg bg-slate-950/60 border border-amber-500/30 text-amber-300 text-xs font-mono">
-          </form>
           <p class="text-[10px] text-slate-500 mt-1">The subscriber types this on the portal to register their IP. Keep it out of the link — the link alone must never be enough.</p>
         </div>
 
@@ -878,7 +915,7 @@
         </button>
         <button class="sidebar-nav-item" data-tab="clients" data-route="/clients">
           <i data-feather="users" class="w-4 h-4"></i>
-          <span>Clients</span>
+          <span>Users</span>
         </button>
         <button class="sidebar-nav-item" data-tab="stream" data-route="/logs">
           <i data-feather="terminal" class="w-4 h-4"></i>
@@ -2191,7 +2228,7 @@
         <div class="flex flex-col sm:flex-row flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-3 w-full sm:w-auto">
             <div class="relative w-full sm:w-72 sm:max-w-full">
-              <input type="text" id="client-search-input" aria-label="Search subscriber accounts" placeholder="Search client name, ID, or IP..."
+              <input type="text" id="client-search-input" aria-label="Search subscriber accounts" placeholder="Search user name, ID, or IP..."
                 class="panel-field panel-field-icon w-full font-mono">
               <i data-feather="search" class="field-icon w-3.5 h-3.5 text-slate-500"></i>
             </div>
@@ -2199,7 +2236,7 @@
 
           <button id="open-add-client-btn" class="panel-btn panel-btn-primary w-full sm:w-auto sm:ms-auto sm:shrink-0 whitespace-nowrap">
             <i data-feather="user-plus" class="w-4 h-4"></i>
-            <span>Add New Client</span>
+            <span>Add New User</span>
           </button>
         </div>
 
@@ -3747,6 +3784,79 @@ async function onBuySubscription(ctx, username) {
             </div>
           </div>
 
+        <!-- Alerts: relay/egress/client/upstream transitions delivered to the
+             operator's own channels. Tokens are write-only; the API never echoes
+             them back. -->
+        <div id="alerts-card" class="glass-panel panel-card p-5 sm:p-6 space-y-4 settings-wide">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h3 class="panel-card-header">
+                <i data-feather="bell" class="w-4 h-4 text-amber-300"></i> Alerts
+              </h3>
+              <p class="text-[11px] text-slate-400 mt-0.5">Send relay, egress, account and upstream events to ntfy, Telegram, Discord, Slack, Gotify or your own webhook.</p>
+            </div>
+            <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-300 cursor-pointer">
+              <span>Enabled</span>
+              <span class="relative inline-flex items-center">
+                <input type="checkbox" id="alerts-enabled" class="sr-only peer">
+                <span class="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:bg-cyan-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></span>
+              </span>
+            </label>
+          </div>
+
+          <div id="alert-channels" class="space-y-3"></div>
+          <button type="button" id="add-alert-channel" class="panel-btn panel-btn-sm panel-btn-neutral">
+            <i data-feather="plus" class="w-3.5 h-3.5"></i> Add channel
+          </button>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label class="block">
+              <span class="block text-[11px] font-semibold text-slate-400 mb-1">Repeat cooldown (minutes)</span>
+              <input type="number" id="alerts-cooldown" min="1" max="1440" value="15"
+                class="panel-field w-full font-mono">
+            </label>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="block">
+                <span class="block text-[11px] font-semibold text-slate-400 mb-1">Agent offline after (min)</span>
+                <input type="number" id="alerts-agent-offline" min="1" max="1440" value="2" class="panel-field w-full font-mono">
+              </label>
+              <label class="block">
+                <span class="block text-[11px] font-semibold text-slate-400 mb-1">Certificate warning (days)</span>
+                <input type="number" id="alerts-cert-days" min="1" max="365" value="30" class="panel-field w-full font-mono">
+              </label>
+              <label class="block">
+                <span class="block text-[11px] font-semibold text-slate-400 mb-1">Upstream error %</span>
+                <input type="number" id="alerts-upstream-error" min="1" max="100" value="50" class="panel-field w-full font-mono">
+              </label>
+              <label class="block">
+                <span class="block text-[11px] font-semibold text-slate-400 mb-1">Egress offline after (min)</span>
+                <input type="number" id="alerts-egress-offline" min="1" max="1440" value="2" class="panel-field w-full font-mono">
+              </label>
+            </div>
+            <div>
+              <span class="block text-[11px] font-semibold text-slate-400 mb-1">Events</span>
+              <div class="flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-300">
+                <label class="inline-flex items-center gap-1.5"><input type="checkbox" data-alert-event class="accent-cyan-500" value="agents" checked> Relay agents</label>
+                <label class="inline-flex items-center gap-1.5"><input type="checkbox" data-alert-event class="accent-cyan-500" value="egresses" checked> Egresses</label>
+                <label class="inline-flex items-center gap-1.5"><input type="checkbox" data-alert-event class="accent-cyan-500" value="relay_mode" checked> Relay mode</label>
+                <label class="inline-flex items-center gap-1.5"><input type="checkbox" data-alert-event class="accent-cyan-500" value="clients" checked> Accounts</label>
+                <label class="inline-flex items-center gap-1.5"><input type="checkbox" data-alert-event class="accent-cyan-500" value="upstreams" checked> Upstreams</label>
+                <label class="inline-flex items-center gap-1.5"><input type="checkbox" data-alert-event class="accent-cyan-500" value="certificates" checked> Certificates</label>
+              </div>
+            </div>
+          </div>
+
+          <div id="alerts-history" class="text-[11px] text-slate-500"></div>
+
+          <div class="flex items-center gap-2 flex-wrap">
+            <button id="save-alerts-btn" type="button" class="panel-btn panel-btn-primary">Save alerts</button>
+            <button id="test-alerts-btn" type="button" class="panel-btn panel-btn-neutral">
+              <i data-feather="send" class="w-3.5 h-3.5"></i> Send test
+            </button>
+            <span id="alerts-status" class="text-[11px] text-slate-400"></span>
+          </div>
+        </div>
+
         <!-- About & legal (AGPL-3.0): product identity, licence and upstream
              attribution. Kept in the panel so the notice travels with the app
              instead of living only in the repository. -->
@@ -3952,7 +4062,7 @@ async function onBuySubscription(ctx, username) {
       </button>
       <button class="mobile-nav-item" data-tab="clients" data-route="/clients">
         <i data-feather="users" class="w-4 h-4"></i>
-        <span>Clients</span>
+        <span>Users</span>
       </button>
       <button class="mobile-nav-item" data-tab="stream" data-route="/logs">
         <i data-feather="terminal" class="w-4 h-4"></i>

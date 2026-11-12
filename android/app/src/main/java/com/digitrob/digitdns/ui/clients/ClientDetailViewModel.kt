@@ -5,8 +5,12 @@ import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
 import com.digitrob.digitdns.core.network.ClientCreateRequest
 import com.digitrob.digitdns.core.network.ClientUpdateRequest
+import com.digitrob.digitdns.data.AgentsRepository
 import com.digitrob.digitdns.data.ClientsRepository
+import com.digitrob.digitdns.data.EgressesRepository
 import com.digitrob.digitdns.domain.model.Client
+import com.digitrob.digitdns.domain.model.EgressInfo
+import com.digitrob.digitdns.domain.model.RelayAgentInfo
 import com.digitrob.digitdns.domain.model.ClientAction
 import com.digitrob.digitdns.domain.model.ClientExpiry
 import com.digitrob.digitdns.domain.model.ClientLinks
@@ -41,6 +45,10 @@ data class ClientDetailUiState(
     val resetCycle: String = "",
     val note: String = "",
     val maxDevices: String = "",
+    val defaultEgress: String = "",
+    /** Exits the picker can offer, loaded with the form. */
+    val agents: List<RelayAgentInfo> = emptyList(),
+    val egresses: List<EgressInfo> = emptyList(),
     /** `yyyy-MM-dd HH:mm`; blank means lifetime. */
     val expiryField: String = "",
     val isLoading: Boolean = false,
@@ -65,13 +73,35 @@ data class ClientDetailUiState(
         get() = !isSaving && name.isNotBlank() && expiryValid && (isCreate || client != null)
 }
 
+@Suppress("TooManyFunctions")
 @HiltViewModel
 class ClientDetailViewModel @Inject constructor(
     private val repository: ClientsRepository,
+    private val agentsRepository: AgentsRepository,
+    private val egressesRepository: EgressesRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ClientDetailUiState())
     val state: StateFlow<ClientDetailUiState> = _state.asStateFlow()
+
+    init {
+        loadEgressOptions()
+    }
+
+    /** Reload the exits a client can be assigned. A newly added agent or egress
+     * appears the next time the form opens; a failure leaves the previous list. */
+    fun loadEgressOptions() {
+        viewModelScope.launch {
+            val agents = runCatching { agentsRepository.list() }.getOrNull()
+            val egresses = runCatching { egressesRepository.list() }.getOrNull()
+            _state.update {
+                it.copy(
+                    agents = agents ?: it.agents,
+                    egresses = egresses ?: it.egresses,
+                )
+            }
+        }
+    }
 
     /**
      * The client the form is currently pointed at, if it is editing one.
@@ -90,8 +120,19 @@ class ClientDetailViewModel @Inject constructor(
      * after another must never show the previous one's half-typed fields.
      */
     fun open(id: String) {
-        _state.update { ClientDetailUiState(mode = ClientDetailMode.Edit(id), isLoading = true) }
+        _state.update {
+            ClientDetailUiState(
+                mode = ClientDetailMode.Edit(id),
+                isLoading = true,
+                // Keep the option lists across the reset: open() runs after the
+                // view model has already loaded them, and wiping them here made
+                // a saved agent ID render as "(unavailable)".
+                agents = it.agents,
+                egresses = it.egresses,
+            )
+        }
         load(id)
+        loadEgressOptions()
     }
 
     private fun load(id: String) {
@@ -110,6 +151,7 @@ class ClientDetailViewModel @Inject constructor(
                         resetCycle = client.trafficResetCycle,
                         note = client.note,
                         maxDevices = client.maxDevices.takeIf { d -> d > 0 }?.toString().orEmpty(),
+                        defaultEgress = client.defaultEgress,
                         expiryField = expiryFieldValue(client.expiresAt),
                         isLoading = false,
                     )
@@ -136,6 +178,9 @@ class ClientDetailViewModel @Inject constructor(
     fun onMaxDevicesChange(value: String) = _state.update {
         it.copy(maxDevices = value.filter { c -> c.isDigit() }, error = null)
     }
+    fun onDefaultEgressChange(value: String) = _state.update {
+        it.copy(defaultEgress = value, error = null)
+    }
     fun dismissMessage() = _state.update { it.copy(message = null) }
 
     /** The dialog owns the clipboard; the view model only carries the confirmation. */
@@ -156,6 +201,8 @@ class ClientDetailViewModel @Inject constructor(
         // form; clearing it is how the operator asks for a lifetime account.
         _state.value = ClientDetailUiState(
             expiryField = expiryFieldValue(Instant.now().plus(DEFAULT_VALIDITY_DAYS, ChronoUnit.DAYS)),
+            agents = _state.value.agents,
+            egresses = _state.value.egresses,
         )
     }
 
@@ -202,6 +249,7 @@ class ClientDetailViewModel @Inject constructor(
                 trafficResetCycle = state.resetCycle,
                 note = state.note.trim(),
                 maxDevices = state.maxDevices.toIntOrNull() ?: 0,
+                defaultEgress = state.defaultEgress,
             ),
         )
     }
@@ -231,6 +279,7 @@ class ClientDetailViewModel @Inject constructor(
                 note = state.note.trim().takeIf { it != original?.note },
                 maxDevices = (state.maxDevices.toIntOrNull() ?: 0)
                     .takeIf { it != original?.maxDevices },
+                defaultEgress = state.defaultEgress.takeIf { it != original?.defaultEgress },
             ),
         )
     }

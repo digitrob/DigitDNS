@@ -70,6 +70,7 @@ data class ClientDto(
     val note: String = "",
     @SerialName("custom_policies") val customPolicies: List<String> = emptyList(),
     @SerialName("max_devices") val maxDevices: Int = 0,
+    @SerialName("default_egress") val defaultEgress: String = "",
     @SerialName("register_secret") val registerSecret: String = "",
     @SerialName("total_queries") val totalQueries: Long = 0,
     @SerialName("last_seen") val lastSeen: String = "",
@@ -95,6 +96,7 @@ data class ClientCreateRequest(
     @SerialName("custom_policies") val customPolicies: List<String> = emptyList(),
     val note: String = "",
     @SerialName("max_devices") val maxDevices: Int = 0,
+    @SerialName("default_egress") val defaultEgress: String = "",
 )
 
 /**
@@ -117,6 +119,7 @@ data class ClientUpdateRequest(
     val enabled: Boolean? = null,
     @SerialName("validity_days_add") val validityDaysAdd: Int? = null,
     @SerialName("max_devices") val maxDevices: Int? = null,
+    @SerialName("default_egress") val defaultEgress: String? = null,
 )
 
 /** Per-action body; only the fields the action reads are ever set. */

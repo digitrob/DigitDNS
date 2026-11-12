@@ -181,7 +181,7 @@ private fun ClientsTopBar(
 ) {
     PanelScreenHeader {
         IconButton(onClick = onNewClient) {
-            Icon(Icons.Filled.Add, contentDescription = "New client")
+            Icon(Icons.Filled.Add, contentDescription = "New user")
         }
     }
 

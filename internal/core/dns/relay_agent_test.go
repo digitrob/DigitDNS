@@ -14,7 +14,7 @@ func relayHandler(v4, v6 string) *Handler {
 	m := matcher.NewMatcher()
 	m.SetCustomRules([]string{"ard.example"}, nil, nil, nil)
 	h := NewHandler(&dummyAccess{}, nil, m, nil, nil, "198.51.100.1")
-	h.SetRelayLookup(func(domain string) RelayTarget {
+	h.SetRelayLookup(func(domain, clientIP string) RelayTarget {
 		if domain != "ard.example" {
 			return RelayTarget{Kind: "local"}
 		}
@@ -96,7 +96,7 @@ func egressHandler(failClosed, healthy bool) *Handler {
 	m := matcher.NewMatcher()
 	m.SetCustomRules([]string{"ard.example"}, nil, nil, nil)
 	h := NewHandler(&dummyAccess{}, nil, m, nil, nil, "198.51.100.1")
-	h.SetRelayLookup(func(domain string) RelayTarget {
+	h.SetRelayLookup(func(domain, clientIP string) RelayTarget {
 		if domain != "ard.example" {
 			return RelayTarget{Kind: "local"}
 		}

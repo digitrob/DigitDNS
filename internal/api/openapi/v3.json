@@ -602,6 +602,10 @@
             "type": "string",
             "format": "date-time",
             "description": "When the traffic allowance next rolls over; omitted when no reset cycle is set."
+          },
+          "default_egress": {
+            "type": "string",
+            "description": "Fallback exit when no domain override or service default applies: \"\" for This Server, an agent ID, or \"egress:<id>\"."
           }
         }
       },
@@ -671,6 +675,10 @@
           },
           "max_devices": {
             "type": "integer"
+          },
+          "default_egress": {
+            "type": "string",
+            "description": "Fallback exit when no domain override or service default applies: \"\" for This Server, an agent ID, or \"egress:<id>\"."
           }
         }
       },
@@ -712,6 +720,10 @@
           },
           "max_devices": {
             "type": "integer"
+          },
+          "default_egress": {
+            "type": "string",
+            "description": "Fallback exit when no domain override or service default applies: \"\" for This Server, an agent ID, or \"egress:<id>\"."
           }
         }
       },
@@ -5100,6 +5112,111 @@
             "$ref": "#/components/responses/Unauthorized"
           }
         }
+      }
+    },
+    "/api/v3/explain": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Explain a domain decision",
+        "description": "Returns the resolver precedence for a domain and optional client IP: action, rule, pattern, blocklist and allowlist detail, custom record, and the relay/egress target.",
+        "operationId": "getExplain",
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "client",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Client IP used to select the account default egress."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "domain is required"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v3/alerts": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Read alert settings",
+        "operationId": "getAlerts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "description": "Returns alert channels, cooldown and enabled event types. Tokens are redacted."
+      },
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Save alert settings",
+        "operationId": "saveAlerts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid configuration"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "description": "Saves the alert configuration. A redacted token is merged with the stored one."
+      }
+    },
+    "/api/v3/alerts/test": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Send a test alert",
+        "operationId": "testAlerts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "description": "Sends a synthetic test alert to every enabled channel."
       }
     }
   }

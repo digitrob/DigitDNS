@@ -5,6 +5,8 @@ import com.digitrob.digitdns.core.network.DiagnosticsApi
 import com.digitrob.digitdns.domain.model.DiagnosticReport
 import com.digitrob.digitdns.domain.model.DiagnosticResult
 import com.digitrob.digitdns.domain.model.DiagnosticTarget
+import com.digitrob.digitdns.domain.model.ExplainResult
+import com.digitrob.digitdns.domain.model.toDomain
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,6 +25,9 @@ class DiagnosticsRepository @Inject constructor(
 
     suspend fun deleteTarget(host: String): List<DiagnosticTarget> =
         api.deleteTarget(host).targets.map(DiagnosticTarget::from)
+
+    suspend fun explain(domain: String, client: String): ExplainResult =
+        api.explain(domain, client.ifBlank { null }).toDomain()
 
     suspend fun run(): DiagnosticReport {
         val dto = api.run()

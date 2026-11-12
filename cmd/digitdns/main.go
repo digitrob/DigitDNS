@@ -574,8 +574,116 @@ func main() {
 		log.Printf("[Main] Warning: relay mode did not start: %v", err)
 	}
 	defer relayModeManager.Stop()
-	sniServer.SetRelayTarget(func(hostname string) proxy.RelayDialTarget {
-		target, _ := relayRouter.LookupFor(hostname, "")
+	relayRouter.SetClientEgressLookup(func(ip string) string {
+		if c, ok := clientService.IsIPAllowed(ip); ok && c != nil {
+			return c.DefaultEgress
+		}
+		return ""
+	})
+	// Alerts: evaluate relay/egress/client/upstream transitions on a timer and
+	// deliver them through the configured channels. The checks are closures over
+	// the live services, so no query path is instrumented and nothing blocks DNS.
+	alertManager := service.NewAlertManager(db)
+	alertManager.AddSource(func() []service.AlertEvent {
+		agents, err := db.ListAgents()
+		if err != nil {
+			return nil
+		}
+		var out []service.AlertEvent
+		limit := time.Duration(alertManager.Thresholds().AgentOfflineMinutes) * time.Minute
+		for _, a := range agents {
+			if !a.Enabled || a.LastSeen.IsZero() {
+				continue
+			}
+			if time.Since(a.LastSeen) > limit {
+				out = append(out, service.AlertEvent{
+					Key: "agent:" + a.ID, Type: "agents", Severity: "warning",
+					Title:   "Relay agent offline: " + a.Name,
+					Message: fmt.Sprintf("%s (%s) has not heartbeated for %s.", a.Name, a.Country, time.Since(a.LastSeen).Round(time.Minute)),
+				})
+			}
+		}
+		return out
+	})
+	alertManager.AddSource(func() []service.AlertEvent {
+		var out []service.AlertEvent
+		for _, e := range egressRegistry.Views() {
+			if !e.Enabled || e.Health != "offline" {
+				continue
+			}
+			out = append(out, service.AlertEvent{
+				Key: "egress:" + e.ID, Type: "egresses", Severity: "warning",
+				Title:   "Egress offline: " + e.Name,
+				Message: fmt.Sprintf("%s %s is offline: %s", e.Kind, e.Name, e.LastError),
+			})
+		}
+		return out
+	})
+	alertManager.AddSource(func() []service.AlertEvent {
+		v := relayModeManager.Status()
+		if !v.Enabled || v.Online {
+			return nil
+		}
+		return []service.AlertEvent{{
+			Key: "relay-mode", Type: "relay_mode", Severity: "warning",
+			Title:   "This server is not syncing with its relay hub",
+			Message: fmt.Sprintf("Hub %s is offline or rejected the heartbeat: %s", v.HubURL, v.LastError),
+		}}
+	})
+	alertManager.AddSource(func() []service.AlertEvent {
+		clients, err := clientService.ListClientViews()
+		if err != nil {
+			return nil
+		}
+		var out []service.AlertEvent
+		now := time.Now()
+		for _, c := range clients {
+			if !c.Enabled {
+				continue
+			}
+			if c.QuotaExceeded {
+				out = append(out, service.AlertEvent{
+					Key: "client:" + c.ID + ":quota", Type: "clients", Severity: "warning",
+					Title:   "Quota exhausted: " + c.Name,
+					Message: fmt.Sprintf("%s has used its traffic allowance.", c.Name),
+				})
+			}
+			if !c.ExpiresAt.IsZero() && now.After(c.ExpiresAt) {
+				out = append(out, service.AlertEvent{
+					Key: "client:" + c.ID + ":expired", Type: "clients", Severity: "warning",
+					Title:   "Account expired: " + c.Name,
+					Message: fmt.Sprintf("%s expired on %s.", c.Name, c.ExpiresAt.Format("2006-01-02")),
+				})
+			}
+		}
+		return out
+	})
+	alertManager.AddSource(func() []service.AlertEvent {
+		return service.CertificateExpiryEvents(tlsSettings, certSettings, alertManager.Thresholds().CertExpiryDays)
+	})
+	alertManager.AddSource(func() []service.AlertEvent {
+		if u == nil {
+			return nil
+		}
+		var out []service.AlertEvent
+		limit := alertManager.Thresholds().UpstreamErrorPercent
+		for _, st := range u.GetUpstreamStats() {
+			degraded := st.CircuitOpen || (st.RecentSamples >= 10 && st.RecentErrorRate*100 >= float64(limit))
+			if !degraded {
+				continue
+			}
+			out = append(out, service.AlertEvent{
+				Key: "upstream:" + st.Address, Type: "upstreams", Severity: "warning",
+				Title:   "Upstream circuit open: " + st.Address,
+				Message: fmt.Sprintf("%s is failing repeatedly: %s", st.Address, st.LastError),
+			})
+		}
+		return out
+	})
+	alertManager.Start(context.Background())
+
+	sniServer.SetRelayTarget(func(hostname, clientIP string) proxy.RelayDialTarget {
+		target, _ := relayRouter.LookupFor(hostname, clientIP)
 		return proxy.RelayDialTarget{
 			Kind: target.Kind, EgressID: target.EgressID, EgressName: target.EgressName,
 			EgressKind: target.EgressKind, FailClosed: target.FailClosed, Healthy: target.Healthy,
@@ -598,8 +706,8 @@ func main() {
 	}
 	dnsHandler.SetProxyLeakProtection(dnsSettings.ProxyLeakProtection)
 	dnsHandler.SetBlockPolicy(filterService.BlockPolicy)
-	dnsHandler.SetRelayLookup(func(domain string) dns.RelayTarget {
-		target, _ := relayRouter.LookupFor(domain, "")
+	dnsHandler.SetRelayLookup(func(domain, clientIP string) dns.RelayTarget {
+		target, _ := relayRouter.LookupFor(domain, clientIP)
 		out := dns.RelayTarget{
 			Kind: target.Kind, AgentID: target.AgentID, AgentName: target.Name,
 			Country: target.Country, EgressID: target.EgressID, EgressName: target.EgressName,
@@ -747,6 +855,7 @@ func main() {
 	webServer.SetAuthSettings(authSettings)
 	webServer.SetCustomGroupService(customGroupService)
 	webServer.SetRelayRouter(relayRouter)
+	webServer.SetAlertManager(alertManager)
 	webServer.SetEgressRegistry(egressRegistry)
 	webServer.SetRelayModeManager(relayModeManager)
 	webServer.SetEngineSetter(dnsHandler.SetEngineEnabled)

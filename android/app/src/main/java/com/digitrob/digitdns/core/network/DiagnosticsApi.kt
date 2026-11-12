@@ -31,7 +31,47 @@ interface DiagnosticsApi {
 
     @POST("diagnostics/run")
     suspend fun run(): DiagnosticReport
+
+    /** The resolver's ordered decision for one name, optionally for a client IP. */
+    @GET("explain")
+    suspend fun explain(
+        @Query("domain") domain: String,
+        @Query("client") client: String? = null,
+    ): ExplainDto
 }
+
+@Serializable
+data class ExplainDto(
+    val domain: String = "",
+    @SerialName("client_ip") val clientIp: String = "",
+    val account: String = "",
+    val engine: Boolean = true,
+    val action: String = "",
+    val rule: String = "",
+    val pattern: String = "",
+    val source: String = "",
+    @SerialName("blocklist_source") val blocklistSource: String = "",
+    @SerialName("blocklist_pattern") val blocklistPattern: String = "",
+    @SerialName("allow_source") val allowSource: String = "",
+    @SerialName("allow_pattern") val allowPattern: String = "",
+    @SerialName("suppressed_source") val suppressedSource: String = "",
+    @SerialName("suppressed_pattern") val suppressedPattern: String = "",
+    @SerialName("custom_record") val customRecord: String = "",
+    val target: ExplainTargetDto? = null,
+)
+
+@Serializable
+data class ExplainTargetDto(
+    val kind: String = "",
+    @SerialName("agent_id") val agentId: String = "",
+    val name: String = "",
+    val country: String = "",
+    @SerialName("egress_id") val egressId: String = "",
+    @SerialName("egress_kind") val egressKind: String = "",
+    val healthy: Boolean = true,
+    @SerialName("fail_closed") val failClosed: Boolean = false,
+    @SerialName("fallback_reason") val fallbackReason: String = "",
+)
 
 @Serializable
 data class DiagnosticsTargetsResponse(

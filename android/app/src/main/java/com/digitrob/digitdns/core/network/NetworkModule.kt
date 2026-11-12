@@ -212,6 +212,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideAlertsApi(retrofit: Retrofit): AlertsApi = retrofit.create(AlertsApi::class.java)
+
+    @Provides
+    @Singleton
     fun provideDiagnosticsApi(retrofit: Retrofit): DiagnosticsApi =
         retrofit.create(DiagnosticsApi::class.java)
 

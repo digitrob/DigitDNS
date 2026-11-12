@@ -68,6 +68,7 @@ import com.digitrob.digitdns.core.network.UpstreamPresetProvider
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.core.network.normalizedAdaptiveIntervalMinutes
 import com.digitrob.digitdns.core.network.normalizedResolutionStrategy
+import com.digitrob.digitdns.domain.model.relayRelativeAge
 import com.digitrob.digitdns.core.network.normalizedTransports
 import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
 import com.digitrob.digitdns.ui.components.PanelCard
@@ -149,6 +150,7 @@ internal fun UpstreamRacersCard(
                                     resolverExcludedByTransport(stat.address, policy.transport, policy.encrypted) ||
                                     (policy.pinActive && stat.address != policy.pinned),
                                 isAdaptiveCurrent = stat.address == adaptiveCurrent,
+                                adaptiveLastRun = resolutionControls.settings?.adaptiveLastRun.orEmpty(),
                                 onRemove = {
                                     scope.launch { removeError = actions.onRemove(stat.address) }
                                 },
@@ -935,12 +937,14 @@ private fun UpstreamAddRow(
     }
 }
 
+@Suppress("LongMethod")
 @Composable
 private fun UpstreamRow(
     stat: UpstreamStat,
     swipeEnabled: Boolean,
     dimmed: Boolean,
     isAdaptiveCurrent: Boolean,
+    adaptiveLastRun: String,
     onRemove: () -> Unit,
 ) {
     val colors = DigitDnsTheme.colors
@@ -1016,6 +1020,18 @@ private fun UpstreamRow(
                                 .clip(RoundedCornerShape(999.dp))
                                 .background(colors.success.copy(alpha = 0.12f))
                                 .padding(horizontal = 5.dp, vertical = 1.dp),
+                            maxLines = 1,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = relayRelativeAge(adaptiveLastRun).let {
+                                if (it == "never") "—" else it
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 8.sp,
+                                fontFamily = PanelMono,
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                         )
                     }

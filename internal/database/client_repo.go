@@ -81,6 +81,7 @@ type encClient struct {
 	Enabled           bool      `json:"enabled"`
 	Note              string    `json:"note"`
 	CustomPolicies    []string  `json:"custom_policies"`
+	DefaultEgress     string    `json:"default_egress,omitempty"`
 
 	// The recurring-quota fields are stored in the clear beside the limit they
 	// govern. A cycle name and two counters say nothing about who the subscriber is
@@ -212,6 +213,7 @@ func (db *DB) packClient(c Client) ([]byte, error) {
 		Enabled:           c.Enabled,
 		Note:              c.Note,
 		CustomPolicies:    c.CustomPolicies,
+		DefaultEgress:     c.DefaultEgress,
 
 		TrafficResetCycle:     c.TrafficResetCycle,
 		TrafficResetAnchor:    c.TrafficResetAnchor,
@@ -287,6 +289,7 @@ func (db *DB) unpackClient(data []byte) (*Client, error) {
 		Enabled:          enc.Enabled,
 		Note:             enc.Note,
 		CustomPolicies:   customPolicies,
+		DefaultEgress:    enc.DefaultEgress,
 
 		TrafficResetCycle:     enc.TrafficResetCycle,
 		TrafficResetAnchor:    enc.TrafficResetAnchor,

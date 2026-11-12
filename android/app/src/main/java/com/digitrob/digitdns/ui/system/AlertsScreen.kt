@@ -101,6 +101,8 @@ fun AlertsScreen(viewModel: LiveAlertsViewModel = hiltViewModel()) {
             }
         }
 
+        ServerAlertsCard()
+
         if (state.enabled && !permissionGranted) {
             Text(
                 text = stringResource(R.string.alerts_permission_needed),

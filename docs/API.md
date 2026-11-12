@@ -593,6 +593,7 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/clients \
     "traffic_limit_gb": 50,
     "traffic_reset_cycle": "monthly",
     "custom_policies": [],
+    "default_egress": "",
     "note": "Purchased 50GB VIP Plan"
   }'
 ```
@@ -600,6 +601,8 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/clients \
 `name` is the only required field.
 
 `custom_policies` (v2: `policy_ids`) is accepted and stored, but it is **inert** in this build: the resolver applies one set of rules to everybody, so the list does not narrow an account's routing. Send `[]` or omit it.
+
+`default_egress` is the account's fallback exit when neither a domain override nor a service default names one. Use `""` for **This Server**, an agent ID, or `egress:<id>` for a SOCKS5/WireGuard egress. Domain and service assignments still win.
 
 **`days` has no server-side default, and omitting it does not mean "short trial" — it means the account never expires.** A zero or absent `days` stores no expiry date at all, which is how the *Lifetime* plan is created and also how a billing integration with a missing field silently gives away a permanent account. Always send it explicitly, even when your product's default is 30.
 
@@ -621,6 +624,7 @@ Omit it and the account behaves exactly as it did before v1.5.0: one quota, spen
   "next_traffic_reset": "2026-10-01T19:30:00Z",
   "quota_exceeded": false,
   "custom_policies": [],
+  "default_egress": "",
   "note": "Purchased 50GB VIP Plan",
   "created_at": "2026-09-01T19:30:00Z",
   "expires_at": "2026-10-01T19:30:00Z",
@@ -697,6 +701,7 @@ curl -s -X PUT http://127.0.0.1:8080/api/v1/clients/c4b8e219 \
     "traffic_limit_gb": 100,
     "traffic_reset_cycle": "monthly",
     "custom_policies": [],
+    "default_egress": "egress:egress-abc123",
     "enabled": true,
     "note": "Upgraded to 100GB plan"
   }'

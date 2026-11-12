@@ -291,6 +291,7 @@ type v3ClientDTO struct {
 	Note              string   `json:"note,omitempty"`
 	PolicyIDs         []string `json:"custom_policies"`
 	MaxDevices        int      `json:"max_devices"`
+	DefaultEgress     string   `json:"default_egress,omitempty"`
 	RegisterSecret    string   `json:"register_secret,omitempty"`
 	TotalQueries      uint64   `json:"total_queries"`
 	LastSeen          string   `json:"last_seen,omitempty"`
@@ -312,6 +313,7 @@ func v3ViewToDTO(c service.ClientView) v3ClientDTO {
 		Note:              c.Note,
 		PolicyIDs:         c.CustomPolicies,
 		MaxDevices:        database.NormalizeMaxDevices(c.MaxDevices),
+		DefaultEgress:     c.DefaultEgress,
 		RegisterSecret:    c.RegisterSecret,
 		TotalQueries:      c.TotalQueries,
 	}
@@ -373,6 +375,7 @@ func (a *API) handleV3Clients(w http.ResponseWriter, r *http.Request) {
 			QuotaLimitGB    float64    `json:"traffic_limit_gb"`
 			QuotaResetCycle string     `json:"traffic_reset_cycle"`
 			PolicyIDs       []string   `json:"custom_policies"`
+			DefaultEgress   string     `json:"default_egress"`
 			Note            string     `json:"note"`
 			MaxDevices      int        `json:"max_devices"`
 		}
@@ -400,6 +403,7 @@ func (a *API) handleV3Clients(w http.ResponseWriter, r *http.Request) {
 			Note:              req.Note,
 			CustomPolicies:    req.PolicyIDs,
 			MaxDevices:        req.MaxDevices,
+			DefaultEgress:     req.DefaultEgress,
 		})
 		if err != nil {
 			httpx.WriteClientError(w, err)
@@ -480,6 +484,7 @@ type v3PatchRequest struct {
 	ValidityDaysAdd *int       `json:"validity_days_add"`
 	ExpiresAt       *time.Time `json:"expires_at"`
 	MaxDevices      *int       `json:"max_devices"`
+	DefaultEgress   *string    `json:"default_egress"`
 }
 
 func (p v3PatchRequest) toService() service.UpdateClientRequest {
@@ -513,6 +518,9 @@ func (p v3PatchRequest) toService() service.UpdateClientRequest {
 	}
 	if p.MaxDevices != nil {
 		req.MaxDevices = p.MaxDevices
+	}
+	if p.DefaultEgress != nil {
+		req.DefaultEgress = p.DefaultEgress
 	}
 	return req
 }
@@ -1801,6 +1809,75 @@ func (a *API) handleV3FlushCache(w http.ResponseWriter, r *http.Request) {
 	}
 	a.cache.Flush()
 	_ = json.NewEncoder(w).Encode(map[string]any{"flushed": true})
+}
+
+func (a *API) handleV3Alerts(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		resp, err := a.v3Backend.AlertSettings()
+		if err != nil {
+			writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	case http.MethodPost:
+		body, ok := v3Body(r)
+		if !ok {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			return
+		}
+		resp, err := a.v3Backend.SaveAlertSettings(r, body)
+		if err != nil {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
+	}
+}
+
+func (a *API) handleV3AlertsTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	resp, err := a.v3Backend.TestAlerts(r)
+	if err != nil {
+		writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (a *API) handleV3Explain(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	domain := strings.TrimSpace(r.URL.Query().Get("domain"))
+	if domain == "" {
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "domain is required")
+		return
+	}
+	resp, err := a.v3Backend.Explain(domain, strings.TrimSpace(r.URL.Query().Get("client")))
+	if err != nil {
+		writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (a *API) handleV3DiagnosticsTargets(w http.ResponseWriter, r *http.Request) {

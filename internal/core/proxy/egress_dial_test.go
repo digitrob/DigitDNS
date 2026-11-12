@@ -25,7 +25,7 @@ func (f *fakeEgressDialer) Dial(context.Context, string, string, []netip.Addr, i
 func TestDialTargetFailClosedEgressRefuses(t *testing.T) {
 	s := NewServer(database.SNIProxySettings{}, "127.0.0.1", "", nil)
 	dialer := &fakeEgressDialer{}
-	s.SetRelayTarget(func(string) RelayDialTarget {
+	s.SetRelayTarget(func(string, string) RelayDialTarget {
 		return RelayDialTarget{
 			Kind: "egress", EgressID: "e1", EgressName: "NL",
 			FailClosed: true, Healthy: false,
@@ -46,7 +46,7 @@ func TestDialTargetHealthyEgressIsUsed(t *testing.T) {
 	server, client := net.Pipe()
 	defer server.Close()
 	dialer := &fakeEgressDialer{conn: client}
-	s.SetRelayTarget(func(string) RelayDialTarget {
+	s.SetRelayTarget(func(string, string) RelayDialTarget {
 		return RelayDialTarget{
 			Kind: "egress", EgressID: "e1", EgressName: "NL",
 			FailClosed: true, Healthy: true,
@@ -83,7 +83,7 @@ func TestDialTargetFailOpenEgressFallsBack(t *testing.T) {
 
 	s := NewServer(database.SNIProxySettings{}, "127.0.0.1", "", nil)
 	dialer := &fakeEgressDialer{err: errors.New("egress down")}
-	s.SetRelayTarget(func(string) RelayDialTarget {
+	s.SetRelayTarget(func(string, string) RelayDialTarget {
 		return RelayDialTarget{
 			Kind: "egress", EgressID: "e1", EgressName: "NL",
 			FailClosed: false, Healthy: true,

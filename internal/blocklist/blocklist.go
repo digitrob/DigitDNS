@@ -117,6 +117,37 @@ func (i *Index) MatchNormalized(d string) (blocked bool, source, pattern string)
 	return false, "", ""
 }
 
+// BlockMatchNormalized returns the blocklist rule for d without consulting the
+// allowlist. It is the explanation path: the resolver's MatchNormalized already
+// suppresses an allowed name, but "why was this allowed?" needs to show which
+// blocklist rule would otherwise have applied.
+func (i *Index) BlockMatchNormalized(d string) (blocked bool, source, pattern string) {
+	if i == nil || d == "" {
+		return false, "", ""
+	}
+	if name, ok := i.blockExact[d]; ok {
+		return true, name, d
+	}
+	if name, pat, ok := lookupSuffix(i.blockWildcard, d); ok {
+		return true, name, pat
+	}
+	return false, "", ""
+}
+
+// AllowMatchNormalized returns the allowlist rule covering d, if any.
+func (i *Index) AllowMatchNormalized(d string) (source, pattern string, ok bool) {
+	if i == nil || d == "" {
+		return "", "", false
+	}
+	if name, ok := i.allowExact[d]; ok {
+		return name, d, true
+	}
+	if name, pat, ok := lookupSuffix(i.allowWildcard, d); ok {
+		return name, pat, true
+	}
+	return "", "", false
+}
+
 // DomainCount is the number of unique blocked names, counting an exact rule and
 // its suffix form once.
 func (i *Index) DomainCount() int {

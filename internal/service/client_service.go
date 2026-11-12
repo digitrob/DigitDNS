@@ -131,6 +131,7 @@ type UpdateClientRequest struct {
 	Note           *string    `json:"note"`
 	CustomPolicies *[]string  `json:"custom_policies"`
 	MaxDevices     *int       `json:"max_devices"`
+	DefaultEgress  *string    `json:"default_egress"`
 
 	// TrafficResetCycle is "", "daily", "weekly" or "monthly". Switching a cycle on
 	// anchors it at the moment of the request, so the first rollover is a whole
@@ -606,6 +607,7 @@ type CreateClientRequest struct {
 	Note           string
 	CustomPolicies []string
 	MaxDevices     int
+	DefaultEgress  string
 }
 
 // ProvisionClient creates a subscriber account from a full plan in a single write.
@@ -706,6 +708,7 @@ func (s *ClientService) ProvisionClient(req CreateClientRequest) (*database.Clie
 		Note:           req.Note,
 		CustomPolicies: policies,
 		MaxDevices:     database.NormalizeMaxDevices(req.MaxDevices),
+		DefaultEgress:  strings.TrimSpace(req.DefaultEgress),
 
 		RegisterSecret: registerSecret,
 
@@ -810,6 +813,9 @@ func (s *ClientService) UpdateClient(id string, req UpdateClientRequest) (*datab
 		}
 		if req.CustomPolicies != nil {
 			client.CustomPolicies = *req.CustomPolicies
+		}
+		if req.DefaultEgress != nil {
+			client.DefaultEgress = strings.TrimSpace(*req.DefaultEgress)
 		}
 		if req.MaxDevices != nil {
 			// Clamp on write so a stored record is always in range; the registration

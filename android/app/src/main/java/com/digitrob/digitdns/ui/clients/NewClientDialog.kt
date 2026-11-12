@@ -71,7 +71,7 @@ fun NewClientDialog(
         },
         title = {
             Text(
-                text = if (created == null) "New client" else "Client created",
+                text = if (created == null) "New user" else "User created",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )

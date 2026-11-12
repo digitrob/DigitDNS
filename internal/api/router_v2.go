@@ -131,6 +131,7 @@ type v2ClientDTO struct {
 	QuotaLimitBytes float64  `json:"quota_limit_gb"`       // 0 = unlimited (unit kept for v1 parity)
 	QuotaResetCycle string   `json:"quota_reset_cycle"`    // "", daily, weekly, monthly
 	PolicyIDs       []string `json:"policy_ids"`
+	DefaultEgress   string   `json:"default_egress,omitempty"`
 	Note            string   `json:"note,omitempty"`
 	Enabled         bool     `json:"enabled"`
 	MaxDevices      int      `json:"max_devices"`
@@ -251,6 +252,7 @@ func (a *API) handleV2Clients(w http.ResponseWriter, r *http.Request) {
 			QuotaLimitGB    float64  `json:"quota_limit_gb"`
 			QuotaResetCycle string   `json:"quota_reset_cycle"`
 			PolicyIDs       []string `json:"policy_ids"`
+			DefaultEgress   string   `json:"default_egress"`
 			Note            string   `json:"note"`
 			MaxDevices      int      `json:"max_devices"`
 		}
@@ -273,6 +275,7 @@ func (a *API) handleV2Clients(w http.ResponseWriter, r *http.Request) {
 			Note:              req.Note,
 			CustomPolicies:    req.PolicyIDs,
 			MaxDevices:        req.MaxDevices,
+			DefaultEgress:     req.DefaultEgress,
 		})
 		if err != nil {
 			httpx.WriteClientError(w, err)
@@ -347,6 +350,7 @@ type v2PatchRequest struct {
 	Enabled         *bool     `json:"enabled"`
 	ValidityDaysAdd *int      `json:"validity_days_add"`
 	MaxDevices      *int      `json:"max_devices"`
+	DefaultEgress   *string   `json:"default_egress"`
 }
 
 func (p v2PatchRequest) toService() service.UpdateClientRequest {
@@ -374,6 +378,9 @@ func (p v2PatchRequest) toService() service.UpdateClientRequest {
 	}
 	if p.MaxDevices != nil {
 		req.MaxDevices = p.MaxDevices
+	}
+	if p.DefaultEgress != nil {
+		req.DefaultEgress = p.DefaultEgress
 	}
 	return req
 }
@@ -434,6 +441,7 @@ func v2ViewToDTO(c service.ClientView) v2ClientDTO {
 		QuotaLimitBytes: c.TrafficLimitGB,
 		QuotaResetCycle: c.TrafficResetCycle,
 		PolicyIDs:       c.CustomPolicies,
+		DefaultEgress:   c.DefaultEgress,
 		Note:            c.Note,
 		Enabled:         c.Enabled,
 		MaxDevices:      database.NormalizeMaxDevices(c.MaxDevices),

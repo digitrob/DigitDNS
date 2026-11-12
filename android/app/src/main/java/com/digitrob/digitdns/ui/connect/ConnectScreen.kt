@@ -59,7 +59,7 @@ fun ConnectScreen(viewModel: ConnectViewModel = hiltViewModel()) {
             else -> {
                 if (state.clients.isEmpty()) {
                     Text(
-                        "No clients yet. Create one in the Clients tab to share a subscription link.",
+                        "No clients yet. Create one in the Users tab to share a subscription link.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )

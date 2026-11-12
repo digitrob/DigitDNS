@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -124,6 +126,10 @@ fun PanelWideDialog(
     scrollable: Boolean = true,
 ) {
     val colors = DigitDnsTheme.colors
+    // A dialog taller than the phone would put its footer off the screen. Cap it
+    // and let the existing vertical scroll carry the rest, so the Save/Cancel row
+    // is always reachable.
+    val maxDialogHeight = (LocalConfiguration.current.screenHeightDp * 0.92f).dp
     val container = if (solid) {
         colors.bgCard.compositeOver(colors.bgMain)
     } else {
@@ -134,18 +140,18 @@ fun PanelWideDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(
-            modifier = modifier.fillMaxWidth(WIDE_DIALOG_WIDTH),
+            modifier = modifier.fillMaxWidth(WIDE_DIALOG_WIDTH).heightIn(max = maxDialogHeight),
             shape = RoundedCornerShape(14.dp),
             color = container,
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ) {
             Column(
                 modifier = Modifier
-                    .padding(12.dp)
+                    .padding(10.dp)
                     .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier),
             ) {
                 title?.let {
-                    Box(modifier = Modifier.padding(bottom = 12.dp)) { it() }
+                    Box(modifier = Modifier.padding(bottom = 8.dp)) { it() }
                 }
                 if (scrollable) {
                     text?.invoke()
@@ -158,7 +164,7 @@ fun PanelWideDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp),
+                        .padding(top = 8.dp),
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

@@ -11,6 +11,7 @@ import (
 	"digitdns/internal/api"
 	"digitdns/internal/auth"
 	"digitdns/internal/netutil"
+	"digitdns/internal/service"
 )
 
 // v3Backend adapts *WebServer onto the api.V3Backend interface the v3 router
@@ -395,6 +396,62 @@ func (b *v3Backend) ACMEStatus() map[string]any {
 // -----------------------------------------------------------------------------
 // Diagnostics targets
 // -----------------------------------------------------------------------------
+
+func (b *v3Backend) Explain(domain, clientIP string) (map[string]any, error) {
+	return b.ws.Explain(domain, clientIP)
+}
+
+func (b *v3Backend) AlertSettings() (map[string]any, error) {
+	if b.ws.alerts == nil {
+		return nil, nil
+	}
+	s, err := b.ws.alerts.Settings()
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"alerts": redactAlerts(s), "history": b.ws.alerts.History()}, nil
+}
+
+func (b *v3Backend) SaveAlertSettings(r *http.Request, body map[string]any) (map[string]any, error) {
+	if b.ws.alerts == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	var req service.AlertSettings
+	if err := json.Unmarshal(data, &req); err != nil {
+		return nil, err
+	}
+	if current, err := b.ws.alerts.Settings(); err == nil {
+		byID := map[string]string{}
+		for _, ch := range current.Channels {
+			byID[ch.ID] = ch.Token
+		}
+		for i := range req.Channels {
+			tok := strings.TrimSpace(req.Channels[i].Token)
+			if (tok == "" || strings.HasPrefix(tok, "••")) && byID[req.Channels[i].ID] != "" {
+				req.Channels[i].Token = byID[req.Channels[i].ID]
+			}
+		}
+	}
+	if err := validateAlerts(req); err != nil {
+		return nil, err
+	}
+	if err := b.ws.alerts.SaveSettings(req); err != nil {
+		return nil, err
+	}
+	return map[string]any{"alerts": redactAlerts(req), "history": b.ws.alerts.History()}, nil
+}
+
+func (b *v3Backend) TestAlerts(r *http.Request) (map[string]any, error) {
+	if b.ws.alerts == nil {
+		return nil, nil
+	}
+	failures := b.ws.alerts.SendTest(r.Context())
+	return map[string]any{"ok": len(failures) == 0, "errors": failures}, nil
+}
 
 func (b *v3Backend) DiagnosticsTargets() map[string]any {
 	rec := httptest.NewRecorder()

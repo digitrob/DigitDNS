@@ -370,6 +370,82 @@ func (m *Matcher) matchDetailLower(d string) (Action, string, string) {
 	return ActionDirect, "Direct", ""
 }
 
+// Explanation is the ordered decision behind a name: which stage answered, the
+// rule and pattern that matched, and whether an allowlist suppressed a blocklist
+// rule. It is the support-facing counterpart to MatchDetail, which only carries
+// what the query log needs.
+type Explanation struct {
+	Action            string `json:"action"`
+	Rule              string `json:"rule"`
+	Pattern           string `json:"pattern,omitempty"`
+	Source            string `json:"source,omitempty"`
+	BlocklistSource   string `json:"blocklist_source,omitempty"`
+	BlocklistPattern  string `json:"blocklist_pattern,omitempty"`
+	AllowSource       string `json:"allow_source,omitempty"`
+	AllowPattern      string `json:"allow_pattern,omitempty"`
+	SuppressedSource  string `json:"suppressed_source,omitempty"`
+	SuppressedPattern string `json:"suppressed_pattern,omitempty"`
+	CustomRecord      string `json:"custom_record,omitempty"`
+}
+
+// Explain returns the same precedence the resolver uses, plus the allowlist and
+// custom-record detail that MatchDetail deliberately leaves out. Keep this in
+// step with matchDetailLower: it is the one place the operator can see the chain.
+func (m *Matcher) Explain(domain string) Explanation {
+	d := normalizeDomain(domain)
+	snap := m.snapshot.Load()
+	if snap == nil {
+		return Explanation{Action: "DIRECT", Rule: "Direct", Source: "default"}
+	}
+	if record, ok := snap.customRecords[d]; ok {
+		return Explanation{
+			Action: "CUSTOM", Rule: "Custom Record", Source: "custom",
+			CustomRecord: record,
+		}
+	}
+	if name, pattern, ok := snap.direct.lookupPattern(d); ok {
+		return Explanation{Action: "DIRECT", Rule: name, Pattern: pattern, Source: "custom"}
+	}
+	if name, pattern, ok := snap.blocked.lookupPattern(d); ok {
+		return Explanation{Action: "BLOCK", Rule: name, Pattern: pattern, Source: "custom"}
+	}
+
+	allowSource, allowPattern, allowed := snap.blockIndex.AllowMatchNormalized(d)
+	blocked, blockSource, blockPattern := snap.blockIndex.BlockMatchNormalized(d)
+	if blocked && !allowed {
+		return Explanation{
+			Action: "BLOCK", Rule: "Blocklist: " + blockSource, Pattern: blockPattern,
+			Source: "blocklist", BlocklistSource: blockSource, BlocklistPattern: blockPattern,
+		}
+	}
+	// An allowlist entry that suppressed a real block is part of the answer, not
+	// noise: the operator needs to see why a listed name still resolves.
+	suppressedSource, suppressedPattern := "", ""
+	if blocked && allowed {
+		suppressedSource, suppressedPattern = blockSource, blockPattern
+	}
+
+	if name, pattern, ok := snap.realtime.lookupPattern(d); ok {
+		return Explanation{
+			Action: "DIRECT", Rule: name, Pattern: pattern, Source: "realtime",
+			AllowSource: allowSource, AllowPattern: allowPattern,
+			SuppressedSource: suppressedSource, SuppressedPattern: suppressedPattern,
+		}
+	}
+	if name, pattern, ok := snap.proxied.lookupPattern(d); ok {
+		return Explanation{
+			Action: "PROXY", Rule: name, Pattern: pattern, Source: "custom",
+			AllowSource: allowSource, AllowPattern: allowPattern,
+			SuppressedSource: suppressedSource, SuppressedPattern: suppressedPattern,
+		}
+	}
+	return Explanation{
+		Action: "DIRECT", Rule: "Direct", Source: "default",
+		AllowSource: allowSource, AllowPattern: allowPattern,
+		SuppressedSource: suppressedSource, SuppressedPattern: suppressedPattern,
+	}
+}
+
 // GetCustomRecord returns the custom DNS answer configured for a domain, if any.
 func (m *Matcher) GetCustomRecord(domain string) (string, bool) {
 	d := normalizeDomain(domain)

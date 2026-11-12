@@ -123,7 +123,7 @@ class ClientsViewModel @Inject constructor(
             } catch (e: ApiException) {
                 _state.update { it.copy(error = e.userMessage) }
             } catch (e: IOException) {
-                _state.update { it.copy(error = e.message ?: "Could not load clients.") }
+                _state.update { it.copy(error = e.message ?: "Could not load users.") }
             } finally {
                 // Cancellation and both failure paths land here, so neither indicator
                 // can be left spinning after a refresh that did not finish.
@@ -151,7 +151,7 @@ class ClientsViewModel @Inject constructor(
             } catch (e: ApiException) {
                 _state.update { it.copy(busyId = null, error = e.userMessage) }
             } catch (e: IOException) {
-                _state.update { it.copy(busyId = null, error = e.message ?: "Could not renew the client.") }
+                _state.update { it.copy(busyId = null, error = e.message ?: "Could not renew the user.") }
             }
         }
     }
@@ -207,7 +207,7 @@ class ClientsViewModel @Inject constructor(
             } catch (e: ApiException) {
                 _state.update { it.copy(busyId = null, error = e.userMessage) }
             } catch (e: IOException) {
-                _state.update { it.copy(busyId = null, error = e.message ?: "Could not delete the client.") }
+                _state.update { it.copy(busyId = null, error = e.message ?: "Could not delete the user.") }
             }
         }
     }

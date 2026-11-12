@@ -24,7 +24,7 @@
     <string name="tab_dashboard">Dashboard</string>
     <string name="tab_domains">Domains</string>
     <string name="tab_live_log">Live Log</string>
-    <string name="tab_clients">Clients</string>
+    <string name="tab_clients">Users</string>
     <string name="tab_settings">Settings</string>
 
     <!-- Shared actions. -->
@@ -134,15 +134,15 @@
     <string name="client_edit_uuid">Edit UUID</string>
     <string name="client_uuid">UUID</string>
     <string name="client_use_uuid">Use UUID</string>
-    <string name="client_name">Name</string>
-    <string name="client_allowed_ips">Allowed IPs (comma or space separated)</string>
+    <string name="client_name">Email / User Name</string>
+    <string name="client_allowed_ips">Allowed IPs / CIDRs (comma or newline separated)</string>
     <string name="client_traffic_gb">Traffic (GB)</string>
     <string name="client_max_devices">Max devices</string>
     <string name="client_note">Note</string>
     <string name="client_reset_traffic">Reset traffic</string>
     <string name="client_new_uuid">New UUID</string>
     <string name="client_new_secret">New secret</string>
-    <string name="client_delete_title">Delete this client?</string>
+    <string name="client_delete_title">Delete this user?</string>
     <string name="client_delete_body">Their subscription link and whitelisted address stop working immediately. This cannot be undone.</string>
     <string name="client_regenerate_title">Regenerate %1$s?</string>
     <string name="client_regenerate">Regenerate</string>
@@ -411,9 +411,9 @@
     <string name="transports_add_token">Add</string>
     <string name="transports_no_tokens">No DoQ tokens yet</string>
     <string name="transports_no_dot_tokens">No DoT tokens yet</string>
-    <string name="transports_doq_ip_summary">IPs: Clients → Allowed IPs + Settings → Access allowlist · clients %1$d · IPs/CIDRs %2$d · ranges %3$d</string>
+    <string name="transports_doq_ip_summary">IPs: Users → Allowed IPs + Settings → Access allowlist · clients %1$d · IPs/CIDRs %2$d · ranges %3$d</string>
     <string name="transports_ip_auth">IP authentication</string>
-    <string name="transports_ip_shared_help">Shared by DoQ, DoT and DNSCrypt: a source is accepted when it appears in Clients → Allowed IPs or Settings → Access → Server-wide Resolver Allowlist.</string>
+    <string name="transports_ip_shared_help">Shared by DoQ, DoT and DNSCrypt: a source is accepted when it appears in Users → Allowed IPs or Settings → Access → Server-wide Resolver Allowlist.</string>
     <string name="transports_doq_ip_public_warning">Public Mode is on — any source can use the IP-authenticated transports (DoQ, DoT, DNSCrypt); the allowlist is not enforced.</string>
     <string name="transports_doq_ip_empty_warning">No IPs allowlisted — IP-authenticated transports will refuse every source.</string>
     <string name="transports_dot">DoT (DNS-over-TLS)</string>
@@ -607,7 +607,7 @@
     <string name="login_master_key_hint">The master key grants full control of the install. Prefer an account where you can.</string>
 
     <!-- Connect / clients / rules -->
-    <string name="clients_credentials_warning">Copy these now — the secret and UUID are the credentials the subscriber needs. They stay available in the client\'s details.</string>
+    <string name="clients_credentials_warning">Copy these now — the secret and UUID are the credentials the subscriber needs. They stay available in the user\'s details.</string>
     <string name="connect_no_origin">No subscription origin is configured on the server, so no shareable link can be built. Set the public address in the panel\'s Settings.</string>
     <string name="connect_tap_to_copy">Tap to copy link</string>
     <string name="connect_how_to">How to connect devices</string>

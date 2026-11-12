@@ -23,6 +23,10 @@ type Client struct {
 	Enabled          bool      `json:"enabled"`
 	Note             string    `json:"note"`
 	CustomPolicies   []string  `json:"custom_policies"` // empty = inherit global policies
+	// DefaultEgress is where this account's proxied names exit when neither a
+	// domain override nor a service default names a target. Empty means this
+	// server; otherwise an agent ID or "egress:<id>".
+	DefaultEgress string `json:"default_egress,omitempty"`
 
 	// MaxDevices is how many source IPs this subscription may hold at once
 	// (v2.5). The registration path evicts the oldest bound address when a new

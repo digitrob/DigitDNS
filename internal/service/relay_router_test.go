@@ -175,3 +175,50 @@ func TestRelayRouterSkipsOfflineAndDisabledAgents(t *testing.T) {
 		t.Error("a disabled agent was considered healthy")
 	}
 }
+
+func TestRelayRouterClientDefaultEgressApplies(t *testing.T) {
+	r := NewRelayRouter()
+	r.SetAgents([]database.Agent{
+		relayAgent("de", "Frankfurt", "DE", "203.0.113.10"),
+		relayAgent("us", "New York", "US", "198.51.100.20"),
+	})
+	r.SetClientEgressLookup(func(ip string) string {
+		if ip == "192.0.2.10" {
+			return "de"
+		}
+		return ""
+	})
+
+	target, ok := r.LookupFor("unassigned.example", "192.0.2.10")
+	if !ok || target.Kind != "agent" || target.AgentID != "de" {
+		t.Fatalf("client default = %#v, %v; want the DE agent", target, ok)
+	}
+
+	if target, _ := r.LookupFor("unassigned.example", "192.0.2.11"); target.Kind != "local" {
+		t.Fatalf("unknown client = %#v; want local", target)
+	}
+}
+
+func TestRelayRouterDomainAndServiceBeatClientDefault(t *testing.T) {
+	r := NewRelayRouter()
+	r.SetAgents([]database.Agent{
+		relayAgent("de", "Frankfurt", "DE", "203.0.113.10"),
+		relayAgent("us", "New York", "US", "198.51.100.20"),
+	})
+	r.SetClientEgressLookup(func(string) string { return "de" })
+	r.SetAssignments(
+		map[string]string{"override.example": "us"},
+		map[string]string{"tv": "us"},
+		map[string]string{"service.example": "tv"},
+	)
+
+	if target, _ := r.LookupFor("override.example", "192.0.2.10"); target.AgentID != "us" {
+		t.Fatalf("domain override = %#v; want US", target)
+	}
+	if target, _ := r.LookupFor("service.example", "192.0.2.10"); target.AgentID != "us" {
+		t.Fatalf("service default = %#v; want US", target)
+	}
+	if target, _ := r.LookupFor("plain.example", "192.0.2.10"); target.AgentID != "de" {
+		t.Fatalf("client fallback = %#v; want DE", target)
+	}
+}

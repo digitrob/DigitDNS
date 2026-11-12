@@ -100,6 +100,12 @@ type V3Backend interface {
 	TLSAutoRenew(r *http.Request, body map[string]any) (map[string]any, error)
 	ACMEStatus() map[string]any
 
+	// Why-blocked explanation for one domain and optional client IP.
+	Explain(domain, clientIP string) (map[string]any, error)
+	// Alert configuration and delivery test.
+	AlertSettings() (map[string]any, error)
+	SaveAlertSettings(r *http.Request, body map[string]any) (map[string]any, error)
+	TestAlerts(r *http.Request) (map[string]any, error)
 	// Diagnostics targets (the run itself is data-only and lives in the router).
 	DiagnosticsTargets() map[string]any
 	AddDiagnosticsTarget(r *http.Request, body map[string]any) (map[string]any, error)
@@ -288,6 +294,9 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	// Diagnostics.
 	mux.HandleFunc("/api/v3/diagnostics/targets", a.SecurityMiddlewareV3(a.handleV3DiagnosticsTargets))
 	mux.HandleFunc("/api/v3/diagnostics/run", a.SecurityMiddlewareV3(a.handleV3DiagnosticsRun))
+	mux.HandleFunc("/api/v3/explain", a.SecurityMiddlewareV3(a.handleV3Explain))
+	mux.HandleFunc("/api/v3/alerts", a.SecurityMiddlewareV3(a.handleV3Alerts))
+	mux.HandleFunc("/api/v3/alerts/test", a.SecurityMiddlewareV3(a.handleV3AlertsTest))
 
 	// Cache, config & self-update.
 	mux.HandleFunc("/api/v3/cache/flush", a.SecurityMiddlewareV3(a.handleV3FlushCache))
