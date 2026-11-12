@@ -44,7 +44,8 @@ type TLSSnapshot struct {
 	// the API see this field; only the stored record uses the inverted one.
 	// (AutoRenewACME above is the pre-existing startup-fixed field for the
 	// panel pair and is deliberately left alone.)
-	DotAutoRenewACME bool `json:"dot_auto_renew_acme"`
+	DotAutoRenewACME   bool `json:"dot_auto_renew_acme"`
+	PanelAutoRenewACME bool `json:"panel_auto_renew_acme"`
 }
 
 // Snapshot copies every field under a single lock.
@@ -52,20 +53,21 @@ func (t *TLSSettings) Snapshot() TLSSnapshot {
 	if t == nil {
 		// DotAutoRenewACME true matches the inverted field's zero-complement:
 		// an absent record means renewal runs, as it always has.
-		return TLSSnapshot{DotAutoRenewACME: true}
+		return TLSSnapshot{DotAutoRenewACME: true, PanelAutoRenewACME: true}
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return TLSSnapshot{
-		Domain:           t.Domain,
-		Email:            t.Email,
-		CertPath:         t.CertPath,
-		KeyPath:          t.KeyPath,
-		AutoRenewACME:    t.AutoRenewACME,
-		DoTDomain:        t.DoTDomain,
-		PanelHTTPS:       t.PanelHTTPS,
-		RedirectPort:     t.RedirectPort,
-		DotAutoRenewACME: !t.NoDotAutoRenewACME,
+		Domain:             t.Domain,
+		Email:              t.Email,
+		CertPath:           t.CertPath,
+		KeyPath:            t.KeyPath,
+		AutoRenewACME:      t.AutoRenewACME,
+		DoTDomain:          t.DoTDomain,
+		PanelHTTPS:         t.PanelHTTPS,
+		RedirectPort:       t.RedirectPort,
+		DotAutoRenewACME:   !t.NoDotAutoRenewACME,
+		PanelAutoRenewACME: !t.NoPanelAutoRenewACME,
 	}
 }
 
@@ -113,6 +115,36 @@ func (t *TLSSettings) IsDotAutoRenewEnabled() bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return !t.NoDotAutoRenewACME
+}
+
+// IsPanelAutoRenewEnabled reports whether the daily loop should renew the
+// admin panel's certificate.
+func (t *TLSSettings) IsPanelAutoRenewEnabled() bool {
+	if t == nil {
+		return true
+	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return !t.NoPanelAutoRenewACME
+}
+
+// SetPanelAutoRenew opts the panel certificate in or out of the daily loop.
+func (t *TLSSettings) SetPanelAutoRenew(enabled bool, persist func(*TLSSettings) error) error {
+	if t == nil {
+		return ErrTLSSettingsNil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	before := t.NoPanelAutoRenewACME
+	t.NoPanelAutoRenewACME = !enabled
+	if persist == nil {
+		return nil
+	}
+	if err := persist(t); err != nil {
+		t.NoPanelAutoRenewACME = before
+		return err
+	}
+	return nil
 }
 
 // SetDotAutoRenew opts the DoH/DoT certificate in or out of the daily renewal

@@ -224,6 +224,7 @@
     <string name="adaptive_interval_24h">24h</string>
     <string name="adaptive_last_run">Last run %1$s · using %2$s</string>
     <string name="adaptive_last_run_empty">No benchmark yet.</string>
+    <string name="upstream_last_used">Last used: %1$s</string>
     <string name="domains_transport_excluded">The selected upstream is excluded by this transport and is ignored.</string>
     <string name="domains_pinned_records">DNS Rewrites</string>
     <string name="domains_pinned_body">Map a hostname directly to a fixed IPv4 or IPv6 address.</string>
@@ -394,7 +395,7 @@
     <string name="transports_copy_dot">Copy DoT URL</string>
     <string name="transports_tcp_port">TCP port</string>
     <string name="transports_doh3">DoH3 (HTTP/3)</string>
-    <string name="transports_doh3_help">Shares the DoH port over UDP. Always on while DoH is configured.</string>
+    <string name="transports_doh3_help">Shares the DoH port over UDP. Can be turned off while DoH stays on.</string>
     <string name="transports_doh3_port">UDP %1$s</string>
     <string name="transports_doh3_port_shared">UDP port (shared with DoH)</string>
     <string name="transports_doh3_shared_note">DoH3 shares the DoH port over UDP; change it on the DoH card. TCP DoH advertises this endpoint with Alt-Svc.</string>
@@ -616,7 +617,7 @@
     <!-- System screens -->
     <string name="tls_valid_range">Valid %1$s → %2$s</string>
     <string name="tls_renew_le">Renew Let\'s Encrypt SSL certificate.</string>
-    <string name="tls_renew_auto">Renew the DNS-over-TLS/HTTPS certificate automatically.</string>
+    <string name="tls_renew_auto">Renew the Let\'s Encrypt DoT/DoH certificate automatically.</string>
     <string name="tls_run_progress">%1$s · %2$s%%</string>
     <string name="sub_portal_origin">Portal origin</string>
     <string name="sub_portal_title">Subscription portal</string>

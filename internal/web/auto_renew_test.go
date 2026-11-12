@@ -252,12 +252,59 @@ func TestHandleConfigCarriesDoTCertAndAutoRenew(t *testing.T) {
 		t.Fatalf("GET /api/config = %d", w.Code)
 	}
 	body := w.Body.String()
-	for _, key := range []string{`"dot_cert"`, `"panel_cert"`, `"dot_auto_renew_acme"`} {
+	for _, key := range []string{`"dot_cert"`, `"panel_cert"`, `"dot_auto_renew_acme"`, `"panel_auto_renew_acme"`} {
 		if !strings.Contains(body, key) {
 			t.Errorf("config body has no %s key", key)
 		}
 	}
 	if !strings.Contains(body, `"dot_auto_renew_acme":true`) {
 		t.Errorf("dot_auto_renew_acme should default true: %.200s", body)
+	}
+	if !strings.Contains(body, `"panel_auto_renew_acme":true`) {
+		t.Errorf("panel_auto_renew_acme should default true: %.200s", body)
+	}
+}
+
+// The panel certificate's auto-renew toggle uses the same endpoint with
+// purpose=panel and persists the inverted stored flag.
+func TestHandleTLSAutoRenewPanel(t *testing.T) {
+	ws, db, cleanup := setupTestWebServer(t)
+	defer cleanup()
+	ws.tlsSettings = &database.TLSSettings{}
+	h := ws.buildAdminHandler()
+	tok := bearerFor(t, h)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tls/auto-renew", strings.NewReader(`{"enabled":false,"purpose":"panel"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST panel auto-renew = %d — %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"enabled":false`) {
+		t.Errorf("response body = %s, want enabled:false", w.Body.String())
+	}
+	var stored database.TLSSettings
+	if err := db.GetSetting("tls", &stored); err != nil {
+		t.Fatalf("tls record not persisted: %v", err)
+	}
+	if !stored.NoPanelAutoRenewACME {
+		t.Error("stored NoPanelAutoRenewACME = false after disabling, want true")
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/tls/auto-renew", strings.NewReader(`{"enabled":true,"purpose":"panel"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST panel auto-renew enable = %d — %s", w.Code, w.Body.String())
+	}
+	if err := db.GetSetting("tls", &stored); err != nil {
+		t.Fatalf("tls record not persisted: %v", err)
+	}
+	if stored.NoPanelAutoRenewACME {
+		t.Error("stored NoPanelAutoRenewACME = true after enabling, want false")
 	}
 }

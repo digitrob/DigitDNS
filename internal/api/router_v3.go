@@ -95,6 +95,8 @@ type V3Backend interface {
 
 	// TLS / ACME.
 	IssueTLS(r *http.Request, body map[string]any) (map[string]any, error)
+	TLSCertDetails() map[string]any
+	InstallTLSCert(r *http.Request, body map[string]any) (map[string]any, error)
 	TLSAutoRenew(r *http.Request, body map[string]any) (map[string]any, error)
 	ACMEStatus() map[string]any
 
@@ -242,6 +244,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 
 	// TLS / ACME.
 	mux.HandleFunc("/api/v3/tls/issue", a.SecurityMiddlewareV3(a.handleV3TLSIssue))
+	mux.HandleFunc("/api/v3/tls/cert", a.SecurityMiddlewareV3(a.handleV3TLSCert))
 	mux.HandleFunc("/api/v3/tls/auto-renew", a.SecurityMiddlewareV3(a.handleV3TLSAutoRenew))
 	mux.HandleFunc("/api/v3/tls/acme/status", a.SecurityMiddlewareV3(a.handleV3ACMEStatus))
 

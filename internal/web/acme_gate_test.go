@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"digitdns/internal/database"
 	"digitdns/internal/service/acme"
 )
 
@@ -90,7 +91,7 @@ func TestMantisStartACMEIfNeededDoesNotHoldTheGate(t *testing.T) {
 
 	// And the consequence is concrete: the panel's save path sees a free gate
 	// and starts its own run for the same name.
-	issuing, detail := ws.startACMEIssuance("panel.example", "panel@example.com", "panel")
+	issuing, detail := ws.startACMEIssuance(acmeRun{Domain: "panel.example", CertName: "panel.example", Email: "panel@example.com", Purpose: "panel", Challenge: database.CertChallengeHTTP01})
 	defer ws.acmeRunning.Store(false)
 	if !issuing {
 		t.Errorf("F7 partial: the gate was free while a boot issuance was in flight, but "+
@@ -149,7 +150,7 @@ func TestMantisBootAndSaveBothReachIssue(t *testing.T) {
 	}
 
 	// The save path does take the gate; its run reaches Issue, which refuses.
-	issuing, _ := ws.startACMEIssuance("panel.example", "panel@example.com", "panel")
+	issuing, _ := ws.startACMEIssuance(acmeRun{Domain: "panel.example", CertName: "panel.example", Email: "panel@example.com", Purpose: "panel", Challenge: database.CertChallengeHTTP01})
 	if issuing {
 		defer ws.acmeRunning.Store(false)
 	}

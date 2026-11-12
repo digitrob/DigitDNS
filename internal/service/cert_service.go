@@ -20,7 +20,8 @@ import (
 	"digitdns/internal/database"
 )
 
-func LoadOrGenerateTLSConfig(tlsCfg *database.TLSSettings) (*tls.Config, error) {
+func LoadOrGenerateTLSConfig(tlsCfg *database.TLSSettings, allowSelfSigned ...bool) (*tls.Config, error) {
+	allowSelf := len(allowSelfSigned) > 0 && allowSelfSigned[0]
 	if tlsCfg == nil {
 		tlsCfg = &database.TLSSettings{}
 	}
@@ -74,7 +75,7 @@ func LoadOrGenerateTLSConfig(tlsCfg *database.TLSSettings) (*tls.Config, error) 
 			if parseErr != nil {
 				continue
 			}
-			if bytes.Equal(leaf.RawIssuer, leaf.RawSubject) {
+			if !allowSelf && bytes.Equal(leaf.RawIssuer, leaf.RawSubject) {
 				log.Printf("[TLS] Skipping self-signed certificate at %s — a configured panel domain must be served a CA-signed certificate", cPath)
 				continue
 			}

@@ -126,7 +126,7 @@ func (ws *WebServer) handleSubDataAPI(w http.ResponseWriter, r *http.Request) {
 		"doh_port":               dohPortForDisplay(ws.dnsCfg),
 		"dot_port":               dotPortForDisplay(ws.dnsCfg),
 		"doq_port":               doqPortForDisplay(ws.dnsCfg),
-		"doh3_enabled":           true,
+		"doh3_enabled":           ws.dnsCfg != nil && ws.dnsCfg.DoH3Active(),
 		"doq_enabled":            ws.dnsCfg != nil && ws.dnsCfg.DoQEnabled,
 		"doq_url":                ws.doqURL(),
 		"detected_ip_registered": ipMatchesBindings(clientIP, client.AllowedIPs),
@@ -678,7 +678,7 @@ func (ws *WebServer) renderIPResultPage(w http.ResponseWriter, r *http.Request, 
 		DoTPort:     dotPortForDisplay(ws.dnsCfg),
 		DoQPort:     doqPortForDisplay(ws.dnsCfg),
 		DoQURL:      ws.doqURL(),
-		DoH3Enabled: true,
+		DoH3Enabled: ws.dnsCfg != nil && ws.dnsCfg.DoH3Active(),
 		DoQEnabled:  ws.dnsCfg != nil && ws.dnsCfg.DoQEnabled,
 		// The operator's stylesheet lands after the built-in one. Depending on
 		// the configured source it is the inline text, a sanitised server-local

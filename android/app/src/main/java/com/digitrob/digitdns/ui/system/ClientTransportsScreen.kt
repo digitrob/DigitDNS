@@ -106,7 +106,7 @@ fun ClientTransportsScreen(viewModel: ClientTransportsViewModel = hiltViewModel(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.Top,
                         ) {
-                            Doh3Card(state, Modifier.weight(1f))
+                            Doh3Card(state, viewModel, Modifier.weight(1f))
                             DnscryptCard(state, viewModel, Modifier.weight(1f))
                         }
                     } else {
@@ -114,7 +114,7 @@ fun ClientTransportsScreen(viewModel: ClientTransportsViewModel = hiltViewModel(
                         DotCard(state, viewModel)
                         DohCard(state, viewModel)
                         DoqCard(state, viewModel)
-                        Doh3Card(state)
+                        Doh3Card(state, viewModel)
                         DnscryptCard(state, viewModel)
                     }
                     MtlsCard(state, viewModel)
@@ -363,6 +363,7 @@ private fun DohCard(
 @Composable
 private fun Doh3Card(
     state: ClientTransportsUiState,
+    viewModel: ClientTransportsViewModel,
     modifier: Modifier = Modifier,
 ) {
     PanelCard(modifier = modifier.fillMaxWidth(), contentPadding = 12.dp) {
@@ -370,11 +371,12 @@ private fun Doh3Card(
             TransportHeader(
                 title = stringResource(R.string.transports_doh3),
                 help = stringResource(R.string.transports_doh3_help),
-                enabled = true,
-                onToggle = {},
-                toggleEnabled = false,
+                enabled = state.doh3Enabled,
+                onToggle = viewModel::setDoh3Enabled,
+                // DoH3 shares the DoH listener; it cannot be on while DoH is off.
+                toggleEnabled = state.dohEnabled,
                 status = {
-                    TransportStatus(true, state.doh3Listening, false, false)
+                    TransportStatus(state.doh3Enabled, state.doh3Listening, false, false)
                 },
             )
             OutlinedTextField(

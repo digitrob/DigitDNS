@@ -3145,6 +3145,29 @@
                       "subscription",
                       "dot"
                     ]
+                  },
+                  "challenge": {
+                    "type": "string",
+                    "enum": [
+                      "http-01",
+                      "dns-01"
+                    ]
+                  },
+                  "cert_name": {
+                    "type": "string",
+                    "description": "ACME identifier; may be a wildcard such as *.example.com."
+                  },
+                  "dns_provider": {
+                    "type": "string",
+                    "enum": [
+                      "cloudflare"
+                    ]
+                  },
+                  "dns_zone": {
+                    "type": "string"
+                  },
+                  "dns_token": {
+                    "type": "string"
                   }
                 }
               }
@@ -4403,6 +4426,85 @@
             "$ref": "#/components/responses/Forbidden"
           }
         }
+      }
+    },
+    "/api/v3/tls/cert": {
+      "get": {
+        "tags": [
+          "tls"
+        ],
+        "summary": "Certificate source policy and current certificate details",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "operationId": "getTlsCert",
+        "description": "Returns the certificate-source policy for the panel, DoH/DoT and subscriber portal, plus the certificate details each surface currently serves."
+      },
+      "post": {
+        "tags": [
+          "tls"
+        ],
+        "summary": "Install an operator-supplied certificate pair",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "purpose",
+                  "source"
+                ],
+                "properties": {
+                  "purpose": {
+                    "type": "string",
+                    "enum": [
+                      "panel",
+                      "dot",
+                      "subscription"
+                    ]
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "files"
+                    ]
+                  },
+                  "domain": {
+                    "type": "string"
+                  },
+                  "cert_pem": {
+                    "type": "string"
+                  },
+                  "key_pem": {
+                    "type": "string"
+                  },
+                  "cert_path": {
+                    "type": "string"
+                  },
+                  "key_path": {
+                    "type": "string"
+                  },
+                  "allow_self_signed": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        },
+        "description": "Validates, writes and hot-applies a PEM pair for the named surface. The private key is never returned.",
+        "operationId": "postTlsCert"
       }
     }
   }

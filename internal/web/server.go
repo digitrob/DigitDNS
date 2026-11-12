@@ -66,6 +66,7 @@ type WebServer struct {
 	updateCheckFn func(context.Context) (selfupdate.Status, error)
 	settings      *database.ServerSettings
 	tlsSettings   *database.TLSSettings
+	certSettings  *database.CertificateSettings
 	dnsCfg        *database.DNSSettings
 	subSettings   *database.SubscriptionSettings
 	authSettings  *database.AuthSettings
@@ -299,6 +300,7 @@ func NewWebServer(
 		dohHandler:   dohHandler,
 		settings:     settings,
 		tlsSettings:  tlsSettings,
+		certSettings: database.DefaultCertificateSettings(),
 		dnsCfg:       dnsCfg,
 		sessions:     sessions,
 		staticFS:     staticFS,
@@ -642,6 +644,59 @@ func (ws *WebServer) SetIPv6PolicySetter(fn func(enabled bool, address string)) 
 
 func (ws *WebServer) SetSubscriptionSettings(s *database.SubscriptionSettings) {
 	ws.subSettings = s
+}
+
+// SetCertificateSettings installs the persisted certificate-source policy. It
+// is called once during startup; test harnesses that never call it keep the
+// ACME/HTTP-01 default the constructor installs.
+func (ws *WebServer) SetCertificateSettings(s *database.CertificateSettings) {
+	if ws == nil {
+		return
+	}
+	if s == nil {
+		s = database.DefaultCertificateSettings()
+	}
+	s.Normalize()
+	ws.certSettings = s
+}
+
+func (ws *WebServer) certConfig(purpose string) database.CertificateConfig {
+	if ws == nil || ws.certSettings == nil {
+		return database.CertificateConfig{
+			Source:    database.CertSourceACME,
+			Challenge: database.CertChallengeHTTP01,
+			AutoRenew: true,
+		}
+	}
+	return ws.certSettings.Get(purpose)
+}
+
+// validateConfiguredCertificate applies the operator's self-signed opt-in.
+// Public deployments keep the strict validator; a private CA or LAN install
+// can deliberately accept a self-signed pair.
+func validateConfiguredCertificate(cfg database.CertificateConfig, certPath, keyPath, domain string) error {
+	if cfg.AllowSelfSigned {
+		return ValidateCertificateForDomain(certPath, keyPath, domain, true)
+	}
+	return ValidatePanelCertificate(certPath, keyPath, domain)
+}
+
+// setCertificateConfig persists one surface's certificate policy. A nil
+// settings pointer means a test harness that never wired the record; it is
+// upgraded in place so the caller still sees its choice.
+func (ws *WebServer) setCertificateConfig(purpose string, cfg database.CertificateConfig) error {
+	if ws == nil {
+		return nil
+	}
+	if ws.certSettings == nil {
+		ws.certSettings = database.DefaultCertificateSettings()
+	}
+	return ws.certSettings.Set(purpose, cfg, func(s *database.CertificateSettings) error {
+		if ws.db == nil {
+			return nil
+		}
+		return ws.db.SetSetting("certificates", s)
+	})
 }
 
 // SetSelfDomainRefresher wires the resolver's self-name set refresher. When the
@@ -1103,9 +1158,19 @@ func (ws *WebServer) subscriberTLSConfig() (*tls.Config, error) {
 		panel = ws.settings.GetPublicIP()
 	}
 	if domain := strings.TrimSpace(snap.Domain); domain != "" && (panel == "" || !strings.EqualFold(domain, panel)) {
-		certPath = filepath.Join(ws.acmeDir(), domain+".crt")
-		keyPath = filepath.Join(ws.acmeDir(), domain+".key")
-		if err := ValidatePanelCertificate(certPath, keyPath, domain); err != nil {
+		cfg := ws.certConfig(database.CertPurposeSubscription)
+		if cfg.CertPath != "" && cfg.KeyPath != "" {
+			certPath, keyPath = cfg.CertPath, cfg.KeyPath
+		} else {
+			certName := strings.TrimSpace(cfg.CertName)
+			if certName == "" {
+				certName = domain
+			}
+			certName = strings.ReplaceAll(certName, "*", "_wildcard")
+			certPath = filepath.Join(ws.acmeDir(), certName+".crt")
+			keyPath = filepath.Join(ws.acmeDir(), certName+".key")
+		}
+		if err := validateConfiguredCertificate(cfg, certPath, keyPath, domain); err != nil {
 			return nil, fmt.Errorf("the subscription domain %s has no valid certificate under %s — use Let's Encrypt beside the domain field (%w)", domain, ws.acmeDir(), err)
 		}
 	} else {
@@ -1152,13 +1217,27 @@ func (ws *WebServer) panelCertificatePair() (string, string, error) {
 	if domain == "" {
 		return "", "", fmt.Errorf("no panel domain is configured")
 	}
+	// The certificate-source record wins when it names a usable pair. This is
+	// what makes a BYO or DNS-01 wildcard certificate survive a restart even
+	// when the ACME directory does not contain a pair under the served name.
+	cfg := ws.certConfig(database.CertPurposePanel)
+	if cfg.CertPath != "" && cfg.KeyPath != "" {
+		if err := validateConfiguredCertificate(cfg, cfg.CertPath, cfg.KeyPath, domain); err == nil {
+			return cfg.CertPath, cfg.KeyPath, nil
+		}
+	}
 	if snap.CertPath != "" && snap.KeyPath != "" {
 		if err := ValidatePanelCertificate(snap.CertPath, snap.KeyPath, domain); err == nil {
 			return snap.CertPath, snap.KeyPath, nil
 		}
 	}
-	certPath := filepath.Join(ws.acmeDir(), domain+".crt")
-	keyPath := filepath.Join(ws.acmeDir(), domain+".key")
+	certName := strings.TrimSpace(cfg.CertName)
+	if certName == "" {
+		certName = domain
+	}
+	certName = strings.ReplaceAll(certName, "*", "_wildcard")
+	certPath := filepath.Join(ws.acmeDir(), certName+".crt")
+	keyPath := filepath.Join(ws.acmeDir(), certName+".key")
 	if err := ValidatePanelCertificate(certPath, keyPath, domain); err == nil {
 		return certPath, keyPath, nil
 	}
@@ -1283,6 +1362,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/settings/proxy-leak", ws.requireAuth(ws.handleProxyLeakSettings))
 	mux.HandleFunc("/api/upstreams/delete", ws.requireAuth(ws.handleUpstreamsDelete))
 	mux.HandleFunc("/api/tls/issue", ws.requireAuth(ws.handleTLSSettings))
+	mux.HandleFunc("/api/tls/cert", ws.requireAuth(ws.handleTLSCert))
 	mux.HandleFunc("/api/tls/auto-renew", ws.requireAuth(ws.handleTLSAutoRenew))
 	mux.HandleFunc("/api/tls/acme/status", ws.requireAuth(ws.handleACMEStatus))
 
@@ -2039,11 +2119,12 @@ func (ws *WebServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"server":  ws.settingsView(),
-		"tls":     ws.tlsSettings.Snapshot(),
-		"version": version.Get(),
-		"access":  ws.loadAccessConfig(),
-		"rules":   ws.loadRulesConfig(),
+		"server":       ws.settingsView(),
+		"tls":          ws.tlsSettings.Snapshot(),
+		"certificates": ws.certSettings.Snapshot(),
+		"version":      version.Get(),
+		"access":       ws.loadAccessConfig(),
+		"rules":        ws.loadRulesConfig(),
 		// The dashboard arrangement is install-wide, not browser-local: an
 		// operator who rearranges the cards on one machine should see the same
 		// order on the next.

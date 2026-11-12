@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -88,14 +89,21 @@ func TestTransportSettingsDefaultsAndRoundTrip(t *testing.T) {
 		t.Errorf("GET tokens = %#v", got.DoQTokens)
 	}
 
-	// A partial save must not reset the fields it omits, including the tokens.
+	// A partial save must not reset the fields it omits, including the tokens,
+	// but the DoH3 switch it does carry must take effect.
 	w = postTransportSettings(t, ws, `{"doh3_enabled":false}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("partial POST = %d: %s", w.Code, w.Body.String())
 	}
 	got = getTransportSettings(t, ws)
-	if !got.DoQEnabled || !got.DoH3Enabled || got.DoQAuth != "sni-token" || len(got.DoQTokens) != 2 {
-		t.Errorf("partial save lost state: %#v", got)
+	if !got.DoQEnabled || got.DoH3Enabled || got.DoQAuth != "sni-token" || len(got.DoQTokens) != 2 {
+		t.Errorf("partial save state: %#v", got)
+	}
+	if err := db.GetSetting("dns", &saved); err != nil {
+		t.Fatalf("GetSetting(dns): %v", err)
+	}
+	if saved.DoH3Disabled != true || slices.Contains(saved.Transports, "doh3") {
+		t.Errorf("DoH3 switch did not reach the transport set: %#v", saved)
 	}
 }
 

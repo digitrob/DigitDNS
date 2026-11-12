@@ -368,6 +368,18 @@ func (b *v3Backend) IssueTLS(r *http.Request, body map[string]any) (map[string]a
 	return b.delegateBody(r, body, b.ws.handleTLSSettings)
 }
 
+func (b *v3Backend) TLSCertDetails() map[string]any {
+	rec := httptest.NewRecorder()
+	b.ws.handleTLSCert(rec, httptest.NewRequest(http.MethodGet, "/api/tls/cert", nil))
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	return out
+}
+
+func (b *v3Backend) InstallTLSCert(r *http.Request, body map[string]any) (map[string]any, error) {
+	return b.delegateBody(r, body, b.ws.handleTLSCert)
+}
+
 func (b *v3Backend) TLSAutoRenew(r *http.Request, body map[string]any) (map[string]any, error) {
 	return b.delegateBody(r, body, b.ws.handleTLSAutoRenew)
 }

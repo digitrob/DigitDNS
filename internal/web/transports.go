@@ -9,9 +9,91 @@ import (
 	"strconv"
 	"strings"
 
+	"digitdns/internal/core/resolution"
+	"digitdns/internal/database"
 	"digitdns/internal/httpx"
 	dnscryptlib "github.com/ameshkov/dnscrypt/v2"
 )
+
+// protocolsFromClient turns the six client transport switches into the
+// upstream protocol set the resolver chips display. DoH3 is excluded when DoH
+// is off, and an all-off form falls back to plain DNS so the resolver always
+// has at least one protocol.
+func protocolsFromClient(cfg *database.DNSSettings) []string {
+	if cfg == nil {
+		return []string{resolution.ProtocolPlain}
+	}
+	out := make([]string, 0, 6)
+	if !cfg.PlainDNSDisabled {
+		out = append(out, resolution.ProtocolPlain)
+	}
+	if !cfg.DoTDisabled {
+		out = append(out, resolution.ProtocolDoT)
+	}
+	if !cfg.DoHDisabled {
+		out = append(out, resolution.ProtocolDoH)
+	}
+	if cfg.DoH3Active() {
+		out = append(out, resolution.ProtocolDoH3)
+	}
+	if cfg.DoQEnabled {
+		out = append(out, resolution.ProtocolDoQ)
+	}
+	if cfg.DNSCryptEnabled {
+		out = append(out, resolution.ProtocolDNSCrypt)
+	}
+	if len(out) == 0 {
+		out = append(out, resolution.ProtocolPlain)
+	}
+	return resolution.NormalizeProtocols(out)
+}
+
+// applyProtocolsToClient makes the client transport switches follow the
+// resolver chips. DoH3 implies DoH because it shares the listener; an all-off
+// selection keeps plain DNS so the server remains reachable.
+func applyProtocolsToClient(cfg *database.DNSSettings, protocols []string) []string {
+	if cfg == nil {
+		return protocols
+	}
+	set := map[string]bool{}
+	for _, p := range protocols {
+		set[p] = true
+	}
+	if set[resolution.ProtocolDoH3] {
+		set[resolution.ProtocolDoH] = true
+	}
+	if !set[resolution.ProtocolPlain] && !set[resolution.ProtocolDoT] &&
+		!set[resolution.ProtocolDoH] && !set[resolution.ProtocolDoQ] &&
+		!set[resolution.ProtocolDNSCrypt] {
+		set[resolution.ProtocolPlain] = true
+	}
+	cfg.PlainDNSDisabled = !set[resolution.ProtocolPlain]
+	cfg.DoTDisabled = !set[resolution.ProtocolDoT]
+	cfg.DoHDisabled = !set[resolution.ProtocolDoH]
+	cfg.DoH3Enabled = set[resolution.ProtocolDoH3]
+	cfg.DoH3Disabled = !set[resolution.ProtocolDoH3]
+	cfg.DoQEnabled = set[resolution.ProtocolDoQ]
+	cfg.DNSCryptEnabled = set[resolution.ProtocolDNSCrypt]
+
+	out := make([]string, 0, 6)
+	for _, p := range []string{
+		resolution.ProtocolPlain,
+		resolution.ProtocolDoT,
+		resolution.ProtocolDoH,
+		resolution.ProtocolDoH3,
+		resolution.ProtocolDoQ,
+		resolution.ProtocolDNSCrypt,
+	} {
+		if set[p] {
+			out = append(out, p)
+		}
+	}
+	out = resolution.NormalizeProtocols(out)
+	cfg.Transports = out
+	cfg.Transport = resolution.LegacyTransportFor(out)
+	cfg.EncryptedOnly = cfg.Transport == resolution.TransportEncrypted
+	return out
+}
 
 // transportSettingsView is the encrypted-DNS card's state for the two
 // client-facing QUIC transports. Both are opt-in and applied live; the view
@@ -91,13 +173,11 @@ func (ws *WebServer) transportSettingsView() transportSettingsView {
 	ws.dnsMu.Lock()
 	cfg := ws.mutableDNSLocked()
 	view := transportSettingsView{
-		DoQEnabled:     cfg.DoQEnabled,
-		DoQPort:        cfg.DoQPort,
-		DoQAuth:        cfg.DoQAuth,
-		DoQTokenDomain: cfg.DoQTokenDomain,
-		// DoH3 shares the DoH listener's port and is always available over UDP;
-		// the card shows it on and non-changeable.
-		DoH3Enabled:          true,
+		DoQEnabled:           cfg.DoQEnabled,
+		DoQPort:              cfg.DoQPort,
+		DoQAuth:              cfg.DoQAuth,
+		DoQTokenDomain:       cfg.DoQTokenDomain,
+		DoH3Enabled:          cfg.DoH3Active(),
 		DoH3Port:             cfg.DoHPort,
 		DNSCryptEnabled:      cfg.DNSCryptEnabled,
 		DNSCryptPort:         cfg.DNSCryptPort,
@@ -355,9 +435,15 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// DoH3 shares the DoH port and stays on; the switch is read-only in the
-	// card. Ignore a client that still sends false.
-	doh3Enabled := true
+	// DoH3 shares the DoH port but has its own switch. It cannot be on while
+	// DoH itself is off.
+	doh3Enabled := before.DoH3Active()
+	if req.DoH3Enabled != nil {
+		doh3Enabled = *req.DoH3Enabled
+	}
+	if !dohEnabled {
+		doh3Enabled = false
+	}
 
 	dotPort := before.DoTPort
 	if dotPort == 0 {
@@ -552,6 +638,14 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 	next.DoTPort = dotPort
 	next.DoQEnabled = doqEnabled
 	next.DoH3Enabled = doh3Enabled
+	next.DoH3Disabled = !doh3Enabled
+	// The resolver transport chips and the client transport switches are one
+	// policy. Keep the upstream protocol set in step with the listeners so the
+	// Upstream Resolvers card never shows a transport this server does not
+	// actually serve.
+	next.Transports = protocolsFromClient(&next)
+	next.Transport = resolution.LegacyTransportFor(next.Transports)
+	next.EncryptedOnly = next.Transport == resolution.TransportEncrypted
 	next.DoQPort = port
 	next.DoQAuth = auth
 	next.DoQTokenDomain = tokenDomain
@@ -639,6 +733,10 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 	current := ws.mutableDNSLocked()
 	current.DoQEnabled = next.DoQEnabled
 	current.DoH3Enabled = next.DoH3Enabled
+	current.DoH3Disabled = next.DoH3Disabled
+	current.Transports = next.Transports
+	current.Transport = next.Transport
+	current.EncryptedOnly = next.EncryptedOnly
 	current.DoQPort = next.DoQPort
 	current.DoQAuth = next.DoQAuth
 	current.DoQTokenDomain = next.DoQTokenDomain
@@ -662,6 +760,10 @@ func (ws *WebServer) saveTransportSettings(w http.ResponseWriter, r *http.Reques
 		ws.dnsMu.Lock()
 		current.DoQEnabled = before.DoQEnabled
 		current.DoH3Enabled = before.DoH3Enabled
+		current.DoH3Disabled = before.DoH3Disabled
+		current.Transports = before.Transports
+		current.Transport = before.Transport
+		current.EncryptedOnly = before.EncryptedOnly
 		current.DoQPort = before.DoQPort
 		current.DoQAuth = before.DoQAuth
 		current.DoQTokenDomain = before.DoQTokenDomain

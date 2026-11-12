@@ -161,6 +161,10 @@ class DashboardViewModel @Inject constructor(
         startPolling()
         observeLiveStream()
         loadHistory()
+        // Transport switches in Settings write the same DNSSettings record as
+        // the resolver chips. Re-read on return so the chips show the listener
+        // state the operator just saved.
+        loadResolution()
     }
 
     fun onPause() {

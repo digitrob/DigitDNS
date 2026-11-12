@@ -135,6 +135,12 @@ class ClientTransportsViewModel @Inject constructor(
         it.copy(dohPort = value.digits(), stagedDirty = true, error = null)
     }
 
+    /** DoH3 has its own switch; the server forces it off when DoH is off. */
+    fun setDoh3Enabled(value: Boolean) {
+        _state.update { it.copy(doh3Enabled = value, stagedDirty = true, error = null) }
+        autoSaveIfReady()
+    }
+
     fun setDotPort(value: String) = _state.update {
         it.copy(dotPort = value.digits(), stagedDirty = true, error = null)
     }
@@ -293,7 +299,7 @@ class ClientTransportsViewModel @Inject constructor(
                         plainDNSPort = plainPort,
                         dohEnabled = current.dohEnabled,
                         dohPort = dohPort,
-                        doh3Enabled = true,
+                        doh3Enabled = current.doh3Enabled,
                         dotEnabled = current.dotEnabled,
                         dotPort = dotPort,
                         doqEnabled = current.doqEnabled,
@@ -327,8 +333,8 @@ class ClientTransportsViewModel @Inject constructor(
                             dnscryptCertNotAfter = saved.dnscryptCertNotAfter,
                             serverHost = saved.serverHost,
                             dotHost = saved.dotHost.ifBlank { saved.serverHost },
-                            doh3Enabled = true,
-                            appliedDoh3Enabled = true,
+                            doh3Enabled = saved.doh3Enabled,
+                            appliedDoh3Enabled = saved.doh3Enabled,
                             appliedDoqEnabled = saved.doqEnabled,
                             transportSaving = false,
                             stagedDirty = true,
@@ -437,9 +443,8 @@ private fun ClientTransportsUiState.apply(settings: TransportSettingsDto): Clien
     dohEnabled = settings.dohEnabled,
     dohPort = settings.dohPort.takeIf { it > 0 }?.toString() ?: "8443",
     dohListening = settings.dohListening,
-    // DoH3 shares the DoH port and cannot be switched off.
-    doh3Enabled = true,
-    appliedDoh3Enabled = true,
+    doh3Enabled = settings.doh3Enabled,
+    appliedDoh3Enabled = settings.doh3Enabled,
     doh3Port = settings.dohPort.takeIf { it > 0 } ?: 8443,
     doqEnabled = settings.doqEnabled,
     appliedDoqEnabled = settings.doqEnabled,

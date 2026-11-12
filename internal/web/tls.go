@@ -89,6 +89,41 @@ func validACMEDomain(raw string) (string, error) {
 	return domain, nil
 }
 
+// validACMECertName accepts the identifier an ACME order may carry. A
+// wildcard is allowed only as the complete left-most label ("*.example.com"),
+// which is the shape RFC 8555 DNS-01 validates; "foo.*.example.com" is not a
+// wildcard the CA will accept.
+func validACMECertName(raw string) (string, error) {
+	name := strings.ToLower(strings.TrimSpace(raw))
+	if strings.HasPrefix(name, "*.") {
+		base, err := validACMEDomain(strings.TrimPrefix(name, "*."))
+		if err != nil {
+			return "", err
+		}
+		return "*." + base, nil
+	}
+	return validACMEDomain(name)
+}
+
+// certificateNameCovers reports whether an ACME identifier can cover the
+// hostname the listener serves. A wildcard covers exactly one label, which is
+// the rule x509.VerifyHostname applies; catching it here turns a failed
+// issuance minutes later into an immediate, understandable 400.
+func certificateNameCovers(certName, domain string) bool {
+	if certName == domain {
+		return true
+	}
+	if !strings.HasPrefix(certName, "*.") {
+		return false
+	}
+	base := strings.TrimPrefix(certName, "*.")
+	if !strings.HasSuffix(domain, "."+base) {
+		return false
+	}
+	left := strings.TrimSuffix(domain, "."+base)
+	return left != "" && !strings.Contains(left, ".")
+}
+
 // validACMELabel enforces the label rules the ACME server would apply anyway (RFC
 // 1035 §2.3.1 and RFC 1123 §2.1): one to sixty-three bytes of letters, digits and
 // hyphens, not beginning or ending with a hyphen. It assumes an already lower-cased
@@ -178,6 +213,21 @@ const (
 	acmePurposeDOT          = "dot"
 )
 
+// acmeRun is one issuance request. Domain is the name the listener serves;
+// CertName is the identifier requested from the CA and may be a wildcard. The
+// two are separate so "*.example.com" can cover "dns.example.com" without
+// renaming the DoH/DoT endpoint.
+type acmeRun struct {
+	Domain      string
+	CertName    string
+	Email       string
+	Purpose     string
+	Challenge   string
+	DNSProvider string
+	DNSZone     string
+	DNSToken    string
+}
+
 func (ws *WebServer) handleTLSSettings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -191,6 +241,16 @@ func (ws *WebServer) handleTLSSettings(w http.ResponseWriter, r *http.Request) {
 		Domain  string `json:"domain"`
 		Email   string `json:"email"`
 		Purpose string `json:"purpose"` // "panel" (default) | "subscription" | "dot"
+		// Challenge is "http-01" (default) or "dns-01". DNS-01 is what makes a
+		// wildcard possible; it needs a provider token below.
+		Challenge string `json:"challenge"`
+		// CertName is the identifier requested from the CA. It may be a
+		// wildcard ("*.example.com") and defaults to Domain. Domain remains the
+		// name the listener serves, so a wildcard does not rename the endpoint.
+		CertName    string `json:"cert_name"`
+		DNSProvider string `json:"dns_provider"`
+		DNSZone     string `json:"dns_zone"`
+		DNSToken    string `json:"dns_token"`
 		// Force requests a real renewal even when a valid certificate for the
 		// name is already on disk. Without it, a re-issue re-applies the stored
 		// pair and never contacts Let's Encrypt (the quota-preserving fast path);
@@ -243,6 +303,56 @@ func (ws *WebServer) handleTLSSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	challenge := strings.ToLower(strings.TrimSpace(req.Challenge))
+	if challenge == "" {
+		challenge = database.CertChallengeHTTP01
+	}
+	if challenge != database.CertChallengeHTTP01 && challenge != database.CertChallengeDNS01 {
+		httpx.WriteJSONError(w, http.StatusBadRequest, "challenge must be http-01 or dns-01")
+		return
+	}
+	certName := strings.TrimSpace(req.CertName)
+	if certName == "" {
+		certName = domain
+	}
+	certName, err = validACMECertName(certName)
+	if err != nil {
+		httpx.WriteJSONErrorFor(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.HasPrefix(certName, "*.") && challenge != database.CertChallengeDNS01 {
+		httpx.WriteJSONError(w, http.StatusBadRequest, "a wildcard certificate needs the DNS-01 challenge; choose DNS-01 and supply a provider token")
+		return
+	}
+	if !certificateNameCovers(certName, domain) {
+		httpx.WriteJSONError(w, http.StatusBadRequest, fmt.Sprintf("certificate name %s does not cover the served hostname %s", certName, domain))
+		return
+	}
+	dnsProvider := strings.ToLower(strings.TrimSpace(req.DNSProvider))
+	if challenge == database.CertChallengeDNS01 {
+		if dnsProvider == "" {
+			dnsProvider = "cloudflare"
+		}
+		if dnsProvider != "cloudflare" {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "the only DNS-01 provider in this build is cloudflare")
+			return
+		}
+		if strings.TrimSpace(req.DNSToken) == "" {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "a Cloudflare API token is required for DNS-01")
+			return
+		}
+	}
+	run := acmeRun{
+		Domain:      domain,
+		CertName:    certName,
+		Email:       email,
+		Purpose:     purpose,
+		Challenge:   challenge,
+		DNSProvider: dnsProvider,
+		DNSZone:     strings.TrimSpace(req.DNSZone),
+		DNSToken:    strings.TrimSpace(req.DNSToken),
+	}
+
 	if purpose == acmePurposePanel {
 		// The panel purpose keeps today's contract: the domain is part of the
 		// TLS record (it is load-bearing for the whole HTTPS panel), so it is
@@ -272,7 +382,7 @@ func (ws *WebServer) handleTLSSettings(w http.ResponseWriter, r *http.Request) {
 		// A forced renewal skips this fast path outright: the operator asked for
 		// a fresh certificate, so re-applying the stored pair would answer a
 		// request it was meant to override.
-		if c, k, resErr := ws.panelCertificatePair(); !req.Force && resErr == nil {
+		if c, k, resErr := ws.panelCertificatePair(); challenge == database.CertChallengeHTTP01 && !req.Force && resErr == nil {
 			if problem := ws.applyIssuedPurpose(domain, acmePurposePanel, c, k); problem != "" {
 				httpx.WriteJSONError(w, http.StatusInternalServerError, problem)
 				return
@@ -285,7 +395,12 @@ func (ws *WebServer) handleTLSSettings(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		issuing, detail := ws.startACMEIssuance(domain, email, purpose)
+		_ = ws.setCertificateConfig(acmePurposePanel, database.CertificateConfig{
+			Source: database.CertSourceACME, Domain: domain, CertName: certName,
+			Challenge: challenge, DNSProvider: dnsProvider, DNSZone: run.DNSZone,
+			DNSAPIToken: run.DNSToken, AutoRenew: true,
+		})
+		issuing, detail := ws.startACMEIssuance(run)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"domain":  domain,
@@ -301,7 +416,7 @@ func (ws *WebServer) handleTLSSettings(w http.ResponseWriter, r *http.Request) {
 	// domain" bug. If a valid pair is already on disk for this name, apply it
 	// synchronously without spending Let's Encrypt quota. A forced renewal
 	// skips this fast path so the name is re-issued with Let's Encrypt.
-	if ws.acmeManager != nil && !req.Force {
+	if ws.acmeManager != nil && challenge == database.CertChallengeHTTP01 && !req.Force {
 		certPath := filepath.Join(ws.acmeManager.CertDir, domain+".crt")
 		keyPath := filepath.Join(ws.acmeManager.CertDir, domain+".key")
 		if err := ValidatePanelCertificate(certPath, keyPath, domain); err == nil {
@@ -319,7 +434,12 @@ func (ws *WebServer) handleTLSSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	issuing, detail := ws.startACMEIssuance(domain, email, purpose)
+	_ = ws.setCertificateConfig(purpose, database.CertificateConfig{
+		Source: database.CertSourceACME, Domain: domain, CertName: certName,
+		Challenge: challenge, DNSProvider: dnsProvider, DNSZone: run.DNSZone,
+		DNSAPIToken: run.DNSToken, AutoRenew: true,
+	})
+	issuing, detail := ws.startACMEIssuance(run)
 	if !issuing {
 		httpx.WriteJSONError(w, http.StatusConflict, detail)
 		return
@@ -346,7 +466,8 @@ func (ws *WebServer) handleTLSAutoRenew(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req struct {
-		Enabled *bool `json:"enabled"`
+		Enabled *bool  `json:"enabled"`
+		Purpose string `json:"purpose"` // "dot" (default) | "panel"
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil {
 		httpx.WriteJSONError(w, http.StatusBadRequest, "the request body could not be read as JSON")
@@ -356,18 +477,37 @@ func (ws *WebServer) handleTLSAutoRenew(w http.ResponseWriter, r *http.Request) 
 		httpx.WriteJSONError(w, http.StatusBadRequest, "enabled is required")
 		return
 	}
-	if err := ws.tlsSettings.SetDotAutoRenew(*req.Enabled, func(s *database.TLSSettings) error {
-		return ws.db.SetSetting("tls", s)
-	}); err != nil {
-		log.Printf("[TLS] storing the DoH/DoT auto-renew preference failed: %v", err)
-		httpx.WriteJSONError(w, http.StatusInternalServerError, "the auto-renew preference could not be stored; see the daemon log")
-		return
+	purpose := strings.ToLower(strings.TrimSpace(req.Purpose))
+	if purpose == "" {
+		purpose = acmePurposeDOT
 	}
-	log.Printf("[TLS] DoH/DoT auto-renew %v", map[bool]string{true: "enabled", false: "disabled"}[*req.Enabled])
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"success": true,
-		"enabled": ws.tlsSettings.IsDotAutoRenewEnabled(),
-	})
+	persist := func(s *database.TLSSettings) error { return ws.db.SetSetting("tls", s) }
+	switch purpose {
+	case acmePurposePanel:
+		if err := ws.tlsSettings.SetPanelAutoRenew(*req.Enabled, persist); err != nil {
+			log.Printf("[TLS] storing the panel auto-renew preference failed: %v", err)
+			httpx.WriteJSONError(w, http.StatusInternalServerError, "the auto-renew preference could not be stored; see the daemon log")
+			return
+		}
+		log.Printf("[TLS] panel auto-renew %v", map[bool]string{true: "enabled", false: "disabled"}[*req.Enabled])
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"enabled": ws.tlsSettings.IsPanelAutoRenewEnabled(),
+		})
+	case acmePurposeDOT:
+		if err := ws.tlsSettings.SetDotAutoRenew(*req.Enabled, persist); err != nil {
+			log.Printf("[TLS] storing the DoH/DoT auto-renew preference failed: %v", err)
+			httpx.WriteJSONError(w, http.StatusInternalServerError, "the auto-renew preference could not be stored; see the daemon log")
+			return
+		}
+		log.Printf("[TLS] DoH/DoT auto-renew %v", map[bool]string{true: "enabled", false: "disabled"}[*req.Enabled])
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"enabled": ws.tlsSettings.IsDotAutoRenewEnabled(),
+		})
+	default:
+		httpx.WriteJSONError(w, http.StatusBadRequest, "purpose must be dot or panel")
+	}
 }
 
 // certDetails is the view of one certificate the dashboard renders: enough to
@@ -404,8 +544,18 @@ func (ws *WebServer) subscriptionCertDetails() *certDetails {
 		panel = ws.settings.GetPublicIP()
 	}
 	if domain != "" && (panel == "" || !strings.EqualFold(domain, panel)) {
-		certPath = filepath.Join(ws.acmeDir(), domain+".crt")
-		keyPath = filepath.Join(ws.acmeDir(), domain+".key")
+		cfg := ws.certConfig(database.CertPurposeSubscription)
+		if cfg.CertPath != "" && cfg.KeyPath != "" {
+			certPath, keyPath = cfg.CertPath, cfg.KeyPath
+		} else {
+			certName := strings.TrimSpace(cfg.CertName)
+			if certName == "" {
+				certName = domain
+			}
+			certName = strings.ReplaceAll(certName, "*", "_wildcard")
+			certPath = filepath.Join(ws.acmeDir(), certName+".crt")
+			keyPath = filepath.Join(ws.acmeDir(), certName+".key")
+		}
 	} else {
 		if !ws.panelHTTPS() || ws.tlsSettings == nil {
 			return nil
@@ -469,10 +619,23 @@ func (ws *WebServer) dotCertDetails() *certDetails {
 	if ws.tlsSettings == nil {
 		return nil
 	}
-	if domain := strings.TrimSpace(ws.tlsSettings.GetDoTDomain()); domain != "" {
+	cfg := ws.certConfig(database.CertPurposeDoT)
+	domain := strings.TrimSpace(cfg.Domain)
+	if domain == "" {
+		domain = strings.TrimSpace(ws.tlsSettings.GetDoTDomain())
+	}
+	if cfg.CertPath != "" && cfg.KeyPath != "" {
+		return certDetailsFromPair(domain, cfg.CertPath, cfg.KeyPath)
+	}
+	if domain != "" {
+		certName := strings.TrimSpace(cfg.CertName)
+		if certName == "" {
+			certName = domain
+		}
+		certName = strings.ReplaceAll(certName, "*", "_wildcard")
 		return certDetailsFromPair(domain,
-			filepath.Join(ws.acmeDir(), domain+".crt"),
-			filepath.Join(ws.acmeDir(), domain+".key"))
+			filepath.Join(ws.acmeDir(), certName+".crt"),
+			filepath.Join(ws.acmeDir(), certName+".key"))
 	}
 	return ws.panelCertDetails()
 }
@@ -549,7 +712,7 @@ func (ws *WebServer) handleACMEStatus(w http.ResponseWriter, r *http.Request) {
 // second order nor burns Let's Encrypt's duplicate-certificate quota (five
 // per name per week). For non-panel purposes the refusal names the in-flight
 // run so both buttons can say what is happening.
-func (ws *WebServer) startACMEIssuance(domain, email, purpose string) (bool, string) {
+func (ws *WebServer) startACMEIssuance(run acmeRun) (bool, string) {
 	if ws.acmeManager == nil {
 		return false, "domain saved. Automatic issuance is not available in this build — point cert_path and key_path at a certificate you already hold."
 	}
@@ -560,29 +723,40 @@ func (ws *WebServer) startACMEIssuance(domain, email, purpose string) (bool, str
 		}
 		return false, "an issuance is already running; its result will be in the daemon log."
 	}
-	go ws.runEmbeddedACME(domain, email, purpose)
-	return true, fmt.Sprintf("requesting a certificate for %s over the built-in ACME client — this usually takes under a minute; watch the progress bar.", domain)
+	go ws.runEmbeddedACME(run)
+	challenge := "HTTP-01"
+	if run.Challenge == database.CertChallengeDNS01 {
+		challenge = "DNS-01"
+	}
+	return true, fmt.Sprintf("requesting a certificate for %s over the built-in ACME client (%s) — this usually takes under a minute; watch the progress bar.", run.CertName, challenge)
 }
 
 // runEmbeddedACME performs one issuance and applies the result to the surface
 // its purpose names. It holds the single-flight gate for its lifetime. The
 // manager reports progress (0-90); applyIssuedPurpose + Complete close the
 // run at 100 when the certificate is on disk, validated, and live.
-func (ws *WebServer) runEmbeddedACME(domain, email, purpose string) {
+func (ws *WebServer) runEmbeddedACME(run acmeRun) {
 	defer ws.acmeRunning.Store(false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), acmeIssueTimeout)
 	defer cancel()
 
-	ws.acmeManager.ContactEmail = email
-	res, err := ws.acmeManager.Issue(ctx, domain, purpose)
+	ws.acmeManager.ContactEmail = run.Email
+	var res *acme.Result
+	var err error
+	if run.Challenge == database.CertChallengeDNS01 {
+		provider := acme.NewCloudflare(run.DNSToken, run.DNSZone)
+		res, err = ws.acmeManager.IssueDNS01(ctx, run.CertName, run.Purpose, provider)
+	} else {
+		res, err = ws.acmeManager.Issue(ctx, run.CertName, run.Purpose)
+	}
 	if err != nil {
-		log.Printf("[TLS] embedded ACME for %s (%s) failed: %v", domain, purpose, err)
+		log.Printf("[TLS] embedded ACME for %s (%s) failed: %v", run.CertName, run.Purpose, err)
 		return
 	}
-	certPath, keyPath, err := acme.Persist(ws.acmeManager.CertDir, domain, res.CertPEM, res.KeyPEM)
+	certPath, keyPath, err := acme.Persist(ws.acmeManager.CertDir, run.CertName, res.CertPEM, res.KeyPEM)
 	if err != nil {
-		log.Printf("[TLS] embedded ACME issued for %s but persisting failed: %v", domain, err)
+		log.Printf("[TLS] embedded ACME issued for %s but persisting failed: %v", run.CertName, err)
 		// The run is over and it failed — say so on the poll, which otherwise
 		// still shows the successful "fetched/90" stage Issue left behind.
 		ws.acmeManager.ApplyFailed("the certificate was issued but could not be written to disk: " + err.Error())
@@ -591,18 +765,26 @@ func (ws *WebServer) runEmbeddedACME(domain, email, purpose string) {
 	// Promote the stored paths only after the pair is on disk and passes the
 	// same validator the panel listener applies — a save that pointed the
 	// daemon at a not-yet-existing file is the fail-closed boot loop the
-	// v2.1 ACME panel already had to recover from by hand.
-	if err := ValidatePanelCertificate(certPath, keyPath, domain); err != nil {
-		log.Printf("[TLS] embedded ACME result for %s did not validate: %v", domain, err)
+	// v2.1 ACME panel already had to recover from by hand. The served domain
+	// is checked, not the certificate identifier: a wildcard cert for
+	// *.example.com must cover dns.example.com.
+	if err := ValidatePanelCertificate(certPath, keyPath, run.Domain); err != nil {
+		log.Printf("[TLS] embedded ACME result for %s did not validate against %s: %v", run.CertName, run.Domain, err)
 		ws.acmeManager.ApplyFailed("the issued certificate did not validate: " + err.Error())
 		return
 	}
-	if problem := ws.applyIssuedPurpose(domain, purpose, certPath, keyPath); problem != "" {
-		log.Printf("[TLS] embedded ACME for %s (%s) issued but could not be applied: %s", domain, purpose, problem)
+	_ = ws.setCertificateConfig(run.Purpose, database.CertificateConfig{
+		Source: database.CertSourceACME, Domain: run.Domain, CertName: run.CertName,
+		Challenge: run.Challenge, CertPath: certPath, KeyPath: keyPath,
+		DNSProvider: run.DNSProvider, DNSZone: run.DNSZone, DNSAPIToken: run.DNSToken,
+		AutoRenew: true,
+	})
+	if problem := ws.applyIssuedPurpose(run.Domain, run.Purpose, certPath, keyPath); problem != "" {
+		log.Printf("[TLS] embedded ACME for %s (%s) issued but could not be applied: %s", run.CertName, run.Purpose, problem)
 		ws.acmeManager.ApplyFailed(problem)
 		return
 	}
-	ws.acmeManager.Complete(fmt.Sprintf("certificate for %s issued and applied — links and listeners updated.", domain))
+	ws.acmeManager.Complete(fmt.Sprintf("certificate for %s issued and applied — links and listeners updated.", run.Domain))
 }
 
 // applyIssuedPurpose moves an issued (or cleared, paths empty) certificate
@@ -755,6 +937,9 @@ func (ws *WebServer) applyDotPurpose(domain, certPath, keyPath string) string {
 // uses. Safe to call on any cadence — the gate and NeedsRenewal make a
 // too-early call a no-op.
 func (ws *WebServer) RenewIfDue() {
+	if !ws.tlsSettings.IsPanelAutoRenewEnabled() {
+		return
+	}
 	domain, email := ws.tlsSettings.ACMEContact()
 	ws.renewPurposeIfDue(acmePurposePanel, domain, email)
 }
@@ -816,6 +1001,21 @@ func (ws *WebServer) renewPurposeIfDue(purpose, domain, email string) {
 	if strings.TrimSpace(domain) == "" || ws.acmeManager == nil {
 		return
 	}
+	cfg := ws.certConfig(purpose)
+	if cfg.Source == database.CertSourceFiles {
+		return // an operator-supplied pair is renewed outside the daemon
+	}
+	if cfg.Domain != "" {
+		domain = cfg.Domain
+	}
+	certName := strings.TrimSpace(cfg.CertName)
+	if certName == "" {
+		certName = domain
+	}
+	challenge := cfg.Challenge
+	if challenge == "" {
+		challenge = database.CertChallengeHTTP01
+	}
 	var certPath string
 	if purpose == acmePurposePanel {
 		// The resolver's pair, not the raw stored path — after a rename the
@@ -827,8 +1027,10 @@ func (ws *WebServer) renewPurposeIfDue(purpose, domain, email string) {
 		if p, _, err := ws.panelCertificatePair(); err == nil {
 			certPath = p
 		}
+	} else if cfg.CertPath != "" {
+		certPath = cfg.CertPath
 	} else {
-		certPath = filepath.Join(ws.acmeDir(), domain+".crt")
+		certPath = filepath.Join(ws.acmeDir(), strings.ReplaceAll(certName, "*", "_wildcard")+".crt")
 	}
 	if certPath != "" {
 		if certPEM, err := os.ReadFile(certPath); err == nil && !acme.NeedsRenewal(certPEM) {
@@ -838,7 +1040,11 @@ func (ws *WebServer) renewPurposeIfDue(purpose, domain, email string) {
 	if !ws.acmeRunning.CompareAndSwap(false, true) {
 		return // a dashboard Save is already in flight
 	}
-	go ws.runEmbeddedACME(domain, email, purpose)
+	go ws.runEmbeddedACME(acmeRun{
+		Domain: domain, CertName: certName, Email: email, Purpose: purpose,
+		Challenge: challenge, DNSProvider: cfg.DNSProvider, DNSZone: cfg.DNSZone,
+		DNSToken: cfg.DNSAPIToken,
+	})
 }
 
 // StartACMEIfNeeded runs ONE embedded issuance at daemon startup when the
@@ -863,8 +1069,26 @@ func (ws *WebServer) renewPurposeIfDue(purpose, domain, email string) {
 // so certbot could have port 80.
 func (ws *WebServer) StartACMEIfNeeded() {
 	domain, email := ws.tlsSettings.ACMEContact()
+	cfg := ws.certConfig(database.CertPurposePanel)
+	if cfg.Source == database.CertSourceFiles {
+		// The operator supplied the panel pair. If it is not usable the normal
+		// fail-closed startup path reports it; issuing an ACME certificate
+		// would silently override the operator's choice.
+		return
+	}
+	if cfg.Domain != "" {
+		domain = cfg.Domain
+	}
 	if strings.TrimSpace(domain) == "" {
 		return
+	}
+	certName := strings.TrimSpace(cfg.CertName)
+	if certName == "" {
+		certName = domain
+	}
+	challenge := cfg.Challenge
+	if challenge == "" {
+		challenge = database.CertChallengeHTTP01
 	}
 	// The resolver, not the raw stored paths: a renamed domain whose ACME
 	// pair is already on disk must boot straight to serving it — issuing
@@ -890,7 +1114,11 @@ func (ws *WebServer) StartACMEIfNeeded() {
 		log.Printf("[TLS] an embedded ACME run is already in progress; startup issuance skipped")
 		return
 	}
-	ws.runEmbeddedACME(domain, email, "panel")
+	ws.runEmbeddedACME(acmeRun{
+		Domain: domain, CertName: certName, Email: email, Purpose: acmePurposePanel,
+		Challenge: challenge, DNSProvider: cfg.DNSProvider, DNSZone: cfg.DNSZone,
+		DNSToken: cfg.DNSAPIToken,
+	})
 	if _, _, err := ws.panelCertificatePair(); err != nil {
 		log.Printf("[TLS] Certificate for %s is still not usable after issuance: %v", domain, err)
 	}

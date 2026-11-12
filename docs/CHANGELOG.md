@@ -6,6 +6,75 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [Unreleased] — certificate sources and DNS-01
+
+### Added
+- **Bring-your-own certificate.** The SSL / TLS Manager now accepts a PEM
+  certificate and key, either uploaded/pasted or read from paths on the server,
+  for the DoH/DoT listeners, the admin panel, and the subscriber portal. Pairs
+  are validated for key match, hostname coverage, expiry and (optionally)
+  self-signed private-CA use before they are written.
+- **ACME DNS-01 wildcard issuance.** A Cloudflare API token and optional zone
+  let the embedded ACME client issue and renew wildcard certificates such as
+  `*.example.com`. The served hostname stays `dns.example.com`; only the
+  certificate identifier is wildcard.
+- **Certificate source record.** Each surface records whether it uses ACME or
+  an operator-supplied pair, the ACME identifier, challenge type, paths and
+  renewal policy. The DNS API token is stored encrypted and never returned by
+  the API.
+- **Startup and renewal honour the source.** A BYO DoH/DoT pair is loaded at
+  boot and is not overwritten by the daily ACME loop; ACME wildcard renewals
+  reuse the recorded identifier and DNS-01 settings.
+- **API.** `GET/POST /api/v3/tls/cert` and `GET/POST /api/tls/cert` expose the
+  source policy and install a pair. `/api/tls/issue` accepts `challenge`,
+  `cert_name`, `dns_provider`, `dns_zone` and `dns_token`.
+
+### Android
+- **Certificate source card.** The SSL / TLS tab now offers Let's Encrypt
+  HTTP-01, Let's Encrypt wildcard DNS-01, PEM paths on the server, and PEM
+  upload/paste, for the panel, subscriber portal and DoH/DoT surfaces. Surface
+  and Source are dropdowns, matching the web card instead of a scrolling chip
+  row.
+- **DNS-01 fields** for the wildcard certificate name, Cloudflare zone and API
+  token.
+- **PEM upload** with Android's document picker for the certificate and private
+  key, plus an allow-self-signed switch for private CA/LAN use.
+- **DoH3 switch** is now a real toggle; it is disabled while DoH is off.
+
+### Changed
+- **One transport policy.** The Upstream Resolvers transport chips and the
+  Client Transports switches now write the same `DNSSettings` record. Disabling
+  a chip stops the corresponding listener, and a listener switch updates the
+  chips. DoH3 requires DoH, and an all-off chip selection keeps plain DNS on.
+- The card is titled **SSL / TLS Manager for DoH, DoT**.
+- The DoH/DoT and Subscription cards take the full settings width so the new
+  certificate controls are readable.
+- **Certificate upload pickers** are styled drop zones with the selected file
+  name and a Browse action instead of native file inputs.
+- **TLS card layout.** The DoH/DoT and Admin Panel certificate sections sit
+  side by side as half-width panes on a wide panel, with compact inline
+  **Issue certificate** buttons. Each pane states that the certificate is
+  issued by Let's Encrypt, and the auto-renew labels mention Let's Encrypt.
+- **Panel certificate auto-renew.** The Admin Panel pane now has its own
+  **Auto-renew Let's Encrypt certificate** tick, backed by the same daily loop
+  as the DoH/DoT switch.
+- **Chromium flicker fixes.** The transport card no longer throws on an
+  undefined draft field, DoH3 changes are included in the dirty check, hidden
+  Domains rows are not rebuilt on background resolution polls, and the saved
+  dashboard layout is applied before the grid is revealed.
+- **Android certificate labels and validity.** The issue button is **Issue
+  certificate** (or **Renew certificate**), the card title names Let's
+  Encrypt, and the validity line is green with the number of days left. The
+  DoT/DoH auto-renew card names Let's Encrypt.
+- **Android Single Server state.** Disabled strategy, interval and transport
+  chips keep readable muted colors instead of fading to black, and the
+  interval footer shows **Last used: <resolver>** while Single Server is on.
+- **Provider marks.** Control D / FreeDNS and the rest of the bundled resolver
+  catalogue now map to their own logos on web and Android, instead of a generic
+  globe.
+
+---
+
 ## 🏷️ [v5.5.7] — adaptive upstreams and transport chips
 
 ### Added

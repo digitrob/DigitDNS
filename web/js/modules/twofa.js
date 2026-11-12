@@ -270,19 +270,19 @@ function initSubscriptionSettings() {
     if (!cert || !cert.not_after) {
       details.textContent = 'No certificate yet — the portal is not serving TLS, or its pair could not be read.';
       details.className = 'text-[11px] font-mono text-slate-500';
-      leBtn.textContent = "Let's Encrypt";
+      leBtn.textContent = 'Issue certificate';
       return;
     }
     const fmt = ts => new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     if (cert.expired) {
       details.textContent = `Certificate expired ${fmt(cert.not_after)} — issue a renewal below.`;
       details.className = 'text-[11px] font-mono text-red-400';
-      leBtn.textContent = 'Renew';
+      leBtn.textContent = 'Renew certificate';
     } else {
       const daysLeft = Math.ceil((new Date(cert.not_after) - Date.now()) / 86400000);
       details.textContent = `Certificate for ${cert.domain || 'this portal'}: valid ${fmt(cert.not_before)} → ${fmt(cert.not_after)} · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
       details.className = 'text-[11px] font-mono text-emerald-400/80';
-      leBtn.textContent = "Let's Encrypt";
+      leBtn.textContent = 'Issue certificate';
     }
   }
 

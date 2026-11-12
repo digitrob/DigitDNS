@@ -128,6 +128,11 @@ func (ws *WebServer) handleResolutionAdaptiveRun(w http.ResponseWriter, r *http.
 }
 
 func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
+	// A chip save and a transport switch save touch the same DNSSettings and
+	// the same listeners. Serialise them so the last writer wins cleanly.
+	ws.transportSaveMu.Lock()
+	defer ws.transportSaveMu.Unlock()
+
 	var body struct {
 		Transport string `json:"transport"`
 		// Transports is the authoritative multi-select protocol set. Nil means
@@ -227,6 +232,7 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 
 	ws.dnsMu.Lock()
 	cfg := ws.mutableDNSLocked()
+	before := *cfg
 	transports := cfg.Transports
 	switch {
 	case body.Transports != nil:
@@ -236,7 +242,7 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 	case body.EncryptedOnly != nil && *body.EncryptedOnly:
 		transports = resolution.ProtocolsForTransport(resolution.TransportEncrypted)
 	}
-	transports = resolution.NormalizeProtocols(transports)
+	transports = applyProtocolsToClient(cfg, transports)
 	cfg.Transports = transports
 	cfg.Transport = resolution.LegacyTransportFor(transports)
 	// Keep the legacy flag in step so a downgrade to 3.4.11 still means the
@@ -266,11 +272,47 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 			adaptiveCleared = true
 		}
 	}
+	// The resolver chips and the client transport switches are one policy:
+	// apply the listener changes before persisting so a failed bind leaves the
+	// stored record untouched. A nil applier is a test harness.
+	tokens := ws.loadAccessConfig().DoQTokens
+	if cfg.DNSCryptEnabled && ws.dnscryptApplier != nil {
+		rc, cert := ws.dnscryptRuntime()
+		if rc == nil {
+			var keyErr error
+			_, rc, cert, keyErr = ws.ensureDNSCrypt(cfg.DNSCryptProviderName)
+			if keyErr != nil {
+				*cfg = before
+				ws.dnsMu.Unlock()
+				httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not prepare the DNSCrypt keys: "+keyErr.Error())
+				return
+			}
+			if err := ws.dnscryptApplier(rc, cert); err != nil {
+				*cfg = before
+				ws.dnsMu.Unlock()
+				httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not install the DNSCrypt keys: "+err.Error())
+				return
+			}
+		}
+	}
+	if ws.transportApplier != nil {
+		if err := ws.transportApplier(*cfg, tokens); err != nil {
+			_ = ws.transportApplier(before, tokens)
+			*cfg = before
+			ws.dnsMu.Unlock()
+			httpx.WriteJSONError(w, http.StatusInternalServerError, "The transport settings were not applied: "+err.Error())
+			return
+		}
+	}
+
 	err := ws.db.SetSetting("dns", cfg)
 	adaptiveCurrent := cfg.AdaptiveCurrent
 	legacyTransport := cfg.Transport
 	ws.dnsMu.Unlock()
 	if err != nil {
+		if ws.transportApplier != nil {
+			_ = ws.transportApplier(before, tokens)
+		}
 		httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not persist the resolution settings")
 		return
 	}

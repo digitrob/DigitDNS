@@ -467,8 +467,12 @@ func Persist(certDir, domain string, certPEM, keyPEM []byte) (string, string, er
 	if err := os.MkdirAll(certDir, 0o700); err != nil {
 		return "", "", err
 	}
-	certPath := filepath.Join(certDir, domain+".crt")
-	keyPath := filepath.Join(certDir, domain+".key")
+	// A wildcard identifier cannot be used verbatim in a file name on every
+	// filesystem and is awkward to type in a shell. The certificate still
+	// carries the real SAN; only the stored file base is sanitised.
+	base := strings.ReplaceAll(domain, "*", "_wildcard")
+	certPath := filepath.Join(certDir, base+".crt")
+	keyPath := filepath.Join(certDir, base+".key")
 	if err := atomicWrite(certPath, certPEM, 0o644); err != nil {
 		return "", "", err
 	}

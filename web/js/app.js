@@ -975,6 +975,13 @@ async function bootDashboard() {
     initAPIEvents();
     areEventListenersAttached = true;
   }
+  // Apply the last known arrangement before the config request lands. The
+  // authoritative layout still comes from the server below, but a reload no
+  // longer paints the default grid first and then jumps every card into place.
+  try {
+    const cached = localStorage.getItem(DASH_LAYOUT_CACHE_KEY);
+    if (cached) applyDashboardLayout(JSON.parse(cached));
+  } catch (e) { /* corrupt cache is ignored */ }
   const authed = await loadConfig();
   if (!authed) return; // 401 -> login modal is already shown
   loadOnboarding();
@@ -1102,8 +1109,8 @@ function renderTLSCertDetails(cfg) {
     }
   }
 
-  render('dot-cert-details', cfg.dot_cert, "Let's Encrypt", 'Renew', 'issue-dot-ssl-btn');
-  render('panel-cert-details', cfg.panel_cert, 'Issue SSL Certificate', 'Renew SSL Certificate', 'issue-ssl-btn');
+  render('dot-cert-details', cfg.dot_cert, 'Issue certificate', 'Renew certificate', 'issue-dot-ssl-btn');
+  render('panel-cert-details', cfg.panel_cert, 'Issue certificate', 'Renew certificate', 'issue-ssl-btn');
 
   // The DoH/DoT auto-renew toggle's live state. The snapshot carries the
   // positive form; a config predating the field reads as undefined, and
@@ -1111,7 +1118,32 @@ function renderTLSCertDetails(cfg) {
   // reading of the same absence.
   const dotAutoRenew = document.getElementById('dot-auto-renew-input');
   if (dotAutoRenew) {
-    dotAutoRenew.checked = !cfg.tls || cfg.tls.dot_auto_renew_acme !== false;
+    const dotCfg = cfg.certificates && cfg.certificates.dot ? cfg.certificates.dot : null;
+    const byo = !!(dotCfg && dotCfg.source === 'files');
+    dotAutoRenew.checked = byo
+      ? !!dotCfg.auto_renew
+      : (!cfg.tls || cfg.tls.dot_auto_renew_acme !== false);
+    // A BYO pair is renewed by whatever issued it (certbot, the CA, the
+    // operator). The daemon's daily loop deliberately does not touch it.
+    dotAutoRenew.disabled = byo;
+    dotAutoRenew.title = byo
+      ? 'This certificate was supplied by the operator; renew it outside DigitDNS.'
+      : '';
+  }
+  const panelAutoRenew = document.getElementById('panel-auto-renew-input');
+  if (panelAutoRenew) {
+    const panelCfg = cfg.certificates && cfg.certificates.panel ? cfg.certificates.panel : null;
+    const byo = !!(panelCfg && panelCfg.source === 'files');
+    panelAutoRenew.checked = byo
+      ? !!panelCfg.auto_renew
+      : (!cfg.tls || cfg.tls.panel_auto_renew_acme !== false);
+    panelAutoRenew.disabled = byo;
+    panelAutoRenew.title = byo
+      ? 'This certificate was supplied by the operator; renew it outside DigitDNS.'
+      : '';
+  }
+  if (typeof window.syncCertManagerFields === 'function') {
+    window.syncCertManagerFields(true);
   }
 }
 
@@ -1131,6 +1163,7 @@ const DASH_COL_GAP = 12;
 const DASH_ROW_GAP = 12;
 const DASH_MAX_ROWS = 240;
 const DASH_LAYOUT_VERSION = 3;
+const DASH_LAYOUT_CACHE_KEY = 'digitdns_dashboard_layout_v3';
 const DASH_CARD_MIN = {
   qps: { w: 2, h: 5 },
   cache: { w: 2, h: 5 },
@@ -1506,6 +1539,10 @@ function applyDashboardLayout(raw, animate) {
   });
   if (animate) dashFlip(before);
   else requestAnimationFrame(resizeDashCharts);
+  // Cache the arrangement so the next reload can apply it before the config
+  // request lands instead of painting the default grid and jumping.
+  try { localStorage.setItem(DASH_LAYOUT_CACHE_KEY, JSON.stringify(dashLayout)); } catch (e) {}
+  document.documentElement.classList.remove('dash-layout-pending');
 }
 
 // Edits stay in memory while the editor is open. The only write happens when
@@ -2123,7 +2160,7 @@ function renderConfig(cfg) {
 
   // Render Custom Rules Lists (with safe optional chaining)
   renderProxiedSuggestions();
-  renderProxiedList();
+  refreshProxiedListIfVisible();
   proxiedFillViewport();
   renderList('custom-blocked-list', cfg.rules?.custom_blocked || [], 'remove-blocked');
   renderList('tokens-list', cfg.access?.doh_tokens || [], 'remove-token');
@@ -2268,8 +2305,8 @@ function normalizeTransportSettings(cfg) {
   if (!cfg.transports || typeof cfg.transports !== 'object') cfg.transports = {};
   const t = cfg.transports;
   t.doq_enabled = !!t.doq_enabled;
-  // DoH3 shares the DoH port; it is always on and its switch is read-only.
-  t.doh3_enabled = true;
+  // DoH3 shares the DoH port but has its own switch.
+  t.doh3_enabled = !!t.doh3_enabled;
   t.doq_port = Number.isFinite(Number(t.doq_port)) && Number(t.doq_port) > 0 ? Number(t.doq_port) : 853;
   t.doq_auth = t.doq_auth === 'sni-token' ? 'sni-token' : 'ip';
   t.doq_token_domain = typeof t.doq_token_domain === 'string' ? t.doq_token_domain : '';
@@ -2392,7 +2429,7 @@ function transportSaveBody(draft) {
     doh_enabled: !!draft.doh_enabled,
     doh_port: Number(draft.doh_port),
     dot_port: Number(draft.dot_port),
-    doh3_enabled: true,
+    doh3_enabled: !!draft.doh3_enabled,
     doq_enabled: !!draft.doq_enabled,
     doq_port: Number(draft.doq_port),
     doq_auth: draft.doq_auth,
@@ -2411,7 +2448,8 @@ function transportSaveBody(draft) {
 }
 
 function transportDraftDirty(applied, draft) {
-  return draft.doq_enabled !== applied.doq_enabled ||
+  return draft.doh3_enabled !== applied.doh3_enabled ||
+    draft.doq_enabled !== applied.doq_enabled ||
     Number(draft.doq_port) !== Number(applied.doq_port) ||
     draft.doq_auth !== applied.doq_auth ||
     draft.doq_token_domain !== applied.doq_token_domain ||
@@ -2816,8 +2854,9 @@ function renderTransportSettings() {
 
   const doh3 = document.getElementById('doh3-enabled-input');
   if (doh3) {
-    if (!doh3.checked) doh3.checked = true;
-    doh3.disabled = true;
+    doh3.checked = !!draft.doh3_enabled;
+    // DoH3 shares the DoH listener, so it cannot be on while DoH is off.
+    doh3.disabled = !draft.doh_enabled;
   }
   const doq = document.getElementById('doq-enabled-input');
   if (doq) {
@@ -2941,6 +2980,7 @@ async function autoSaveTransportDraft() {
     }
     currentConfig.transports = normalizeTransportSettings({ transports: await res.json() });
     transportSaving = false;
+    void loadResolutionSettings();
     // An edit made while the request was in flight is not in the response;
     // keep the draft and send it now that the first save is done.
     const stillDirty = transportDraft && transportDraftDirty(normalizeTransportSettings(currentConfig), transportDraft);
@@ -3819,9 +3859,28 @@ async function loadResolutionSettings() {
     if (!res.ok) return;
     resolutionSettings = normalizeResolutionSettings(await res.json());
     syncResolutionControls();
-    renderProxiedList();
+    refreshProxiedListIfVisible();
   } catch (e) { /* keep the defaults; the dialog still works */ }
   finally { resolutionLoading = false; }
+}
+
+// The resolver transport chips and the Client Transports switches are one
+// backend policy. A chip save rebinds listeners, so refresh the card that shows
+// their live state instead of waiting for the next full config poll.
+async function refreshTransportCard() {
+  if (!currentConfig || !authToken) return;
+  try {
+    const res = await fetch(api('/api/settings/transports'), {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (!res.ok) return;
+    currentConfig.transports = normalizeTransportSettings({ transports: await res.json() });
+    // A resolver-chip save changes the applied transport policy outside the
+    // Client Transports form. Drop any staged draft so the switches show the
+    // server's new state instead of the pre-chip draft.
+    transportDraft = null;
+    renderTransportSettings();
+  } catch (e) { /* the next config poll will catch up */ }
 }
 
 // normalizeStrategyValue maps retired spellings onto the four strategies the
@@ -3911,6 +3970,12 @@ function providerIdForUpstream(address) {
   if (a.includes('google') || a.includes('8.8.8.8') || a.includes('8.8.4.4')) return 'google';
   if (a.includes('quad9') || a.includes('9.9.9.9') || a.includes('149.112.112.112')) return 'quad9';
   if (a.includes('adguard') || a.includes('94.140.14.14') || a.includes('94.140.15.15')) return 'adguard';
+  if (a.includes('controld') || a.includes('freedns') || a.includes('76.76.2.0') || a.includes('76.76.10.0')) return 'controld';
+  if (a.includes('dns.sb') || a.includes('dot.sb') || a.includes('doh.dns.sb') || a.includes('185.222.222.222') || a.includes('45.11.45.11')) return 'dnssb';
+  if (a.includes('opendns') || a.includes('208.67.222.222') || a.includes('208.67.220.220')) return 'opendns';
+  if (a.includes('yandex') || a.includes('77.88.8.8') || a.includes('77.88.8.1')) return 'yandex';
+  if (a.includes('nextdns') || a.includes('45.90.28.0') || a.includes('45.90.30.0')) return 'nextdns';
+  if (a.includes('cleanbrowsing') || a.includes('185.228.168.9') || a.includes('185.228.169.9')) return 'cleanbrowsing';
   return '';
 }
 
@@ -4117,6 +4182,14 @@ function syncResolutionControls() {
   }
 }
 
+// The Domains table is expensive to rebuild and invisible while another tab is
+// showing. Background resolution refreshes (the adaptive last-run poll) should
+// not rewrite it; switchTab('proxied') and the resolution save path call it when
+// the table is actually on screen.
+function refreshProxiedListIfVisible() {
+  if (activeDashTab === 'proxied') renderProxiedList();
+}
+
 // saveResolutionSettings posts the current state with the given overrides and
 // mirrors the server's answer back into the controls.
 async function saveResolutionSettings(overrides, message) {
@@ -4146,7 +4219,8 @@ async function saveResolutionSettings(overrides, message) {
     }
     resolutionSettings = normalizeResolutionSettings(await res.json());
     syncResolutionControls();
-    renderProxiedList();
+    refreshProxiedListIfVisible();
+    void refreshTransportCard();
     if (message) showToast(message, 'success');
     return true;
   } catch (e) {
@@ -4177,7 +4251,7 @@ async function runAdaptiveNow() {
     resolutionSettings = normalizeResolutionSettings(await res.json());
     adaptiveFlash = true;
     syncResolutionControls();
-    renderProxiedList();
+    refreshProxiedListIfVisible();
     showToast('Adaptive check complete', 'success');
     if (adaptiveFlashTimer) clearTimeout(adaptiveFlashTimer);
     adaptiveFlashTimer = setTimeout(() => {
@@ -10436,10 +10510,200 @@ function initEventListeners() {
     };
   };
 
+  // ── Certificate source manager ───────────────────────────────────────────
+  // The advanced path for all three TLS surfaces: Let's Encrypt HTTP-01,
+  // wildcard DNS-01 through Cloudflare, or a PEM pair the operator already
+  // holds. The one-click Let's Encrypt buttons above stay untouched.
+  function certConfigFor(purpose) {
+    const all = (currentConfig && currentConfig.certificates) || {};
+    return all[purpose] || null;
+  }
+  function certDefaultDomain(purpose) {
+    const tls = (currentConfig && currentConfig.tls) || {};
+    const sub = (currentConfig && currentConfig.subscription) || {};
+    if (purpose === 'panel') return (tls.domain || '').trim();
+    if (purpose === 'subscription') return (sub.domain || '').trim();
+    return (tls.dot_domain || tls.domain || '').trim();
+  }
+  function updateCertFields(fillDefaults) {
+    const source = document.getElementById('cert-source')?.value || 'acme-http01';
+    const dns = document.getElementById('cert-dns-fields');
+    const paths = document.getElementById('cert-path-fields');
+    const upload = document.getElementById('cert-upload-fields');
+    if (dns) dns.classList.toggle('hidden', source !== 'acme-dns01');
+    if (paths) paths.classList.toggle('hidden', source !== 'files-path');
+    if (upload) upload.classList.toggle('hidden', source !== 'files-upload');
+
+    const purpose = document.getElementById('cert-purpose')?.value || 'dot';
+    const domain = document.getElementById('cert-domain');
+    if (fillDefaults && domain && !domain.value.trim()) {
+      const fallback = certDefaultDomain(purpose);
+      if (fallback) domain.value = fallback;
+    }
+    const cfg = certConfigFor(purpose);
+    if (fillDefaults && cfg) {
+      const zone = document.getElementById('cert-dns-zone');
+      const certPath = document.getElementById('cert-path');
+      const keyPath = document.getElementById('cert-key-path');
+      if (zone && !zone.value.trim()) zone.value = cfg.dns_zone || '';
+      if (certPath && !certPath.value.trim()) certPath.value = cfg.cert_path || '';
+      if (keyPath && !keyPath.value.trim()) keyPath.value = cfg.key_path || '';
+      if (domain && !domain.value.trim()) domain.value = cfg.domain || '';
+    }
+    if (fillDefaults && source === 'acme-dns01') {
+      const name = document.getElementById('cert-name');
+      if (name && !name.value.trim() && domain && domain.value.trim()) {
+        const parts = domain.value.trim().split('.');
+        if (parts.length >= 2) name.value = '*.' + parts.slice(-2).join('.');
+      }
+    }
+  }
+  function readFileText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('read failed'));
+      reader.readAsText(file);
+    });
+  }
+  async function pollCertRun(statusEl) {
+    for (;;) {
+      await new Promise(r => setTimeout(r, 700));
+      let state = null;
+      try {
+        const res = await fetch(api('/api/tls/acme/status'), {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (res.ok) state = await res.json();
+      } catch (e) { /* transient poll failure: keep polling */ }
+      if (!state || !state.running) return state;
+      if (statusEl) statusEl.textContent = `${state.progress || 0}% — ${state.detail || state.stage || 'working…'}`;
+    }
+  }
+  function bindCertificateManager() {
+    const purposeEl = document.getElementById('cert-purpose');
+    const sourceEl = document.getElementById('cert-source');
+    const applyBtn = document.getElementById('cert-apply-btn');
+    const statusEl = document.getElementById('cert-apply-status');
+    if (!purposeEl || !sourceEl || !applyBtn) return;
+    purposeEl.onchange = () => { updateCertFields(true); };
+    sourceEl.onchange = () => { updateCertFields(true); };
+    updateCertFields(true);
+    window.syncCertManagerFields = updateCertFields;
+
+    function bindCertFileLabel(inputId, nameId, fallback) {
+      const input = document.getElementById(inputId);
+      const name = document.getElementById(nameId);
+      if (!input || !name) return;
+      input.addEventListener('change', () => {
+        name.textContent = input.files && input.files[0] ? input.files[0].name : fallback;
+      });
+    }
+    bindCertFileLabel('cert-file-input', 'cert-file-name', 'fullchain.pem');
+    bindCertFileLabel('cert-key-input', 'cert-key-name', 'privkey.pem');
+
+    applyBtn.onclick = async () => {
+      const purpose = purposeEl.value || 'dot';
+      const source = sourceEl.value || 'acme-http01';
+      const domain = (document.getElementById('cert-domain')?.value || '').trim();
+      if (!domain) { showToast('Enter the hostname this surface serves.', 'error'); return; }
+      applyBtn.disabled = true;
+      if (statusEl) statusEl.textContent = 'working…';
+      try {
+        if (source.startsWith('acme-')) {
+          const challenge = source === 'acme-dns01' ? 'dns-01' : 'http-01';
+          const certName = challenge === 'dns-01'
+            ? ((document.getElementById('cert-name')?.value || '').trim() || domain)
+            : domain;
+          const body = {
+            domain, purpose, challenge, cert_name: certName,
+            email: (document.getElementById('ssl-email-input')?.value || '').trim()
+          };
+          if (challenge === 'dns-01') {
+            body.dns_provider = 'cloudflare';
+            body.dns_zone = (document.getElementById('cert-dns-zone')?.value || '').trim();
+            body.dns_token = (document.getElementById('cert-dns-token')?.value || '').trim();
+            if (!body.dns_token) {
+              showToast('A Cloudflare API token is required for DNS-01.', 'error');
+              if (statusEl) statusEl.textContent = 'token required';
+              return;
+            }
+          }
+          const res = await fetch(api('/api/tls/issue'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+            body: JSON.stringify(body)
+          });
+          const out = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            showToast(out.error || 'The certificate request was refused.', 'error');
+            if (statusEl) statusEl.textContent = out.error || 'refused';
+            return;
+          }
+          if (out.issuing) {
+            showToast(out.detail || 'Requesting the certificate…', 'info');
+            const final = await pollCertRun(statusEl);
+            if (final && final.error) {
+              showToast('Issuance failed: ' + final.error, 'error');
+              if (statusEl) statusEl.textContent = final.error;
+              return;
+            }
+          }
+          showToast(out.detail || 'Certificate issued and applied.', 'success');
+        } else {
+          const body = { purpose, source: 'files', domain };
+          if (source === 'files-upload') {
+            const certFile = document.getElementById('cert-file-input')?.files?.[0];
+            const keyFile = document.getElementById('cert-key-input')?.files?.[0];
+            if (!certFile || !keyFile) {
+              showToast('Choose both the certificate and the private key.', 'error');
+              if (statusEl) statusEl.textContent = 'choose both files';
+              return;
+            }
+            body.cert_pem = await readFileText(certFile);
+            body.key_pem = await readFileText(keyFile);
+            body.allow_self_signed = !!document.getElementById('cert-upload-self-signed')?.checked;
+          } else {
+            body.cert_path = (document.getElementById('cert-path')?.value || '').trim();
+            body.key_path = (document.getElementById('cert-key-path')?.value || '').trim();
+            body.allow_self_signed = !!document.getElementById('cert-allow-self-signed')?.checked;
+            if (!body.cert_path || !body.key_path) {
+              showToast('Enter both the certificate and key paths.', 'error');
+              if (statusEl) statusEl.textContent = 'paths required';
+              return;
+            }
+          }
+          const res = await fetch(api('/api/tls/cert'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+            body: JSON.stringify(body)
+          });
+          const out = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            showToast(out.error || 'The certificate was refused.', 'error');
+            if (statusEl) statusEl.textContent = out.error || 'refused';
+            return;
+          }
+          showToast(out.detail || 'Certificate installed and applied.', 'success');
+        }
+        if (statusEl) statusEl.textContent = 'applied';
+        await loadConfig();
+        renderTLSCertDetails(currentConfig);
+        if (typeof window.renderSubscriptionSettings === 'function') window.renderSubscriptionSettings();
+        updateCertFields(false);
+      } catch (e) {
+        showToast('Could not reach the server, so it is not known whether the request was accepted.', 'error');
+      } finally {
+        applyBtn.disabled = false;
+      }
+    };
+  }
+
   // The panel + DoH/DoT buttons live in app.js's own settings scope; the
   // subscription button binds itself from its module (twofa.js).
   window.bindLEButton(document.getElementById('issue-ssl-btn'), document.getElementById('ssl-domain-input'), 'panel', 'panel-le-progress');
   window.bindLEButton(document.getElementById('issue-dot-ssl-btn'), document.getElementById('dot-domain-input'), 'dot', 'dot-le-progress');
+  bindCertificateManager();
   const dotDomainInput = document.getElementById('dot-domain-input');
   if (dotDomainInput && currentConfig && currentConfig.tls) dotDomainInput.value = currentConfig.tls.dot_domain || '';
 
@@ -10447,34 +10711,40 @@ function initEventListeners() {
   // has no Save button, and the pattern matches the session-idle toggle: a
   // preference, not a form field. A failed save flips the checkbox back so
   // the UI never claims a state the daemon refused.
-  const dotAutoRenewInput = document.getElementById('dot-auto-renew-input');
-  if (dotAutoRenewInput) {
-    dotAutoRenewInput.onchange = async () => {
-      const enabled = dotAutoRenewInput.checked;
-      dotAutoRenewInput.disabled = true;
+  // Certificate auto-renew toggles: DoH/DoT and the admin panel. Both save the
+  // moment they are clicked; a failed save flips the checkbox back so the UI
+  // never claims a state the daemon refused.
+  function bindTlsAutoRenew(inputId, purpose, label) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    input.onchange = async () => {
+      const enabled = input.checked;
+      input.disabled = true;
       try {
         const res = await fetch(api('/api/tls/auto-renew'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-          body: JSON.stringify({ enabled })
+          body: JSON.stringify({ enabled, purpose })
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
-          dotAutoRenewInput.checked = !enabled;
+          input.checked = !enabled;
+          input.disabled = false;
           showToast((body && body.error) || 'The auto-renew preference could not be saved.', 'error');
           return;
         }
-        showToast(enabled ? 'DoH/DoT auto-renew enabled.' : 'DoH/DoT auto-renew disabled.', 'success');
+        showToast(enabled ? `${label} auto-renew enabled.` : `${label} auto-renew disabled.`, 'success');
         await loadConfig();
         if (typeof window.renderSubscriptionSettings === 'function') window.renderSubscriptionSettings();
       } catch (e) {
-        dotAutoRenewInput.checked = !enabled;
+        input.checked = !enabled;
+        input.disabled = false;
         showToast('Could not reach the server.', 'error');
-      } finally {
-        dotAutoRenewInput.disabled = false;
       }
     };
   }
+  bindTlsAutoRenew('dot-auto-renew-input', 'dot', 'DoH/DoT');
+  bindTlsAutoRenew('panel-auto-renew-input', 'panel', 'Panel');
 
   // Flush Cache
   const flushBtn = document.getElementById('flush-cache-btn');
@@ -10987,7 +11257,7 @@ function initEventListeners() {
   // applies immediately; incomplete SNI-token and mTLS states stay local until
   // their required inputs are present.
   document.getElementById('doh3-enabled-input')?.addEventListener('change', (e) => {
-    withTransportDraft(d => { d.doh3_enabled = true; });
+    withTransportDraft(d => { d.doh3_enabled = !!e.target.checked; });
   });
   document.getElementById('plain-enabled-input')?.addEventListener('change', (e) => {
     withTransportDraft(d => { d.plain_dns_enabled = !!e.target.checked; });

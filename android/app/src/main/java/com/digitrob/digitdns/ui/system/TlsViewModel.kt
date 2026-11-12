@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
 import com.digitrob.digitdns.core.network.CertView
+import com.digitrob.digitdns.core.network.CertificateSourceView
 import com.digitrob.digitdns.core.network.ConfigResponse
 import com.digitrob.digitdns.core.network.SubscriptionSaveRequest
+import com.digitrob.digitdns.core.network.TlsCertInstallRequest
+import com.digitrob.digitdns.core.network.TlsIssueRequest
 import com.digitrob.digitdns.data.ConfigRepository
 import com.digitrob.digitdns.data.SubscriptionRepository
 import com.digitrob.digitdns.data.TlsRepository
@@ -36,6 +39,17 @@ data class TlsUiState(
     val certAutoRenewBusy: Boolean = false,
     /** The settings snapshot, used for the on-disk certificates and domain prefill. */
     val config: ConfigResponse? = null,
+    /** `acme-http01`, `acme-dns01`, `files-path` or `files-upload`. */
+    val certSource: String = "acme-http01",
+    val certName: String = "",
+    val dnsZone: String = "",
+    val dnsToken: String = "",
+    val certPath: String = "",
+    val keyPath: String = "",
+    val allowSelfSigned: Boolean = false,
+    val certPem: String = "",
+    val keyPem: String = "",
+    val certBusy: Boolean = false,
     val working: Boolean = false,
     /**
      * The pull-to-refresh indicator's own flag.
@@ -60,9 +74,13 @@ data class TlsUiState(
     val domainsByPurpose: Map<String, String>
         get() = mapOf(
             "panel" to config?.tls?.domain.orEmpty(),
-            "subscription" to config?.tls?.domain.orEmpty(),
+            "subscription" to config?.subscription?.domain.orEmpty(),
             "dot" to config?.tls?.dotHostname.orEmpty(),
         ).mapValues { (_, value) -> value.ifBlank { config?.server?.domain.orEmpty() } }
+
+    /** The certificate-source record for the selected purpose. */
+    val currentCertSource: CertificateSourceView?
+        get() = config?.certificates?.forPurpose(purpose)
 
     /** The certificate for the selected purpose, if any is on disk. */
     val selectedCert: CertView? get() = certs[purpose]
@@ -75,6 +93,14 @@ data class TlsUiState(
     val selectedCertExpired: Boolean get() = selectedCert?.expired == true
 }
 
+/** The UI source key for a stored certificate record. */
+private fun certSourceKey(cfg: CertificateSourceView?): String = when {
+    cfg == null -> "acme-http01"
+    cfg.source == "files" -> "files-path"
+    cfg.challenge == "dns-01" -> "acme-dns01"
+    else -> "acme-http01"
+}
+
 /**
  * Certificate issuance. A run is asynchronous: [issue] only *starts* it (or applies an
  * existing certificate), then the screen polls [TlsRepository.acmeStatus] until the
@@ -82,6 +108,7 @@ data class TlsUiState(
  * and the endpoint is a single small object — a stream would be more machinery than
  * the two-second poll it replaces.
  */
+@Suppress("TooManyFunctions")
 @HiltViewModel
 class TlsViewModel @Inject constructor(
     private val repository: TlsRepository,
@@ -101,15 +128,35 @@ class TlsViewModel @Inject constructor(
 
     fun onDomainChange(v: String) = _state.update { it.copy(domain = v) }
     fun onEmailChange(v: String) = _state.update { it.copy(email = v) }
+    fun onCertSourceChange(v: String) = _state.update { it.copy(certSource = v) }
+    fun onCertNameChange(v: String) = _state.update { it.copy(certName = v) }
+    fun onDnsZoneChange(v: String) = _state.update { it.copy(dnsZone = v) }
+    fun onDnsTokenChange(v: String) = _state.update { it.copy(dnsToken = v) }
+    fun onCertPathChange(v: String) = _state.update { it.copy(certPath = v) }
+    fun onKeyPathChange(v: String) = _state.update { it.copy(keyPath = v) }
+    fun onAllowSelfSignedChange(v: Boolean) = _state.update { it.copy(allowSelfSigned = v) }
+    fun onCertPemChange(v: String) = _state.update { it.copy(certPem = v) }
+    fun onKeyPemChange(v: String) = _state.update { it.copy(keyPem = v) }
 
     /**
-     * Switching purpose re-seeds the domain field from that purpose's configured
-     * domain, unless the operator has already typed something for it. Without this the
-     * field would keep whatever the previous purpose had, which is the wrong name half
-     * the time.
+     * Switching purpose re-seeds the domain and certificate-source fields from that
+     * purpose's record. Without this the fields would keep the previous purpose's
+     * values, which is the wrong name and often the wrong source half the time.
      */
     fun onPurposeChange(v: String) = _state.update { current ->
-        current.copy(domain = current.domainsByPurpose[v].orEmpty(), purpose = v)
+        val cfg = current.config?.certificates?.forPurpose(v)
+        current.copy(
+            domain = current.domainsByPurpose[v].orEmpty(),
+            purpose = v,
+            certSource = certSourceKey(cfg),
+            certName = cfg?.certName.orEmpty(),
+            dnsZone = cfg?.dnsZone.orEmpty(),
+            certPath = cfg?.certPath.orEmpty(),
+            keyPath = cfg?.keyPath.orEmpty(),
+            allowSelfSigned = cfg?.allowSelfSigned == true,
+            certPem = "",
+            keyPem = "",
+        )
     }
 
     fun dismissMessage() = _state.update { it.copy(message = null) }
@@ -123,6 +170,7 @@ class TlsViewModel @Inject constructor(
         viewModelScope.launch {
             val config = runCatching { configRepository.config() }.getOrNull() ?: return@launch
             _state.update { current ->
+                val cfg = config.certificates?.forPurpose(current.purpose)
                 // Seed the domain only when the operator has not started typing, so a
                 // slow config load never overwrites an in-progress entry.
                 current.copy(
@@ -132,6 +180,12 @@ class TlsViewModel @Inject constructor(
                     // DoT flag used to default to "on" without ever being read back.
                     autoRenew = config.tls?.dotAutoRenew ?: current.autoRenew,
                     subscriptionAutoRenew = config.subscription?.autoRenewAcme ?: current.subscriptionAutoRenew,
+                    certSource = certSourceKey(cfg),
+                    certName = cfg?.certName.orEmpty(),
+                    dnsZone = cfg?.dnsZone.orEmpty(),
+                    certPath = cfg?.certPath.orEmpty(),
+                    keyPath = cfg?.keyPath.orEmpty(),
+                    allowSelfSigned = cfg?.allowSelfSigned == true,
                 )
             }
         }
@@ -180,6 +234,86 @@ class TlsViewModel @Inject constructor(
                 _state.update { it.copy(working = false) }
             }
         }
+    }
+
+    /**
+     * The advanced certificate-source action: ACME HTTP-01, ACME DNS-01 wildcard, a
+     * PEM pair on the server, or a PEM pair pasted/loaded from the phone.
+     */
+    fun applyCertificate() {
+        val s = _state.value
+        val problem = certValidationError(s)
+        if (problem != null) {
+            _state.update { it.copy(error = problem) }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(certBusy = true, error = null, message = null) }
+            try {
+                if (s.certSource.startsWith("acme")) applyAcme(s) else applyFiles(s)
+                loadConfig()
+            } catch (e: ApiException) {
+                _state.update { it.copy(error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update { it.copy(error = e.message ?: "Could not apply the certificate.") }
+            } finally {
+                _state.update { it.copy(certBusy = false) }
+            }
+        }
+    }
+
+    private fun certValidationError(s: TlsUiState): String? = when {
+        s.domain.isBlank() -> "Enter the hostname this surface serves."
+        s.certSource == "acme-dns01" && s.dnsToken.isBlank() ->
+            "A Cloudflare API token is required for DNS-01."
+        s.certSource == "files-path" && (s.certPath.isBlank() || s.keyPath.isBlank()) ->
+            "Enter both the certificate and key paths."
+        s.certSource == "files-upload" && (s.certPem.isBlank() || s.keyPem.isBlank()) ->
+            "Paste or load both the certificate and the private key."
+        else -> null
+    }
+
+    private suspend fun applyAcme(s: TlsUiState) {
+        val dns01 = s.certSource == "acme-dns01"
+        val domain = s.domain.trim()
+        val result = repository.issue(
+            TlsIssueRequest(
+                domain = domain,
+                email = s.email.trim(),
+                purpose = s.purpose,
+                force = s.selectedCertExpired,
+                challenge = if (dns01) "dns-01" else "http-01",
+                certName = if (dns01) s.certName.ifBlank { domain } else domain,
+                dnsProvider = if (dns01) "cloudflare" else "",
+                dnsZone = if (dns01) s.dnsZone.trim() else "",
+                dnsToken = if (dns01) s.dnsToken.trim() else "",
+            ),
+        )
+        _state.update {
+            it.copy(
+                message = if (result.issuing) {
+                    "Issuance started for ${result.domain}."
+                } else {
+                    result.detail.ifBlank { "A valid certificate was already present and has been applied." }
+                },
+            )
+        }
+        if (result.issuing) awaitRun()
+    }
+
+    private suspend fun applyFiles(s: TlsUiState) {
+        val result = repository.installCertificate(
+            TlsCertInstallRequest(
+                purpose = s.purpose,
+                domain = s.domain.trim(),
+                certPem = if (s.certSource == "files-upload") s.certPem else "",
+                keyPem = if (s.certSource == "files-upload") s.keyPem else "",
+                certPath = if (s.certSource == "files-path") s.certPath.trim() else "",
+                keyPath = if (s.certSource == "files-path") s.keyPath.trim() else "",
+                allowSelfSigned = s.allowSelfSigned,
+            ),
+        )
+        _state.update { it.copy(message = result.detail.ifBlank { "Certificate installed and applied." }) }
     }
 
     fun setAutoRenew(enabled: Boolean) {

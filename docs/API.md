@@ -197,7 +197,7 @@ curl -s "https://dns.example.com/<admin-path>/api/v3/clients" \
 | Upstreams | `GET/POST /api/v3/upstreams`, `GET /api/v3/upstreams/presets`, `POST /api/v3/upstreams/{benchmark,reorder}` |
 | Ad blocking | `GET /api/v3/filtering`, `POST/PUT /api/v3/filtering/settings`, `POST /api/v3/filtering/refresh`, `GET/POST /api/v3/filtering/presets`, `POST /api/v3/filtering/lists`, `PATCH/POST/DELETE /api/v3/filtering/lists/{id}`, `POST /api/v3/filtering/lists/{id}/update` |
 | Settings | `GET/POST /api/v3/settings`, `…/settings/subscription`, `…/settings/transports`, `…/settings/regenerate-api-key`, `…/settings/regenerate-admin-path` |
-| TLS / ACME | `POST /api/v3/tls/issue`, `POST /api/v3/tls/auto-renew`, `GET /api/v3/tls/acme/status` |
+| TLS / ACME | `POST /api/v3/tls/issue`, `GET/POST /api/v3/tls/cert`, `POST /api/v3/tls/auto-renew`, `GET /api/v3/tls/acme/status` |
 | Stats & stream | `GET /api/v3/stats`, `GET /api/v3/stats/{summary,series,top,export,settings}`, `POST /api/v3/stats/settings`, `GET /api/v3/events/stream` (`?ticket=` accepted) |
 | Diagnostics | `GET/POST/DELETE /api/v3/diagnostics/targets`, `POST /api/v3/diagnostics/run` |
 | Ops | `POST /api/v3/cache/flush`, `GET /api/v3/config`, `POST /api/v3/benchmark`, `GET /api/v3/update/check`, `POST /api/v3/update/apply`, `GET /api/v3/update/status` |

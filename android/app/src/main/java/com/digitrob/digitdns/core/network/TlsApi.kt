@@ -27,6 +27,14 @@ interface TlsApi {
     @POST("tls/issue")
     suspend fun issue(@Body body: TlsIssueRequest): TlsIssueResponse
 
+    /** The certificate-source policy and the pair each surface currently serves. */
+    @GET("tls/cert")
+    suspend fun certificateSources(): TlsCertResponse
+
+    /** Install an operator-supplied PEM pair (upload/paste or paths). */
+    @POST("tls/cert")
+    suspend fun installCertificate(@Body body: TlsCertInstallRequest): TlsCertInstallResponse
+
     @POST("tls/auto-renew")
     suspend fun autoRenew(@Body body: TlsAutoRenewRequest): TlsAutoRenewResponse
 
@@ -42,6 +50,43 @@ data class TlsIssueRequest(
     val purpose: String = "panel",
     /** When true, skips the server's fast-path and forces a fresh ACME order. */
     val force: Boolean = false,
+    /** `http-01` (default) or `dns-01`. DNS-01 is required for a wildcard. */
+    val challenge: String = "http-01",
+    /** The ACME identifier; may be a wildcard such as `*.example.com`. */
+    @SerialName("cert_name") val certName: String = "",
+    @SerialName("dns_provider") val dnsProvider: String = "",
+    @SerialName("dns_zone") val dnsZone: String = "",
+    @SerialName("dns_token") val dnsToken: String = "",
+)
+
+@Serializable
+data class TlsCertInstallRequest(
+    val purpose: String,
+    val source: String = "files",
+    val domain: String = "",
+    @SerialName("cert_pem") val certPem: String = "",
+    @SerialName("key_pem") val keyPem: String = "",
+    @SerialName("cert_path") val certPath: String = "",
+    @SerialName("key_path") val keyPath: String = "",
+    @SerialName("allow_self_signed") val allowSelfSigned: Boolean = false,
+)
+
+@Serializable
+data class TlsCertInstallResponse(
+    val success: Boolean = false,
+    val purpose: String = "",
+    val domain: String = "",
+    @SerialName("cert_path") val certPath: String = "",
+    @SerialName("key_path") val keyPath: String = "",
+    val detail: String = "",
+)
+
+@Serializable
+data class TlsCertResponse(
+    val certificates: CertificateSettingsView? = null,
+    @SerialName("panel_cert") val panelCert: CertView? = null,
+    @SerialName("dot_cert") val dotCert: CertView? = null,
+    @SerialName("sub_cert") val subCert: CertView? = null,
 )
 
 @Serializable

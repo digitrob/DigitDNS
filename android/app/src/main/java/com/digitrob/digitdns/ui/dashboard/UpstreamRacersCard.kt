@@ -438,17 +438,21 @@ private fun ResolverChip(
     val color = accent ?: primary
     val fullGreySelection = selected && grey && accent == null
     val background = when {
+        !enabled && selected -> color.copy(alpha = 0.10f)
+        !enabled -> colors.bgTile.copy(alpha = 0.55f)
         fullGreySelection -> primary
         selected -> color.copy(alpha = 0.14f)
         else -> colors.bgTile
     }
     val foreground = when {
-        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+        !enabled && selected -> color.copy(alpha = 0.62f)
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
         fullGreySelection -> MaterialTheme.colorScheme.onPrimary
         selected -> color
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val borderColor = when {
+        !enabled -> colors.borderColor.copy(alpha = 0.65f)
         !selected -> colors.borderColor
         fullGreySelection -> primary
         else -> color.copy(alpha = 0.5f)
@@ -459,7 +463,7 @@ private fun ResolverChip(
             .background(background)
             .border(1.dp, borderColor, RoundedCornerShape(7.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .alpha(if (enabled) 1f else 0.38f)
+            .alpha(if (enabled) 1f else 0.78f)
             .padding(horizontal = 3.dp, vertical = 2.dp),
     ) {
         Text(
@@ -491,7 +495,7 @@ private fun ChipBlock(
                 text = label,
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp, lineHeight = 14.sp),
                 color = if (dimmed) {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
@@ -539,18 +543,22 @@ private fun AdaptiveIntervalChips(
         label = stringResource(R.string.adaptive_interval),
         dimmed = !enabled,
         footer = {
+            val footerText = when {
+                !enabled -> base.defaultUpstream.takeIf { it.isNotBlank() }?.let {
+                    stringResource(R.string.upstream_last_used, it)
+                }.orEmpty()
+                !adaptive -> ""
+                base.adaptiveLastRun.isBlank() -> stringResource(R.string.adaptive_last_run_empty)
+                else -> stringResource(
+                    R.string.adaptive_last_run,
+                    formatAdaptiveRun(base.adaptiveLastRun),
+                    base.adaptiveCurrent.ifBlank { "—" },
+                )
+            }
             Text(
-                text = when {
-                    !adaptive -> ""
-                    base.adaptiveLastRun.isBlank() -> stringResource(R.string.adaptive_last_run_empty)
-                    else -> stringResource(
-                        R.string.adaptive_last_run,
-                        formatAdaptiveRun(base.adaptiveLastRun),
-                        base.adaptiveCurrent.ifBlank { "—" },
-                    )
-                },
+                text = footerText,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.72f),
                 maxLines = 2,
                 minLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -619,7 +627,7 @@ private fun AdaptiveForceButton(
         color = if (enabled) {
             MaterialTheme.colorScheme.onSurfaceVariant
         } else {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
         },
     )
 }
@@ -776,9 +784,15 @@ private val PROVIDER_MATCHES = listOf(
     listOf("google", "8.8.8.8", "8.8.4.4") to R.drawable.provider_google,
     listOf("quad9", "9.9.9.9", "149.112.112.112") to R.drawable.provider_quad9,
     listOf("adguard", "94.140.14.14", "94.140.15.15") to R.drawable.provider_adguard,
+    listOf("controld", "freedns", "76.76.2.0", "76.76.10.0") to R.drawable.provider_controld,
+    listOf("dns.sb", "dot.sb", "doh.dns.sb", "185.222.222.222", "45.11.45.11") to R.drawable.provider_dnssb,
+    listOf("opendns", "208.67.222.222", "208.67.220.220") to R.drawable.provider_opendns,
+    listOf("yandex", "77.88.8.8", "77.88.8.1") to R.drawable.provider_yandex,
+    listOf("nextdns", "45.90.28.0", "45.90.30.0") to R.drawable.provider_nextdns,
+    listOf("cleanbrowsing", "185.228.168.9", "185.228.169.9") to R.drawable.provider_cleanbrowsing,
 )
 
-private fun providerDrawable(address: String): Int? {
+internal fun providerDrawable(address: String): Int? {
     val a = address.trim().lowercase()
     return PROVIDER_MATCHES.firstOrNull { (needles, _) -> needles.any { a.contains(it) } }?.second
 }

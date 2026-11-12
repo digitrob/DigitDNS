@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"digitdns/internal/database"
 )
 
 // The effective-URL layer (v2.1 plan §3.2).
@@ -261,9 +263,18 @@ func (ws *WebServer) validateSubscriptionCertificate() string {
 	if panel != "" && strings.EqualFold(domain, panel) {
 		return "" // the panel's own name: the panel's certificate serves
 	}
-	certPath := filepath.Join(ws.acmeDir(), domain+".crt")
-	keyPath := filepath.Join(ws.acmeDir(), domain+".key")
-	if err := ValidatePanelCertificate(certPath, keyPath, domain); err != nil {
+	cfg := ws.certConfig(database.CertPurposeSubscription)
+	certPath, keyPath := cfg.CertPath, cfg.KeyPath
+	if certPath == "" || keyPath == "" {
+		certName := strings.TrimSpace(cfg.CertName)
+		if certName == "" {
+			certName = domain
+		}
+		certName = strings.ReplaceAll(certName, "*", "_wildcard")
+		certPath = filepath.Join(ws.acmeDir(), certName+".crt")
+		keyPath = filepath.Join(ws.acmeDir(), certName+".key")
+	}
+	if err := validateConfiguredCertificate(cfg, certPath, keyPath, domain); err != nil {
 		return "the subscription domain has no issued certificate yet — click Let's Encrypt beside the domain field to obtain one (the domain is applied only after the certificate exists)"
 	}
 	return ""
@@ -395,8 +406,21 @@ func (ws *WebServer) sanitizeSubscriptionSnapshot(in SubscriptionSettingsInput) 
 	out.UsePanelCertificate = true
 	if out.Domain != "" && !strings.EqualFold(out.Domain, ws.effectivePanelDomain()) {
 		out.UsePanelCertificate = false
-		out.CertPath = filepath.Join(ws.acmeDir(), out.Domain+".crt")
-		out.KeyPath = filepath.Join(ws.acmeDir(), out.Domain+".key")
+		cfg := ws.certConfig(database.CertPurposeSubscription)
+		if cfg.Source == database.CertSourceFiles && cfg.CertPath != "" && cfg.KeyPath != "" {
+			// A BYO pair is a deliberate choice; do not overwrite it with the
+			// ACME path just because the operator re-saved the card.
+			out.CertPath = cfg.CertPath
+			out.KeyPath = cfg.KeyPath
+		} else {
+			certName := strings.TrimSpace(cfg.CertName)
+			if certName == "" {
+				certName = out.Domain
+			}
+			certName = strings.ReplaceAll(certName, "*", "_wildcard")
+			out.CertPath = filepath.Join(ws.acmeDir(), certName+".crt")
+			out.KeyPath = filepath.Join(ws.acmeDir(), certName+".key")
+		}
 	}
 	return out, ""
 }

@@ -2,6 +2,9 @@ package com.digitrob.digitdns.data
 
 import com.digitrob.digitdns.core.network.TlsApi
 import com.digitrob.digitdns.core.network.TlsAutoRenewRequest
+import com.digitrob.digitdns.core.network.TlsCertInstallRequest
+import com.digitrob.digitdns.core.network.TlsCertInstallResponse
+import com.digitrob.digitdns.core.network.TlsCertResponse
 import com.digitrob.digitdns.core.network.TlsIssueRequest
 import com.digitrob.digitdns.domain.model.AcmeRun
 import javax.inject.Inject
@@ -16,6 +19,16 @@ data class TlsIssueResult(
     val detail: String,
 )
 
+/** The outcome of an operator-supplied certificate install. */
+data class TlsCertInstallResult(
+    val success: Boolean,
+    val purpose: String,
+    val domain: String,
+    val certPath: String,
+    val keyPath: String,
+    val detail: String,
+)
+
 /**
  * TLS certificate issuance. There is no certificate *state* here — issuance is an
  * action, and the run progress comes from [acmeStatus]. Whether the panel is HTTPS
@@ -25,10 +38,33 @@ data class TlsIssueResult(
 class TlsRepository @Inject constructor(
     private val api: TlsApi,
 ) {
-    suspend fun issue(domain: String, email: String, purpose: String, force: Boolean = false): TlsIssueResult {
-        val response = api.issue(TlsIssueRequest(domain = domain, email = email, purpose = purpose, force = force))
+    suspend fun issue(
+        domain: String,
+        email: String,
+        purpose: String,
+        force: Boolean = false,
+    ): TlsIssueResult = issue(
+        TlsIssueRequest(domain = domain, email = email, purpose = purpose, force = force),
+    )
+
+    suspend fun issue(request: TlsIssueRequest): TlsIssueResult {
+        val response = api.issue(request)
         return TlsIssueResult(response.success, response.domain, response.issuing, response.detail)
     }
+
+    suspend fun installCertificate(request: TlsCertInstallRequest): TlsCertInstallResult {
+        val response: TlsCertInstallResponse = api.installCertificate(request)
+        return TlsCertInstallResult(
+            success = response.success,
+            purpose = response.purpose,
+            domain = response.domain,
+            certPath = response.certPath,
+            keyPath = response.keyPath,
+            detail = response.detail,
+        )
+    }
+
+    suspend fun certificateSources(): TlsCertResponse = api.certificateSources()
 
     /** Toggle DoT/DoH ACME auto-renew. Returns the flag the server now holds. */
     suspend fun setAutoRenew(enabled: Boolean): Boolean = api.autoRenew(TlsAutoRenewRequest(enabled)).enabled

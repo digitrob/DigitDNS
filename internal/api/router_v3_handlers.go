@@ -1438,6 +1438,35 @@ func (a *API) handleV3TLSIssue(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// handleV3TLSCert exposes the BYO certificate installer to API-key clients.
+// GET returns the current source policy and certificate details; POST accepts
+// the same body as /api/tls/cert.
+func (a *API) handleV3TLSCert(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodPost {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		_ = json.NewEncoder(w).Encode(a.v3Backend.TLSCertDetails())
+		return
+	}
+	body, ok := v3Body(r)
+	if !ok {
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+		return
+	}
+	resp, err := a.v3Backend.InstallTLSCert(r, body)
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (a *API) handleV3GeoIPStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")

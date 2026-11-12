@@ -1293,13 +1293,18 @@ input:checked + .slider:before {
        blank notch under it. */
     align-items: stretch;
   }
-  /* Half width is too narrow for three fields plus a button in one line, so
-     the TLS field rows become two columns with a full-width action button. */
+  /* The certificate-source block made the TLS card too tall and too wide to
+     share a row with the Subscription card. Both dense forms now take the
+     full width; their field rows keep the three-column geometry the markup
+     already uses at sm and up. */
+  .settings-pair-dense > .settings-wide {
+    grid-column: 1 / -1;
+  }
   .settings-pair-dense .settings-tls-card .tls-field-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .settings-pair-dense .settings-tls-card .tls-field-row > button {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 }
 
@@ -4660,4 +4665,82 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   font-size: 10px;
   color: var(--text-muted);
   line-height: 1.4;
+}
+
+/* Certificate upload pickers. A native file input is hard to style and reads as
+   a text box; this is a drop-zone-looking label with the selected file name. */
+.cert-upload {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 3.25rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-main);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.cert-upload:hover,
+.cert-upload:focus-within {
+  border-color: var(--accent-cyan);
+  background: var(--bg-card-hover);
+}
+.cert-upload-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.6rem;
+  color: var(--accent-cyan);
+  background: color-mix(in srgb, var(--accent-cyan) 12%, transparent);
+  flex-shrink: 0;
+}
+.cert-upload-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.cert-upload-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.cert-upload-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.cert-upload-action {
+  flex-shrink: 0;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  color: var(--accent-cyan);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* The DoH/DoT and Admin Panel certificate panes sit side by side inside the
+   SSL/TLS card on a wide panel. Each pane is a small bordered block so the
+   two certificate surfaces read as peers instead of one long stacked form. */
+.tls-pane {
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-main);
+}
+
+
+/* The dashboard grid is revealed only after app.js applies the saved layout.
+   Without this, a reload paints the default card order and then jumps every
+   card into its stored position — the Chromium layout flicker. */
+html.dash-layout-pending #tab-dashboard {
+  visibility: hidden;
 }

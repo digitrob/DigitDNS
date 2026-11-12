@@ -38,6 +38,12 @@
         var h = document.documentElement;
         h.setAttribute('data-theme', t);
         h.classList.toggle('dark', t !== 'light');
+        // A saved dashboard arrangement is applied by app.js before the config
+        // request lands. Keep the grid out of the first paint until then so the
+        // default HTML order cannot flash before every card moves.
+        if (localStorage.getItem('digitdns_dashboard_layout_v3')) {
+          h.classList.add('dash-layout-pending');
+        }
       } catch (e) { /* private mode: the markup's own defaults stand */ }
     })();
   </script>
@@ -2662,14 +2668,14 @@ async function onBuySubscription(ctx, username) {
           <div class="flex flex-col sm:flex-row sm:items-center gap-3">
             <button id="sub-issue-ssl-btn" type="button"
               class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
-              Let's Encrypt
+              Issue certificate
             </button>
             <label class="flex items-center gap-2 text-xs text-slate-300 whitespace-nowrap">
               <input type="checkbox" id="sub-auto-renew-input" class="accent-emerald-500 w-4 h-4">
-              Auto-renew certificate
+              Auto-renew Let's Encrypt certificate
             </label>
             <p class="text-[11px] text-slate-400 leading-relaxed flex-1">
-              Issue a certificate for the subscription domain above. Empty the domain field and click to go back to the panel's name.
+              Issue a Let's Encrypt certificate for the subscription domain above. Empty the domain field and click to go back to the panel's name.
             </p>
           </div>
           <!-- Validity window of the certificate the portal currently serves,
@@ -2720,59 +2726,183 @@ async function onBuySubscription(ctx, username) {
               <i data-feather="lock" class="w-5 h-5"></i>
             </div>
             <div>
-              <h3 class="panel-card-title">SSL / TLS Manager for DoH, DoT (Android Private DNS)</h3>
+              <h3 class="panel-card-title">SSL / TLS Manager for DoH, DoT</h3>
               <p class="text-[11px] text-slate-400">Trusted certificates for the DoH / DoT endpoints clients connect to, and for the panel itself</p>
             </div>
           </div>
 
-          <!-- Custom DoH/DoT domain (empty = panel domain) — first, matching the title -->
-          <p class="text-[11px] font-bold text-cyan-300 mb-1.5">DNS TRANSPORTS (DoT :853 / DoH :8443)</p>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 tls-field-row">
-            <input type="text" id="dot-domain-input" aria-label="Custom DoH DoT domain" placeholder="Custom DoH, DoT domain (empty = panel domain)"
-              class="panel-field sm:col-span-2 font-mono focus:border-cyan-400">
-            <button id="issue-dot-ssl-btn" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition disabled:opacity-50 disabled:cursor-not-allowed">
-              Let's Encrypt
-            </button>
-          </div>
-          <div id="dot-le-progress" class="hidden space-y-1.5">
-            <div class="h-2 rounded-full bg-slate-800 overflow-hidden" role="progressbar" aria-label="DoH DoT certificate issuance progress">
-              <div id="dot-le-progress-bar" class="h-full bg-gradient-to-r from-cyan-500 to-blue-400 transition-all duration-300" style="width: 0%"></div>
-            </div>
-            <p id="dot-le-progress-text" class="text-[11px] text-slate-400 font-mono"></p>
-          </div>
-          <!-- Validity window of the certificate the DoH/DoT listeners serve,
-               rendered from config.dot_cert. The button above flips to "Renew"
-               when this line says the certificate has expired. -->
-          <p id="dot-cert-details" class="text-[11px] font-mono text-slate-500 mt-1"></p>
-          <label class="flex items-center gap-2 text-xs text-slate-300 mt-1">
-            <input type="checkbox" id="dot-auto-renew-input" class="accent-cyan-500 w-4 h-4">
-            Auto-renew certificate (daily check; saves immediately)
-          </label>
-          <p class="text-[10px] text-slate-500 mt-1">This is the hostname for DNS-over-TLS and DNS-over-HTTPS — what Android's Private DNS field expects. Leave empty to use the panel domain.</p>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- DoH/DoT pane -->
+            <section class="tls-pane">
+              <p class="text-[11px] font-bold text-cyan-300 mb-2">DNS TRANSPORTS (DoT :853 / DoH :8443)</p>
+              <div class="space-y-2.5">
+                <div class="flex flex-col sm:flex-row gap-2">
+                  <input type="text" id="dot-domain-input" aria-label="Custom DoH DoT domain" placeholder="Custom DoH, DoT domain (empty = panel domain)"
+                    class="panel-field flex-1 font-mono focus:border-cyan-400">
+                  <button id="issue-dot-ssl-btn" class="shrink-0 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-[11px] font-heading transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+                    Issue certificate
+                  </button>
+                </div>
+                <div id="dot-le-progress" class="hidden space-y-1.5">
+                  <div class="h-2 rounded-full bg-slate-800 overflow-hidden" role="progressbar" aria-label="DoH DoT certificate issuance progress">
+                    <div id="dot-le-progress-bar" class="h-full bg-gradient-to-r from-cyan-500 to-blue-400 transition-all duration-300" style="width: 0%"></div>
+                  </div>
+                  <p id="dot-le-progress-text" class="text-[11px] text-slate-400 font-mono"></p>
+                </div>
+                <p id="dot-cert-details" class="text-[11px] font-mono text-slate-500"></p>
+                <p class="text-[10px] text-slate-500">Issued by Let's Encrypt over ACME HTTP-01.</p>
+                <label class="flex items-center gap-2 text-xs text-slate-300">
+                  <input type="checkbox" id="dot-auto-renew-input" class="accent-cyan-500 w-4 h-4">
+                  Auto-renew Let's Encrypt certificate (daily check; saves immediately)
+                </label>
+                <p class="text-[10px] text-slate-500">This is the hostname for DNS-over-TLS and DNS-over-HTTPS — what Android's Private DNS field expects. Leave empty to use the panel domain.</p>
+              </div>
+            </section>
 
-          <!-- Panel domain — second, under its own heading, so its wider
-               blast radius (the whole dashboard) is stated, not inferred -->
-          <p class="text-[11px] font-bold text-slate-300 mt-4 mb-1.5">ADMIN PANEL (the dashboard itself)</p>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 tls-field-row">
-            <input type="text" id="ssl-domain-input" aria-label="Panel domain name" placeholder="Panel domain — the dashboard's own name"
-              class="panel-field font-mono focus:border-cyan-400">
-            <input type="email" id="ssl-email-input" aria-label="Certificate contact email" placeholder="Admin Email (optional)"
-              class="panel-field font-mono focus:border-cyan-400">
-            <button id="issue-ssl-btn" class="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 text-slate-950 font-bold rounded-lg text-xs font-heading transition disabled:opacity-50 disabled:cursor-not-allowed">
-              Issue SSL Certificate
-            </button>
+            <!-- Admin panel pane -->
+            <section class="tls-pane">
+              <p class="text-[11px] font-bold text-slate-300 mb-2">ADMIN PANEL (the dashboard itself)</p>
+              <div class="space-y-2.5">
+                <input type="text" id="ssl-domain-input" aria-label="Panel domain name" placeholder="Panel domain — the dashboard's own name"
+                  class="panel-field w-full font-mono focus:border-cyan-400">
+                <div class="flex flex-col sm:flex-row gap-2">
+                  <input type="email" id="ssl-email-input" aria-label="Certificate contact email" placeholder="Admin Email (optional)"
+                    class="panel-field flex-1 font-mono focus:border-cyan-400">
+                  <button id="issue-ssl-btn" class="shrink-0 px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 text-slate-950 font-bold rounded-lg text-[11px] font-heading transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+                    Issue certificate
+                  </button>
+                </div>
+                <div id="panel-le-progress" class="hidden space-y-1.5">
+                  <div class="h-2 rounded-full bg-slate-800 overflow-hidden" role="progressbar" aria-label="Panel certificate issuance progress">
+                    <div id="panel-le-progress-bar" class="h-full bg-gradient-to-r from-cyan-500 to-blue-400 transition-all duration-300" style="width: 0%"></div>
+                  </div>
+                  <p id="panel-le-progress-text" class="text-[11px] text-slate-400 font-mono"></p>
+                </div>
+                <p id="panel-cert-details" class="text-[11px] font-mono text-slate-500"></p>
+                <p class="text-[10px] text-slate-500">Issued by Let's Encrypt over ACME HTTP-01.</p>
+                <label class="flex items-center gap-2 text-xs text-slate-300">
+                  <input type="checkbox" id="panel-auto-renew-input" class="accent-cyan-500 w-4 h-4">
+                  Auto-renew Let's Encrypt certificate (daily check; saves immediately)
+                </label>
+                <p class="text-[10px] text-slate-500">Changing this renames the dashboard itself — every panel link and the admin cert follow it. Not the field for your DoH/DoT hostname.</p>
+              </div>
+            </section>
           </div>
-          <div id="panel-le-progress" class="hidden space-y-1.5">
-            <div class="h-2 rounded-full bg-slate-800 overflow-hidden" role="progressbar" aria-label="Panel certificate issuance progress">
-              <div id="panel-le-progress-bar" class="h-full bg-gradient-to-r from-cyan-500 to-blue-400 transition-all duration-300" style="width: 0%"></div>
+
+          <!-- Certificate source: the shared installer for all three TLS
+               surfaces. Let's Encrypt HTTP-01 is the existing path; DNS-01 is
+               what makes a wildcard possible; files installs a pair the
+               operator already holds. The card above keeps its one-click
+               Let's Encrypt buttons, so this block is the advanced path. -->
+          <div class="mt-5 border-t border-slate-800 pt-4 space-y-3">
+            <div class="flex items-start gap-3">
+              <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-300">
+                <i data-feather="shield" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-white font-heading">Certificate source</h4>
+                <p class="text-[10px] text-slate-500">Let's Encrypt, a wildcard through Cloudflare DNS-01, or a PEM pair you already hold. Applies to the DoH/DoT listeners, the panel, or the subscriber portal.</p>
+              </div>
             </div>
-            <p id="panel-le-progress-text" class="text-[11px] text-slate-400 font-mono"></p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <label class="block">
+                <span class="block text-[10px] font-semibold text-slate-400 mb-1">Surface</span>
+                <select id="cert-purpose" class="panel-field w-full focus:border-cyan-400">
+                  <option value="dot">DoH / DoT</option>
+                  <option value="panel">Admin panel</option>
+                  <option value="subscription">Subscriber portal</option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="block text-[10px] font-semibold text-slate-400 mb-1">Source</span>
+                <select id="cert-source" class="panel-field w-full focus:border-cyan-400">
+                  <option value="acme-http01">Let's Encrypt (HTTP-01)</option>
+                  <option value="acme-dns01">Let's Encrypt wildcard (DNS-01)</option>
+                  <option value="files-path">PEM files on this server</option>
+                  <option value="files-upload">Upload / paste PEM</option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="block text-[10px] font-semibold text-slate-400 mb-1">Served hostname</span>
+                <input type="text" id="cert-domain" placeholder="dns.example.com"
+                  class="panel-field w-full font-mono focus:border-cyan-400">
+              </label>
+            </div>
+
+            <div id="cert-dns-fields" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <label class="block">
+                <span class="block text-[10px] font-semibold text-slate-400 mb-1">Certificate name (wildcard allowed)</span>
+                <input type="text" id="cert-name" placeholder="*.example.com"
+                  class="panel-field w-full font-mono focus:border-cyan-400">
+              </label>
+              <label class="block">
+                <span class="block text-[10px] font-semibold text-slate-400 mb-1">Cloudflare zone</span>
+                <input type="text" id="cert-dns-zone" placeholder="example.com (optional)"
+                  class="panel-field w-full font-mono focus:border-cyan-400">
+              </label>
+              <label class="block">
+                <span class="block text-[10px] font-semibold text-slate-400 mb-1">Cloudflare API token</span>
+                <input type="password" id="cert-dns-token" placeholder="Zone:DNS:Edit token"
+                  class="panel-field w-full font-mono focus:border-cyan-400" autocomplete="off">
+              </label>
+            </div>
+
+            <div id="cert-path-fields" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label class="block">
+                <span class="block text-[10px] font-semibold text-slate-400 mb-1">Certificate path (fullchain.pem)</span>
+                <input type="text" id="cert-path" placeholder="/etc/ssl/fullchain.pem"
+                  class="panel-field w-full font-mono focus:border-cyan-400">
+              </label>
+              <label class="block">
+                <span class="block text-[10px] font-semibold text-slate-400 mb-1">Private key path (privkey.pem)</span>
+                <input type="text" id="cert-key-path" placeholder="/etc/ssl/privkey.pem"
+                  class="panel-field w-full font-mono focus:border-cyan-400">
+              </label>
+              <label class="flex items-center gap-2 text-[11px] text-slate-300 sm:col-span-2">
+                <input type="checkbox" id="cert-allow-self-signed" class="accent-cyan-500 w-4 h-4">
+                Allow a self-signed certificate (private CA / LAN only)
+              </label>
+            </div>
+
+            <div id="cert-upload-fields" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="cert-upload" for="cert-file-input">
+                  <span class="cert-upload-icon"><i data-feather="upload-cloud" class="w-4 h-4"></i></span>
+                  <span class="cert-upload-copy">
+                    <span class="cert-upload-title">Certificate PEM</span>
+                    <span class="cert-upload-name" id="cert-file-name">fullchain.pem</span>
+                  </span>
+                  <span class="cert-upload-action">Browse</span>
+                </label>
+                <input type="file" id="cert-file-input" accept=".pem,.crt,.cer" class="sr-only">
+              </div>
+              <div>
+                <label class="cert-upload" for="cert-key-input">
+                  <span class="cert-upload-icon"><i data-feather="key" class="w-4 h-4"></i></span>
+                  <span class="cert-upload-copy">
+                    <span class="cert-upload-title">Private key PEM</span>
+                    <span class="cert-upload-name" id="cert-key-name">privkey.pem</span>
+                  </span>
+                  <span class="cert-upload-action">Browse</span>
+                </label>
+                <input type="file" id="cert-key-input" accept=".pem,.key" class="sr-only">
+              </div>
+              <label class="flex items-center gap-2 text-[11px] text-slate-300 sm:col-span-2">
+                <input type="checkbox" id="cert-upload-self-signed" class="accent-cyan-500 w-4 h-4">
+                Allow a self-signed certificate (private CA / LAN only)
+              </label>
+            </div>
+
+            <div class="flex items-center gap-3 flex-wrap">
+              <button id="cert-apply-btn" type="button"
+                class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition disabled:opacity-50 disabled:cursor-not-allowed">
+                Apply certificate
+              </button>
+              <span id="cert-apply-status" class="text-[11px] text-slate-400"></span>
+            </div>
+            <p class="text-[10px] text-slate-500">A wildcard certificate covers one label: <code>*.example.com</code> covers <code>dns.example.com</code>, not <code>a.b.example.com</code>. The served hostname stays what clients type; only the certificate identifier is wildcard.</p>
           </div>
-          <!-- Validity window of the panel's own certificate, rendered from
-               config.panel_cert. The button above flips to "Renew SSL
-               Certificate" when this line says the certificate has expired. -->
-          <p id="panel-cert-details" class="text-[11px] font-mono text-slate-500 mt-1"></p>
-          <p class="text-[10px] text-slate-500 mt-1">Changing this renames the dashboard itself — every panel link and the admin cert follow it. Not the field for your DoH/DoT hostname.</p>
         </div>
         </div>
 
@@ -2962,8 +3092,8 @@ async function onBuySubscription(ctx, username) {
                 <div class="flex items-center gap-3 shrink-0">
                   <span id="doh3-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
                   <label class="transport-toggle switch-cyan">
-                    <input type="checkbox" id="doh3-enabled-input" class="transport-toggle-input" disabled>
-                    <span class="transport-toggle-label">Always on</span>
+                    <input type="checkbox" id="doh3-enabled-input" class="transport-toggle-input">
+                    <span class="transport-toggle-label">Enabled</span>
                     <span class="transport-toggle-track" aria-hidden="true"></span>
                   </label>
                 </div>

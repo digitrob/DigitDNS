@@ -32,6 +32,40 @@ data class ConfigResponse(
     @SerialName("dot_cert") val dotCert: CertView? = null,
     @SerialName("panel_cert") val panelCert: CertView? = null,
     @SerialName("subscription_cert") val subscriptionCert: CertView? = null,
+    val certificates: CertificateSettingsView? = null,
+)
+
+/**
+ * The certificate-source policy for the three TLS surfaces, as `/config` reports it
+ * under `certificates`. The DNS API token itself is never sent; [dnsApiTokenSet]
+ * only says whether one is stored.
+ */
+@Serializable
+data class CertificateSettingsView(
+    val panel: CertificateSourceView = CertificateSourceView(),
+    val dot: CertificateSourceView = CertificateSourceView(),
+    val subscription: CertificateSourceView = CertificateSourceView(),
+) {
+    fun forPurpose(purpose: String): CertificateSourceView = when (purpose) {
+        "dot" -> dot
+        "subscription" -> subscription
+        else -> panel
+    }
+}
+
+@Serializable
+data class CertificateSourceView(
+    val source: String = "acme",
+    val domain: String = "",
+    @SerialName("cert_name") val certName: String = "",
+    val challenge: String = "http-01",
+    @SerialName("cert_path") val certPath: String = "",
+    @SerialName("key_path") val keyPath: String = "",
+    @SerialName("dns_provider") val dnsProvider: String = "",
+    @SerialName("dns_zone") val dnsZone: String = "",
+    @SerialName("dns_api_token_set") val dnsApiTokenSet: Boolean = false,
+    @SerialName("allow_self_signed") val allowSelfSigned: Boolean = false,
+    @SerialName("auto_renew") val autoRenew: Boolean = true,
 )
 
 /**

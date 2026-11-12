@@ -144,6 +144,12 @@ func (f *fakeV3Backend) GeoIPUpdate(r *http.Request) (map[string]any, error) {
 func (f *fakeV3Backend) IssueTLS(r *http.Request, b map[string]any) (map[string]any, error) {
 	return map[string]any{"success": true, "issuing": false}, nil
 }
+func (f *fakeV3Backend) TLSCertDetails() map[string]any {
+	return map[string]any{"certificates": map[string]any{}}
+}
+func (f *fakeV3Backend) InstallTLSCert(r *http.Request, b map[string]any) (map[string]any, error) {
+	return map[string]any{"success": true}, nil
+}
 func (f *fakeV3Backend) TLSAutoRenew(r *http.Request, b map[string]any) (map[string]any, error) {
 	return map[string]any{"success": true}, nil
 }

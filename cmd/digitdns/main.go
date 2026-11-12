@@ -197,6 +197,7 @@ func main() {
 
 	subscriptionSettings := &database.SubscriptionSettings{}
 	authSettings := &database.AuthSettings{}
+	certSettings := database.DefaultCertificateSettings()
 
 	// Apply defaults from config.json if provided (values already stored in the
 	// database always take precedence over these file defaults).
@@ -230,6 +231,7 @@ func main() {
 		bootstrap.SettingSpec{Key: "dns", Target: dnsSettings},
 		bootstrap.SettingSpec{Key: "sniproxy", Target: sniSettings},
 		bootstrap.SettingSpec{Key: "tls", Target: tlsSettings},
+		bootstrap.SettingSpec{Key: "certificates", Target: certSettings},
 		bootstrap.SettingSpec{Key: "subscription", Target: subscriptionSettings},
 		bootstrap.SettingSpec{Key: "auth", Target: authSettings},
 		bootstrap.SettingSpec{Key: "allow_all", Target: &allowAll},
@@ -668,6 +670,7 @@ func main() {
 		webAssets.StaticFS,
 	)
 	webServer.SetSubscriptionSettings(subscriptionSettings)
+	webServer.SetCertificateSettings(certSettings)
 	// The DNSSEC card compares this startup snapshot with the saved record to
 	// report whether a restart is pending. It is set before listeners start.
 	webServer.SetDNSSECStatus(dnsHandler.DNSSECEnabled(), dnsSettings.DNSSECTrustAnchors)
@@ -799,7 +802,7 @@ func main() {
 	}
 	webServer.StartACMEIfNeeded()
 
-	tlsConfig, err := service.LoadOrGenerateTLSConfig(tlsSettings)
+	tlsConfig, err := service.LoadOrGenerateTLSConfig(tlsSettings, certSettings.Get(database.CertPurposePanel).AllowSelfSigned)
 	if err != nil {
 		// With a domain configured this is the "no trusted certificate" case:
 		// the panel listener below refuses to start for the same reason, so
@@ -815,11 +818,25 @@ func main() {
 	// hot-swaps through it without touching the listeners. No pair / no
 	// domain = nil source = the transports ride the panel certificate.
 	var dotHolder *internalWeb.CertHolder
-	if d := tlsSettings.GetDoTDomain(); d != "" {
+	dotCfg := certSettings.Get(database.CertPurposeDoT)
+	d := tlsSettings.GetDoTDomain()
+	if dotCfg.Domain != "" {
+		d = dotCfg.Domain
+	}
+	if d != "" {
 		crt := filepath.Join(acmeDir, d+".crt")
 		key := filepath.Join(acmeDir, d+".key")
-		if err := internalWeb.ValidatePanelCertificate(crt, key, d); err != nil {
-			log.Printf("[TLS] Configured DoH/DoT domain %s has no valid certificate yet (%v) — the transports serve the panel certificate; issue one from Settings", d, err)
+		// A BYO or wildcard pair is recorded with its actual paths. The
+		// ACME-directory convention only applies when no pair is recorded.
+		if dotCfg.CertPath != "" && dotCfg.KeyPath != "" {
+			crt, key = dotCfg.CertPath, dotCfg.KeyPath
+		}
+		validateErr := internalWeb.ValidatePanelCertificate(crt, key, d)
+		if dotCfg.AllowSelfSigned {
+			validateErr = internalWeb.ValidateCertificateForDomain(crt, key, d, true)
+		}
+		if validateErr != nil {
+			log.Printf("[TLS] Configured DoH/DoT domain %s has no valid certificate yet (%v) — the transports serve the panel certificate; issue one from Settings", d, validateErr)
 		} else {
 			dotHolder = internalWeb.NewCertHolderLoading(crt, key)
 			log.Printf("[TLS] DoT/DoH listeners will serve the certificate for %s", d)
@@ -836,7 +853,7 @@ func main() {
 		DoQEnabled:       dnsSettings.DoQEnabled,
 		DoQAuth:          dnsSettings.DoQAuth,
 		DoQTokenDomain:   dnsSettings.DoQTokenDomain,
-		DoH3Enabled:      true,
+		DoH3Enabled:      dnsSettings.DoH3Active(),
 		PlainDNSDisabled: dnsSettings.PlainDNSDisabled,
 		DoHDisabled:      dnsSettings.DoHDisabled,
 		DoTDisabled:      dnsSettings.DoTDisabled,
@@ -878,7 +895,7 @@ func main() {
 			DoQEnabled:       cfg.DoQEnabled,
 			DoQAuth:          cfg.DoQAuth,
 			DoQTokenDomain:   cfg.DoQTokenDomain,
-			DoH3Enabled:      true,
+			DoH3Enabled:      cfg.DoH3Active(),
 			PlainDNSDisabled: cfg.PlainDNSDisabled,
 			DoHDisabled:      cfg.DoHDisabled,
 			DoTDisabled:      cfg.DoTDisabled,

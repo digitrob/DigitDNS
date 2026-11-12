@@ -224,6 +224,11 @@ type DNSSettings struct {
 	DoQAuth        string `json:"doq_auth"`
 	DoQTokenDomain string `json:"doq_token_domain"`
 	DoH3Enabled    bool   `json:"doh3_enabled"`
+	// DoH3Disabled is the negative form of the DoH3 switch. It is the
+	// authoritative value: zero keeps DoH3 on for every record written before
+	// the switch existed, while an explicit save can turn it off. DoH3 also
+	// requires DoH, so DoHDisabled wins over this field.
+	DoH3Disabled bool `json:"doh3_disabled"`
 	// DNSCrypt is the third opt-in client transport. Its provider/resolver keys
 	// live in the separate "dnscrypt" setting; these fields carry only the
 	// operator-visible policy.
@@ -323,6 +328,13 @@ type DNSCryptSettings struct {
 	ResolverSk   string `json:"resolver_secret"`
 	EsVersion    int    `json:"es_version"`
 	CertNotAfter int64  `json:"cert_not_after"`
+}
+
+// DoH3Active reports whether HTTP/3 is actually served. DoH3 shares the DoH
+// listener, so a disabled DoH listener also means no DoH3, regardless of the
+// dedicated switch.
+func (s DNSSettings) DoH3Active() bool {
+	return !s.DoHDisabled && !s.DoH3Disabled
 }
 
 // EffectiveTransport collapses the legacy encrypted_only switch into the
@@ -445,6 +457,10 @@ type TLSSettings struct {
 	// existing installs. Guarded by mu like Domain: the dashboard's
 	// auto-renew toggle rewrites it while the daemon serves.
 	NoDotAutoRenewACME bool `json:"no_dot_auto_renew_acme"`
+
+	// NoPanelAutoRenewACME is the same inverted switch for the admin panel's
+	// own certificate. Zero keeps the historical always-renew behaviour.
+	NoPanelAutoRenewACME bool `json:"no_panel_auto_renew_acme"`
 
 	// PanelHTTPS makes the dashboard listener serve TLS instead of plain HTTP on
 	// WebPort. It is fixed at startup (it therefore sits outside mu, like the

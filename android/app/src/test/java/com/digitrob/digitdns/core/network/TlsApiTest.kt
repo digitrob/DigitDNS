@@ -96,6 +96,73 @@ class TlsApiTest {
     }
 
     @Test
+    fun issueWithDns01SendsTheWildcardFields() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"domain":"dns.example.com","issuing":true,"detail":"requesting"}""",
+            ),
+        )
+
+        repo.issue(
+            TlsIssueRequest(
+                domain = "dns.example.com",
+                purpose = "dot",
+                challenge = "dns-01",
+                certName = "*.example.com",
+                dnsProvider = "cloudflare",
+                dnsZone = "example.com",
+                dnsToken = "token",
+            ),
+        )
+
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue(body.contains("\"challenge\":\"dns-01\""))
+        assertTrue(body.contains("\"cert_name\":\"*.example.com\""))
+        assertTrue(body.contains("\"dns_provider\":\"cloudflare\""))
+        assertTrue(body.contains("\"dns_zone\":\"example.com\""))
+        assertTrue(body.contains("\"dns_token\":\"token\""))
+    }
+
+    @Test
+    fun certificateSourcesReadsThePolicy() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"certificates":{"dot":{"source":"files","domain":"dot.example","cert_path":"/c","key_path":"/k","allow_self_signed":true}}}""",
+            ),
+        )
+
+        val response = repo.certificateSources()
+
+        assertEquals("/tls/cert", server.takeRequest().path)
+        assertEquals("files", response.certificates?.dot?.source)
+        assertEquals("/c", response.certificates?.dot?.certPath)
+        assertTrue(response.certificates?.dot?.allowSelfSigned == true)
+    }
+
+    @Test
+    fun installCertificatePostsThePair() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"purpose":"dot","domain":"dot.example","cert_path":"/c","key_path":"/k","detail":"installed"}""",
+            ),
+        )
+
+        val result = repo.installCertificate(
+            TlsCertInstallRequest(
+                purpose = "dot",
+                domain = "dot.example",
+                certPem = "CERT",
+                keyPem = "KEY",
+                allowSelfSigned = true,
+            ),
+        )
+
+        assertEquals("/tls/cert", server.takeRequest().path)
+        assertTrue(result.success)
+        assertEquals("installed", result.detail)
+    }
+
+    @Test
     fun acmeStatusReadsTheRun() = runTest {
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(

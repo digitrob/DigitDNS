@@ -193,6 +193,7 @@ func applyConfigFile(path string, server *database.ServerSettings, dns *database
 		}
 		if d.DoH3Enabled != nil {
 			dns.DoH3Enabled = *d.DoH3Enabled
+			dns.DoH3Disabled = !*d.DoH3Enabled
 		}
 		if d.Upstreams != nil {
 			dns.Upstreams = *d.Upstreams
