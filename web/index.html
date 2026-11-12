@@ -174,8 +174,8 @@
         </label>
         <div id="login-error" class="text-xs text-red-400 hidden">Invalid username or password.</div>
         <button type="submit"
-          class="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 text-slate-950 font-bold rounded-lg transition duration-200 shadow-lg shadow-cyan-500/20 text-sm font-heading">
-          AUTHENTICATE & ACCESS
+          class="panel-btn panel-btn-primary panel-btn-lg w-full">
+          Authenticate &amp; access
         </button>
       </form>
     </div>
@@ -251,8 +251,8 @@
             CANCEL
           </button>
           <button type="submit"
-            class="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-bold rounded-lg transition duration-200 shadow-lg shadow-amber-500/20 text-sm font-heading">
-            SAVE NEW CREDENTIALS
+            class="panel-btn panel-btn-primary panel-btn-lg flex-1">
+            Save new credentials
           </button>
         </div>
       </form>
@@ -484,8 +484,8 @@
                   <select id="dp-minute-select" aria-label="Expiry minute" class="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-cyan-300 text-xs"></select>
                 </div>
                 <div class="flex items-center gap-1.5">
-                  <button type="button" id="dp-set-now-btn" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] transition">Now (+30d)</button>
-                  <button type="button" id="dp-confirm-btn" class="px-2.5 py-0.5 rounded bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[10px] transition">OK</button>
+                  <button type="button" id="dp-set-now-btn" class="panel-btn panel-btn-sm panel-btn-neutral">Now (+30d)</button>
+                  <button type="button" id="dp-confirm-btn" class="panel-btn panel-btn-primary panel-btn-sm">OK</button>
                 </div>
               </div>
             </div>
@@ -576,7 +576,7 @@
               Cancel
             </button>
             <button type="submit" id="edit-client-save-btn"
-              class="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 text-slate-950 font-bold rounded-lg text-xs font-heading transition shadow-lg shadow-cyan-500/20">
+              class="panel-btn panel-btn-primary">
               Save
             </button>
           </div>
@@ -702,8 +702,8 @@
                   <select id="add-dp-minute-select" aria-label="Expiry minute" class="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-cyan-300 text-xs"></select>
                 </div>
                 <div class="flex items-center gap-1.5">
-                  <button type="button" id="add-dp-set-now-btn" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] transition">Now (+30d)</button>
-                  <button type="button" id="add-dp-confirm-btn" class="px-2.5 py-0.5 rounded bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[10px] transition">OK</button>
+                  <button type="button" id="add-dp-set-now-btn" class="panel-btn panel-btn-sm panel-btn-neutral">Now (+30d)</button>
+                  <button type="button" id="add-dp-confirm-btn" class="panel-btn panel-btn-primary panel-btn-sm">OK</button>
                 </div>
               </div>
             </div>
@@ -727,8 +727,8 @@
         </div>
 
         <button type="submit"
-          class="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 text-slate-950 font-bold rounded-lg text-xs font-heading transition shadow-lg shadow-cyan-500/20">
-          CREATE CLIENT &amp; GENERATE LINK
+          class="panel-btn panel-btn-primary panel-btn-lg w-full">
+          Create client &amp; generate link
         </button>
       </form>
     </div>
@@ -796,14 +796,14 @@
               </button>
             </form>
             <button type="button" id="toggle-created-secret-btn" aria-label="Show or hide the registration secret"
-              class="shrink-0 px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[10px] font-semibold transition">Show</button>
+              class="panel-btn panel-btn-sm panel-btn-neutral shrink-0">Show</button>
           </div>
           <p class="text-[10px] text-slate-500 mt-1">The subscriber types this on the portal to register their IP. Keep it out of the link — the link alone must never be enough.</p>
         </div>
 
         <button type="button" id="close-client-created-done-btn"
-          class="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 text-slate-950 font-bold rounded-lg text-xs font-heading transition shadow-lg shadow-emerald-500/20">
-          DONE
+          class="panel-btn panel-btn-primary panel-btn-lg w-full">
+          Done
         </button>
       </div>
     </div>
@@ -2424,7 +2424,7 @@
             <div id="tools-check-result" class="text-xs text-slate-500">Resolve a host and open one TCP port.</div>
           </div>
 
-          <div class="glass-panel panel-card p-5 space-y-3 lg:col-span-2">
+          <div class="glass-panel panel-card p-5 space-y-3 lg:col-span-2 querylog-card">
             <div class="flex items-start justify-between gap-3 flex-wrap">
               <div>
                 <h4 class="text-xs font-bold text-white font-heading">Query search</h4>
@@ -2452,11 +2452,11 @@
               <input id="querylog-client" type="text" placeholder="client / account" class="panel-field sm:w-40 font-mono text-xs" aria-label="Filter by client">
               <div class="relative">
                 <button id="querylog-action-btn" type="button" class="panel-field sm:w-36 text-left font-mono text-xs" aria-haspopup="true" aria-expanded="false">Any action</button>
-                <div id="querylog-action-menu" class="hidden absolute end-0 top-full mt-1 z-30 w-56 p-1.5 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl space-y-0.5"></div>
+                <div id="querylog-action-menu" class="hidden absolute end-0 top-full mt-1 z-50 w-56 max-h-80 overflow-y-auto p-1.5 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl space-y-0.5"></div>
               </div>
               <div class="relative">
                 <button id="querylog-proto-btn" type="button" class="panel-field sm:w-32 text-left font-mono text-xs" aria-haspopup="true" aria-expanded="false">Any proto</button>
-                <div id="querylog-proto-menu" class="hidden absolute end-0 top-full mt-1 z-30 w-44 p-1.5 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl space-y-0.5"></div>
+                <div id="querylog-proto-menu" class="hidden absolute end-0 top-full mt-1 z-50 w-44 max-h-80 overflow-y-auto p-1.5 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl space-y-0.5"></div>
               </div>
               <button id="querylog-search" type="button" class="panel-btn panel-btn-primary">Search</button>
               <button id="querylog-export-csv" type="button" class="panel-btn panel-btn-neutral">CSV</button>
@@ -2513,7 +2513,7 @@
               </div>
             </div>
             <div class="flex flex-col items-start sm:items-end gap-2">
-              <a href="/api/v3/docs" target="_blank" class="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-onfill font-bold rounded-xl text-xs font-heading flex items-center gap-2 transition shadow-lg shadow-cyan-500/20">
+              <a href="/api/v3/docs" target="_blank" class="panel-btn panel-btn-primary">
                 <i data-feather="book-open" class="w-4 h-4"></i>
                 <span>API Reference v3 (OpenAPI)</span>
               </a>
@@ -2676,6 +2676,7 @@ async function onBuySubscription(ctx, username) {
              image/binary selector. On a phone the pair collapses to one column in
              that same order. Plain CSS for the grid, because the purged utility
              sheet cannot grow a new breakpoint class here. -->
+        <h3 class="settings-section-heading settings-wide">Server &amp; access</h3>
         <div class="settings-pair settings-wide">
           <!-- Server location: the country the GeoIP database resolves for this
                install's public address, plus the age of that database and a manual
@@ -2909,6 +2910,7 @@ async function onBuySubscription(ctx, username) {
           </div>
         </div>
 
+        <h3 class="settings-section-heading settings-wide">Subscriber portal &amp; TLS</h3>
         <div class="settings-pair-dense settings-wide">
 
         <!-- Subscription surface settings (3x-ui style, third tab group). -->
@@ -3488,6 +3490,7 @@ async function onBuySubscription(ctx, username) {
           </div>
         </div>
 
+        <h3 class="settings-section-heading settings-wide">DNS policy &amp; rules</h3>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 settings-wide">
           
           <!-- Custom Blocklist (Sinkhole / Adblock) -->
@@ -3629,6 +3632,7 @@ async function onBuySubscription(ctx, username) {
         <!-- The two DNS policy cards share a row on wide panels and stack on
              mobile. The built-in root anchors are always visible inside a fixed
              height block, so the DNSSEC card never grows when it is opened. -->
+        <h3 class="settings-section-heading settings-wide">Resolver protection</h3>
         <div class="settings-pair settings-wide">
         <div class="flex flex-col gap-3 min-w-0">
         <!-- Proxy leak protection. Proxied names must never advertise QUIC or
@@ -3798,6 +3802,7 @@ async function onBuySubscription(ctx, username) {
         <!-- Aggregate history policy. The store is opened once at boot, so these
              values are deliberately restart-scoped rather than pretending to take
              effect live. -->
+        <h3 class="settings-section-heading settings-wide">History &amp; alerts</h3>
         <div class="glass-panel panel-card p-5 sm:p-6 space-y-4 settings-wide" id="stats-settings-card">
           <div class="flex items-center gap-3">
             <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
@@ -3957,6 +3962,7 @@ async function onBuySubscription(ctx, username) {
         <!-- About & legal (AGPL-3.0): product identity, licence and upstream
              attribution. Kept in the panel so the notice travels with the app
              instead of living only in the repository. -->
+        <h3 class="settings-section-heading settings-wide">About</h3>
         <div class="glass-panel panel-card p-5 sm:p-6 space-y-2 settings-wide">
           <h3 class="panel-card-header">
             <i data-feather="info" class="w-4 h-4 text-cyan-400"></i> About &amp; Legal
@@ -4157,10 +4163,6 @@ async function onBuySubscription(ctx, username) {
         <i data-feather="slash" class="w-4 h-4"></i>
         <span>Filters</span>
       </button>
-      <button class="mobile-nav-item" data-tab="tools" data-route="/tools">
-        <i data-feather="tool" class="w-4 h-4"></i>
-        <span class="text-[9px]">Tools</span>
-      </button>
       <button class="mobile-nav-item" data-tab="clients" data-route="/clients">
         <i data-feather="users" class="w-4 h-4"></i>
         <span>Users</span>
@@ -4169,23 +4171,58 @@ async function onBuySubscription(ctx, username) {
         <i data-feather="terminal" class="w-4 h-4"></i>
         <span>Live Log</span>
       </button>
-      <button class="mobile-nav-item" data-tab="systemlog" data-route="/system-log">
-        <i data-feather="list" class="w-4 h-4"></i>
-        <span>Sys Log</span>
-      </button>
-      <button class="mobile-nav-item" data-tab="api" data-route="/api">
-        <i data-feather="code" class="w-4 h-4"></i>
-        <span>API</span>
-      </button>
-      <button class="mobile-nav-item" data-tab="rules" data-route="/settings">
-        <i data-feather="sliders" class="w-4 h-4"></i>
-        <span>Settings</span>
-      </button>
-      <button class="mobile-nav-item" data-tab="connect" data-route="/guide">
-        <i data-feather="wifi" class="w-4 h-4"></i>
-        <span>Guide</span>
+      <!-- The five destinations above are the ones an operator uses constantly.
+           Everything else lives behind More: ten equal tabs put each target at
+           roughly 36px on a 360px screen, which is under the 48px a thumb aims
+           for and squeezes four of the labels to the point of colliding. -->
+      <button id="mobile-more-btn" type="button" class="mobile-nav-item"
+        aria-haspopup="dialog" aria-expanded="false" aria-controls="mobile-more-sheet">
+        <i data-feather="grid" class="w-4 h-4"></i>
+        <span>More</span>
       </button>
     </nav>
+
+    <!-- The rest of the panel, as a bottom sheet. Its items carry data-tab and the
+         same .mobile-more-item hook the tab wiring listens for, so selecting one
+         runs the ordinary switchTab path — no second navigation implementation. -->
+    <div id="mobile-more-sheet" class="mobile-more-sheet hidden" role="dialog" aria-modal="true"
+      aria-labelledby="mobile-more-title">
+      <div class="mobile-more-backdrop" data-mobile-more-close></div>
+      <div class="mobile-more-panel">
+        <div class="mobile-more-head">
+          <span id="mobile-more-title" class="mobile-more-title">More</span>
+          <button type="button" class="mobile-more-close" data-mobile-more-close aria-label="Close menu">
+            <i data-feather="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div class="mobile-more-grid">
+          <button class="mobile-more-item" data-tab="agents" data-route="/agents">
+            <i data-feather="globe" class="w-4 h-4"></i>
+            <span>Egress Options</span>
+          </button>
+          <button class="mobile-more-item" data-tab="tools" data-route="/tools">
+            <i data-feather="tool" class="w-4 h-4"></i>
+            <span>Tools</span>
+          </button>
+          <button class="mobile-more-item" data-tab="systemlog" data-route="/system-log">
+            <i data-feather="list" class="w-4 h-4"></i>
+            <span>System Log</span>
+          </button>
+          <button class="mobile-more-item" data-tab="api" data-route="/api">
+            <i data-feather="code" class="w-4 h-4"></i>
+            <span>API</span>
+          </button>
+          <button class="mobile-more-item" data-tab="rules" data-route="/settings">
+            <i data-feather="sliders" class="w-4 h-4"></i>
+            <span>Settings</span>
+          </button>
+          <button class="mobile-more-item" data-tab="connect" data-route="/guide">
+            <i data-feather="wifi" class="w-4 h-4"></i>
+            <span>Setup Guide</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
 
   </div>

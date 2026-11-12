@@ -10703,6 +10703,40 @@ const routeTabs = {
   '/connect': 'connect'
 };
 
+// Tabs that live in the phone's More sheet rather than in its bottom bar. Kept
+// beside switchTab because the bar and the sheet are one control split in two.
+const MOBILE_MORE_TABS = ['agents', 'tools', 'systemlog', 'api', 'rules', 'connect'];
+
+function syncMobileMore(target) {
+  const moreBtn = document.getElementById('mobile-more-btn');
+  if (moreBtn) {
+    const on = MOBILE_MORE_TABS.indexOf(target) !== -1;
+    moreBtn.classList.toggle('active', on);
+    moreBtn.classList.toggle('text-cyan-400', on);
+    moreBtn.classList.toggle('text-slate-400', !on);
+  }
+  closeMobileMore();
+  document.querySelectorAll('.mobile-more-item').forEach((item) => {
+    item.classList.toggle('active', item.dataset.tab === target);
+  });
+}
+
+function openMobileMore() {
+  const sheet = document.getElementById('mobile-more-sheet');
+  const btn = document.getElementById('mobile-more-btn');
+  if (!sheet) return;
+  sheet.classList.remove('hidden');
+  if (btn) btn.setAttribute('aria-expanded', 'true');
+}
+
+function closeMobileMore() {
+  const sheet = document.getElementById('mobile-more-sheet');
+  const btn = document.getElementById('mobile-more-btn');
+  if (!sheet || sheet.classList.contains('hidden')) return;
+  sheet.classList.add('hidden');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
 function switchTab(target, updateUrl = true, loadData = true) {
   activeDashTab = target;
   document.documentElement?.setAttribute('data-boot-tab', target);
@@ -10723,6 +10757,11 @@ function switchTab(target, updateUrl = true, loadData = true) {
       t.classList.add('text-slate-400');
     }
   });
+
+  // The six destinations behind the phone's More sheet still need a lit tab. The
+  // sheet itself closes on navigation, so choosing a row there lands on a page whose
+  // bottom bar says "More" is the active section rather than showing nothing.
+  syncMobileMore(target);
 
   document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
   const targetEl = document.getElementById(`tab-${target}`);
@@ -11675,6 +11714,20 @@ const QUERYLOG_PROTOCOLS = [
   { value: 'DNSCrypt', label: 'DNSCrypt' },
 ];
 
+function openQueryLogMenu(btn, menu) {
+  if (!btn || !menu) return;
+  menu.classList.remove('hidden');
+  btn.setAttribute('aria-expanded', 'true');
+  const rect = btn.getBoundingClientRect();
+  if (rect.bottom + menu.offsetHeight > window.innerHeight - 8) {
+    menu.classList.add('bottom-full', 'mb-1');
+    menu.classList.remove('top-full', 'mt-1');
+  } else {
+    menu.classList.add('top-full', 'mt-1');
+    menu.classList.remove('bottom-full', 'mb-1');
+  }
+}
+
 function renderQueryLogActionMenu() {
   const menu = document.getElementById('querylog-action-menu');
   const btn = document.getElementById('querylog-action-btn');
@@ -11702,8 +11755,8 @@ function initQueryLogActionMenu() {
   const menu = document.getElementById('querylog-action-menu');
   if (!btn || !menu) return;
   btn.onclick = () => {
-    menu.classList.toggle('hidden');
-    btn.setAttribute('aria-expanded', String(!menu.classList.contains('hidden')));
+    if (menu.classList.contains('hidden')) openQueryLogMenu(btn, menu);
+    else { menu.classList.add('hidden'); btn.setAttribute('aria-expanded', 'false'); }
   };
   menu.onclick = (e) => {
     e.stopPropagation();
@@ -11743,8 +11796,8 @@ function initQueryLogProtoMenu() {
   const menu = document.getElementById('querylog-proto-menu');
   if (!btn || !menu) return;
   btn.onclick = () => {
-    menu.classList.toggle('hidden');
-    btn.setAttribute('aria-expanded', String(!menu.classList.contains('hidden')));
+    if (menu.classList.contains('hidden')) openQueryLogMenu(btn, menu);
+    else { menu.classList.add('hidden'); btn.setAttribute('aria-expanded', 'false'); }
   };
   menu.onclick = (e) => {
     e.stopPropagation();
@@ -12137,7 +12190,7 @@ function initEventListeners() {
   initOnboarding();
   initDiffModal();
   // Tabs Navigation (Sidebar & Mobile Bottom Bar)
-  document.querySelectorAll('.sidebar-nav-item, .nav-tab, .mobile-nav-item, .agent-nav-link').forEach(tab => {
+  document.querySelectorAll('.sidebar-nav-item, .nav-tab, .mobile-nav-item, .mobile-more-item, .agent-nav-link').forEach(tab => {
     tab.onclick = (e) => {
       e.preventDefault();
       const target = tab.dataset.tab;
@@ -16053,4 +16106,24 @@ document.addEventListener('click', (e) => {
     c.classList.toggle('is-active', on);
     c.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
+});
+
+// =======================================================
+// MOBILE "MORE" SHEET
+// =======================================================
+// The sheet is opened here and closed by three paths: the backdrop, the ×, and any
+// tab selection (switchTab calls syncMobileMore). Escape closes it for a keyboard
+// attached to a tablet, where the bar is still the mobile one.
+document.addEventListener('click', (e) => {
+  if (e.target.closest?.('#mobile-more-btn')) {
+    openMobileMore();
+    return;
+  }
+  if (e.target.closest?.('[data-mobile-more-close]')) {
+    closeMobileMore();
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeMobileMore();
 });

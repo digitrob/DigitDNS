@@ -1167,6 +1167,96 @@ input:checked + .slider:before {
   filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.6));
 }
 
+/* ── Mobile "More" sheet ────────────────────────────────────────────────────────
+ * The bottom bar keeps the five destinations an operator touches constantly; the
+ * other six live here. The sheet is a bottom panel rather than a dropdown because a
+ * dropdown anchored to the last tab has nowhere to open on a 360px screen, and
+ * because a panel can lay six labelled rows out at a comfortable height instead of
+ * squeezing them into a 40px strip. */
+.mobile-more-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+}
+.mobile-more-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+}
+.mobile-more-panel {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  padding: 10px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-main);
+  border-top: 1px solid var(--border-color);
+  border-start-start-radius: var(--radius-lg);
+  border-start-end-radius: var(--radius-lg);
+  box-shadow: 0 -14px 40px rgba(0, 0, 0, 0.5);
+  animation: mobile-more-in 0.18s ease-out;
+}
+@keyframes mobile-more-in {
+  from { transform: translateY(12px); opacity: 0.6; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.mobile-more-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 8px;
+}
+.mobile-more-title {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mobile-more-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+.mobile-more-close:hover {
+  color: var(--text-main);
+}
+.mobile-more-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.mobile-more-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: start;
+}
+.mobile-more-item:hover {
+  border-color: rgb(var(--c-slate-600));
+}
+.mobile-more-item.active {
+  color: var(--accent-cyan);
+  border-color: rgb(var(--c-cyan-500) / 0.45);
+  background: rgb(var(--c-cyan-500) / 0.10);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-more-panel { animation: none; }
+}
+
 /* ── Proxied domains list — the scrolling batch region ───────────────────────────
  * The routing list is the one list on the panel that can hold thousands of
  * entries, so it is not capped at max-h-72 and printed in full. It gets a fixed
@@ -2948,6 +3038,18 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   cursor: not-allowed;
 }
 
+/* The commit action of a modal or a full-width form block: same anatomy as
+   .panel-btn one step taller, so a primary action that owns the width of a card
+   reads as the card's decision rather than a toolbar button that happened to
+   stretch. Used by the five modal footers that previously carried a hand-written
+   gradient with their own height, radius and shadow. */
+.panel-btn-lg {
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-md);
+}
+
 /* .panel-btn sets display: inline-flex, which out-ranks the plain .hidden utility
    because this sheet loads after tailwind.purged.css. Two-class selector on
    purpose, same reason as .badge.hidden: a button that is toggled with .hidden
@@ -3103,40 +3205,11 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   border-color: rgba(255, 255, 255, 0.2);
 }
 
-/* Tailwind-composed primary buttons: gradients and solid cyan fills in the
-   markup, which carry no semantic class. */
-[data-theme="grey"] button[class*="from-cyan-500"],
-[data-theme="grey"] button[class*="from-cyan-600"],
-[data-theme="grey"] a[class*="from-cyan-500"],
-[data-theme="grey"] a[class*="from-cyan-600"] {
-  background-image: none;
-  background-color: rgb(var(--c-slate-200));
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-  color: rgb(var(--c-slate-950));
-}
-
-[data-theme="grey"] button[class*="from-cyan-500"]:hover,
-[data-theme="grey"] button[class*="from-cyan-600"]:hover,
-[data-theme="grey"] a[class*="from-cyan-500"]:hover,
-[data-theme="grey"] a[class*="from-cyan-600"]:hover {
-  background-color: rgb(var(--c-slate-100));
-}
-
-[data-theme="grey"] button[class~="bg-cyan-500"],
-[data-theme="grey"] button[class~="bg-cyan-600"],
-[data-theme="grey"] a[class~="bg-cyan-500"],
-[data-theme="grey"] a[class~="bg-cyan-600"] {
-  background-color: rgb(var(--c-slate-200));
-  color: rgb(var(--c-slate-950));
-}
-
-[data-theme="grey"] button[class~="bg-cyan-500"]:hover,
-[data-theme="grey"] button[class~="bg-cyan-600"]:hover,
-[data-theme="grey"] a[class~="bg-cyan-500"]:hover,
-[data-theme="grey"] a[class~="bg-cyan-600"]:hover {
-  background-color: rgb(var(--c-slate-100));
-}
-
+/* Tailwind-composed cyan pills and icon buttons that still exist in the markup
+   (the sidebar's diagnostics action, the mobile header's). Kept as a substring
+   selector because those elements carry utility classes rather than a semantic
+   one; the gradient and solid-fill variants were removed when every primary
+   button moved to .panel-btn-primary. */
 /* Soft cyan pills and icon buttons: keep the shape, drop the hue. */
 [data-theme="grey"] button[class*="bg-cyan-500/"],
 [data-theme="grey"] a[class*="bg-cyan-500/"] {
@@ -4721,18 +4794,9 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 }
 
 /* Decorative blue and purple are category colour, not status. In Graphite they
-   become neutral; green, amber and red keep their semantic meaning. */
-[data-theme="grey"] button[class*="bg-sky-600"],
-[data-theme="grey"] button[class*="bg-fuchsia-600"] {
-  background-color: rgb(var(--c-slate-200));
-  color: rgb(var(--c-slate-950));
-}
-
-[data-theme="grey"] button[class*="bg-sky-600"]:hover,
-[data-theme="grey"] button[class*="bg-fuchsia-600"]:hover {
-  background-color: rgb(var(--c-slate-100));
-}
-
+   become neutral; green, amber and red keep their semantic meaning. The solid
+   sky/fuchsia button fills are gone (those actions use .panel-btn-primary now),
+   so only the category tints and text remain to neutralise here. */
 [data-theme="grey"] [class*="bg-sky-"],
 [data-theme="grey"] [class*="bg-fuchsia-"],
 [data-theme="grey"] [class*="bg-purple-"] {
@@ -4946,6 +5010,11 @@ html.dash-layout-pending #tab-dashboard {
 /* ── Egress options ──────────────────────────────────────────────────────────
  * SOCKS5 and WireGuard sit side by side on wide screens and stack on phones.
  * Each configured connection is a compact subcard, not a separate page. */
+/* Dropdown menus are positioned inside this card. The glass-panel paint
+   containment used elsewhere clips absolutely positioned descendants, which
+   hid every entry below the card's bottom edge. */
+.querylog-card { contain: none; }
+
 .egress-grid { display: grid; gap: 1rem; }
 @media (min-width: 1024px) {
   .egress-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -5052,6 +5121,25 @@ html.dash-layout-pending #tab-dashboard {
   color: var(--text-muted);
 }
 .proxied-bulk-group:first-child { padding-top: 2px; }
+
+/* Caption above a run of related Settings cards. The tab holds fifteen cards and
+ * the chip row above it jumps between them, but a jump bar answers "where do I go"
+ * only after the operator already knows the name of the place. These headings give
+ * the card column the same structure the Android hub's chip labels imply. */
+.settings-section-heading {
+  margin: 10px 0 -4px;
+  padding: 0 4px;
+  font-family: var(--font-heading);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+.settings-section-heading:first-of-type {
+  margin-top: 0;
+}
 
 /* Settings section jump bar. Chips are .panel-chip (the status/filter pill) so the
  * control already matches the Domains page's filter row; only the container and the
