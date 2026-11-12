@@ -1,53 +1,71 @@
-# DigitDNS v5.7.0 — full-instance relay mode and unified egress cards
+# DigitDNS v5.8.0 — query search and UI consistency
 
-A minor release on top of v5.6.1. No database schema migration is required;
+A minor release on top of v5.7.0. No database schema migration is required;
 existing settings, clients, blocklists, certificates, relay agents and egress
 options are preserved.
 
 ## Added
 
-- **Full-instance relay mode.** A full DigitDNS instance can act as a relay for
-  another hub while continuing to serve its own clients. Relay traffic and local
-  proxying share the same 80/443 listeners. Hub clients only reach hosts the hub
-  approves; local clients keep their existing behaviour.
-- **Relay mode card** on web and Android with the hub URL (including the hidden
-  admin path), a write-only agent key, first-time enrolment token, online and
-  sync state, hosts, clients, relay traffic and a real **Test connection** that
-  fetches the catalogue and reports ping.
-- **Cached catalogue.** A hub outage no longer stops relay service; the last
-  synced catalogue keeps working until the hub returns.
-- **Separate relay counters.** Relay bytes are reported independently of local
-  proxy traffic.
-- **API.** `GET/POST /api/v3/relay-mode` and `POST /api/v3/relay-mode/test`,
-  mirrored on the web API and documented in the v3 OpenAPI spec.
+- **Query search.** An opt-in persistent query history, off by default and
+  stored in a separate `querylog.db` beside the main database. Search by
+  domain, client or account, action and protocol; retention defaults to 7 days
+  and results are anonymised by default. Available as a Tools card on the web
+  panel and a Query Log screen on Android, with CSV and JSON export.
+- **Query log API.** `GET /api/v3/query-log`, settings and export endpoints,
+  documented in the v3 OpenAPI spec and mirrored on the web API.
+- **Multi-select filters.** Actions and protocols can be combined in both
+  clients. Protocol entries carry the app's own colour in the menu and in the
+  trigger.
+- **One protocol palette.** UDP cyan, TCP blue, DoT emerald, DoH purple, DoQ
+  amber, DoH3 orange and DNSCrypt fuchsia, shared by the web panel, Android and
+  the live query log, with a light-mode step.
+- **Copy feedback.** Copy actions confirm in place — a check glyph on the web,
+  a tinted control in the portal, and a green check for 1.2 s on Android.
 
 ## Changed
 
-- **SOCKS5 and WireGuard cards match relay agents.** Status beside the name,
-  compact header actions, one traffic/last-seen meta line, a colour-coded ping
-  badge, **Test connection** in the footer, and ten-second auto-refresh.
-- **Relay card footer.** The agent number is pinned to the far right and the ping
-  badge has a fixed slot, so text no longer jumps while a test runs. The separate
-  refresh button was removed.
-- **Android.** The engine ON/OFF control appears only on the Dashboard. The
-  upstream **FASTEST** badge now sits beside the hits/errors count.
+- **Shared fields and buttons.** Login, change-password, diagnostics, add/edit
+  client, bulk import, the API allow-list and the Domains/live-log toolbars use
+  the shared `.panel-field` and `.panel-btn` styles. `.panel-field-sm` covers
+  dense toolbars and `.panel-field-end-icon` keeps an in-field glyph clear.
+- **One primary action per form.** Modal and full-width form commits use the
+  primary button style; the last hand-written gradient buttons are gone.
+- **Settings and phone navigation.** Settings is grouped under six captions
+  above the sticky section jump bar. The phone bottom bar drops to six targets
+  (Dashboard, Domains, Filters, Users, Live Log, More), with the rest in a More
+  sheet that reuses the same tab wiring.
+- **Compact query filters.** Both clients show the first selected chip plus a
+  `+N` count, so more selections never grow the card or stretch the domain and
+  client fields.
+- **Android.** Query Log scrolls in landscape or any viewport shorter than the
+  content; portrait still fits without page scrolling. Dialog corners now match
+  card corners.
+
+## Fixed
+
+- Query-card dropdowns were clipped by paint containment; the card releases it
+  and the menus flip up or down based on viewport space and scroll when long.
+- A wide first filter label clipped the `+N` counter; the chip now yields width
+  so the number always shows.
+- Toggled buttons could stay visible because `.hidden` lost to a component
+  display rule; the two-class guard now matches `.badge.hidden`.
 
 ## Upgrade
 
 In-place upgrades from the dashboard are supported. The release assets include
 the Linux amd64/arm64 hub binary, relay-agent binaries, the offline bundle,
 checksums and their ed25519 signature, and the Android APKs attached from the
-`android-v5.7.0` tag.
+`android-v5.8.0` tag.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.7.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.8.0/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.7.0
-docker pull ghcr.io/digitrob/digitdns-agent:5.7.0
-docker pull robmeister/digitdns:5.7.0
-docker pull robmeister/digitdns-agent:5.7.0
+docker pull ghcr.io/digitrob/digitdns:5.8.0
+docker pull ghcr.io/digitrob/digitdns-agent:5.8.0
+docker pull robmeister/digitdns:5.8.0
+docker pull robmeister/digitdns-agent:5.8.0
 ```

@@ -15,8 +15,8 @@ vm.runInContext(code, context);
 const protocolClass = vm.runInContext('protocolClass', context);
 
 test('each shown protocol has its own colour', () => {
-  assert.equal(protocolClass('UDP'), 'text-blue-400');
-  assert.equal(protocolClass('TCP'), 'text-sky-400');
+  assert.equal(protocolClass('UDP'), 'text-cyan-400');
+  assert.equal(protocolClass('TCP'), 'text-blue-400');
   assert.equal(protocolClass('DoT'), 'text-emerald-400');
   assert.equal(protocolClass('DoH'), 'text-purple-400');
   assert.equal(protocolClass('DoQ'), 'text-amber-400');

@@ -6,6 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.8.0] — query search and UI consistency
+
+### Added
+- **Query search.** An opt-in persistent query history, off by default and stored
+  in a separate `querylog.db` beside the main database. Search by domain,
+  client or account, action and protocol, with a 7-day default retention and
+  anonymisation on by default. Available as a Tools card on the web panel and a
+  Query Log screen on Android, with CSV and JSON export.
+- **Query log API.** `GET /api/v3/query-log`, settings and export endpoints,
+  documented in the v3 OpenAPI spec and mirrored on the web API.
+- **Multi-select filters.** Actions and protocols are multi-select in both
+  clients; protocols keep the app's colour in the menu and in the trigger.
+- **Protocol palette.** One shared colour ramp for every surface: UDP cyan, TCP
+  blue, DoT emerald, DoH purple, DoQ amber, DoH3 orange and DNSCrypt fuchsia,
+  with a light-mode step. The live query log renders the transport as a tinted
+  pill instead of bare text.
+- **Copy feedback.** Copy actions confirm in place: the web panel swaps the
+  glyph for a check, the portal tints the control, and Android flashes a green
+  check for 1.2 s.
+
+### Changed
+- **Shared fields and buttons.** Login, change-password, diagnostics, add/edit
+  client, bulk import, the API allow-list and the Domains/live-log toolbars now
+  use `.panel-field` and `.panel-btn` instead of per-card utility strings.
+  `.panel-field-sm` covers dense toolbars, and `.panel-field-end-icon` keeps an
+  in-field glyph clear of the text.
+- **One primary action per form.** Modal and full-width form commits use
+  `.panel-btn-primary` (`.panel-btn-lg` when they own the card's width); the
+  hand-written gradient buttons are gone.
+- **Settings and phone navigation.** Settings is grouped under six captions
+  above the sticky section jump bar. The phone bottom bar drops from ten targets
+  to six (Dashboard, Domains, Filters, Users, Live Log, More); the rest live in
+  a More sheet that reuses the same tab wiring.
+- **Compact query filters.** Both clients show the first selected chip plus a
+  `+N` count, so choosing more actions or protocols never grows the card or
+  stretches the domain and client fields.
+- **Android.** Query Log scrolls when the viewport is shorter than the content
+  (landscape), while portrait still fits without page scrolling. Dialog corners
+  align with card corners.
+
+### Fixed
+- **Query card dropdowns were clipped.** Paint containment on the card hid every
+  entry below its bottom edge; the card now releases containment and the menus
+  flip upward or downward based on viewport space and scroll when long.
+- **The `+N` counter was clipped** by a wide first label; the chip now yields
+  width so the number always shows.
+- **Toggled buttons stayed visible** because `.hidden` lost to the component's
+  own display rule; the two-class guard now matches `.badge.hidden`.
+
 ## 🏷️ [v5.7.0] — full-instance relay mode and unified egress cards
 
 ### Added

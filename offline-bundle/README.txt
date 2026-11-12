@@ -1,5 +1,5 @@
 ========================================================================
-   DigitDNS v5.7.0 — OFFLINE INSTALLER
+   DigitDNS v5.8.0 — OFFLINE INSTALLER
    Standalone · Single Binary · Pre-packaged Assets
 ========================================================================
 
@@ -23,7 +23,7 @@ WHAT'S IN THIS PACKAGE
                         /root, then hands over to install.sh.
                         bash migrate-from-v1.sh        (asks MIGRATE)
                         bash migrate-from-v1.sh -y    (no prompt)
-  version.json          Build version metadata (5.7.0).
+  version.json          Build version metadata (5.8.0).
   scripts/uninstall.sh  Clean uninstaller.
   scripts/restore.sh    Restore an uninstall backup (requires Python 3).
   LICENSE               AGPL-3.0.

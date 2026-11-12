@@ -80,44 +80,11 @@ fun SystemLogScreen(viewModel: SystemLogViewModel = hiltViewModel()) {
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "System Log",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    "Newest daemon lines, kept in memory.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            TextButton(
-                onClick = { viewModel.refresh(manual = true) },
-                enabled = !state.isManualRefreshing,
-            ) {
-                if (state.isManualRefreshing) {
-                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                }
-                Spacer(Modifier.width(4.dp))
-                Text("Refresh")
-            }
-            TextButton(
-                onClick = { saveLauncher.launch("digitdns-system.log") },
-                enabled = state.lines.isNotEmpty(),
-            ) {
-                Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Save")
-            }
-        }
+        SystemLogHeader(
+            state = state,
+            onRefresh = { viewModel.refresh(manual = true) },
+            onSave = { saveLauncher.launch("digitdns-system.log") },
+        )
         Spacer(Modifier.height(8.dp))
         state.error?.let { message ->
             Text(message, color = DigitDnsTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
@@ -188,6 +155,46 @@ fun SystemLogScreen(viewModel: SystemLogViewModel = hiltViewModel()) {
                     },
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SystemLogHeader(
+    state: SystemLogUiState,
+    onRefresh: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "System Log",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "Newest daemon lines, kept in memory.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(onClick = onRefresh, enabled = !state.isManualRefreshing) {
+            if (state.isManualRefreshing) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+            }
+            Spacer(Modifier.width(4.dp))
+            Text("Refresh")
+        }
+        TextButton(onClick = onSave, enabled = state.lines.isNotEmpty()) {
+            Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Save")
         }
     }
 }
