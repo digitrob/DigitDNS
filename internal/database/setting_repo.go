@@ -104,6 +104,7 @@ var authoritativeSettingTargets = map[string]func() any{
 	"tls":          func() any { return &TLSSettings{} },
 	"certificates": func() any { return &CertificateSettings{} },
 	"egresses":     func() any { return &EgressSettings{} },
+	"relay_mode":   func() any { return &RelayModeSettings{} },
 	"subscription": func() any { return &SubscriptionSettings{} },
 	"stats":        func() any { return &StatsSettings{} },
 	"filtering":    func() any { return &FilteringSettings{} },

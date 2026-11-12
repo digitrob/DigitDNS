@@ -161,6 +161,24 @@ type Server struct {
 	// new relay connections are refused so turning the engine off stops
 	// proxying immediately, not only after clients expire their DNS cache.
 	engineEnabled func() bool
+
+	// Relay mode: this full instance can also serve as an agent for a hub. The
+	// policy is optional; local proxying is unchanged when it is nil.
+	relayMu          sync.RWMutex
+	relayPolicy      RelayPolicy
+	localHostAllowed func(string) bool
+	relayBytesIn     atomic.Uint64
+	relayBytesOut    atomic.Uint64
+	refusedRelayHost atomic.Uint64
+}
+
+// RelayPolicy is the hub catalogue applied to a full instance acting as a
+// relay. AllowsClient says whether the source is a hub relay client;
+// AllowsHost says whether the hub approved that hostname.
+type RelayPolicy interface {
+	Enabled() bool
+	AllowsClient(ip net.IP) bool
+	AllowsHost(host string) bool
 }
 
 // RelayDialTarget is where the hub should dial for a vetted hostname. Kind
@@ -196,6 +214,27 @@ func (s *Server) SetRelayTarget(lookup RelayTargetLookup, dialer EgressDialer) {
 // wiring; nil keeps the historical always-on behaviour in test harnesses.
 func (s *Server) SetEngineEnabled(fn func() bool) {
 	s.engineEnabled = fn
+}
+
+// SetRelayPolicy installs the hub catalogue for this full instance. policy may
+// be nil to turn relay mode off. localHostAllowed preserves local proxying for
+// clients that are both a hub relay client and a local client.
+func (s *Server) SetRelayPolicy(policy RelayPolicy, localHostAllowed func(string) bool) {
+	s.relayMu.Lock()
+	s.relayPolicy = policy
+	s.localHostAllowed = localHostAllowed
+	s.relayMu.Unlock()
+}
+
+// RelayStats returns the bytes carried for hub relay clients only.
+func (s *Server) RelayStats() (in, out uint64) {
+	return s.relayBytesIn.Load(), s.relayBytesOut.Load()
+}
+
+func (s *Server) relaySnapshot() (RelayPolicy, func(string) bool) {
+	s.relayMu.RLock()
+	defer s.relayMu.RUnlock()
+	return s.relayPolicy, s.localHostAllowed
 }
 
 // SetChallengeResponder attaches the ACME challenge source. Called once at
@@ -491,24 +530,36 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 		return
 	}
 
+	// Relay mode: a client in the hub catalogue is authorised by the hub, not
+	// by this instance's local whitelist. Local access is still evaluated so a
+	// dual-role client can keep using local proxied hosts.
+	relayPolicy, localHostAllowed := s.relaySnapshot()
+	relayClient := relayPolicy != nil && relayPolicy.Enabled() &&
+		relayPolicy.AllowsClient(net.ParseIP(clientIP))
+
 	// Access control. The client is resolved even in allow_all mode — where
 	// IsIPAllowed reports true for everyone — because a recognised account still
 	// has to be metered and quota-checked. An unknown source in that mode gets a
 	// nil client and is relayed unmetered, which is what allow_all means.
 	var client *database.Client
+	localAllowed := true
 	if s.access != nil {
 		c, allowed := s.access.IsIPAllowed(clientIP)
-		if !allowed {
-			return
+		localAllowed = allowed
+		if allowed {
+			client = c
 		}
-		client = c
+	}
+	if !relayClient && !localAllowed {
+		return
 	}
 
 	// A client that has spent its allowance is dropped before any work is done on
 	// its behalf. Refusing rather than disabling the account keeps the block
 	// reversible: raising the limit or resetting the counter restores service
-	// without an operator re-enabling anything by hand.
-	if client != nil && s.meter != nil && s.meter.QuotaExceeded(client) {
+	// without an operator re-enabling anything by hand. Hub relay clients are
+	// authorized and accounted by the hub, so local quota does not apply.
+	if !relayClient && client != nil && s.meter != nil && s.meter.QuotaExceeded(client) {
 		s.refused.Add(1)
 		s.refusedQuota.Add(1)
 		return
@@ -574,6 +625,21 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 		return
 	}
 
+	// A hub relay client may only reach hosts the hub approved. A client that is
+	// also local may additionally reach this instance's own proxied hosts, so
+	// coexistence does not break local domains.
+	if relayClient {
+		allowed := relayPolicy.AllowsHost(hostname)
+		if !allowed && localAllowed && localHostAllowed != nil {
+			allowed = localHostAllowed(hostname)
+		}
+		if !allowed {
+			s.refused.Add(1)
+			s.refusedRelayHost.Add(1)
+			return
+		}
+	}
+
 	// Resolve and vet before dialling, then dial the vetted address rather than
 	// the name. The old code string-matched the hostname and handed the name to
 	// the dialer, so any name that resolved to a private address — DNS rebinding,
@@ -627,9 +693,12 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 	// The handshake is the first thing the client spent, so it is counted like
 	// any other relayed byte rather than being absorbed silently.
 	s.bytesSent.Add(uint64(n))
+	if relayClient {
+		s.relayBytesOut.Add(uint64(n))
+	}
 
 	var report func(uint64)
-	if client != nil && s.meter != nil {
+	if !relayClient && client != nil && s.meter != nil {
 		report = func(delta uint64) {
 			s.meter.AddTraffic(client.ID, delta)
 
@@ -653,7 +722,18 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 		report(uint64(n))
 	}
 
-	s.relay(clientConn, targetConn, idle, report)
+	var relayReport func(uint64, bool)
+	if relayClient {
+		relayReport = func(delta uint64, outbound bool) {
+			if outbound {
+				s.relayBytesOut.Add(delta)
+			} else {
+				s.relayBytesIn.Add(delta)
+			}
+		}
+	}
+
+	s.relay(clientConn, targetConn, idle, report, relayReport)
 }
 
 // dialTarget chooses between the direct dial and a configured hub-side egress.
@@ -711,9 +791,28 @@ func (s *Server) dialVetted(ctx context.Context, addrs []netip.Addr, port int) (
 // will never produce another byte. report, when non-nil, is called from both
 // directions with each chunk of accounted traffic and must be safe for concurrent
 // use.
-func (s *Server) relay(clientConn, targetConn net.Conn, idle time.Duration, report func(uint64)) {
+func (s *Server) relay(clientConn, targetConn net.Conn, idle time.Duration, report func(uint64), relayReport func(uint64, bool)) {
 	var wg sync.WaitGroup
 	wg.Add(2)
+
+	sendReport := report
+	if relayReport != nil {
+		sendReport = func(delta uint64) {
+			if report != nil {
+				report(delta)
+			}
+			relayReport(delta, true)
+		}
+	}
+	recvReport := report
+	if relayReport != nil {
+		recvReport = func(delta uint64) {
+			if report != nil {
+				report(delta)
+			}
+			relayReport(delta, false)
+		}
+	}
 
 	go func() {
 		defer wg.Done()
@@ -724,12 +823,12 @@ func (s *Server) relay(clientConn, targetConn net.Conn, idle time.Duration, repo
 		// A metered relay needs the userspace buffer; the unmetered splice path
 		// does not, so do not reserve 64 KiB per direction for nothing.
 		var buf []byte
-		if report != nil {
+		if sendReport != nil {
 			b := relayBufPool.Get().(*[]byte)
 			defer relayBufPool.Put(b)
 			buf = *b
 		}
-		s.bytesSent.Add(copyIdle(targetConn, clientConn, buf, idle, report))
+		s.bytesSent.Add(copyIdle(targetConn, clientConn, buf, idle, sendReport))
 	}()
 
 	go func() {
@@ -737,12 +836,12 @@ func (s *Server) relay(clientConn, targetConn net.Conn, idle time.Duration, repo
 		defer closeWrite(clientConn)
 		defer safego.Recover("sni.relay.recv")
 		var buf []byte
-		if report != nil {
+		if recvReport != nil {
 			b := relayBufPool.Get().(*[]byte)
 			defer relayBufPool.Put(b)
 			buf = *b
 		}
-		s.bytesRecv.Add(copyIdle(clientConn, targetConn, buf, idle, report))
+		s.bytesRecv.Add(copyIdle(clientConn, targetConn, buf, idle, recvReport))
 	}()
 
 	wg.Wait()

@@ -957,6 +957,48 @@ func (a *API) handleV3Engine(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (a *API) handleV3RelayMode(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		_ = json.NewEncoder(w).Encode(a.v3Backend.RelayMode())
+	case http.MethodPost, http.MethodPut:
+		body, ok := v3Body(r)
+		if !ok {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			return
+		}
+		resp, err := a.v3Backend.SaveRelayMode(r, body)
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
+	}
+}
+
+func (a *API) handleV3RelayModeTest(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST")
+		return
+	}
+	resp, err := a.v3Backend.TestRelayMode(r)
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (a *API) handleV3SystemLog(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
 		v3BackendUnavailable(w, r)

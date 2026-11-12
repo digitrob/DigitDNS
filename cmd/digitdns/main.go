@@ -554,6 +554,26 @@ func main() {
 	egressRegistry.Start(context.Background())
 	defer egressRegistry.Stop()
 	relayRouter.SetEgressRegistry(egressRegistry)
+	// Full-instance relay mode: this server can act as an agent for another
+	// DigitDNS hub while keeping its own local proxying on the same listeners.
+	relayModeManager := service.NewRelayModeManager(
+		db, sniServer, sniSettings.HTTPSPort,
+		func() string {
+			snap := serverSettings.Snapshot()
+			if !snap.ProxyIPv6Enabled {
+				return ""
+			}
+			return snap.PublicIPv6
+		},
+		func(host string) bool {
+			action, _, _ := m.MatchDetailLower(host)
+			return action == matcher.ActionProxy
+		},
+	)
+	if err := relayModeManager.Start(context.Background()); err != nil {
+		log.Printf("[Main] Warning: relay mode did not start: %v", err)
+	}
+	defer relayModeManager.Stop()
 	sniServer.SetRelayTarget(func(hostname string) proxy.RelayDialTarget {
 		target, _ := relayRouter.LookupFor(hostname, "")
 		return proxy.RelayDialTarget{
@@ -728,6 +748,7 @@ func main() {
 	webServer.SetCustomGroupService(customGroupService)
 	webServer.SetRelayRouter(relayRouter)
 	webServer.SetEgressRegistry(egressRegistry)
+	webServer.SetRelayModeManager(relayModeManager)
 	webServer.SetEngineSetter(dnsHandler.SetEngineEnabled)
 	webServer.SetEngineState(dnsHandler.EngineEnabled)
 	webServer.SetSystemLog(logTail)

@@ -72,6 +72,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.EgressSaveRequest
+import com.digitrob.digitdns.core.network.RelayModeDto
 import com.digitrob.digitdns.domain.model.EgressInfo
 import com.digitrob.digitdns.domain.model.RelayAgentInfo
 import com.digitrob.digitdns.domain.model.egressTrafficLabel
@@ -87,6 +88,8 @@ import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.components.showPanelToast
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -124,6 +127,14 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
         clipboard.setText(AnnotatedString(text))
         viewModel.consumeClipboard()
     }
+    // Egress latency/health and agent traffic age on their own, exactly like the
+    // web cards' 10-second poll. Pull-to-refresh stays for an immediate read.
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(10_000)
+            viewModel.autoRefresh()
+        }
+    }
 
     // The Settings hub already lays this screen out below the status bar and above
     // the bottom navigation. Applying the default scaffold insets here again left a
@@ -153,15 +164,6 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
                 modifier = Modifier.fillMaxSize(),
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    EgressSectionHeader(
-                        title = stringResource(R.string.egress_relay_agents_title),
-                        body = stringResource(R.string.egress_relay_agents_body),
-                        action = stringResource(R.string.agents_add),
-                        onAdd = { creating = true },
-                    )
-                }
-
-                item(span = { GridItemSpan(maxLineSpan) }) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         EgressSummary(state.egresses)
                         if (state.agents.isNotEmpty()) {
@@ -178,6 +180,20 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
                             )
                         }
                     }
+                }
+
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    RelayModeCard(
+                        mode = state.relayMode,
+                        saving = state.isRelayModeSaving,
+                        testing = state.isRelayModeTesting,
+                        onSave = { enabled, hub, key, token ->
+                            viewModel.saveRelayMode(enabled, hub, key, token)
+                        },
+                        onTest = viewModel::testRelayMode,
+                        testPingMs = state.relayTestPingMs,
+                        testOk = state.relayTestOk,
+                    )
                 }
 
                 state.error?.let { message ->
@@ -197,6 +213,15 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
                             }
                         }
                     }
+                }
+
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    EgressSectionHeader(
+                        title = stringResource(R.string.egress_relay_agents_title),
+                        body = stringResource(R.string.egress_relay_agents_body),
+                        action = stringResource(R.string.agents_add),
+                        onAdd = { creating = true },
+                    )
                 }
 
                 when {
@@ -245,6 +270,7 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
                             onToggle = { viewModel.setEgressEnabled(egress.id, !egress.enabled) },
                             onDelete = { deletingEgress = egress },
                             onTest = { viewModel.testEgress(egress.id) },
+                            onRefresh = viewModel::refresh,
                         )
                     }
                 }
@@ -271,6 +297,7 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
                             onToggle = { viewModel.setEgressEnabled(egress.id, !egress.enabled) },
                             onDelete = { deletingEgress = egress },
                             onTest = { viewModel.testEgress(egress.id) },
+                            onRefresh = viewModel::refresh,
                         )
                     }
                 }
@@ -407,6 +434,160 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
     }
 }
 
+@Suppress("LongMethod", "CyclomaticComplexMethod")
+@Composable
+private fun RelayModeCard(
+    mode: RelayModeDto?,
+    saving: Boolean,
+    testing: Boolean,
+    onSave: (Boolean, String, String, String) -> Unit,
+    onTest: () -> Unit,
+    testPingMs: Double,
+    testOk: Boolean,
+) {
+    var hub by remember(mode?.hubUrl) { mutableStateOf(mode?.hubUrl.orEmpty()) }
+    var key by remember { mutableStateOf("") }
+    var token by remember { mutableStateOf("") }
+    var enabled by remember(mode?.enabled) { mutableStateOf(mode?.enabled == true) }
+    val status = when {
+        mode == null -> "unknown"
+        !mode.enabled -> "disabled"
+        mode.online -> "online"
+        else -> "offline"
+    }
+    val tone = when {
+        mode?.online == true -> DigitDnsTheme.colors.success
+        mode?.enabled == true -> DigitDnsTheme.colors.warning
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    PanelCard(contentPadding = 8.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "This Server as Relay",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(Modifier.width(6.dp))
+                StatusBadge(status, tone)
+            }
+            Text(
+                "Let another DigitDNS instance use this server as a relay agent. " +
+                    "Local proxying continues on the same 80/443 listeners; " +
+                    "hub clients only reach hub-approved hosts.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = hub,
+                onValueChange = { hub = it },
+                label = { Text("Hub URL (including the hidden admin path)") },
+                placeholder = { Text("https://hub:port/<admin-path>") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = key,
+                onValueChange = { key = it },
+                label = { Text("Agent key (write-only)") },
+                placeholder = {
+                    Text(
+                        if (mode?.agentKeySet == true) "Saved — leave blank to keep" else "id:secret from the hub",
+                    )
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text("Enrolment token (first time only)") },
+                placeholder = { Text("One-time token from the hub") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            ToggleRow(
+                title = "Relay mode",
+                subtitle = "Sync this server with a hub",
+                checked = enabled,
+                onCheckedChange = { enabled = it },
+            )
+            Text(
+                text = buildString {
+                    append("${mode?.hosts ?: 0} hosts · ${mode?.clients ?: 0} clients")
+                    append(" · ")
+                    append(egressTrafficLabel((mode?.relayBytesIn ?: 0) + (mode?.relayBytesOut ?: 0)))
+                    append(" relayed")
+                    if (!mode?.lastSync.isNullOrBlank()) {
+                        append(" · Last sync ")
+                        append(relayRelativeAge(mode.lastSync))
+                    }
+                },
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            mode?.lastError?.takeIf { it.isNotBlank() }?.let { message ->
+                Text(
+                    message,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = DigitDnsTheme.colors.warning,
+                    maxLines = 2,
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        onSave(enabled, hub, key, token)
+                        key = ""
+                        token = ""
+                    },
+                    enabled = !saving,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    modifier = Modifier.height(34.dp),
+                ) {
+                    Text(if (saving) "Saving…" else "Save relay mode")
+                }
+                OutlinedButton(
+                    onClick = onTest,
+                    enabled = !testing && !saving,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    modifier = Modifier.height(34.dp),
+                ) {
+                    if (testing) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(4.dp))
+                    } else {
+                        Icon(Icons.Filled.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(if (testing) "Testing…" else "Test connection")
+                }
+                Spacer(Modifier.weight(1f))
+                RelayTestPingBadge(testPingMs, testOk)
+            }
+        }
+    }
+}
+
+/** Same badge and thresholds as a relay agent's ping: green fast, yellow over
+ * 40 ms, red over 80 ms, and a stable "ping —" before the first test. */
+@Composable
+private fun RelayTestPingBadge(pingMs: Double, ok: Boolean) {
+    val (text, color) = when {
+        !ok || pingMs <= 0 -> "ping —" to MaterialTheme.colorScheme.onSurfaceVariant
+        pingMs > 80 -> String.format(Locale.US, "ping %.1f ms", pingMs) to DigitDnsTheme.colors.danger
+        pingMs > 40 -> String.format(Locale.US, "ping %.1f ms", pingMs) to DigitDnsTheme.colors.warning
+        else -> String.format(Locale.US, "ping %.1f ms", pingMs) to DigitDnsTheme.colors.success
+    }
+    StatusBadge(text, color)
+}
+
 @Composable
 private fun EgressSummary(egresses: List<EgressInfo>) {
     val enabled = egresses.filter { it.enabled }
@@ -501,6 +682,7 @@ private fun EgressCard(
     onToggle: () -> Unit,
     onDelete: () -> Unit,
     onTest: () -> Unit,
+    onRefresh: () -> Unit,
 ) {
     val statusColor = when {
         !egress.enabled -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -551,6 +733,11 @@ private fun EgressCard(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
                     AgentActionButton(
+                        icon = Icons.Filled.Autorenew,
+                        label = stringResource(R.string.egress_refresh),
+                        onClick = onRefresh,
+                    )
+                    AgentActionButton(
                         icon = Icons.Filled.Edit,
                         label = stringResource(R.string.egress_edit),
                         onClick = onEdit,
@@ -569,18 +756,17 @@ private fun EgressCard(
                 }
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                EgressStat(stringResource(R.string.egress_latency), egress.latencyLabel, Modifier.weight(1f))
-                EgressStat(stringResource(R.string.egress_traffic), egress.trafficLabel, Modifier.weight(1f))
-                EgressStat(stringResource(R.string.egress_last_seen), egress.lastSeenLabel, Modifier.weight(1f))
-            }
+            Text(
+                text = stringResource(
+                    R.string.egress_traffic_meta,
+                    egress.trafficLabel,
+                    egress.lastSeenLabel,
+                ),
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
 
             if (egress.lastError.isNotBlank()) {
                 Text(
@@ -612,36 +798,25 @@ private fun EgressCard(
                     }
                     Text(stringResource(if (testing) R.string.egress_testing else R.string.egress_test), maxLines = 1)
                 }
+                Spacer(Modifier.weight(1f))
+                EgressLatencyBadge(egress)
             }
         }
     }
 }
 
+/** Same colour scheme as relay-agent ping: green fast, yellow over 40 ms,
+ * red over 80 ms. The badge replaces the three boxed latency/traffic/age
+ * fields, so the card matches an agent card. */
 @Composable
-private fun EgressStat(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(
-            text = label.uppercase(),
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, lineHeight = 10.sp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.labelMedium.copy(
-                fontFamily = PanelMono,
-                fontWeight = FontWeight.Bold,
-                fontSize = 10.sp,
-                lineHeight = 12.sp,
-            ),
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
-        )
+private fun EgressLatencyBadge(egress: EgressInfo) {
+    val (text, color) = when {
+        egress.latencyMs <= 0 -> stringResource(R.string.egress_latency_none) to MaterialTheme.colorScheme.onSurfaceVariant
+        egress.latencyMs > 80 -> String.format(Locale.US, "ping %.1f ms", egress.latencyMs) to DigitDnsTheme.colors.danger
+        egress.latencyMs > 40 -> String.format(Locale.US, "ping %.1f ms", egress.latencyMs) to DigitDnsTheme.colors.warning
+        else -> String.format(Locale.US, "ping %.1f ms", egress.latencyMs) to DigitDnsTheme.colors.success
     }
+    StatusBadge(text, color)
 }
 
 @Composable

@@ -4981,6 +4981,126 @@
           }
         }
       }
+    },
+    "/api/v3/relay-mode": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Get relay mode",
+        "description": "Reports whether this full instance acts as a relay agent for another hub, plus synced catalogue counts and relay traffic.",
+        "operationId": "getRelayMode",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Set relay mode",
+        "description": "Enables or disables full-instance relay mode, stores the hub URL and credential, and syncs the hub catalogue.",
+        "operationId": "postRelayMode",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "hub_url": {
+                    "type": "string"
+                  },
+                  "agent_key": {
+                    "type": "string",
+                    "description": "Write-only id:secret credential."
+                  },
+                  "token": {
+                    "type": "string",
+                    "description": "One-time enrolment token."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Set relay mode",
+        "description": "Enables or disables full-instance relay mode, stores the hub URL and credential, and syncs the hub catalogue.",
+        "operationId": "putRelayMode",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "hub_url": {
+                    "type": "string"
+                  },
+                  "agent_key": {
+                    "type": "string",
+                    "description": "Write-only id:secret credential."
+                  },
+                  "token": {
+                    "type": "string",
+                    "description": "One-time enrolment token."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v3/relay-mode/test": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Test relay mode",
+        "description": "Performs a real catalogue request against the configured hub and returns ok plus latency_ms, or ok=false with an error.",
+        "operationId": "postRelayModeTest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
     }
   }
 }

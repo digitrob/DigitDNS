@@ -204,6 +204,17 @@ func (f *fakeV3Backend) EngineStatus() map[string]any { return map[string]any{"e
 func (f *fakeV3Backend) SaveEngine(r *http.Request, body map[string]any) (map[string]any, error) {
 	return map[string]any{"enabled": true}, nil
 }
+func (f *fakeV3Backend) RelayMode() map[string]any {
+	return map[string]any{"relay_mode": map[string]any{"enabled": false}}
+}
+func (f *fakeV3Backend) TestRelayMode(r *http.Request) (map[string]any, error) {
+	return map[string]any{"ok": true, "latency_ms": 8.0}, nil
+}
+
+func (f *fakeV3Backend) SaveRelayMode(r *http.Request, body map[string]any) (map[string]any, error) {
+	return map[string]any{"relay_mode": map[string]any{"enabled": true}}, nil
+}
+
 func (f *fakeV3Backend) SystemLog(limit int) (map[string]any, error) {
 	return map[string]any{"lines": []string{"line one"}}, nil
 }
@@ -463,6 +474,15 @@ func TestV3_DelegatedRoutesUseBackend(t *testing.T) {
 	}
 	if w := v3Request(mux, http.MethodGet, "/api/v3/system-log?limit=10", key, nil); w.Code != http.StatusOK {
 		t.Fatalf("system log = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodGet, "/api/v3/relay-mode", key, nil); w.Code != http.StatusOK {
+		t.Fatalf("relay mode = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodPost, "/api/v3/relay-mode", key, map[string]any{"enabled": false}); w.Code != http.StatusOK {
+		t.Fatalf("save relay mode = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodPost, "/api/v3/relay-mode/test", key, nil); w.Code != http.StatusOK {
+		t.Fatalf("test relay mode = %d, want 200: %s", w.Code, w.Body.String())
 	}
 	if w := v3Request(mux, http.MethodGet, "/api/v3/agents/a1/key", key, nil); w.Code != http.StatusOK {
 		t.Fatalf("agent key = %d, want 200: %s", w.Code, w.Body.String())

@@ -391,7 +391,9 @@ private fun TabShell(
             bottomBar = {
                 if (!wide) {
                     Column {
-                        EngineBar()
+                        // The engine switch belongs to the dashboard; other tabs
+                        // should not carry a global control they do not use.
+                        if (current == Routes.DASHBOARD) EngineBar()
                         NavigationBar {
                             tabs.forEach { tab ->
                                 NavigationBarItem(
@@ -419,7 +421,7 @@ private fun TabShell(
                             )
                         }
                         Spacer(Modifier.weight(1f))
-                        EngineBar(compact = true)
+                        if (current == Routes.DASHBOARD) EngineBar(compact = true)
                     }
                     VerticalDivider()
                 }

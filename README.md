@@ -41,6 +41,25 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.7.0
+
+**Full-instance relay mode and a unified egress UI.**
+
+- **This Server as Relay.** A full DigitDNS instance can act as a relay agent
+  for another hub while continuing to serve its own clients. Hub traffic and
+  local proxying share the same 80/443 listeners; hub clients only reach hosts
+  the hub approves, and the cached catalogue keeps the relay working during a
+  hub outage.
+- **Relay mode controls** on web and Android: hub URL with the hidden admin
+  path, write-only agent key, first-time enrolment token, online/sync state,
+  hosts, clients, relay traffic and a real **Test connection**.
+- **Egress cards match relay agents.** SOCKS5 and WireGuard cards now use the
+  relay-agent card layout: status beside the name, refresh/edit/toggle/delete in
+  the header, traffic and last-seen meta, a ping badge and **Test connection**.
+  They refresh every 10 seconds like agent cards.
+- **Android polish.** The engine switch appears only on the Dashboard, and the
+  upstream **FASTEST** badge sits beside the hits/errors count.
+
 ## What's new in 5.6.1
 
 **A patch release for the engine switch, sidebar shell and system log.**
@@ -651,7 +670,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.6.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.7.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -714,7 +733,7 @@ DoT SNI-token authentication and mTLS. Open the same ports in the firewall.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.6.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.7.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -797,7 +816,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.6.1` | Engine switch one-way fix, switch colours, fixed sidebar footer, system log copy, Force spacing (latest) |
+| `5.7.0` | Full-instance relay mode, unified egress cards, ping badges, Android engine/Fastest polish (latest) |
+| `5.6.1` | Engine switch one-way fix, switch colours, fixed sidebar footer, system log copy, Force spacing (older) |
 | `5.6.0` | Egress Options, global engine switch, system log, forced resolver selection, provider ranking, foldable sidebar (older) |
 | `5.5.7` | Adaptive upstreams, transport chips, reworked resolver card, Android parity, online status fix (older) |
 | `5.5.6` | Android biometric login, 12 px dashboard rhythm, compact stats, in-place upstream rows (older) |
@@ -870,7 +890,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.6.1/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.7.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1330,7 +1350,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.6.1`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.7.0`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

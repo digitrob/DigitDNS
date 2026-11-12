@@ -989,12 +989,19 @@ private fun UpstreamRow(
             ProviderMark(stat.address, 14.dp)
             Spacer(Modifier.width(6.dp))
             Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stat.address,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = stat.address,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
+                        text = pluralStringResource(R.plurals.upstream_hit_count, stat.hits.toInt(), stat.hits) +
+                            " · " +
+                            pluralStringResource(R.plurals.upstream_error_count, stat.errors.toInt(), stat.errors),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (isAdaptiveCurrent) {
                         Spacer(Modifier.width(6.dp))
@@ -1013,13 +1020,6 @@ private fun UpstreamRow(
                         )
                     }
                 }
-                Text(
-                    text = pluralStringResource(R.plurals.upstream_hit_count, stat.hits.toInt(), stat.hits) +
-                        " · " +
-                        pluralStringResource(R.plurals.upstream_error_count, stat.errors.toInt(), stat.errors),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
             Text(
                 text = if (stat.isMeasured) "%.1f ms".format(stat.displayLatencyMs) else "—",

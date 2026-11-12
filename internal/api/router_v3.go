@@ -135,6 +135,9 @@ type V3Backend interface {
 	EngineStatus() map[string]any
 	SaveEngine(r *http.Request, body map[string]any) (map[string]any, error)
 	SystemLog(limit int) (map[string]any, error)
+	RelayMode() map[string]any
+	SaveRelayMode(r *http.Request, body map[string]any) (map[string]any, error)
+	TestRelayMode(r *http.Request) (map[string]any, error)
 
 	// Self-update.
 	UpdateCheck(r *http.Request) (map[string]any, error)
@@ -230,6 +233,8 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	// Global engine switch and the in-process system log tail.
 	mux.HandleFunc("/api/v3/engine", a.SecurityMiddlewareV3(a.handleV3Engine))
 	mux.HandleFunc("/api/v3/system-log", a.SecurityMiddlewareV3(a.handleV3SystemLog))
+	mux.HandleFunc("/api/v3/relay-mode", a.SecurityMiddlewareV3(a.handleV3RelayMode))
+	mux.HandleFunc("/api/v3/relay-mode/test", a.SecurityMiddlewareV3(a.handleV3RelayModeTest))
 
 	// Rules & access.
 	mux.HandleFunc("/api/v3/rules", a.SecurityMiddlewareV3(a.handleV3Rules))

@@ -179,6 +179,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideRelayModeApi(retrofit: Retrofit): RelayModeApi = retrofit.create(RelayModeApi::class.java)
+
+    @Provides
+    @Singleton
     fun provideAccessApi(retrofit: Retrofit): AccessApi = retrofit.create(AccessApi::class.java)
 
     @Provides

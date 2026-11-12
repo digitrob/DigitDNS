@@ -57,7 +57,9 @@ type WebServer struct {
 	engineSetter func(bool)
 	engineState  func() bool
 	// systemLog is the bounded in-process log tail. Nil in harnesses.
-	systemLog  *logbuffer.Buffer
+	systemLog *logbuffer.Buffer
+	// relayMode lets this full instance act as a relay agent for another hub.
+	relayMode  *service.RelayModeManager
 	upstreams  *upstream.UpstreamPool
 	dohHandler http.Handler
 	updater    *selfupdate.Updater
@@ -1330,6 +1332,8 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/egresses", ws.requireAuth(ws.handleEgresses))
 	mux.HandleFunc("/api/egresses/", ws.requireAuth(ws.handleEgressByID))
 	mux.HandleFunc("/api/engine", ws.requireAuth(ws.handleEngine))
+	mux.HandleFunc("/api/relay-mode", ws.requireAuth(ws.handleRelayMode))
+	mux.HandleFunc("/api/relay-mode/test", ws.requireAuth(ws.handleRelayModeTest))
 	mux.HandleFunc("/api/system-log", ws.requireAuth(ws.handleSystemLog))
 	mux.HandleFunc("/api/system-log/export", ws.requireAuth(ws.handleSystemLogExport))
 	mux.HandleFunc("/agent/enrol", ws.handleAgentEnrol)

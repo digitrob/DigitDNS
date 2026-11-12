@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.7.0] — full-instance relay mode and unified egress cards
+
+### Added
+- **Full-instance relay mode.** A full DigitDNS instance can serve as a relay
+  agent for another hub while continuing normal local operation. Hub traffic and
+  local proxying share the same 80/443 listeners; hub clients are limited to the
+  hub's approved host list, while local clients keep their existing behaviour.
+- **Relay mode card** on web and Android: hub URL including the hidden admin
+  path, write-only agent key, first-time enrolment token, online and sync state,
+  hosts, clients, relay traffic, cached catalogue during hub outages, and a real
+  **Test connection** that fetches the catalogue and reports ping.
+- **Relay counters.** Relay traffic is counted separately from local proxy
+  traffic for heartbeat and dashboard reporting.
+- **API.** `GET/POST /api/v3/relay-mode` and `POST /api/v3/relay-mode/test`,
+  mirrored on the web API and documented in the v3 OpenAPI spec.
+
+### Changed
+- **SOCKS5 and WireGuard cards now match relay-agent cards.** Status sits beside
+  the card name; refresh, edit, enable/disable and delete are compact header
+  icons; traffic and last-seen share one meta line; latency is a colour-coded
+  ping badge; and **Test connection** sits in the footer. Cards refresh every
+  ten seconds like agent cards.
+- **Relay card layout.** Status sits beside the title, the agent number is pinned
+  to the far right, and the ping badge has a fixed slot so the footer does not
+  jump while testing. The separate refresh button was removed.
+- **Android.** The engine ON/OFF control is shown only on the Dashboard, and the
+  upstream **FASTEST** badge sits beside the hits/errors count.
+
 ## 🏷️ [v5.6.1] — engine switch and shell fixes
 
 ### Fixed

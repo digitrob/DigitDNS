@@ -230,17 +230,23 @@ function flagURL(code) {
 
 function paintCountryFlag(img, code) {
   if (!img) return;
+  const holder = img.closest('#copy-ip-btn');
   const url = flagURL(code);
   if (!url) {
     img.classList.add('hidden');
     img.removeAttribute('src');
+    if (holder) holder.classList.remove('has-country-flag');
     return;
   }
-  img.onerror = () => { img.classList.add('hidden'); };
+  img.onerror = () => {
+    img.classList.add('hidden');
+    if (holder) holder.classList.remove('has-country-flag');
+  };
   img.src = url;
   img.alt = countryName(code);
   img.title = countryName(code);
   img.classList.remove('hidden');
+  if (holder) holder.classList.add('has-country-flag');
 }
 
 function renderServerLocation(code) {
@@ -9278,6 +9284,7 @@ async function loadAgents() {
   // agent refresh also refreshes the hub-side egresses. Failures are rendered
   // by loadEgresses itself and do not block the agent list.
   await loadEgresses();
+  loadRelayMode();
   try {
     const res = await fetch(api('/api/agents'), { headers: { 'Authorization': `Bearer ${authToken}` } });
     if (res.status === 401) {
@@ -9996,12 +10003,18 @@ function renderEgressList(kind) {
 function renderEgressSubcard(e) {
   const status = !e.enabled ? 'disabled' : (e.health === 'online' ? 'online' : (e.health === 'offline' ? 'offline' : 'unknown'));
   const stateClass = status === 'online' ? 'is-online' : (status === 'offline' ? 'is-offline' : 'is-disabled');
-  const cardClass = 'egress-subcard' + (status === 'offline' ? ' is-offline' : '') + (status === 'disabled' ? ' is-disabled' : '');
-  const latency = Number(e.latency_ms) > 0 ? `${Number(e.latency_ms).toFixed(0)} ms` : '—';
+  const cardClass = 'agent-card glass-panel panel-card p-4 sm:p-5 flex flex-col justify-between space-y-3'
+    + (status === 'offline' ? ' is-offline' : '')
+    + (status === 'disabled' ? ' is-disabled' : '');
+  const latency = Number(e.latency_ms) > 0 ? `${Number(e.latency_ms).toFixed(1)} ms` : '—';
   const traffic = humanBytes(Number(e.bytes_in || 0) + Number(e.bytes_out || 0));
+  const age = egressRelativeAge(e.last_seen);
+  const latencyBadge = egressLatencyBadge(e);
   const detail = e.kind === 'socks5'
     ? (e.address || 'no address')
     : (e.config_set ? 'Configuration saved' : 'No configuration');
+  const failMode = e.fail_closed ? 'Fail closed' : 'Fallback';
+  const failModeClass = e.fail_closed ? 'text-amber-300' : 'text-slate-300';
   const failClosed = e.fail_closed
     ? `<span class="agent-badge egress-badge-failclosed" title="If this egress is offline, matching domains fail instead of falling back to this server">fail-closed</span>`
     : '';
@@ -10011,41 +10024,83 @@ function renderEgressSubcard(e) {
   const icon = e.kind === 'wireguard' ? 'lock' : 'shuffle';
   return `
     <div class="${escapeHTML(cardClass)}">
-      <div class="egress-head">
-        <div class="min-w-0 flex-1">
-          <div class="egress-title">
-            ${egressFlagHTML(e, 'agent-flag')}
-            <span class="egress-name">${escapeHTML(e.name || e.id)}</span>
-            <span class="agent-badge ${escapeHTML(stateClass)}">${escapeHTML(status)}</span>
-            ${failClosed}
-            <span class="egress-kind"><i data-feather="${escapeHTML(icon)}" class="w-3 h-3"></i>${escapeHTML(egressKindLabel(e.kind))}</span>
+      <div>
+        <div class="flex items-start justify-between gap-2 mb-2 pb-2 border-b border-slate-800/80">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              ${egressFlagHTML(e, 'agent-flag')}
+              <h4 class="agent-name truncate">${escapeHTML(e.name || e.id)}</h4>
+              <span class="agent-badge ${escapeHTML(stateClass)}">${escapeHTML(status)}</span>
+              ${failClosed}
+              <span class="egress-kind"><i data-feather="${escapeHTML(icon)}" class="w-3 h-3"></i>${escapeHTML(egressKindLabel(e.kind))}</span>
+            </div>
+            <div class="agent-meta mt-0.5 truncate" title="${escapeHTML(detail)}">${escapeHTML(detail)}${e.country ? ' · ' + escapeHTML(e.country) : ''}</div>
           </div>
-          <div class="egress-meta mt-1" title="${escapeHTML(detail)}">${escapeHTML(detail)}${e.country ? ' · ' + escapeHTML(e.country) : ''}</div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button type="button" class="agent-icon-btn" data-egress-refresh="${escapeHTML(e.id)}" title="Refresh egress" aria-label="Refresh egress ${escapeHTML(e.name || e.id)}">
+              <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i>
+            </button>
+            <button type="button" class="agent-icon-btn" data-egress-edit="${escapeHTML(e.id)}" title="Edit egress" aria-label="Edit egress ${escapeHTML(e.name || e.id)}">
+              <i data-feather="edit-2" class="w-3.5 h-3.5"></i>
+            </button>
+            <button type="button" class="agent-icon-btn" data-egress-toggle="${escapeHTML(e.id)}" data-enable="${escapeHTML(e.enabled ? '0' : '1')}" title="${escapeHTML(e.enabled ? 'Disable egress' : 'Enable egress')}" aria-label="${escapeHTML(e.enabled ? 'Disable egress' : 'Enable egress')}">
+              <i data-feather="${escapeHTML(e.enabled ? 'pause' : 'play')}" class="w-3.5 h-3.5"></i>
+            </button>
+            <button type="button" class="agent-icon-btn agent-icon-btn-danger" data-egress-delete="${escapeHTML(e.id)}" title="Delete egress" aria-label="Delete egress ${escapeHTML(e.name || e.id)}">
+              <i data-feather="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
         </div>
-        <div class="flex items-center gap-1 shrink-0">
-          <button type="button" class="agent-icon-btn" data-egress-toggle="${escapeHTML(e.id)}" data-enable="${escapeHTML(e.enabled ? '0' : '1')}" title="${escapeHTML(e.enabled ? 'Disable egress' : 'Enable egress')}" aria-label="${escapeHTML(e.enabled ? 'Disable egress' : 'Enable egress')}">
-            <i data-feather="${escapeHTML(e.enabled ? 'pause' : 'play')}" class="w-3.5 h-3.5"></i>
-          </button>
-          <button type="button" class="agent-icon-btn agent-icon-btn-danger" data-egress-delete="${escapeHTML(e.id)}" title="Delete egress" aria-label="Delete egress ${escapeHTML(e.name || e.id)}">
-            <i data-feather="trash-2" class="w-3.5 h-3.5"></i>
-          </button>
+
+        <div class="agent-card-body">
+          <div class="agent-card-values">
+            <div class="flex items-center justify-between gap-2 text-[10px] font-mono bg-slate-950/80 px-2.5 py-1.5 rounded-lg border border-slate-800/80">
+              <span class="text-slate-500 font-semibold shrink-0">ENDPOINT</span>
+              <span class="text-cyan-300 min-w-0 flex-1 truncate text-right select-all" title="${escapeHTML(detail)}">${escapeHTML(detail)}</span>
+            </div>
+            <div class="flex items-center justify-between gap-2 text-[10px] font-mono bg-slate-950/80 px-2.5 py-1.5 rounded-lg border border-slate-800/80">
+              <span class="text-slate-500 font-semibold shrink-0">FAIL MODE</span>
+              <span class="${escapeHTML(failModeClass)} min-w-0 flex-1 truncate text-right">${escapeHTML(failMode)}</span>
+            </div>
+            <div class="agent-meta agent-card-traffic">${escapeHTML(traffic)} carried · Last seen ${escapeHTML(age)}</div>
+          </div>
+
+          <div class="agent-card-side">
+            <div class="agent-side-stat"><span>Ping</span><strong>${escapeHTML(latency)}</strong></div>
+            <div class="agent-side-stat"><span>Last Seen</span><strong>${escapeHTML(age)}</strong></div>
+            <div class="agent-side-stat is-domains"><span>Traffic</span><strong>${escapeHTML(traffic)}</strong></div>
+          </div>
         </div>
+
+        ${error}
       </div>
-      <div class="egress-stats">
-        <div class="egress-stat"><span>Latency</span><strong>${escapeHTML(latency)}</strong></div>
-        <div class="egress-stat"><span>Traffic</span><strong>${escapeHTML(traffic)}</strong></div>
-        <div class="egress-stat"><span>Last seen</span><strong>${escapeHTML(egressRelativeAge(e.last_seen))}</strong></div>
-      </div>
-      ${error}
-      <div class="egress-actions">
-        <button type="button" class="panel-btn panel-btn-sm panel-btn-neutral" data-egress-test="${escapeHTML(e.id)}">
-          <i data-feather="activity" class="w-3.5 h-3.5"></i> Test
+
+      <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
+        <button type="button" class="panel-btn panel-btn-sm panel-btn-neutral" data-egress-test="${escapeHTML(e.id)}" title="Open a connection through this egress">
+          <i data-feather="activity" class="w-3.5 h-3.5"></i> Test connection
         </button>
-        <button type="button" class="panel-btn panel-btn-sm panel-btn-neutral" data-egress-edit="${escapeHTML(e.id)}">
-          <i data-feather="edit-2" class="w-3.5 h-3.5"></i> Edit
-        </button>
+        <span class="shrink-0 px-2 py-0.5 rounded border ${escapeHTML(latencyBadge.cls)} text-[10px] font-bold font-mono whitespace-nowrap" title="${escapeHTML(latencyBadge.title)}">${escapeHTML(latencyBadge.text)}</span>
       </div>
     </div>`;
+}
+
+function egressLatencyBadge(e) {
+  const latency = Number(e && e.latency_ms) || 0;
+  if (!(latency > 0)) {
+    return {
+      cls: 'text-slate-400 bg-slate-500/10 border-slate-600/40',
+      text: 'ping —',
+      title: 'No egress test yet',
+    };
+  }
+  let cls = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+  if (latency > 40) cls = 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30';
+  if (latency > 80) cls = 'text-red-400 bg-red-500/10 border-red-500/30';
+  return {
+    cls,
+    text: `ping ${latency.toFixed(1)} ms`,
+    title: 'Last egress test',
+  };
 }
 
 function egressRelativeAge(value) {
@@ -10237,6 +10292,8 @@ async function deleteEgress(id) {
 }
 
 function handleEgressListClick(e) {
+  const refresh = e.target.closest('[data-egress-refresh]');
+  if (refresh) { testEgress(refresh.dataset.egressRefresh, refresh); return; }
   const test = e.target.closest('[data-egress-test]');
   if (test) { testEgress(test.dataset.egressTest, test); return; }
   const edit = e.target.closest('[data-egress-edit]');
@@ -10249,6 +10306,158 @@ function handleEgressListClick(e) {
   if (toggle) { toggleEgress(toggle.dataset.egressToggle, toggle.dataset.enable === '1'); return; }
   const del = e.target.closest('[data-egress-delete]');
   if (del) deleteEgress(del.dataset.egressDelete);
+}
+
+
+// ── Full-instance relay mode ────────────────────────────────────────────────
+// A full DigitDNS can also act as a relay agent for another hub. This card
+// configures the agent credential and shows the synced catalogue; the actual
+// policy is applied by the server to the same SNI listeners local proxying uses.
+
+let relayModeView = null;
+
+function relayModeStatus(view) {
+  if (!view || !view.enabled) return { text: 'disabled', cls: 'is-disabled' };
+  if (view.online) return { text: 'online', cls: 'is-online' };
+  return { text: view.last_error ? 'error' : 'offline', cls: 'is-offline' };
+}
+
+function renderRelayMode(view) {
+  relayModeView = view || null;
+  const status = relayModeStatus(view);
+  const badge = document.getElementById('relay-mode-status');
+  if (badge) {
+    badge.className = 'agent-badge ' + status.cls;
+    badge.textContent = status.text;
+    badge.title = view && view.last_error ? view.last_error : '';
+  }
+  const hub = document.getElementById('relay-mode-hub');
+  if (hub && document.activeElement !== hub) hub.value = (view && view.hub_url) || '';
+  const key = document.getElementById('relay-mode-key');
+  if (key) {
+    key.value = '';
+    key.placeholder = view && view.agent_key_set ? 'Saved — leave blank to keep' : 'id:secret from the hub';
+  }
+  const token = document.getElementById('relay-mode-token');
+  if (token) {
+    token.value = '';
+    token.placeholder = 'One-time token from the hub';
+  }
+  const enabled = document.getElementById('relay-mode-enabled');
+  if (enabled) enabled.checked = !!(view && view.enabled);
+  const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+  set('relay-mode-hosts', String((view && view.hosts) || 0));
+  set('relay-mode-clients', String((view && view.clients) || 0));
+  set('relay-mode-traffic', humanBytes(Number((view && view.relay_bytes_in) || 0) + Number((view && view.relay_bytes_out) || 0)));
+  set('relay-mode-last-sync', view && view.last_sync ? egressRelativeAge(view.last_sync) : '—');
+  const error = document.getElementById('relay-mode-error');
+  if (error) {
+    const message = view && view.last_error ? String(view.last_error) : '';
+    error.textContent = message;
+    error.classList.toggle('hidden', !message);
+  }
+  const saveStatus = document.getElementById('relay-mode-save-status');
+  if (saveStatus && !saveStatus.textContent) {
+    saveStatus.textContent = view && view.agent_id ? 'Agent ' + view.agent_id : '';
+  }
+}
+
+async function loadRelayMode() {
+  try {
+    const res = await fetch(api('/api/relay-mode'), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    renderRelayMode(data.relay_mode);
+  } catch (e) { /* the card keeps its last known state */ }
+}
+
+function setRelayTestBadge(ms, ok) {
+  const el = document.getElementById('relay-mode-ping-badge');
+  if (!el) return;
+  if (!ok || !(Number(ms) > 0)) {
+    el.className = 'shrink-0 inline-flex items-center justify-center min-w-[92px] px-2 py-0.5 rounded border text-slate-400 bg-slate-500/10 border-slate-600/40 text-[10px] font-bold font-mono whitespace-nowrap';
+    el.textContent = 'ping —';
+    el.title = 'No relay test yet';
+    return;
+  }
+  const value = Number(ms);
+  let cls = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+  if (value > 40) cls = 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30';
+  if (value > 80) cls = 'text-red-400 bg-red-500/10 border-red-500/30';
+  el.className = `shrink-0 inline-flex items-center justify-center min-w-[92px] px-2 py-0.5 rounded border ${cls} text-[10px] font-bold font-mono whitespace-nowrap`;
+  el.textContent = `ping ${value.toFixed(1)} ms`;
+  el.title = 'Last relay test';
+}
+
+async function testRelayMode() {
+  const btn = document.getElementById('test-relay-mode-btn');
+  if (btn) btn.disabled = true;
+  // Only the fixed-width ping badge changes during a test. The agent number
+  // stays in the far-right slot so it never flickers away and back.
+  const badge = document.getElementById('relay-mode-ping-badge');
+  if (badge) {
+    badge.textContent = 'ping …';
+    badge.className = 'shrink-0 inline-flex items-center justify-center min-w-[92px] px-2 py-0.5 rounded border text-slate-400 bg-slate-500/10 border-slate-600/40 text-[10px] font-bold font-mono whitespace-nowrap';
+  }
+  try {
+    const res = await fetch(api('/api/relay-mode/test'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      const latency = Number(data.latency_ms || 0);
+      setRelayTestBadge(latency, true);
+      showToast(`Relay connection OK — ${latency.toFixed(0)} ms`, 'success');
+      loadRelayMode();
+    } else {
+      const message = data.error || 'hub unreachable';
+      setRelayTestBadge(0, false);
+      showToast(`Relay test failed — ${message}`, 'error');
+    }
+  } catch (e) {
+    setRelayTestBadge(0, false);
+    showToast(e.message || 'Relay test failed', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function saveRelayMode() {
+  const status = document.getElementById('relay-mode-save-status');
+  const setStatus = (text, error) => {
+    if (!status) return;
+    status.textContent = text || '';
+    status.className = 'ml-auto min-w-0 max-w-[45%] truncate text-right text-[11px] ' + (error ? 'text-red-400' : 'text-slate-400');
+  };
+  const hub = (document.getElementById('relay-mode-hub').value || '').trim();
+  const key = document.getElementById('relay-mode-key').value || '';
+  const token = document.getElementById('relay-mode-token').value || '';
+  const enabled = !!document.getElementById('relay-mode-enabled').checked;
+  const body = { enabled, hub_url: hub };
+  if (key.trim()) body.agent_key = key.trim();
+  if (token.trim()) body.token = token.trim();
+  const btn = document.getElementById('save-relay-mode-btn');
+  if (btn) btn.disabled = true;
+  setStatus('Saving…');
+  try {
+    const res = await fetch(api('/api/relay-mode'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not save relay mode'));
+    const data = await res.json();
+    renderRelayMode(data.relay_mode);
+    setStatus('Saved.');
+    showToast(enabled ? 'Relay mode saved — syncing with the hub.' : 'Relay mode disabled.', 'success');
+  } catch (e) {
+    setStatus(e.message || 'Could not save relay mode', true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function initEgressPage() {
@@ -10290,6 +10499,8 @@ function initEgressPage() {
       showToast('Could not read that configuration file.', 'error');
     }
   });
+  document.getElementById('save-relay-mode-btn')?.addEventListener('click', saveRelayMode);
+  document.getElementById('test-relay-mode-btn')?.addEventListener('click', testRelayMode);
   document.getElementById('socks5-list')?.addEventListener('click', handleEgressListClick);
   document.getElementById('wireguard-list')?.addEventListener('click', handleEgressListClick);
   document.getElementById('egress-modal')?.addEventListener('click', (e) => {

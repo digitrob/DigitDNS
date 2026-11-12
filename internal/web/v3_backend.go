@@ -556,6 +556,25 @@ func (b *v3Backend) agentItem(
 	return parsed, nil
 }
 
+func (b *v3Backend) TestRelayMode(r *http.Request) (map[string]any, error) {
+	rec := httptest.NewRecorder()
+	b.ws.handleRelayModeTest(rec, httptest.NewRequest(http.MethodPost, "/api/relay-mode/test", nil))
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out == nil {
+		out = map[string]any{"ok": false, "error": "relay mode test returned no response"}
+	}
+	return out, nil
+}
+
+func (b *v3Backend) RelayMode() map[string]any {
+	return map[string]any{"relay_mode": b.ws.relayModeView()}
+}
+
+func (b *v3Backend) SaveRelayMode(r *http.Request, body map[string]any) (map[string]any, error) {
+	return b.delegateBody(r, body, b.ws.handleRelayMode)
+}
+
 func (b *v3Backend) EngineStatus() map[string]any {
 	rec := httptest.NewRecorder()
 	b.ws.handleEngine(rec, httptest.NewRequest(http.MethodGet, "/api/engine", nil))

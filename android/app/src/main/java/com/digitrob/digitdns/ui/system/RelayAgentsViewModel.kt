@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
 import com.digitrob.digitdns.core.network.EgressSaveRequest
+import com.digitrob.digitdns.core.network.RelayModeDto
 import com.digitrob.digitdns.data.AgentsRepository
 import com.digitrob.digitdns.data.EgressesRepository
+import com.digitrob.digitdns.data.RelayModeRepository
 import com.digitrob.digitdns.data.RulesRepository
 import com.digitrob.digitdns.domain.model.EgressInfo
 import com.digitrob.digitdns.domain.model.RelayAgentInfo
@@ -35,6 +37,13 @@ data class RelayAgentsUiState(
     val egresses: List<EgressInfo> = emptyList(),
     /** The egress whose Test button is running. */
     val testingEgressId: String? = null,
+    /** Full-instance relay mode for another hub. */
+    val relayMode: RelayModeDto? = null,
+    val isRelayModeSaving: Boolean = false,
+    val isRelayModeTesting: Boolean = false,
+    /** Ping from the last relay-mode Test connection; 0 means no result yet. */
+    val relayTestPingMs: Double = 0.0,
+    val relayTestOk: Boolean = false,
     /** Agent id -> number of domains that would currently exit through it. */
     val assignedCounts: Map<String, Int> = emptyMap(),
     /** Agent id -> service names whose default relay is that agent. */
@@ -62,6 +71,7 @@ class RelayAgentsViewModel @Inject constructor(
     private val repository: AgentsRepository,
     private val rulesRepository: RulesRepository,
     private val egressesRepository: EgressesRepository,
+    private val relayModeRepository: RelayModeRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(RelayAgentsUiState())
@@ -75,17 +85,26 @@ class RelayAgentsViewModel @Inject constructor(
 
     fun refresh() = performLoad(pull = true)
 
+    /** Silent periodic refresh: latency and health age like the web cards, and
+     * no spinner appears unless the list is still empty. */
+    fun autoRefresh() {
+        if (_state.value.isLoading || _state.value.isRefreshing || _state.value.isSaving) return
+        performLoad(pull = false)
+    }
+
     private fun performLoad(pull: Boolean) {
         viewModelScope.launch {
             _state.update { it.copy(isLoading = !pull && it.agents.isEmpty(), isRefreshing = pull, error = null) }
             try {
                 val list = repository.list()
                 val egresses = runCatching { egressesRepository.list() }.getOrNull()
+                val relayMode = runCatching { relayModeRepository.load() }.getOrNull()
                 val rules = runCatching { rulesRepository.load() }.getOrNull()
                 _state.update {
                     it.copy(
                         agents = list,
                         egresses = egresses ?: it.egresses,
+                        relayMode = relayMode ?: it.relayMode,
                         assignedCounts = rules?.let(::assignmentCounts).orEmpty(),
                         serviceLabels = rules?.let(::serviceDefaults).orEmpty(),
                         isLoading = false,
@@ -387,6 +406,80 @@ class RelayAgentsViewModel @Inject constructor(
                 _state.update { it.copy(testingEgressId = null, error = e.userMessage) }
             } catch (e: IOException) {
                 _state.update { it.copy(testingEgressId = null, error = e.message ?: "Egress test failed.") }
+            }
+        }
+    }
+
+    fun refreshRelayMode() {
+        viewModelScope.launch {
+            try {
+                val mode = relayModeRepository.load()
+                _state.update { it.copy(relayMode = mode) }
+            } catch (e: ApiException) {
+                _state.update { it.copy(error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update { it.copy(error = e.message ?: "Could not load relay mode.") }
+            }
+        }
+    }
+
+    fun testRelayMode() {
+        viewModelScope.launch {
+            _state.update { it.copy(isRelayModeTesting = true, error = null) }
+            try {
+                val result = relayModeRepository.test()
+                val mode = runCatching { relayModeRepository.load() }.getOrNull()
+                _state.update {
+                    it.copy(
+                        relayMode = mode ?: it.relayMode,
+                        isRelayModeTesting = false,
+                        relayTestOk = result.ok,
+                        relayTestPingMs = if (result.ok) result.latencyMs else 0.0,
+                    )
+                }
+            } catch (e: ApiException) {
+                _state.update {
+                    it.copy(
+                        isRelayModeTesting = false,
+                        relayTestOk = false,
+                        relayTestPingMs = 0.0,
+                        error = e.userMessage,
+                    )
+                }
+            } catch (e: IOException) {
+                _state.update {
+                    it.copy(
+                        isRelayModeTesting = false,
+                        relayTestOk = false,
+                        relayTestPingMs = 0.0,
+                        error = e.message ?: "Relay test failed.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun saveRelayMode(enabled: Boolean, hubUrl: String, agentKey: String, token: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(isRelayModeSaving = true, error = null) }
+            try {
+                val saved = relayModeRepository.save(
+                    enabled = enabled,
+                    hubUrl = hubUrl.trim(),
+                    agentKey = agentKey.trim(),
+                    token = token.trim(),
+                )
+                _state.update {
+                    it.copy(
+                        relayMode = saved,
+                        isRelayModeSaving = false,
+                        message = if (saved.enabled) "Relay mode saved." else "Relay mode disabled.",
+                    )
+                }
+            } catch (e: ApiException) {
+                _state.update { it.copy(isRelayModeSaving = false, error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update { it.copy(isRelayModeSaving = false, error = e.message ?: "Could not save relay mode.") }
             }
         }
     }
