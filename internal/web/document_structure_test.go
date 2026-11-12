@@ -120,8 +120,8 @@ func TestIndexHTMLFormsHaveExplicitLabels(t *testing.T) {
 
 func TestIndexHTMLMobileNavigationMeetsTargetSize(t *testing.T) {
 	doc := readAsset(t, "index.html")
-	if strings.Count(doc, `class="mobile-nav-item`) != 8 {
-		t.Error("the mobile navigation must carry its eight targets")
+	if strings.Count(doc, `class="mobile-nav-item`) != 9 {
+		t.Error("the mobile navigation must carry its nine targets")
 	}
 	// Sizing lives once in css/style.css's .mobile-nav-item rule (a documented
 	// 40px target inside the 48px bar — above WCAG 2.2 SC 2.5.8's 24px floor),

@@ -103,6 +103,30 @@ var featherInterpSources = map[string]struct {
 		},
 		why: "both names are literals inside the expression itself",
 	},
+	"escapeHTML(e.enabled ? 'pause' : 'play')": {
+		names: func(_ *testing.T, _, expr string) []string {
+			return values(featherJSLiteralRe, expr)
+		},
+		why: "both names are literals inside the expression itself",
+	},
+	"escapeHTML(icon)": {
+		names: func(_ *testing.T, app, _ string) []string {
+			return values(regexp.MustCompile(`const icon = e\.kind === 'wireguard' \? '([a-z0-9-]*)' : '([a-z0-9-]*)'`), app)
+		},
+		why: "renderEgressSubcard picks between two literal kind icons",
+	},
+	"escapeHTML(egress.kind === 'wireguard' ? 'lock' : 'shuffle')": {
+		names: func(_ *testing.T, _, expr string) []string {
+			return values(regexp.MustCompile(`\? '([a-z0-9-]*)' : '([a-z0-9-]*)'`), expr)
+		},
+		why: "both names are literals after the ternary inside the expression",
+	},
+	"escapeHTML(kind === 'wireguard' ? 'lock' : 'shuffle')": {
+		names: func(_ *testing.T, _, expr string) []string {
+			return values(regexp.MustCompile(`\? '([a-z0-9-]*)' : '([a-z0-9-]*)'`), expr)
+		},
+		why: "both names are literals after the ternary inside the expression",
+	},
 }
 
 // TestEveryFeatherIconNameIsOneTheBundleCanRender sweeps both assets and resolves every name,

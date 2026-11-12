@@ -266,7 +266,7 @@ func (b *v3Backend) RunAdaptive() (map[string]any, error) {
 	if b.ws.upstreams == nil {
 		return nil, api.V3Error(api.ErrV3Unavailable, "no upstream pool configured")
 	}
-	if _, err := b.ws.runAdaptiveNow(); err != nil {
+	if _, err := b.ws.runAdaptiveNow(true); err != nil {
 		if errors.Is(err, errAdaptiveNotSelected) || errors.Is(err, errAdaptiveBusy) {
 			return nil, api.V3Error(api.ErrV3Conflict, err.Error())
 		}
@@ -547,6 +547,106 @@ func (b *v3Backend) agentItem(
 		r2 = cloned
 	}
 	_, parsed, _, err := call(b.ws.handleAgentByID, r2)
+	if err != nil {
+		return nil, err
+	}
+	if parsed == nil {
+		parsed = map[string]any{"success": true}
+	}
+	return parsed, nil
+}
+
+func (b *v3Backend) EngineStatus() map[string]any {
+	rec := httptest.NewRecorder()
+	b.ws.handleEngine(rec, httptest.NewRequest(http.MethodGet, "/api/engine", nil))
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out == nil {
+		out = map[string]any{"enabled": true}
+	}
+	return out
+}
+
+func (b *v3Backend) SaveEngine(r *http.Request, body map[string]any) (map[string]any, error) {
+	return b.delegateBody(r, body, b.ws.handleEngine)
+}
+
+func (b *v3Backend) SystemLog(limit int) (map[string]any, error) {
+	lines := []string{}
+	if b.ws.systemLog != nil {
+		lines = b.ws.systemLog.Lines(limit)
+	}
+	return map[string]any{"lines": lines}, nil
+}
+
+func (b *v3Backend) Egresses() ([]map[string]any, error) {
+	rec := httptest.NewRecorder()
+	b.ws.handleEgresses(rec, httptest.NewRequest(http.MethodGet, "/api/egresses", nil))
+	var wrapper struct {
+		Egresses []json.RawMessage `json:"egresses"`
+	}
+	if rec.Code >= 400 {
+		var parsed map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &parsed)
+		return nil, v3FromStatus(rec.Code, agentErrorMessage(parsed, "could not list egresses"))
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &wrapper)
+	out := make([]map[string]any, 0, len(wrapper.Egresses))
+	for _, raw := range wrapper.Egresses {
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+func (b *v3Backend) CreateEgress(r *http.Request, body map[string]any) (map[string]any, error) {
+	return b.delegateBody(r, body, b.ws.handleEgresses)
+}
+
+func (b *v3Backend) UpdateEgress(r *http.Request, id string, body map[string]any) (map[string]any, error) {
+	return b.egressItem(r, id, http.MethodPut, "", body)
+}
+
+func (b *v3Backend) DeleteEgress(r *http.Request, id string) (map[string]any, error) {
+	return b.egressItem(r, id, http.MethodDelete, "", nil)
+}
+
+func (b *v3Backend) SetEgressEnabled(r *http.Request, id string, enabled bool) (map[string]any, error) {
+	action := "disable"
+	if enabled {
+		action = "enable"
+	}
+	return b.egressItem(r, id, http.MethodPost, action, nil)
+}
+
+func (b *v3Backend) TestEgress(r *http.Request, id string) (map[string]any, error) {
+	return b.egressItem(r, id, http.MethodPost, "test", nil)
+}
+
+// egressItem runs the panel's item handler for one id. The v3 middleware has
+// already authorised the caller; the cloned request only needs the panel path.
+func (b *v3Backend) egressItem(
+	r *http.Request,
+	id, method, action string,
+	body map[string]any,
+) (map[string]any, error) {
+	r2 := r.Clone(r.Context())
+	r2.Method = method
+	r2.URL.Path = "/api/egresses/" + id
+	if action != "" {
+		r2.URL.Path += "/" + action
+	}
+	if body != nil {
+		cloned, err := cloneWithBody(r2, body)
+		if err != nil {
+			return nil, err
+		}
+		r2 = cloned
+	}
+	_, parsed, _, err := call(b.ws.handleEgressByID, r2)
 	if err != nil {
 		return nil, err
 	}

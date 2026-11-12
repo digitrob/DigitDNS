@@ -103,6 +103,7 @@ var authoritativeSettingTargets = map[string]func() any{
 	"sniproxy":     func() any { return &SNIProxySettings{} },
 	"tls":          func() any { return &TLSSettings{} },
 	"certificates": func() any { return &CertificateSettings{} },
+	"egresses":     func() any { return &EgressSettings{} },
 	"subscription": func() any { return &SubscriptionSettings{} },
 	"stats":        func() any { return &StatsSettings{} },
 	"filtering":    func() any { return &FilteringSettings{} },

@@ -28,6 +28,8 @@ data class RuleLists(
     val serviceAgents: Map<String, String> = emptyMap(),
     /** Agent id -> display metadata (name, country) for the relay badge. */
     val relayAgents: Map<String, RelayAgent> = emptyMap(),
+    /** "egress:<id>" -> display metadata for a hub-side SOCKS5/WireGuard exit. */
+    val egresses: Map<String, RelayAgent> = emptyMap(),
 ) {
     /** Every pattern any of the four lists holds; the quick-action menu preselects from this. */
     val managedPatterns: Set<String>
@@ -52,8 +54,12 @@ data class RuleLists(
             else -> serviceAgents[serviceId].orEmpty()
         }
         if (id.isEmpty()) return null
-        return relayAgents[id]?.copy(id = id)
+        return relayById(id)?.copy(id = id)
     }
+
+    /** An agent or egress by its stored assignment value. */
+    fun relayById(id: String): RelayAgent? =
+        relayAgents[id] ?: egresses[id]
 
     companion object {
         fun from(dto: RulesResponse): RuleLists = RuleLists(
@@ -82,6 +88,8 @@ data class RelayAgent(
     val id: String,
     val name: String,
     val country: String,
+    /** Empty for a relay agent; "socks5" or "wireguard" for a hub-side egress. */
+    val kind: String = "",
 )
 
 /**

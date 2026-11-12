@@ -114,6 +114,15 @@ type QueryLogItem struct {
 	RelayAgentID   string `json:"relay_agent_id,omitempty"`
 	RelayAgentName string `json:"relay_agent_name,omitempty"`
 	RelayCountry   string `json:"relay_country,omitempty"`
+
+	// RelayEgress* describe a query routed through a hub-side egress. The
+	// client reached the hub; only the outbound dial used SOCKS5 or WireGuard.
+	RelayEgressID   string `json:"relay_egress_id,omitempty"`
+	RelayEgressName string `json:"relay_egress_name,omitempty"`
+	RelayEgressKind string `json:"relay_egress_kind,omitempty"`
+	// RelayFallbackReason explains why a proxied name did not use its assigned
+	// egress (for example, it was offline or fail-closed).
+	RelayFallbackReason string `json:"relay_fallback_reason,omitempty"`
 }
 
 // ServerSettings holds core daemon & network binding settings.
@@ -208,6 +217,13 @@ type ServerSettings struct {
 type DNSSettings struct {
 	Enabled bool `json:"enabled"`
 	Port    int  `json:"port"`
+	// EngineDisabled turns the DNS policy engine off without stopping the
+	// resolver. When true, queries bypass custom records, the rule matcher
+	// (block/proxy/direct), service/agent assignments and ad blocking, and are
+	// answered directly from the upstream pool. Access control and quota still
+	// apply. The negative form keeps the zero value "engine on" for every
+	// database written before the switch existed.
+	EngineDisabled bool `json:"engine_disabled"`
 	// Plain DNS and DoH are on unless explicitly disabled, so old records and
 	// the zero value keep serving after an upgrade. The API exposes the
 	// positive enabled form.

@@ -113,7 +113,7 @@ func (ws *WebServer) handleResolutionAdaptiveRun(w http.ResponseWriter, r *http.
 		httpx.WriteJSONError(w, http.StatusServiceUnavailable, "No upstream pool configured")
 		return
 	}
-	if _, err := ws.runAdaptiveNow(); err != nil {
+	if _, err := ws.runAdaptiveNow(true); err != nil {
 		switch {
 		case errors.Is(err, errAdaptiveNotSelected):
 			httpx.WriteJSONError(w, http.StatusConflict, "Select Adaptive (fastest) before running a check")

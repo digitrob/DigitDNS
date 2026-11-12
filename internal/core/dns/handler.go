@@ -45,11 +45,39 @@ type ClientQueryCounter interface {
 	RecordClientQuery(clientID string)
 }
 
-// RelayLookup returns the egress addresses for a proxied domain. Either family
-// may be empty when the agent publishes only one; the caller sinks the missing
-// family rather than leaking the hub's address. The agent fields are for the
-// query log and the dashboard badge.
-type RelayLookup func(domain string) (ipv4, ipv6 net.IP, agentID, agentName, country string, ok bool)
+// RelayTarget describes where a proxied domain should leave the hub. The zero
+// kind is treated as "local", which keeps the hub relay as the default.
+//
+//   - "local": the hub's own public address is published.
+//   - "agent": a public relay agent's address is published and the client
+//     connects to that agent.
+//   - "egress": the hub's public address is published; only the hub's outbound
+//     dial goes through a SOCKS5 or WireGuard egress.
+type RelayTarget struct {
+	Kind string
+
+	// Agent fields, populated for Kind == "agent".
+	IPv4      net.IP
+	IPv6      net.IP
+	AgentID   string
+	AgentName string
+	Country   string
+
+	// Egress fields, populated for Kind == "egress".
+	EgressID   string
+	EgressName string
+	EgressKind string
+	// FailClosed means the operator forbids a local fallback when the egress
+	// is offline. Healthy is the last health probe result.
+	FailClosed bool
+	Healthy    bool
+	// FallbackReason explains a local fallback or a fail-closed refusal.
+	FallbackReason string
+}
+
+// RelayLookup resolves a proxied name to a relay target. It always returns a
+// target; Kind "local" is the explicit no-assignment result.
+type RelayLookup func(domain string) RelayTarget
 
 type Handler struct {
 	access     AccessProvider
@@ -76,6 +104,9 @@ type Handler struct {
 	// query hot path.
 	selfNames    atomic.Pointer[map[string]struct{}]
 	totalQueries atomic.Uint64
+	// engineDisabled bypasses every DNS policy rule when true. It is read on
+	// the hot path and flipped live by the dashboard/Android engine switch.
+	engineDisabled atomic.Bool
 
 	quota        QuotaEnforcer
 	queryCounter ClientQueryCounter
@@ -298,6 +329,19 @@ func (h *Handler) SetProxyIPv6Enabled(enabled bool) {
 // lookup itself is safe for concurrent use.
 func (h *Handler) SetRelayLookup(fn RelayLookup) {
 	h.relayLookup = fn
+}
+
+// SetEngineEnabled turns the DNS policy engine on or off. Off means every
+// query is resolved directly: custom records, block/proxy/direct rules,
+// service and agent assignments and ad blocking are all skipped. Access
+// control and quota remain in force because they protect the resolver itself.
+func (h *Handler) SetEngineEnabled(enabled bool) {
+	h.engineDisabled.Store(!enabled)
+}
+
+// EngineEnabled reports the live engine state.
+func (h *Handler) EngineEnabled() bool {
+	return !h.engineDisabled.Load()
 }
 
 // SetSelfDomains installs this server's own service hostnames (panel domain,
@@ -714,33 +758,41 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		return m
 	}
 
+	engineOff := h.engineDisabled.Load()
+
 	// 3. Custom record overrides outrank every other rule. Both address
 	// families are answered here — previously only A was intercepted, so a
 	// client could reach the real host by asking for AAAA instead.
-	if customIP, ok := h.matcher.GetCustomRecord(domain); ok && (q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA) {
-		if ip := net.ParseIP(strings.TrimSpace(customIP)); ip != nil {
-			m := new(dns.Msg)
-			m.SetReply(r)
-			isV4 := ip.To4() != nil
-			if isV4 && q.Qtype == dns.TypeA {
-				if rr := makeARecord(q.Name, 60, ip); rr != nil {
-					m.Answer = append(m.Answer, rr)
+	if !engineOff {
+		if customIP, ok := h.matcher.GetCustomRecord(domain); ok && (q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA) {
+			if ip := net.ParseIP(strings.TrimSpace(customIP)); ip != nil {
+				m := new(dns.Msg)
+				m.SetReply(r)
+				isV4 := ip.To4() != nil
+				if isV4 && q.Qtype == dns.TypeA {
+					if rr := makeARecord(q.Name, 60, ip); rr != nil {
+						m.Answer = append(m.Answer, rr)
+					}
+				} else if !isV4 && q.Qtype == dns.TypeAAAA {
+					if rr := makeAAAARecord(q.Name, 60, ip); rr != nil {
+						m.Answer = append(m.Answer, rr)
+					}
 				}
-			} else if !isV4 && q.Qtype == dns.TypeAAAA {
-				if rr := makeAAAARecord(q.Name, 60, ip); rr != nil {
-					m.Answer = append(m.Answer, rr)
-				}
+				// The other family deliberately gets an empty NOERROR.
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+				return m
 			}
-			// The other family deliberately gets an empty NOERROR.
-			h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
-			return m
 		}
+
 	}
 
 	// 4. Rule matcher. Every client is matched against the same admin-wide
 	// rules: the per-client policy lists a stored account may still carry are
 	// inert in this build.
-	action, ruleName, matchedPattern := h.matcher.MatchDetailLower(domain)
+	action, ruleName, matchedPattern := matcher.ActionDirect, "Engine off", ""
+	if !engineOff {
+		action, ruleName, matchedPattern = h.matcher.MatchDetailLower(domain)
+	}
 
 	switch action {
 	case matcher.ActionBlock:
@@ -769,8 +821,20 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		// A domain assigned to a relay agent exits from that agent's public
 		// address. The local relay is the fallback when no agent is assigned or
 		// the assigned one is offline, so an agent outage cannot silently leak the
-		// origin's real address.
+		// origin's real address. Egress targets are different: the client still
+		// reaches the hub, so the hub's own address is published and only the
+		// outbound dial changes. A fail-closed egress refuses to fall back.
+		target := RelayTarget{Kind: "local", IPv4: h.publicIPv4, IPv6: h.publicIPv6Addr}
+		if h.relayLookup != nil {
+			target = h.relayLookup(domain)
+			if target.Kind == "" {
+				target.Kind = "local"
+			}
+		}
 		targetIPv4, targetIPv6 := h.publicIPv4, h.publicIPv6Addr
+		if target.Kind == "agent" {
+			targetIPv4, targetIPv6 = target.IPv4, target.IPv6
+		}
 		// The IPv6 switch is a hard gate: with it off the address is ignored even
 		// though it may still be stored, so a later enable does not need the
 		// operator to re-enter it. The same gate is applied after the relay
@@ -779,18 +843,15 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		if !ipv6Allowed {
 			targetIPv6 = nil
 		}
-		agentID, agentName, agentCountry := "", "", ""
-		agentAssigned := false
-		if h.relayLookup != nil {
-			if v4, v6, id, name, country, ok := h.relayLookup(domain); ok {
-				agentAssigned = true
-				targetIPv4 = v4
-				targetIPv6 = v6
-				agentID, agentName, agentCountry = id, name, country
-			}
-		}
-		if !ipv6Allowed {
-			targetIPv6 = nil
+		// Fail closed before answering anything, including the AAAA and HTTPS
+		// sinks: an offline egress must produce an error, never a hub address that
+		// would let the client bypass the operator's routing policy.
+		if target.Kind == "egress" && target.FailClosed && !target.Healthy {
+			m := new(dns.Msg)
+			m.SetReply(r)
+			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure)
+			m.SetRcode(r, dns.RcodeServerFailure)
+			return m
 		}
 
 		if q.Qtype == dns.TypeA {
@@ -799,15 +860,14 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				m.SetReply(r)
 				// An agent with no IPv4 must not fall through to the cache or an
 				// upstream answer: that would expose the real host address.
-				action := "PROXY_FAILED"
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, action, false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, dns.RcodeServerFailure)
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure)
 				m.SetRcode(r, dns.RcodeServerFailure)
 				return m
 			}
 			m := new(dns.Msg)
 			m.SetReply(r)
 			ttl := localProxyAnswerTTL
-			if agentAssigned {
+			if target.Kind == "agent" {
 				ttl = agentProxyAnswerTTL
 			}
 			// The relay router publishes already-parsed addresses, so the query
@@ -819,12 +879,12 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				// means a future regression can never masquerade as a successful
 				// proxy answer again (v2.1.0 B-13 remediation).
 				log.Printf("[DNS] Could not build proxied A record for %s from %s", q.Name, targetIPv4)
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, dns.RcodeServerFailure)
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure)
 				m.SetRcode(r, dns.RcodeServerFailure)
 				return m
 			}
 			m.Answer = append(m.Answer, rr)
-			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, m.Rcode)
+			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, target, q.Qtype, m.Rcode)
 			return m
 		}
 		if q.Qtype == dns.TypeAAAA {
@@ -836,17 +896,17 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			m.SetReply(r)
 			if len(targetIPv6) != 0 {
 				ttl := localProxyAnswerTTL
-				if agentAssigned {
+				if target.Kind == "agent" {
 					ttl = agentProxyAnswerTTL
 				}
 				if rr := makeAAAARecord(q.Name, ttl, targetIPv6); rr != nil {
 					m.Answer = append(m.Answer, rr)
-					h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, m.Rcode)
+					h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, target, q.Qtype, m.Rcode)
 					return m
 				}
 			}
-			if agentAssigned {
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, m.Rcode)
+			if target.Kind == "agent" || target.Kind == "egress" || target.FallbackReason != "" {
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, target, q.Qtype, m.Rcode)
 			} else {
 				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, q.Qtype, m.Rcode)
 			}
@@ -866,8 +926,8 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			m := new(dns.Msg)
 			m.SetReply(r)
 			m.AuthenticatedData = false
-			if agentAssigned {
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_HTTPS_SINK", false, "", matchedPattern, agentID, agentName, agentCountry, q.Qtype, m.Rcode)
+			if target.Kind == "agent" || target.Kind == "egress" || target.FallbackReason != "" {
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_HTTPS_SINK", false, "", matchedPattern, target, q.Qtype, m.Rcode)
 			} else {
 				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_HTTPS_SINK", false, "", matchedPattern, q.Qtype, m.Rcode)
 			}
@@ -999,29 +1059,33 @@ func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, ac
 	})
 }
 
-// logQueryRelay is logQuery with the agent that answered the proxied name. The
-// local relay path keeps using logQuery, so its payload is unchanged.
-func (h *Handler) logQueryRelay(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern, agentID, agentName, country string, qtype uint16, rcode int) {
+// logQueryRelay is logQuery with the relay target that answered the proxied
+// name. The local relay path keeps using logQuery, so its payload is unchanged.
+func (h *Handler) logQueryRelay(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern string, target RelayTarget, qtype uint16, rcode int) {
 	if h.telemetry == nil {
 		return
 	}
 	h.telemetry.PushQueryLog(database.QueryLogItem{
-		Timestamp:        start,
-		ClientIP:         ip,
-		AccountName:      account,
-		Protocol:         proto,
-		Domain:           domain,
-		RuleMatched:      rule,
-		Action:           action,
-		LatencyMs:        float64(time.Since(start).Microseconds()) / 1000.0,
-		Cached:           cached,
-		QType:            qtype,
-		Rcode:            rcode,
-		Upstream:         upstreamAddr,
-		UpstreamProtocol: upstream.ProtocolOf(upstreamAddr),
-		MatchedPattern:   matchedPattern,
-		RelayAgentID:     agentID,
-		RelayAgentName:   agentName,
-		RelayCountry:     country,
+		Timestamp:           start,
+		ClientIP:            ip,
+		AccountName:         account,
+		Protocol:            proto,
+		Domain:              domain,
+		RuleMatched:         rule,
+		Action:              action,
+		LatencyMs:           float64(time.Since(start).Microseconds()) / 1000.0,
+		Cached:              cached,
+		QType:               qtype,
+		Rcode:               rcode,
+		Upstream:            upstreamAddr,
+		UpstreamProtocol:    upstream.ProtocolOf(upstreamAddr),
+		MatchedPattern:      matchedPattern,
+		RelayAgentID:        target.AgentID,
+		RelayAgentName:      target.AgentName,
+		RelayCountry:        target.Country,
+		RelayEgressID:       target.EgressID,
+		RelayEgressName:     target.EgressName,
+		RelayEgressKind:     target.EgressKind,
+		RelayFallbackReason: target.FallbackReason,
 	})
 }

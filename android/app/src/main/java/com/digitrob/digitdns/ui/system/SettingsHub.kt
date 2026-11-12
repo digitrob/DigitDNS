@@ -74,6 +74,7 @@ private enum class SettingsSection(@StringRes val labelRes: Int, val icon: Image
     AdBlocking(R.string.settings_ad_blocking, Icons.Filled.Block),
     Servers(R.string.settings_servers, Icons.Filled.Dns),
     RelayAgents(R.string.settings_relay_agents, Icons.Filled.Speed),
+    SystemLog(R.string.settings_system_log, Icons.Filled.Code),
     ConnectGuide(R.string.settings_connect_guide, Icons.Filled.Wifi),
     Diagnostics(R.string.settings_diagnostics, Icons.Filled.MonitorHeart),
     Tls(R.string.settings_tls, Icons.Filled.Lock),
@@ -156,6 +157,7 @@ private fun SettingsSectionContent(
             onOpenSubscriber = onOpenSubscriber,
         )
         SettingsSection.RelayAgents -> RelayAgentsScreen()
+        SettingsSection.SystemLog -> SystemLogScreen()
         SettingsSection.ConnectGuide -> ConnectScreen()
         SettingsSection.Diagnostics -> DiagnosticsScreen()
         SettingsSection.Tls -> TlsScreen()

@@ -151,6 +151,51 @@ type Server struct {
 	guard *targetGuard
 	// slots is a counting semaphore: a relay takes one for its lifetime.
 	slots chan struct{}
+
+	// relayTarget resolves a vetted hostname to the hub-side egress that should
+	// carry it. nil keeps the original direct dial, so installs without egress
+	// configuration are unchanged.
+	relayTarget  RelayTargetLookup
+	egressDialer EgressDialer
+	// engineEnabled is the live DNS policy engine state. When it reports false,
+	// new relay connections are refused so turning the engine off stops
+	// proxying immediately, not only after clients expire their DNS cache.
+	engineEnabled func() bool
+}
+
+// RelayDialTarget is where the hub should dial for a vetted hostname. Kind
+// "local" (or empty) keeps the direct dial; Kind "egress" routes the dial
+// through the named SOCKS5 or WireGuard egress.
+type RelayDialTarget struct {
+	Kind       string
+	EgressID   string
+	EgressName string
+	EgressKind string
+	FailClosed bool
+	Healthy    bool
+}
+
+// RelayTargetLookup resolves a hostname to a hub-side dial target.
+type RelayTargetLookup func(hostname string) RelayDialTarget
+
+// EgressDialer opens an origin connection through a configured egress. addrs
+// are the addresses the guard already resolved and vetted, so the egress can
+// use them in local-resolution mode without a second lookup.
+type EgressDialer interface {
+	Dial(ctx context.Context, id, host string, addrs []netip.Addr, port int) (net.Conn, error)
+}
+
+// SetRelayTarget installs the egress resolver. Call during wiring, before the
+// listeners accept connections.
+func (s *Server) SetRelayTarget(lookup RelayTargetLookup, dialer EgressDialer) {
+	s.relayTarget = lookup
+	s.egressDialer = dialer
+}
+
+// SetEngineEnabled installs the live policy-engine predicate. Called during
+// wiring; nil keeps the historical always-on behaviour in test harnesses.
+func (s *Server) SetEngineEnabled(fn func() bool) {
+	s.engineEnabled = fn
 }
 
 // SetChallengeResponder attaches the ACME challenge source. Called once at
@@ -438,6 +483,14 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 		defer func() { handshakeBufPool.Put(bufPtr) }()
 	}
 
+	// The engine switch is authoritative for new relays. DNS already stops
+	// advertising proxied names, but a client with a cached answer could still
+	// arrive here; refusing closes that window immediately.
+	if s.engineEnabled != nil && !s.engineEnabled() {
+		s.refused.Add(1)
+		return
+	}
+
 	// Access control. The client is resolved even in allow_all mode — where
 	// IsIPAllowed reports true for everyone — because a recognised account still
 	// has to be metered and quota-checked. An unknown source in that mode gets a
@@ -549,7 +602,7 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 		return
 	}
 
-	targetConn, err := s.dialVetted(ctx, addrs, listenPort)
+	targetConn, err := s.dialTarget(ctx, hostname, addrs, listenPort, clientIP)
 	if err != nil {
 		return
 	}
@@ -601,6 +654,36 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 	}
 
 	s.relay(clientConn, targetConn, idle, report)
+}
+
+// dialTarget chooses between the direct dial and a configured hub-side egress.
+// A fail-closed egress never falls back to the direct path: the operator asked
+// for this name to leave through it, and a silent local dial would leak the
+// hub's address. A fail-open egress falls back after a dial error.
+func (s *Server) dialTarget(ctx context.Context, hostname string, addrs []netip.Addr, port int, clientIP string) (net.Conn, error) {
+	target := RelayDialTarget{Kind: "local"}
+	if s.relayTarget != nil {
+		target = s.relayTarget(hostname)
+	}
+	if target.Kind != "egress" || s.egressDialer == nil {
+		return s.dialVetted(ctx, addrs, port)
+	}
+	if target.FailClosed && !target.Healthy {
+		s.refused.Add(1)
+		log.Printf("[SNI Proxy] Refused relay from %s for %s: egress %q is offline and fail-closed", clientIP, hostname, target.EgressName)
+		return nil, errors.New("proxy: fail-closed egress is offline")
+	}
+	conn, err := s.egressDialer.Dial(ctx, target.EgressID, hostname, addrs, port)
+	if err == nil {
+		return conn, nil
+	}
+	if target.FailClosed {
+		s.refused.Add(1)
+		log.Printf("[SNI Proxy] Refused relay from %s for %s: egress %q failed: %v", clientIP, hostname, target.EgressName, err)
+		return nil, err
+	}
+	log.Printf("[SNI Proxy] Egress %q failed for %s, falling back to direct: %v", target.EgressName, hostname, err)
+	return s.dialVetted(ctx, addrs, port)
 }
 
 // dialVetted connects to the first reachable vetted address. Passing an address

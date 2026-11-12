@@ -200,6 +200,33 @@ func (f *fakeV3Backend) TestAgent(r *http.Request, id string) (map[string]any, e
 	return map[string]any{"ok": true, "ping_ms": 1.2, "agent": map[string]any{"id": id}}, nil
 }
 
+func (f *fakeV3Backend) EngineStatus() map[string]any { return map[string]any{"enabled": true} }
+func (f *fakeV3Backend) SaveEngine(r *http.Request, body map[string]any) (map[string]any, error) {
+	return map[string]any{"enabled": true}, nil
+}
+func (f *fakeV3Backend) SystemLog(limit int) (map[string]any, error) {
+	return map[string]any{"lines": []string{"line one"}}, nil
+}
+
+func (f *fakeV3Backend) Egresses() ([]map[string]any, error) {
+	return []map[string]any{{"id": "egress-1", "kind": "socks5", "name": "NL"}}, nil
+}
+func (f *fakeV3Backend) CreateEgress(r *http.Request, body map[string]any) (map[string]any, error) {
+	return map[string]any{"egress": map[string]any{"id": "egress-1", "kind": "socks5"}}, nil
+}
+func (f *fakeV3Backend) UpdateEgress(r *http.Request, id string, body map[string]any) (map[string]any, error) {
+	return map[string]any{"egress": map[string]any{"id": id}}, nil
+}
+func (f *fakeV3Backend) DeleteEgress(r *http.Request, id string) (map[string]any, error) {
+	return map[string]any{"success": true}, nil
+}
+func (f *fakeV3Backend) SetEgressEnabled(r *http.Request, id string, enabled bool) (map[string]any, error) {
+	return map[string]any{"success": true}, nil
+}
+func (f *fakeV3Backend) TestEgress(r *http.Request, id string) (map[string]any, error) {
+	return map[string]any{"ok": true, "latency_ms": 12.0}, nil
+}
+
 func (f *fakeV3Backend) UpdateCheck(r *http.Request) (map[string]any, error) {
 	return map[string]any{"update_available": false}, nil
 }
@@ -412,6 +439,30 @@ func TestV3_DelegatedRoutesUseBackend(t *testing.T) {
 	}
 	if w := v3Request(mux, http.MethodPost, "/api/v3/agents/a1/test", key, nil); w.Code != http.StatusOK {
 		t.Fatalf("test agent = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodGet, "/api/v3/egresses", key, nil); w.Code != http.StatusOK {
+		t.Fatalf("egresses = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodPost, "/api/v3/egresses", key, map[string]any{"kind": "socks5", "name": "NL"}); w.Code != http.StatusCreated {
+		t.Fatalf("create egress = %d, want 201: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodGet, "/api/v3/egresses/egress-1", key, nil); w.Code != http.StatusOK {
+		t.Fatalf("get egress = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodPost, "/api/v3/egresses/egress-1/test", key, nil); w.Code != http.StatusOK {
+		t.Fatalf("test egress = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodPost, "/api/v3/egresses/egress-1/disable", key, nil); w.Code != http.StatusOK {
+		t.Fatalf("disable egress = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodGet, "/api/v3/engine", key, nil); w.Code != http.StatusOK {
+		t.Fatalf("engine = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodPost, "/api/v3/engine", key, map[string]any{"enabled": false}); w.Code != http.StatusOK {
+		t.Fatalf("save engine = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w := v3Request(mux, http.MethodGet, "/api/v3/system-log?limit=10", key, nil); w.Code != http.StatusOK {
+		t.Fatalf("system log = %d, want 200: %s", w.Code, w.Body.String())
 	}
 	if w := v3Request(mux, http.MethodGet, "/api/v3/agents/a1/key", key, nil); w.Code != http.StatusOK {
 		t.Fatalf("agent key = %d, want 200: %s", w.Code, w.Body.String())

@@ -25,15 +25,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -253,52 +249,63 @@ private fun LogToolbar(state: LiveQueryLogUiState, viewModel: LiveQueryLogViewMo
             }
         }
 
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedTextField(
                 value = state.search,
                 onValueChange = viewModel::onSearchChange,
                 label = { Text("Search domain") },
                 singleLine = true,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
             )
-            ActionFilterDropdown(state.actionFilter, viewModel::onActionFilterChange)
+            ActionFilterChips(state.actionFilter, viewModel::onActionFilterChange)
         }
     }
 }
 
-/** The action filter as a dropdown button, placed to the right of the search field. */
+/**
+ * Action filters as status pills rather than a popup. The old dropdown anchored
+ * to the right edge and Compose flipped it to the opposite side when it ran out
+ * of room; a chip row has no popup to misplace and uses the same colour language
+ * as the action badges in the rows below.
+ */
 @Composable
-private fun ActionFilterDropdown(selected: ActionFilter, onSelect: (ActionFilter) -> Unit) {
-    val colors = DigitDnsTheme.colors
-    var expanded by remember { mutableStateOf(false) }
-    OutlinedButton(onClick = { expanded = true }) {
-        Text(selected.name, maxLines = 1)
-        Icon(Icons.Filled.ArrowDropDown, contentDescription = "Filter")
-    }
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = { expanded = false },
-        modifier = Modifier
-            .background(colors.bgCard)
-            .border(1.dp, colors.borderColor, RoundedCornerShape(12.dp)),
+private fun ActionFilterChips(selected: ActionFilter, onSelect: (ActionFilter) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         ActionFilter.entries.forEach { filter ->
-            DropdownMenuItem(
-                text = { Text(filter.name) },
-                trailingIcon = {
-                    if (filter == selected) {
-                        Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    }
-                },
-                onClick = {
-                    expanded = false
-                    onSelect(filter)
-                },
-            )
+            val tone = when (filter) {
+                ActionFilter.All -> MaterialTheme.colorScheme.primary
+                ActionFilter.Proxy -> DigitDnsTheme.colors.purple
+                ActionFilter.Direct -> DigitDnsTheme.colors.success
+                ActionFilter.Block -> MaterialTheme.colorScheme.error
+            }
+            val active = filter == selected
+            val shape = RoundedCornerShape(999.dp)
+            Box(
+                modifier = Modifier
+                    .clip(shape)
+                    .background(if (active) tone.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface)
+                    .border(
+                        width = 1.dp,
+                        color = if (active) tone.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant,
+                        shape = shape,
+                    )
+                    .clickable { onSelect(filter) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = filter.name,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = if (active) tone else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }

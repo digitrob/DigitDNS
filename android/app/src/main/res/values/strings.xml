@@ -42,7 +42,7 @@
     <!-- Settings hub sections. -->
     <string name="settings_app">App</string>
     <string name="settings_servers">Servers</string>
-    <string name="settings_relay_agents">Relay Agents</string>
+    <string name="settings_relay_agents">Egress Options</string>
     <string name="settings_connect_guide">Connect Guide</string>
     <string name="settings_diagnostics">Diagnostics</string>
     <string name="settings_tls">SSL / TLS</string>
@@ -773,4 +773,62 @@
     <string name="ipv6_settings_disable_title">Turn off Proxy IPv6?</string>
     <string name="ipv6_settings_disable_message">Proxied AAAA will be withheld, HTTPS/SVCB hints stay blocked, and agents will switch to IPv4-only on their next heartbeat. Direct domains keep their normal AAAA.</string>
     <string name="ipv6_settings_disable_confirm">TURN OFF</string>
+
+    <!-- Egress options: relay agents plus hub-side SOCKS5 and WireGuard. -->
+    <string name="egress_summary_healthy">%1$d healthy</string>
+    <string name="egress_summary_failed">%1$d failed</string>
+    <string name="egress_summary_traffic">%1$s traffic</string>
+    <string name="egress_summary_failclosed">%1$d fail-closed</string>
+    <string name="egress_group_agents">Relay Agents</string>
+    <string name="egress_group_socks5">SOCKS5</string>
+    <string name="egress_group_wireguard">WireGuard</string>
+    <string name="egress_relay_agents_title">Relay Agents</string>
+    <string name="egress_relay_agents_body">Extra exit points in other countries. A domain assigned to an agent resolves to that agent\'s address; the agent relays TLS without decrypting it.</string>
+    <string name="egress_socks5_title">SOCKS5</string>
+    <string name="egress_socks5_body">The hub opens the origin connection through a SOCKS5 proxy. DNS is resolved by the proxy by default, after the destination passes the hub\'s SSRF guard.</string>
+    <string name="egress_wireguard_title">WireGuard</string>
+    <string name="egress_wireguard_body">The hub dials through a userspace WireGuard tunnel. Paste a standard wg-quick configuration; the private key is encrypted at rest and never returned.</string>
+    <string name="egress_add_socks5">Add SOCKS5</string>
+    <string name="egress_add_wireguard">Add WireGuard</string>
+    <string name="egress_add_socks5_title">Add SOCKS5 egress</string>
+    <string name="egress_add_wireguard_title">Add WireGuard egress</string>
+    <string name="egress_edit_title">Edit %1$s egress</string>
+    <string name="egress_name">Name</string>
+    <string name="egress_name_hint">NL proxy</string>
+    <string name="egress_country">Country</string>
+    <string name="egress_address">Address</string>
+    <string name="egress_address_hint">10.0.0.5:1080</string>
+    <string name="egress_username">Username (optional)</string>
+    <string name="egress_password">Password (write-only)</string>
+    <string name="egress_password_saved">Saved — leave blank to keep</string>
+    <string name="egress_config">WireGuard configuration</string>
+    <string name="egress_config_saved">Saved configuration — paste a new one to replace it</string>
+    <string name="egress_config_hint">[Interface]\nPrivateKey = ...\nAddress = 10.9.0.2/32\n\n[Peer]\nPublicKey = ...\nEndpoint = vpn.example.com:51820\nAllowedIPs = 0.0.0.0/0</string>
+    <string name="egress_resolve">DNS resolution</string>
+    <string name="egress_resolve_remote">Remote — the proxy resolves the hostname (recommended)</string>
+    <string name="egress_resolve_local">Local — send the hub-vetted address</string>
+    <string name="egress_fail_closed">Fail closed</string>
+    <string name="egress_fail_closed_hint">Refuse, never fall back to this server</string>
+    <string name="egress_enabled">Enabled</string>
+    <string name="egress_enabled_hint">Include in routing and health checks</string>
+    <string name="egress_empty_socks5">No SOCKS5 egress yet — add one to route selected domains through a proxy.</string>
+    <string name="egress_empty_wireguard">No WireGuard egress yet — paste a .conf to route selected domains through a tunnel.</string>
+    <string name="egress_test">Test</string>
+    <string name="egress_testing">Testing…</string>
+    <string name="egress_edit">Edit</string>
+    <string name="egress_delete">Delete</string>
+    <string name="egress_delete_title">Delete %1$s?</string>
+    <string name="egress_delete_body">Traffic stops using this egress immediately. Domains assigned to it fall back unless a service default applies; a fail-closed egress refuses instead.</string>
+    <string name="egress_latency">Latency</string>
+    <string name="egress_traffic">Traffic</string>
+    <string name="egress_last_seen">Last seen</string>
+    <string name="egress_fail_closed_badge">fail-closed</string>
+    <string name="egress_never">—</string>
+    <string name="egress_kind">Egress</string>
+    <string name="egress_status_disabled">disabled</string>
+    <string name="egress_status_online">online</string>
+    <string name="egress_status_offline">offline</string>
+    <string name="egress_status_unknown">unknown</string>
+    <string name="settings_system_log">System Log</string>
+    <string name="egress_upload_conf">Upload .conf</string>
 </resources>

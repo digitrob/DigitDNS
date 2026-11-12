@@ -31,6 +31,7 @@ import (
 	"digitdns/internal/crypto"
 	"digitdns/internal/database"
 	"digitdns/internal/geoip"
+	"digitdns/internal/logbuffer"
 	"digitdns/internal/netutil"
 	"digitdns/internal/selfupdate"
 	"digitdns/internal/service"
@@ -54,6 +55,12 @@ func main() {
 	serverMode := flag.Bool("server", false, "Run as background server engine")
 	showVersion := flag.Bool("version", false, "Print version information")
 	flag.Parse()
+
+	// Capture the same lines the daemon writes to stderr/journald, bounded so a
+	// long-running resolver cannot grow this in memory. The dashboard and app
+	// read it through the authenticated system-log endpoint.
+	logTail := logbuffer.New(2000, 1<<20)
+	log.SetOutput(io.MultiWriter(os.Stderr, logTail))
 
 	if *showVersion {
 		_, exitCode := runPreDBCommand([]string{"-version"}, *configPath, os.Stdout, os.Stderr)
@@ -537,7 +544,26 @@ func main() {
 	if err := relayRouter.Reload(db); err != nil {
 		log.Printf("[Main] Warning: could not load relay agents: %v", err)
 	}
+	// Hub-side egress: SOCKS5 and WireGuard paths the relay can dial through.
+	// The registry is loaded before any listener starts, and its health loop
+	// keeps the DNS and SNI decisions current without touching the DB hot path.
+	egressRegistry := service.NewEgressRegistry(db)
+	if err := egressRegistry.Reload(); err != nil {
+		log.Printf("[Main] Warning: could not load egress options: %v", err)
+	}
+	egressRegistry.Start(context.Background())
+	defer egressRegistry.Stop()
+	relayRouter.SetEgressRegistry(egressRegistry)
+	sniServer.SetRelayTarget(func(hostname string) proxy.RelayDialTarget {
+		target, _ := relayRouter.LookupFor(hostname, "")
+		return proxy.RelayDialTarget{
+			Kind: target.Kind, EgressID: target.EgressID, EgressName: target.EgressName,
+			EgressKind: target.EgressKind, FailClosed: target.FailClosed, Healthy: target.Healthy,
+		}
+	}, egressRegistry)
 	dnsHandler := dns.NewHandler(clientService, c, m, u, statsService, serverSettings.PublicIP)
+	dnsHandler.SetEngineEnabled(!dnsSettings.EngineDisabled)
+	sniServer.SetEngineEnabled(dnsHandler.EngineEnabled)
 	// DNSSEC validation is opt-in and startup-only. With it off, the upstream's
 	// AD bit is passed through exactly as before; with it on, only an answer this
 	// hub validated itself can carry AD.
@@ -552,12 +578,18 @@ func main() {
 	}
 	dnsHandler.SetProxyLeakProtection(dnsSettings.ProxyLeakProtection)
 	dnsHandler.SetBlockPolicy(filterService.BlockPolicy)
-	dnsHandler.SetRelayLookup(func(domain string) (net.IP, net.IP, string, string, string, bool) {
-		target, ok := relayRouter.Lookup(domain)
-		if !ok {
-			return nil, nil, "", "", "", false
+	dnsHandler.SetRelayLookup(func(domain string) dns.RelayTarget {
+		target, _ := relayRouter.LookupFor(domain, "")
+		out := dns.RelayTarget{
+			Kind: target.Kind, AgentID: target.AgentID, AgentName: target.Name,
+			Country: target.Country, EgressID: target.EgressID, EgressName: target.EgressName,
+			EgressKind: target.EgressKind, FailClosed: target.FailClosed, Healthy: target.Healthy,
+			FallbackReason: target.FallbackReason,
 		}
-		return target.IPv4, target.IPv6, target.AgentID, target.Name, target.Country, true
+		if target.Kind == "agent" {
+			out.IPv4, out.IPv6 = target.IPv4, target.IPv6
+		}
+		return out
 	})
 	// v2.5: publish the server's IPv6 for proxied AAAA when one is configured, so
 	// IPv6 clients reach the SNI proxy over v6 instead of being forced to IPv4.
@@ -695,6 +727,10 @@ func main() {
 	webServer.SetAuthSettings(authSettings)
 	webServer.SetCustomGroupService(customGroupService)
 	webServer.SetRelayRouter(relayRouter)
+	webServer.SetEgressRegistry(egressRegistry)
+	webServer.SetEngineSetter(dnsHandler.SetEngineEnabled)
+	webServer.SetEngineState(dnsHandler.EngineEnabled)
+	webServer.SetSystemLog(logTail)
 	// v2.8: a runtime domain change re-applies the resolver's self-name set, so a
 	// retired operator domain stops answering and the new one starts (audit
 	// needs-validation fix — before, only the startup set existed).

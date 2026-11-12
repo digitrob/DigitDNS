@@ -2081,6 +2081,22 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   border-color: rgb(var(--c-emerald-500) / 0.45);
   box-shadow: inset 3px 0 0 rgb(var(--c-emerald-500) / 0.8);
 }
+.upstream-fastest-badge {
+  display: none;
+  margin-top: 2px;
+  width: fit-content;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.10);
+  color: var(--accent-green);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+}
+.upstream-row.is-adaptive-current .upstream-fastest-badge { display: inline-flex; }
 
 /* Resolver card chips. The same compact shape as the history range buttons,
    with protocol chips carrying their own colour when enabled. */
@@ -3577,8 +3593,11 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 #tab-dashboard.dash-custom-layout [data-dash-grid="metrics"] [data-dash-card] {
   container-type: inline-size;
 }
-#tab-dashboard.dash-custom-layout [data-dash-grid="metrics"] span[id^="stat-"] {
-  font-size: clamp(0.9rem, 9cqw, 1.6rem) !important;
+#tab-dashboard.dash-custom-layout [data-dash-grid="metrics"] .metric-value {
+  font-size: clamp(1.65rem, 9cqi, 2.5rem) !important;
+}
+#tab-dashboard.dash-custom-layout [data-dash-grid="metrics"] .metric-value-traffic {
+  font-size: clamp(1.25rem, 7cqi, 1.9rem) !important;
 }
 /* Four latency tiles in a 12-column card: let them fall into 2x2 when the card
  * is half width instead of squeezing four columns into unreadable cells. */
@@ -4743,4 +4762,323 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
    card into its stored position — the Chromium layout flicker. */
 html.dash-layout-pending #tab-dashboard {
   visibility: hidden;
+}
+
+/* ── Egress options ──────────────────────────────────────────────────────────
+ * SOCKS5 and WireGuard sit side by side on wide screens and stack on phones.
+ * Each configured connection is a compact subcard, not a separate page. */
+.egress-grid { display: grid; gap: 1.5rem; }
+@media (min-width: 1024px) {
+  .egress-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.egress-subcard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgb(var(--c-slate-800));
+  border-radius: 12px;
+  background: rgb(var(--c-slate-950) / 0.55);
+}
+.egress-subcard.is-offline { border-color: rgba(245, 158, 11, 0.32); }
+.egress-subcard.is-disabled { opacity: 0.62; }
+.egress-subcard + .egress-subcard { margin-top: 10px; }
+.egress-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.egress-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
+.egress-name {
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.egress-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--c-slate-700));
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.egress-meta { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.egress-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.egress-stat {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid rgb(var(--c-slate-800) / 0.8);
+  border-radius: 8px;
+  background: rgb(var(--c-slate-950) / 0.6);
+}
+.egress-stat span {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.egress-stat strong {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.egress-badge-failclosed {
+  color: var(--accent-amber);
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.09);
+}
+.egress-error {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent-amber);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.egress-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-top: 2px; }
+.egress-empty {
+  padding: 26px 14px;
+  text-align: center;
+  border: 1px dashed rgb(var(--c-slate-800));
+  border-radius: 10px;
+}
+.egress-empty p { font-size: 11px; color: var(--text-muted); }
+.proxied-bulk-group {
+  padding: 7px 8px 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.proxied-bulk-group:first-child { padding-top: 2px; }
+
+/* ── Shell controls: engine switch and sidebar collapse ───────────────────── */
+.sidebar-utility-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.sidebar-engine-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--c-slate-800));
+  background: rgb(var(--c-slate-900) / 0.9);
+  color: var(--text-muted);
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.sidebar-engine-btn:hover { border-color: rgba(34, 211, 238, 0.45); color: var(--text-main); }
+.sidebar-engine-btn.is-on { color: var(--accent-green); border-color: rgba(16, 185, 129, 0.35); }
+.sidebar-engine-btn.is-off { color: var(--accent-red); border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.08); }
+.engine-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent-red);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.14);
+  flex-shrink: 0;
+}
+.engine-mobile-pill {
+  display: none;
+}
+@media (max-width: 767px) {
+  .engine-mobile-pill {
+    position: fixed;
+    right: 12px;
+    bottom: 4.6rem;
+    z-index: 35;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--c-slate-700));
+    background: rgb(var(--c-slate-950) / 0.92);
+    color: var(--text-muted);
+    font-family: var(--font-heading);
+    font-size: 10px;
+    font-weight: 700;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+  .engine-mobile-pill.is-on { color: var(--accent-green); border-color: rgba(16, 185, 129, 0.4); }
+  .engine-mobile-pill.is-off { color: var(--accent-red); border-color: rgba(239, 68, 68, 0.5); }
+}
+.sidebar-engine-btn.is-on .engine-dot,
+.engine-mobile-pill.is-on .engine-dot {
+  background: var(--accent-green);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
+}
+[data-theme-toggle] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+.sidebar-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  border: 1px solid rgb(var(--c-slate-800));
+  background: rgb(var(--c-slate-900) / 0.9);
+  color: var(--text-muted);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.sidebar-collapse-btn:hover { color: var(--accent-cyan); border-color: rgba(34, 211, 238, 0.4); }
+.sidebar-collapse-btn svg { transition: transform 0.18s ease; }
+html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
+
+@media (min-width: 768px) {
+  html.sidebar-collapsed #app-sidebar {
+    width: 5rem !important;
+    padding-left: 0.6rem;
+    padding-right: 0.6rem;
+  }
+  html.sidebar-collapsed #app-sidebar .sidebar-brand-copy,
+  html.sidebar-collapsed #app-sidebar .sidebar-nav-item span,
+  html.sidebar-collapsed #app-sidebar #copy-ip-btn .sidebar-ip-copy,
+  html.sidebar-collapsed #app-sidebar #open-diagnostics-btn span,
+  html.sidebar-collapsed #app-sidebar #restart-engine-btn span,
+  html.sidebar-collapsed #app-sidebar .sidebar-engine-label,
+  html.sidebar-collapsed #app-sidebar #dash-edit-btn,
+  html.sidebar-collapsed #app-sidebar #dash-reset-btn-sidebar {
+    display: none !important;
+  }
+  html.sidebar-collapsed #app-sidebar .sidebar-nav-item,
+  html.sidebar-collapsed #app-sidebar #copy-ip-btn,
+  html.sidebar-collapsed #app-sidebar #open-diagnostics-btn,
+  html.sidebar-collapsed #app-sidebar #restart-engine-btn {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  html.sidebar-collapsed #app-sidebar .sidebar-nav-item { gap: 0; }
+  html.sidebar-collapsed #app-sidebar .sidebar-utility-row,
+  html.sidebar-collapsed #app-sidebar .sidebar-action-row {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: center;
+    gap: 6px;
+  }
+  html.sidebar-collapsed #app-sidebar .sidebar-utility-row > *,
+  html.sidebar-collapsed #app-sidebar .sidebar-action-row > * {
+    flex: 0 0 auto;
+    width: 100%;
+    height: 38px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  html.sidebar-collapsed #app-sidebar .sidebar-engine-btn {
+    padding-left: 0;
+    padding-right: 0;
+    border-radius: 10px;
+  }
+  html.sidebar-collapsed #app-sidebar .sidebar-collapse-btn { width: 100%; height: 38px; }
+  html.sidebar-collapsed #app-sidebar #copy-ip-btn > i,
+  html.sidebar-collapsed #app-sidebar #copy-ip-btn > svg { display: none !important; }
+  html.sidebar-collapsed #app-sidebar { overflow-x: hidden; overflow-y: auto; }
+}
+
+/* ── Top upstreams: provider grouping ─────────────────────────────────────── */
+.history-top-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+.history-top-provider-toggle {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--c-slate-700));
+  background: rgb(var(--c-slate-900) / 0.8);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.history-top-provider-toggle:hover { color: var(--accent-cyan); border-color: rgba(34, 211, 238, 0.4); }
+.history-top-provider-toggle[aria-pressed="true"] {
+  color: var(--accent-cyan);
+  border-color: rgba(34, 211, 238, 0.5);
+  background: rgba(34, 211, 238, 0.10);
+}
+.history-top-provider-logo {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+/* ── System log viewer ────────────────────────────────────────────────────── */
+.system-log-view {
+  margin: 0;
+  max-height: min(60vh, 34rem);
+  overflow: auto;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--c-slate-800));
+  background: rgb(var(--c-slate-950) / 0.8);
+  color: rgb(var(--c-slate-300));
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+
+/* ── Dashboard metric headlines ─────────────────────────────────────────────
+ * The six top cards can be resized by the dashboard layout editor and by the
+ * responsive grid. A viewport-based size would be wrong in both cases, so the
+ * value scales with the card's own inline size via container query units. The
+ * fallback is the previous 24px headline; the clamp only grows it when the card
+ * has room, and never below the size that already fit the narrow six-across
+ * layout. */
+[data-dash-grid="metrics"] > [data-dash-card] {
+  container-type: inline-size;
+}
+.metric-value {
+  font-size: 1.5rem;
+  font-size: clamp(1.65rem, 9cqi, 2.5rem);
+  line-height: 1.02;
+  white-space: nowrap;
+}
+.metric-value-traffic {
+  font-size: 1.125rem;
+  font-size: clamp(1.25rem, 7cqi, 1.9rem);
+  line-height: 1.08;
 }

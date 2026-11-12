@@ -1333,7 +1333,19 @@ func (p *UpstreamPool) exchangeAdaptive(req *dns.Msg, upstreams []string, curren
 // does not run the benchmark; the caller does that first so this remains cheap
 // and testable.
 func (p *UpstreamPool) SelectAdaptiveFastest(current string, minImprovement float64) AdaptiveDecision {
-	if minImprovement <= 0 {
+	return p.selectAdaptiveFastest(current, minImprovement, false)
+}
+
+// SelectAdaptiveFastestForced picks the absolute fastest healthy resolver and
+// ignores the hysteresis that protects the scheduled interval from flapping.
+// It is what the operator's Force button means: switch now, even when the new
+// server is only marginally faster.
+func (p *UpstreamPool) SelectAdaptiveFastestForced(current string) AdaptiveDecision {
+	return p.selectAdaptiveFastest(current, 0, true)
+}
+
+func (p *UpstreamPool) selectAdaptiveFastest(current string, minImprovement float64, force bool) AdaptiveDecision {
+	if !force && minImprovement <= 0 {
 		minImprovement = adaptiveHysteresis
 	}
 	if minImprovement > 0.5 {
@@ -1395,11 +1407,15 @@ func (p *UpstreamPool) SelectAdaptiveFastest(current string, minImprovement floa
 		decision.Note = "selected the fastest healthy resolver"
 	case bestAddr == current:
 		decision.Note = "current resolver is still the fastest"
-	case float64(bestLatency) < float64(currentLat)*(1-minImprovement):
+	case force || float64(bestLatency) < float64(currentLat)*(1-minImprovement):
 		decision.Current = bestAddr
 		decision.CurrentLatency = bestLatency
 		decision.Changed = true
-		decision.Note = "switched to a meaningfully faster resolver"
+		if force {
+			decision.Note = "forced to the fastest healthy resolver"
+		} else {
+			decision.Note = "switched to a meaningfully faster resolver"
+		}
 	default:
 		decision.Note = "kept the current resolver; the fastest is not meaningfully faster"
 	}

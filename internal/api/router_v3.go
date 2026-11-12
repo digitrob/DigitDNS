@@ -122,6 +122,20 @@ type V3Backend interface {
 	AgentKey(r *http.Request, id string) (map[string]any, error)
 	TestAgent(r *http.Request, id string) (map[string]any, error)
 
+	// Hub-side egresses. Secrets (SOCKS5 password, WireGuard private key) are
+	// accepted on write and never returned; the DTO reports *_set booleans.
+	Egresses() ([]map[string]any, error)
+	CreateEgress(r *http.Request, body map[string]any) (map[string]any, error)
+	UpdateEgress(r *http.Request, id string, body map[string]any) (map[string]any, error)
+	DeleteEgress(r *http.Request, id string) (map[string]any, error)
+	SetEgressEnabled(r *http.Request, id string, enabled bool) (map[string]any, error)
+	TestEgress(r *http.Request, id string) (map[string]any, error)
+
+	// Engine switch and the bounded system log tail.
+	EngineStatus() map[string]any
+	SaveEngine(r *http.Request, body map[string]any) (map[string]any, error)
+	SystemLog(limit int) (map[string]any, error)
+
 	// Self-update.
 	UpdateCheck(r *http.Request) (map[string]any, error)
 	UpdateApply(r *http.Request) (map[string]any, error)
@@ -208,6 +222,14 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	// key/enable/disable/rotate-key/test actions.
 	mux.HandleFunc("/api/v3/agents", a.SecurityMiddlewareV3(a.handleV3Agents))
 	mux.HandleFunc("/api/v3/agents/", a.SecurityMiddlewareV3(a.handleV3AgentItem))
+
+	// Hub-side egress options (SOCKS5 and WireGuard).
+	mux.HandleFunc("/api/v3/egresses", a.SecurityMiddlewareV3(a.handleV3Egresses))
+	mux.HandleFunc("/api/v3/egresses/", a.SecurityMiddlewareV3(a.handleV3EgressItem))
+
+	// Global engine switch and the in-process system log tail.
+	mux.HandleFunc("/api/v3/engine", a.SecurityMiddlewareV3(a.handleV3Engine))
+	mux.HandleFunc("/api/v3/system-log", a.SecurityMiddlewareV3(a.handleV3SystemLog))
 
 	// Rules & access.
 	mux.HandleFunc("/api/v3/rules", a.SecurityMiddlewareV3(a.handleV3Rules))

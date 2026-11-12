@@ -59,6 +59,9 @@ let historyTimer = null;
 let historyInFlight = false;
 let historySeq = 0;
 let historyInitialized = false;
+// Top upstreams can be ranked per server (default) or aggregated per provider.
+let historyTopUpstreamByProvider = false;
+let historyTopData = {};
 let currentConfig = null;
 let isStreamPaused = false;
 
@@ -3248,13 +3251,31 @@ function renderBulkEgressOptions() {
   const local = `<button type="button" class="proxied-bulk-option" role="option" data-bulk-egress="__local__">
     <span class="service-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg></span>
     <span>This Server</span></button>`;
+  const group = (label) => `<div class="proxied-bulk-group">${escapeHTML(label)}</div>`;
   const agents = agentsCache.length
-    ? agentsCache.map((a) => `<button type="button" class="proxied-bulk-option" role="option" data-bulk-egress="${escapeHTML(a.id)}">
+    ? group('Relay Agents') + agentsCache.map((a) => `<button type="button" class="proxied-bulk-option" role="option" data-bulk-egress="${escapeHTML(a.id)}">
         ${agentFlagHTML(a)}
         <span class="truncate">${escapeHTML(a.name || a.id)} · ${escapeHTML(a.country || '')}${!agentIsOnline(a) ? ' (offline)' : ''}</span>
       </button>`).join('')
-    : '<div class="proxied-bulk-option is-disabled" role="option" aria-disabled="true"><span>No agents yet</span></div>';
-  menu.innerHTML = inherit + local + agents;
+    : '';
+  const socks = egressesCache.filter((e) => e.kind === 'socks5');
+  const socksHTML = socks.length
+    ? group('SOCKS5') + socks.map((e) => `<button type="button" class="proxied-bulk-option" role="option" data-bulk-egress="${escapeHTML(egressValue(e))}">
+        ${egressFlagHTML(e) || '<i data-feather="shuffle" class="w-3.5 h-3.5"></i>'}
+        <span class="truncate">${escapeHTML(e.name || e.id)} · ${escapeHTML(e.country || '')}${!egressIsOnline(e) ? ' (offline)' : ''}</span>
+      </button>`).join('')
+    : '';
+  const wireguard = egressesCache.filter((e) => e.kind === 'wireguard');
+  const wgHTML = wireguard.length
+    ? group('WireGuard') + wireguard.map((e) => `<button type="button" class="proxied-bulk-option" role="option" data-bulk-egress="${escapeHTML(egressValue(e))}">
+        ${egressFlagHTML(e) || '<i data-feather="lock" class="w-3.5 h-3.5"></i>'}
+        <span class="truncate">${escapeHTML(e.name || e.id)} · ${escapeHTML(e.country || '')}${!egressIsOnline(e) ? ' (offline)' : ''}</span>
+      </button>`).join('')
+    : '';
+  const empty = !agents && !socksHTML && !wgHTML
+    ? '<div class="proxied-bulk-option is-disabled" role="option" aria-disabled="true"><span>No egress options yet</span></div>'
+    : '';
+  menu.innerHTML = inherit + local + agents + socksHTML + wgHTML + empty;
 }
 
 function closeBulkEgressMenu() {
@@ -3278,12 +3299,13 @@ async function assignEgressToSelected(agentId) {
   if (!ok) return;
   renderProxiedList();
   const agent = agentForId(agentId);
+  const egress = egressForId(agentId);
   showToast(
     agentId === '__inherit__'
       ? `Cleared ${domains.length} domain override(s); services apply`
       : agentId === '__local__'
         ? `Set ${domains.length} domain(s) to This Server`
-        : `Routed ${domains.length} domain(s) through ${agent ? agent.name : agentId}`,
+        : `Routed ${domains.length} domain(s) via ${egress ? egress.name : (agent ? agent.name : agentId)}`,
     'success',
   );
 }
@@ -3429,15 +3451,40 @@ function openRelayPicker(domain, trigger) {
       <span class="truncate">This Server${stored === '__local__' ? ' · selected' : ''}</span>
     </button>`,
   ];
+  const group = (label) => `<div class="proxied-bulk-group">${escapeHTML(label)}</div>`;
   if (agentsCache.length) {
+    rows.push(group('Relay Agents'));
     for (const a of agentsCache) {
       rows.push(`<button type="button" class="proxied-bulk-option" role="option" data-relay-id="${escapeHTML(a.id)}">
         ${agentFlagHTML(a, 'agent-flag relay-flag')}
         <span class="truncate">${escapeHTML(a.name || a.id)} · ${escapeHTML(a.country || '')}${agentIsOnline(a) ? '' : ' (offline)'}${stored === a.id ? ' · selected' : ''}</span>
       </button>`);
     }
-  } else {
-    rows.push('<div class="proxied-bulk-option is-disabled" role="option" aria-disabled="true"><span>No agents yet</span></div>');
+  }
+  const socks = egressesCache.filter((e) => e.kind === 'socks5');
+  if (socks.length) {
+    rows.push(group('SOCKS5'));
+    for (const e of socks) {
+      const value = egressValue(e);
+      rows.push(`<button type="button" class="proxied-bulk-option" role="option" data-relay-id="${escapeHTML(value)}">
+        ${egressFlagHTML(e, 'agent-flag relay-flag') || '<i data-feather="shuffle" class="w-3.5 h-3.5"></i>'}
+        <span class="truncate">${escapeHTML(e.name || e.id)} · ${escapeHTML(e.country || '')}${egressIsOnline(e) ? '' : ' (offline)'}${stored === value ? ' · selected' : ''}</span>
+      </button>`);
+    }
+  }
+  const wireguard = egressesCache.filter((e) => e.kind === 'wireguard');
+  if (wireguard.length) {
+    rows.push(group('WireGuard'));
+    for (const e of wireguard) {
+      const value = egressValue(e);
+      rows.push(`<button type="button" class="proxied-bulk-option" role="option" data-relay-id="${escapeHTML(value)}">
+        ${egressFlagHTML(e, 'agent-flag relay-flag') || '<i data-feather="lock" class="w-3.5 h-3.5"></i>'}
+        <span class="truncate">${escapeHTML(e.name || e.id)} · ${escapeHTML(e.country || '')}${egressIsOnline(e) ? '' : ' (offline)'}${stored === value ? ' · selected' : ''}</span>
+      </button>`);
+    }
+  }
+  if (!agentsCache.length && !socks.length && !wireguard.length) {
+    rows.push('<div class="proxied-bulk-option is-disabled" role="option" aria-disabled="true"><span>No egress options yet</span></div>');
   }
   menu.innerHTML = rows.join('');
   menu.classList.remove('hidden');
@@ -3461,12 +3508,13 @@ async function assignRelayToDomain(domain, id) {
   if (!(await saveRules(true))) return;
   renderProxiedList();
   const agent = id && id !== '__local__' && id !== '__inherit__' ? agentForId(id) : null;
+  const egress = egressForId(id);
   showToast(
     id === '__inherit__'
       ? 'Relay now follows the service default'
       : id === '__local__'
         ? 'Relay set to This Server'
-        : `Relayed through ${agent ? agent.name : id}`,
+        : `Routed via ${egress ? egress.name : (agent ? agent.name : id)}`,
     'success',
   );
 }
@@ -3970,7 +4018,7 @@ function providerIdForUpstream(address) {
   if (a.includes('google') || a.includes('8.8.8.8') || a.includes('8.8.4.4')) return 'google';
   if (a.includes('quad9') || a.includes('9.9.9.9') || a.includes('149.112.112.112')) return 'quad9';
   if (a.includes('adguard') || a.includes('94.140.14.14') || a.includes('94.140.15.15')) return 'adguard';
-  if (a.includes('controld') || a.includes('freedns') || a.includes('76.76.2.0') || a.includes('76.76.10.0')) return 'controld';
+  if (a.includes('controld') || a.includes('control d') || a.includes('freedns') || a.includes('76.76.2.0') || a.includes('76.76.10.0')) return 'controld';
   if (a.includes('dns.sb') || a.includes('dot.sb') || a.includes('doh.dns.sb') || a.includes('185.222.222.222') || a.includes('45.11.45.11')) return 'dnssb';
   if (a.includes('opendns') || a.includes('208.67.222.222') || a.includes('208.67.220.220')) return 'opendns';
   if (a.includes('yandex') || a.includes('77.88.8.8') || a.includes('77.88.8.1')) return 'yandex';
@@ -4251,6 +4299,10 @@ async function runAdaptiveNow() {
     resolutionSettings = normalizeResolutionSettings(await res.json());
     adaptiveFlash = true;
     syncResolutionControls();
+    // Repaint the resolver rows now: the highlight and FASTEST badge depend on
+    // adaptive_current, and waiting for the next stats poll made Force look like
+    // it had not switched.
+    if (Array.isArray(lastUpstreamsPayload)) renderUpstreams(lastUpstreamsPayload);
     refreshProxiedListIfVisible();
     showToast('Adaptive check complete', 'success');
     if (adaptiveFlashTimer) clearTimeout(adaptiveFlashTimer);
@@ -4628,6 +4680,16 @@ function renderProxiedList() {
         if (currentConfig?.server?.country) {
           trigger.title = `This Server — ${countryName(currentConfig.server.country)}`;
         }
+      } else if (relay.egress) {
+        const e = relay.egress;
+        const isOnline = egressIsOnline(e);
+        trigger.innerHTML = (e.country ? egressFlagHTML(e, 'agent-flag relay-flag') : '<i data-feather="shuffle" class="w-3.5 h-3.5"></i>') +
+          '<span class="proxied-relay-name"></span>' +
+          (isOnline ? '' : '<span class="proxied-relay-offline">offline</span>') +
+          '<i data-feather="chevron-down" class="w-3 h-3"></i>';
+        trigger.querySelector('.proxied-relay-name').textContent = e.name || 'Egress';
+        trigger.title = `${e.name || 'Egress'} — ${egressKindLabel(e.kind)}${isOnline ? '' : ' (offline)'}`;
+        if (!isOnline) trigger.classList.add('is-offline');
       } else {
         const agent = relay.agent;
         const isOnline = agent ? agentIsOnline(agent) : false;
@@ -6102,6 +6164,7 @@ function renderUpstreams(upstreams) {
                  Drag it, scroll it, or focus and use the arrow keys; the title is the
                  hover fallback. The dot and the latency/delete controls never move. -->
             <span class="upstream-addr block min-w-0 font-mono text-slate-200" tabindex="0" title="${escapeHTML(u.address)}">${escapeHTML(u.address)}</span>
+            <span class="upstream-fastest-badge">FASTEST</span>
           </div>
         </div>
         <div class="flex items-center gap-2 shrink-0">
@@ -6604,7 +6667,7 @@ function queryRowHTML(q) {
   // two sink actions also left through the proxy, so they keep the same exit.
   const proxied = isProxyAction(action);
   const relayName = proxied
-    ? String(q.relay_agent_name || 'This Server').trim()
+    ? String(q.relay_egress_name || q.relay_agent_name || 'This Server').trim()
     : '';
   const relayCountry = proxied
     ? String(q.relay_country || (currentConfig?.server?.country || '')).trim()
@@ -6612,7 +6675,12 @@ function queryRowHTML(q) {
   const relayFlag = relayCountry && flagURL(relayCountry)
     ? `<img class="agent-flag agent-flag-sm" src="${escapeHTML(flagURL(relayCountry))}" alt="${escapeHTML(countryName(relayCountry))}" title="${escapeHTML(countryName(relayCountry))}">`
     : '';
-  const relayTitle = relayCountry ? `${relayName} · ${countryName(relayCountry)}` : relayName;
+  const relayKind = proxied && q.relay_egress_kind
+    ? (q.relay_egress_kind === 'wireguard' ? 'WireGuard' : 'SOCKS5')
+    : '';
+  const relayFallback = proxied ? String(q.relay_fallback_reason || '').trim() : '';
+  const relayTitle = [relayName, relayKind, relayCountry ? countryName(relayCountry) : '', relayFallback]
+    .filter(Boolean).join(' · ');
   const relayCell = proxied
     ? `<span class="stream-relay" title="Relay: ${escapeHTML(relayTitle)}">${relayFlag}<span>${escapeHTML(relayName)}</span></span>`
     : '<span class="text-slate-600">—</span>';
@@ -7725,7 +7793,10 @@ function renderHistoryTop(id, data, empty, dimension) {
   if (!el) return;
   const previousList = el.querySelector('.history-top-list');
   const scrollTop = previousList ? previousList.scrollTop : 0;
-  const items = Array.isArray(data.items) ? data.items : [];
+  let items = Array.isArray(data.items) ? data.items : [];
+  if (id === 'history-top-upstreams' && historyTopUpstreamByProvider) {
+    items = groupUpstreamsByProvider(items);
+  }
   if (!items.length) {
     el.innerHTML = `<div class="history-top-list"><div class="py-2 text-slate-500">${escapeHTML(empty)}</div></div>`;
     return;
@@ -7741,7 +7812,10 @@ function renderHistoryTop(id, data, empty, dimension) {
     const flag = relay ? countryFlagHTML(flagCode, 'agent-flag relay-flag') : '';
     const label = relay ? relayCountryLabel(value) : dimension === 'protocol' ? protocolLabel(value) : value;
     const valueClass = dimension === 'protocol' ? protocolClass(value) : 'text-slate-300';
-    const valueMarkup = `${flag}<span class="truncate font-mono ${escapeHTML(valueClass)}" title="${escapeHTML(label)}">${escapeHTML(label)}</span>`;
+    const providerLogo = dimension === 'upstream'
+      ? providerFaviconMarkup(item.provider || value, 'history-top-provider-logo')
+      : '';
+    const valueMarkup = `${providerLogo}${flag}<span class="truncate font-mono ${escapeHTML(valueClass)}" title="${escapeHTML(label)}">${escapeHTML(label)}</span>`;
     // Relay rows carry the flag and name, the number of queries proxied
     // through that relay, and a share bar. The count is labelled for assistive
     // tech because the card title alone does not make the number self-evident.
@@ -7763,6 +7837,40 @@ function renderHistoryTop(id, data, empty, dimension) {
   // were reading; only the entry viewport scrolls.
   const nextList = el.querySelector('.history-top-list');
   if (nextList) nextList.scrollTop = scrollTop;
+}
+
+const PROVIDER_NAMES = {
+  cloudflare: 'Cloudflare', google: 'Google', quad9: 'Quad9', adguard: 'AdGuard',
+  controld: 'Control D', dnssb: 'DNS.SB', opendns: 'OpenDNS', yandex: 'Yandex',
+  nextdns: 'NextDNS', cleanbrowsing: 'CleanBrowsing',
+};
+
+// groupUpstreamsByProvider turns per-server history rows into provider totals.
+// Unknown/custom resolvers are one "Other" bucket rather than a dozen rows that
+// all say nothing about which provider answered.
+function groupUpstreamsByProvider(items) {
+  const totals = new Map();
+  for (const item of items) {
+    const address = String(item.value || 'unknown');
+    const id = providerIdForUpstream(address);
+    const key = id || 'other';
+    const entry = totals.get(key) || {
+      value: id ? (PROVIDER_NAMES[id] || id) : 'Other',
+      count: 0,
+      provider: id || '',
+    };
+    entry.count += Number(item.count || 0);
+    totals.set(key, entry);
+  }
+  return [...totals.values()].sort((a, b) => b.count - a.count);
+}
+
+function setHistoryTopUpstreamGrouping(byProvider) {
+  historyTopUpstreamByProvider = !!byProvider;
+  const btn = document.getElementById('history-top-upstreams-toggle');
+  if (btn) btn.setAttribute('aria-pressed', historyTopUpstreamByProvider ? 'true' : 'false');
+  const top = historyTopData.upstream || { items: [] };
+  renderHistoryTop('history-top-upstreams', top, 'No upstream history in this range.', 'upstream');
 }
 
 function relayCountryLabel(value) {
@@ -7849,6 +7957,7 @@ async function loadHistory(force = false) {
     if (seq !== historySeq) return;
     renderHistorySummary(data.summary);
     await renderHistoryChart(data.series);
+    historyTopData = data.tops || {};
     HISTORY_TOP_DIMENSIONS.forEach((entry) => {
       const top = (data.tops && data.tops[entry.dimension]) || { items: [] };
       renderHistoryTop(entry.id, top, entry.empty, entry.dimension);
@@ -7908,6 +8017,9 @@ function initHistory() {
   document.getElementById('history-export-csv')?.addEventListener('click', () => exportHistory('csv'));
   document.getElementById('history-export-json')?.addEventListener('click', () => exportHistory('json'));
   document.getElementById('history-refresh-btn')?.addEventListener('click', () => loadHistory(true));
+  document.getElementById('history-top-upstreams-toggle')?.addEventListener('click', () => {
+    setHistoryTopUpstreamGrouping(!historyTopUpstreamByProvider);
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       if (historyTimer) {
@@ -9049,6 +9161,36 @@ function agentForId(id) {
   return agentsCache.find((a) => a.id === id) || null;
 }
 
+// Hub-side egresses (SOCKS5 and WireGuard) are a separate list from agents.
+// Assignment values use the "egress:<id>" prefix; existing agent IDs are left
+// untouched so saved rules keep working.
+let egressesCache = [];
+let egressCountrySelectReady = false;
+let egressEditingId = '';
+
+function egressIsOnline(e) {
+  return !!(e && e.enabled && e.health === 'online');
+}
+
+function egressForId(value) {
+  const raw = String(value || '');
+  if (!raw.startsWith('egress:')) return null;
+  const id = raw.slice('egress:'.length);
+  return egressesCache.find((e) => e.id === id) || null;
+}
+
+function egressKindLabel(kind) {
+  return kind === 'wireguard' ? 'WireGuard' : 'SOCKS5';
+}
+
+function egressFlagHTML(e, cls) {
+  return e && e.country ? countryFlagHTML(e.country, cls) : '';
+}
+
+function egressValue(e) {
+  return e && e.id ? 'egress:' + e.id : '';
+}
+
 function matchRelayPattern(assignments, domain) {
   const d = String(domain || '').toLowerCase().replace(/\.$/, '');
   let best = '';
@@ -9077,11 +9219,21 @@ function effectiveRelay(domain) {
   const direct = matchRelayPattern(rules.domain_agents || {}, domain);
   if (direct && direct !== '__inherit__') {
     if (direct === '__local__') return { local: true, source: 'domain' };
+    if (direct.startsWith('egress:')) {
+      const egress = egressForId(direct);
+      return { local: false, id: direct, egress, kind: 'egress', source: 'domain' };
+    }
     return { local: false, id: direct, agent: agentForId(direct), source: 'domain' };
   }
   const service = serviceOfDomain(domain);
   const sid = service ? ((rules.service_agents || {})[service] || '') : '';
-  if (sid) return { local: false, id: sid, agent: agentForId(sid), source: 'service', service };
+  if (sid) {
+    if (sid.startsWith('egress:')) {
+      const egress = egressForId(sid);
+      return { local: false, id: sid, egress, kind: 'egress', source: 'service', service };
+    }
+    return { local: false, id: sid, agent: agentForId(sid), source: 'service', service };
+  }
   return { local: true, source: 'local' };
 }
 
@@ -9122,6 +9274,10 @@ function updateAgentSummary() {
 
 async function loadAgents() {
   const list = document.getElementById('agents-list');
+  // The route pickers and the Egress Options page read both lists, so every
+  // agent refresh also refreshes the hub-side egresses. Failures are rendered
+  // by loadEgresses itself and do not block the agent list.
+  await loadEgresses();
   try {
     const res = await fetch(api('/api/agents'), { headers: { 'Authorization': `Bearer ${authToken}` } });
     if (res.status === 401) {
@@ -9336,24 +9492,37 @@ function renderServiceRelayControl() {
   const input = document.getElementById('service-relay');
   if (!input) return;
   let id = input.value || '';
-  if (id && !agentForId(id)) {
+  const egress = egressForId(id);
+  const egressMissing = id.startsWith('egress:') && !egress;
+  if (id && !agentForId(id) && !egress && !egressMissing) {
     id = '';
     input.value = '';
   }
   const agent = id ? agentForId(id) : null;
   const name = document.getElementById('service-relay-name');
   const mark = document.getElementById('service-relay-mark');
-  if (name) name.textContent = agent ? (agent.name || agent.id) : 'This Server';
+  const label = egress ? (egress.name || egress.id)
+    : (agent ? (agent.name || agent.id) : (egressMissing ? 'Egress (unavailable)' : 'This Server'));
+  if (name) name.textContent = label;
   if (mark) {
-    mark.innerHTML = agent
-      ? agentFlagHTML(agent, 'agent-flag agent-flag-sm')
-      : countryFlagHTML(currentConfig?.server?.country, 'agent-flag agent-flag-sm');
+    if (egress) {
+      mark.innerHTML = egressFlagHTML(egress, 'agent-flag agent-flag-sm') ||
+        `<i data-feather="${escapeHTML(egress.kind === 'wireguard' ? 'lock' : 'shuffle')}" class="w-3.5 h-3.5"></i>`;
+    } else if (egressMissing) {
+      mark.innerHTML = '<i data-feather="alert-triangle" class="w-3.5 h-3.5"></i>';
+    } else {
+      mark.innerHTML = agent
+        ? agentFlagHTML(agent, 'agent-flag agent-flag-sm')
+        : countryFlagHTML(currentConfig?.server?.country, 'agent-flag agent-flag-sm');
+    }
   }
   const trigger = document.getElementById('service-relay-trigger');
   if (trigger) {
-    trigger.title = agent
-      ? `${agent.name || agent.id} — ${agent.country || ''}`
-      : `This Server — ${countryName(currentConfig?.server?.country) || 'local'}`;
+    trigger.title = egress
+      ? `${egress.name || egress.id} — ${egressKindLabel(egress.kind)}${egress.country ? ' · ' + egress.country : ''}`
+      : (agent
+        ? `${agent.name || agent.id} — ${agent.country || ''}`
+        : `This Server — ${countryName(currentConfig?.server?.country) || 'local'}`);
   }
 }
 
@@ -9376,14 +9545,30 @@ function openServiceRelayPicker(trigger) {
       <span>This Server${current === '' ? ' · selected' : ''}</span>
     </button>`,
   ];
-  for (const a of agentsCache) {
-    rows.push(`<button type="button" class="proxied-bulk-option" role="option" data-service-relay-id="${escapeHTML(a.id)}">
-      ${agentFlagHTML(a)}
-      <span class="truncate">${escapeHTML(a.name || a.id)} · ${escapeHTML(a.country || '')}${current === a.id ? ' · selected' : ''}</span>
-    </button>`);
+  const group = (label) => `<div class="proxied-bulk-group">${escapeHTML(label)}</div>`;
+  if (agentsCache.length) {
+    rows.push(group('Relay Agents'));
+    for (const a of agentsCache) {
+      rows.push(`<button type="button" class="proxied-bulk-option" role="option" data-service-relay-id="${escapeHTML(a.id)}">
+        ${agentFlagHTML(a)}
+        <span class="truncate">${escapeHTML(a.name || a.id)} · ${escapeHTML(a.country || '')}${current === a.id ? ' · selected' : ''}</span>
+      </button>`);
+    }
   }
-  if (!agentsCache.length) {
-    rows.push('<div class="proxied-bulk-option is-disabled" role="option" aria-disabled="true"><span>No agents yet</span></div>');
+  for (const kind of ['socks5', 'wireguard']) {
+    const items = egressesCache.filter((e) => e.kind === kind);
+    if (!items.length) continue;
+    rows.push(group(egressKindLabel(kind)));
+    for (const e of items) {
+      const value = egressValue(e);
+      rows.push(`<button type="button" class="proxied-bulk-option" role="option" data-service-relay-id="${escapeHTML(value)}">
+        ${egressFlagHTML(e) || `<i data-feather="${escapeHTML(kind === 'wireguard' ? 'lock' : 'shuffle')}" class="w-3.5 h-3.5"></i>`}
+        <span class="truncate">${escapeHTML(e.name || e.id)} · ${escapeHTML(e.country || '')}${current === value ? ' · selected' : ''}</span>
+      </button>`);
+    }
+  }
+  if (!agentsCache.length && !egressesCache.length) {
+    rows.push('<div class="proxied-bulk-option is-disabled" role="option" aria-disabled="true"><span>No egress options yet</span></div>');
   }
   menu.innerHTML = rows.join('');
   menu.classList.remove('hidden');
@@ -9692,6 +9877,7 @@ async function deleteAgent(id) {
 
 function initAgentPage() {
   initAgentCountrySelect();
+  initEgressPage();
   const add = document.getElementById('add-agent-btn');
   const cancel = document.getElementById('cancel-agent-btn');
   const save = document.getElementById('save-agent-btn');
@@ -9740,6 +9926,380 @@ function initAgentPage() {
   });
 }
 
+
+// ── Hub-side egress options ──────────────────────────────────────────────────
+// SOCKS5 and WireGuard are where the hub relay dials out. Unlike a relay agent,
+// the client never connects to them: DNS still answers with this server, and
+// only the origin dial changes. Both kinds share one list, one modal and one
+// set of health/traffic badges.
+
+async function loadEgresses() {
+  try {
+    const res = await fetch(api('/api/egresses'), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    if (res.status === 401) return;
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not load egress options'));
+    const data = await res.json();
+    egressesCache = Array.isArray(data.egresses) ? data.egresses : [];
+    renderEgressOptions();
+  } catch (e) {
+    const socks = document.getElementById('socks5-list');
+    const wg = document.getElementById('wireguard-list');
+    const msg = `<p class="text-xs text-red-400 py-2">Could not load egress options: ${escapeHTML(e.message)}</p>`;
+    if (socks) socks.innerHTML = msg;
+    if (wg) wg.innerHTML = msg;
+  }
+}
+
+function updateEgressSummary() {
+  const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+  const enabled = egressesCache.filter((e) => e.enabled);
+  const healthy = enabled.filter((e) => e.health === 'online').length;
+  const failed = enabled.filter((e) => e.health === 'offline').length;
+  const failClosed = enabled.filter((e) => e.fail_closed).length;
+  const traffic = egressesCache.reduce((sum, e) => sum + Number(e.bytes_in || 0) + Number(e.bytes_out || 0), 0);
+  set('egress-healthy-count', String(healthy));
+  set('egress-failed-count', String(failed));
+  set('egress-traffic', humanBytes(traffic));
+  set('egress-failclosed-count', String(failClosed));
+}
+
+function renderEgressOptions() {
+  renderEgressList('socks5');
+  renderEgressList('wireguard');
+  updateEgressSummary();
+  renderServiceRelayControl();
+  renderBulkEgressOptions();
+  safeFeatherReplace();
+}
+
+function renderEgressList(kind) {
+  const list = document.getElementById(kind === 'socks5' ? 'socks5-list' : 'wireguard-list');
+  if (!list) return;
+  const items = egressesCache.filter((e) => e.kind === kind);
+  if (!items.length) {
+    list.innerHTML = kind === 'socks5'
+      ? `<div class="egress-empty">
+           <i data-feather="shuffle" class="w-5 h-5 mx-auto text-slate-600 mb-2"></i>
+           <p>No SOCKS5 egress yet — add one to route selected domains through a proxy.</p>
+         </div>`
+      : `<div class="egress-empty">
+           <i data-feather="lock" class="w-5 h-5 mx-auto text-slate-600 mb-2"></i>
+           <p>No WireGuard egress yet — paste a <span class="font-mono">.conf</span> to route selected domains through a tunnel.</p>
+         </div>`;
+    safeFeatherReplace();
+    return;
+  }
+  list.innerHTML = items.map(renderEgressSubcard).join('');
+  safeFeatherReplace();
+}
+
+function renderEgressSubcard(e) {
+  const status = !e.enabled ? 'disabled' : (e.health === 'online' ? 'online' : (e.health === 'offline' ? 'offline' : 'unknown'));
+  const stateClass = status === 'online' ? 'is-online' : (status === 'offline' ? 'is-offline' : 'is-disabled');
+  const cardClass = 'egress-subcard' + (status === 'offline' ? ' is-offline' : '') + (status === 'disabled' ? ' is-disabled' : '');
+  const latency = Number(e.latency_ms) > 0 ? `${Number(e.latency_ms).toFixed(0)} ms` : '—';
+  const traffic = humanBytes(Number(e.bytes_in || 0) + Number(e.bytes_out || 0));
+  const detail = e.kind === 'socks5'
+    ? (e.address || 'no address')
+    : (e.config_set ? 'Configuration saved' : 'No configuration');
+  const failClosed = e.fail_closed
+    ? `<span class="agent-badge egress-badge-failclosed" title="If this egress is offline, matching domains fail instead of falling back to this server">fail-closed</span>`
+    : '';
+  const error = e.last_error
+    ? `<div class="egress-error" title="${escapeHTML(e.last_error)}">${escapeHTML(e.last_error)}</div>`
+    : '';
+  const icon = e.kind === 'wireguard' ? 'lock' : 'shuffle';
+  return `
+    <div class="${escapeHTML(cardClass)}">
+      <div class="egress-head">
+        <div class="min-w-0 flex-1">
+          <div class="egress-title">
+            ${egressFlagHTML(e, 'agent-flag')}
+            <span class="egress-name">${escapeHTML(e.name || e.id)}</span>
+            <span class="agent-badge ${escapeHTML(stateClass)}">${escapeHTML(status)}</span>
+            ${failClosed}
+            <span class="egress-kind"><i data-feather="${escapeHTML(icon)}" class="w-3 h-3"></i>${escapeHTML(egressKindLabel(e.kind))}</span>
+          </div>
+          <div class="egress-meta mt-1" title="${escapeHTML(detail)}">${escapeHTML(detail)}${e.country ? ' · ' + escapeHTML(e.country) : ''}</div>
+        </div>
+        <div class="flex items-center gap-1 shrink-0">
+          <button type="button" class="agent-icon-btn" data-egress-toggle="${escapeHTML(e.id)}" data-enable="${escapeHTML(e.enabled ? '0' : '1')}" title="${escapeHTML(e.enabled ? 'Disable egress' : 'Enable egress')}" aria-label="${escapeHTML(e.enabled ? 'Disable egress' : 'Enable egress')}">
+            <i data-feather="${escapeHTML(e.enabled ? 'pause' : 'play')}" class="w-3.5 h-3.5"></i>
+          </button>
+          <button type="button" class="agent-icon-btn agent-icon-btn-danger" data-egress-delete="${escapeHTML(e.id)}" title="Delete egress" aria-label="Delete egress ${escapeHTML(e.name || e.id)}">
+            <i data-feather="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+      <div class="egress-stats">
+        <div class="egress-stat"><span>Latency</span><strong>${escapeHTML(latency)}</strong></div>
+        <div class="egress-stat"><span>Traffic</span><strong>${escapeHTML(traffic)}</strong></div>
+        <div class="egress-stat"><span>Last seen</span><strong>${escapeHTML(egressRelativeAge(e.last_seen))}</strong></div>
+      </div>
+      ${error}
+      <div class="egress-actions">
+        <button type="button" class="panel-btn panel-btn-sm panel-btn-neutral" data-egress-test="${escapeHTML(e.id)}">
+          <i data-feather="activity" class="w-3.5 h-3.5"></i> Test
+        </button>
+        <button type="button" class="panel-btn panel-btn-sm panel-btn-neutral" data-egress-edit="${escapeHTML(e.id)}">
+          <i data-feather="edit-2" class="w-3.5 h-3.5"></i> Edit
+        </button>
+      </div>
+    </div>`;
+}
+
+function egressRelativeAge(value) {
+  if (!value || String(value).startsWith('0001')) return '—';
+  const then = new Date(value).getTime();
+  if (!Number.isFinite(then) || then < Date.UTC(2000, 0, 1)) return '—';
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+  return `${Math.round(seconds / 86400)}d ago`;
+}
+
+function initEgressCountrySelect() {
+  const select = document.getElementById('egress-country');
+  if (!select || egressCountrySelectReady) return;
+  egressCountrySelectReady = true;
+  const pinned = AGENT_PINNED_COUNTRIES.filter((c, i, all) => AGENT_COUNTRY_CODES.includes(c) && all.indexOf(c) === i);
+  const rest = AGENT_COUNTRY_CODES.filter((c) => !pinned.includes(c));
+  const opts = (codes) => codes.map((c) =>
+    `<option value="${escapeHTML(c)}">${escapeHTML(countryName(c))} (${escapeHTML(c.toUpperCase())})</option>`).join('');
+  select.innerHTML = `<optgroup label="Frequently used">${opts(pinned)}</optgroup><optgroup label="All countries">${opts(rest)}</optgroup>`;
+  select.value = 'nl';
+}
+
+function updateEgressCountryFlag() {
+  const select = document.getElementById('egress-country');
+  const img = document.getElementById('egress-country-flag');
+  if (!select || !img) return;
+  if (select.value) paintCountryFlag(img, select.value);
+  else img.classList.add('hidden');
+}
+
+function openEgressForm(kind, item) {
+  initEgressCountrySelect();
+  const modal = document.getElementById('egress-modal');
+  if (!modal) return;
+  egressEditingId = item ? item.id : '';
+  document.getElementById('egress-id').value = item ? item.id : '';
+  document.getElementById('egress-kind').value = kind;
+  document.getElementById('egress-modal-title').textContent = item
+    ? `Edit ${egressKindLabel(kind)} egress`
+    : `Add ${egressKindLabel(kind)} egress`;
+  document.getElementById('egress-modal-subtitle').textContent = kind === 'wireguard'
+    ? 'Route selected domains through a userspace tunnel'
+    : 'Route selected domains through a SOCKS5 proxy';
+  document.getElementById('egress-socks5-fields').classList.toggle('hidden', kind !== 'socks5');
+  document.getElementById('egress-wireguard-fields').classList.toggle('hidden', kind !== 'wireguard');
+
+  document.getElementById('egress-name').value = item ? (item.name || '') : '';
+  const country = document.getElementById('egress-country');
+  country.value = item && item.country ? item.country.toLowerCase() : (currentConfig?.server?.country || 'nl').toLowerCase();
+  updateEgressCountryFlag();
+
+  const password = document.getElementById('egress-password');
+  password.value = '';
+  password.placeholder = item && item.password_set ? 'Saved — leave blank to keep' : 'Optional';
+  document.getElementById('egress-username').value = item ? (item.username || '') : '';
+  document.getElementById('egress-address').value = item ? (item.address || '') : '';
+  document.getElementById('egress-resolve').value = item && item.resolve === 'local' ? 'local' : 'remote';
+
+  const config = document.getElementById('egress-config');
+  config.value = '';
+  const configFile = document.getElementById('egress-config-file');
+  if (configFile) configFile.value = '';
+  const configFileName = document.getElementById('egress-config-file-name');
+  if (configFileName) configFileName.textContent = '';
+  config.placeholder = item && item.config_set
+    ? 'Saved configuration — paste a new one to replace it'
+    : '[Interface]\nPrivateKey = ...\nAddress = 10.9.0.2/32\n\n[Peer]\nPublicKey = ...\nEndpoint = vpn.example.com:51820\nAllowedIPs = 0.0.0.0/0';
+  document.getElementById('egress-fail-closed').checked = item ? !!item.fail_closed : true;
+  document.getElementById('egress-enabled').checked = item ? !!item.enabled : true;
+  document.getElementById('egress-form-status').textContent = '';
+
+  modal.classList.remove('hidden');
+  safeFeatherReplace();
+  document.getElementById('egress-name')?.focus();
+}
+
+function closeEgressForm() {
+  document.getElementById('egress-modal')?.classList.add('hidden');
+  egressEditingId = '';
+}
+
+async function saveEgressForm() {
+  const statusEl = document.getElementById('egress-form-status');
+  const setStatus = (text, error) => {
+    if (!statusEl) return;
+    statusEl.textContent = text || '';
+    statusEl.className = 'text-[11px] ' + (error ? 'text-red-400' : 'text-slate-400');
+  };
+  const id = document.getElementById('egress-id').value;
+  const kind = document.getElementById('egress-kind').value === 'wireguard' ? 'wireguard' : 'socks5';
+  const name = (document.getElementById('egress-name').value || '').trim();
+  if (!name) { setStatus('Give the egress a name.', true); return; }
+
+  const payload = {
+    kind,
+    name,
+    country: (document.getElementById('egress-country').value || '').trim(),
+    fail_closed: !!document.getElementById('egress-fail-closed').checked,
+    enabled: !!document.getElementById('egress-enabled').checked,
+  };
+  if (kind === 'socks5') {
+    const address = (document.getElementById('egress-address').value || '').trim();
+    if (!address) { setStatus('Enter the proxy address as host:port.', true); return; }
+    payload.address = address;
+    payload.username = (document.getElementById('egress-username').value || '').trim();
+    payload.resolve = document.getElementById('egress-resolve').value === 'local' ? 'local' : 'remote';
+    const password = document.getElementById('egress-password').value || '';
+    if (password) payload.password = password;
+  } else {
+    const config = (document.getElementById('egress-config').value || '').trim();
+    if (config) payload.config = config;
+    if (!id && !config) { setStatus('Paste a WireGuard configuration.', true); return; }
+  }
+
+  const btn = document.getElementById('save-egress-btn');
+  if (btn) btn.disabled = true;
+  setStatus('Saving…');
+  try {
+    const res = await fetch(api(id ? '/api/egresses/' + encodeURIComponent(id) : '/api/egresses'), {
+      method: id ? 'PUT' : 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not save the egress'));
+    await loadEgresses();
+    closeEgressForm();
+    showToast(id ? 'Egress updated.' : 'Egress added.', 'success');
+  } catch (e) {
+    setStatus(e.message || 'Could not save the egress', true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function testEgress(id, button) {
+  if (!id) return;
+  if (button) { button.disabled = true; button.classList.add('is-refreshing'); }
+  showToast('Testing egress…', 'info');
+  try {
+    const res = await fetch(api('/api/egresses/' + encodeURIComponent(id) + '/test'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    await loadEgresses();
+    if (res.ok && data.ok) {
+      showToast(`Egress online — ${Number(data.latency_ms || 0).toFixed(0)} ms`, 'success');
+    } else {
+      showToast(`Egress test failed — ${data.error || 'unreachable'}`, 'error');
+    }
+  } catch (e) {
+    showToast(e.message || 'Egress test failed', 'error');
+  } finally {
+    if (button) { button.disabled = false; button.classList.remove('is-refreshing'); }
+    safeFeatherReplace();
+  }
+}
+
+async function toggleEgress(id, enable) {
+  const res = await fetch(api('/api/egresses/' + encodeURIComponent(id) + (enable ? '/enable' : '/disable')), {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${authToken}` },
+  });
+  if (!res.ok) { showToast(await errorMessage(res, 'Could not update the egress.'), 'error'); return; }
+  showToast(enable ? 'Egress enabled.' : 'Egress disabled.', 'success');
+  await loadEgresses();
+}
+
+async function deleteEgress(id) {
+  const item = egressesCache.find((e) => e.id === id);
+  const ok = await confirmAction({
+    destructive: true,
+    title: 'Delete this egress?',
+    hint: 'ITS DOMAINS FALL BACK TO THE SERVICE OR LOCAL RELAY',
+    message: `${item ? (item.name || item.id) : 'This egress'} stops carrying traffic immediately. Domains assigned to it fall back unless a service default applies.`,
+    confirmText: 'DELETE EGRESS',
+  });
+  if (!ok) return;
+  const res = await fetch(api('/api/egresses/' + encodeURIComponent(id)), {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${authToken}` },
+  });
+  if (!res.ok) { showToast(await errorMessage(res, 'Could not delete the egress.'), 'error'); return; }
+  showToast('Egress deleted.', 'success');
+  await loadEgresses();
+}
+
+function handleEgressListClick(e) {
+  const test = e.target.closest('[data-egress-test]');
+  if (test) { testEgress(test.dataset.egressTest, test); return; }
+  const edit = e.target.closest('[data-egress-edit]');
+  if (edit) {
+    const item = egressesCache.find((x) => x.id === edit.dataset.egressEdit);
+    if (item) openEgressForm(item.kind, item);
+    return;
+  }
+  const toggle = e.target.closest('[data-egress-toggle]');
+  if (toggle) { toggleEgress(toggle.dataset.egressToggle, toggle.dataset.enable === '1'); return; }
+  const del = e.target.closest('[data-egress-delete]');
+  if (del) deleteEgress(del.dataset.egressDelete);
+}
+
+function initEgressPage() {
+  initEgressCountrySelect();
+  document.getElementById('add-socks5-btn')?.addEventListener('click', () => openEgressForm('socks5', null));
+  document.getElementById('add-wireguard-btn')?.addEventListener('click', () => openEgressForm('wireguard', null));
+  document.getElementById('refresh-egresses-btn')?.addEventListener('click', () => loadAgents());
+  document.getElementById('close-egress-btn')?.addEventListener('click', closeEgressForm);
+  document.getElementById('cancel-egress-btn')?.addEventListener('click', closeEgressForm);
+  document.getElementById('save-egress-btn')?.addEventListener('click', saveEgressForm);
+  document.getElementById('test-egress-btn')?.addEventListener('click', () => {
+    const id = document.getElementById('egress-id').value;
+    if (!id) {
+      const status = document.getElementById('egress-form-status');
+      if (status) { status.textContent = 'Save the egress first, then test it.'; status.className = 'text-[11px] text-slate-400'; }
+      return;
+    }
+    testEgress(id, document.getElementById('test-egress-btn'));
+  });
+  document.getElementById('egress-country')?.addEventListener('change', updateEgressCountryFlag);
+  document.getElementById('egress-config-file')?.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    const nameEl = document.getElementById('egress-config-file-name');
+    if (!file) {
+      if (nameEl) nameEl.textContent = '';
+      return;
+    }
+    if (file.size > 256 * 1024) {
+      showToast('That configuration is too large (limit 256 KiB).', 'error');
+      e.target.value = '';
+      return;
+    }
+    try {
+      const text = await file.text();
+      const area = document.getElementById('egress-config');
+      if (area) area.value = text;
+      if (nameEl) nameEl.textContent = file.name;
+    } catch (err) {
+      showToast('Could not read that configuration file.', 'error');
+    }
+  });
+  document.getElementById('socks5-list')?.addEventListener('click', handleEgressListClick);
+  document.getElementById('wireguard-list')?.addEventListener('click', handleEgressListClick);
+  document.getElementById('egress-modal')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeEgressForm();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !document.getElementById('egress-modal')?.classList.contains('hidden')) closeEgressForm();
+  });
+}
+
 const tabRoutes = {
   'dashboard': '/home',
   'proxied': '/proxied',
@@ -9747,6 +10307,7 @@ const tabRoutes = {
   'agents': '/agents',
   'clients': '/clients',
   'stream': '/logs',
+  'systemlog': '/system-log',
   'api': '/api',
   'rules': '/settings',
   'connect': '/guide'
@@ -9763,6 +10324,7 @@ const routeTabs = {
   '/clients': 'clients',
   '/logs': 'stream',
   '/stream': 'stream',
+  '/system-log': 'systemlog',
   '/api': 'api',
   '/settings': 'rules',
   '/guide': 'connect',
@@ -9828,6 +10390,9 @@ function switchTab(target, updateUrl = true, loadData = true) {
       }
       if (target === 'filters') {
         loadFiltering();
+      }
+      if (target === 'systemlog') {
+        loadSystemLog();
       }
       if (target === 'rules') {
         // Refresh the saved-vs-running comparison every time Settings opens,
@@ -10311,11 +10876,156 @@ function initAdminPathControls() {
   });
 }
 
+
+// ── Shell controls: engine switch, sidebar fold, system log ─────────────────
+let engineEnabledState = true;
+
+function applyEngineUI(enabled) {
+  engineEnabledState = !!enabled;
+  for (const [btnID, labelID] of [
+    ['engine-toggle-btn', 'engine-label'],
+    ['engine-toggle-mobile', 'engine-label-mobile'],
+  ]) {
+    const btn = document.getElementById(btnID);
+    const label = document.getElementById(labelID);
+    if (btn) {
+      btn.classList.toggle('is-on', engineEnabledState);
+      btn.classList.toggle('is-off', !engineEnabledState);
+      btn.setAttribute('aria-pressed', engineEnabledState ? 'true' : 'false');
+      btn.title = engineEnabledState
+        ? 'DNS policy engine is on'
+        : 'DNS policy engine is off — all queries resolve directly';
+    }
+    if (label) label.textContent = engineEnabledState ? 'Engine ON' : 'Engine OFF';
+  }
+}
+
+async function loadEngineState() {
+  try {
+    const res = await fetch(api('/api/engine'), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    if (!res.ok) return;
+    const data = await res.json();
+    applyEngineUI(data.enabled !== false);
+  } catch (e) { /* the sidebar keeps its last known state */ }
+}
+
+async function toggleEngine() {
+  const next = !engineEnabledState;
+  const btn = document.getElementById('engine-toggle-btn');
+  const mobileBtn = document.getElementById('engine-toggle-mobile');
+  if (btn) btn.disabled = true;
+  if (mobileBtn) mobileBtn.disabled = true;
+  try {
+    const res = await fetch(api('/api/engine'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: next }),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not change the engine state'));
+    const data = await res.json();
+    applyEngineUI(data.enabled !== false);
+    showToast(
+      data.enabled === false
+        ? 'Engine off — every query now resolves directly, with no rules or proxying.'
+        : 'Engine on — DNS rules, proxying and blocking are active.',
+      data.enabled === false ? 'info' : 'success',
+    );
+  } catch (e) {
+    showToast(e.message || 'Could not change the engine state', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (mobileBtn) mobileBtn.disabled = false;
+    safeFeatherReplace();
+  }
+}
+
+function applySidebarCollapsed(collapsed) {
+  const on = !!collapsed;
+  document.documentElement.classList.toggle('sidebar-collapsed', on);
+  try { localStorage.setItem('digitdns_sidebar_collapsed', on ? '1' : '0'); } catch (e) {}
+  const btn = document.getElementById('sidebar-collapse-btn');
+  if (btn) {
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.title = on ? 'Expand sidebar' : 'Collapse sidebar';
+    btn.setAttribute('aria-label', btn.title);
+  }
+}
+
+function initShellControls() {
+  let collapsed = false;
+  try { collapsed = localStorage.getItem('digitdns_sidebar_collapsed') === '1'; } catch (e) {}
+  applySidebarCollapsed(collapsed);
+  document.getElementById('engine-toggle-btn')?.addEventListener('click', toggleEngine);
+  document.getElementById('engine-toggle-mobile')?.addEventListener('click', toggleEngine);
+  document.getElementById('sidebar-collapse-btn')?.addEventListener('click', () => {
+    applySidebarCollapsed(!document.documentElement.classList.contains('sidebar-collapsed'));
+  });
+  loadEngineState();
+}
+
+let systemLogText = '';
+
+async function loadSystemLog() {
+  const view = document.getElementById('system-log-view');
+  if (view) view.textContent = 'Loading…';
+  try {
+    const res = await fetch(api('/api/system-log?limit=2000'), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not load the system log'));
+    const data = await res.json();
+    const lines = Array.isArray(data.lines) ? data.lines : [];
+    systemLogText = lines.join('\n');
+    if (view) view.textContent = systemLogText || 'No log lines captured yet.';
+  } catch (e) {
+    systemLogText = '';
+    if (view) view.textContent = e.message || 'Could not load the system log.';
+  }
+}
+
+function copySystemLog() {
+  if (!systemLogText) {
+    showToast('The system log is empty.', 'info');
+    return;
+  }
+  copyClipboard(systemLogText, 'System log copied.');
+}
+
+async function exportSystemLog() {
+  try {
+    const res = await fetch(api('/api/system-log/export'), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not export the system log'));
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    link.download = `digitdns-system-${stamp}.log`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast('System log exported.', 'success');
+  } catch (e) {
+    showToast(e.message || 'Could not export the system log', 'error');
+  }
+}
+
+function initSystemLogPage() {
+  document.getElementById('system-log-refresh-btn')?.addEventListener('click', loadSystemLog);
+  document.getElementById('system-log-copy-btn')?.addEventListener('click', copySystemLog);
+  document.getElementById('system-log-export-btn')?.addEventListener('click', exportSystemLog);
+}
+
 function initEventListeners() {
   initUpstreamAddressScroll();
   initUpstreamPresetBrowser();
   initServices();
   initAgentPage();
+  initShellControls();
+  initSystemLogPage();
   initOnboarding();
   initDiffModal();
   // Tabs Navigation (Sidebar & Mobile Bottom Bar)
@@ -11901,7 +12611,7 @@ function clientsPanelMessage(icon, title, body, titleClass = 'text-slate-300') {
   if (!listContainer) return;
   listContainer.innerHTML = `
     <div class="clients-placeholder col-span-1 md:col-span-2 glass-panel panel-card p-8 text-center text-slate-400">
-      <i data-feather="${icon}" class="w-8 h-8 mx-auto text-slate-600 mb-2"></i>
+      <i data-feather="${escapeHTML(icon)}" class="w-8 h-8 mx-auto text-slate-600 mb-2"></i>
       <div class="font-bold ${titleClass} font-heading">${title}</div>
       <p class="text-xs text-slate-500 mt-1">${body}</p>
     </div>

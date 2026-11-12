@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,6 +59,8 @@ internal data class RelayChoice(
     val label: String,
     val country: String,
     val detail: String = "",
+    /** Set on the first row of a group; the dialog draws the heading above it. */
+    val group: String? = null,
 )
 
 /**
@@ -98,15 +101,34 @@ internal fun RelayPickerDialog(
                 country = state.serverCountry,
             ),
         )
-        state.relayAgents().forEach { agent ->
+        state.relayAgents().forEachIndexed { index, agent ->
             add(
                 RelayChoice(
                     id = agent.id,
                     label = agent.name.ifBlank { agent.id },
                     country = agent.country,
                     detail = agent.country,
+                    group = if (index == 0) stringResource(R.string.egress_group_agents) else null,
                 ),
             )
+        }
+        var lastGroup = ""
+        state.relayEgresses().forEach { (id, egress) ->
+            val group = if (egress.kind == "wireguard") {
+                stringResource(R.string.egress_group_wireguard)
+            } else {
+                stringResource(R.string.egress_group_socks5)
+            }
+            add(
+                RelayChoice(
+                    id = id,
+                    label = egress.name.ifBlank { id },
+                    country = egress.country,
+                    detail = egress.country,
+                    group = group.takeIf { it != lastGroup },
+                ),
+            )
+            lastGroup = group
         }
     }
     val stored = state.storedRelayId(domain)
@@ -146,15 +168,34 @@ internal fun BulkRelayPickerDialog(
                 country = state.serverCountry,
             ),
         )
-        state.relayAgents().forEach { agent ->
+        state.relayAgents().forEachIndexed { index, agent ->
             add(
                 RelayChoice(
                     id = agent.id,
                     label = agent.name.ifBlank { agent.id },
                     country = agent.country,
                     detail = agent.country,
+                    group = if (index == 0) stringResource(R.string.egress_group_agents) else null,
                 ),
             )
+        }
+        var lastGroup = ""
+        state.relayEgresses().forEach { (id, egress) ->
+            val group = if (egress.kind == "wireguard") {
+                stringResource(R.string.egress_group_wireguard)
+            } else {
+                stringResource(R.string.egress_group_socks5)
+            }
+            add(
+                RelayChoice(
+                    id = id,
+                    label = egress.name.ifBlank { id },
+                    country = egress.country,
+                    detail = egress.country,
+                    group = group.takeIf { it != lastGroup },
+                ),
+            )
+            lastGroup = group
         }
     }
     RelayChoiceDialog(
@@ -189,6 +230,14 @@ internal fun RelayChoiceDialog(
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
                 options.forEach { option ->
+                    option.group?.let { heading ->
+                        Text(
+                            heading.uppercase(),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 2.dp),
+                        )
+                    }
                     RelayChoiceRow(
                         option = option,
                         selected = option.id == selected,

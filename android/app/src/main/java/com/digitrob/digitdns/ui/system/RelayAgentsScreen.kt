@@ -67,10 +67,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
+import com.digitrob.digitdns.core.network.EgressSaveRequest
+import com.digitrob.digitdns.domain.model.EgressInfo
 import com.digitrob.digitdns.domain.model.RelayAgentInfo
+import com.digitrob.digitdns.domain.model.egressTrafficLabel
 import com.digitrob.digitdns.domain.model.relayRelativeAge
 import com.digitrob.digitdns.ui.components.CountryFlag
 import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
@@ -105,6 +109,9 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
     var creating by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<RelayAgentInfo?>(null) }
     var deleting by remember { mutableStateOf<RelayAgentInfo?>(null) }
+    var creatingEgressKind by remember { mutableStateOf<String?>(null) }
+    var editingEgress by remember { mutableStateOf<EgressInfo?>(null) }
+    var deletingEgress by remember { mutableStateOf<EgressInfo?>(null) }
     val onlineCount = state.agents.count { it.isOnline() }
 
     LaunchedEffect(state.message) {
@@ -146,22 +153,17 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
                 modifier = Modifier.fillMaxSize(),
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    // No connection badge here: the page is about agents, and the
-                    // freed right-hand space carries the at-a-glance count instead.
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TextButton(
-                            onClick = { creating = true },
-                            modifier = Modifier.height(36.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(stringResource(R.string.agents_add))
-                        }
-                        Spacer(Modifier.weight(1f))
+                    EgressSectionHeader(
+                        title = stringResource(R.string.egress_relay_agents_title),
+                        body = stringResource(R.string.egress_relay_agents_body),
+                        action = stringResource(R.string.agents_add),
+                        onAdd = { creating = true },
+                    )
+                }
+
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        EgressSummary(state.egresses)
                         if (state.agents.isNotEmpty()) {
                             Text(
                                 text = stringResource(
@@ -172,6 +174,7 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
                                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 12.dp),
                             )
                         }
                     }
@@ -216,6 +219,58 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
                             onCopyKey = { viewModel.copyKey(agent.id) },
                             onRotateKey = { viewModel.rotateKey(agent.id) },
                             onTest = { viewModel.test(agent.id) },
+                        )
+                    }
+                }
+
+                val socks = state.egresses.filter { !it.isWireGuard }
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    EgressSectionHeader(
+                        title = stringResource(R.string.egress_socks5_title),
+                        body = stringResource(R.string.egress_socks5_body),
+                        action = stringResource(R.string.egress_add_socks5),
+                        onAdd = { creatingEgressKind = "socks5" },
+                    )
+                }
+                if (socks.isEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        EmptyEgress(stringResource(R.string.egress_empty_socks5))
+                    }
+                } else {
+                    items(socks, key = { "egress-" + it.id }) { egress ->
+                        EgressCard(
+                            egress = egress,
+                            testing = state.testingEgressId == egress.id,
+                            onEdit = { editingEgress = egress },
+                            onToggle = { viewModel.setEgressEnabled(egress.id, !egress.enabled) },
+                            onDelete = { deletingEgress = egress },
+                            onTest = { viewModel.testEgress(egress.id) },
+                        )
+                    }
+                }
+
+                val wireguard = state.egresses.filter { it.isWireGuard }
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    EgressSectionHeader(
+                        title = stringResource(R.string.egress_wireguard_title),
+                        body = stringResource(R.string.egress_wireguard_body),
+                        action = stringResource(R.string.egress_add_wireguard),
+                        onAdd = { creatingEgressKind = "wireguard" },
+                    )
+                }
+                if (wireguard.isEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        EmptyEgress(stringResource(R.string.egress_empty_wireguard))
+                    }
+                } else {
+                    items(wireguard, key = { "egress-" + it.id }) { egress ->
+                        EgressCard(
+                            egress = egress,
+                            testing = state.testingEgressId == egress.id,
+                            onEdit = { editingEgress = egress },
+                            onToggle = { viewModel.setEgressEnabled(egress.id, !egress.enabled) },
+                            onDelete = { deletingEgress = egress },
+                            onTest = { viewModel.testEgress(egress.id) },
                         )
                     }
                 }
@@ -265,6 +320,52 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
         )
     }
 
+    creatingEgressKind?.let { kind ->
+        EgressFormDialog(
+            kind = kind,
+            egress = null,
+            saving = state.isSaving,
+            onDismiss = { creatingEgressKind = null },
+            onSave = { body ->
+                viewModel.createEgress(body)
+                creatingEgressKind = null
+            },
+        )
+    }
+
+    editingEgress?.let { egress ->
+        EgressFormDialog(
+            kind = egress.kind,
+            egress = egress,
+            saving = state.isSaving,
+            testing = state.testingEgressId == egress.id,
+            onTest = { viewModel.testEgress(egress.id) },
+            onDismiss = { editingEgress = null },
+            onSave = { body ->
+                viewModel.updateEgress(egress.id, body)
+                editingEgress = null
+            },
+        )
+    }
+
+    deletingEgress?.let { egress ->
+        PanelDialog(
+            onDismissRequest = { deletingEgress = null },
+            solid = true,
+            title = { Text(stringResource(R.string.egress_delete_title, egress.displayName)) },
+            text = { Text(stringResource(R.string.egress_delete_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteEgress(egress.id)
+                    deletingEgress = null
+                }) { Text(stringResource(R.string.action_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingEgress = null }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
+    }
+
     state.revealedKey?.let { revealed ->
         PanelDialog(
             onDismissRequest = viewModel::dismissKey,
@@ -303,6 +404,448 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
                 TextButton(onClick = viewModel::dismissKey) { Text(stringResource(R.string.action_done)) }
             },
         )
+    }
+}
+
+@Composable
+private fun EgressSummary(egresses: List<EgressInfo>) {
+    val enabled = egresses.filter { it.enabled }
+    val healthy = enabled.count { it.health == "online" }
+    val failed = enabled.count { it.health == "offline" }
+    val failClosed = enabled.count { it.failClosed }
+    val traffic = egresses.sumOf { it.bytesIn + it.bytesOut }
+    val trafficLabel = egressTrafficLabel(traffic)
+    PanelCard(contentPadding = 8.dp) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            EgressSummaryItem(stringResource(R.string.egress_summary_healthy, healthy), Modifier.weight(1f))
+            EgressSummaryItem(stringResource(R.string.egress_summary_failed, failed), Modifier.weight(1f))
+            EgressSummaryItem(stringResource(R.string.egress_summary_traffic, trafficLabel), Modifier.weight(1f))
+            EgressSummaryItem(stringResource(R.string.egress_summary_failclosed, failClosed), Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun EgressSummaryItem(label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontFamily = PanelMono,
+                fontWeight = FontWeight.Bold,
+                fontSize = 9.sp,
+                lineHeight = 11.sp,
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun EgressSectionHeader(title: String, body: String, action: String, onAdd: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text(
+                body,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        TextButton(onClick = onAdd, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(action, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun EmptyEgress(body: String) {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).heightIn(min = 76.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            body,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(10.dp),
+        )
+    }
+}
+
+@Composable
+@Suppress("LongMethod")
+private fun EgressCard(
+    egress: EgressInfo,
+    testing: Boolean,
+    onEdit: () -> Unit,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit,
+    onTest: () -> Unit,
+) {
+    val statusColor = when {
+        !egress.enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+        egress.health == "online" -> DigitDnsTheme.colors.success
+        egress.health == "offline" -> DigitDnsTheme.colors.warning
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    PanelCard(
+        modifier = Modifier.fillMaxWidth().alpha(if (egress.enabled) 1f else 0.62f),
+        contentPadding = 8.dp,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                CountryFlag(
+                    country = egress.country,
+                    width = 24.dp,
+                    height = 18.dp,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            egress.displayName,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        StatusBadge(egress.statusLabel, statusColor)
+                        if (egress.failClosed) {
+                            Spacer(Modifier.width(4.dp))
+                            StatusBadge(
+                                stringResource(R.string.egress_fail_closed_badge),
+                                DigitDnsTheme.colors.warning,
+                            )
+                        }
+                    }
+                    Text(
+                        text = "${egress.kindLabel} · ${egress.detail}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                    AgentActionButton(
+                        icon = Icons.Filled.Edit,
+                        label = stringResource(R.string.egress_edit),
+                        onClick = onEdit,
+                    )
+                    AgentActionButton(
+                        icon = if (egress.enabled) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        label = stringResource(if (egress.enabled) R.string.agents_disable else R.string.agents_enable),
+                        onClick = onToggle,
+                    )
+                    AgentActionButton(
+                        icon = Icons.Filled.Delete,
+                        label = stringResource(R.string.egress_delete),
+                        onClick = onDelete,
+                        tint = DigitDnsTheme.colors.danger,
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                EgressStat(stringResource(R.string.egress_latency), egress.latencyLabel, Modifier.weight(1f))
+                EgressStat(stringResource(R.string.egress_traffic), egress.trafficLabel, Modifier.weight(1f))
+                EgressStat(stringResource(R.string.egress_last_seen), egress.lastSeenLabel, Modifier.weight(1f))
+            }
+
+            if (egress.lastError.isNotBlank()) {
+                Text(
+                    egress.lastError,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
+                    color = DigitDnsTheme.colors.warning,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onTest,
+                    enabled = !testing,
+                    modifier = Modifier.height(34.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                ) {
+                    if (testing) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(6.dp))
+                    } else {
+                        Icon(Icons.Filled.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(stringResource(if (testing) R.string.egress_testing else R.string.egress_test), maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EgressStat(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(
+            text = label.uppercase(),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, lineHeight = 10.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontFamily = PanelMono,
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp,
+                lineHeight = 12.sp,
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+@Suppress("LongMethod", "LongParameterList")
+private fun EgressFormDialog(
+    kind: String,
+    egress: EgressInfo?,
+    saving: Boolean,
+    testing: Boolean = false,
+    onTest: (() -> Unit)? = null,
+    onDismiss: () -> Unit,
+    onSave: (EgressSaveRequest) -> Unit,
+) {
+    val wireguard = kind == "wireguard"
+    var name by remember(egress) { mutableStateOf(egress?.name.orEmpty()) }
+    var country by remember(egress) { mutableStateOf(egress?.country.orEmpty().uppercase(Locale.US)) }
+    var address by remember(egress) { mutableStateOf(egress?.address.orEmpty()) }
+    var username by remember(egress) { mutableStateOf(egress?.username.orEmpty()) }
+    var password by remember(egress) { mutableStateOf("") }
+    var config by remember(egress) { mutableStateOf("") }
+    var resolveLocal by remember(egress) { mutableStateOf(egress?.resolve == "local") }
+    var failClosed by remember(egress) { mutableStateOf(egress?.failClosed ?: true) }
+    var enabled by remember(egress) { mutableStateOf(egress?.enabled ?: true) }
+    val editing = egress != null
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val configPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+                    config = reader.readText().take(256 * 1024)
+                }
+            }
+        }
+    }
+    val valid = name.trim().isNotEmpty() &&
+        (if (wireguard) config.isNotBlank() || (editing && egress?.configSet == true) else address.trim().isNotEmpty())
+
+    PanelDialog(
+        onDismissRequest = onDismiss,
+        solid = true,
+        title = {
+            Text(
+                if (editing) {
+                    stringResource(R.string.egress_edit_title, if (wireguard) "WireGuard" else "SOCKS5")
+                } else {
+                    stringResource(
+                        if (wireguard) R.string.egress_add_wireguard_title else R.string.egress_add_socks5_title,
+                    )
+                },
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.egress_name)) },
+                    placeholder = { Text(stringResource(R.string.egress_name_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                CountryField(selected = country, onSelect = { country = it })
+                if (wireguard) {
+                    OutlinedTextField(
+                        value = config,
+                        onValueChange = { config = it },
+                        label = { Text(stringResource(R.string.egress_config)) },
+                        placeholder = {
+                            Text(
+                                if (editing && egress?.configSet == true) {
+                                    stringResource(R.string.egress_config_saved)
+                                } else {
+                                    stringResource(R.string.egress_config_hint)
+                                },
+                            )
+                        },
+                        minLines = 5,
+                        maxLines = 9,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            configPicker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
+                        },
+                        modifier = Modifier.height(34.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(stringResource(R.string.egress_upload_conf), maxLines = 1)
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = address,
+                        onValueChange = { address = it },
+                        label = { Text(stringResource(R.string.egress_address)) },
+                        placeholder = { Text(stringResource(R.string.egress_address_hint)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = username,
+                        onValueChange = { username = it },
+                        label = { Text(stringResource(R.string.egress_username)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text(stringResource(R.string.egress_password)) },
+                        placeholder = {
+                            Text(
+                                if (editing && egress?.passwordSet == true) {
+                                    stringResource(R.string.egress_password_saved)
+                                } else {
+                                    ""
+                                },
+                            )
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    ToggleRow(
+                        title = stringResource(R.string.egress_resolve),
+                        subtitle = stringResource(
+                            if (resolveLocal) R.string.egress_resolve_local else R.string.egress_resolve_remote,
+                        ),
+                        checked = resolveLocal,
+                        onCheckedChange = { resolveLocal = it },
+                    )
+                }
+                ToggleRow(
+                    title = stringResource(R.string.egress_fail_closed),
+                    subtitle = stringResource(R.string.egress_fail_closed_hint),
+                    checked = failClosed,
+                    onCheckedChange = { failClosed = it },
+                )
+                ToggleRow(
+                    title = stringResource(R.string.egress_enabled),
+                    subtitle = stringResource(R.string.egress_enabled_hint),
+                    checked = enabled,
+                    onCheckedChange = { enabled = it },
+                )
+            }
+        },
+        confirmButton = {
+            Row {
+                if (onTest != null) {
+                    TextButton(onClick = onTest, enabled = !testing) {
+                        Text(stringResource(if (testing) R.string.egress_testing else R.string.egress_test))
+                    }
+                }
+                TextButton(
+                    onClick = {
+                        onSave(
+                            EgressSaveRequest(
+                                kind = kind,
+                                name = name.trim(),
+                                country = country.trim().uppercase(Locale.US),
+                                address = if (wireguard) null else address.trim(),
+                                username = if (wireguard) null else username.trim(),
+                                password = if (wireguard) null else password.ifBlank { null },
+                                config = if (wireguard) config.trim().ifBlank { null } else null,
+                                resolve = if (wireguard) null else if (resolveLocal) "local" else "remote",
+                                failClosed = failClosed,
+                                enabled = enabled,
+                            ),
+                        )
+                    },
+                    enabled = valid && !saving,
+                ) { Text(stringResource(if (editing) R.string.action_save else R.string.action_add)) }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun ToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

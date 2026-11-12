@@ -15,11 +15,23 @@ import (
 // family is deliberately left empty so the DNS handler can sink that query
 // instead of falling back to the hub's address.
 type RelayTarget struct {
+	// Kind is "local", "agent" or "egress". A local target has no addresses
+	// here; the DNS handler fills the hub's public IP.
+	Kind string
+	// Agent fields are populated for Kind == "agent".
 	AgentID string
 	Name    string
 	Country string
 	IPv4    net.IP
 	IPv6    net.IP
+	// Egress fields are populated for Kind == "egress".
+	EgressID   string
+	EgressName string
+	EgressKind string
+	FailClosed bool
+	Healthy    bool
+	// FallbackReason explains a local fallback or a fail-closed refusal.
+	FallbackReason string
 }
 
 // RelayRouter holds the live geo-agent assignment map. It is read on the DNS
@@ -38,6 +50,7 @@ type RelayRouter struct {
 	domainAgents   assignmentIndex
 	serviceAgents  map[string]string
 	domainServices assignmentIndex
+	egresses       *EgressRegistry
 
 	onlineFor time.Duration
 	now       func() time.Time
@@ -122,6 +135,12 @@ const (
 	// before a two-minute outage.
 	AgentOnlineFor = 90 * time.Second
 )
+
+func (r *RelayRouter) SetEgressRegistry(e *EgressRegistry) {
+	r.mu.Lock()
+	r.egresses = e
+	r.mu.Unlock()
+}
 
 func NewRelayRouter() *RelayRouter {
 	return &RelayRouter{
@@ -248,6 +267,79 @@ func (r *RelayRouter) Reload(db *database.DB) error {
 	r.SetAgents(agents)
 	r.SetAssignments(domainAgents, serviceAgents, domainServices)
 	return nil
+}
+
+// LookupFor resolves a domain to the egress that should carry it. It is the
+// DNS/proxy entry point: unlike Lookup it always returns a target, using
+// Kind "local" when no assignment applies. A deleted or disabled egress falls
+// back to local unless it is fail-closed, in which case the caller must fail
+// closed rather than leak the origin.
+func (r *RelayRouter) LookupFor(domain, clientIP string) (RelayTarget, bool) {
+	d := normalizeRelayDomain(domain)
+	if d == "" {
+		return RelayTarget{Kind: "local", Healthy: true}, true
+	}
+	r.mu.RLock()
+	targetID := r.domainAgents.lookup(d)
+	if targetID == "__inherit__" {
+		targetID = ""
+	}
+	if targetID == "" {
+		if serviceID := r.domainServices.lookup(d); serviceID != "" {
+			targetID = r.serviceAgents[serviceID]
+		}
+	}
+	agent, hasAgent := r.agents[targetID]
+	ipv4 := r.agentIPv4[targetID]
+	ipv6 := r.agentIPv6[targetID]
+	egresses := r.egresses
+	r.mu.RUnlock()
+
+	if strings.HasPrefix(targetID, "egress:") {
+		id := strings.TrimPrefix(targetID, "egress:")
+		if egresses == nil {
+			return RelayTarget{Kind: "local", Healthy: true}, true
+		}
+		view, ok := egresses.Lookup(id)
+		if !ok {
+			return RelayTarget{Kind: "local", Healthy: true}, true
+		}
+		if !view.Enabled {
+			// A disabled egress is still an explicit routing policy. Fail closed
+			// rather than silently leaking the origin through the hub when the
+			// operator asked for no fallback.
+			if view.FailClosed {
+				return RelayTarget{
+					Kind: "egress", EgressID: id, EgressName: view.Name,
+					EgressKind: view.Kind, Country: view.Country, FailClosed: true, Healthy: false,
+					FallbackReason: "egress disabled (fail-closed)",
+				}, true
+			}
+			return RelayTarget{Kind: "local", Healthy: true, FallbackReason: "egress disabled"}, true
+		}
+		if view.Health != "online" {
+			if view.FailClosed {
+				return RelayTarget{
+					Kind: "egress", EgressID: id, EgressName: view.Name,
+					EgressKind: view.Kind, Country: view.Country, FailClosed: true, Healthy: false,
+					FallbackReason: "egress offline (fail-closed)",
+				}, true
+			}
+			return RelayTarget{Kind: "local", Healthy: true, FallbackReason: "egress offline"}, true
+		}
+		return RelayTarget{
+			Kind: "egress", EgressID: id, EgressName: view.Name,
+			EgressKind: view.Kind, Country: view.Country, Healthy: true,
+		}, true
+	}
+
+	if !hasAgent || !r.healthy(agent) {
+		return RelayTarget{Kind: "local", Healthy: true}, true
+	}
+	return RelayTarget{
+		Kind: "agent", AgentID: agent.ID, Name: agent.Name, Country: agent.Country,
+		IPv4: ipv4, IPv6: ipv6, Healthy: true,
+	}, true
 }
 
 // Lookup returns the agent that should answer a proxied domain. A domain-level

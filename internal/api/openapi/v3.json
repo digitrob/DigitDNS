@@ -79,6 +79,10 @@
     {
       "name": "system",
       "description": "Cache, configuration snapshot, benchmark and self-update."
+    },
+    {
+      "name": "egresses",
+      "description": "Hub-side SOCKS5 and WireGuard exit paths the relay dials through."
     }
   ],
   "components": {
@@ -4505,6 +4509,477 @@
         },
         "description": "Validates, writes and hot-applies a PEM pair for the named surface. The private key is never returned.",
         "operationId": "postTlsCert"
+      }
+    },
+    "/api/v3/egresses": {
+      "get": {
+        "tags": [
+          "egresses"
+        ],
+        "summary": "List egress options",
+        "description": "Lists hub-side SOCKS5 and WireGuard egresses with health, latency and traffic. Secrets are never returned; password_set and config_set report whether one is stored.",
+        "operationId": "getEgresses",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "egresses"
+        ],
+        "summary": "Create an egress option",
+        "description": "Creates a SOCKS5 or WireGuard egress. The SOCKS5 password and WireGuard configuration are write-only. Fail-closed defaults to true when omitted.",
+        "operationId": "postEgresses",
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "socks5",
+                      "wireguard"
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "country": {
+                    "type": "string",
+                    "description": "Two-letter country code."
+                  },
+                  "address": {
+                    "type": "string",
+                    "description": "SOCKS5 host:port."
+                  },
+                  "username": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "description": "Write-only. Never returned."
+                  },
+                  "config": {
+                    "type": "string",
+                    "description": "WireGuard wg-quick configuration. Write-only; contains the private key."
+                  },
+                  "resolve": {
+                    "type": "string",
+                    "enum": [
+                      "remote",
+                      "local"
+                    ]
+                  },
+                  "test_host": {
+                    "type": "string"
+                  },
+                  "fail_closed": {
+                    "type": "boolean"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v3/egresses/{id}": {
+      "get": {
+        "tags": [
+          "egresses"
+        ],
+        "summary": "Get one egress option",
+        "description": "Returns one egress with the same secret-free view as the list.",
+        "operationId": "getEgress",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "egresses"
+        ],
+        "summary": "Update an egress option",
+        "description": "Updates one egress. Omitted secrets keep their stored value; an empty string clears one.",
+        "operationId": "putEgress",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "socks5",
+                      "wireguard"
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "country": {
+                    "type": "string",
+                    "description": "Two-letter country code."
+                  },
+                  "address": {
+                    "type": "string",
+                    "description": "SOCKS5 host:port."
+                  },
+                  "username": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "description": "Write-only. Never returned."
+                  },
+                  "config": {
+                    "type": "string",
+                    "description": "WireGuard wg-quick configuration. Write-only; contains the private key."
+                  },
+                  "resolve": {
+                    "type": "string",
+                    "enum": [
+                      "remote",
+                      "local"
+                    ]
+                  },
+                  "test_host": {
+                    "type": "string"
+                  },
+                  "fail_closed": {
+                    "type": "boolean"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "egresses"
+        ],
+        "summary": "Patch an egress option",
+        "description": "Partial update. Omitted secrets keep their stored value.",
+        "operationId": "patchEgress",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "socks5",
+                      "wireguard"
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "country": {
+                    "type": "string",
+                    "description": "Two-letter country code."
+                  },
+                  "address": {
+                    "type": "string",
+                    "description": "SOCKS5 host:port."
+                  },
+                  "username": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "description": "Write-only. Never returned."
+                  },
+                  "config": {
+                    "type": "string",
+                    "description": "WireGuard wg-quick configuration. Write-only; contains the private key."
+                  },
+                  "resolve": {
+                    "type": "string",
+                    "enum": [
+                      "remote",
+                      "local"
+                    ]
+                  },
+                  "test_host": {
+                    "type": "string"
+                  },
+                  "fail_closed": {
+                    "type": "boolean"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "egresses"
+        ],
+        "summary": "Delete an egress option",
+        "description": "Deletes an egress. Domains assigned to it fall back unless the egress was fail-closed.",
+        "operationId": "deleteEgress",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v3/egresses/{id}/test": {
+      "post": {
+        "tags": [
+          "egresses"
+        ],
+        "summary": "Test an egress option",
+        "description": "Opens one probe through the egress and returns ok plus latency_ms, or ok=false with an error.",
+        "operationId": "postEgressTest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v3/egresses/{id}/enable": {
+      "post": {
+        "tags": [
+          "egresses"
+        ],
+        "summary": "Enable an egress option",
+        "description": "Includes the egress in routing and health checks.",
+        "operationId": "postEgressEnable",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v3/egresses/{id}/disable": {
+      "post": {
+        "tags": [
+          "egresses"
+        ],
+        "summary": "Disable an egress option",
+        "description": "Stops routing through the egress. A fail-closed egress refuses instead of falling back to the hub.",
+        "operationId": "postEgressDisable",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v3/engine": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Get engine state",
+        "description": "Reports whether the DNS policy engine is on. Off means every query resolves directly, without rules, proxying or blocking.",
+        "operationId": "getEngine",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Set engine state",
+        "description": "Turns the DNS policy engine on or off live and persists the choice.",
+        "operationId": "postEngine",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Set engine state",
+        "description": "Turns the DNS policy engine on or off live and persists the choice.",
+        "operationId": "putEngine",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v3/system-log": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Get the system log tail",
+        "description": "Returns the newest bounded in-process daemon log lines. The authoritative log remains stderr/journald.",
+        "operationId": "getSystemLog",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
       }
     }
   }

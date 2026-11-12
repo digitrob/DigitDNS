@@ -813,6 +813,177 @@ func (a *API) handleV3AgentItem(w http.ResponseWriter, r *http.Request) {
 }
 
 // -----------------------------------------------------------------------------
+// Hub-side egress options (delegated)
+// -----------------------------------------------------------------------------
+
+func (a *API) handleV3Egresses(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		egresses, err := a.v3Backend.Egresses()
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "internal", err.Error())
+			return
+		}
+		if egresses == nil {
+			egresses = []map[string]any{}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"egresses": egresses})
+	case http.MethodPost:
+		body, ok := v3Body(r)
+		if !ok {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			return
+		}
+		resp, err := a.v3Backend.CreateEgress(r, body)
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(resp)
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
+	}
+}
+
+func (a *API) handleV3EgressItem(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v3/egresses/"), "/")
+	parts := strings.SplitN(rest, "/", 2)
+	id := parts[0]
+	action := ""
+	if len(parts) == 2 {
+		action = parts[1]
+	}
+	if id == "" {
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "missing egress id")
+		return
+	}
+
+	var resp map[string]any
+	var err error
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		if action != "" {
+			writeProblemAt(w, r, http.StatusNotFound, "not_found", "unknown egress action")
+			return
+		}
+		var all []map[string]any
+		all, err = a.v3Backend.Egresses()
+		if err == nil {
+			for _, item := range all {
+				if item["id"] == id {
+					resp = map[string]any{"egress": item}
+					break
+				}
+			}
+			if resp == nil {
+				writeProblemAt(w, r, http.StatusNotFound, "not_found", "egress not found")
+				return
+			}
+		}
+	case http.MethodPut, http.MethodPatch:
+		if action != "" {
+			writeProblemAt(w, r, http.StatusNotFound, "not_found", "unknown egress action")
+			return
+		}
+		body, ok := v3Body(r)
+		if !ok {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			return
+		}
+		resp, err = a.v3Backend.UpdateEgress(r, id, body)
+	case http.MethodDelete:
+		if action != "" {
+			writeProblemAt(w, r, http.StatusNotFound, "not_found", "unknown egress action")
+			return
+		}
+		resp, err = a.v3Backend.DeleteEgress(r, id)
+	case http.MethodPost:
+		switch action {
+		case "enable":
+			resp, err = a.v3Backend.SetEgressEnabled(r, id, true)
+		case "disable":
+			resp, err = a.v3Backend.SetEgressEnabled(r, id, false)
+		case "test":
+			resp, err = a.v3Backend.TestEgress(r, id)
+		default:
+			writeProblemAt(w, r, http.StatusNotFound, "not_found", "unknown egress action")
+			return
+		}
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, PUT, PATCH, POST or DELETE")
+		return
+	}
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+		return
+	}
+	if resp == nil {
+		resp = map[string]any{"success": true}
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (a *API) handleV3Engine(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		_ = json.NewEncoder(w).Encode(a.v3Backend.EngineStatus())
+	case http.MethodPost, http.MethodPut:
+		body, ok := v3Body(r)
+		if !ok {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			return
+		}
+		resp, err := a.v3Backend.SaveEngine(r, body)
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or PUT")
+	}
+}
+
+func (a *API) handleV3SystemLog(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD")
+		return
+	}
+	limit := 1000
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			if n > 5000 {
+				n = 5000
+			}
+			limit = n
+		}
+	}
+	resp, err := a.v3Backend.SystemLog(limit)
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "internal", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// -----------------------------------------------------------------------------
 // Rules & access (delegated)
 // -----------------------------------------------------------------------------
 

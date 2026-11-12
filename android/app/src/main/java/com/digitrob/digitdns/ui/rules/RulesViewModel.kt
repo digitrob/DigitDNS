@@ -8,6 +8,7 @@ import com.digitrob.digitdns.core.network.ApiException
 import com.digitrob.digitdns.core.network.ResolutionProfileDto
 import com.digitrob.digitdns.core.network.ResolutionSaveRequest
 import com.digitrob.digitdns.core.network.ResolutionSettings
+import com.digitrob.digitdns.data.EgressesRepository
 import com.digitrob.digitdns.data.RulesRepository
 import com.digitrob.digitdns.data.SettingsRepository
 import com.digitrob.digitdns.data.UpstreamsRepository
@@ -190,13 +191,18 @@ data class RulesUiState(
     fun serviceRelayAgent(domain: String): RelayAgent? {
         val id = lists.serviceAgents[lists.serviceOf(domain)].orEmpty()
         if (id.isBlank()) return null
-        return lists.relayAgents[id]?.copy(id = id)
+        return lists.relayById(id)?.copy(id = id)
     }
 
     /** Every agent as a picker row, ordered by display name. */
     fun relayAgents(): List<RelayAgent> =
         lists.relayAgents.map { (id, meta) -> meta.copy(id = id) }
             .sortedBy { it.name.ifBlank { it.id }.lowercase(Locale.US) }
+
+    /** Hub-side SOCKS5 and WireGuard choices, grouped by kind. */
+    fun relayEgresses(): List<Pair<String, RelayAgent>> =
+        lists.egresses.map { (id, meta) -> id to meta.copy(id = id) }
+            .sortedWith(compareBy({ (_, a) -> a.kind }, { (_, a) -> a.name.lowercase(Locale.US) }))
 
     /** Every editable domain, tagged with its status. */
     private val allRows: List<DomainRow>
@@ -343,6 +349,7 @@ class RulesViewModel @Inject constructor(
     private val repository: RulesRepository,
     private val settingsRepository: SettingsRepository,
     private val upstreamsRepository: UpstreamsRepository,
+    private val egressesRepository: EgressesRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(RulesUiState())
@@ -352,6 +359,23 @@ class RulesViewModel @Inject constructor(
         load()
         loadResolution()
         loadServerCountry()
+        loadEgresses()
+    }
+
+    /** Egress labels for the route picker and the row badge. */
+    private fun loadEgresses() {
+        viewModelScope.launch {
+            val list = runCatching { egressesRepository.list() }.getOrNull() ?: return@launch
+            val metadata = list.associate { egress ->
+                egress.value to RelayAgent(
+                    id = egress.value,
+                    name = egress.name,
+                    country = egress.country,
+                    kind = egress.kind,
+                )
+            }
+            _state.update { it.copy(lists = it.lists.copy(egresses = metadata)) }
+        }
     }
 
     /** The local flag on relay choices comes from the settings view, not the rules body. */

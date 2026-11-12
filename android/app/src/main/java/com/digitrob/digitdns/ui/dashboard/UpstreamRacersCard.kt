@@ -784,13 +784,32 @@ private val PROVIDER_MATCHES = listOf(
     listOf("google", "8.8.8.8", "8.8.4.4") to R.drawable.provider_google,
     listOf("quad9", "9.9.9.9", "149.112.112.112") to R.drawable.provider_quad9,
     listOf("adguard", "94.140.14.14", "94.140.15.15") to R.drawable.provider_adguard,
-    listOf("controld", "freedns", "76.76.2.0", "76.76.10.0") to R.drawable.provider_controld,
+    listOf("controld", "control d", "freedns", "76.76.2.0", "76.76.10.0") to R.drawable.provider_controld,
     listOf("dns.sb", "dot.sb", "doh.dns.sb", "185.222.222.222", "45.11.45.11") to R.drawable.provider_dnssb,
     listOf("opendns", "208.67.222.222", "208.67.220.220") to R.drawable.provider_opendns,
     listOf("yandex", "77.88.8.8", "77.88.8.1") to R.drawable.provider_yandex,
     listOf("nextdns", "45.90.28.0", "45.90.30.0") to R.drawable.provider_nextdns,
     listOf("cleanbrowsing", "185.228.168.9", "185.228.169.9") to R.drawable.provider_cleanbrowsing,
 )
+
+private val PROVIDER_NAMES = listOf(
+    listOf("cloudflare", "1.1.1.1", "1.0.0.1", "one.one.one.one") to "Cloudflare",
+    listOf("google", "8.8.8.8", "8.8.4.4") to "Google",
+    listOf("quad9", "9.9.9.9", "149.112.112.112") to "Quad9",
+    listOf("adguard", "94.140.14.14", "94.140.15.15") to "AdGuard",
+    listOf("controld", "freedns", "76.76.2.0", "76.76.10.0") to "Control D",
+    listOf("dns.sb", "dot.sb", "doh.dns.sb", "185.222.222.222", "45.11.45.11") to "DNS.SB",
+    listOf("opendns", "208.67.222.222", "208.67.220.220") to "OpenDNS",
+    listOf("yandex", "77.88.8.8", "77.88.8.1") to "Yandex",
+    listOf("nextdns", "45.90.28.0", "45.90.30.0") to "NextDNS",
+    listOf("cleanbrowsing", "185.228.168.9", "185.228.169.9") to "CleanBrowsing",
+)
+
+/** The public provider's display name, or null for a custom resolver. */
+internal fun providerName(address: String): String? {
+    val a = address.trim().lowercase()
+    return PROVIDER_NAMES.firstOrNull { (needles, _) -> needles.any { a.contains(it) } }?.second
+}
 
 internal fun providerDrawable(address: String): Int? {
     val a = address.trim().lowercase()
@@ -970,12 +989,30 @@ private fun UpstreamRow(
             ProviderMark(stat.address, 14.dp)
             Spacer(Modifier.width(6.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stat.address,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stat.address,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                    )
+                    if (isAdaptiveCurrent) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "FASTEST",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                            color = colors.success,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(colors.success.copy(alpha = 0.12f))
+                                .padding(horizontal = 5.dp, vertical = 1.dp),
+                            maxLines = 1,
+                        )
+                    }
+                }
                 Text(
                     text = pluralStringResource(R.plurals.upstream_hit_count, stat.hits.toInt(), stat.hits) +
                         " · " +

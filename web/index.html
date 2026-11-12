@@ -826,14 +826,14 @@
   <!-- ================================================================= -->
   <!-- VERTICAL LEFT SIDEBAR (Desktop - Sticky on Left) -->
   <!-- ================================================================= -->
-  <aside class="w-full md:w-64 bg-slate-950/90 backdrop-blur-2xl border-b md:border-b-0 md:border-e border-slate-800/80 hidden md:flex flex-col justify-between p-4 flex-shrink-0 md:h-screen md:sticky md:top-0">
+  <aside id="app-sidebar" class="w-full md:w-64 bg-slate-950/90 backdrop-blur-2xl border-b md:border-b-0 md:border-e border-slate-800/80 hidden md:flex flex-col justify-between p-4 flex-shrink-0 md:h-screen md:sticky md:top-0">
     
     <!-- Sidebar Top: Brand & Live Pulse -->
     <div class="space-y-6">
       <div class="flex items-center gap-3 px-2 py-1">
         <img src="/img/digitdns-app-icon.png" alt="" width="48" height="48"
              class="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/10 flex-shrink-0">
-        <div>
+        <div class="sidebar-brand-copy">
           <div id="sidebar-brand" class="flex items-center gap-2">
             <span class="font-extrabold tracking-wider text-base text-white font-heading">DigitDNS</span>
           </div>
@@ -874,7 +874,7 @@
         </button>
         <button class="sidebar-nav-item" data-tab="agents" data-route="/agents">
           <i data-feather="globe" class="w-4 h-4"></i>
-          <span>Relay Agents</span>
+          <span>Egress Options</span>
         </button>
         <button class="sidebar-nav-item" data-tab="clients" data-route="/clients">
           <i data-feather="users" class="w-4 h-4"></i>
@@ -883,6 +883,10 @@
         <button class="sidebar-nav-item" data-tab="stream" data-route="/logs">
           <i data-feather="terminal" class="w-4 h-4"></i>
           <span>Live Log</span>
+        </button>
+        <button class="sidebar-nav-item" data-tab="systemlog" data-route="/system-log">
+          <i data-feather="list" class="w-4 h-4"></i>
+          <span>System Log</span>
         </button>
         <button class="sidebar-nav-item" data-tab="api" data-route="/api">
           <i data-feather="code" class="w-4 h-4"></i>
@@ -901,12 +905,12 @@
 
     <!-- Sidebar Bottom: Server IP Badge, Diagnostics & Actions -->
     <div class="space-y-3 pt-4 border-t border-slate-800/80">
-      
+
       <!-- Public IP Box with Copy -->
       <div id="copy-ip-btn" class="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between cursor-pointer group hover:border-cyan-400/50 transition active:scale-95" title="Click to copy server IP">
         <div class="flex items-center gap-2">
           <i data-feather="globe" class="w-4 h-4 text-cyan-400"></i>
-          <div>
+          <div class="sidebar-ip-copy">
             <div class="text-[9px] font-mono uppercase text-slate-500">Server Public IP</div>
             <div id="header-public-ip" class="text-xs font-mono font-bold text-slate-200 group-hover:text-cyan-300">127.0.0.1</div>
           </div>
@@ -925,7 +929,7 @@
       </button>
 
       <!-- Action Icons Row -->
-      <div class="flex items-center justify-between gap-2">
+      <div class="sidebar-action-row flex items-center justify-between gap-2">
         <button id="restart-engine-btn" class="flex-1 py-2 px-2 rounded-lg bg-slate-900 hover:bg-orange-500/20 text-slate-400 hover:text-orange-400 border border-slate-800 flex items-center justify-center gap-1.5 text-[11px] font-semibold transition" title="Restart Core Engine & Reload Rules">
           <i data-feather="power" class="w-3.5 h-3.5"></i>
           <span>Restart</span>
@@ -934,7 +938,13 @@
         <button id="flush-cache-btn" class="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-cyan-400 border border-slate-800 transition" title="Flush DNS Cache">
           <i data-feather="refresh-cw" class="w-4 h-4"></i>
         </button>
-        
+
+        <button type="button" data-theme-toggle aria-pressed="false"
+          class="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-amber-300 border border-slate-800 transition shrink-0"
+          title="Switch to light theme" aria-label="Switch to light theme">
+          <i data-feather="moon" class="w-4 h-4"></i>
+        </button>
+
         <button id="logout-btn" class="p-2 rounded-lg bg-slate-900 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-slate-800 transition" title="Sign Out">
           <i data-feather="log-out" class="w-4 h-4"></i>
         </button>
@@ -946,11 +956,15 @@
            js/i18n.js wires every match, so it works from either viewport. The theme
            button's icon name (moon/sun) and its label are written by syncSwitchLabels — the
            literals here are what a browser with JavaScript disabled would show. -->
-      <div class="flex items-center gap-2">
-        <button type="button" data-theme-toggle aria-pressed="false"
-          class="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-amber-300 border border-slate-800 transition shrink-0"
-          title="Switch to light theme" aria-label="Switch to light theme">
-          <i data-feather="moon" class="w-4 h-4"></i>
+      <div class="sidebar-utility-row flex items-center gap-2">
+        <button id="engine-toggle-btn" type="button" class="sidebar-engine-btn is-on"
+          aria-pressed="true" title="DNS policy engine is on">
+          <span id="engine-dot" class="engine-dot"></span>
+          <span id="engine-label" class="sidebar-engine-label">Engine ON</span>
+        </button>
+        <button id="sidebar-collapse-btn" type="button" class="sidebar-collapse-btn"
+          aria-pressed="false" title="Collapse sidebar" aria-label="Collapse sidebar">
+          <i data-feather="sidebar" class="w-4 h-4"></i>
         </button>
       </div>
 
@@ -1103,7 +1117,7 @@
             </div>
             <div class="flex items-baseline justify-between gap-1">
               <div class="flex items-baseline gap-1 shrink-0">
-                <span id="stat-qps" class="text-xl sm:text-2xl font-extrabold font-mono text-white">0.0</span>
+                <span id="stat-qps" class="metric-value text-xl sm:text-2xl font-extrabold font-mono text-white">0.0</span>
                 <span class="text-[9px] sm:text-[10px] text-slate-400">QPS</span>
               </div>
               <!-- Total and the rate-limit state sit to the right of the headline, right-
@@ -1125,7 +1139,7 @@
               <div class="p-1 sm:p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400"><i data-feather="database" class="w-3.5 h-3.5"></i></div>
             </div>
             <div class="flex items-baseline gap-1">
-              <span id="stat-cache-ratio" class="text-xl sm:text-2xl font-extrabold font-mono text-emerald-400">0.0%</span>
+              <span id="stat-cache-ratio" class="metric-value text-xl sm:text-2xl font-extrabold font-mono text-emerald-400">0.0%</span>
               <span class="text-[9px] sm:text-[10px] text-slate-400">hits</span>
             </div>
             <div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 sm:mt-1 font-mono truncate">Items: <span id="stat-cache-entries" class="text-slate-300 font-bold">0</span></div>
@@ -1139,7 +1153,7 @@
             </div>
             <div class="flex items-baseline justify-between gap-1">
               <div class="flex items-baseline gap-1 shrink-0">
-                <span id="stat-proxy-active" class="text-xl sm:text-2xl font-extrabold font-mono text-purple-300">0</span>
+                <span id="stat-proxy-active" class="metric-value text-xl sm:text-2xl font-extrabold font-mono text-purple-300">0</span>
                 <span class="text-[9px] sm:text-[10px] text-slate-400">relays</span>
               </div>
               <!-- Total and the drop counters sit to the right of the headline, right-
@@ -1161,7 +1175,7 @@
             </div>
             <div class="flex flex-col items-center">
               <div class="flex items-baseline gap-1">
-                <span id="stat-cpu-sys" class="text-xl sm:text-2xl font-extrabold font-mono text-orange-300">—</span>
+                <span id="stat-cpu-sys" class="metric-value text-xl sm:text-2xl font-extrabold font-mono text-orange-300">—</span>
               </div>
               <!-- Server % is the headline above. The daemon's CPU share and the core
                    count sit on one centered line beneath it so neither is clipped and the
@@ -1183,7 +1197,7 @@
                    RAM is useful context, not the number an operator opens this card
                    for, so it sits underneath the instance figure. -->
               <div class="flex items-baseline gap-1">
-                <span id="stat-memory" class="text-xl sm:text-2xl font-extrabold font-mono text-blue-300">—</span>
+                <span id="stat-memory" class="metric-value text-xl sm:text-2xl font-extrabold font-mono text-blue-300">—</span>
                 <span class="text-[9px] sm:text-[10px] text-slate-400">MB</span>
               </div>
               <div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 sm:mt-1 font-mono leading-tight text-center">
@@ -1200,15 +1214,16 @@
               <div class="p-1 sm:p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400"><i data-feather="activity" class="w-3.5 h-3.5"></i></div>
             </div>
             <!-- The in/out figures are the headline of this card: same size and weight as
-                 every other card's big number, centered, and pushed toward the bottom with
-                 the Total line beneath them so the two live readings and the running total
-                 read as one block anchored low in the panel. -->
-            <div class="mt-auto flex flex-col items-center">
+                 every other card's big number, centered, and starting directly under the
+                 header so they align with the QPS/cache/CPU/RAM values beside them. The
+                 Total line sits beneath them; the card's spare height stays below the
+                 block instead of pushing it to the bottom. -->
+            <div class="flex flex-col items-center">
               <!-- Each reading is its own no-wrap group, so at six-across widths the
                    pair wraps onto two lines instead of the outbound value running into
                    the card padding. leading-tight is what keeps the two lines inside
                    the fixed grid card height. -->
-              <div class="flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0 font-mono text-lg sm:text-xl font-extrabold leading-tight text-slate-200">
+              <div class="metric-value-traffic flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0 font-mono text-lg sm:text-xl font-extrabold leading-tight text-slate-200">
                 <span class="flex items-baseline gap-1 whitespace-nowrap">
                   <i data-feather="arrow-down" class="w-3.5 h-3.5 text-emerald-400 shrink-0 self-center"></i><span id="stat-speed-in">0.0</span><span class="text-[10px] font-bold text-slate-400">KB/s</span>
                 </span>
@@ -1497,7 +1512,12 @@
               <div id="history-top-clients" class="history-top-body mt-1.5 text-xs text-slate-500">Waiting for history…</div>
             </div>
             <div data-dash-card="history-top-upstreams" class="glass-panel panel-card p-4 sm:col-span-1 md:col-span-1 history-top-card">
-              <h3 class="panel-card-header"><i data-feather="radio" class="w-4 h-4 text-sky-400"></i> Top upstreams</h3>
+              <div class="history-top-head">
+                <h3 class="panel-card-header"><i data-feather="radio" class="w-4 h-4 text-sky-400"></i> Top upstreams</h3>
+                <button id="history-top-upstreams-toggle" type="button"
+                  class="history-top-provider-toggle" aria-pressed="false"
+                  title="Group the ranking by DNS provider">By Provider</button>
+              </div>
               <div id="history-top-upstreams" class="history-top-body mt-1.5 text-xs text-slate-500">Waiting for history…</div>
             </div>
             <div data-dash-card="history-top-protocols" class="glass-panel panel-card p-4 sm:col-span-1 md:col-span-1 history-top-card">
@@ -1714,7 +1734,7 @@
               <!-- The desktop sidebar carries Relay Agents. Phones reach it
                    from here, which keeps the bottom bar at seven targets. -->
               <button type="button" class="agent-nav-link md:hidden" data-tab="agents" data-route="/agents">
-                <i data-feather="globe" class="w-3.5 h-3.5"></i> Relay Agents
+                <i data-feather="globe" class="w-3.5 h-3.5"></i> Egress Options
               </button>
             </div>
             <p class="text-[11px] text-slate-400 mt-0.5">All managed domains — proxied, paused, blocked and direct. Filter with the chips, and open a row's status badge to change its routing.</p>
@@ -1879,9 +1899,31 @@
       </section>
 
       <!-- ============================================== -->
-      <!-- TAB: RELAY AGENTS                              -->
+      <!-- TAB: EGRESS OPTIONS                            -->
       <!-- ============================================== -->
       <section id="tab-agents" class="tab-content space-y-6 hidden">
+        <!-- One summary across every egress type. The relay-agent strip below
+             keeps its own agent-specific counts. -->
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h3 class="panel-card-header">
+                <i data-feather="git-branch" class="w-4 h-4"></i> Egress Options
+              </h3>
+              <p class="text-[11px] text-slate-400 mt-0.5">Where the hub relay dials out. Relay agents are public exit points clients connect to directly; SOCKS5 and WireGuard are hub-side paths the relay dials through, so the client still reaches this server.</p>
+            </div>
+            <button id="refresh-egresses-btn" type="button" class="panel-btn panel-btn-neutral shrink-0">
+              <i data-feather="refresh-cw" class="w-4 h-4"></i> Refresh
+            </button>
+          </div>
+          <div class="agent-summary">
+            <div class="agent-summary-item"><span id="egress-healthy-count">0</span><small>healthy egresses</small></div>
+            <div class="agent-summary-item"><span id="egress-failed-count">0</span><small>failed</small></div>
+            <div class="agent-summary-item"><span id="egress-traffic">0 B</span><small>total traffic</small></div>
+            <div class="agent-summary-item"><span id="egress-failclosed-count">0</span><small>fail-closed</small></div>
+          </div>
+        </div>
+
         <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
           <div class="flex items-start justify-between gap-3 flex-wrap">
             <div>
@@ -1998,6 +2040,38 @@
           </div>
 
           <div id="agents-list"></div>
+        </div>
+
+        <div class="egress-grid">
+          <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h3 class="panel-card-header">
+                  <i data-feather="shuffle" class="w-4 h-4"></i> SOCKS5
+                </h3>
+                <p class="text-[11px] text-slate-400 mt-0.5">The hub opens the origin connection through a SOCKS5 proxy. DNS is resolved by the proxy by default, after the destination passes the hub's SSRF guard.</p>
+              </div>
+              <button id="add-socks5-btn" type="button" class="panel-btn panel-btn-primary shrink-0">
+                <i data-feather="plus" class="w-4 h-4"></i> Add SOCKS5
+              </button>
+            </div>
+            <div id="socks5-list"></div>
+          </div>
+
+          <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h3 class="panel-card-header">
+                  <i data-feather="lock" class="w-4 h-4"></i> WireGuard
+                </h3>
+                <p class="text-[11px] text-slate-400 mt-0.5">The hub dials through a userspace WireGuard tunnel. Paste a standard <span class="font-mono">wg-quick</span> configuration; the private key is encrypted at rest and never returned.</p>
+              </div>
+              <button id="add-wireguard-btn" type="button" class="panel-btn panel-btn-primary shrink-0">
+                <i data-feather="plus" class="w-4 h-4"></i> Add WireGuard
+              </button>
+            </div>
+            <div id="wireguard-list"></div>
+          </div>
         </div>
       </section>
 
@@ -2215,6 +2289,34 @@
       <!-- ============================================== -->
       <!-- TAB: DEVELOPER REST API GATEWAY -->
       <!-- ============================================== -->
+      <!-- ============================================== -->
+      <!-- TAB: SYSTEM LOG                                -->
+      <!-- ============================================== -->
+      <section id="tab-systemlog" class="tab-content space-y-6 hidden">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h3 class="panel-card-header">
+                <i data-feather="list" class="w-4 h-4"></i> System Log
+              </h3>
+              <p class="text-[11px] text-slate-400 mt-0.5">The daemon's own log tail. It is bounded in memory; the authoritative copy stays in journald or Docker logs.</p>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <button id="system-log-refresh-btn" type="button" class="panel-btn panel-btn-sm panel-btn-neutral">
+                <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i> Refresh
+              </button>
+              <button id="system-log-copy-btn" type="button" class="panel-btn panel-btn-sm panel-btn-neutral">
+                <i data-feather="copy" class="w-3.5 h-3.5"></i> Copy all
+              </button>
+              <button id="system-log-export-btn" type="button" class="panel-btn panel-btn-sm panel-btn-primary">
+                <i data-feather="download" class="w-3.5 h-3.5"></i> Export .log
+              </button>
+            </div>
+          </div>
+          <pre id="system-log-view" class="system-log-view">Loading…</pre>
+        </div>
+      </section>
+
       <section id="tab-api" class="tab-content space-y-6 hidden">
         
         <!-- Header Banner -->
@@ -3754,6 +3856,12 @@ async function onBuySubscription(ctx, username) {
 
     <!-- MOBILE STICKY BOTTOM NAVIGATION BAR -->
     <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800 px-1 py-1 flex items-stretch justify-around">
+      <button id="engine-toggle-mobile" type="button" class="engine-mobile-pill is-on"
+        aria-pressed="true" title="DNS policy engine is on">
+        <span id="engine-dot-mobile" class="engine-dot"></span>
+        <span id="engine-label-mobile">Engine ON</span>
+      </button>
+
       <div class="mobile-nav-slot">
         <button class="mobile-nav-item active" data-tab="dashboard" data-route="/home">
           <i data-feather="activity" class="w-4 h-4"></i>
@@ -3787,6 +3895,10 @@ async function onBuySubscription(ctx, username) {
         <i data-feather="terminal" class="w-4 h-4"></i>
         <span>Live Log</span>
       </button>
+      <button class="mobile-nav-item" data-tab="systemlog" data-route="/system-log">
+        <i data-feather="list" class="w-4 h-4"></i>
+        <span>Sys Log</span>
+      </button>
       <button class="mobile-nav-item" data-tab="api" data-route="/api">
         <i data-feather="code" class="w-4 h-4"></i>
         <span>API</span>
@@ -3810,6 +3922,117 @@ async function onBuySubscription(ctx, username) {
        and is positioned over the row that opened it. -->
   <div id="service-picker-menu" class="proxied-bulk-menu service-picker-popup hidden"
     role="listbox" aria-label="Assign a service to this domain"></div>
+
+  <!-- Add / edit an egress. One modal for both kinds keeps the list page compact;
+       the SOCKS5 and WireGuard field groups swap with the kind. -->
+  <div id="egress-modal" role="dialog" aria-modal="true" aria-labelledby="egress-modal-title"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md px-4 hidden">
+    <div class="glass-panel p-6 sm:p-7 w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3.5 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center text-cyan-400 border border-cyan-500/30">
+            <i data-feather="git-branch" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h2 id="egress-modal-title" class="text-base font-bold text-white font-heading">Add SOCKS5 egress</h2>
+            <p id="egress-modal-subtitle" class="text-[11px] text-slate-400">Route selected domains through a proxy</p>
+          </div>
+        </div>
+        <button id="close-egress-btn" type="button" aria-label="Close egress editor" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+          <i data-feather="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <input type="hidden" id="egress-id" value="">
+      <input type="hidden" id="egress-kind" value="socks5">
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <label class="block">
+          <span class="block text-[11px] font-semibold text-slate-400 mb-1">Name</span>
+          <input id="egress-name" type="text" placeholder="NL proxy" autocomplete="off" class="panel-field w-full">
+        </label>
+        <label class="block">
+          <span class="block text-[11px] font-semibold text-slate-400 mb-1">Country</span>
+          <div class="flex items-center gap-2">
+            <img id="egress-country-flag" class="server-flag hidden" alt="">
+            <select id="egress-country" class="panel-field w-full" aria-label="Egress country"></select>
+          </div>
+        </label>
+      </div>
+
+      <div id="egress-socks5-fields" class="space-y-3">
+        <label class="block">
+          <span class="block text-[11px] font-semibold text-slate-400 mb-1">Address</span>
+          <input id="egress-address" type="text" placeholder="10.0.0.5:1080" autocomplete="off" class="panel-field w-full font-mono">
+        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <label class="block">
+            <span class="block text-[11px] font-semibold text-slate-400 mb-1">Username <span class="text-slate-500">(optional)</span></span>
+            <input id="egress-username" type="text" autocomplete="off" class="panel-field w-full font-mono">
+          </label>
+          <label class="block">
+            <span class="block text-[11px] font-semibold text-slate-400 mb-1">Password <span class="text-slate-500">(write-only)</span></span>
+            <input id="egress-password" type="password" autocomplete="new-password" class="panel-field w-full font-mono">
+          </label>
+        </div>
+        <label class="block">
+          <span class="block text-[11px] font-semibold text-slate-400 mb-1">DNS resolution</span>
+          <select id="egress-resolve" class="panel-field w-full">
+            <option value="remote">Remote — the proxy resolves the hostname (recommended)</option>
+            <option value="local">Local — send the hub-vetted address</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="egress-wireguard-fields" class="space-y-3 hidden">
+        <label class="block">
+          <span class="block text-[11px] font-semibold text-slate-400 mb-1">WireGuard configuration</span>
+          <textarea id="egress-config" rows="9" spellcheck="false" placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = 10.9.0.2/32&#10;&#10;[Peer]&#10;PublicKey = ...&#10;Endpoint = vpn.example.com:51820&#10;AllowedIPs = 0.0.0.0/0"
+            class="panel-field w-full font-mono text-[11px]"></textarea>
+        </label>
+        <div class="flex items-center gap-2 flex-wrap">
+          <label class="panel-btn panel-btn-sm panel-btn-neutral cursor-pointer">
+            <i data-feather="upload" class="w-3.5 h-3.5"></i> Upload .conf
+            <input id="egress-config-file" type="file" accept=".conf,.txt,text/plain" class="hidden">
+          </label>
+          <span id="egress-config-file-name" class="text-[10px] text-slate-500"></span>
+        </div>
+        <p class="text-[10px] text-slate-500">The private key is stored encrypted and never leaves the server. Leave the box empty while editing to keep the saved configuration.</p>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-950/80 border border-slate-800">
+          <div>
+            <span class="block text-[11px] font-semibold text-slate-300">Fail closed</span>
+            <span class="block text-[10px] text-slate-500">Refuse, never fall back to this server</span>
+          </div>
+          <label class="switch" title="Refuse instead of falling back when the egress is offline">
+            <input type="checkbox" id="egress-fail-closed" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-950/80 border border-slate-800">
+          <div>
+            <span class="block text-[11px] font-semibold text-slate-300">Enabled</span>
+            <span class="block text-[10px] text-slate-500">Include in routing and health checks</span>
+          </div>
+          <label class="switch" title="Enable this egress">
+            <input type="checkbox" id="egress-enabled" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap pt-2">
+        <button id="save-egress-btn" type="button" class="panel-btn panel-btn-primary">Save egress</button>
+        <button id="test-egress-btn" type="button" class="panel-btn panel-btn-neutral">
+          <i data-feather="activity" class="w-3.5 h-3.5"></i> Test connection
+        </button>
+        <button id="cancel-egress-btn" type="button" class="panel-btn panel-btn-neutral">Cancel</button>
+        <span id="egress-form-status" class="text-[11px] text-slate-400"></span>
+      </div>
+    </div>
+  </div>
 
   <!-- Per-domain relay picker. The RELAY cell is the control; it opens at body
        level so the table's scroll container cannot clip it. -->

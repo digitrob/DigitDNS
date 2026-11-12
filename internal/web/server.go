@@ -29,6 +29,7 @@ import (
 	"digitdns/internal/database"
 	"digitdns/internal/geoip"
 	"digitdns/internal/httpx"
+	"digitdns/internal/logbuffer"
 	"digitdns/internal/netutil"
 	"digitdns/internal/selfupdate"
 	"digitdns/internal/service"
@@ -48,9 +49,18 @@ type WebServer struct {
 	// relayRouter is the live geo-agent assignment map shared with the DNS
 	// handler. Nil in the lighter test harnesses.
 	relayRouter *service.RelayRouter
-	upstreams   *upstream.UpstreamPool
-	dohHandler  http.Handler
-	updater     *selfupdate.Updater
+	// egressRegistry is the live hub-side egress list shared with the DNS and
+	// SNI paths. Nil in the lighter test harnesses.
+	egressRegistry *service.EgressRegistry
+	// engineSetter/engineState bridge the dashboard's engine switch to the DNS
+	// handler. Nil in harnesses, where the switch is persistence-only.
+	engineSetter func(bool)
+	engineState  func() bool
+	// systemLog is the bounded in-process log tail. Nil in harnesses.
+	systemLog  *logbuffer.Buffer
+	upstreams  *upstream.UpstreamPool
+	dohHandler http.Handler
+	updater    *selfupdate.Updater
 	// updateCheck caches the last GitHub version check. The dashboard asks on
 	// every boot; without a cache a slow or blocked GitHub turns each page load
 	// into a 15 s wait, and a request cancelled mid-flight must not replace a
@@ -432,7 +442,7 @@ var (
 // The benchmark runs outside dnsMu so a slow resolver cannot block a settings
 // save; the record is re-read afterwards so a strategy change during the probe
 // wins.
-func (ws *WebServer) runAdaptiveNow() (upstream.AdaptiveDecision, error) {
+func (ws *WebServer) runAdaptiveNow(force bool) (upstream.AdaptiveDecision, error) {
 	if ws == nil || ws.upstreams == nil || ws.db == nil {
 		return upstream.AdaptiveDecision{}, errAdaptiveNotSelected
 	}
@@ -466,7 +476,12 @@ func (ws *WebServer) runAdaptiveNow() (upstream.AdaptiveDecision, error) {
 	current = cfg.AdaptiveCurrent
 	ws.dnsMu.Unlock()
 
-	decision := ws.upstreams.SelectAdaptiveFastest(current, 0)
+	var decision upstream.AdaptiveDecision
+	if force {
+		decision = ws.upstreams.SelectAdaptiveFastestForced(current)
+	} else {
+		decision = ws.upstreams.SelectAdaptiveFastest(current, 0)
+	}
 	ws.upstreams.SetAdaptiveCurrent(decision.Current)
 
 	now := time.Now().UTC()
@@ -518,7 +533,7 @@ func (ws *WebServer) runAdaptiveIfDue(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
-	if _, err := ws.runAdaptiveNow(); err != nil && !errors.Is(err, errAdaptiveBusy) {
+	if _, err := ws.runAdaptiveNow(false); err != nil && !errors.Is(err, errAdaptiveBusy) {
 		log.Printf("[Resolution] Adaptive run failed: %v", err)
 	}
 }
@@ -1312,6 +1327,11 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	// routes require an agent key. They intentionally share no middleware.
 	mux.HandleFunc("/api/agents", ws.requireAuth(ws.handleAgents))
 	mux.HandleFunc("/api/agents/", ws.requireAuth(ws.handleAgentByID))
+	mux.HandleFunc("/api/egresses", ws.requireAuth(ws.handleEgresses))
+	mux.HandleFunc("/api/egresses/", ws.requireAuth(ws.handleEgressByID))
+	mux.HandleFunc("/api/engine", ws.requireAuth(ws.handleEngine))
+	mux.HandleFunc("/api/system-log", ws.requireAuth(ws.handleSystemLog))
+	mux.HandleFunc("/api/system-log/export", ws.requireAuth(ws.handleSystemLogExport))
 	mux.HandleFunc("/agent/enrol", ws.handleAgentEnrol)
 	mux.HandleFunc("/agent/catalogue", ws.handleAgentCatalogue)
 	mux.HandleFunc("/agent/heartbeat", ws.handleAgentHeartbeat)
@@ -1399,22 +1419,23 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 		// segment are stripped, "/" is /<admin-path>/dash/, the dashboard document
 		// an operator who follows the login link actually asked for.
 		spaRoutes := map[string]bool{
-			"/":          true,
-			"/dashboard": true,
-			"/panel":     true,
-			"/home":      true,
-			"/proxied":   true,
-			"/filters":   true,
-			"/clients":   true,
-			"/rules":     true,
-			"/policy":    true,
-			"/logs":      true,
-			"/stream":    true,
-			"/agents":    true,
-			"/api":       true,
-			"/settings":  true,
-			"/guide":     true,
-			"/connect":   true,
+			"/":           true,
+			"/dashboard":  true,
+			"/panel":      true,
+			"/home":       true,
+			"/proxied":    true,
+			"/filters":    true,
+			"/clients":    true,
+			"/rules":      true,
+			"/policy":     true,
+			"/logs":       true,
+			"/stream":     true,
+			"/system-log": true,
+			"/agents":     true,
+			"/api":        true,
+			"/settings":   true,
+			"/guide":      true,
+			"/connect":    true,
 			// /login is the address the plan names for the hidden sign-in page and
 			// the one the regeneration flow sends the operator to. There is no
 			// separate login document: unauthenticated, the dashboard shell shows

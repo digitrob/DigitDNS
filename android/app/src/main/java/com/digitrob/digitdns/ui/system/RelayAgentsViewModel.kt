@@ -3,8 +3,11 @@ package com.digitrob.digitdns.ui.system
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
+import com.digitrob.digitdns.core.network.EgressSaveRequest
 import com.digitrob.digitdns.data.AgentsRepository
+import com.digitrob.digitdns.data.EgressesRepository
 import com.digitrob.digitdns.data.RulesRepository
+import com.digitrob.digitdns.domain.model.EgressInfo
 import com.digitrob.digitdns.domain.model.RelayAgentInfo
 import com.digitrob.digitdns.domain.model.RuleLists
 import com.digitrob.digitdns.domain.model.normalizedDomain
@@ -28,6 +31,10 @@ data class RevealedAgentKey(
 
 data class RelayAgentsUiState(
     val agents: List<RelayAgentInfo> = emptyList(),
+    /** Hub-side SOCKS5 and WireGuard egresses. */
+    val egresses: List<EgressInfo> = emptyList(),
+    /** The egress whose Test button is running. */
+    val testingEgressId: String? = null,
     /** Agent id -> number of domains that would currently exit through it. */
     val assignedCounts: Map<String, Int> = emptyMap(),
     /** Agent id -> service names whose default relay is that agent. */
@@ -53,6 +60,7 @@ data class RelayAgentsUiState(
 class RelayAgentsViewModel @Inject constructor(
     private val repository: AgentsRepository,
     private val rulesRepository: RulesRepository,
+    private val egressesRepository: EgressesRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(RelayAgentsUiState())
@@ -71,10 +79,12 @@ class RelayAgentsViewModel @Inject constructor(
             _state.update { it.copy(isLoading = !pull && it.agents.isEmpty(), isRefreshing = pull, error = null) }
             try {
                 val list = repository.list()
+                val egresses = runCatching { egressesRepository.list() }.getOrNull()
                 val rules = runCatching { rulesRepository.load() }.getOrNull()
                 _state.update {
                     it.copy(
                         agents = list,
+                        egresses = egresses ?: it.egresses,
                         assignedCounts = rules?.let(::assignmentCounts).orEmpty(),
                         serviceLabels = rules?.let(::serviceDefaults).orEmpty(),
                         isLoading = false,
@@ -275,6 +285,107 @@ class RelayAgentsViewModel @Inject constructor(
                 _state.update {
                     it.copy(testingId = null, error = e.message ?: "Could not test the agent.")
                 }
+            }
+        }
+    }
+
+    fun createEgress(body: EgressSaveRequest) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, error = null) }
+            try {
+                val created = egressesRepository.create(body)
+                _state.update {
+                    it.copy(
+                        egresses = (it.egresses + created).sortedBy { e -> e.displayName.lowercase(Locale.US) },
+                        isSaving = false,
+                        message = "Added ${created.displayName}.",
+                    )
+                }
+            } catch (e: ApiException) {
+                _state.update { it.copy(isSaving = false, error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update { it.copy(isSaving = false, error = e.message ?: "Could not add the egress.") }
+            }
+        }
+    }
+
+    fun updateEgress(id: String, body: EgressSaveRequest) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, error = null) }
+            try {
+                val updated = egressesRepository.update(id, body)
+                _state.update {
+                    it.copy(
+                        egresses = it.egresses.map { e -> if (e.id == id) updated else e },
+                        isSaving = false,
+                        message = "Saved ${updated.displayName}.",
+                    )
+                }
+            } catch (e: ApiException) {
+                _state.update { it.copy(isSaving = false, error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update { it.copy(isSaving = false, error = e.message ?: "Could not save the egress.") }
+            }
+        }
+    }
+
+    fun deleteEgress(id: String) {
+        viewModelScope.launch {
+            try {
+                egressesRepository.delete(id)
+                _state.update {
+                    it.copy(
+                        egresses = it.egresses.filterNot { e -> e.id == id },
+                        message = "Egress deleted.",
+                    )
+                }
+            } catch (e: ApiException) {
+                _state.update { it.copy(error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update { it.copy(error = e.message ?: "Could not delete the egress.") }
+            }
+        }
+    }
+
+    fun setEgressEnabled(id: String, enabled: Boolean) {
+        viewModelScope.launch {
+            try {
+                egressesRepository.setEnabled(id, enabled)
+                _state.update {
+                    it.copy(
+                        egresses = it.egresses.map { e -> if (e.id == id) e.copy(enabled = enabled) else e },
+                        message = if (enabled) "Egress enabled." else "Egress disabled.",
+                    )
+                }
+            } catch (e: ApiException) {
+                _state.update { it.copy(error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update { it.copy(error = e.message ?: "Could not update the egress.") }
+            }
+        }
+    }
+
+    fun testEgress(id: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(testingEgressId = id, error = null) }
+            try {
+                val result = egressesRepository.test(id)
+                val list = runCatching { egressesRepository.list() }.getOrNull()
+                _state.update {
+                    it.copy(
+                        egresses = list ?: it.egresses,
+                        testingEgressId = null,
+                        message = if (result.ok) {
+                            "Egress online — ${String.format(Locale.US, "%.0f", result.latencyMs)} ms"
+                        } else {
+                            "Egress test failed — ${result.error.ifBlank { "unreachable" }}"
+                        },
+                    )
+                }
+            } catch (e: ApiException) {
+                _state.update { it.copy(testingEgressId = null, error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update { it.copy(testingEgressId = null, error = e.message ?: "Egress test failed.") }
             }
         }
     }

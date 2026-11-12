@@ -166,6 +166,18 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideEgressesApi(retrofit: Retrofit): EgressesApi = retrofit.create(EgressesApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideEngineApi(retrofit: Retrofit): EngineApi = retrofit.create(EngineApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideSystemLogApi(retrofit: Retrofit): SystemLogApi = retrofit.create(SystemLogApi::class.java)
+
+    @Provides
+    @Singleton
     fun provideAccessApi(retrofit: Retrofit): AccessApi = retrofit.create(AccessApi::class.java)
 
     @Provides

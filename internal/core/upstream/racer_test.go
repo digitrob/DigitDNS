@@ -1518,6 +1518,29 @@ func TestAdaptiveSelectionAppliesHysteresis(t *testing.T) {
 	}
 }
 
+func TestAdaptiveForcedSelectionIgnoresHysteresis(t *testing.T) {
+	first := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.73"}), nil)
+	second := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.74"}), nil)
+
+	p := newTestPool(t, []string{first.addr, second.addr}, 2*time.Second, false, "")
+	setMeasuredLatency(t, p, first.addr, 200*time.Millisecond)
+	setMeasuredLatency(t, p, second.addr, 190*time.Millisecond)
+
+	// The scheduled path keeps the current resolver: 5% is noise.
+	if d := p.SelectAdaptiveFastest(first.addr, 0); d.Changed {
+		t.Fatalf("scheduled selection flapped on noise: %+v", d)
+	}
+
+	// Force means the absolute fastest wins, however small the margin.
+	d := p.SelectAdaptiveFastestForced(first.addr)
+	if !d.Changed || d.Current != second.addr || d.Fastest != second.addr {
+		t.Fatalf("forced selection did not switch to the fastest resolver: %+v", d)
+	}
+	if d.Note == "" {
+		t.Fatal("forced selection did not explain itself")
+	}
+}
+
 func TestAdaptiveSelectionReplacesAStaleChoice(t *testing.T) {
 	first := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.81"}), nil)
 	p := newTestPool(t, []string{first.addr}, 2*time.Second, false, "")

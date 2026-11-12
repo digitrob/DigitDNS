@@ -8,6 +8,7 @@ import androidx.annotation.StringRes
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -62,6 +63,7 @@ import com.digitrob.digitdns.ui.security.AppLockScreen
 import com.digitrob.digitdns.ui.security.AppLockViewModel
 import com.digitrob.digitdns.ui.stream.LiveQueryLogScreen
 import com.digitrob.digitdns.ui.subscriber.SubscriberScreen
+import com.digitrob.digitdns.ui.system.EngineBar
 import com.digitrob.digitdns.ui.system.SettingsHubScreen
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -388,14 +390,17 @@ private fun TabShell(
         Scaffold(
             bottomBar = {
                 if (!wide) {
-                    NavigationBar {
-                        tabs.forEach { tab ->
-                            NavigationBarItem(
-                                selected = selectedTab(tab),
-                                onClick = { open(tab) },
-                                icon = { Icon(tab.icon, contentDescription = stringResource(tab.labelRes)) },
-                                label = { Text(stringResource(tab.labelRes)) },
-                            )
+                    Column {
+                        EngineBar()
+                        NavigationBar {
+                            tabs.forEach { tab ->
+                                NavigationBarItem(
+                                    selected = selectedTab(tab),
+                                    onClick = { open(tab) },
+                                    icon = { Icon(tab.icon, contentDescription = stringResource(tab.labelRes)) },
+                                    label = { Text(stringResource(tab.labelRes)) },
+                                )
+                            }
                         }
                     }
                 }
@@ -413,6 +418,8 @@ private fun TabShell(
                                 label = { Text(stringResource(tab.labelRes)) },
                             )
                         }
+                        Spacer(Modifier.weight(1f))
+                        EngineBar(compact = true)
                     }
                     VerticalDivider()
                 }

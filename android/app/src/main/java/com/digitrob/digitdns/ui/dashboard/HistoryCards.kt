@@ -4,7 +4,10 @@ package com.digitrob.digitdns.ui.dashboard
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +34,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -221,6 +229,12 @@ internal fun HistoryTopCard(
     // that row (and Protocols beside it) a matching header slot so the two cards
     // stay level instead of one growing past the other.
     val wrappedHeader = dimension == TopDimension.PROTOCOL || dimension == TopDimension.RELAY_COUNTRY
+    var byProvider by rememberSaveable(dimension) { mutableStateOf(false) }
+    val displayTop = if (dimension == TopDimension.UPSTREAM && byProvider && top != null) {
+        top.copy(items = groupUpstreamsByProvider(top.items))
+    } else {
+        top
+    }
     PanelCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -233,6 +247,22 @@ internal fun HistoryTopCard(
         ) {
             if (dimension == TopDimension.RELAY_COUNTRY) {
                 RelayTitle(dimension.icon, dimension.tint())
+            } else if (dimension == TopDimension.UPSTREAM) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DashboardCardTitle(
+                        text = stringResource(dimension.titleRes()),
+                        icon = dimension.icon,
+                        tint = dimension.tint(),
+                        modifier = Modifier.weight(1f),
+                    )
+                    ProviderGroupChip(
+                        active = byProvider,
+                        onClick = { byProvider = !byProvider },
+                    )
+                }
             } else {
                 DashboardCardTitle(
                     text = stringResource(dimension.titleRes()),
@@ -243,16 +273,16 @@ internal fun HistoryTopCard(
             }
             when {
                 unavailable -> HistoryUnavailable()
-                top == null || top.items.isEmpty() -> Text(
+                displayTop == null || displayTop.items.isEmpty() -> Text(
                     text = stringResource(R.string.history_no_data),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 else -> {
-                    HistoryTopEntries(dimension, top, listHeight, serverCountry)
-                    if (top.otherCount > 0) {
+                    HistoryTopEntries(dimension, displayTop, listHeight, serverCountry)
+                    if (displayTop.otherCount > 0) {
                         Text(
-                            text = stringResource(R.string.history_other, formatCount(top.otherCount)),
+                            text = stringResource(R.string.history_other, formatCount(displayTop.otherCount)),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -348,13 +378,25 @@ private fun HistoryTopRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                else -> Text(
-                    text = item.value,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                else -> {
+                    if (dimension == TopDimension.UPSTREAM) {
+                        providerDrawable(item.value)?.let { drawable ->
+                            Image(
+                                painter = painterResource(drawable),
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Box(Modifier.width(5.dp))
+                        }
+                    }
+                    Text(
+                        text = item.value,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
         Box(Modifier.width(6.dp))
@@ -381,6 +423,47 @@ private fun RelayCountryValue(value: String, serverCountry: String) {
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
+}
+
+/** Aggregate per-server history into provider totals for the By Provider view. */
+private fun groupUpstreamsByProvider(items: List<StatsTopItem>): List<StatsTopItem> {
+    val totals = linkedMapOf<String, Pair<String, Long>>()
+    for (item in items) {
+        val name = providerName(item.value) ?: "Other"
+        val previous = totals[name]?.second ?: 0L
+        totals[name] = name to (previous + item.count)
+    }
+    return totals.values
+        .sortedByDescending { it.second }
+        .map { (name, count) -> StatsTopItem(value = name, count = count) }
+}
+
+@Composable
+private fun ProviderGroupChip(active: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(999.dp)
+    Box(
+        modifier = Modifier
+            .clip(shape)
+            .background(
+                if (active) DigitDnsTheme.colors.info.copy(alpha = 0.14f)
+                else MaterialTheme.colorScheme.surface,
+            )
+            .border(
+                width = 1.dp,
+                color = if (active) DigitDnsTheme.colors.info.copy(alpha = 0.55f)
+                else MaterialTheme.colorScheme.outlineVariant,
+                shape = shape,
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text(
+            text = "By Provider",
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
+            color = if (active) DigitDnsTheme.colors.info else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable
