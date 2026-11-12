@@ -11703,7 +11703,7 @@ const QUERYLOG_ACTIONS = [
   { value: 'QUOTA', label: 'Quota', cls: 'text-yellow-300 border-yellow-500/30 bg-yellow-500/10' },
 ];
 let queryLogActions = new Set();
-let queryLogProto = '';
+let queryLogProtos = new Set();
 const QUERYLOG_PROTOCOLS = [
   { value: 'UDP', label: 'UDP' },
   { value: 'TCP', label: 'TCP' },
@@ -11741,11 +11741,15 @@ function renderQueryLogActionMenu() {
     if (!queryLogActions.size) {
       btn.textContent = 'Any action';
     } else {
-      btn.innerHTML = [...queryLogActions].map((v) => {
-        const a = QUERYLOG_ACTIONS.find((x) => x.value === v);
-        const toneClass = a?.cls || 'text-slate-300 border-slate-600 bg-slate-800';
-        return `<span class="inline-flex items-center px-2 py-0.5 me-1 rounded border text-[10px] font-bold font-mono ${escapeHTML(toneClass)}">${escapeHTML(a?.label || v)}</span>`;
-      }).join('');
+      // Keep the trigger a fixed single line: show the first chip and a count,
+      // so choosing more actions never grows the control or the card.
+      const values = [...queryLogActions];
+      const first = QUERYLOG_ACTIONS.find((x) => x.value === values[0]);
+      const toneClass = first?.cls || 'text-slate-300 border-slate-600 bg-slate-800';
+      const extra = values.length > 1
+        ? `<span class="ms-1 shrink-0 text-[10px] font-bold text-slate-400">+${values.length - 1}</span>`
+        : '';
+      btn.innerHTML = `<span class="inline-flex shrink-0 items-center px-2 py-0.5 rounded border text-[10px] font-bold font-mono ${escapeHTML(toneClass)}">${escapeHTML(first?.label || values[0])}</span>${extra}`;
     }
   }
 }
@@ -11780,13 +11784,17 @@ function renderQueryLogProtoMenu() {
   menu.innerHTML = QUERYLOG_PROTOCOLS.map((p) => `
     <button type="button" class="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-800 transition" data-querylog-proto="${escapeHTML(p.value)}">
       <span class="font-mono text-[11px] font-bold ${escapeHTML(upstreamProtoClass(p.value))}">${escapeHTML(p.label)}</span>
-      <span class="text-cyan-300 text-xs">${queryLogProto === p.value ? '✓' : ''}</span>
+      <span class="text-cyan-300 text-xs">${queryLogProtos.has(p.value) ? '✓' : ''}</span>
     </button>`).join('');
   if (btn) {
-    if (!queryLogProto) {
+    if (!queryLogProtos.size) {
       btn.textContent = 'Any proto';
     } else {
-      btn.innerHTML = `<span class="font-mono text-[11px] font-bold ${escapeHTML(upstreamProtoClass(queryLogProto))}">${escapeHTML(queryLogProto)}</span>`;
+      const values = [...queryLogProtos];
+      const extra = values.length > 1
+        ? `<span class="ms-1 shrink-0 text-[10px] font-bold text-slate-400">+${values.length - 1}</span>`
+        : '';
+      btn.innerHTML = `<span class="shrink-0 font-mono text-[11px] font-bold ${escapeHTML(upstreamProtoClass(values[0]))}">${escapeHTML(values[0])}</span>${extra}`;
     }
   }
 }
@@ -11803,9 +11811,10 @@ function initQueryLogProtoMenu() {
     e.stopPropagation();
     const item = e.target.closest('[data-querylog-proto]');
     if (!item) return;
-    queryLogProto = queryLogProto === item.dataset.querylogProto ? '' : item.dataset.querylogProto;
+    const value = item.dataset.querylogProto;
+    if (queryLogProtos.has(value)) queryLogProtos.delete(value);
+    else queryLogProtos.add(value);
     renderQueryLogProtoMenu();
-    menu.classList.add('hidden');
   };
   document.addEventListener('click', (e) => {
     if (!menu.contains(e.target) && e.target !== btn) menu.classList.add('hidden');
@@ -11860,7 +11869,7 @@ function queryLogParams() {
   add('querylog-domain', 'domain');
   add('querylog-client', 'client');
   if (queryLogActions.size) q.set('action', [...queryLogActions].join(','));
-  if (queryLogProto) q.set('proto', queryLogProto);
+  if (queryLogProtos.size) q.set('proto', [...queryLogProtos].join(','));
   q.set('limit', '200');
   return q;
 }

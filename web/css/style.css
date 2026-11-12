@@ -586,7 +586,7 @@ body::before {
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--border-color);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--card-shadow);
   /* Only the two properties the hover state actually changes are transitioned.
      `transition: all` also animated layout (height) whenever a panel's content
@@ -608,7 +608,7 @@ body::before {
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--border-color);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--card-shadow);
   contain: paint;
 }
@@ -622,7 +622,7 @@ body::before {
   right: 0;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgb(var(--c-cyan-400) / 0.4), transparent);
-  border-radius: 18px 18px 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
 /* Sidebar Nav Item Styling.
@@ -3100,6 +3100,10 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   padding: 0 var(--space-3);
   color: var(--text-main);
   font-size: var(--text-sm);
+}
+
+textarea.panel-field {
+  padding-block: var(--space-2);
 }
 
 /* :where() drops this rule to zero specificity so a field that carries its own

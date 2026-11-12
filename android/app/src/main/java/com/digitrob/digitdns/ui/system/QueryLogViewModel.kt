@@ -21,7 +21,7 @@ data class QueryLogUiState(
     val domain: String = "",
     val client: String = "",
     val actions: Set<String> = emptySet(),
-    val proto: String = "",
+    val protos: Set<String> = emptySet(),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val error: String? = null,
@@ -59,8 +59,8 @@ class QueryLogViewModel @Inject constructor(
         it.copy(actions = if (it.actions.contains(v)) it.actions - v else it.actions + v)
     }
 
-    fun setProto(v: String) = _state.update {
-        it.copy(proto = if (it.proto == v) "" else v)
+    fun toggleProto(v: String) = _state.update {
+        it.copy(protos = if (it.protos.contains(v)) it.protos - v else it.protos + v)
     }
 
     fun save() {
@@ -82,7 +82,7 @@ class QueryLogViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
             try {
-                val items = repository.search(s.domain, s.client, s.actions.joinToString(","), s.proto)
+                val items = repository.search(s.domain, s.client, s.actions.joinToString(","), s.protos.joinToString(","))
                 _state.update { it.copy(items = items, isLoading = false) }
             } catch (e: ApiException) {
                 _state.update { it.copy(isLoading = false, error = e.userMessage) }

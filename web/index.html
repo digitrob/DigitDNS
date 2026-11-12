@@ -2432,9 +2432,9 @@
               </div>
               <label class="inline-flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
                 <span>Enabled</span>
-                <span class="relative inline-flex items-center">
-                  <input type="checkbox" id="querylog-enabled" class="sr-only peer">
-                  <span class="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:bg-cyan-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></span>
+                <span class="switch">
+                  <input type="checkbox" id="querylog-enabled">
+                  <span class="slider"></span>
                 </span>
               </label>
             </div>
@@ -2447,15 +2447,15 @@
               <button id="querylog-clear" type="button" class="panel-btn panel-btn-sm panel-btn-neutral text-red-300">Clear history</button>
               <span id="querylog-status" class="text-[11px] text-slate-500"></span>
             </div>
-            <div class="flex flex-col sm:flex-row gap-2">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-2">
               <input id="querylog-domain" type="text" placeholder="domain" class="panel-field flex-1 font-mono text-xs" aria-label="Filter by domain">
               <input id="querylog-client" type="text" placeholder="client / account" class="panel-field sm:w-40 font-mono text-xs" aria-label="Filter by client">
               <div class="relative">
-                <button id="querylog-action-btn" type="button" class="panel-field sm:w-36 text-left font-mono text-xs" aria-haspopup="true" aria-expanded="false">Any action</button>
+                <button id="querylog-action-btn" type="button" class="panel-field sm:w-36 flex items-center overflow-hidden whitespace-nowrap text-left font-mono text-xs" aria-haspopup="true" aria-expanded="false">Any action</button>
                 <div id="querylog-action-menu" class="hidden absolute end-0 top-full mt-1 z-50 w-56 max-h-80 overflow-y-auto p-1.5 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl space-y-0.5"></div>
               </div>
               <div class="relative">
-                <button id="querylog-proto-btn" type="button" class="panel-field sm:w-32 text-left font-mono text-xs" aria-haspopup="true" aria-expanded="false">Any proto</button>
+                <button id="querylog-proto-btn" type="button" class="panel-field sm:w-32 flex items-center overflow-hidden whitespace-nowrap text-left font-mono text-xs" aria-haspopup="true" aria-expanded="false">Any proto</button>
                 <div id="querylog-proto-menu" class="hidden absolute end-0 top-full mt-1 z-50 w-44 max-h-80 overflow-y-auto p-1.5 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl space-y-0.5"></div>
               </div>
               <button id="querylog-search" type="button" class="panel-btn panel-btn-primary">Search</button>

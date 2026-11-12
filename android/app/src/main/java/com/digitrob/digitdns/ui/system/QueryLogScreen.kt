@@ -1,5 +1,7 @@
 package com.digitrob.digitdns.ui.system
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -52,15 +55,30 @@ private fun ActionFilter(
     var expanded by remember { mutableStateOf(false) }
     androidx.compose.foundation.layout.Box(modifier = modifier) {
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-            Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 if (selected.isEmpty()) {
-                    Text("Any action")
+                    Text("Any action", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 } else {
-                    selected.take(2).forEach { value ->
-                        val label = QUERYLOG_ACTIONS.firstOrNull { it.first == value }?.second ?: value
-                        StatusBadge(label, actionTone(value))
+                    val value = selected.first()
+                    val label = QUERYLOG_ACTIONS.firstOrNull { it.first == value }?.second ?: value
+                    // The badge yields width to the count, so "+N" is never clipped
+                    // even when the first label is long.
+                    StatusBadge(
+                        label,
+                        actionTone(value),
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (selected.size > 1) {
+                        Text(
+                            "+${selected.size - 1}",
+                            maxLines = 1,
+                            modifier = Modifier.padding(start = 2.dp),
+                        )
                     }
-                    if (selected.size > 2) Text("+${selected.size - 2}")
                 }
             }
             androidx.compose.material3.Icon(
@@ -91,22 +109,41 @@ private val QUERYLOG_PROTOCOLS = listOf("UDP", "TCP", "DoT", "DoH", "DoQ", "DoH3
 
 @Composable
 private fun ProtoFilter(
-    selected: String,
-    onSelect: (String) -> Unit,
+    selected: Set<String>,
+    onToggle: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
     androidx.compose.foundation.layout.Box(modifier = modifier) {
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-            if (selected.isBlank()) {
-                Text("Any proto", modifier = Modifier.weight(1f))
-            } else {
-                Text(
-                    protocolLabel(selected),
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = com.digitrob.digitdns.ui.theme.PanelMono),
-                    color = protocolColor(selected),
-                    modifier = Modifier.weight(1f),
-                )
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (selected.isEmpty()) {
+                    Text("Any proto", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                } else {
+                    // One chip plus a count keeps the trigger a fixed height, so
+                    // extra selections never stretch the card. The name yields
+                    // width so the count stays visible.
+                    val first = selected.first()
+                    Text(
+                        protocolLabel(first),
+                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = com.digitrob.digitdns.ui.theme.PanelMono),
+                        color = protocolColor(first),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (selected.size > 1) {
+                        Text(
+                            "+${selected.size - 1}",
+                            maxLines = 1,
+                            modifier = Modifier.padding(start = 2.dp),
+                        )
+                    }
+                }
             }
             androidx.compose.material3.Icon(
                 Icons.Filled.ArrowDropDown,
@@ -119,16 +156,16 @@ private fun ProtoFilter(
                     text = {
                         Text(
                             protocolLabel(proto),
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = com.digitrob.digitdns.ui.theme.PanelMono),
+                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = com.digitrob.digitdns.ui.theme.PanelMono),
                             color = protocolColor(proto),
                         )
                     },
                     trailingIcon = {
-                        if (selected == proto) {
+                        if (selected.contains(proto)) {
                             androidx.compose.material3.Icon(Icons.Filled.Check, contentDescription = null)
                         }
                     },
-                    onClick = { onSelect(proto); expanded = false },
+                    onClick = { onToggle(proto) },
                 )
             }
         }
@@ -150,8 +187,10 @@ private fun actionTone(action: String) = when (action) {
 @Composable
 fun QueryLogScreen(viewModel: QueryLogViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // Portrait fits the cards without scrolling, but landscape is much shorter,
+    // so the column must scroll whenever the content is taller than the viewport.
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         PanelCard(modifier = Modifier.fillMaxWidth()) {
@@ -207,8 +246,8 @@ fun QueryLogScreen(viewModel: QueryLogViewModel = hiltViewModel()) {
                         modifier = Modifier.weight(1f),
                     )
                     ProtoFilter(
-                        selected = state.proto,
-                        onSelect = viewModel::setProto,
+                        selected = state.protos,
+                        onToggle = viewModel::toggleProto,
                         modifier = Modifier.weight(1f),
                     )
                 }

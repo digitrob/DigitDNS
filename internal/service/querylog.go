@@ -339,8 +339,17 @@ func (s *QueryLogService) Search(filter QueryLogFilter) []database.QueryLogItem 
 					continue
 				}
 			}
-			if filter.Proto != "" && !strings.EqualFold(item.Protocol, filter.Proto) {
-				continue
+			if filter.Proto != "" {
+				allowed := false
+				for _, proto := range strings.Split(filter.Proto, ",") {
+					if strings.EqualFold(item.Protocol, strings.TrimSpace(proto)) {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					continue
+				}
 			}
 			out = append(out, item)
 			if len(out) >= filter.Limit {
