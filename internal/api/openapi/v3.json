@@ -5251,6 +5251,86 @@
           }
         }
       }
+    },
+    "/api/v3/query-log": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Search query history",
+        "description": "Searches the optional persistent query log. Filters: from, to, client, domain, action, proto, limit.",
+        "operationId": "getQueryLog",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v3/query-log/settings": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Read query log settings",
+        "description": "Returns whether the optional query log is enabled, retention, anonymization and size cap.",
+        "operationId": "getQueryLogSettings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Save query log settings",
+        "description": "Enables or disables the persistent query log and updates retention and anonymization.",
+        "operationId": "saveQueryLogSettings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v3/query-log/clear": {
+      "post": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Clear query history",
+        "description": "Deletes every stored query while keeping the settings.",
+        "operationId": "clearQueryLog",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
     }
   }
 }

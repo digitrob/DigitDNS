@@ -482,6 +482,9 @@ func main() {
 
 	statsService := service.NewStatsService(db, sniServer.GetStats, c.GetStats)
 	filterService := service.NewFilterService(db, m)
+	queryLogService := service.NewQueryLogService(db, filepath.Join(filepath.Dir(dPath), "querylog.db"))
+	queryLogService.Start()
+	defer queryLogService.Stop()
 
 	// 90-day aggregates live in their own bbolt file. A failure here must not
 	// stop the resolver: the live log and everything else still work, and the
@@ -690,6 +693,7 @@ func main() {
 		}
 	}, egressRegistry)
 	dnsHandler := dns.NewHandler(clientService, c, m, u, statsService, serverSettings.PublicIP)
+	dnsHandler.SetQueryLogSink(queryLogService.Push)
 	dnsHandler.SetEngineEnabled(!dnsSettings.EngineDisabled)
 	sniServer.SetEngineEnabled(dnsHandler.EngineEnabled)
 	// DNSSEC validation is opt-in and startup-only. With it off, the upstream's
@@ -862,6 +866,7 @@ func main() {
 		dnsQueryHost = "127.0.0.1"
 	}
 	webServer.SetDNSQueryAddr(net.JoinHostPort(dnsQueryHost, strconv.Itoa(dnsSettings.Port)))
+	webServer.SetQueryLogService(queryLogService)
 	webServer.SetRelayModeManager(relayModeManager)
 	webServer.SetEngineSetter(dnsHandler.SetEngineEnabled)
 	webServer.SetEngineState(dnsHandler.EngineEnabled)

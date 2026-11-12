@@ -55,6 +55,7 @@
     <string name="settings_upstreams">Upstreams</string>
     <string name="settings_subscription">Subscription</string>
     <string name="settings_alerts">Alerts</string>
+    <string name="settings_query_log">Query Log</string>
     <string name="settings_about">About</string>
 
     <!-- Relay choosers. -->

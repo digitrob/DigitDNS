@@ -163,6 +163,17 @@ func (f *fakeV3Backend) SetRelayModeGlobal(r *http.Request, body map[string]any)
 	return map[string]any{"global_enabled": true}, nil
 }
 
+func (f *fakeV3Backend) QueryLog(r *http.Request) (map[string]any, error) {
+	return map[string]any{"items": []any{}, "count": 0}, nil
+}
+func (f *fakeV3Backend) QueryLogSettings() map[string]any {
+	return map[string]any{"settings": map[string]any{}}
+}
+func (f *fakeV3Backend) SaveQueryLogSettings(r *http.Request, body map[string]any) (map[string]any, error) {
+	return map[string]any{"settings": body}, nil
+}
+func (f *fakeV3Backend) ClearQueryLog() error { return nil }
+
 func (f *fakeV3Backend) AlertSettings() (map[string]any, error) {
 	return map[string]any{"alerts": map[string]any{}}, nil
 }

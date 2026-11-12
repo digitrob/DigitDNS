@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material.icons.filled.Key
@@ -68,6 +67,7 @@ import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.SubscriberStatusDto
 import com.digitrob.digitdns.ui.auth.TrustPrompt
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.PanelCopyIconButton
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelSectionTitle
 import com.digitrob.digitdns.ui.components.PanelSnackbarHost
@@ -368,18 +368,13 @@ private fun DeviceIpCard(status: SubscriberStatusDto, onCopy: (String) -> Unit) 
                 ),
                 color = if (status.detectedIpRegistered) DigitDnsTheme.colors.success else DigitDnsTheme.colors.warning,
             )
-            IconButton(
-                onClick = { if (status.detectedIp.isNotBlank()) onCopy(status.detectedIp) },
+            PanelCopyIconButton(
+                contentDescription = stringResource(R.string.subscriber_copy_device_ip),
+                onCopy = { if (status.detectedIp.isNotBlank()) onCopy(status.detectedIp) },
                 enabled = status.detectedIp.isNotBlank(),
                 modifier = Modifier.size(28.dp),
-            ) {
-                Icon(
-                    Icons.Filled.ContentCopy,
-                    contentDescription = stringResource(R.string.subscriber_copy_device_ip),
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+                iconSize = 14.dp,
+            )
         }
     }
 }
@@ -401,18 +396,13 @@ private fun CopyValueRow(label: String, value: String, onCopy: (String) -> Unit)
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        IconButton(
-            onClick = { onCopy(value) },
+        PanelCopyIconButton(
+            contentDescription = stringResource(R.string.subscriber_copy_value, label),
+            onCopy = { onCopy(value) },
             enabled = value.isNotBlank(),
             modifier = Modifier.size(28.dp),
-        ) {
-            Icon(
-                Icons.Filled.ContentCopy,
-                contentDescription = stringResource(R.string.subscriber_copy_value, label),
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+            iconSize = 14.dp,
+        )
     }
 }
 

@@ -143,12 +143,12 @@
       </div>
       <form id="login-form" class="space-y-4">
         <div>
-          <label for="login-username" class="block text-xs font-semibold text-slate-400 mb-1">ADMIN USERNAME</label>
+          <label for="login-username" class="block text-xs font-semibold text-slate-400 mb-1">Admin username</label>
           <input type="text" id="login-username" value="admin" required autocomplete="username"
             class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-sm font-mono">
         </div>
         <div>
-          <label for="login-password" class="block text-xs font-semibold text-slate-400 mb-1">PASSWORD</label>
+          <label for="login-password" class="block text-xs font-semibold text-slate-400 mb-1">Password</label>
           <input type="password" id="login-password" required autocomplete="current-password"
             placeholder="Enter your admin password"
             class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-sm font-mono">
@@ -156,7 +156,7 @@
         <!-- The second factor. Hidden until the server says the account
              carries one; typing a code when 2FA is off is harmless either way. -->
         <div id="login-2fa-row" class="hidden">
-          <label for="login-code" class="block text-xs font-semibold text-slate-400 mb-1">TWO-FACTOR CODE</label>
+          <label for="login-code" class="block text-xs font-semibold text-slate-400 mb-1">Two-factor code</label>
           <input type="text" id="login-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"
             placeholder="6-digit code"
             class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-sm font-mono">
@@ -214,18 +214,18 @@
              NEW ADMIN USERNAME field is below the password it would pair with. -->
         <input type="text" name="username" autocomplete="username" value="admin" hidden aria-hidden="true" tabindex="-1">
         <div>
-          <label class="block text-xs font-semibold text-slate-400 mb-1" for="current-admin-pass">CURRENT PASSWORD</label>
+          <label class="block text-xs font-semibold text-slate-400 mb-1" for="current-admin-pass">Current password</label>
           <input type="password" id="current-admin-pass" placeholder="Confirm with your current password" required
             autocomplete="current-password"
             class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-amber-400 text-sm font-mono">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-400 mb-1" for="new-admin-user">NEW ADMIN USERNAME</label>
+          <label class="block text-xs font-semibold text-slate-400 mb-1" for="new-admin-user">New admin username</label>
           <input type="text" id="new-admin-user" value="admin" required autocomplete="username" maxlength="64"
             class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-amber-400 text-sm font-mono">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-400 mb-1" for="new-admin-pass">NEW PASSWORD</label>
+          <label class="block text-xs font-semibold text-slate-400 mb-1" for="new-admin-pass">New password</label>
           <input type="password" id="new-admin-pass" placeholder="At least 10 characters" required minlength="10" maxlength="256"
             autocomplete="new-password"
             class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-amber-400 text-sm font-mono">
@@ -238,7 +238,7 @@
              rotation endpoint requires a current code with the credentials, and the
              modal used to have nowhere to put one — every save 401'd. -->
         <div id="change-pwd-2fa-row" class="hidden">
-          <label class="block text-xs font-semibold text-slate-400 mb-1" for="change-pwd-code">TWO-FACTOR CODE</label>
+          <label class="block text-xs font-semibold text-slate-400 mb-1" for="change-pwd-code">Two-factor code</label>
           <input type="text" id="change-pwd-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"
             placeholder="6-digit code"
             class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-amber-400 text-sm font-mono">
@@ -247,7 +247,7 @@
           <!-- Hidden while the modal is forced by a weak password: there is nothing
                safe to cancel back to. Shown when opened from Settings. -->
           <button type="button" id="change-pwd-cancel"
-            class="hidden px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg transition duration-200 text-sm font-heading">
+            class="panel-btn panel-btn-neutral hidden">
             CANCEL
           </button>
           <button type="submit"
@@ -287,7 +287,7 @@
             <div id="diag-score" class="text-2xl sm:text-3xl font-extrabold font-heading text-emerald-400 mt-0.5">--%</div>
             <div id="diag-quality" class="text-[11px] font-semibold text-cyan-400 mt-0.5">Ready to test</div>
           </div>
-          <button id="rerun-diagnostics-btn" class="px-3 sm:px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 text-slate-950 font-bold rounded-lg text-xs font-heading flex items-center gap-1.5 transition whitespace-nowrap">
+          <button id="rerun-diagnostics-btn" class="panel-btn panel-btn-primary panel-btn-sm whitespace-nowrap">
             <i data-feather="play" class="w-3.5 h-3.5"></i> Run Test
           </button>
         </div>
@@ -303,7 +303,7 @@
             <input type="text" id="explain-client" placeholder="client IP (optional)" autocomplete="off" spellcheck="false" aria-label="Client IP for egress selection"
               class="sm:w-44 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-slate-200 focus:border-cyan-500/50 outline-none">
             <button type="button" id="explain-btn"
-              class="px-3 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 rounded-lg text-xs font-bold font-heading flex items-center justify-center gap-1.5 transition whitespace-nowrap">
+              class="panel-btn panel-btn-soft panel-btn-sm whitespace-nowrap">
               <i data-feather="search" class="w-3.5 h-3.5"></i> Explain
             </button>
           </form>
@@ -323,7 +323,7 @@
             <input type="text" id="diag-target-host" placeholder="Host or host:port" autocomplete="off" spellcheck="false" aria-label="Diagnostic server host or host and port"
               class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-slate-200 focus:border-cyan-500/50 outline-none">
             <button type="submit" id="diag-target-add"
-              class="px-3 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 rounded-lg text-xs font-bold font-heading flex items-center justify-center gap-1.5 transition whitespace-nowrap">
+              class="panel-btn panel-btn-soft panel-btn-sm whitespace-nowrap">
               <i data-feather="plus" class="w-3.5 h-3.5"></i> Add
             </button>
           </form>
@@ -555,13 +555,9 @@
             <span class="text-xs font-semibold text-slate-300">Account Status</span>
             <span id="edit-client-status-label" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold">ACTIVE</span>
           </div>
-          <label class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" id="edit-client-enabled" class="sr-only peer" checked>
-            <!-- after:left-[2px] is deliberately physical: the knob is moved by
-                 translate-x-full, and a transform is not mirrored by any writing
-                 direction, so pairing a logical start with a positive translate would
-                 slide the knob off its own track. The track is symmetric. -->
-            <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
+          <label class="switch">
+            <input type="checkbox" id="edit-client-enabled" checked>
+            <span class="slider"></span>
           </label>
         </div>
         </fieldset>
@@ -576,7 +572,7 @@
 
           <div class="flex items-center gap-2">
             <button type="button" id="cancel-edit-client-btn"
-              class="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-semibold font-heading transition">
+              class="panel-btn panel-btn-neutral">
               Cancel
             </button>
             <button type="submit" id="edit-client-save-btn"
@@ -620,7 +616,7 @@
              with no cycle has to be cleared by hand every period. -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
-            <label for="client-name-input" class="block text-[11px] font-semibold text-slate-400 mb-1"><span class="text-red-400 font-bold">*</span> USER NAME / LABEL</label>
+            <label for="client-name-input" class="block text-[11px] font-semibold text-slate-400 mb-1"><span class="text-red-400 font-bold">*</span> Email / User Name</label>
             <input type="text" id="client-name-input" placeholder="e.g. Alex (PS5 &amp; Phone)" required
               class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
           </div>
@@ -714,7 +710,7 @@
           </div>
 
           <div>
-            <label for="client-initial-ip" class="block text-[11px] font-semibold text-slate-400 mb-1">INITIAL IP ADDRESS / CIDR (OPTIONAL)</label>
+            <label for="client-initial-ip" class="block text-[11px] font-semibold text-slate-400 mb-1">IP Addresses <span class="text-slate-500">(optional)</span></label>
             <input type="text" id="client-initial-ip" placeholder="e.g. 2.189.86.32, 203.0.113.0/24"
               class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
             <p class="text-[10px] text-slate-500 mt-1">Comma- or space-separated. Accepts bare IPs and CIDR ranges. Leave blank to let the user self-register via their personal URL.</p>
@@ -722,7 +718,7 @@
         </div>
 
         <div>
-          <label for="client-egress" class="block text-[11px] font-semibold text-slate-400 mb-1">DEFAULT EGRESS</label>
+          <label for="client-egress" class="block text-[11px] font-semibold text-slate-400 mb-1">Default Egress</label>
           <select id="client-egress"
             class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
             <option value="">This Server</option>
@@ -855,7 +851,7 @@
         <button type="button" id="bulk-import-cancel-btn-bottom"
           class="panel-btn panel-btn-neutral">Cancel</button>
         <button type="button" id="bulk-import-apply-btn"
-          class="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Import Domains</button>
+          class="panel-btn panel-btn-primary">Import Domains</button>
       </div>
     </div>
   </div>
@@ -881,8 +877,12 @@
         </div>
       </div>
 
-      <!-- Sidebar Navigation Menu -->
+      <!-- Sidebar Navigation Menu. Grouped with quiet captions: the eleven
+           destinations are otherwise one undifferentiated column, and the captions
+           are the cheapest structure that does not cost a click or a pixel of the
+           collapsed rail (see .sidebar-group-label in style.css). -->
       <nav id="sidebar-nav" class="space-y-1">
+        <div class="sidebar-group-label" aria-hidden="true">Overview</div>
         <div class="sidebar-nav-row">
           <button class="sidebar-nav-item active" data-tab="dashboard" data-route="/home">
             <i data-feather="activity" class="w-4 h-4"></i>
@@ -901,6 +901,12 @@
             <i data-feather="rotate-ccw" class="w-3.5 h-3.5"></i>
           </button>
         </div>
+        <button class="sidebar-nav-item" data-tab="stream" data-route="/logs">
+          <i data-feather="terminal" class="w-4 h-4"></i>
+          <span>Live Log</span>
+        </button>
+
+        <div class="sidebar-group-label" aria-hidden="true">Routing &amp; policy</div>
         <button class="sidebar-nav-item" data-tab="proxied" data-route="/proxied">
           <i data-feather="shield" class="w-4 h-4"></i>
           <span>Domains</span>
@@ -913,17 +919,21 @@
           <i data-feather="globe" class="w-4 h-4"></i>
           <span>Egress Options</span>
         </button>
-        <button class="sidebar-nav-item" data-tab="tools" data-route="/tools">
-          <i data-feather="tool" class="w-4 h-4"></i>
-          <span>Tools</span>
-        </button>
+
+        <div class="sidebar-group-label" aria-hidden="true">Subscribers</div>
         <button class="sidebar-nav-item" data-tab="clients" data-route="/clients">
           <i data-feather="users" class="w-4 h-4"></i>
           <span>Users</span>
         </button>
-        <button class="sidebar-nav-item" data-tab="stream" data-route="/logs">
-          <i data-feather="terminal" class="w-4 h-4"></i>
-          <span>Live Log</span>
+        <button class="sidebar-nav-item" data-tab="connect" data-route="/guide">
+          <i data-feather="wifi" class="w-4 h-4"></i>
+          <span>Guide</span>
+        </button>
+
+        <div class="sidebar-group-label" aria-hidden="true">System</div>
+        <button class="sidebar-nav-item" data-tab="tools" data-route="/tools">
+          <i data-feather="tool" class="w-4 h-4"></i>
+          <span>Tools</span>
         </button>
         <button class="sidebar-nav-item" data-tab="systemlog" data-route="/system-log">
           <i data-feather="list" class="w-4 h-4"></i>
@@ -936,10 +946,6 @@
         <button class="sidebar-nav-item" data-tab="rules" data-route="/settings">
           <i data-feather="sliders" class="w-4 h-4"></i>
           <span>Settings</span>
-        </button>
-        <button class="sidebar-nav-item" data-tab="connect" data-route="/guide">
-          <i data-feather="wifi" class="w-4 h-4"></i>
-          <span>Guide</span>
         </button>
       </nav>
     </div>
@@ -1623,7 +1629,7 @@
 
               <div class="filtering-settings-actions">
                 <button type="button" id="filtering-save-settings-btn"
-                  class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition">
+                  class="panel-btn panel-btn-primary">
                   Save ad blocking settings
                 </button>
                 <span id="filtering-settings-status" class="text-[11px] text-slate-400"></span>
@@ -1980,9 +1986,9 @@
             <div class="flex items-center gap-3 shrink-0">
               <label class="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-300 cursor-pointer">
                 <span>Relay mode</span>
-                <span class="relative inline-flex items-center">
-                  <input type="checkbox" id="relay-global-enabled" class="sr-only peer">
-                  <span class="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:bg-cyan-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></span>
+                <span class="switch">
+                  <input type="checkbox" id="relay-global-enabled">
+                  <span class="slider"></span>
                 </span>
               </label>
               <button id="add-relay-hub-btn" type="button" class="panel-btn panel-btn-primary">
@@ -2408,15 +2414,55 @@
           <div class="glass-panel panel-card p-5 space-y-3">
             <h4 class="text-xs font-bold text-white font-heading">Connectivity check</h4>
             <div class="flex flex-col sm:flex-row gap-2">
-              <input id="tools-host" type="text" placeholder="host or IP" class="panel-field flex-1 font-mono text-xs" aria-label="Host to check">
-              <input id="tools-port" type="number" min="1" max="65535" value="443" class="panel-field sm:w-24 font-mono text-xs" aria-label="Port to check">
-              <select id="tools-check-mode" class="panel-field sm:w-52 font-mono text-xs" aria-label="Dial path">
-                <option value="direct">Direct (This Server)</option>
-                <option value="route">Proxied (routing table)</option>
+              <input id="tools-host" type="text" placeholder="host or IP" class="panel-field flex-1 min-w-0 w-full sm:w-auto font-mono text-xs" aria-label="Host to check">
+              <input id="tools-port" type="number" min="1" max="65535" value="443" class="panel-field w-full sm:w-16 font-mono text-xs text-center" aria-label="Port to check">
+              <select id="tools-check-mode" class="panel-field w-full sm:w-36 min-w-0 font-mono text-xs" aria-label="Dial path">
+                <option value="direct">Direct</option>
               </select>
-              <button id="tools-check-btn" type="button" class="panel-btn panel-btn-primary">Test</button>
+              <button id="tools-check-btn" type="button" class="panel-btn panel-btn-primary w-full sm:w-auto">Test</button>
             </div>
             <div id="tools-check-result" class="text-xs text-slate-500">Resolve a host and open one TCP port.</div>
+          </div>
+
+          <div class="glass-panel panel-card p-5 space-y-3 lg:col-span-2">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h4 class="text-xs font-bold text-white font-heading">Query search</h4>
+                <p class="text-[11px] text-slate-500 mt-0.5">Optional historical query log. Off by default; stored in a separate database.</p>
+              </div>
+              <label class="inline-flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                <span>Enabled</span>
+                <span class="relative inline-flex items-center">
+                  <input type="checkbox" id="querylog-enabled" class="sr-only peer">
+                  <span class="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:bg-cyan-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></span>
+                </span>
+              </label>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+              <select id="querylog-retention" class="panel-field sm:w-32 font-mono text-xs" aria-label="Query log retention">
+                <option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option>
+              </select>
+              <label class="inline-flex items-center gap-1.5 text-[11px] text-slate-300"><input type="checkbox" id="querylog-anonymize" class="accent-cyan-500"> Anonymize clients</label>
+              <button id="querylog-save" type="button" class="panel-btn panel-btn-sm panel-btn-neutral">Save settings</button>
+              <button id="querylog-clear" type="button" class="panel-btn panel-btn-sm panel-btn-neutral text-red-300">Clear history</button>
+              <span id="querylog-status" class="text-[11px] text-slate-500"></span>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-2">
+              <input id="querylog-domain" type="text" placeholder="domain" class="panel-field flex-1 font-mono text-xs" aria-label="Filter by domain">
+              <input id="querylog-client" type="text" placeholder="client / account" class="panel-field sm:w-40 font-mono text-xs" aria-label="Filter by client">
+              <div class="relative">
+                <button id="querylog-action-btn" type="button" class="panel-field sm:w-36 text-left font-mono text-xs" aria-haspopup="true" aria-expanded="false">Any action</button>
+                <div id="querylog-action-menu" class="hidden absolute end-0 top-full mt-1 z-30 w-56 p-1.5 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl space-y-0.5"></div>
+              </div>
+              <div class="relative">
+                <button id="querylog-proto-btn" type="button" class="panel-field sm:w-32 text-left font-mono text-xs" aria-haspopup="true" aria-expanded="false">Any proto</button>
+                <div id="querylog-proto-menu" class="hidden absolute end-0 top-full mt-1 z-30 w-44 p-1.5 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl space-y-0.5"></div>
+              </div>
+              <button id="querylog-search" type="button" class="panel-btn panel-btn-primary">Search</button>
+              <button id="querylog-export-csv" type="button" class="panel-btn panel-btn-neutral">CSV</button>
+              <button id="querylog-export-json" type="button" class="panel-btn panel-btn-neutral">JSON</button>
+            </div>
+            <div id="querylog-results" class="text-xs text-slate-500">Enable the log, then search. Results appear here.</div>
           </div>
 
         </div>
@@ -2609,6 +2655,22 @@ async function onBuySubscription(ctx, username) {
       <!-- ============================================== -->
       <section id="tab-rules" class="tab-content space-y-6 hidden settings-layout">
 
+        <!-- Section jump bar. Fifteen cards on one page is a long scroll with no
+             map, and the Android app already answers this with a chip row, so the
+             panel does the same: each chip moves the page to the card it names
+             rather than hiding anything, which keeps every control reachable and
+             leaves the boot-paint and tab-switch logic untouched. -->
+        <nav class="settings-jump settings-wide" aria-label="Settings sections">
+          <button type="button" class="panel-chip is-active" data-settings-jump="top" aria-pressed="true">All</button>
+          <button type="button" class="panel-chip" data-settings-jump="twofa-card" aria-pressed="false">Security</button>
+          <button type="button" class="panel-chip" data-settings-jump="transports-card" aria-pressed="false">Transports</button>
+          <button type="button" class="panel-chip" data-settings-jump="dnssec-card" aria-pressed="false">DNSSEC</button>
+          <button type="button" class="panel-chip" data-settings-jump="proxy-ipv6-card" aria-pressed="false">IPv6</button>
+          <button type="button" class="panel-chip" data-settings-jump="stats-settings-card" aria-pressed="false">History</button>
+          <button type="button" class="panel-chip" data-settings-jump="alerts-card" aria-pressed="false">Alerts</button>
+          <button type="button" class="panel-chip" data-settings-jump="server-update-card" aria-pressed="false">Updates</button>
+        </nav>
+
         <!-- Server Location and Two-Factor Authentication form the left column;
              Server Update sits on the right, where it has room for the container
              image/binary selector. On a phone the pair collapses to one column in
@@ -2669,7 +2731,7 @@ async function onBuySubscription(ctx, username) {
                   class="panel-field w-full font-mono focus:border-sky-400">
               </form>
               <button id="twofa-begin-btn" type="button"
-                class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
+                class="panel-btn panel-btn-primary">
                 Start Enrollment
               </button>
             </div>
@@ -2707,11 +2769,11 @@ async function onBuySubscription(ctx, username) {
                     class="panel-field flex-1 min-w-0 font-mono focus:border-sky-400">
                 </form>
                 <button id="twofa-confirm-btn" type="button"
-                  class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
-                  Confirm & Enable
+                  class="panel-btn panel-btn-primary">
+                  Confirm &amp; Enable
                 </button>
                 <button id="twofa-cancel-btn" type="button"
-                  class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
+                  class="panel-btn panel-btn-neutral">
                   Cancel enrollment
                 </button>
               </div>
@@ -2728,7 +2790,7 @@ async function onBuySubscription(ctx, username) {
                   class="panel-field flex-1 min-w-0 font-mono focus:border-red-400">
               </form>
               <button id="twofa-disable-btn" type="button"
-                class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
+                class="panel-btn panel-btn-danger">
                 Disable 2FA
               </button>
             </div>
@@ -2759,7 +2821,7 @@ async function onBuySubscription(ctx, username) {
                   <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i> <span>Check for updates</span>
                 </button>
                 <button type="button" id="server-update-apply-btn"
-                  class="hidden inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[11px] transition">
+                  class="panel-btn panel-btn-primary panel-btn-sm hidden">
                   <i data-feather="download-cloud" class="w-3.5 h-3.5"></i> <span>Update now</span>
                 </button>
               </div>
@@ -2816,7 +2878,7 @@ async function onBuySubscription(ctx, username) {
               </div>
             </div>
             <button id="regen-admin-path-btn" type="button"
-              class="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
+              class="panel-btn panel-btn-danger">
               Regenerate Path
             </button>
           </div>
@@ -2841,7 +2903,7 @@ async function onBuySubscription(ctx, username) {
               </div>
             </div>
             <button id="open-change-pwd-btn" type="button"
-              class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
+              class="panel-btn panel-btn-primary">
               Change Username / Password
             </button>
           </div>
@@ -2904,7 +2966,7 @@ async function onBuySubscription(ctx, username) {
                up serving a certificate for a name it no longer uses. -->
           <div class="flex flex-col sm:flex-row sm:items-center gap-3">
             <button id="sub-issue-ssl-btn" type="button"
-              class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+              class="panel-btn panel-btn-primary">
               Issue certificate
             </button>
             <label class="flex items-center gap-2 text-xs text-slate-300 whitespace-nowrap">
@@ -2940,7 +3002,7 @@ async function onBuySubscription(ctx, username) {
 
           <div class="flex items-center gap-3 flex-wrap">
             <button id="save-subscription-btn" type="button"
-              class="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs font-heading transition">
+              class="panel-btn panel-btn-primary">
               Save Subscription Settings
             </button>
             <span id="sub-save-status" class="text-[11px] text-slate-400"></span>
@@ -2976,7 +3038,7 @@ async function onBuySubscription(ctx, username) {
                 <div class="flex flex-col sm:flex-row gap-2">
                   <input type="text" id="dot-domain-input" aria-label="Custom DoH DoT domain" placeholder="Custom DoH, DoT domain (empty = panel domain)"
                     class="panel-field flex-1 font-mono focus:border-cyan-400">
-                  <button id="issue-dot-ssl-btn" class="shrink-0 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-[11px] font-heading transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+                  <button id="issue-dot-ssl-btn" class="panel-btn panel-btn-primary panel-btn-sm">
                     Issue certificate
                   </button>
                 </div>
@@ -3005,7 +3067,7 @@ async function onBuySubscription(ctx, username) {
                 <div class="flex flex-col sm:flex-row gap-2">
                   <input type="email" id="ssl-email-input" aria-label="Certificate contact email" placeholder="Admin Email (optional)"
                     class="panel-field flex-1 font-mono focus:border-cyan-400">
-                  <button id="issue-ssl-btn" class="shrink-0 px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 text-slate-950 font-bold rounded-lg text-[11px] font-heading transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+                  <button id="issue-ssl-btn" class="panel-btn panel-btn-primary panel-btn-sm">
                     Issue certificate
                   </button>
                 </div>
@@ -3133,7 +3195,7 @@ async function onBuySubscription(ctx, username) {
 
             <div class="flex items-center gap-3 flex-wrap">
               <button id="cert-apply-btn" type="button"
-                class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition disabled:opacity-50 disabled:cursor-not-allowed">
+                class="panel-btn panel-btn-primary">
                 Apply certificate
               </button>
               <span id="cert-apply-status" class="text-[11px] text-slate-400"></span>
@@ -3232,7 +3294,7 @@ async function onBuySubscription(ctx, username) {
                 </div>
                 <div class="flex gap-2">
                   <input type="text" id="new-dot-token-input" aria-label="New DoT token label" placeholder="token label (e.g. phone)" class="panel-field flex-1 min-w-0 font-mono text-xs focus:border-sky-400">
-                  <button type="button" id="add-dot-token-btn" class="shrink-0 px-3 py-2 bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold rounded-lg text-[11px] font-heading transition">Add</button>
+                  <button type="button" id="add-dot-token-btn" class="panel-btn panel-btn-primary panel-btn-sm">Add</button>
                 </div>
                 <div id="dot-tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">No DoT tokens yet</div></div>
               </div>
@@ -3308,7 +3370,7 @@ async function onBuySubscription(ctx, username) {
                 </div>
                 <div class="flex gap-2">
                   <input type="text" id="new-doq-token-input" aria-label="New DoQ token label" placeholder="token label (e.g. home)" class="panel-field flex-1 min-w-0 font-mono text-xs focus:border-emerald-400">
-                  <button type="button" id="add-doq-token-btn" class="shrink-0 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-[11px] font-heading transition">Add</button>
+                  <button type="button" id="add-doq-token-btn" class="panel-btn panel-btn-primary panel-btn-sm">Add</button>
                 </div>
                 <div id="doq-tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">No DoQ tokens yet</div></div>
               </div>
@@ -3440,7 +3502,7 @@ async function onBuySubscription(ctx, username) {
             <div class="flex gap-2">
               <input type="text" id="new-blocked-input" aria-label="New blocked domain" placeholder="e.g. *.telemetry.com or ads.tracker.net"
                 class="panel-field flex-1 min-w-0 font-mono focus:border-red-400">
-              <button id="add-blocked-btn" class="shrink-0 px-4 py-2 bg-red-600 hover:bg-red-700 text-onfill font-bold rounded-lg text-xs transition font-heading">Block</button>
+              <button id="add-blocked-btn" class="panel-btn panel-btn-danger">Block</button>
             </div>
 
             <button type="button" id="bulk-blocked-btn"
@@ -3463,7 +3525,7 @@ async function onBuySubscription(ctx, username) {
             <div class="flex gap-2">
               <input type="text" id="new-token-input" aria-label="New DoH access token" placeholder="Enter secure token (e.g. mysecretkey)"
                 class="panel-field flex-1 min-w-0 font-mono focus:border-purple-400">
-              <button id="add-token-btn" class="shrink-0 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-onfill font-bold rounded-lg text-xs transition font-heading">Add Token</button>
+              <button id="add-token-btn" class="panel-btn panel-btn-primary">Add Token</button>
             </div>
 
             <div id="tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">Loading tokens…</div></div>
@@ -3484,7 +3546,7 @@ async function onBuySubscription(ctx, username) {
               <div class="flex gap-2">
                 <input type="text" id="custom-record-ip" aria-label="DNS rewrite IP address" placeholder="1.2.3.4"
                   class="panel-field flex-1 min-w-0 font-mono focus:border-emerald-400">
-                <button id="add-custom-record-btn" class="shrink-0 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Save</button>
+                <button id="add-custom-record-btn" class="panel-btn panel-btn-primary">Save</button>
               </div>
             </div>
 
@@ -3509,7 +3571,7 @@ async function onBuySubscription(ctx, username) {
                 </h3>
                 <p class="text-[11px] text-slate-400 mt-0.5">Named bundles of domains with one action (proxy / direct / block), switchable as a unit.</p>
               </div>
-              <button id="add-custom-group-btn" class="shrink-0 px-4 py-2 bg-violet-500 hover:bg-violet-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">New Group</button>
+              <button id="add-custom-group-btn" class="panel-btn panel-btn-primary">New Group</button>
             </div>
             <div id="custom-groups-list" class="space-y-2"><div class="text-slate-500 text-xs py-1">Loading groups…</div></div>
 
@@ -3549,13 +3611,13 @@ async function onBuySubscription(ctx, username) {
                   <div class="flex items-center gap-2">
                     <label for="custom-group-icon-file" class="cursor-pointer px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-[11px] transition">Upload icon…</label>
                     <input type="file" id="custom-group-icon-file" accept=".svg,image/svg+xml,.png,image/png" class="hidden">
-                    <button type="button" id="custom-group-icon-remove" class="hidden px-2.5 py-1 rounded bg-slate-900 hover:bg-red-500/10 text-slate-300 hover:text-red-400 border border-slate-700 text-[11px] transition">Remove</button>
+                    <button type="button" id="custom-group-icon-remove" class="panel-btn panel-btn-sm panel-btn-danger hidden">Remove</button>
                   </div>
                   <p class="text-[10px] text-slate-500 mt-1">SVG ≤ 16 KB (scripts/refs stripped) or PNG ≤ 64 KB, ≤ 512×512.</p>
                 </div>
               </div>
               <div class="flex items-center gap-2">
-                <button id="save-custom-group-btn" class="px-4 py-2 bg-violet-500 hover:bg-violet-400 text-slate-950 font-bold rounded-lg text-xs transition font-heading">Save Group</button>
+                <button id="save-custom-group-btn" class="panel-btn panel-btn-primary">Save Group</button>
                 <button id="cancel-custom-group-btn" class="panel-btn panel-btn-neutral">Cancel</button>
                 <span id="custom-group-status" class="text-[11px] text-slate-400"></span>
               </div>
@@ -3668,7 +3730,7 @@ async function onBuySubscription(ctx, username) {
 
           <div class="mt-auto flex items-center gap-3 flex-wrap">
             <button id="save-proxy-ipv6-btn" type="button"
-              class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
+              class="panel-btn panel-btn-primary">
               Save IPv6 settings
             </button>
             <span id="proxy-ipv6-status" class="text-[11px] text-slate-400"></span>
@@ -3720,7 +3782,7 @@ async function onBuySubscription(ctx, username) {
 
           <div class="flex flex-col sm:flex-row sm:items-center gap-3">
             <button id="save-dnssec-btn" type="button"
-              class="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs font-heading transition whitespace-nowrap">
+              class="panel-btn panel-btn-primary">
               Save &amp; Apply DNSSEC Settings
             </button>
             <span id="dnssec-save-status" class="text-[11px] text-slate-400"></span>
@@ -3791,7 +3853,7 @@ async function onBuySubscription(ctx, username) {
 
           <div class="flex items-center gap-3 flex-wrap">
             <button id="save-stats-settings-btn" type="button"
-              class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition">
+              class="panel-btn panel-btn-primary">
               Save history settings
             </button>
             <span id="stats-settings-status" class="text-[11px] text-slate-400"></span>
@@ -3815,7 +3877,7 @@ async function onBuySubscription(ctx, username) {
                 aria-label="Session idle timeout in minutes">
               <span class="text-[11px] text-slate-400">min</span>
               <button type="button" id="session-idle-save"
-                class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg text-xs font-heading transition">Save</button>
+                class="panel-btn panel-btn-primary">Save</button>
             </div>
           </div>
 
@@ -3832,9 +3894,9 @@ async function onBuySubscription(ctx, username) {
             </div>
             <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-300 cursor-pointer">
               <span>Enabled</span>
-              <span class="relative inline-flex items-center">
-                <input type="checkbox" id="alerts-enabled" class="sr-only peer">
-                <span class="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:bg-cyan-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></span>
+              <span class="switch">
+                <input type="checkbox" id="alerts-enabled">
+                <span class="slider"></span>
               </span>
             </label>
           </div>

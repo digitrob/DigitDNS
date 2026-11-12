@@ -401,6 +401,46 @@ func (b *v3Backend) Explain(domain, clientIP string) (map[string]any, error) {
 	return b.ws.Explain(domain, clientIP)
 }
 
+func (b *v3Backend) QueryLog(r *http.Request) (map[string]any, error) {
+	if b.ws.queryLog == nil {
+		return nil, nil
+	}
+	items := b.ws.queryLog.Search(queryLogFilter(r))
+	return map[string]any{"items": items, "count": len(items)}, nil
+}
+
+func (b *v3Backend) QueryLogSettings() map[string]any {
+	if b.ws.queryLog == nil {
+		return nil
+	}
+	return map[string]any{"settings": b.ws.queryLog.Settings()}
+}
+
+func (b *v3Backend) SaveQueryLogSettings(r *http.Request, body map[string]any) (map[string]any, error) {
+	if b.ws.queryLog == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	var in service.QueryLogSettings
+	if err := json.Unmarshal(data, &in); err != nil {
+		return nil, err
+	}
+	if err := b.ws.queryLog.SaveSettings(in); err != nil {
+		return nil, err
+	}
+	return map[string]any{"settings": b.ws.queryLog.Settings()}, nil
+}
+
+func (b *v3Backend) ClearQueryLog() error {
+	if b.ws.queryLog == nil {
+		return nil
+	}
+	return b.ws.queryLog.Clear()
+}
+
 func (b *v3Backend) AlertSettings() (map[string]any, error) {
 	if b.ws.alerts == nil {
 		return nil, nil

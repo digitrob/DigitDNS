@@ -33,6 +33,12 @@ data class ExtendedColors(
     val proxy: Color,
     val purple: Color,
     val discord: Color,
+    /** The protocol ramp's TCP blue. [info] is the cyan accent and must not be reused. */
+    val blue: Color,
+    /** DoH3's category colour. */
+    val orange: Color,
+    /** DNSCrypt's category colour. */
+    val fuchsia: Color,
 )
 
 internal fun digitDnsExtendedColors(dark: Boolean, grey: Boolean = false): ExtendedColors = when {
@@ -52,6 +58,11 @@ internal fun digitDnsExtendedColors(dark: Boolean, grey: Boolean = false): Exten
         proxy = PanelColors.AccentProxyGrey,
         purple = PanelColors.AccentPurpleGrey,
         discord = PanelColors.AccentDiscord,
+        // Graphite is monochrome for category colour; green/amber/red keep their
+        // meaning below, but the three decorative protocol hues go neutral.
+        blue = PanelColors.Slate300Grey,
+        orange = PanelColors.Slate300Grey,
+        fuchsia = PanelColors.Slate300Grey,
     )
     dark -> ExtendedColors(
         bgMain = PanelColors.Slate900Dark,
@@ -69,6 +80,9 @@ internal fun digitDnsExtendedColors(dark: Boolean, grey: Boolean = false): Exten
         proxy = PanelColors.Cyan300Dark,
         purple = PanelColors.AccentPurpleDark,
         discord = PanelColors.AccentDiscord,
+        blue = PanelColors.Blue400Dark,
+        orange = PanelColors.Orange400Dark,
+        fuchsia = PanelColors.Fuchsia400Dark,
     )
     else -> ExtendedColors(
         bgMain = PanelColors.Slate900Light,
@@ -86,6 +100,9 @@ internal fun digitDnsExtendedColors(dark: Boolean, grey: Boolean = false): Exten
         proxy = PanelColors.Cyan300Light,
         purple = PanelColors.AccentPurpleLight,
         discord = PanelColors.AccentDiscord,
+        blue = PanelColors.Blue400Light,
+        orange = PanelColors.Orange400Light,
+        fuchsia = PanelColors.Fuchsia400Light,
     )
 }
 

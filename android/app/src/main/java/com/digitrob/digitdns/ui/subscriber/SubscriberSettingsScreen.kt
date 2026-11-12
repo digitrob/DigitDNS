@@ -15,14 +15,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -43,6 +40,7 @@ import com.digitrob.digitdns.R
 import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.domain.model.SubscriberLink
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.PanelCopyIconButton
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
@@ -129,18 +127,13 @@ private fun SubscriptionCard(
                 color = if (state.secretSaved) DigitDnsTheme.colors.success else DigitDnsTheme.colors.warning,
             )
             Spacer(Modifier.weight(1f))
-            IconButton(
-                onClick = { link?.portalUrl?.let(onCopy) },
+            PanelCopyIconButton(
+                contentDescription = stringResource(R.string.subscriber_copy_link),
+                onCopy = { link?.portalUrl?.let(onCopy) },
                 enabled = link != null,
                 modifier = Modifier.size(32.dp),
-            ) {
-                Icon(
-                    Icons.Filled.ContentCopy,
-                    contentDescription = stringResource(R.string.subscriber_copy_link),
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+                iconSize = 16.dp,
+            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { link?.portalUrl?.let(onOpenPortal) }) { Text(stringResource(R.string.subscriber_open_portal)) }

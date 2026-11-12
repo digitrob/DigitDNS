@@ -63,6 +63,12 @@ internal object PanelColors {
     val Blue600Dark = Color(0xFF2563EB)
     val Blue500Dark = Color(0xFF3B82F6)
     val Blue400Dark = Color(0xFF60A5FA)
+    // Category colours for the protocol ramp. They exist as their own tokens because
+    // the live log and the Requests/Browsers card read them by role: DoH3 is orange
+    // and DNSCrypt is fuchsia in the panel's own protocol table, and both need a
+    // light-mode step that is not the dark one (230 121 249 on white is 1.9:1).
+    val Orange400Dark = Color(0xFFFB923C) // 251 146 60
+    val Fuchsia400Dark = Color(0xFFE879F9) // 232 121 249
 
     // Page chrome.
     val BgCardDark = Color(0xB8121C38) // rgba(13, 20, 38, 0.72)
@@ -115,6 +121,11 @@ internal object PanelColors {
     val Blue600Light = Color(0xFF1E40AF)
     val Blue500Light = Color(0xFF1D4ED8)
     val Blue400Light = Color(0xFF1D4ED8)
+    // The light-mode step of the two protocol category colours, matching the
+    // [data-theme="light"] .proto-* block in web/css/style.css: orange-700 and
+    // fuchsia-800, both of which clear 4.5:1 on the light card.
+    val Orange400Light = Color(0xFFC2410C) // 194 65 12
+    val Fuchsia400Light = Color(0xFF86198F) // 134 25 143
 
     val BgCardLight = Color(0xEBFFFFFF) // rgba(255, 255, 255, 0.92)
     val BgCardHoverLight = Color(0xFFFFFFFF)

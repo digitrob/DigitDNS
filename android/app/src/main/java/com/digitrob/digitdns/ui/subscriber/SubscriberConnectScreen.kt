@@ -18,12 +18,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.SubscriberStatusDto
+import com.digitrob.digitdns.ui.components.PanelCopyIconButton
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
@@ -192,13 +190,11 @@ private fun CopyRow(label: String, value: String, onCopy: (String) -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        IconButton(onClick = { onCopy(value) }, modifier = Modifier.size(32.dp)) {
-            Icon(
-                Icons.Filled.ContentCopy,
-                contentDescription = stringResource(R.string.subscriber_copy_value, label),
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        PanelCopyIconButton(
+            contentDescription = stringResource(R.string.subscriber_copy_value, label),
+            onCopy = { onCopy(value) },
+            modifier = Modifier.size(32.dp),
+            iconSize = 16.dp,
+        )
     }
 }

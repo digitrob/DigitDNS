@@ -15,8 +15,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -24,8 +28,12 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,6 +51,7 @@ import com.digitrob.digitdns.data.HistoryClock
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.MetricNumber
 import com.digitrob.digitdns.ui.theme.PanelMono
+import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -93,6 +102,56 @@ fun PanelCard(
         contentAlignment = contentAlignment,
     ) {
         content()
+    }
+}
+
+/**
+ * The panel's copy affordance: an icon button that turns into a green check for a
+ * moment after the value has been handed to the clipboard.
+ *
+ * A toast alone is easy to miss on a phone — it appears at the bottom of the screen
+ * while the operator's eye is on the row they just tapped, and a busy screen can
+ * show three of them in a row. The check says "that one" at the point of the press,
+ * which is the same reason the web panel swaps the glyph inside the copy box instead
+ * of only flashing a corner toast.
+ *
+ * The revert is keyed on [copied] rather than fired from the click handler so a
+ * second tap restarts the window: tapping twice restarts the effect, and the icon
+ * stays a check until the last tap is 1.2 s old.
+ */
+@Composable
+fun PanelCopyIconButton(
+    contentDescription: String,
+    onCopy: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    enabled: Boolean = true,
+    iconSize: Dp? = null,
+) {
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1200)
+            copied = false
+        }
+    }
+    IconButton(
+        onClick = {
+            onCopy()
+            copied = true
+        },
+        modifier = modifier,
+        enabled = enabled,
+    ) {
+        Icon(
+            imageVector = if (copied) Icons.Filled.Check else Icons.Filled.ContentCopy,
+            contentDescription = contentDescription,
+            tint = if (copied) DigitDnsTheme.colors.success else tint,
+            // A 26-28 dp row keeps its 13-14 dp glyph; a default IconButton keeps its
+            // 24 dp one. Without this the compact agent rows would grow a full-size
+            // icon and push their own row height.
+            modifier = if (iconSize != null) Modifier.size(iconSize) else Modifier,
+        )
     }
 }
 

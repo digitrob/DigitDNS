@@ -102,6 +102,11 @@ type V3Backend interface {
 
 	// Why-blocked explanation for one domain and optional client IP.
 	Explain(domain, clientIP string) (map[string]any, error)
+	// Optional persistent query history.
+	QueryLog(r *http.Request) (map[string]any, error)
+	QueryLogSettings() map[string]any
+	SaveQueryLogSettings(r *http.Request, body map[string]any) (map[string]any, error)
+	ClearQueryLog() error
 	// Alert configuration and delivery test.
 	AlertSettings() (map[string]any, error)
 	SaveAlertSettings(r *http.Request, body map[string]any) (map[string]any, error)
@@ -299,6 +304,9 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/explain", a.SecurityMiddlewareV3(a.handleV3Explain))
 	mux.HandleFunc("/api/v3/alerts", a.SecurityMiddlewareV3(a.handleV3Alerts))
 	mux.HandleFunc("/api/v3/alerts/test", a.SecurityMiddlewareV3(a.handleV3AlertsTest))
+	mux.HandleFunc("/api/v3/query-log", a.SecurityMiddlewareV3(a.handleV3QueryLog))
+	mux.HandleFunc("/api/v3/query-log/settings", a.SecurityMiddlewareV3(a.handleV3QueryLogSettings))
+	mux.HandleFunc("/api/v3/query-log/clear", a.SecurityMiddlewareV3(a.handleV3QueryLogClear))
 
 	// Cache, config & self-update.
 	mux.HandleFunc("/api/v3/cache/flush", a.SecurityMiddlewareV3(a.handleV3FlushCache))

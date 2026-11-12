@@ -62,6 +62,8 @@ type WebServer struct {
 	alerts *service.AlertManager
 	// dnsQueryAddr is this server's own resolver, used by the Tools lookup.
 	dnsQueryAddr string
+	// queryLog is the optional persistent query history.
+	queryLog *service.QueryLogService
 	// relayMode lets this full instance act as a relay agent for another hub.
 	relayMode  *service.RelayModeManager
 	upstreams  *upstream.UpstreamPool
@@ -1345,6 +1347,10 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/tools/check", ws.requireAuth(ws.handleToolsCheck))
 	mux.HandleFunc("/api/tools/dns", ws.requireAuth(ws.handleToolsDNS))
 	mux.HandleFunc("/api/tools/whois", ws.requireAuth(ws.handleToolsWhois))
+	mux.HandleFunc("/api/query-log", ws.requireAuth(ws.handleQueryLog))
+	mux.HandleFunc("/api/query-log/settings", ws.requireAuth(ws.handleQueryLogSettings))
+	mux.HandleFunc("/api/query-log/export", ws.requireAuth(ws.handleQueryLogExport))
+	mux.HandleFunc("/api/query-log/clear", ws.requireAuth(ws.handleQueryLogClear))
 	mux.HandleFunc("/api/alerts", ws.requireAuth(ws.handleAlerts))
 	mux.HandleFunc("/api/alerts/test", ws.requireAuth(ws.handleAlertsTest))
 	mux.HandleFunc("/api/relay-mode", ws.requireAuth(ws.handleRelayMode))

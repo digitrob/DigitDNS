@@ -22,7 +22,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -48,6 +47,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.PanelCopyIconButton
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.StatusBadge
@@ -264,9 +264,10 @@ private fun CopyBox(value: String, contentDescription: String) {
             modifier = Modifier.weight(1f),
         )
         if (value.isNotBlank()) {
-            IconButton(onClick = { clipboard.setText(AnnotatedString(value)) }) {
-                Icon(Icons.Filled.ContentCopy, contentDescription = contentDescription)
-            }
+            PanelCopyIconButton(
+                contentDescription = contentDescription,
+                onCopy = { clipboard.setText(AnnotatedString(value)) },
+            )
         }
     }
 }

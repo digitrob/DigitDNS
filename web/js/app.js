@@ -6652,9 +6652,19 @@ const STREAM_ACTION_BADGES = {
 // Colour per protocol for the PROTO column. The shown value is the transport that
 // resolved the query (upstream_protocol), falling back to the client protocol when
 // nothing upstream answered. Unknown or blank values stay muted.
+//
+// These are the SAME seven roles as the .proto-* classes in style.css — UDP cyan,
+// TCP blue, DoT emerald, DoH purple, DoQ amber, DoH3 orange, DNSCrypt fuchsia — and
+// they have to stay in step: this table paints the live log and the history
+// Protocols card, the stylesheet paints the provider browser and the resolver rows,
+// and the same DoQ must not be amber in one place and blue in another. They are
+// Tailwind token classes rather than the .proto-* names because this markup is
+// rendered inside dark glass and light cards alike, and the tokens carry the
+// light-mode step. UDP/TCP were previously inverted here (UDP blue, TCP sky), which
+// is what made the live log disagree with the resolver card beside it.
 const PROTO_COLORS = {
-  UDP: 'text-blue-400',
-  TCP: 'text-sky-400',
+  UDP: 'text-cyan-400',
+  TCP: 'text-blue-400',
   DOT: 'text-emerald-400',
   DOH: 'text-purple-400',
   DOQ: 'text-amber-400',
@@ -6664,6 +6674,24 @@ const PROTO_COLORS = {
 
 function protocolClass(protocol) {
   return PROTO_COLORS[String(protocol || '').toUpperCase()] || 'text-slate-500';
+}
+
+// The stylesheet's own protocol roles, for the live log's chip. Separate from
+// PROTO_COLORS because the chip needs the .proto-* class (which carries the
+// theme-aware fill and border through currentColor), while the history card still
+// takes a plain text colour from the token utilities above.
+const PROTO_PILL_CLASSES = {
+  UDP: 'proto-udp',
+  TCP: 'proto-tcp',
+  DOT: 'proto-dot',
+  DOH: 'proto-doh',
+  DOQ: 'proto-doq',
+  DOH3: 'proto-doh3',
+  DNSCRYPT: 'proto-dnscrypt',
+};
+
+function protocolPillClass(protocol) {
+  return PROTO_PILL_CLASSES[String(protocol || '').toUpperCase()] || 'proto-other';
 }
 
 // Wire values are upper-case; the UI uses the conventional mixed-case names.
@@ -6737,7 +6765,7 @@ function queryRowHTML(q) {
   const protoTitle = resolutionProto
     ? `Resolution: ${protocolLabel(resolutionProto)} · Client: ${protocolLabel(clientProto)}`
     : `Client: ${protocolLabel(clientProto)}`;
-  const protoClass = protocolClass(protoWire);
+  const protoPill = protocolPillClass(protoWire);
 
   // clientIP is escaped like the domain beside it. It is normally a parsed address,
   // but on DoH it can originate from a forwarding header, and the row is written with
@@ -6766,7 +6794,7 @@ function queryRowHTML(q) {
   return `
     <td class="stream-col-time py-2.5 px-2 sm:px-3 text-slate-400 whitespace-nowrap">${timeStr}</td>
     <td class="stream-col-client py-2.5 px-2 sm:px-3">${clientDisplay}</td>
-    <td class="stream-col-proto py-2.5 px-2 sm:px-3 ${protoClass} font-bold hidden sm:table-cell" title="${escapeHTML(protoTitle)}">${escapeHTML(protoStr)}</td>
+    <td class="stream-col-proto py-2.5 px-2 sm:px-3 hidden sm:table-cell" title="${escapeHTML(protoTitle)}"><span class="proto-pill ${escapeHTML(protoPill)}">${escapeHTML(protoStr)}</span></td>
     <td class="stream-col-domain py-2.5 px-2 sm:px-3">
       <div class="text-cyan-300 font-semibold truncate" title="${escapeHTML(domain)}">${escapeHTML(domain)}</div>
       ${blockDetail}
@@ -9866,11 +9894,12 @@ async function rotateAgentKey(id) {
   showToast('Agent key rotated. The old key no longer works.', 'success');
 }
 
-async function copyClipboard(value, message) {
+async function copyClipboard(value, message, btnElement) {
   const text = String(value || '');
   try {
     await navigator.clipboard.writeText(text);
     showToast(message, 'success');
+    flashCopied(btnElement);
     return;
   } catch (e) { /* fall through to the textarea path */ }
   try {
@@ -9884,12 +9913,12 @@ async function copyClipboard(value, message) {
     area.select();
     const ok = document.execCommand('copy');
     area.remove();
-    if (ok) { showToast(message, 'success'); return; }
+    if (ok) { showToast(message, 'success'); flashCopied(btnElement); return; }
   } catch (e) { /* report below */ }
   showToast('Could not copy to the clipboard.', 'error');
 }
 
-async function copyAgentKey(id) {
+async function copyAgentKey(id, btnElement) {
   const res = await fetch(api('/api/agents/' + encodeURIComponent(id) + '/key'), {
     headers: { 'Authorization': `Bearer ${authToken}` }
   });
@@ -9898,7 +9927,7 @@ async function copyAgentKey(id) {
     return;
   }
   const data = await res.json();
-  await copyClipboard(data.key, 'Agent key copied.');
+  await copyClipboard(data.key, 'Agent key copied.', btnElement);
 }
 
 async function testAgentConnection(id) {
@@ -9972,17 +10001,17 @@ function initAgentPage() {
     if (id) rotateAgentKey(id);
   });
   document.getElementById('agent-country')?.addEventListener('change', updateAgentCountryFlag);
-  document.getElementById('copy-agent-token-btn')?.addEventListener('click', () => {
+  document.getElementById('copy-agent-token-btn')?.addEventListener('click', (e) => {
     const value = document.getElementById('agent-token-value')?.textContent || '';
-    copyClipboard(value, 'Key copied.');
+    copyClipboard(value, 'Key copied.', e.currentTarget);
   });
-  document.getElementById('copy-agent-command-btn')?.addEventListener('click', () => {
+  document.getElementById('copy-agent-command-btn')?.addEventListener('click', (e) => {
     const value = document.getElementById('agent-token-command')?.textContent || '';
-    copyClipboard(value, 'Docker run command copied.');
+    copyClipboard(value, 'Docker run command copied.', e.currentTarget);
   });
-  document.getElementById('copy-agent-compose-btn')?.addEventListener('click', () => {
+  document.getElementById('copy-agent-compose-btn')?.addEventListener('click', (e) => {
     const value = document.getElementById('agent-compose')?.textContent || '';
-    copyClipboard(value, 'Portainer stack copied.');
+    copyClipboard(value, 'Portainer stack copied.', e.currentTarget);
   });
   document.querySelectorAll('[data-agent-platform]').forEach((btn) => {
     btn.addEventListener('click', () => setAgentPlatform(btn.dataset.agentPlatform));
@@ -9997,9 +10026,9 @@ function initAgentPage() {
     const test = e.target.closest('[data-agent-test]');
     if (test) { testAgentConnection(test.dataset.agentTest); return; }
     const copyKey = e.target.closest('[data-agent-copy-key]');
-    if (copyKey) { copyAgentKey(copyKey.dataset.agentCopyKey); return; }
+    if (copyKey) { copyAgentKey(copyKey.dataset.agentCopyKey, copyKey); return; }
     const copyIP = e.target.closest('[data-agent-copy-ip]');
-    if (copyIP) { copyClipboard(copyIP.dataset.agentCopyIp, 'Public IP copied.'); return; }
+    if (copyIP) { copyClipboard(copyIP.dataset.agentCopyIp, 'Public IP copied.', copyIP); return; }
     const del = e.target.closest('[data-agent-delete]');
     if (del) deleteAgent(del.dataset.agentDelete);
   });
@@ -11350,12 +11379,12 @@ function stopSystemLogPolling() {
   }
 }
 
-function copySystemLog() {
+function copySystemLog(e) {
   if (!systemLogText) {
     showToast('The system log is empty.', 'info');
     return;
   }
-  copyClipboard(systemLogText, 'System log copied.');
+  copyClipboard(systemLogText, 'System log copied.', e && e.currentTarget);
 }
 
 async function exportSystemLog() {
@@ -11526,7 +11555,7 @@ async function loadToolsEgressOptions() {
       }
     }
     const current = select.value;
-    const rows = ['<option value="direct">Direct (This Server)</option>', '<option value="route">Proxied (routing table)</option>'];
+    const rows = ['<option value="direct">Direct</option>'];
     for (const kind of ['socks5', 'wireguard']) {
       const items = egressesCache.filter((e) => e.kind === kind);
       if (!items.length) continue;
@@ -11624,8 +11653,234 @@ async function toolsCheck() {
   }
 }
 
+const QUERYLOG_ACTIONS = [
+  { value: 'DIRECT', label: 'Direct', cls: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
+  { value: 'PROXY', label: 'Proxy', cls: 'text-cyan-300 border-cyan-500/30 bg-cyan-500/10' },
+  { value: 'BLOCK', label: 'Block', cls: 'text-red-400 border-red-500/30 bg-red-500/10' },
+  { value: 'CUSTOM', label: 'Custom', cls: 'text-amber-300 border-amber-500/30 bg-amber-500/10' },
+  { value: 'PROXY_FAILED', label: 'Proxy failed', cls: 'text-orange-400 border-orange-500/30 bg-orange-500/10' },
+  { value: 'PROXY_IPV6_SINK', label: 'IPv6 sink', cls: 'text-purple-300 border-purple-500/30 bg-purple-500/10' },
+  { value: 'PROXY_HTTPS_SINK', label: 'HTTPS sink', cls: 'text-blue-300 border-blue-500/30 bg-blue-500/10' },
+  { value: 'QUOTA', label: 'Quota', cls: 'text-yellow-300 border-yellow-500/30 bg-yellow-500/10' },
+];
+let queryLogActions = new Set();
+let queryLogProto = '';
+const QUERYLOG_PROTOCOLS = [
+  { value: 'UDP', label: 'UDP' },
+  { value: 'TCP', label: 'TCP' },
+  { value: 'DoT', label: 'DoT' },
+  { value: 'DoH', label: 'DoH' },
+  { value: 'DoQ', label: 'DoQ' },
+  { value: 'DoH3', label: 'DoH3' },
+  { value: 'DNSCrypt', label: 'DNSCrypt' },
+];
+
+function renderQueryLogActionMenu() {
+  const menu = document.getElementById('querylog-action-menu');
+  const btn = document.getElementById('querylog-action-btn');
+  if (!menu) return;
+  menu.innerHTML = QUERYLOG_ACTIONS.map((a) => `
+    <button type="button" class="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-800 transition" data-querylog-action="${escapeHTML(a.value)}">
+      <span class="px-2 py-0.5 rounded border text-[10px] font-bold font-mono ${escapeHTML(a.cls)}">${escapeHTML(a.label)}</span>
+      <span class="text-cyan-300 text-xs">${queryLogActions.has(a.value) ? '✓' : ''}</span>
+    </button>`).join('');
+  if (btn) {
+    if (!queryLogActions.size) {
+      btn.textContent = 'Any action';
+    } else {
+      btn.innerHTML = [...queryLogActions].map((v) => {
+        const a = QUERYLOG_ACTIONS.find((x) => x.value === v);
+        const toneClass = a?.cls || 'text-slate-300 border-slate-600 bg-slate-800';
+        return `<span class="inline-flex items-center px-2 py-0.5 me-1 rounded border text-[10px] font-bold font-mono ${escapeHTML(toneClass)}">${escapeHTML(a?.label || v)}</span>`;
+      }).join('');
+    }
+  }
+}
+
+function initQueryLogActionMenu() {
+  const btn = document.getElementById('querylog-action-btn');
+  const menu = document.getElementById('querylog-action-menu');
+  if (!btn || !menu) return;
+  btn.onclick = () => {
+    menu.classList.toggle('hidden');
+    btn.setAttribute('aria-expanded', String(!menu.classList.contains('hidden')));
+  };
+  menu.onclick = (e) => {
+    e.stopPropagation();
+    const item = e.target.closest('[data-querylog-action]');
+    if (!item) return;
+    const value = item.dataset.querylogAction;
+    if (queryLogActions.has(value)) queryLogActions.delete(value);
+    else queryLogActions.add(value);
+    renderQueryLogActionMenu();
+  };
+  document.addEventListener('click', (e) => {
+    if (!menu.contains(e.target) && e.target !== btn) menu.classList.add('hidden');
+  });
+  renderQueryLogActionMenu();
+}
+
+function renderQueryLogProtoMenu() {
+  const menu = document.getElementById('querylog-proto-menu');
+  const btn = document.getElementById('querylog-proto-btn');
+  if (!menu) return;
+  menu.innerHTML = QUERYLOG_PROTOCOLS.map((p) => `
+    <button type="button" class="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-800 transition" data-querylog-proto="${escapeHTML(p.value)}">
+      <span class="font-mono text-[11px] font-bold ${escapeHTML(upstreamProtoClass(p.value))}">${escapeHTML(p.label)}</span>
+      <span class="text-cyan-300 text-xs">${queryLogProto === p.value ? '✓' : ''}</span>
+    </button>`).join('');
+  if (btn) {
+    if (!queryLogProto) {
+      btn.textContent = 'Any proto';
+    } else {
+      btn.innerHTML = `<span class="font-mono text-[11px] font-bold ${escapeHTML(upstreamProtoClass(queryLogProto))}">${escapeHTML(queryLogProto)}</span>`;
+    }
+  }
+}
+
+function initQueryLogProtoMenu() {
+  const btn = document.getElementById('querylog-proto-btn');
+  const menu = document.getElementById('querylog-proto-menu');
+  if (!btn || !menu) return;
+  btn.onclick = () => {
+    menu.classList.toggle('hidden');
+    btn.setAttribute('aria-expanded', String(!menu.classList.contains('hidden')));
+  };
+  menu.onclick = (e) => {
+    e.stopPropagation();
+    const item = e.target.closest('[data-querylog-proto]');
+    if (!item) return;
+    queryLogProto = queryLogProto === item.dataset.querylogProto ? '' : item.dataset.querylogProto;
+    renderQueryLogProtoMenu();
+    menu.classList.add('hidden');
+  };
+  document.addEventListener('click', (e) => {
+    if (!menu.contains(e.target) && e.target !== btn) menu.classList.add('hidden');
+  });
+  renderQueryLogProtoMenu();
+}
+
+async function loadQueryLogSettings() {
+  try {
+    const res = await fetch(api('/api/query-log/settings'), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    if (!res.ok) return;
+    const data = await res.json();
+    const s = data.settings || {};
+    const en = document.getElementById('querylog-enabled');
+    if (en) en.checked = !!s.enabled;
+    const ret = document.getElementById('querylog-retention');
+    if (ret) ret.value = String(s.retention_days || 7);
+    const anon = document.getElementById('querylog-anonymize');
+    if (anon) anon.checked = s.anonymize !== false;
+  } catch (e) { /* defaults */ }
+}
+
+async function saveQueryLogSettings() {
+  const status = document.getElementById('querylog-status');
+  try {
+    const res = await fetch(api('/api/query-log/settings'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enabled: !!document.getElementById('querylog-enabled')?.checked,
+        retention_days: parseInt(document.getElementById('querylog-retention')?.value, 10) || 7,
+        anonymize: !!document.getElementById('querylog-anonymize')?.checked,
+        opt_out: [],
+        max_mb: 256,
+      }),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not save query log settings'));
+    if (status) status.textContent = 'Saved.';
+    showToast('Query log settings saved.', 'success');
+  } catch (e) {
+    if (status) status.textContent = e.message;
+    showToast(e.message, 'error');
+  }
+}
+
+function queryLogParams() {
+  const q = new URLSearchParams();
+  const add = (id, key) => {
+    const v = (document.getElementById(id)?.value || '').trim();
+    if (v) q.set(key, v);
+  };
+  add('querylog-domain', 'domain');
+  add('querylog-client', 'client');
+  if (queryLogActions.size) q.set('action', [...queryLogActions].join(','));
+  if (queryLogProto) q.set('proto', queryLogProto);
+  q.set('limit', '200');
+  return q;
+}
+
+function renderQueryLog(items) {
+  const out = document.getElementById('querylog-results');
+  if (!out) return;
+  if (!items.length) {
+    out.className = 'text-xs text-slate-500';
+    out.textContent = 'No matching queries.';
+    return;
+  }
+  out.className = 'text-xs text-slate-300 overflow-x-auto';
+  out.innerHTML = `<table class="w-full font-mono text-[10px]">
+    <thead><tr class="text-slate-500 text-left"><th class="py-1 pe-2">TIME</th><th class="py-1 pe-2">CLIENT</th><th class="py-1 pe-2">DOMAIN</th><th class="py-1 pe-2">ACTION</th><th class="py-1 pe-2">RULE</th><th class="py-1 pe-2">PROTO</th><th class="py-1">MS</th></tr></thead>
+    <tbody>${items.map((it) => `<tr class="border-t border-slate-800/60">
+      <td class="py-1 pe-2 text-slate-500 whitespace-nowrap">${escapeHTML(it.timestamp ? new Date(it.timestamp).toLocaleString() : '')}</td>
+      <td class="py-1 pe-2 truncate max-w-[140px]">${escapeHTML(it.account_name || it.client_ip || '')}</td>
+      <td class="py-1 pe-2 truncate max-w-[220px]">${escapeHTML(it.domain || '')}</td>
+      <td class="py-1 pe-2">${escapeHTML(it.action || '')}</td>
+      <td class="py-1 pe-2 truncate max-w-[160px]">${escapeHTML(it.rule_matched || '')}</td>
+      <td class="py-1 pe-2"><span class="${escapeHTML(upstreamProtoClass(it.protocol))}">${escapeHTML(protocolLabel(it.protocol || ''))}</span></td>
+      <td class="py-1">${Number(it.latency_ms || 0).toFixed(1)}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+async function searchQueryLog() {
+  const out = document.getElementById('querylog-results');
+  if (out) { out.className = 'text-xs text-slate-500'; out.textContent = 'Searching…'; }
+  try {
+    const res = await fetch(api('/api/query-log?' + queryLogParams().toString()), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Search failed');
+    renderQueryLog(data.items || []);
+  } catch (e) {
+    if (out) { out.className = 'text-xs text-red-400'; out.textContent = e.message; }
+  }
+}
+
+async function exportQueryLog(format) {
+  try {
+    const q = queryLogParams();
+    q.set('format', format);
+    const res = await fetch(api('/api/query-log/export?' + q.toString()), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    if (!res.ok) throw new Error('Export failed');
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `digitdns-query-log.${format}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  } catch (e) {
+    showToast(e.message || 'Export failed', 'error');
+  }
+}
+
+async function clearQueryLog() {
+  if (!confirmAction('Delete all stored query history? This cannot be undone.')) return;
+  try {
+    const res = await fetch(api('/api/query-log/clear'), { method: 'POST', headers: { 'Authorization': `Bearer ${authToken}` } });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not clear history'));
+    renderQueryLog([]);
+    showToast('Query history cleared.', 'success');
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
 function loadToolsPage() {
   loadToolsEgressOptions();
+  loadQueryLogSettings();
 }
 
 function initToolsPage() {
@@ -11633,6 +11888,13 @@ function initToolsPage() {
   document.getElementById('tools-check-btn')?.addEventListener('click', toolsCheck);
   document.getElementById('tools-dns-btn')?.addEventListener('click', toolsDNS);
   document.getElementById('tools-whois-btn')?.addEventListener('click', toolsWhois);
+  document.getElementById('querylog-save')?.addEventListener('click', saveQueryLogSettings);
+  document.getElementById('querylog-search')?.addEventListener('click', searchQueryLog);
+  initQueryLogActionMenu();
+  initQueryLogProtoMenu();
+  document.getElementById('querylog-export-csv')?.addEventListener('click', () => exportQueryLog('csv'));
+  document.getElementById('querylog-export-json')?.addEventListener('click', () => exportQueryLog('json'));
+  document.getElementById('querylog-clear')?.addEventListener('click', clearQueryLog);
 }
 
 function initExplainTool() {
@@ -12535,12 +12797,13 @@ function initEventListeners() {
   });
   document.getElementById('server-update-check-btn')?.addEventListener('click', checkServerUpdate);
   document.getElementById('server-update-apply-btn')?.addEventListener('click', applyServerUpdate);
-  document.getElementById('server-update-copy')?.addEventListener('click', async () => {
+  document.getElementById('server-update-copy')?.addEventListener('click', async (e) => {
     const command = 'docker compose pull && docker compose up -d';
     try {
       await navigator.clipboard.writeText(command);
       showToast('Update command copied.', 'success');
-    } catch (e) {
+      flashCopied(e.currentTarget);
+    } catch (err) {
       showToast('Could not copy the command.', 'error');
     }
   });
@@ -14329,12 +14592,26 @@ function copyText(text, btnElement) {
     showToast(`Copied!`, 'success');
   }
 
-  if (btnElement) {
-    btnElement.classList.add('ring-2', 'ring-cyan-400');
-    setTimeout(() => {
-      btnElement.classList.remove('ring-2', 'ring-cyan-400');
-    }, 800);
-  }
+  flashCopied(btnElement);
+}
+
+// The button that was pressed swaps its glyph for a check for a moment. The toast
+// already announces the copy, but it appears in the corner while the operator's eye
+// is on the box they just clicked — and on the query log the ACTION badges sit in a
+// dense table where a corner toast is easy to miss entirely. The CSS owns the swap
+// (see [data-copied-flash] in style.css); this only times the attribute.
+//
+// The timer is stored on the element so a double click restarts the window instead
+// of letting the first timeout clear the second flash a few milliseconds in.
+function flashCopied(btnElement) {
+  if (!btnElement || !btnElement.setAttribute) return;
+  try {
+    btnElement.setAttribute('data-copied-flash', '');
+    clearTimeout(btnElement._copiedTimer);
+    btnElement._copiedTimer = setTimeout(() => {
+      btnElement.removeAttribute('data-copied-flash');
+    }, 1200);
+  } catch (err) { /* detached node: nothing to flash */ }
 }
 
 // Copy-to-clipboard, by delegation.
@@ -15086,6 +15363,7 @@ function showToast(msg, type = 'info') {
       if (uuid) {
         navigator.clipboard.writeText(uuid);
         showToast('UUID copied to clipboard!', 'success');
+        flashCopied(copyUuidBtn);
       }
     }
   });
@@ -15745,3 +16023,34 @@ function initDiffModal() {
   document.getElementById('diff-cancel-btn')?.addEventListener('click', () => settleDiff(false));
   document.getElementById('diff-cancel-x')?.addEventListener('click', () => settleDiff(false));
 }
+
+// =======================================================
+// SETTINGS SECTION JUMP BAR
+// =======================================================
+// The Settings tab stacks fifteen cards on one page. The chips above them move the
+// viewport to a card rather than hiding the rest: filtering would take controls out
+// of the document an operator is searching, and would need to know about every card
+// in the tab to keep working whenever one is added. A jump cannot fall out of date.
+function jumpToSettingsSection(target) {
+  const section = document.getElementById('tab-rules');
+  const dest = (!target || target === 'top')
+    ? section
+    : document.getElementById(target);
+  if (!dest) return;
+  // Scroll to the section's own top for "All"; a named card clears the sticky chip
+  // bar through its scroll-margin-top in style.css.
+  const reduce = window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  dest.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+}
+
+document.addEventListener('click', (e) => {
+  const chip = e.target.closest?.('[data-settings-jump]');
+  if (!chip) return;
+  jumpToSettingsSection(chip.getAttribute('data-settings-jump'));
+  document.querySelectorAll('[data-settings-jump]').forEach((c) => {
+    const on = c === chip;
+    c.classList.toggle('is-active', on);
+    c.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+});

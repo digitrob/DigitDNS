@@ -515,6 +515,10 @@ h1, h2, h3, h4, .font-heading {
 
 code, pre, .font-mono {
   font-family: var(--font-mono);
+  /* Fixed-advance digits even in the fallback monospace. A metric that repaints once
+     a second must not shove its neighbours sideways because the chosen face has
+     proportional figures for one of the weights it synthesises. */
+  font-variant-numeric: tabular-nums;
 }
 
 body {
@@ -684,6 +688,28 @@ body::before {
   filter: drop-shadow(0 0 8px rgb(var(--c-cyan-400) / 0.6));
 }
 
+/* Section captions for the sidebar. The eleven destinations are one flat column
+ * otherwise, and "Tools" next to "Settings" next to "Guide" gives the eye no
+ * structure to hold on to. They are labels, not controls: no hover, not focusable,
+ * and hidden entirely in the collapsed rail where there is no room for a word. */
+.sidebar-group-label {
+  padding: 14px 16px 4px;
+  font-family: var(--font-heading);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.7;
+  user-select: none;
+}
+.sidebar-group-label:first-of-type {
+  padding-top: 2px;
+}
+html.sidebar-collapsed .sidebar-group-label {
+  display: none;
+}
+
 /* Pulse Dot */
 .pulse-dot {
   width: 9px;
@@ -731,6 +757,8 @@ body::before {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  /* Counts inside chips ("STALE 12") must not resize the chip on each poll. */
+  font-variant-numeric: tabular-nums;
 }
 
 /* .badge sets inline-flex, so the plain .hidden utility can lose the cascade.
@@ -863,6 +891,16 @@ input:checked + .slider:before {
   box-shadow: 0 0 14px var(--accent-cyan);
 }
 
+/* The input itself is visually hidden (opacity 0, zero size), so the track is the
+   only thing a keyboard user can see focus land on. Without this ring every switch
+   in the panel is reachable by Tab and invisible while focused — and the switches
+   that used to be Tailwind `peer` checkboxes did carry one, so converting them to
+   .switch would otherwise have removed an affordance they already had. */
+.switch input:focus-visible + .slider {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+}
+
 /* Custom Scrollbar.
  *
  * The ::-webkit-scrollbar rules below are Chromium and Safari only, so every scrollable panel in
@@ -895,7 +933,41 @@ input:checked + .slider:before {
   background: var(--accent-cyan);
 }
 
-/* Code Snippet Box */
+/* A copy that worked says so where the click happened. The toast in the corner is
+ * still the announcement (and the only one a screen reader hears), but the eye is
+ * on the box that was just pressed, so the glyph becomes a check for a moment.
+ *
+ * The check is a pseudo-element rather than a swapped icon node: Feather has
+ * already replaced every <i data-feather> with an <svg> by the time a click lands,
+ * and swapping one DOM subtree for another loses the original markup that has to
+ * come back afterwards. Hiding the child glyph and letting ::after paint a masked
+ * check needs no bookkeeping — the host only carries one attribute, and removing
+ * it restores exactly what was there.
+ *
+ * ::after lands where the glyph was in both shapes the panel uses: last child of
+ * the flex row in a .code-box, and the sole centred child of the square icon
+ * buttons. 14px matches the w-3.5 glyphs so the row does not twitch during the
+ * flash. */
+[data-copied-flash] > i,
+[data-copied-flash] > svg {
+  display: none;
+}
+[data-copied-flash]::after {
+  content: "";
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background-color: var(--accent-green);
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>");
+  mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>");
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+/* Copyable values: IPs, tokens, UUIDs. */
 .code-box {
   background: var(--code-bg);
   border: 1px solid rgb(var(--c-cyan-400) / 0.22);
@@ -1146,6 +1218,7 @@ input:checked + .slider:before {
 }
 .proxied-table {
   table-layout: fixed;
+  font-variant-numeric: tabular-nums;
 }
 /* Row cells share one horizontal line: the domain name, the status badge and the
  * pause/resume switch are all middle-aligned per row instead of sitting on the
@@ -1656,6 +1729,9 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
  * sm:table-cell), so their widths only apply where they are shown. */
 .stream-table {
   table-layout: fixed;
+  /* Tabular figures keep the TIME and LATENCY columns from shifting as values
+     change width, which in a live feed is every row. */
+  font-variant-numeric: tabular-nums;
   /* The eight fixed columns leave the domain column whatever is left, and at a
    * narrow panel that was zero pixels: the domain vanished while every other
    * cell kept its width. A floor on the table keeps at least a readable share
@@ -1675,7 +1751,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
  * leaving the domain a usable share down to roughly 1050px of table width. */
 .stream-col-time { width: 5.5rem; }
 .stream-col-client { width: 10rem; }
-.stream-col-proto { width: 4rem; }
+.stream-col-proto { width: 4.75rem; }
 .stream-col-domain { width: auto; }
 .stream-col-rule { width: 8.5rem; }
 .stream-col-relay { width: 9.5rem; }
@@ -2022,14 +2098,71 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   font-weight: 800;
   letter-spacing: 0.04em;
 }
-.proto-udp { color: rgb(34 211 238); }
-.proto-tcp { color: rgb(96 165 250); }
-.proto-dot { color: rgb(52 211 153); }
-.proto-doh { color: rgb(192 132 252); }
-.proto-doq { color: rgb(251 191 36); }
-.proto-doh3 { color: rgb(251 146 60); }
+/* One protocol, one colour — everywhere. The same seven values are read by the
+ * provider browser, the resolver rows, the live log's PROTO column and the
+ * history Protocols card, so the ramp is stated once here rather than per
+ * surface.
+ *
+ * The values are the palette's own --c-*-400 tokens rather than a second copy of
+ * Tailwind's 400 steps, so this table and the live log (which applies the same
+ * tokens through utility classes) resolve to the same RGB. The one exception is
+ * fuchsia: no --c-fuchsia token exists because it is only ever used as a fill, so
+ * DNSCrypt keeps a literal and needs the light-mode step written out below. */
+.proto-udp { color: rgb(var(--c-cyan-400)); }
+.proto-tcp { color: rgb(var(--c-blue-400)); }
+.proto-dot { color: rgb(var(--c-emerald-400)); }
+.proto-doh { color: rgb(var(--c-purple-400)); }
+.proto-doq { color: rgb(var(--c-amber-400)); }
+.proto-doh3 { color: rgb(var(--c-orange-400)); }
 .proto-dnscrypt { color: rgb(232 121 249); }
 .proto-other { color: var(--text-muted); }
+
+/* The live log renders the transport as a tinted chip rather than bare text: a feed
+ * arriving at 1 Hz is scanned, not read, and a pill the eye can lock onto is what
+ * makes "which of these went over DoH" a glance instead of a column sweep. Colour
+ * comes from the .proto-* role beside it through currentColor, so the chip and the
+ * resolver card can never drift apart — and both themes are handled by the same
+ * token, including Graphite's neutralised categories.
+ *
+ * Sized to fit the PROTO column without pushing the domain column: 10px mono, 1px
+ * of side padding beyond the border, and the column widened to 4.75rem (see
+ * .stream-col-proto) to hold the longest label, DNSCrypt, without clipping. */
+.proto-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 38%, transparent);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+/* color-mix is a 2023 baseline. A browser without it gets the plain text colour and
+   a hairline edge instead of a wash it cannot compute. */
+@supports not (color: color-mix(in srgb, red 50%, transparent)) {
+  .proto-pill {
+    border-color: currentColor;
+    background: transparent;
+  }
+}
+
+/* fuchsia-800 on the light card: the bright 400 measures under 2:1 against white,
+   and the light ramp's other 400s are all tokenised, so this is the only protocol
+   colour that still needs a per-theme value. */
+[data-theme="light"] .proto-dnscrypt { color: rgb(134 25 143); }
+
+/* Graphite is monochrome for category colour, and blue, orange and fuchsia have no
+   neutral twin in the palette (cyan already resolves to a slate through
+   --c-cyan-400). Green, amber and the lavender DoH keep their meaning, which is the
+   same split the grey theme makes for every other badge in this stylesheet. */
+[data-theme="grey"] .proto-tcp,
+[data-theme="grey"] .proto-doh3,
+[data-theme="grey"] .proto-dnscrypt { color: rgb(var(--c-slate-300)); }
 .upstream-preset-action {
   flex-shrink: 0;
   width: 20px;
@@ -2813,6 +2946,17 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .panel-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* .panel-btn sets display: inline-flex, which out-ranks the plain .hidden utility
+   because this sheet loads after tailwind.purged.css. Two-class selector on
+   purpose, same reason as .badge.hidden: a button that is toggled with .hidden
+   (the update action, the custom-group remove control) must actually disappear.
+   These buttons were written with `hidden inline-flex` in the markup before they
+   carried .panel-btn, and the utility pair only worked because of its position in
+   the other stylesheet — which this sheet cannot rely on. */
+.panel-btn.hidden {
+  display: none;
 }
 
 .panel-btn-primary {
@@ -4909,6 +5053,45 @@ html.dash-layout-pending #tab-dashboard {
 }
 .proxied-bulk-group:first-child { padding-top: 2px; }
 
+/* Settings section jump bar. Chips are .panel-chip (the status/filter pill) so the
+ * control already matches the Domains page's filter row; only the container and the
+ * sticky behaviour are new. It stays under the top edge while the operator scrolls
+ * the card column, which is what makes "jump to Alerts" usable from halfway down
+ * rather than only from the top of the page. */
+.settings-jump {
+  position: sticky;
+  /* Clears the phone's sticky header (56 px, z-30); on a desktop viewport there is
+     no header and 8 px is enough to keep the chips off the very edge. */
+  top: 3.5rem;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0;
+  background: var(--bg-main);
+  border-bottom: 1px solid rgb(var(--c-slate-800) / 0.55);
+}
+.settings-jump .panel-chip {
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+.settings-jump .panel-chip:hover {
+  color: var(--text-main);
+  border-color: rgb(var(--c-slate-600));
+}
+/* A card scrolled to must not land underneath the sticky chip bar. The jump targets
+   are not all direct children of the tab (the DNSSEC and IPv6 cards live inside a
+   .settings-pair wrapper), so the margin is set on any identified element in the
+   tab; scroll-margin only matters when that element is scrolled to, so the reach is
+   harmless. */
+#tab-rules [id] {
+  scroll-margin-top: 5rem;
+}
+@media (min-width: 768px) {
+  .settings-jump { top: 0.5rem; }
+}
+
 /* ── Shell controls: engine switch and sidebar collapse ───────────────────── */
 .sidebar-utility-row {
   display: flex;
@@ -5157,9 +5340,12 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
   font-size: clamp(1.65rem, 9cqi, 2.5rem);
   line-height: 1.02;
   white-space: nowrap;
+  /* A 1 Hz counter in a proportional face jitters by a pixel per repaint. */
+  font-variant-numeric: tabular-nums;
 }
 .metric-value-traffic {
   font-size: 1.65rem;
   font-size: clamp(1.65rem, 9cqi, 2.5rem);
   line-height: 1.02;
+  font-variant-numeric: tabular-nums;
 }

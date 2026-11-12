@@ -80,11 +80,14 @@ type RelayTarget struct {
 type RelayLookup func(domain, clientIP string) RelayTarget
 
 type Handler struct {
-	access     AccessProvider
-	cache      *cache.Cache
-	matcher    *matcher.Matcher
-	upstreams  *upstream.UpstreamPool
-	telemetry  TelemetrySink
+	access    AccessProvider
+	cache     *cache.Cache
+	matcher   *matcher.Matcher
+	upstreams *upstream.UpstreamPool
+	telemetry TelemetrySink
+	// queryLog is the optional persistent query history. It is nil unless the
+	// operator enabled it; Push never blocks.
+	queryLog   func(database.QueryLogItem)
 	publicIP   string
 	publicIPv6 string
 	// Parsed forms of the two addresses above. They are built when the operator
@@ -327,6 +330,11 @@ func (h *Handler) SetProxyIPv6Enabled(enabled bool) {
 
 // SetRelayLookup installs the geo-agent resolver. Call during startup only; the
 // lookup itself is safe for concurrent use.
+// SetQueryLogSink installs the optional persistent query history.
+func (h *Handler) SetQueryLogSink(fn func(database.QueryLogItem)) {
+	h.queryLog = fn
+}
+
 func (h *Handler) SetRelayLookup(fn RelayLookup) {
 	h.relayLookup = fn
 }
@@ -1038,10 +1046,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 }
 
 func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern string, qtype uint16, rcode int) {
-	if h.telemetry == nil {
-		return
-	}
-	h.telemetry.PushQueryLog(database.QueryLogItem{
+	item := database.QueryLogItem{
 		Timestamp:        start,
 		ClientIP:         ip,
 		AccountName:      account,
@@ -1056,16 +1061,19 @@ func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, ac
 		Upstream:         upstreamAddr,
 		UpstreamProtocol: upstream.ProtocolOf(upstreamAddr),
 		MatchedPattern:   matchedPattern,
-	})
+	}
+	if h.telemetry != nil {
+		h.telemetry.PushQueryLog(item)
+	}
+	if h.queryLog != nil {
+		h.queryLog(item)
+	}
 }
 
 // logQueryRelay is logQuery with the relay target that answered the proxied
 // name. The local relay path keeps using logQuery, so its payload is unchanged.
 func (h *Handler) logQueryRelay(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern string, target RelayTarget, qtype uint16, rcode int) {
-	if h.telemetry == nil {
-		return
-	}
-	h.telemetry.PushQueryLog(database.QueryLogItem{
+	item := database.QueryLogItem{
 		Timestamp:           start,
 		ClientIP:            ip,
 		AccountName:         account,
@@ -1087,5 +1095,11 @@ func (h *Handler) logQueryRelay(start time.Time, ip, account, proto, domain, rul
 		RelayEgressName:     target.EgressName,
 		RelayEgressKind:     target.EgressKind,
 		RelayFallbackReason: target.FallbackReason,
-	})
+	}
+	if h.telemetry != nil {
+		h.telemetry.PushQueryLog(item)
+	}
+	if h.queryLog != nil {
+		h.queryLog(item)
+	}
 }

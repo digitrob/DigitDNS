@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Layers
@@ -87,6 +88,7 @@ private enum class SettingsSection(@StringRes val labelRes: Int, val icon: Image
     Upstreams(R.string.settings_upstreams, Icons.Filled.Podcasts),
     Subscription(R.string.settings_subscription, Icons.Filled.Share),
     Alerts(R.string.settings_alerts, Icons.Filled.Notifications),
+    QueryLog(R.string.settings_query_log, Icons.Filled.History),
     About(R.string.settings_about, Icons.Filled.Info),
 }
 
@@ -170,6 +172,7 @@ private fun SettingsSectionContent(
         SettingsSection.Upstreams -> UpstreamsScreen()
         SettingsSection.Subscription -> SubscriptionScreen()
         SettingsSection.Alerts -> AlertsScreen()
+        SettingsSection.QueryLog -> QueryLogScreen()
         SettingsSection.About -> AboutScreen()
     }
 }

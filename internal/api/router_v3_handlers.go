@@ -1833,6 +1833,64 @@ func (a *API) handleV3FlushCache(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"flushed": true})
 }
 
+func (a *API) handleV3QueryLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	resp, err := a.v3Backend.QueryLog(r)
+	if err != nil {
+		writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (a *API) handleV3QueryLogSettings(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		_ = json.NewEncoder(w).Encode(a.v3Backend.QueryLogSettings())
+	case http.MethodPost:
+		body, ok := v3Body(r)
+		if !ok {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			return
+		}
+		resp, err := a.v3Backend.SaveQueryLogSettings(r, body)
+		if err != nil {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
+	}
+}
+
+func (a *API) handleV3QueryLogClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	if err := a.v3Backend.ClearQueryLog(); err != nil {
+		writeProblemAt(w, r, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
 func (a *API) handleV3Alerts(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
 		v3BackendUnavailable(w, r)

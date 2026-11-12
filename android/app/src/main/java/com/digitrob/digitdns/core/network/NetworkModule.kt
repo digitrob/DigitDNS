@@ -216,6 +216,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideQueryLogApi(retrofit: Retrofit): QueryLogApi = retrofit.create(QueryLogApi::class.java)
+
+    @Provides
+    @Singleton
     fun provideDiagnosticsApi(retrofit: Retrofit): DiagnosticsApi =
         retrofit.create(DiagnosticsApi::class.java)
 

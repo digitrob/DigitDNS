@@ -6,9 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -29,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.domain.model.ClientLinks
+import com.digitrob.digitdns.ui.components.PanelCopyIconButton
 import com.digitrob.digitdns.ui.components.PanelWideDialog
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 
@@ -171,9 +169,10 @@ private fun CreatedRow(
             modifier = Modifier.weight(1f),
         )
         if (copyValue.isNotBlank()) {
-            IconButton(onClick = { onCopy(copyValue, label) }) {
-                Icon(Icons.Filled.ContentCopy, contentDescription = "Copy $label")
-            }
+            PanelCopyIconButton(
+                contentDescription = "Copy $label",
+                onCopy = { onCopy(copyValue, label) },
+            )
         }
     }
 }

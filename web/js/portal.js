@@ -110,9 +110,28 @@
     // question is which of the four they just got.
     var done = host.getAttribute('data-copied') || msg('copied');
     writeClipboard(text).then(function (ok) {
-      if (ok) showToast(done, 'is-ok');
-      else showToast(msg('copy-fail'), 'is-warn');
+      if (ok) {
+        flashCopied(host);
+        showToast(done, 'is-ok');
+      } else {
+        showToast(msg('copy-fail'), 'is-warn');
+      }
     });
+  }
+
+  // Say it where the tap happened, not only in the toast at the bottom of the
+  // screen. The portal's copyable controls have no glyph to swap for a check (the
+  // button carries the word "Copy"), so the flash is a green edge and label for a
+  // moment — the same "that one worked" signal the dashboard gives by turning its
+  // copy icon into a check. The attribute is the only state; CSS owns the rest, so
+  // nothing about the markup has to be rebuilt and restored.
+  function flashCopied(host) {
+    if (!host || !host.setAttribute) return;
+    host.setAttribute('data-copied-flash', '');
+    if (host.flashTimer) clearTimeout(host.flashTimer);
+    host.flashTimer = setTimeout(function () {
+      host.removeAttribute('data-copied-flash');
+    }, 1200);
   }
 
   /* --- Device guide tabs ---------------------------------------------------- */

@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Autorenew
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
@@ -73,6 +72,7 @@ import com.digitrob.digitdns.domain.model.EgressInfo
 import com.digitrob.digitdns.domain.model.RelayAgentInfo
 import com.digitrob.digitdns.ui.components.CountryFlag
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.PanelCopyIconButton
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelSnackbarHost
 import com.digitrob.digitdns.ui.components.PanelWideDialog
@@ -696,16 +696,12 @@ private fun CredentialRow(
         )
         trailing?.invoke()
         if (copyValue != null) {
-            IconButton(
-                onClick = { onCopy(copyValue, label) },
+            PanelCopyIconButton(
+                contentDescription = "Copy $label",
+                onCopy = { onCopy(copyValue, label) },
                 modifier = Modifier.size(32.dp),
-            ) {
-                Icon(
-                    Icons.Filled.ContentCopy,
-                    contentDescription = "Copy $label",
-                    modifier = Modifier.size(18.dp),
-                )
-            }
+                iconSize = 18.dp,
+            )
         }
     }
 }

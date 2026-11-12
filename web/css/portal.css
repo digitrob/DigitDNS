@@ -615,6 +615,20 @@
   color: var(--ink);
 }
 
+/* A copy that worked, marked on the control that was tapped. The green edge is the
+ * same confirmation the dashboard gives by swapping its copy glyph for a check; the
+ * portal's controls carry the word "Copy" instead of an icon, so the whole control
+ * takes the success colour for a moment. data-copied-flash is set and cleared by
+ * /js/portal.js — the only state involved, so nothing in the markup moves. */
+[data-copied-flash] {
+  border-color: var(--green) !important;
+  color: var(--green) !important;
+}
+[data-copied-flash] .copy-card-tag,
+[data-copied-flash] .copy-card-val {
+  color: var(--green);
+}
+
 /* The register card (Phase B): the one write the portal offers, gated by the
    out-of-band registration secret. The row is a flex pair — a secret input the
    browser must not autocomplete or reveal, and the action button that posts it
@@ -631,7 +645,11 @@
   flex: 1;
   min-width: 0;
   font: inherit;
-  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  /* var(--font-mono), not a second hardcoded stack. The IP field below already
+     reads the token, so the secret field and the address field beside it
+     rendered in different typefaces — one JetBrains Mono, one whatever the OS
+     called monospace. */
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--ink);
   background: var(--chip-face);

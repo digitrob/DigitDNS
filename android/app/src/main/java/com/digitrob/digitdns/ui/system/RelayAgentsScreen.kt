@@ -28,7 +28,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Pause
@@ -81,6 +80,7 @@ import com.digitrob.digitdns.domain.model.relayRelativeAge
 import com.digitrob.digitdns.ui.components.CountryFlag
 import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.PanelCopyIconButton
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
@@ -1352,13 +1352,13 @@ private fun AgentValueRow(
                 )
             }
         }
-        IconButton(onClick = onCopy, enabled = copyEnabled, modifier = Modifier.size(26.dp)) {
-            Icon(
-                Icons.Filled.ContentCopy,
-                contentDescription = stringResource(R.string.agents_copy_value, label),
-                modifier = Modifier.size(13.dp),
-            )
-        }
+        PanelCopyIconButton(
+            contentDescription = stringResource(R.string.agents_copy_value, label),
+            onCopy = onCopy,
+            enabled = copyEnabled,
+            modifier = Modifier.size(26.dp),
+            iconSize = 13.dp,
+        )
     }
 }
 

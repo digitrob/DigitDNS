@@ -12,8 +12,12 @@ import (
 	"time"
 
 	"digitdns/internal/httpx"
+	"digitdns/internal/service"
 	"github.com/miekg/dns"
 )
+
+// SetQueryLogService installs the optional persistent query history.
+func (ws *WebServer) SetQueryLogService(q *service.QueryLogService) { ws.queryLog = q }
 
 // SetDNSQueryAddr installs the local resolver address used by the Tools DNS
 // lookup. Empty means the lookup endpoint reports that it is unavailable.
