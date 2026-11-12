@@ -60,6 +60,8 @@ type WebServer struct {
 	systemLog *logbuffer.Buffer
 	// alerts evaluates relay/egress/client conditions and delivers transitions.
 	alerts *service.AlertManager
+	// dnsQueryAddr is this server's own resolver, used by the Tools lookup.
+	dnsQueryAddr string
 	// relayMode lets this full instance act as a relay agent for another hub.
 	relayMode  *service.RelayModeManager
 	upstreams  *upstream.UpstreamPool
@@ -1340,9 +1342,14 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/egresses/", ws.requireAuth(ws.handleEgressByID))
 	mux.HandleFunc("/api/engine", ws.requireAuth(ws.handleEngine))
 	mux.HandleFunc("/api/explain", ws.requireAuth(ws.handleExplain))
+	mux.HandleFunc("/api/tools/check", ws.requireAuth(ws.handleToolsCheck))
+	mux.HandleFunc("/api/tools/dns", ws.requireAuth(ws.handleToolsDNS))
+	mux.HandleFunc("/api/tools/whois", ws.requireAuth(ws.handleToolsWhois))
 	mux.HandleFunc("/api/alerts", ws.requireAuth(ws.handleAlerts))
 	mux.HandleFunc("/api/alerts/test", ws.requireAuth(ws.handleAlertsTest))
 	mux.HandleFunc("/api/relay-mode", ws.requireAuth(ws.handleRelayMode))
+	mux.HandleFunc("/api/relay-mode/global", ws.requireAuth(ws.handleRelayModeGlobal))
+	mux.HandleFunc("/api/relay-mode/", ws.requireAuth(ws.handleRelayModeByID))
 	mux.HandleFunc("/api/relay-mode/test", ws.requireAuth(ws.handleRelayModeTest))
 	mux.HandleFunc("/api/system-log", ws.requireAuth(ws.handleSystemLog))
 	mux.HandleFunc("/api/system-log/export", ws.requireAuth(ws.handleSystemLogExport))
@@ -1446,6 +1453,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 			"/stream":     true,
 			"/system-log": true,
 			"/agents":     true,
+			"/tools":      true,
 			"/api":        true,
 			"/settings":   true,
 			"/guide":      true,

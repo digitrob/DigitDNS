@@ -625,7 +625,25 @@ func (b *v3Backend) TestRelayMode(r *http.Request) (map[string]any, error) {
 }
 
 func (b *v3Backend) RelayMode() map[string]any {
-	return map[string]any{"relay_mode": b.ws.relayModeView()}
+	views := b.ws.relayModeViews()
+	global := true
+	if b.ws.relayMode != nil {
+		global = b.ws.relayMode.GlobalEnabled()
+	}
+	return map[string]any{"global_enabled": global, "relay_mode": firstRelayView(views), "relay_hubs": views}
+}
+
+func (b *v3Backend) SetRelayModeGlobal(r *http.Request, body map[string]any) (map[string]any, error) {
+	rec := httptest.NewRecorder()
+	data, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/api/relay-mode/global", bytes.NewReader(data))
+	b.ws.handleRelayModeGlobal(rec, req)
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if rec.Code >= 400 {
+		return out, errors.New(rec.Body.String())
+	}
+	return out, nil
 }
 
 func (b *v3Backend) SaveRelayMode(r *http.Request, body map[string]any) (map[string]any, error) {

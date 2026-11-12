@@ -173,12 +173,18 @@ type Server struct {
 }
 
 // RelayPolicy is the hub catalogue applied to a full instance acting as a
-// relay. AllowsClient says whether the source is a hub relay client;
-// AllowsHost says whether the hub approved that hostname.
+// relay. With several hubs, the source IP decides which hub's allowlist applies.
 type RelayPolicy interface {
 	Enabled() bool
-	AllowsClient(ip net.IP) bool
+	ForClient(ip net.IP) (RelayHostPolicy, bool)
+}
+
+// RelayHostPolicy is one hub's catalogue as seen by the proxy. AddBytes keeps
+// the per-hub heartbeat counters independent.
+type RelayHostPolicy interface {
+	HubID() string
 	AllowsHost(host string) bool
+	AddBytes(in, out uint64)
 }
 
 // RelayDialTarget is where the hub should dial for a vetted hostname. Kind
@@ -534,8 +540,11 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 	// by this instance's local whitelist. Local access is still evaluated so a
 	// dual-role client can keep using local proxied hosts.
 	relayPolicy, localHostAllowed := s.relaySnapshot()
-	relayClient := relayPolicy != nil && relayPolicy.Enabled() &&
-		relayPolicy.AllowsClient(net.ParseIP(clientIP))
+	var relayHost RelayHostPolicy
+	relayClient := false
+	if relayPolicy != nil && relayPolicy.Enabled() {
+		relayHost, relayClient = relayPolicy.ForClient(net.ParseIP(clientIP))
+	}
 
 	// Access control. The client is resolved even in allow_all mode — where
 	// IsIPAllowed reports true for everyone — because a recognised account still
@@ -628,8 +637,8 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 	// A hub relay client may only reach hosts the hub approved. A client that is
 	// also local may additionally reach this instance's own proxied hosts, so
 	// coexistence does not break local domains.
-	if relayClient {
-		allowed := relayPolicy.AllowsHost(hostname)
+	if relayClient && relayHost != nil {
+		allowed := relayHost.AllowsHost(hostname)
 		if !allowed && localAllowed && localHostAllowed != nil {
 			allowed = localHostAllowed(hostname)
 		}
@@ -723,12 +732,14 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 	}
 
 	var relayReport func(uint64, bool)
-	if relayClient {
+	if relayClient && relayHost != nil {
 		relayReport = func(delta uint64, outbound bool) {
 			if outbound {
 				s.relayBytesOut.Add(delta)
+				relayHost.AddBytes(0, delta)
 			} else {
 				s.relayBytesIn.Add(delta)
+				relayHost.AddBytes(delta, 0)
 			}
 		}
 	}

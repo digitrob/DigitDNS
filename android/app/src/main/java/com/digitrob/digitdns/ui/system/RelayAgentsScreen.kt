@@ -73,6 +73,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.EgressSaveRequest
 import com.digitrob.digitdns.core.network.RelayModeDto
+import com.digitrob.digitdns.core.network.RelayModeTestResponse
 import com.digitrob.digitdns.domain.model.EgressInfo
 import com.digitrob.digitdns.domain.model.RelayAgentInfo
 import com.digitrob.digitdns.domain.model.egressTrafficLabel
@@ -183,17 +184,38 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
                 }
 
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    RelayModeCard(
-                        mode = state.relayMode,
-                        saving = state.isRelayModeSaving,
-                        testing = state.isRelayModeTesting,
-                        onSave = { enabled, hub, key, token ->
-                            viewModel.saveRelayMode(enabled, hub, key, token)
-                        },
-                        onTest = viewModel::testRelayMode,
-                        testPingMs = state.relayTestPingMs,
-                        testOk = state.relayTestOk,
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        RelayGlobalSwitch(
+                            enabled = state.relayGlobalEnabled,
+                            onChange = viewModel::setRelayGlobal,
+                        )
+                        state.relayHubs.forEach { hub ->
+                            RelayModeCard(
+                                hub = hub,
+                                isNew = false,
+                                saving = state.relaySavingId == hub.id,
+                                testing = state.relayTestingId == hub.id,
+                                testResult = state.relayTests[hub.id],
+                                onSave = { name, enabled, url, key, token ->
+                                    viewModel.saveRelayHub(hub.id, name, enabled, url, key, token)
+                                },
+                                onTest = { viewModel.testRelayHub(hub.id) },
+                                onDelete = { viewModel.deleteRelayHub(hub.id) },
+                            )
+                        }
+                        RelayModeCard(
+                            hub = null,
+                            isNew = true,
+                            saving = state.relaySavingId == "new",
+                            testing = false,
+                            testResult = null,
+                            onSave = { name, enabled, url, key, token ->
+                                viewModel.saveRelayHub("", name, enabled, url, key, token)
+                            },
+                            onTest = {},
+                            onDelete = {},
+                        )
+                    }
                 }
 
                 state.error?.let { message ->
@@ -434,56 +456,84 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
     }
 }
 
-@Suppress("LongMethod", "CyclomaticComplexMethod")
+@Composable
+private fun RelayGlobalSwitch(enabled: Boolean, onChange: (Boolean) -> Unit) {
+    PanelCard(contentPadding = 8.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("This Server as Relay", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    "Master switch for every hub below. Off stops all relay workers and leaves local proxying untouched.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = enabled, onCheckedChange = onChange)
+        }
+    }
+}
+
+@Suppress("LongMethod", "CyclomaticComplexMethod", "LongParameterList")
 @Composable
 private fun RelayModeCard(
-    mode: RelayModeDto?,
+    hub: RelayModeDto?,
+    isNew: Boolean,
     saving: Boolean,
     testing: Boolean,
-    onSave: (Boolean, String, String, String) -> Unit,
+    testResult: RelayModeTestResponse?,
+    onSave: (String, Boolean, String, String, String) -> Unit,
     onTest: () -> Unit,
-    testPingMs: Double,
-    testOk: Boolean,
+    onDelete: () -> Unit,
 ) {
-    var hub by remember(mode?.hubUrl) { mutableStateOf(mode?.hubUrl.orEmpty()) }
+    var name by remember(hub?.name) { mutableStateOf(hub?.name.orEmpty()) }
+    var url by remember(hub?.hubUrl) { mutableStateOf(hub?.hubUrl.orEmpty()) }
     var key by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
-    var enabled by remember(mode?.enabled) { mutableStateOf(mode?.enabled == true) }
+    var enabled by remember(hub?.enabled) { mutableStateOf(hub?.enabled == true) }
     val status = when {
-        mode == null -> "unknown"
-        !mode.enabled -> "disabled"
-        mode.online -> "online"
+        hub == null -> "unknown"
+        !hub.enabled -> "disabled"
+        hub.online -> "online"
         else -> "offline"
     }
     val tone = when {
-        mode?.online == true -> DigitDnsTheme.colors.success
-        mode?.enabled == true -> DigitDnsTheme.colors.warning
+        hub?.online == true -> DigitDnsTheme.colors.success
+        hub?.enabled == true -> DigitDnsTheme.colors.warning
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     PanelCard(contentPadding = 8.dp) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "This Server as Relay",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Hub name") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.width(6.dp))
-                StatusBadge(status, tone)
+                if (!isNew) {
+                    Spacer(Modifier.width(6.dp))
+                    StatusBadge(status, tone)
+                    AgentActionButton(
+                        icon = Icons.Filled.Delete,
+                        label = "Remove hub",
+                        onClick = onDelete,
+                        tint = DigitDnsTheme.colors.danger,
+                    )
+                }
             }
-            Text(
-                "Let another DigitDNS instance use this server as a relay agent. " +
-                    "Local proxying continues on the same 80/443 listeners; " +
-                    "hub clients only reach hub-approved hosts.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (isNew) {
+                Text(
+                    "Let another DigitDNS instance use this server as a relay agent. " +
+                        "Local proxying continues on the same 80/443 listeners; " +
+                        "each hub's clients only reach that hub's approved hosts.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             OutlinedTextField(
-                value = hub,
-                onValueChange = { hub = it },
+                value = url,
+                onValueChange = { url = it },
                 label = { Text("Hub URL (including the hidden admin path)") },
                 placeholder = { Text("https://hub:port/<admin-path>") },
                 singleLine = true,
@@ -495,9 +545,7 @@ private fun RelayModeCard(
                 onValueChange = { key = it },
                 label = { Text("Agent key (write-only)") },
                 placeholder = {
-                    Text(
-                        if (mode?.agentKeySet == true) "Saved — leave blank to keep" else "id:secret from the hub",
-                    )
+                    Text(if (hub?.agentKeySet == true) "Saved — leave blank to keep" else "id:secret from the hub")
                 },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -511,20 +559,20 @@ private fun RelayModeCard(
                 modifier = Modifier.fillMaxWidth(),
             )
             ToggleRow(
-                title = "Relay mode",
-                subtitle = "Sync this server with a hub",
+                title = "Relay mode for this hub",
+                subtitle = "Sync this server with the hub",
                 checked = enabled,
                 onCheckedChange = { enabled = it },
             )
             Text(
                 text = buildString {
-                    append("${mode?.hosts ?: 0} hosts · ${mode?.clients ?: 0} clients")
+                    append("${hub?.hosts ?: 0} hosts · ${hub?.clients ?: 0} clients")
                     append(" · ")
-                    append(egressTrafficLabel((mode?.relayBytesIn ?: 0) + (mode?.relayBytesOut ?: 0)))
+                    append(egressTrafficLabel((hub?.relayBytesIn ?: 0) + (hub?.relayBytesOut ?: 0)))
                     append(" relayed")
-                    if (!mode?.lastSync.isNullOrBlank()) {
+                    if (!hub?.lastSync.isNullOrBlank()) {
                         append(" · Last sync ")
-                        append(relayRelativeAge(mode.lastSync))
+                        append(relayRelativeAge(hub.lastSync))
                     }
                 },
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = PanelMono),
@@ -532,18 +580,13 @@ private fun RelayModeCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            mode?.lastError?.takeIf { it.isNotBlank() }?.let { message ->
-                Text(
-                    message,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = DigitDnsTheme.colors.warning,
-                    maxLines = 2,
-                )
+            hub?.lastError?.takeIf { it.isNotBlank() }?.let { message ->
+                Text(message, style = MaterialTheme.typography.labelSmall, color = DigitDnsTheme.colors.warning, maxLines = 2)
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
-                        onSave(enabled, hub, key, token)
+                        onSave(name.trim(), enabled, url, key, token)
                         key = ""
                         token = ""
                     },
@@ -551,25 +594,29 @@ private fun RelayModeCard(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                     modifier = Modifier.height(34.dp),
                 ) {
-                    Text(if (saving) "Saving…" else "Save relay mode")
+                    Text(if (saving) "Saving…" else if (isNew) "Add hub" else "Save hub")
                 }
-                OutlinedButton(
-                    onClick = onTest,
-                    enabled = !testing && !saving,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                    modifier = Modifier.height(34.dp),
-                ) {
-                    if (testing) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(4.dp))
-                    } else {
-                        Icon(Icons.Filled.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
+                if (!isNew) {
+                    OutlinedButton(
+                        onClick = onTest,
+                        enabled = !testing && !saving,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        modifier = Modifier.height(34.dp),
+                    ) {
+                        if (testing) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(4.dp))
+                        } else {
+                            Icon(Icons.Filled.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        Text(if (testing) "Testing…" else "Test connection")
                     }
-                    Text(if (testing) "Testing…" else "Test connection")
+                    Spacer(Modifier.weight(1f))
+                    val ms = testResult?.latencyMs ?: 0.0
+                    val ok = testResult?.ok == true
+                    RelayTestPingBadge(ms, ok)
                 }
-                Spacer(Modifier.weight(1f))
-                RelayTestPingBadge(testPingMs, testOk)
             }
         }
     }

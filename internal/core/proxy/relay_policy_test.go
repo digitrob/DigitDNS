@@ -11,9 +11,16 @@ import (
 
 type blockingRelayPolicy struct{}
 
-func (blockingRelayPolicy) Enabled() bool            { return true }
-func (blockingRelayPolicy) AllowsClient(net.IP) bool { return true }
-func (blockingRelayPolicy) AllowsHost(string) bool   { return false }
+func (blockingRelayPolicy) Enabled() bool { return true }
+func (blockingRelayPolicy) ForClient(net.IP) (RelayHostPolicy, bool) {
+	return blockingHostPolicy{}, true
+}
+
+type blockingHostPolicy struct{}
+
+func (blockingHostPolicy) HubID() string           { return "test" }
+func (blockingHostPolicy) AllowsHost(string) bool  { return false }
+func (blockingHostPolicy) AddBytes(uint64, uint64) {}
 
 func TestRelayClientRefusesHostOutsideHubCatalogue(t *testing.T) {
 	s := NewServer(database.SNIProxySettings{}, "127.0.0.1", "", nil)
@@ -36,9 +43,10 @@ func TestRelayClientRefusesHostOutsideHubCatalogue(t *testing.T) {
 
 type allowingRelayPolicy struct{}
 
-func (allowingRelayPolicy) Enabled() bool            { return true }
-func (allowingRelayPolicy) AllowsClient(net.IP) bool { return false }
-func (allowingRelayPolicy) AllowsHost(string) bool   { return true }
+func (allowingRelayPolicy) Enabled() bool { return true }
+func (allowingRelayPolicy) ForClient(net.IP) (RelayHostPolicy, bool) {
+	return nil, false
+}
 
 func TestNonRelayClientKeepsLocalPath(t *testing.T) {
 	// A local client is not in the hub list, so the relay host check must not

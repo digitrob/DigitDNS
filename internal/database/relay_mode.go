@@ -25,3 +25,27 @@ type RelayModeSettings struct {
 	LastSync      time.Time `json:"last_sync,omitempty"`
 	LastError     string    `json:"last_error,omitempty"`
 }
+
+// RelayHubSettings is one hub this full instance serves as a relay. The single
+// RelayModeSettings record is kept for migration and older clients; new saves
+// write the relay_hubs list.
+type RelayHubSettings struct {
+	ID      string `json:"id"`
+	Name    string `json:"name,omitempty"`
+	Enabled bool   `json:"enabled"`
+
+	HubURL   string `json:"hub_url"`
+	AgentKey string `json:"agent_key,omitempty"`
+	AgentID  string `json:"agent_id,omitempty"`
+	Country  string `json:"country,omitempty"`
+
+	Hosts         []string  `json:"hosts,omitempty"`
+	Clients       []string  `json:"clients,omitempty"`
+	IPv6Enabled   bool      `json:"ipv6_enabled"`
+	CatalogueETag string    `json:"catalogue_etag,omitempty"`
+	LastSync      time.Time `json:"last_sync,omitempty"`
+	LastHeartbeat time.Time `json:"last_heartbeat,omitempty"`
+	LastError     string    `json:"last_error,omitempty"`
+	RelayBytesIn  uint64    `json:"relay_bytes_in,omitempty"`
+	RelayBytesOut uint64    `json:"relay_bytes_out,omitempty"`
+}

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
 import com.digitrob.digitdns.core.network.EgressSaveRequest
 import com.digitrob.digitdns.core.network.RelayModeDto
+import com.digitrob.digitdns.core.network.RelayModeTestResponse
 import com.digitrob.digitdns.data.AgentsRepository
 import com.digitrob.digitdns.data.EgressesRepository
 import com.digitrob.digitdns.data.RelayModeRepository
@@ -37,13 +38,13 @@ data class RelayAgentsUiState(
     val egresses: List<EgressInfo> = emptyList(),
     /** The egress whose Test button is running. */
     val testingEgressId: String? = null,
-    /** Full-instance relay mode for another hub. */
-    val relayMode: RelayModeDto? = null,
-    val isRelayModeSaving: Boolean = false,
-    val isRelayModeTesting: Boolean = false,
-    /** Ping from the last relay-mode Test connection; 0 means no result yet. */
-    val relayTestPingMs: Double = 0.0,
-    val relayTestOk: Boolean = false,
+    /** Full-instance relay hubs this server serves. */
+    val relayHubs: List<RelayModeDto> = emptyList(),
+    val relayGlobalEnabled: Boolean = true,
+    val relaySavingId: String? = null,
+    val relayTestingId: String? = null,
+    /** Hub id -> last test result. */
+    val relayTests: Map<String, RelayModeTestResponse> = emptyMap(),
     /** Agent id -> number of domains that would currently exit through it. */
     val assignedCounts: Map<String, Int> = emptyMap(),
     /** Agent id -> service names whose default relay is that agent. */
@@ -98,13 +99,14 @@ class RelayAgentsViewModel @Inject constructor(
             try {
                 val list = repository.list()
                 val egresses = runCatching { egressesRepository.list() }.getOrNull()
-                val relayMode = runCatching { relayModeRepository.load() }.getOrNull()
+                val relayEnvelope = runCatching { relayModeRepository.envelope() }.getOrNull()
                 val rules = runCatching { rulesRepository.load() }.getOrNull()
                 _state.update {
                     it.copy(
                         agents = list,
                         egresses = egresses ?: it.egresses,
-                        relayMode = relayMode ?: it.relayMode,
+                        relayHubs = relayEnvelope?.relayHubs ?: it.relayHubs,
+                        relayGlobalEnabled = relayEnvelope?.globalEnabled ?: it.relayGlobalEnabled,
                         assignedCounts = rules?.let(::assignmentCounts).orEmpty(),
                         serviceLabels = rules?.let(::serviceDefaults).orEmpty(),
                         isLoading = false,
@@ -410,60 +412,80 @@ class RelayAgentsViewModel @Inject constructor(
         }
     }
 
-    fun refreshRelayMode() {
+    fun setRelayGlobal(enabled: Boolean) {
         viewModelScope.launch {
             try {
-                val mode = relayModeRepository.load()
-                _state.update { it.copy(relayMode = mode) }
+                val hubs = relayModeRepository.setGlobal(enabled)
+                _state.update { it.copy(relayGlobalEnabled = enabled, relayHubs = hubs) }
             } catch (e: ApiException) {
                 _state.update { it.copy(error = e.userMessage) }
             } catch (e: IOException) {
-                _state.update { it.copy(error = e.message ?: "Could not load relay mode.") }
+                _state.update { it.copy(error = e.message ?: "Could not change relay mode.") }
             }
         }
     }
 
-    fun testRelayMode() {
+    fun refreshRelayMode() {
         viewModelScope.launch {
-            _state.update { it.copy(isRelayModeTesting = true, error = null) }
             try {
-                val result = relayModeRepository.test()
-                val mode = runCatching { relayModeRepository.load() }.getOrNull()
+                val hubs = relayModeRepository.list()
+                _state.update { it.copy(relayHubs = hubs) }
+            } catch (e: ApiException) {
+                _state.update { it.copy(error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update { it.copy(error = e.message ?: "Could not load relay hubs.") }
+            }
+        }
+    }
+
+    fun testRelayHub(id: String) {
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            _state.update { it.copy(relayTestingId = id, error = null) }
+            try {
+                val result = relayModeRepository.testHub(id)
                 _state.update {
                     it.copy(
-                        relayMode = mode ?: it.relayMode,
-                        isRelayModeTesting = false,
-                        relayTestOk = result.ok,
-                        relayTestPingMs = if (result.ok) result.latencyMs else 0.0,
+                        relayTestingId = null,
+                        relayTests = it.relayTests + (id to result),
                     )
                 }
             } catch (e: ApiException) {
-                _state.update {
-                    it.copy(
-                        isRelayModeTesting = false,
-                        relayTestOk = false,
-                        relayTestPingMs = 0.0,
-                        error = e.userMessage,
-                    )
-                }
+                _state.update { it.copy(relayTestingId = null, error = e.userMessage) }
             } catch (e: IOException) {
-                _state.update {
-                    it.copy(
-                        isRelayModeTesting = false,
-                        relayTestOk = false,
-                        relayTestPingMs = 0.0,
-                        error = e.message ?: "Relay test failed.",
-                    )
-                }
+                _state.update { it.copy(relayTestingId = null, error = e.message ?: "Relay test failed.") }
             }
         }
     }
 
-    fun saveRelayMode(enabled: Boolean, hubUrl: String, agentKey: String, token: String) {
+    fun deleteRelayHub(id: String) {
+        if (id.isBlank()) return
         viewModelScope.launch {
-            _state.update { it.copy(isRelayModeSaving = true, error = null) }
             try {
-                val saved = relayModeRepository.save(
+                val hubs = relayModeRepository.delete(id)
+                _state.update { it.copy(relayHubs = hubs, message = "Relay hub removed.") }
+            } catch (e: ApiException) {
+                _state.update { it.copy(error = e.userMessage) }
+            } catch (e: IOException) {
+                _state.update { it.copy(error = e.message ?: "Could not remove the relay hub.") }
+            }
+        }
+    }
+
+    fun saveRelayHub(
+        id: String,
+        name: String,
+        enabled: Boolean,
+        hubUrl: String,
+        agentKey: String,
+        token: String,
+    ) {
+        viewModelScope.launch {
+            _state.update { it.copy(relaySavingId = id.ifBlank { "new" }, error = null) }
+            try {
+                val hubs = relayModeRepository.save(
+                    id = id,
+                    name = name,
                     enabled = enabled,
                     hubUrl = hubUrl.trim(),
                     agentKey = agentKey.trim(),
@@ -471,19 +493,18 @@ class RelayAgentsViewModel @Inject constructor(
                 )
                 _state.update {
                     it.copy(
-                        relayMode = saved,
-                        isRelayModeSaving = false,
-                        message = if (saved.enabled) "Relay mode saved." else "Relay mode disabled.",
+                        relayHubs = hubs,
+                        relaySavingId = null,
+                        message = if (enabled) "Relay hub saved." else "Relay hub disabled.",
                     )
                 }
             } catch (e: ApiException) {
-                _state.update { it.copy(isRelayModeSaving = false, error = e.userMessage) }
+                _state.update { it.copy(relaySavingId = null, error = e.userMessage) }
             } catch (e: IOException) {
-                _state.update { it.copy(isRelayModeSaving = false, error = e.message ?: "Could not save relay mode.") }
+                _state.update { it.copy(relaySavingId = null, error = e.message ?: "Could not save the relay hub.") }
             }
         }
-    }
-}
+    }}
 
 /**
  * Count the domains that resolve to each agent: direct assignments first, then a

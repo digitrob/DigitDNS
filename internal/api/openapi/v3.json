@@ -5218,6 +5218,39 @@
         },
         "description": "Sends a synthetic test alert to every enabled channel."
       }
+    },
+    "/api/v3/relay-mode/global": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Set global relay mode",
+        "description": "Master switch for this server acting as a relay. Off stops every hub worker and removes the relay policy.",
+        "operationId": "setRelayModeGlobal",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
     }
   }
 }

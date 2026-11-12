@@ -85,7 +85,7 @@ fun ServerAlertsCard(viewModel: ServerAlertsViewModel = hiltViewModel()) {
             s.channels.forEachIndexed { index, channel ->
                 AlertChannelRow(
                     channel = channel,
-                    onChange = { viewModel.updateChannel(index) { channel } },
+                    onChange = { transform -> viewModel.updateChannel(index, transform) },
                     onRemove = { viewModel.removeChannel(index) },
                 )
             }

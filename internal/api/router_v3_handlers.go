@@ -990,6 +990,28 @@ func (a *API) handleV3RelayMode(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (a *API) handleV3RelayModeGlobal(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	body, ok := v3Body(r)
+	if !ok {
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+		return
+	}
+	resp, err := a.v3Backend.SetRelayModeGlobal(r, body)
+	if err != nil {
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (a *API) handleV3RelayModeTest(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
 		v3BackendUnavailable(w, r)

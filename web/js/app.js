@@ -10388,147 +10388,187 @@ function handleEgressListClick(e) {
 
 let relayModeView = null;
 
+let relayHubsCache = [];
+let relayGlobalEnabled = true;
+
 function relayModeStatus(view) {
   if (!view || !view.enabled) return { text: 'disabled', cls: 'is-disabled' };
   if (view.online) return { text: 'online', cls: 'is-online' };
   return { text: view.last_error ? 'error' : 'offline', cls: 'is-offline' };
 }
 
-function renderRelayMode(view) {
-  relayModeView = view || null;
+function relayHubCard(v, isNew) {
+  const view = v || {};
   const status = relayModeStatus(view);
-  const badge = document.getElementById('relay-mode-status');
-  if (badge) {
-    badge.className = 'agent-badge ' + status.cls;
-    badge.textContent = status.text;
-    badge.title = view && view.last_error ? view.last_error : '';
+  const traffic = humanBytes(Number(view.relay_bytes_in || 0) + Number(view.relay_bytes_out || 0));
+  const lastSync = view.last_sync ? egressRelativeAge(view.last_sync) : '—';
+  const keyPlaceholder = view.agent_key_set ? 'Saved — leave blank to keep' : 'id:secret from the hub';
+  return `<div class="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-3" data-relay-hub data-hub-id="${escapeHTML(view.id || '')}">
+    <div class="flex items-start justify-between gap-2 flex-wrap">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <input data-relay-field="name" type="text" value="${escapeHTML(view.name || '')}" placeholder="Hub name"
+            class="panel-field text-xs font-bold w-44" aria-label="Hub name">
+          ${isNew ? '<span class="agent-badge is-editing">new</span>' : `<span class="agent-badge ${escapeHTML(status.cls)}">${escapeHTML(status.text)}</span>`}
+        </div>
+        <div class="text-[10px] text-slate-500 font-mono mt-1 truncate">${escapeHTML(view.agent_id ? 'Agent ' + view.agent_id : 'Not enrolled')}</div>
+      </div>
+      <div class="flex items-center gap-1 shrink-0">
+        ${isNew ? '' : `<button type="button" class="agent-icon-btn" data-relay-action="test" data-hub-id="${escapeHTML(view.id)}" title="Test connection"><i data-feather="activity" class="w-3.5 h-3.5"></i></button>`}
+        ${isNew ? '' : `<button type="button" class="agent-icon-btn agent-icon-btn-danger" data-relay-action="delete" data-hub-id="${escapeHTML(view.id)}" title="Remove hub"><i data-feather="trash-2" class="w-3.5 h-3.5"></i></button>`}
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <label class="block">
+        <span class="block text-[10px] font-semibold text-slate-400 mb-1">Hub URL (including the hidden admin path)</span>
+        <input data-relay-field="hub_url" type="text" value="${escapeHTML(view.hub_url || '')}" placeholder="https://hub:port/&lt;admin-path&gt;" autocomplete="off" class="panel-field w-full font-mono">
+      </label>
+      <label class="block">
+        <span class="block text-[10px] font-semibold text-slate-400 mb-1">Agent key (write-only)</span>
+        <input data-relay-field="agent_key" type="password" placeholder="${escapeHTML(keyPlaceholder)}" autocomplete="new-password" class="panel-field w-full font-mono">
+      </label>
+      <label class="block">
+        <span class="block text-[10px] font-semibold text-slate-400 mb-1">Enrolment token (first time only)</span>
+        <input data-relay-field="token" type="password" placeholder="One-time token from the hub" autocomplete="new-password" class="panel-field w-full font-mono">
+      </label>
+      <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-950/80 border border-slate-800">
+        <div><span class="block text-[11px] font-semibold text-slate-300">Relay mode</span><span class="block text-[10px] text-slate-500">Sync this server with the hub</span></div>
+        <label class="switch" title="Enable this hub"><input data-relay-field="enabled" type="checkbox" ${view.enabled ? 'checked' : ''}><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="agent-meta agent-card-traffic">${escapeHTML(String(view.hosts || 0))} hosts · ${escapeHTML(String(view.clients || 0))} clients · ${escapeHTML(traffic)} relayed · Last sync ${escapeHTML(lastSync)}</div>
+    ${view.last_error ? `<div class="egress-error" title="${escapeHTML(view.last_error)}">${escapeHTML(view.last_error)}</div>` : ''}
+    <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
+      <button type="button" class="panel-btn panel-btn-sm panel-btn-primary" data-relay-action="save" data-hub-id="${escapeHTML(view.id || '')}">${isNew ? 'Add hub' : 'Save hub'}</button>
+      <span data-relay-ping class="shrink-0 inline-flex items-center justify-center min-w-[92px] px-2 py-0.5 rounded border text-slate-400 bg-slate-500/10 border-slate-600/40 text-[10px] font-bold font-mono whitespace-nowrap">ping —</span>
+    </div>
+  </div>`;
+}
+
+function renderRelayHubs(views) {
+  relayHubsCache = Array.isArray(views) ? views : [];
+  const global = document.getElementById('relay-global-enabled');
+  if (global) global.checked = !!relayGlobalEnabled;
+  const list = document.getElementById('relay-hubs-list');
+  if (!list) return;
+  if (!relayHubsCache.length) {
+    list.innerHTML = `<div class="egress-empty"><p>No relay hubs yet — add one to let another DigitDNS use this server as a relay.</p></div>`;
+  } else {
+    list.innerHTML = relayHubsCache.map((v) => relayHubCard(v, false)).join('');
   }
-  const hub = document.getElementById('relay-mode-hub');
-  if (hub && document.activeElement !== hub) hub.value = (view && view.hub_url) || '';
-  const key = document.getElementById('relay-mode-key');
-  if (key) {
-    key.value = '';
-    key.placeholder = view && view.agent_key_set ? 'Saved — leave blank to keep' : 'id:secret from the hub';
-  }
-  const token = document.getElementById('relay-mode-token');
-  if (token) {
-    token.value = '';
-    token.placeholder = 'One-time token from the hub';
-  }
-  const enabled = document.getElementById('relay-mode-enabled');
-  if (enabled) enabled.checked = !!(view && view.enabled);
-  const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
-  set('relay-mode-hosts', String((view && view.hosts) || 0));
-  set('relay-mode-clients', String((view && view.clients) || 0));
-  set('relay-mode-traffic', humanBytes(Number((view && view.relay_bytes_in) || 0) + Number((view && view.relay_bytes_out) || 0)));
-  set('relay-mode-last-sync', view && view.last_sync ? egressRelativeAge(view.last_sync) : '—');
-  const error = document.getElementById('relay-mode-error');
-  if (error) {
-    const message = view && view.last_error ? String(view.last_error) : '';
-    error.textContent = message;
-    error.classList.toggle('hidden', !message);
-  }
-  const saveStatus = document.getElementById('relay-mode-save-status');
-  if (saveStatus && !saveStatus.textContent) {
-    saveStatus.textContent = view && view.agent_id ? 'Agent ' + view.agent_id : '';
-  }
+  safeFeatherReplace();
+}
+
+function addRelayHub() {
+  const list = document.getElementById('relay-hubs-list');
+  if (!list) return;
+  const empty = list.querySelector('.egress-empty');
+  if (empty) empty.remove();
+  list.insertAdjacentHTML('afterbegin', relayHubCard(null, true));
+  safeFeatherReplace();
 }
 
 async function loadRelayMode() {
   try {
-    const res = await fetch(api('/api/relay-mode'), {
-      headers: { 'Authorization': `Bearer ${authToken}` },
-    });
+    const res = await fetch(api('/api/relay-mode'), { headers: { 'Authorization': `Bearer ${authToken}` } });
     if (!res.ok) return;
     const data = await res.json();
-    renderRelayMode(data.relay_mode);
+    relayGlobalEnabled = data.global_enabled !== false;
+    renderRelayHubs(data.relay_hubs || []);
   } catch (e) { /* the card keeps its last known state */ }
 }
 
-function setRelayTestBadge(ms, ok) {
-  const el = document.getElementById('relay-mode-ping-badge');
-  if (!el) return;
-  if (!ok || !(Number(ms) > 0)) {
-    el.className = 'shrink-0 inline-flex items-center justify-center min-w-[92px] px-2 py-0.5 rounded border text-slate-400 bg-slate-500/10 border-slate-600/40 text-[10px] font-bold font-mono whitespace-nowrap';
-    el.textContent = 'ping —';
-    el.title = 'No relay test yet';
-    return;
-  }
-  const value = Number(ms);
-  let cls = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
-  if (value > 40) cls = 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30';
-  if (value > 80) cls = 'text-red-400 bg-red-500/10 border-red-500/30';
-  el.className = `shrink-0 inline-flex items-center justify-center min-w-[92px] px-2 py-0.5 rounded border ${cls} text-[10px] font-bold font-mono whitespace-nowrap`;
-  el.textContent = `ping ${value.toFixed(1)} ms`;
-  el.title = 'Last relay test';
+function relayHubField(card, name) {
+  return card.querySelector('[data-relay-field="' + name + '"]');
 }
 
-async function testRelayMode() {
-  const btn = document.getElementById('test-relay-mode-btn');
-  if (btn) btn.disabled = true;
-  // Only the fixed-width ping badge changes during a test. The agent number
-  // stays in the far-right slot so it never flickers away and back.
-  const badge = document.getElementById('relay-mode-ping-badge');
-  if (badge) {
-    badge.textContent = 'ping …';
-    badge.className = 'shrink-0 inline-flex items-center justify-center min-w-[92px] px-2 py-0.5 rounded border text-slate-400 bg-slate-500/10 border-slate-600/40 text-[10px] font-bold font-mono whitespace-nowrap';
-  }
-  try {
-    const res = await fetch(api('/api/relay-mode/test'), {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${authToken}` },
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.ok) {
-      const latency = Number(data.latency_ms || 0);
-      setRelayTestBadge(latency, true);
-      showToast(`Relay connection OK — ${latency.toFixed(0)} ms`, 'success');
-      loadRelayMode();
-    } else {
-      const message = data.error || 'hub unreachable';
-      setRelayTestBadge(0, false);
-      showToast(`Relay test failed — ${message}`, 'error');
-    }
-  } catch (e) {
-    setRelayTestBadge(0, false);
-    showToast(e.message || 'Relay test failed', 'error');
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-async function saveRelayMode() {
-  const status = document.getElementById('relay-mode-save-status');
-  const setStatus = (text, error) => {
-    if (!status) return;
-    status.textContent = text || '';
-    status.className = 'ml-auto min-w-0 max-w-[45%] truncate text-right text-[11px] ' + (error ? 'text-red-400' : 'text-slate-400');
+async function saveRelayHub(card) {
+  if (!card) return;
+  const id = card.dataset.hubId || '';
+  const body = {
+    enabled: !!relayHubField(card, 'enabled')?.checked,
+    hub_url: (relayHubField(card, 'hub_url')?.value || '').trim(),
+    name: (relayHubField(card, 'name')?.value || '').trim(),
   };
-  const hub = (document.getElementById('relay-mode-hub').value || '').trim();
-  const key = document.getElementById('relay-mode-key').value || '';
-  const token = document.getElementById('relay-mode-token').value || '';
-  const enabled = !!document.getElementById('relay-mode-enabled').checked;
-  const body = { enabled, hub_url: hub };
+  if (id) body.id = id;
+  const key = relayHubField(card, 'agent_key')?.value || '';
+  const token = relayHubField(card, 'token')?.value || '';
   if (key.trim()) body.agent_key = key.trim();
   if (token.trim()) body.token = token.trim();
-  const btn = document.getElementById('save-relay-mode-btn');
+  const btn = card.querySelector('[data-relay-action="save"]');
   if (btn) btn.disabled = true;
-  setStatus('Saving…');
   try {
     const res = await fetch(api('/api/relay-mode'), {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(await errorMessage(res, 'Could not save relay mode'));
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not save the relay hub'));
     const data = await res.json();
-    renderRelayMode(data.relay_mode);
-    setStatus('Saved.');
-    showToast(enabled ? 'Relay mode saved — syncing with the hub.' : 'Relay mode disabled.', 'success');
+    renderRelayHubs(data.relay_hubs || []);
+    showToast(body.enabled ? 'Relay hub saved — syncing.' : 'Relay hub disabled.', 'success');
   } catch (e) {
-    setStatus(e.message || 'Could not save relay mode', true);
-  } finally {
+    showToast(e.message || 'Could not save the relay hub', 'error');
     if (btn) btn.disabled = false;
+  }
+}
+
+async function testRelayHub(id, button, badge) {
+  if (!id) return;
+  if (button) button.disabled = true;
+  if (badge) { badge.textContent = 'ping …'; }
+  try {
+    const res = await fetch(api('/api/relay-mode/' + encodeURIComponent(id) + '/test'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      const ms = Number(data.latency_ms || 0);
+      if (badge) {
+        badge.textContent = `ping ${ms.toFixed(1)} ms`;
+        badge.className = 'shrink-0 inline-flex items-center justify-center min-w-[92px] px-2 py-0.5 rounded border text-emerald-400 bg-emerald-500/10 border-emerald-500/30 text-[10px] font-bold font-mono whitespace-nowrap';
+      }
+      showToast(`Relay connection OK — ${ms.toFixed(0)} ms`, 'success');
+    } else {
+      if (badge) badge.textContent = 'ping —';
+      showToast(`Relay test failed — ${data.error || 'hub unreachable'}`, 'error');
+    }
+  } catch (e) {
+    if (badge) badge.textContent = 'ping —';
+    showToast(e.message || 'Relay test failed', 'error');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function deleteRelayHub(id) {
+  if (!id) return;
+  if (!confirmAction('Remove this relay hub? Its clients will stop being relayed.')) return;
+  try {
+    const res = await fetch(api('/api/relay-mode/' + encodeURIComponent(id)), {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not remove the relay hub'));
+    const data = await res.json();
+    renderRelayHubs(data.relay_hubs || []);
+    showToast('Relay hub removed.', 'success');
+  } catch (e) {
+    showToast(e.message || 'Could not remove the relay hub', 'error');
+  }
+}
+
+function handleRelayHubsClick(e) {
+  const action = e.target.closest('[data-relay-action]');
+  if (!action) return;
+  const card = action.closest('[data-relay-hub]');
+  switch (action.dataset.relayAction) {
+    case 'save': saveRelayHub(card); break;
+    case 'test': testRelayHub(action.dataset.hubId, action, card?.querySelector('[data-relay-ping]')); break;
+    case 'delete': deleteRelayHub(action.dataset.hubId); break;
   }
 }
 
@@ -10571,8 +10611,26 @@ function initEgressPage() {
       showToast('Could not read that configuration file.', 'error');
     }
   });
-  document.getElementById('save-relay-mode-btn')?.addEventListener('click', saveRelayMode);
-  document.getElementById('test-relay-mode-btn')?.addEventListener('click', testRelayMode);
+  document.getElementById('add-relay-hub-btn')?.addEventListener('click', addRelayHub);
+  document.getElementById('relay-global-enabled')?.addEventListener('change', async (e) => {
+    const enabled = !!e.target.checked;
+    try {
+      const res = await fetch(api('/api/relay-mode/global'), {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) throw new Error(await errorMessage(res, 'Could not change relay mode'));
+      const data = await res.json();
+      relayGlobalEnabled = data.global_enabled !== false;
+      renderRelayHubs(data.relay_hubs || []);
+      showToast(enabled ? 'Relay mode enabled.' : 'Relay mode disabled.', 'success');
+    } catch (err) {
+      e.target.checked = !enabled;
+      showToast(err.message || 'Could not change relay mode', 'error');
+    }
+  });
+  document.getElementById('relay-hubs-list')?.addEventListener('click', handleRelayHubsClick);
   document.getElementById('socks5-list')?.addEventListener('click', handleEgressListClick);
   document.getElementById('wireguard-list')?.addEventListener('click', handleEgressListClick);
   document.getElementById('egress-modal')?.addEventListener('click', (e) => {
@@ -10588,6 +10646,7 @@ const tabRoutes = {
   'proxied': '/proxied',
   'filters': '/filters',
   'agents': '/agents',
+  'tools': '/tools',
   'clients': '/clients',
   'stream': '/logs',
   'systemlog': '/system-log',
@@ -10604,6 +10663,7 @@ const routeTabs = {
   '/proxied': 'proxied',
   '/filters': 'filters',
   '/agents': 'agents',
+  '/tools': 'tools',
   '/clients': 'clients',
   '/logs': 'stream',
   '/stream': 'stream',
@@ -10642,6 +10702,9 @@ function switchTab(target, updateUrl = true, loadData = true) {
     if (loadData) {
       if (target === 'clients') {
         loadClients();
+      }
+      if (target === 'tools') {
+        loadToolsPage();
       }
       // Returning to the Logs view repaints the stream from the buffer: the
       // per-query DOM work was skipped while another tab was showing (see
@@ -11411,6 +11474,167 @@ async function runExplain() {
   }
 }
 
+// ── Unified Tools page ─────────────────────────────────────────────────────
+function toolsRow(label, value, cls) {
+  if (!value) return '';
+  const toneClass = cls || 'text-slate-200';
+  return `<div class="flex items-start justify-between gap-3 py-1 border-b border-slate-800/60 last:border-0">
+    <span class="text-slate-500 shrink-0">${escapeHTML(label)}</span>
+    <span class="text-right min-w-0 break-words ${escapeHTML(toneClass)}">${escapeHTML(value)}</span>
+  </div>`;
+}
+
+async function toolsExplain() {
+  const out = document.getElementById('tools-explain-result');
+  const domain = (document.getElementById('tools-domain')?.value || '').trim();
+  if (!domain) return;
+  if (out) { out.className = 'text-xs text-slate-500'; out.textContent = 'Checking…'; }
+  try {
+    const q = new URLSearchParams({ domain });
+    const client = (document.getElementById('tools-client')?.value || '').trim();
+    if (client) q.set('client', client);
+    const res = await fetch(api('/api/explain?' + q.toString()), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not explain that domain');
+    const tone = data.action === 'BLOCK' ? 'text-red-400' : data.action === 'PROXY' ? 'text-cyan-300' : 'text-emerald-400';
+    const target = data.target ? `${data.target.kind === 'agent' ? 'Relay agent ' : data.target.kind === 'egress' ? 'Egress ' : ''}${data.target.name || data.target.agent_id || data.target.egress_id || 'This Server'}${data.target.country ? ' · ' + data.target.country : ''}` : '';
+    if (out) {
+      out.className = 'text-xs text-slate-300';
+      out.innerHTML = `<div class="flex items-center gap-2 mb-2"><span class="${tone} font-mono font-bold">${escapeHTML(data.action || 'DIRECT')}</span><span class="font-mono text-slate-400 truncate">${escapeHTML(data.domain || domain)}</span></div>`
+        + toolsRow('Rule', data.rule)
+        + toolsRow('Pattern', data.pattern)
+        + toolsRow('Blocklist', data.blocklist_source ? `${data.blocklist_source}${data.blocklist_pattern ? ' · ' + data.blocklist_pattern : ''}` : '')
+        + toolsRow('Allowlist', data.allow_source ? `${data.allow_source}${data.allow_pattern ? ' · ' + data.allow_pattern : ''}` : '')
+        + toolsRow('Custom record', data.custom_record)
+        + toolsRow('Egress', target)
+        + toolsRow('Client', data.account ? `${data.account}${data.client_ip ? ' · ' + data.client_ip : ''}` : data.client_ip);
+    }
+  } catch (e) {
+    if (out) { out.className = 'text-xs text-red-400'; out.textContent = e.message; }
+  }
+}
+
+async function loadToolsEgressOptions() {
+  const select = document.getElementById('tools-check-mode');
+  if (!select) return;
+  try {
+    if (!egressesCache.length) {
+      const res = await fetch(api('/api/egresses'), { headers: { 'Authorization': `Bearer ${authToken}` } });
+      if (res.ok) {
+        const data = await res.json();
+        egressesCache = Array.isArray(data.egresses) ? data.egresses : [];
+      }
+    }
+    const current = select.value;
+    const rows = ['<option value="direct">Direct (This Server)</option>', '<option value="route">Proxied (routing table)</option>'];
+    for (const kind of ['socks5', 'wireguard']) {
+      const items = egressesCache.filter((e) => e.kind === kind);
+      if (!items.length) continue;
+      rows.push(`<optgroup label="${escapeHTML(egressKindLabel(kind))}">`);
+      for (const e of items) {
+        const flag = countryFlagEmoji(e.country);
+        rows.push(`<option value="${escapeHTML(egressValue(e))}">${escapeHTML(flag)} ${escapeHTML(e.name || e.id)} · ${escapeHTML(e.country || '')}</option>`);
+      }
+      rows.push('</optgroup>');
+    }
+    select.innerHTML = rows.join('');
+    if (current && [...select.options].some((o) => o.value === current)) select.value = current;
+  } catch (e) { /* keep direct/route */ }
+}
+
+async function toolsDNS() {
+  const out = document.getElementById('tools-dns-result');
+  const name = (document.getElementById('tools-dns-name')?.value || '').trim();
+  if (!name) return;
+  if (out) { out.className = 'text-xs text-slate-500'; out.textContent = 'Querying…'; }
+  try {
+    const q = new URLSearchParams({
+      name,
+      type: document.getElementById('tools-dns-type')?.value || 'A',
+      dnssec: document.getElementById('tools-dns-dnssec')?.checked ? '1' : '0',
+    });
+    const res = await fetch(api('/api/tools/dns?' + q.toString()), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Lookup failed');
+    if (out) {
+      out.className = 'text-xs text-slate-300';
+      const answers = (data.answers || []).map((a) => `<div class="py-1 border-b border-slate-800/60 last:border-0 font-mono">
+        <span class="text-slate-500">${escapeHTML(a.type)}</span> ${escapeHTML(a.name)} <span class="text-cyan-300">${escapeHTML(a.value)}</span> <span class="text-slate-600">TTL ${a.ttl}</span>
+      </div>`).join('');
+      const rcodeTone = data.rcode === 'NOERROR' ? 'text-emerald-400' : 'text-red-400';
+      const adTone = data.ad ? 'text-emerald-400' : 'text-slate-500';
+      out.innerHTML = `<div class="flex items-center gap-2 mb-2"><span class="font-mono ${escapeHTML(rcodeTone)}">${escapeHTML(data.rcode || '')}</span><span class="text-[10px] ${escapeHTML(adTone)}">${data.ad ? 'DNSSEC validated (AD)' : (data.dnssec ? 'DO requested, no AD' : 'no DNSSEC request')}</span></div>${answers || '<div class="text-slate-500">No answers.</div>'}`;
+    }
+  } catch (e) {
+    if (out) { out.className = 'text-xs text-red-400'; out.textContent = e.message; }
+  }
+}
+
+async function toolsWhois() {
+  const out = document.getElementById('tools-whois-result');
+  const query = (document.getElementById('tools-whois-query')?.value || '').trim();
+  if (!query) return;
+  if (out) { out.className = 'text-xs text-slate-500'; out.textContent = 'Looking up…'; }
+  try {
+    const res = await fetch(api('/api/tools/whois?query=' + encodeURIComponent(query)), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'WHOIS lookup failed');
+    const events = (data.events || []).map((e) => `<div class="flex justify-between gap-2 py-0.5"><span class="text-slate-500">${escapeHTML(e.eventAction || '')}</span><span class="font-mono text-slate-300">${escapeHTML(e.eventDate || '')}</span></div>`).join('');
+    const ns = (data.nameservers || []).map((n) => escapeHTML(n.ldhName || '')).filter(Boolean).join(', ');
+    if (out) {
+      out.className = 'text-xs text-slate-300';
+      out.innerHTML = toolsRow('Handle', data.handle)
+        + toolsRow('Name', data.name)
+        + toolsRow('Status', (data.status || []).join(', '))
+        + (events ? `<div class="mt-1">${events}</div>` : '')
+        + toolsRow('Nameservers', ns);
+    }
+  } catch (e) {
+    if (out) { out.className = 'text-xs text-red-400'; out.textContent = e.message; }
+  }
+}
+
+async function toolsCheck() {
+  const out = document.getElementById('tools-check-result');
+  const host = (document.getElementById('tools-host')?.value || '').trim();
+  const port = (document.getElementById('tools-port')?.value || '').trim();
+  if (!host || !port) return;
+  if (out) { out.className = 'text-xs text-slate-500'; out.textContent = 'Testing…'; }
+  try {
+    const selected = document.getElementById('tools-check-mode')?.value || 'direct';
+    const params = new URLSearchParams({ host, port });
+    if (selected.startsWith('egress:')) {
+      params.set('mode', 'egress');
+      params.set('egress', selected.slice('egress:'.length));
+    } else {
+      params.set('mode', selected);
+    }
+    const res = await fetch(api('/api/tools/check?' + params.toString()), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Check failed');
+    if (out) {
+      out.className = 'text-xs ' + (data.ok ? 'text-emerald-400' : 'text-red-400');
+      out.innerHTML = `<div class="font-mono">${data.ok ? 'OK' : 'FAIL'} · ${escapeHTML(host)}:${escapeHTML(port)}${data.latency_ms != null ? ' · ' + Number(data.latency_ms).toFixed(1) + ' ms' : ''}${data.path ? ' · ' + escapeHTML(data.path) : ''}</div>`
+        + `<div class="text-[10px] text-slate-500 font-mono mt-1">${escapeHTML((data.addresses || []).join(', ') || data.error || '')}</div>`;
+    }
+  } catch (e) {
+    if (out) { out.className = 'text-xs text-red-400'; out.textContent = e.message; }
+  }
+}
+
+function loadToolsPage() {
+  loadToolsEgressOptions();
+}
+
+function initToolsPage() {
+  document.getElementById('tools-explain-btn')?.addEventListener('click', toolsExplain);
+  document.getElementById('tools-check-btn')?.addEventListener('click', toolsCheck);
+  document.getElementById('tools-dns-btn')?.addEventListener('click', toolsDNS);
+  document.getElementById('tools-whois-btn')?.addEventListener('click', toolsWhois);
+}
+
 function initExplainTool() {
   // onclick/onsubmit assignment, not addEventListener: this initialiser runs on
   // every login and would otherwise stack duplicate handlers that each fire a
@@ -11646,6 +11870,7 @@ function initEventListeners() {
   initShellControls();
   initSystemLogPage();
   initExplainTool();
+  initToolsPage();
   initAlerts();
   initOnboarding();
   initDiffModal();

@@ -159,6 +159,10 @@ func (f *fakeV3Backend) Explain(domain, clientIP string) (map[string]any, error)
 	return map[string]any{"domain": domain, "client_ip": clientIP, "action": "DIRECT"}, nil
 }
 
+func (f *fakeV3Backend) SetRelayModeGlobal(r *http.Request, body map[string]any) (map[string]any, error) {
+	return map[string]any{"global_enabled": true}, nil
+}
+
 func (f *fakeV3Backend) AlertSettings() (map[string]any, error) {
 	return map[string]any{"alerts": map[string]any{}}, nil
 }

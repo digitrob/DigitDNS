@@ -857,6 +857,11 @@ func main() {
 	webServer.SetRelayRouter(relayRouter)
 	webServer.SetAlertManager(alertManager)
 	webServer.SetEgressRegistry(egressRegistry)
+	dnsQueryHost := strings.TrimSpace(serverSettings.BindHost)
+	if dnsQueryHost == "" || dnsQueryHost == "0.0.0.0" || dnsQueryHost == "::" {
+		dnsQueryHost = "127.0.0.1"
+	}
+	webServer.SetDNSQueryAddr(net.JoinHostPort(dnsQueryHost, strconv.Itoa(dnsSettings.Port)))
 	webServer.SetRelayModeManager(relayModeManager)
 	webServer.SetEngineSetter(dnsHandler.SetEngineEnabled)
 	webServer.SetEngineState(dnsHandler.EngineEnabled)

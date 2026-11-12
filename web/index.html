@@ -63,7 +63,7 @@
         var routes = {
           '/home': 'dashboard', '/dashboard': 'dashboard', '/panel': 'dashboard',
           '/login': 'dashboard', '/proxied': 'proxied', '/filters': 'filters',
-          '/agents': 'agents', '/clients': 'clients', '/logs': 'stream',
+          '/agents': 'agents', '/tools': 'tools', '/clients': 'clients', '/logs': 'stream',
           '/stream': 'stream', '/system-log': 'systemlog', '/api': 'api', '/settings': 'rules',
           '/guide': 'connect', '/connect': 'connect'
         };
@@ -912,6 +912,10 @@
         <button class="sidebar-nav-item" data-tab="agents" data-route="/agents">
           <i data-feather="globe" class="w-4 h-4"></i>
           <span>Egress Options</span>
+        </button>
+        <button class="sidebar-nav-item" data-tab="tools" data-route="/tools">
+          <i data-feather="tool" class="w-4 h-4"></i>
+          <span>Tools</span>
         </button>
         <button class="sidebar-nav-item" data-tab="clients" data-route="/clients">
           <i data-feather="users" class="w-4 h-4"></i>
@@ -1961,64 +1965,32 @@
           </div>
         </div>
 
-        <!-- Full-instance relay mode: this server can be an agent for another
-             DigitDNS hub while its own local proxying keeps using the same
-             listeners. The hub's host allowlist is enforced for relay clients. -->
+        <!-- Full-instance relay mode: this server can be an agent for one or
+             more DigitDNS hubs while its own local proxying keeps using the
+             same listeners. Each hub has its own catalogue and host allowlist. -->
         <div id="relay-mode-card" class="glass-panel panel-card p-5 sm:p-6 space-y-4">
           <div class="flex items-start justify-between gap-3 flex-wrap">
             <div>
-              <div class="flex items-center gap-2 flex-wrap">
-                <h3 class="panel-card-header">
-                  <i data-feather="share-2" class="w-4 h-4"></i> This Server as Relay
-                </h3>
-                <span id="relay-mode-status" class="agent-badge">off</span>
-              </div>
-              <p class="text-[11px] text-slate-400 mt-0.5">Let another DigitDNS instance use this server as a relay agent. Local proxying continues on the same 80/443 listeners; hub relay clients only reach hosts the hub approves.</p>
-              <p class="text-[10px] text-slate-500 mt-1">Requires the SNI proxy to be enabled. Hub clients bypass this instance's client whitelist but are still limited to the hub host list.</p>
+              <h3 class="panel-card-header">
+                <i data-feather="share-2" class="w-4 h-4"></i> This Server as Relay
+              </h3>
+              <p class="text-[11px] text-slate-400 mt-0.5">Let one or more DigitDNS hubs use this server as a relay agent. Local proxying continues on the same 80/443 listeners; each hub's clients only reach that hub's approved hosts.</p>
+              <p class="text-[10px] text-slate-500 mt-1">Requires the SNI proxy to be enabled. A client IP that appears in two hubs is refused rather than guessed.</p>
             </div>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label class="block">
-              <span class="block text-[11px] font-semibold text-slate-400 mb-1">Hub URL <span class="text-slate-500">(including the hidden admin path)</span></span>
-              <input id="relay-mode-hub" type="text" placeholder="https://hub.example:8080/&lt;admin-path&gt;" autocomplete="off"
-                class="panel-field w-full font-mono">
-            </label>
-            <label class="block">
-              <span class="block text-[11px] font-semibold text-slate-400 mb-1">Agent key <span class="text-slate-500">(write-only)</span></span>
-              <input id="relay-mode-key" type="password" autocomplete="new-password"
-                class="panel-field w-full font-mono">
-            </label>
-            <label class="block">
-              <span class="block text-[11px] font-semibold text-slate-400 mb-1">Enrolment token <span class="text-slate-500">(first time only)</span></span>
-              <input id="relay-mode-token" type="password" autocomplete="new-password"
-                class="panel-field w-full font-mono">
-            </label>
-            <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-950/80 border border-slate-800">
-              <div>
-                <span class="block text-[11px] font-semibold text-slate-300">Relay mode</span>
-                <span class="block text-[10px] text-slate-500">Sync this server with a hub</span>
-              </div>
-              <label class="switch" title="Enable relay mode">
-                <input type="checkbox" id="relay-mode-enabled">
-                <span class="slider"></span>
+            <div class="flex items-center gap-3 shrink-0">
+              <label class="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-300 cursor-pointer">
+                <span>Relay mode</span>
+                <span class="relative inline-flex items-center">
+                  <input type="checkbox" id="relay-global-enabled" class="sr-only peer">
+                  <span class="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:bg-cyan-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></span>
+                </span>
               </label>
+              <button id="add-relay-hub-btn" type="button" class="panel-btn panel-btn-primary">
+                <i data-feather="plus" class="w-4 h-4"></i> Add hub
+              </button>
             </div>
           </div>
-          <div class="agent-summary">
-            <div class="agent-summary-item"><span id="relay-mode-hosts">0</span><small>hub hosts</small></div>
-            <div class="agent-summary-item"><span id="relay-mode-clients">0</span><small>hub clients</small></div>
-            <div class="agent-summary-item"><span id="relay-mode-traffic">0 B</span><small>relay traffic</small></div>
-            <div class="agent-summary-item"><span id="relay-mode-last-sync">—</span><small>last sync</small></div>
-          </div>
-          <p id="relay-mode-error" class="text-[11px] text-amber-300 hidden"></p>
-          <div class="flex items-center gap-2 flex-wrap">
-            <button id="save-relay-mode-btn" type="button" class="panel-btn panel-btn-primary">Save relay mode</button>
-            <button id="test-relay-mode-btn" type="button" class="panel-btn panel-btn-neutral">
-              <i data-feather="activity" class="w-3.5 h-3.5"></i> Test connection
-            </button>
-            <span id="relay-mode-ping-badge" class="shrink-0 inline-flex items-center justify-center min-w-[92px] px-2 py-0.5 rounded border text-slate-400 bg-slate-500/10 border-slate-600/40 text-[10px] font-bold font-mono whitespace-nowrap">ping —</span>
-            <span id="relay-mode-save-status" class="ml-auto min-w-0 max-w-[45%] truncate text-right text-[11px] text-slate-400"></span>
-          </div>
+          <div id="relay-hubs-list" class="space-y-4"></div>
         </div>
 
         <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
@@ -2387,6 +2359,69 @@
       <!-- TAB: DEVELOPER REST API GATEWAY -->
       <!-- ============================================== -->
       <!-- ============================================== -->
+      <!-- ============================================== -->
+      <!-- TAB: TOOLS                                      -->
+      <!-- ============================================== -->
+      <section id="tab-tools" class="tab-content space-y-6 hidden">
+        <div class="glass-panel panel-card p-5 sm:p-6">
+          <h3 class="panel-card-header"><i data-feather="tool" class="w-4 h-4 text-cyan-400"></i> Tools</h3>
+          <p class="text-[11px] text-slate-400 mt-0.5">Look up a decision, resolve DNS records with DNSSEC, query WHOIS/RDAP, or test a port through a chosen path.</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="glass-panel panel-card p-5 space-y-3">
+            <h4 class="text-xs font-bold text-white font-heading">Why blocked?</h4>
+            <div class="flex flex-col sm:flex-row gap-2">
+              <input id="tools-domain" type="text" placeholder="domain" class="panel-field flex-1 font-mono text-xs" aria-label="Domain to explain">
+              <input id="tools-client" type="text" placeholder="client IP (optional)" class="panel-field sm:w-40 font-mono text-xs" aria-label="Client IP">
+              <button id="tools-explain-btn" type="button" class="panel-btn panel-btn-primary">Explain</button>
+            </div>
+            <div id="tools-explain-result" class="text-xs text-slate-500">Enter a domain to see the matching rule, blocklist and egress.</div>
+          </div>
+
+          <div class="glass-panel panel-card p-5 space-y-3">
+            <h4 class="text-xs font-bold text-white font-heading">DNS lookup</h4>
+            <div class="flex flex-col sm:flex-row gap-2">
+              <input id="tools-dns-name" type="text" placeholder="name to resolve" class="panel-field flex-1 font-mono text-xs" aria-label="DNS name">
+              <select id="tools-dns-type" class="panel-field sm:w-28 font-mono text-xs" aria-label="DNS record type">
+                <option value="A">A</option><option value="AAAA">AAAA</option><option value="CNAME">CNAME</option>
+                <option value="MX">MX</option><option value="TXT">TXT</option><option value="NS">NS</option>
+                <option value="SOA">SOA</option><option value="SRV">SRV</option><option value="CAA">CAA</option>
+                <option value="PTR">PTR</option><option value="DS">DS</option><option value="DNSKEY">DNSKEY</option>
+                <option value="RRSIG">RRSIG</option><option value="ANY">ANY</option>
+              </select>
+              <label class="inline-flex items-center gap-1.5 text-[11px] text-slate-300 whitespace-nowrap"><input type="checkbox" id="tools-dns-dnssec" class="accent-cyan-500"> DNSSEC</label>
+              <button id="tools-dns-btn" type="button" class="panel-btn panel-btn-primary">Lookup</button>
+            </div>
+            <div id="tools-dns-result" class="text-xs text-slate-500">Query this server's resolver and optionally request DNSSEC records.</div>
+          </div>
+
+          <div class="glass-panel panel-card p-5 space-y-3">
+            <h4 class="text-xs font-bold text-white font-heading">WHOIS / RDAP</h4>
+            <div class="flex gap-2">
+              <input id="tools-whois-query" type="text" placeholder="domain or IP" class="panel-field flex-1 font-mono text-xs" aria-label="WHOIS query">
+              <button id="tools-whois-btn" type="button" class="panel-btn panel-btn-primary">Lookup</button>
+            </div>
+            <div id="tools-whois-result" class="text-xs text-slate-500">Registration, expiry, status and nameservers via RDAP.</div>
+          </div>
+
+          <div class="glass-panel panel-card p-5 space-y-3">
+            <h4 class="text-xs font-bold text-white font-heading">Connectivity check</h4>
+            <div class="flex flex-col sm:flex-row gap-2">
+              <input id="tools-host" type="text" placeholder="host or IP" class="panel-field flex-1 font-mono text-xs" aria-label="Host to check">
+              <input id="tools-port" type="number" min="1" max="65535" value="443" class="panel-field sm:w-24 font-mono text-xs" aria-label="Port to check">
+              <select id="tools-check-mode" class="panel-field sm:w-52 font-mono text-xs" aria-label="Dial path">
+                <option value="direct">Direct (This Server)</option>
+                <option value="route">Proxied (routing table)</option>
+              </select>
+              <button id="tools-check-btn" type="button" class="panel-btn panel-btn-primary">Test</button>
+            </div>
+            <div id="tools-check-result" class="text-xs text-slate-500">Resolve a host and open one TCP port.</div>
+          </div>
+
+        </div>
+      </section>
+
       <!-- TAB: SYSTEM LOG                                -->
       <!-- ============================================== -->
       <section id="tab-systemlog" class="tab-content space-y-6 hidden">
@@ -4059,6 +4094,10 @@ async function onBuySubscription(ctx, username) {
       <button class="mobile-nav-item" data-tab="filters" data-route="/filters">
         <i data-feather="slash" class="w-4 h-4"></i>
         <span>Filters</span>
+      </button>
+      <button class="mobile-nav-item" data-tab="tools" data-route="/tools">
+        <i data-feather="tool" class="w-4 h-4"></i>
+        <span class="text-[9px]">Tools</span>
       </button>
       <button class="mobile-nav-item" data-tab="clients" data-route="/clients">
         <i data-feather="users" class="w-4 h-4"></i>

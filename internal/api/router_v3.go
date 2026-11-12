@@ -143,6 +143,7 @@ type V3Backend interface {
 	SystemLog(limit int) (map[string]any, error)
 	RelayMode() map[string]any
 	SaveRelayMode(r *http.Request, body map[string]any) (map[string]any, error)
+	SetRelayModeGlobal(r *http.Request, body map[string]any) (map[string]any, error)
 	TestRelayMode(r *http.Request) (map[string]any, error)
 
 	// Self-update.
@@ -241,6 +242,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/system-log", a.SecurityMiddlewareV3(a.handleV3SystemLog))
 	mux.HandleFunc("/api/v3/relay-mode", a.SecurityMiddlewareV3(a.handleV3RelayMode))
 	mux.HandleFunc("/api/v3/relay-mode/test", a.SecurityMiddlewareV3(a.handleV3RelayModeTest))
+	mux.HandleFunc("/api/v3/relay-mode/global", a.SecurityMiddlewareV3(a.handleV3RelayModeGlobal))
 
 	// Rules & access.
 	mux.HandleFunc("/api/v3/rules", a.SecurityMiddlewareV3(a.handleV3Rules))

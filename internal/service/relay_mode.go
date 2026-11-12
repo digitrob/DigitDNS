@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"digitdns/internal/agent"
@@ -15,10 +16,10 @@ import (
 	"digitdns/internal/version"
 )
 
-// RelayModeManager lets a full DigitDNS instance act as a relay agent for
-// another DigitDNS hub. It reuses the existing agent protocol, but applies the
-// catalogue to the instance's own SNI proxy so local proxying and relay traffic
-// share the same 80/443 listeners.
+// RelayModeManager lets a full DigitDNS instance act as a relay agent for one
+// or more hubs. Each hub keeps its own credential, catalogue, counters and
+// worker; the proxy selects the hub by the source client IP, so one hub's
+// clients never inherit another hub's host allowlist.
 type RelayModeManager struct {
 	db               *database.DB
 	proxy            *proxy.Server
@@ -27,18 +28,28 @@ type RelayModeManager struct {
 	localHostAllowed func(string) bool
 
 	mu            sync.Mutex
-	settings      database.RelayModeSettings
+	globalEnabled bool
+	hubs          map[string]*relayHub
+	order         []string
+	policy        *multiRelayPolicy
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
+}
+
+type relayHub struct {
+	settings      database.RelayHubSettings
 	online        bool
 	lastHeartbeat time.Time
 	lastError     string
 	policy        *relayModePolicy
 	cancel        context.CancelFunc
-	wg            sync.WaitGroup
 }
 
 // RelayModeView is the safe, display-only shape the panel receives. The agent
 // key is never included.
 type RelayModeView struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name,omitempty"`
 	Enabled       bool      `json:"enabled"`
 	HubURL        string    `json:"hub_url"`
 	AgentID       string    `json:"agent_id,omitempty"`
@@ -69,83 +80,194 @@ func NewRelayModeManager(
 	return &RelayModeManager{
 		db: db, proxy: sni, relayPort: relayPort,
 		publicIPv6: publicIPv6, localHostAllowed: localHostAllowed,
+		hubs: map[string]*relayHub{}, globalEnabled: true,
 	}
 }
 
 type relayModePolicy struct {
+	hubID   string
 	hosts   *agent.Allowlist
 	clients *agent.ClientList
+	in      atomic.Uint64
+	out     atomic.Uint64
 }
 
-func (p *relayModePolicy) Enabled() bool { return p != nil }
-func (p *relayModePolicy) AllowsClient(ip net.IP) bool {
-	return p != nil && p.clients.Allows(ip)
-}
+func (p *relayModePolicy) HubID() string { return p.hubID }
 func (p *relayModePolicy) AllowsHost(host string) bool {
 	return p != nil && p.hosts.Allows(host)
 }
-
-func (m *RelayModeManager) loadSettings() (database.RelayModeSettings, error) {
-	var settings database.RelayModeSettings
-	if m == nil || m.db == nil {
-		return settings, nil
+func (p *relayModePolicy) AllowsClient(ip net.IP) bool {
+	return p != nil && p.clients.Allows(ip)
+}
+func (p *relayModePolicy) AddBytes(in, out uint64) {
+	if p == nil {
+		return
 	}
-	if err := m.db.GetSetting("relay_mode", &settings); err != nil {
-		return settings, err
+	if in > 0 {
+		p.in.Add(in)
 	}
-	settings.HubURL = strings.TrimRight(strings.TrimSpace(settings.HubURL), "/")
-	return settings, nil
+	if out > 0 {
+		p.out.Add(out)
+	}
 }
 
-// Start loads the persisted relay mode and starts the sync/heartbeat loops when
-// it is enabled and has a hub credential. It is safe to call again after Stop.
+type multiRelayPolicy struct {
+	hubs      []*relayModePolicy
+	byClient  map[string]*relayModePolicy
+	ambiguous map[string]bool
+}
+
+func (p *multiRelayPolicy) Enabled() bool { return p != nil && len(p.hubs) > 0 }
+func (p *multiRelayPolicy) ForClient(ip net.IP) (proxy.RelayHostPolicy, bool) {
+	if p == nil || ip == nil {
+		return nil, false
+	}
+	key := ip.String()
+	if p.ambiguous[key] {
+		return nil, false
+	}
+	hub := p.byClient[key]
+	if hub == nil {
+		return nil, false
+	}
+	return hub, true
+}
+
+// Compatibility helpers for the single-hub tests and diagnostics.
+func (p *multiRelayPolicy) AllowsClient(ip net.IP) bool {
+	_, ok := p.ForClient(ip)
+	return ok
+}
+func (p *multiRelayPolicy) AllowsHost(host string) bool {
+	for _, h := range p.hubs {
+		if h.AllowsHost(host) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *RelayModeManager) loadHubs() ([]database.RelayHubSettings, error) {
+	if m == nil || m.db == nil {
+		return nil, nil
+	}
+	var hubs []database.RelayHubSettings
+	if err := m.db.GetSetting("relay_hubs", &hubs); err == nil && len(hubs) > 0 {
+		return hubs, nil
+	}
+	var old database.RelayModeSettings
+	if err := m.db.GetSetting("relay_mode", &old); err == nil && old.HubURL != "" {
+		hubs = []database.RelayHubSettings{{
+			ID: "hub-1", Name: "Hub", Enabled: old.Enabled, HubURL: old.HubURL,
+			AgentKey: old.AgentKey, AgentID: old.AgentID, Country: old.Country,
+			Hosts: old.Hosts, Clients: old.Clients, IPv6Enabled: old.IPv6Enabled,
+			CatalogueETag: old.CatalogueETag, LastSync: old.LastSync, LastError: old.LastError,
+		}}
+	}
+	return hubs, nil
+}
+
+func (m *RelayModeManager) saveHubs(hubs []database.RelayHubSettings) error {
+	if m == nil || m.db == nil {
+		return nil
+	}
+	return m.db.SetSetting("relay_hubs", hubs)
+}
+
+type relayModeGlobalSetting struct {
+	Enabled *bool `json:"enabled"`
+}
+
+// GlobalEnabled is the master switch. Missing records read as enabled so an
+// upgrade does not silently stop relays that were already configured.
+func (m *RelayModeManager) GlobalEnabled() bool {
+	if m == nil || m.db == nil {
+		return true
+	}
+	var v relayModeGlobalSetting
+	if err := m.db.GetSetting("relay_mode_global", &v); err != nil || v.Enabled == nil {
+		return true
+	}
+	return *v.Enabled
+}
+
+func (m *RelayModeManager) SetGlobalEnabled(enabled bool) error {
+	if m == nil || m.db == nil {
+		return nil
+	}
+	if err := m.db.SetSetting("relay_mode_global", relayModeGlobalSetting{Enabled: &enabled}); err != nil {
+		return err
+	}
+	return m.Reload()
+}
+
+// Start loads the persisted hubs and starts one sync/heartbeat pair per enabled
+// hub. It is safe to call again after Stop.
 func (m *RelayModeManager) Start(ctx context.Context) error {
 	if m == nil {
 		return nil
 	}
-	settings, err := m.loadSettings()
+	hubs, err := m.loadHubs()
 	if err != nil {
 		return err
 	}
-	m.mu.Lock()
-	m.settings = settings
-	m.lastError = settings.LastError
-	m.mu.Unlock()
-
-	if !settings.Enabled || settings.HubURL == "" || settings.AgentKey == "" {
-		if m.proxy != nil {
-			m.proxy.SetRelayPolicy(nil, m.localHostAllowed)
-		}
-		m.mu.Lock()
-		m.policy = nil
-		m.mu.Unlock()
-		return nil
-	}
-	m.applyPolicy(settings)
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	runCtx, cancel := context.WithCancel(ctx)
+	global := m.GlobalEnabled()
+
 	m.mu.Lock()
 	m.cancel = cancel
-	m.wg.Add(2)
+	m.globalEnabled = global
+	m.hubs = map[string]*relayHub{}
+	m.order = nil
+	for _, h := range hubs {
+		if h.ID == "" {
+			h.ID = fmt.Sprintf("hub-%d", time.Now().UnixNano())
+		}
+		if h.Name == "" {
+			h.Name = h.AgentID
+			if h.Name == "" {
+				h.Name = h.HubURL
+			}
+		}
+		m.hubs[h.ID] = &relayHub{settings: h, lastError: h.LastError}
+		m.order = append(m.order, h.ID)
+	}
+	m.rebuildPolicyLocked()
+	if global {
+		for _, id := range m.order {
+			h := m.hubs[id]
+			if h.settings.Enabled && h.settings.HubURL != "" && h.settings.AgentKey != "" {
+				m.startHubLocked(runCtx, id)
+			}
+		}
+	}
 	m.mu.Unlock()
-
-	hub := agent.NewHub(settings.HubURL)
-	go func() {
-		defer m.wg.Done()
-		m.syncLoop(runCtx, hub, settings.AgentKey)
-	}()
-	go func() {
-		defer m.wg.Done()
-		m.heartbeatLoop(runCtx, hub, settings.AgentKey)
-	}()
-	log.Printf("[Relay Mode] serving as relay for %s as %s", settings.HubURL, settings.AgentID)
 	return nil
 }
 
-// Stop cancels the loops and removes the relay policy, leaving local proxying
-// exactly as it was.
+func (m *RelayModeManager) startHubLocked(ctx context.Context, id string) {
+	h := m.hubs[id]
+	hub := agent.NewHub(h.settings.HubURL)
+	hubCtx, cancel := context.WithCancel(ctx)
+	h.cancel = cancel
+	key := h.settings.AgentKey
+	m.wg.Add(2)
+	go func() {
+		defer m.wg.Done()
+		m.syncLoop(hubCtx, id, hub, key)
+	}()
+	go func() {
+		defer m.wg.Done()
+		m.heartbeatLoop(hubCtx, id, hub, key)
+	}()
+	log.Printf("[Relay Mode] serving hub %s as %s", h.settings.HubURL, h.settings.AgentID)
+}
+
+// Stop cancels every hub worker and removes the relay policy, leaving local
+// proxying exactly as it was.
 func (m *RelayModeManager) Stop() {
 	if m == nil {
 		return
@@ -153,13 +275,17 @@ func (m *RelayModeManager) Stop() {
 	m.mu.Lock()
 	cancel := m.cancel
 	m.cancel = nil
+	for _, h := range m.hubs {
+		if h.cancel != nil {
+			h.cancel()
+		}
+	}
 	m.mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
 	m.wg.Wait()
 	m.mu.Lock()
-	m.online = false
 	m.policy = nil
 	m.mu.Unlock()
 	if m.proxy != nil {
@@ -167,52 +293,87 @@ func (m *RelayModeManager) Stop() {
 	}
 }
 
-// Reload rereads the stored settings and restarts the loops.
 func (m *RelayModeManager) Reload() error {
 	m.Stop()
 	return m.Start(context.Background())
 }
 
-func (m *RelayModeManager) applyPolicy(settings database.RelayModeSettings) {
+// rebuildPolicyLocked compiles every hub's cached catalogue into one policy.
+// A client IP that appears in two hubs is ambiguous and is refused rather than
+// guessed, because the wrong choice would expose another hub's host list.
+func (m *RelayModeManager) rebuildPolicyLocked() {
+	if !m.globalEnabled {
+		m.policy = nil
+		if m.proxy != nil {
+			m.proxy.SetRelayPolicy(nil, m.localHostAllowed)
+		}
+		return
+	}
+	var policies []*relayModePolicy
+	byClient := map[string]*relayModePolicy{}
+	ambiguous := map[string]bool{}
+	for _, id := range m.order {
+		h := m.hubs[id]
+		if !h.settings.Enabled || len(h.settings.Clients) == 0 {
+			h.policy = nil
+			continue
+		}
+		p := &relayModePolicy{
+			hubID: id, hosts: agent.NewAllowlist(h.settings.Hosts),
+			clients: agent.NewClientList(h.settings.Clients),
+		}
+		if h.policy != nil {
+			p.in.Store(h.policy.in.Load())
+			p.out.Store(h.policy.out.Load())
+		}
+		h.policy = p
+		for _, raw := range h.settings.Clients {
+			ip := net.ParseIP(strings.TrimSpace(raw))
+			if ip == nil {
+				continue
+			}
+			key := ip.String()
+			if prev, ok := byClient[key]; ok && prev != p {
+				ambiguous[key] = true
+				continue
+			}
+			byClient[key] = p
+		}
+		policies = append(policies, p)
+	}
+	for key := range ambiguous {
+		delete(byClient, key)
+	}
+	m.policy = &multiRelayPolicy{hubs: policies, byClient: byClient, ambiguous: ambiguous}
 	if m.proxy == nil {
 		return
 	}
-	if !settings.Enabled || len(settings.Clients) == 0 {
+	if len(policies) == 0 {
 		m.proxy.SetRelayPolicy(nil, m.localHostAllowed)
-		m.mu.Lock()
-		m.policy = nil
-		m.mu.Unlock()
-		return
+	} else {
+		m.proxy.SetRelayPolicy(m.policy, m.localHostAllowed)
 	}
-	policy := &relayModePolicy{
-		hosts:   agent.NewAllowlist(settings.Hosts),
-		clients: agent.NewClientList(settings.Clients),
-	}
-	m.proxy.SetRelayPolicy(policy, m.localHostAllowed)
-	m.mu.Lock()
-	m.policy = policy
-	m.mu.Unlock()
 }
 
-func (m *RelayModeManager) syncLoop(ctx context.Context, hub *agent.Hub, key string) {
-	m.mu.Lock()
-	etag := m.settings.CatalogueETag
-	if etag != "" && len(m.settings.Hosts) == 0 && len(m.settings.Clients) == 0 {
-		etag = ""
-	}
-	m.mu.Unlock()
-
+func (m *RelayModeManager) syncLoop(ctx context.Context, id string, hub *agent.Hub, key string) {
 	wait := time.Duration(0)
 	for {
 		if ctx.Err() != nil {
 			return
 		}
+		m.mu.Lock()
+		h := m.hubs[id]
+		etag := ""
+		if h != nil {
+			etag = h.settings.CatalogueETag
+		}
+		m.mu.Unlock()
 		cat, newETag, notModified, err := hub.FetchConditional(ctx, key, etag, wait)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
-			m.setError(err)
+			m.setHubError(id, err)
 			select {
 			case <-ctx.Done():
 				return
@@ -225,53 +386,36 @@ func (m *RelayModeManager) syncLoop(ctx context.Context, hub *agent.Hub, key str
 		if notModified {
 			continue
 		}
-		if newETag != "" {
-			etag = newETag
-		}
-		m.applyCatalogue(cat, etag)
+		m.applyCatalogue(id, cat, newETag)
 	}
 }
 
-func (m *RelayModeManager) applyCatalogue(cat agent.Catalogue, etag string) {
-	// A fetch can finish after the operator disabled relay mode or changed the
-	// hub/key. The database record is authoritative for those fields; merge only
-	// the catalogue into the current record instead of writing a stale copy that
-	// would resurrect a disabled relay.
-	var current database.RelayModeSettings
-	if err := m.db.GetSetting("relay_mode", &current); err != nil {
-		m.setError(err)
-		return
-	}
+func (m *RelayModeManager) applyCatalogue(id string, cat agent.Catalogue, etag string) {
 	m.mu.Lock()
-	expected := m.settings
-	m.mu.Unlock()
-	if !current.Enabled || current.HubURL != expected.HubURL || current.AgentKey != expected.AgentKey {
+	h := m.hubs[id]
+	if h == nil || !h.settings.Enabled {
+		m.mu.Unlock()
 		return
 	}
-	current.Hosts = append([]string(nil), cat.Hosts...)
-	current.Clients = append([]string(nil), cat.Clients...)
-	current.Country = cat.Country
-	current.CatalogueETag = etag
-	current.LastSync = time.Now().UTC()
-	current.LastError = ""
+	h.settings.Hosts = append([]string(nil), cat.Hosts...)
+	h.settings.Clients = append([]string(nil), cat.Clients...)
+	h.settings.Country = cat.Country
+	h.settings.CatalogueETag = etag
+	h.settings.LastSync = time.Now().UTC()
+	h.settings.LastError = ""
 	if cat.IPv6Enabled != nil {
-		current.IPv6Enabled = *cat.IPv6Enabled
+		h.settings.IPv6Enabled = *cat.IPv6Enabled
 	}
-	m.mu.Lock()
-	m.settings = current
-	m.lastError = ""
+	settings := h.settings
+	m.rebuildPolicyLocked()
 	m.mu.Unlock()
-
-	m.applyPolicy(current)
-	if err := m.db.SetSetting("relay_mode", current); err != nil {
-		m.setError(err)
-		return
+	if err := m.saveHubs(m.snapshotHubs()); err != nil {
+		log.Printf("[Relay Mode] could not persist hub %s catalogue: %v", id, err)
 	}
-	log.Printf("[Relay Mode] catalogue synced: %d hosts, %d clients", len(current.Hosts), len(current.Clients))
+	log.Printf("[Relay Mode] hub %s catalogue synced: %d hosts, %d clients", id, len(settings.Hosts), len(settings.Clients))
 }
 
-func (m *RelayModeManager) heartbeatLoop(ctx context.Context, hub *agent.Hub, key string) {
-	// A first beat makes the hub show this relay online immediately.
+func (m *RelayModeManager) heartbeatLoop(ctx context.Context, id string, hub *agent.Hub, key string) {
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -281,101 +425,141 @@ func (m *RelayModeManager) heartbeatLoop(ctx context.Context, hub *agent.Hub, ke
 		case <-timer.C:
 		}
 		m.mu.Lock()
-		settings := m.settings
-		m.mu.Unlock()
-		var in, out uint64
-		if m.proxy != nil {
-			in, out = m.proxy.RelayStats()
+		h := m.hubs[id]
+		if h == nil {
+			m.mu.Unlock()
+			return
 		}
+		settings := h.settings
+		var in, out uint64
+		if h.policy != nil {
+			in, out = h.policy.in.Load(), h.policy.out.Load()
+		}
+		m.mu.Unlock()
 		ipv6 := ""
 		if m.publicIPv6 != nil {
 			ipv6 = m.publicIPv6()
 		}
 		_, err := hub.Heartbeat(key, version.Display(), m.relayPort, in, out, ipv6, settings.CatalogueETag)
+		m.mu.Lock()
+		h = m.hubs[id]
+		if h != nil {
+			if err != nil {
+				h.online = false
+				h.lastError = err.Error()
+			} else {
+				h.online = true
+				h.lastHeartbeat = time.Now().UTC()
+				h.lastError = ""
+			}
+			h.settings.LastHeartbeat = h.lastHeartbeat
+			h.settings.LastError = h.lastError
+			h.settings.RelayBytesIn, h.settings.RelayBytesOut = in, out
+		}
+		m.mu.Unlock()
 		if err != nil {
-			m.mu.Lock()
-			m.online = false
-			m.lastError = err.Error()
-			m.mu.Unlock()
+			m.persistHubError(id, err)
 		} else {
-			m.mu.Lock()
-			m.online = true
-			m.lastHeartbeat = time.Now().UTC()
-			m.lastError = ""
-			m.mu.Unlock()
+			_ = m.saveHubs(m.snapshotHubs())
 		}
 		timer.Reset(30 * time.Second)
 	}
 }
 
-func (m *RelayModeManager) setError(err error) {
+func (m *RelayModeManager) snapshotHubs() []database.RelayHubSettings {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]database.RelayHubSettings, 0, len(m.order))
+	for _, id := range m.order {
+		if h := m.hubs[id]; h != nil {
+			out = append(out, h.settings)
+		}
+	}
+	return out
+}
+
+func (m *RelayModeManager) setHubError(id string, err error) {
 	if err == nil {
 		return
 	}
 	m.mu.Lock()
-	m.lastError = err.Error()
+	if h := m.hubs[id]; h != nil {
+		h.online = false
+		h.lastError = err.Error()
+		h.settings.LastError = err.Error()
+	}
 	m.mu.Unlock()
-	m.persistError(err)
+	m.persistHubError(id, err)
 }
 
-func (m *RelayModeManager) persistError(err error) {
-	var current database.RelayModeSettings
-	if getErr := m.db.GetSetting("relay_mode", &current); getErr != nil {
-		log.Printf("[Relay Mode] could not read settings for the last error: %v", getErr)
+func (m *RelayModeManager) persistHubError(id string, err error) {
+	if err == nil {
 		return
 	}
-	if !current.Enabled {
-		return
-	}
-	current.LastError = err.Error()
-	if setErr := m.db.SetSetting("relay_mode", current); setErr != nil {
-		log.Printf("[Relay Mode] could not persist the last error: %v", setErr)
-	}
+	_ = m.saveHubs(m.snapshotHubs())
 }
 
-// Status returns the display view, including relay-only traffic counters.
-func (m *RelayModeManager) Status() RelayModeView {
+// Statuses returns every hub view, in creation order.
+func (m *RelayModeManager) Statuses() []RelayModeView {
 	if m == nil {
-		return RelayModeView{RelayPort: 443}
+		return nil
 	}
 	m.mu.Lock()
-	settings := m.settings
-	online := m.online
-	lastHeartbeat := m.lastHeartbeat
-	lastError := m.lastError
-	m.mu.Unlock()
-	if settings.HubURL == "" {
-		// A manager created before Start still reports the stored record.
-		if loaded, err := m.loadSettings(); err == nil {
-			settings = loaded
+	defer m.mu.Unlock()
+	out := make([]RelayModeView, 0, len(m.order))
+	for _, id := range m.order {
+		h := m.hubs[id]
+		if h == nil {
+			continue
 		}
+		var in, outBytes uint64
+		if h.policy != nil {
+			in, outBytes = h.policy.in.Load(), h.policy.out.Load()
+		}
+		out = append(out, RelayModeView{
+			ID: id, Name: h.settings.Name, Enabled: h.settings.Enabled,
+			HubURL: h.settings.HubURL, AgentID: h.settings.AgentID,
+			AgentKeySet: h.settings.AgentKey != "", Country: h.settings.Country,
+			IPv6Enabled: h.settings.IPv6Enabled, Hosts: len(h.settings.Hosts),
+			Clients: len(h.settings.Clients), Online: h.online,
+			LastSync: h.settings.LastSync, LastHeartbeat: h.lastHeartbeat,
+			LastError: h.lastError, RelayBytesIn: in, RelayBytesOut: outBytes,
+			RelayPort: m.relayPort,
+		})
 	}
-	var in, out uint64
-	if m.proxy != nil {
-		in, out = m.proxy.RelayStats()
-	}
-	return RelayModeView{
-		Enabled: settings.Enabled, HubURL: settings.HubURL,
-		AgentID: settings.AgentID, AgentKeySet: settings.AgentKey != "",
-		Country: settings.Country, IPv6Enabled: settings.IPv6Enabled,
-		Hosts: len(settings.Hosts), Clients: len(settings.Clients),
-		Online: online, LastSync: settings.LastSync, LastHeartbeat: lastHeartbeat,
-		LastError: lastError, RelayBytesIn: in, RelayBytesOut: out,
-		RelayPort: m.relayPort,
-	}
+	return out
 }
 
-// Test performs a real catalogue request against the configured hub. It proves
-// the hub URL, credential and network path without changing the active policy.
+// Status keeps the single-hub contract for older callers and the test suite.
+func (m *RelayModeManager) Status() RelayModeView {
+	views := m.Statuses()
+	if len(views) == 0 {
+		return RelayModeView{RelayPort: 443}
+	}
+	return views[0]
+}
+
+// Test performs a real catalogue request against one hub.
 func (m *RelayModeManager) Test(ctx context.Context) (time.Duration, error) {
+	views := m.Statuses()
+	if len(views) == 0 {
+		return 0, fmt.Errorf("relay mode is not enabled")
+	}
+	return m.TestHub(ctx, views[0].ID)
+}
+
+func (m *RelayModeManager) TestHub(ctx context.Context, id string) (time.Duration, error) {
 	if m == nil {
 		return 0, fmt.Errorf("relay mode is unavailable")
 	}
-	settings, err := m.loadSettings()
-	if err != nil {
-		return 0, err
+	m.mu.Lock()
+	h := m.hubs[id]
+	var settings database.RelayHubSettings
+	if h != nil {
+		settings = h.settings
 	}
-	if !settings.Enabled || settings.HubURL == "" || settings.AgentKey == "" {
+	m.mu.Unlock()
+	if settings.HubURL == "" || settings.AgentKey == "" {
 		return 0, fmt.Errorf("relay mode is not enabled")
 	}
 	if ctx == nil {
@@ -409,7 +593,7 @@ func (m *RelayModeManager) Enroll(ctx context.Context, hubURL, token string) (ag
 	ch := make(chan result, 1)
 	go func() {
 		enrolment, err := agent.NewHub(hubURL).Enrol(token, version.Display())
-		ch <- result{enrolment: enrolment, err: err}
+		ch <- result{enrolment, err}
 	}()
 	select {
 	case <-ctx.Done():
