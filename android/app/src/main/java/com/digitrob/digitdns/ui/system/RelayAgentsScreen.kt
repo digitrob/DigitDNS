@@ -418,7 +418,7 @@ private fun EgressSummary(egresses: List<EgressInfo>) {
     PanelCard(contentPadding = 8.dp) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             EgressSummaryItem(stringResource(R.string.egress_summary_healthy, healthy), Modifier.weight(1f))
             EgressSummaryItem(stringResource(R.string.egress_summary_failed, failed), Modifier.weight(1f))
@@ -434,15 +434,15 @@ private fun EgressSummaryItem(label: String, modifier: Modifier = Modifier) {
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 4.dp, vertical = 5.dp),
     ) {
         Text(
             label,
             style = MaterialTheme.typography.labelSmall.copy(
                 fontFamily = PanelMono,
                 fontWeight = FontWeight.Bold,
-                fontSize = 9.sp,
-                lineHeight = 11.sp,
+                fontSize = 8.sp,
+                lineHeight = 10.sp,
             ),
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
@@ -645,7 +645,7 @@ private fun EgressStat(label: String, value: String, modifier: Modifier = Modifi
 }
 
 @Composable
-@Suppress("LongMethod", "LongParameterList")
+@Suppress("LongMethod", "LongParameterList", "CyclomaticComplexMethod")
 private fun EgressFormDialog(
     kind: String,
     egress: EgressInfo?,

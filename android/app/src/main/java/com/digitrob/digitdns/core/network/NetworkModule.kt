@@ -46,6 +46,7 @@ private const val WRITE_TIMEOUT_SECONDS = 15L
  */
 private const val READ_TIMEOUT_SECONDS = 20L
 
+@Suppress("TooManyFunctions")
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {

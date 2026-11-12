@@ -15,11 +15,16 @@ import javax.inject.Inject
 
 data class SystemLogUiState(
     val lines: List<String> = emptyList(),
+    /** First load / background fetch; drives the empty-state spinner only. */
     val isLoading: Boolean = false,
+    /** True only while the operator pressed Refresh, so auto-refresh never animates the button. */
+    val isManualRefreshing: Boolean = false,
     val error: String? = null,
 ) {
     val text: String get() = lines.joinToString("\n")
 }
+
+private const val SYSTEM_LOG_LIMIT = 2000
 
 @HiltViewModel
 class SystemLogViewModel @Inject constructor(
@@ -32,17 +37,36 @@ class SystemLogViewModel @Inject constructor(
         refresh()
     }
 
-    fun refresh() {
+    fun refresh(manual: Boolean = false) {
+        if (_state.value.isLoading || _state.value.isManualRefreshing) return
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
+            _state.update {
+                it.copy(
+                    isLoading = it.lines.isEmpty(),
+                    isManualRefreshing = manual,
+                    error = null,
+                )
+            }
             try {
-                val response = api.tail(2000)
-                _state.update { it.copy(lines = response.lines, isLoading = false) }
+                val response = api.tail(SYSTEM_LOG_LIMIT)
+                _state.update {
+                    it.copy(
+                        lines = response.lines,
+                        isLoading = false,
+                        isManualRefreshing = false,
+                    )
+                }
             } catch (e: ApiException) {
-                _state.update { it.copy(isLoading = false, error = e.userMessage) }
+                _state.update {
+                    it.copy(isLoading = false, isManualRefreshing = false, error = e.userMessage)
+                }
             } catch (e: IOException) {
                 _state.update {
-                    it.copy(isLoading = false, error = e.message ?: "Could not load the system log.")
+                    it.copy(
+                        isLoading = false,
+                        isManualRefreshing = false,
+                        error = e.message ?: "Could not load the system log.",
+                    )
                 }
             }
         }

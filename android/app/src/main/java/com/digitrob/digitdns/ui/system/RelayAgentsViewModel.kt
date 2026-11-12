@@ -56,6 +56,7 @@ data class RelayAgentsUiState(
  * offers. A successful test replaces one card from the server's answer instead of
  * re-listing, so the page does not jump while the badge changes.
  */
+@Suppress("TooManyFunctions")
 @HiltViewModel
 class RelayAgentsViewModel @Inject constructor(
     private val repository: AgentsRepository,

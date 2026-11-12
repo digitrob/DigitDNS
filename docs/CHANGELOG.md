@@ -6,9 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## 🏷️ [Unreleased] — certificate sources and DNS-01
+## 🏷️ [v5.6.0] — egress options, engine switch and system log
 
 ### Added
+- **Egress Options.** Relay Agents, SOCKS5 and WireGuard now share one page and
+  one routing model. Relay agents remain public exit points; SOCKS5 and
+  WireGuard are hub-side paths the relay dials through.
+- **SOCKS5 egress.** Remote DNS by default, optional local resolution, optional
+  username/password, health probe and traffic counters. Destinations still pass
+  the hub's SSRF guard before dialling.
+- **WireGuard egress.** Userspace `wireguard-go` + gVisor netstack, standard
+  `wg-quick` configuration parsing, and `.conf` upload on web and Android.
+- **Fail-closed egress.** An offline or disabled fail-closed egress answers
+  SERVFAIL instead of falling back to this server. Fail-open egresses fall back
+  to the direct path.
+- **Grouped Route via.** This Server, Relay Agents, SOCKS5 and WireGuard groups;
+  new values use `egress:<id>` and existing agent IDs are unchanged.
+- **Global engine switch.** Engine OFF bypasses custom records, the rule
+  matcher, proxying, service/agent assignments and ad blocking; queries resolve
+  directly. Access control and quota remain enforced, and new SNI relays are
+  refused while off.
+- **System Log.** Bounded in-memory daemon log with a web page and Android
+  Settings section, live refresh, copy and export/save.
+- **By Provider ranking.** Top upstreams gains provider logos and a toggle that
+  aggregates the ranking by provider.
+- **Forced resolver selection.** Force bypasses adaptive hysteresis and selects
+  the absolute fastest healthy resolver, marked with a FASTEST badge.
+- **API.** `/api/v3/egresses`, `/api/v3/engine` and `/api/v3/system-log`.
 - **Bring-your-own certificate.** The SSL / TLS Manager now accepts a PEM
   certificate and key, either uploaded/pasted or read from paths on the server,
   for the DoH/DoT listeners, the admin panel, and the subscriber portal. Pairs
@@ -40,8 +64,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **PEM upload** with Android's document picker for the certificate and private
   key, plus an allow-self-signed switch for private CA/LAN use.
 - **DoH3 switch** is now a real toggle; it is disabled while DoH is off.
+- **Egress Options.** Relay Agents, SOCKS5 and WireGuard subcards, add/edit
+  dialogs, `.conf` upload, health/traffic/fail-closed summary and a grouped
+  relay picker.
+- **Engine control** in the bottom bar / navigation rail.
+- **System Log** section with copy and save.
+- **Live Log filters** are coloured status chips instead of a popup.
+- **Top upstreams** shows provider logos and a By Provider toggle.
+- **Egress summary** stays on one row.
 
 ### Changed
+- **Dashboard metric values** scale with the card's own width and no longer
+  overflow when a card is resized.
+- **Sidebar fold.** The desktop sidebar collapses to an icon rail and remembers
+  the choice; engine and theme controls stay in the existing bottom rows.
+- **Live Traffic** values use the same size as the other metric cards and align
+  with them.
 - **One transport policy.** The Upstream Resolvers transport chips and the
   Client Transports switches now write the same `DNSSettings` record. Disabling
   a chip stops the corresponding listener, and a listener switch updates the

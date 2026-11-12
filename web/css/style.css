@@ -1519,6 +1519,7 @@ html[data-boot-tab="filters"] #tab-filters,
 html[data-boot-tab="agents"] #tab-agents,
 html[data-boot-tab="clients"] #tab-clients,
 html[data-boot-tab="stream"] #tab-stream,
+html[data-boot-tab="systemlog"] #tab-systemlog,
 html[data-boot-tab="api"] #tab-api,
 html[data-boot-tab="connect"] #tab-connect {
   display: block;
@@ -3597,7 +3598,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   font-size: clamp(1.65rem, 9cqi, 2.5rem) !important;
 }
 #tab-dashboard.dash-custom-layout [data-dash-grid="metrics"] .metric-value-traffic {
-  font-size: clamp(1.25rem, 7cqi, 1.9rem) !important;
+  font-size: clamp(1.65rem, 9cqi, 2.5rem) !important;
 }
 /* Four latency tiles in a 12-column card: let them fall into 2x2 when the card
  * is half width instead of squeezing four columns into unreadable cells. */
@@ -5078,7 +5079,7 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
   white-space: nowrap;
 }
 .metric-value-traffic {
-  font-size: 1.125rem;
-  font-size: clamp(1.25rem, 7cqi, 1.9rem);
-  line-height: 1.08;
+  font-size: 1.65rem;
+  font-size: clamp(1.65rem, 9cqi, 2.5rem);
+  line-height: 1.02;
 }

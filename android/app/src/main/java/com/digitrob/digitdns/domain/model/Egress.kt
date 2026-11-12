@@ -79,6 +79,7 @@ data class EgressInfo(
 }
 
 /** Bytes in the panel's binary units, shared by the summary strip and a card. */
+@Suppress("MagicNumber")
 fun egressTrafficLabel(total: Long): String {
     if (total < 1024) return "$total B"
     val units = listOf("KiB", "MiB", "GiB", "TiB")

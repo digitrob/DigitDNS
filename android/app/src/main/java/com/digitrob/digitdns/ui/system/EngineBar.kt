@@ -25,32 +25,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewModelScope
-import com.digitrob.digitdns.data.EngineStore
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.launch
-import javax.inject.Inject
 
-@HiltViewModel
-class EngineViewModel @Inject constructor(
-    private val store: EngineStore,
-) : ViewModel() {
-    val enabled = store.enabled
-
-    init {
-        viewModelScope.launch {
-            if (store.enabled.value == null) runCatching { store.refresh() }
-        }
-    }
-
-    fun setEnabled(enabled: Boolean) {
-        viewModelScope.launch { runCatching { store.setEnabled(enabled) } }
-    }
-}
 
 /**
  * The global engine switch. It is deliberately outside the tab content: turning

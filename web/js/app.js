@@ -10393,6 +10393,9 @@ function switchTab(target, updateUrl = true, loadData = true) {
       }
       if (target === 'systemlog') {
         loadSystemLog();
+        startSystemLogPolling();
+      } else {
+        stopSystemLogPolling();
       }
       if (target === 'rules') {
         // Refresh the saved-vs-running comparison every time Settings opens,
@@ -10964,10 +10967,11 @@ function initShellControls() {
 }
 
 let systemLogText = '';
+let systemLogTimer = null;
 
-async function loadSystemLog() {
+async function loadSystemLog(quiet = false) {
   const view = document.getElementById('system-log-view');
-  if (view) view.textContent = 'Loading…';
+  if (!quiet && view) view.textContent = 'Loading…';
   try {
     const res = await fetch(api('/api/system-log?limit=2000'), {
       headers: { 'Authorization': `Bearer ${authToken}` },
@@ -10978,8 +10982,25 @@ async function loadSystemLog() {
     systemLogText = lines.join('\n');
     if (view) view.textContent = systemLogText || 'No log lines captured yet.';
   } catch (e) {
-    systemLogText = '';
-    if (view) view.textContent = e.message || 'Could not load the system log.';
+    if (!quiet) {
+      systemLogText = '';
+      if (view) view.textContent = e.message || 'Could not load the system log.';
+    }
+  }
+}
+
+function startSystemLogPolling() {
+  stopSystemLogPolling();
+  systemLogTimer = setInterval(() => {
+    if (activeDashTab !== 'systemlog' || document.visibilityState === 'hidden' || !authToken) return;
+    loadSystemLog(true);
+  }, 3000);
+}
+
+function stopSystemLogPolling() {
+  if (systemLogTimer) {
+    clearInterval(systemLogTimer);
+    systemLogTimer = null;
   }
 }
 

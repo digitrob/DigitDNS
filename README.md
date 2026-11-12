@@ -41,6 +41,27 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.6.0
+
+**Egress Options, a global engine switch and a live system log.**
+
+- **Egress Options.** Relay Agents, SOCKS5 and WireGuard share one page. SOCKS5
+  uses remote DNS by default; WireGuard runs userspace `wireguard-go` and
+  accepts a pasted or uploaded `.conf`. Fail-closed is the default, and secrets
+  are write-only.
+- **Global Engine ON/OFF.** Off bypasses custom records, rules, proxying and ad
+  blocking so every query resolves directly. Access control and quota remain
+  enforced.
+- **System Log.** Bounded daemon log with live refresh, copy and export/save on
+  web and Android.
+- **Upstream Force** now picks the absolute fastest healthy resolver, bypassing
+  hysteresis, and marks it FASTEST. Top upstreams gains provider logos and a
+  **By Provider** ranking.
+- **Dashboard.** Metric values scale with card width without overflow, the
+  sidebar folds to an icon rail, and Live Traffic aligns with the other cards.
+- **Android parity** for Egress Options, engine control, system log, coloured
+  Live Log filters and By Provider ranking.
+
 ## What's new in 5.5.7
 
 **Adaptive upstreams, real transport chips and a resolver card that uses the space.**
@@ -615,7 +636,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.7/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.6.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -678,7 +699,7 @@ DoT SNI-token authentication and mTLS. Open the same ports in the firewall.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.5.7/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.6.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -761,7 +782,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.5.7` | Adaptive upstreams, transport chips, reworked resolver card, Android parity, online status fix (latest) |
+| `5.6.0` | Egress Options, global engine switch, system log, forced resolver selection, provider ranking, foldable sidebar (latest) |
+| `5.5.7` | Adaptive upstreams, transport chips, reworked resolver card, Android parity, online status fix (older) |
 | `5.5.6` | Android biometric login, 12 px dashboard rhythm, compact stats, in-place upstream rows (older) |
 | `5.5.5` | Lock-free matcher reads, faster client/agent/stats paths, gzip pooling, login branding (older) |
 | `5.5.4` | Working API docs, stable update card, 2FA cancel, first-run checklist, change previews (older) |
@@ -832,7 +854,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.5.7/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.6.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1292,7 +1314,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.5.7`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.6.0`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |
