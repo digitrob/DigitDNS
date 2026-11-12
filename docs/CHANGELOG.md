@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.6.1] — engine switch and shell fixes
+
+### Fixed
+- **Android engine switch could not be turned back on.** `enabled: true` was
+  omitted as a serialization default, so the enable request arrived as `{}` and
+  was rejected; disabling sent `false` and worked.
+- **Android engine switch colours.** The switch is green when on and red when
+  off.
+- **Folded web sidebar created a vertical scrollbar.** The sidebar is now a
+  fixed shell: only the navigation list scrolls, while the bottom controls stay
+  pinned.
+- **Web System Log copy** is an icon inside the log window, markdown-style,
+  instead of a header button.
+- **Upstream Force button** sits closer to the interval chips.
+
 ## 🏷️ [v5.6.0] — egress options, engine switch and system log
 
 ### Added

@@ -16,4 +16,10 @@ interface EngineApi {
 }
 
 @Serializable
-data class EngineState(val enabled: Boolean = true)
+data class EngineState(
+    // No default: the shared Json config omits default-valued properties, and
+    // the server requires `enabled` on POST. With `= true` here, turning the
+    // engine back on serialised to `{}` and was rejected; turning it off sent
+    // `false` and worked, which is exactly the one-way switch symptom.
+    val enabled: Boolean,
+)

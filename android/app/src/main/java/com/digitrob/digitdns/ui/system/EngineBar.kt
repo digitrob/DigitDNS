@@ -15,12 +15,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -103,6 +105,14 @@ fun EngineBar(
             checked = on,
             enabled = known,
             onCheckedChange = viewModel::setEnabled,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = DigitDnsTheme.colors.success,
+                checkedBorderColor = DigitDnsTheme.colors.success,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = DigitDnsTheme.colors.danger,
+                uncheckedBorderColor = DigitDnsTheme.colors.danger,
+            ),
         )
     }
 }

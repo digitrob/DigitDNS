@@ -41,6 +41,21 @@ dependency. Use it only on servers and networks you are allowed to operate.
 
 ---
 
+## What's new in 5.6.1
+
+**A patch release for the engine switch, sidebar shell and system log.**
+
+- **Android engine switch fixed.** Turning the engine off and back on now works;
+  the request no longer serialises to an empty body when enabling it.
+- **Engine switch colours.** The Android switch is green when on and red when
+  off.
+- **System log copy.** Web copy is now a markdown-style icon inside the log
+  window instead of a header button.
+- **Folded sidebar.** Only the navigation list scrolls; the bottom controls stay
+  fixed. No stray vertical scrollbar when the sidebar is folded.
+- **Force button spacing.** The upstream Force control sits closer to the
+  interval chips.
+
 ## What's new in 5.6.0
 
 **Egress Options, a global engine switch and a live system log.**
@@ -636,7 +651,7 @@ HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not
 optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.6.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.6.1/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a
@@ -699,7 +714,7 @@ DoT SNI-token authentication and mTLS. Open the same ports in the firewall.
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.6.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.6.1/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -782,7 +797,8 @@ and DNS/DoT/DoH are not simple `-p` mappings.
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.6.0` | Egress Options, global engine switch, system log, forced resolver selection, provider ranking, foldable sidebar (latest) |
+| `5.6.1` | Engine switch one-way fix, switch colours, fixed sidebar footer, system log copy, Force spacing (latest) |
+| `5.6.0` | Egress Options, global engine switch, system log, forced resolver selection, provider ranking, foldable sidebar (older) |
 | `5.5.7` | Adaptive upstreams, transport chips, reworked resolver card, Android parity, online status fix (older) |
 | `5.5.6` | Android biometric login, 12 px dashboard rhythm, compact stats, in-place upstream rows (older) |
 | `5.5.5` | Lock-free matcher reads, faster client/agent/stats paths, gzip pooling, login branding (older) |
@@ -854,7 +870,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.6.0/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.6.1/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```
@@ -1314,7 +1330,7 @@ through a relay agent — that agent's own IPv6 switch is on.
 ## Android app
 
 The Android app is a native companion with the same control surface as the
-panel. It has its own version line (`android-v5.6.0`) and is side-loaded; it is
+panel. It has its own version line (`android-v5.6.1`) and is side-loaded; it is
 not on Play.
 
 | APK | Architecture |

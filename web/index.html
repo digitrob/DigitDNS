@@ -829,7 +829,7 @@
   <aside id="app-sidebar" class="w-full md:w-64 bg-slate-950/90 backdrop-blur-2xl border-b md:border-b-0 md:border-e border-slate-800/80 hidden md:flex flex-col justify-between p-4 flex-shrink-0 md:h-screen md:sticky md:top-0">
     
     <!-- Sidebar Top: Brand & Live Pulse -->
-    <div class="space-y-6">
+    <div id="sidebar-top" class="space-y-6">
       <div class="flex items-center gap-3 px-2 py-1">
         <img src="/img/digitdns-app-icon.png" alt="" width="48" height="48"
              class="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/10 flex-shrink-0">
@@ -845,7 +845,7 @@
       </div>
 
       <!-- Sidebar Navigation Menu -->
-      <nav class="space-y-1">
+      <nav id="sidebar-nav" class="space-y-1">
         <div class="sidebar-nav-row">
           <button class="sidebar-nav-item active" data-tab="dashboard" data-route="/home">
             <i data-feather="activity" class="w-4 h-4"></i>
@@ -904,7 +904,7 @@
     </div>
 
     <!-- Sidebar Bottom: Server IP Badge, Diagnostics & Actions -->
-    <div class="space-y-3 pt-4 border-t border-slate-800/80">
+    <div id="sidebar-bottom" class="space-y-3 pt-4 border-t border-slate-800/80">
 
       <!-- Public IP Box with Copy -->
       <div id="copy-ip-btn" class="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between cursor-pointer group hover:border-cyan-400/50 transition active:scale-95" title="Click to copy server IP">
@@ -2305,15 +2305,18 @@
               <button id="system-log-refresh-btn" type="button" class="panel-btn panel-btn-sm panel-btn-neutral">
                 <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i> Refresh
               </button>
-              <button id="system-log-copy-btn" type="button" class="panel-btn panel-btn-sm panel-btn-neutral">
-                <i data-feather="copy" class="w-3.5 h-3.5"></i> Copy all
-              </button>
               <button id="system-log-export-btn" type="button" class="panel-btn panel-btn-sm panel-btn-primary">
                 <i data-feather="download" class="w-3.5 h-3.5"></i> Export .log
               </button>
             </div>
           </div>
-          <pre id="system-log-view" class="system-log-view">Loading…</pre>
+          <div class="system-log-shell">
+            <pre id="system-log-view" class="system-log-view">Loading…</pre>
+            <button id="system-log-copy-btn" type="button" class="system-log-copy"
+              title="Copy the system log" aria-label="Copy the system log">
+              <i data-feather="copy" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
         </div>
       </section>
 
