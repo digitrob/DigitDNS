@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
@@ -52,6 +53,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -104,6 +106,7 @@ import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.MetricMeta
 import com.digitrob.digitdns.ui.theme.MetricNumber
 import com.digitrob.digitdns.ui.theme.PanelMono
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -378,6 +381,13 @@ private fun ServerIpBox(
     // value instead of leaving it readable behind a no-op blur.
     val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val shownText = if (hidden && !canBlur) maskAddress(displayed) else displayed
+    var addressCopied by remember { mutableStateOf(false) }
+    LaunchedEffect(addressCopied) {
+        if (addressCopied) {
+            delay(1200)
+            addressCopied = false
+        }
+    }
 
     Row(
         modifier = modifier
@@ -385,7 +395,10 @@ private fun ServerIpBox(
             .clip(RoundedCornerShape(12.dp))
             .background(colors.bgCard)
             .border(1.dp, colors.borderColor, RoundedCornerShape(12.dp))
-            .clickable { clipboard.setText(AnnotatedString(displayed)) }
+            .clickable {
+                clipboard.setText(AnnotatedString(displayed))
+                addressCopied = true
+            }
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -433,9 +446,9 @@ private fun ServerIpBox(
             Spacer(Modifier.width(10.dp))
         }
         Icon(
-            imageVector = Icons.Filled.ContentCopy,
+            imageVector = if (addressCopied) Icons.Filled.Check else Icons.Filled.ContentCopy,
             contentDescription = stringResource(R.string.dashboard_copy_address),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (addressCopied) colors.success else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(16.dp),
         )
     }

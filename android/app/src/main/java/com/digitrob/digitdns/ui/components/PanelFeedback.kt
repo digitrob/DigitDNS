@@ -93,7 +93,7 @@ fun PanelDialog(
         dismissButton = dismissButton,
         title = title,
         text = text,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(12.dp),
         containerColor = container,
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -141,7 +141,7 @@ fun PanelWideDialog(
     ) {
         Surface(
             modifier = modifier.fillMaxWidth(WIDE_DIALOG_WIDTH).heightIn(max = maxDialogHeight),
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(12.dp),
             color = container,
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ) {

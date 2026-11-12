@@ -145,13 +145,13 @@
         <div>
           <label for="login-username" class="block text-xs font-semibold text-slate-400 mb-1">Admin username</label>
           <input type="text" id="login-username" value="admin" required autocomplete="username"
-            class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-sm font-mono">
+            class="panel-field w-full font-mono">
         </div>
         <div>
           <label for="login-password" class="block text-xs font-semibold text-slate-400 mb-1">Password</label>
           <input type="password" id="login-password" required autocomplete="current-password"
             placeholder="Enter your admin password"
-            class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-sm font-mono">
+            class="panel-field w-full font-mono">
         </div>
         <!-- The second factor. Hidden until the server says the account
              carries one; typing a code when 2FA is off is harmless either way. -->
@@ -159,7 +159,7 @@
           <label for="login-code" class="block text-xs font-semibold text-slate-400 mb-1">Two-factor code</label>
           <input type="text" id="login-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"
             placeholder="6-digit code"
-            class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-sm font-mono">
+            class="panel-field w-full font-mono">
         </div>
         <!-- The session token alone cannot keep the operator signed in: sessions
              live in the daemon's memory and expire after two idle hours, so a
@@ -217,18 +217,18 @@
           <label class="block text-xs font-semibold text-slate-400 mb-1" for="current-admin-pass">Current password</label>
           <input type="password" id="current-admin-pass" placeholder="Confirm with your current password" required
             autocomplete="current-password"
-            class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-amber-400 text-sm font-mono">
+            class="panel-field w-full font-mono focus:border-amber-400">
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-400 mb-1" for="new-admin-user">New admin username</label>
           <input type="text" id="new-admin-user" value="admin" required autocomplete="username" maxlength="64"
-            class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-amber-400 text-sm font-mono">
+            class="panel-field w-full font-mono focus:border-amber-400">
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-400 mb-1" for="new-admin-pass">New password</label>
           <input type="password" id="new-admin-pass" placeholder="At least 10 characters" required minlength="10" maxlength="256"
             autocomplete="new-password"
-            class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-amber-400 text-sm font-mono">
+            class="panel-field w-full font-mono focus:border-amber-400">
           <p class="mt-1.5 text-[11px] text-slate-500 leading-relaxed">
             At least 10 characters, not a common password, and not the same as the username.
             A short passphrase of unrelated words is both stronger and easier to type.
@@ -241,7 +241,7 @@
           <label class="block text-xs font-semibold text-slate-400 mb-1" for="change-pwd-code">Two-factor code</label>
           <input type="text" id="change-pwd-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"
             placeholder="6-digit code"
-            class="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-amber-400 text-sm font-mono">
+            class="panel-field w-full font-mono focus:border-amber-400">
         </div>
         <div class="flex gap-3">
           <!-- Hidden while the modal is forced by a weak password: there is nothing
@@ -299,9 +299,9 @@
           <div class="text-[10px] text-slate-400 font-mono">WHY BLOCKED?</div>
           <form id="explain-form" class="flex flex-col sm:flex-row gap-2">
             <input type="text" id="explain-domain" placeholder="domain (e.g. ads.example.com)" autocomplete="off" spellcheck="false" aria-label="Domain to explain"
-              class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-slate-200 focus:border-cyan-500/50 outline-none">
+              class="panel-field flex-1 min-w-0 font-mono">
             <input type="text" id="explain-client" placeholder="client IP (optional)" autocomplete="off" spellcheck="false" aria-label="Client IP for egress selection"
-              class="sm:w-44 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-slate-200 focus:border-cyan-500/50 outline-none">
+              class="panel-field sm:w-44 font-mono">
             <button type="button" id="explain-btn"
               class="panel-btn panel-btn-soft panel-btn-sm whitespace-nowrap">
               <i data-feather="search" class="w-3.5 h-3.5"></i> Explain
@@ -319,9 +319,9 @@
           </div>
           <form id="diag-target-form" class="flex flex-col sm:flex-row gap-2">
             <input type="text" id="diag-target-name" placeholder="Name (e.g. office VPN)" autocomplete="off" aria-label="Diagnostic server name"
-              class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:border-cyan-500/50 outline-none">
+              class="panel-field flex-1 min-w-0">
             <input type="text" id="diag-target-host" placeholder="Host or host:port" autocomplete="off" spellcheck="false" aria-label="Diagnostic server host or host and port"
-              class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-slate-200 focus:border-cyan-500/50 outline-none">
+              class="panel-field flex-1 min-w-0 font-mono">
             <button type="submit" id="diag-target-add"
               class="panel-btn panel-btn-soft panel-btn-sm whitespace-nowrap">
               <i data-feather="plus" class="w-3.5 h-3.5"></i> Add
@@ -396,18 +396,18 @@
           <div>
             <label for="edit-client-name" class="block text-[11px] font-semibold text-slate-400 mb-1"><span class="text-red-400 font-bold">*</span> Email / User Name</label>
             <input type="text" id="edit-client-name" required placeholder="e.g. customer-alex"
-              class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
+              class="panel-field w-full">
           </div>
           <div class="grid grid-cols-2 gap-3.5">
             <div>
               <label for="edit-client-traffic" class="block text-[11px] font-semibold text-slate-400 mb-1">Traffic Limit (GB)</label>
               <input type="number" step="0.5" min="0" id="edit-client-traffic" placeholder="0 (0 = Unlimited)"
-                class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
+                class="panel-field w-full font-mono">
             </div>
             <div>
               <label for="edit-client-traffic-cycle" class="block text-[11px] font-semibold text-slate-400 mb-1">Auto Reset</label>
               <select id="edit-client-traffic-cycle"
-                class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
+                class="panel-field w-full">
                 <option value="">Never (manual)</option>
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
@@ -424,7 +424,7 @@
               <div>
                 <label for="edit-client-max-devices" class="block text-[11px] font-semibold text-slate-400 mb-1">Max Devices (1–5)</label>
                 <input type="number" min="1" max="5" id="edit-client-max-devices" placeholder="1"
-                  class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
+                  class="panel-field w-full font-mono">
               </div>
             </div>
             <div class="relative">
@@ -434,7 +434,7 @@
             </div>
             <div class="relative flex items-center">
               <input type="text" id="edit-client-expiry" placeholder="YYYY-MM-DD HH:mm:ss" readonly
-                class="w-full ps-3 pe-9 py-2 rounded-lg bg-slate-950 border border-slate-700 text-cyan-300 focus:outline-none focus:border-cyan-400 text-xs font-mono cursor-pointer">
+                class="panel-field panel-field-end-icon w-full text-cyan-300 font-mono cursor-pointer">
               <button type="button" id="open-datepicker-btn" aria-label="Open expiry date picker" class="absolute end-2.5 text-slate-400 hover:text-cyan-400 transition">
                 <i data-feather="calendar" class="w-4 h-4"></i>
               </button>
@@ -495,7 +495,7 @@
           <div class="flex min-w-0 flex-col">
             <label for="edit-client-ip" class="block text-[11px] font-semibold text-slate-400 mb-1">IP Addresses</label>
             <textarea id="edit-client-ip" rows="3" placeholder="e.g. 5.200.10.42, 203.0.113.0/24"
-              class="w-full flex-1 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono resize-y"></textarea>
+              class="panel-field w-full flex-1 font-mono resize-y"></textarea>
             <p class="text-[10px] text-slate-500 mt-1">Host addresses and CIDR blocks are both accepted, comma-separated. CIDRs are exempt from the device limit.</p>
           </div>
         </div>
@@ -506,7 +506,7 @@
         <div>
           <label for="edit-client-egress" class="block text-[11px] font-semibold text-slate-400 mb-1">Default Egress</label>
           <select id="edit-client-egress"
-            class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
+            class="panel-field w-full">
             <option value="">This Server</option>
           </select>
           <p class="text-[10px] text-slate-500 mt-1">Used only when no domain override or service default names an exit. Domain and service rules still win.</p>
@@ -521,7 +521,7 @@
             </button>
           </div>
           <input type="text" id="edit-client-uuid"
-            class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-cyan-300 focus:outline-none focus:border-cyan-400 text-xs font-mono">
+            class="panel-field w-full text-cyan-300 font-mono">
         </div>
 
         <!-- Row 3b: Registration Secret (Phase B) — the out-of-band credential the
@@ -536,7 +536,7 @@
             </button>
           </div>
           <input type="text" id="edit-client-secret" readonly
-            class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-amber-300 focus:outline-none focus:border-cyan-400 text-xs font-mono">
+            class="panel-field w-full text-amber-300 font-mono">
           <p class="text-[10px] text-slate-500 mt-1">Deliver this secret to the subscriber separately from their /sub/ link. Regenerating invalidates the old one immediately.</p>
         </div>
 
@@ -544,7 +544,7 @@
         <div>
           <label for="edit-client-note" class="block text-[11px] font-semibold text-slate-400 mb-1">Comment / Note</label>
           <input type="text" id="edit-client-note" placeholder="e.g. customer-a / VIP Plan"
-            class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
+            class="panel-field w-full">
         </div>
 
         <!-- Row 6: Enabled Toggle Switch -->
@@ -565,7 +565,7 @@
         <!-- Modal Footer: Reset Traffic on left, Cancel & Save on right -->
         <div class="flex items-center justify-between pt-3 border-t border-slate-800">
           <button type="button" id="edit-client-reset-traffic-btn"
-            class="px-3.5 py-2 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-300 border border-red-500/30 text-xs font-semibold font-heading flex items-center gap-1.5 transition">
+            class="panel-btn panel-btn-danger">
             <i data-feather="rotate-ccw" class="w-3.5 h-3.5"></i>
             <span>Reset Traffic</span>
           </button>
@@ -618,17 +618,17 @@
           <div>
             <label for="client-name-input" class="block text-[11px] font-semibold text-slate-400 mb-1"><span class="text-red-400 font-bold">*</span> Email / User Name</label>
             <input type="text" id="client-name-input" placeholder="e.g. Alex (PS5 &amp; Phone)" required
-              class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
+              class="panel-field w-full">
           </div>
           <div class="grid grid-cols-2 gap-3.5">
             <div>
               <label for="client-traffic-input" class="block text-[11px] font-semibold text-slate-400 mb-1">Traffic Limit (GB)</label>
               <input type="number" step="0.5" min="0" id="client-traffic-input" placeholder="0 = Unlimited"
-                class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
+                class="panel-field w-full font-mono">
             </div>
             <div>
               <label for="client-traffic-cycle" class="block text-[11px] font-semibold text-slate-400 mb-1">Auto Reset</label>
-              <select id="client-traffic-cycle" class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
+              <select id="client-traffic-cycle" class="panel-field w-full">
                 <option value="">Never (manual)</option>
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
@@ -640,7 +640,7 @@
             <div>
               <label for="client-max-devices" class="block text-[11px] font-semibold text-slate-400 mb-1">Max Devices (1–5)</label>
               <input type="number" min="1" max="5" id="client-max-devices" placeholder="1"
-                class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
+                class="panel-field w-full font-mono">
             </div>
           </div>
         </div>
@@ -659,7 +659,7 @@
             </div>
             <div class="relative flex items-center">
               <input type="text" id="add-client-expiry" placeholder="YYYY-MM-DD HH:mm:ss" readonly
-                class="w-full ps-3 pe-9 py-2 rounded-lg bg-slate-950 border border-slate-700 text-cyan-300 focus:outline-none focus:border-cyan-400 text-xs font-mono cursor-pointer">
+                class="panel-field panel-field-end-icon w-full text-cyan-300 font-mono cursor-pointer">
               <button type="button" id="add-open-datepicker-btn" aria-label="Open expiry date picker" class="absolute end-2.5 text-slate-400 hover:text-cyan-400 transition">
                 <i data-feather="calendar" class="w-4 h-4"></i>
               </button>
@@ -712,7 +712,7 @@
           <div>
             <label for="client-initial-ip" class="block text-[11px] font-semibold text-slate-400 mb-1">IP Addresses <span class="text-slate-500">(optional)</span></label>
             <input type="text" id="client-initial-ip" placeholder="e.g. 2.189.86.32, 203.0.113.0/24"
-              class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs font-mono">
+              class="panel-field w-full font-mono">
             <p class="text-[10px] text-slate-500 mt-1">Comma- or space-separated. Accepts bare IPs and CIDR ranges. Leave blank to let the user self-register via their personal URL.</p>
           </div>
         </div>
@@ -720,7 +720,7 @@
         <div>
           <label for="client-egress" class="block text-[11px] font-semibold text-slate-400 mb-1">Default Egress</label>
           <select id="client-egress"
-            class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-cyan-400 text-xs">
+            class="panel-field w-full">
             <option value="">This Server</option>
           </select>
           <p class="text-[10px] text-slate-500 mt-1">Fallback exit for this account when no domain or service rule names one.</p>
@@ -841,7 +841,7 @@
         <label for="bulk-import-textarea" id="bulk-import-textarea-label" class="block text-[11px] font-semibold text-slate-400 mb-1">Domains</label>
         <textarea id="bulk-import-textarea" rows="10" spellcheck="false"
           placeholder="example.com&#10;*.sub.example.com&#10;another.example.net, third.example.org"
-          class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400"></textarea>
+          class="panel-field w-full font-mono"></textarea>
         <p id="bulk-import-help" class="text-[10px] text-slate-500 mt-1">One name per line, or separated by commas, semicolons or spaces. Lines starting with <code>#</code> are ignored. A leading <code>*.</code> covers every subdomain.</p>
       </div>
 
@@ -1831,7 +1831,7 @@
             <label class="flex shrink-0 items-center gap-1.5 text-[11px] text-slate-400">
               Sort
               <select id="proxied-sort" aria-label="Sort proxied domains"
-                class="proxied-sort-select bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
+                class="proxied-sort-select panel-field panel-field-sm font-mono">
                 <option value="added-desc">Added (newest)</option>
                 <option value="added-asc">Added (oldest)</option>
                 <option value="az">Name A–Z</option>
@@ -1851,7 +1851,7 @@
                 autocomplete="off" autocapitalize="off" spellcheck="false"
                 aria-label="Search proxied domains"
                 placeholder="Search domains..."
-                class="w-full ps-8 pe-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono">
+                class="panel-field panel-field-sm panel-field-icon w-full font-mono">
               <i data-feather="search" class="field-icon w-3.5 h-3.5 text-slate-500"></i>
             </div>
 
@@ -1884,13 +1884,13 @@
             </div>
             <button type="button" id="proxied-bulk-pause"
               title="Pause selected domains"
-              class="proxied-bulk-btn inline-flex shrink-0 items-center gap-1.5 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">Pause</button>
+              class="proxied-bulk-btn panel-btn panel-btn-sm panel-btn-soft shrink-0">Pause</button>
             <button type="button" id="proxied-bulk-resume"
               title="Resume selected domains"
-              class="proxied-bulk-btn inline-flex shrink-0 items-center gap-1.5 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition">Resume</button>
+              class="proxied-bulk-btn panel-btn panel-btn-sm panel-btn-neutral shrink-0">Resume</button>
             <button type="button" id="proxied-bulk-remove"
               title="Remove selected domains" aria-label="Remove selected domains"
-              class="proxied-bulk-btn inline-flex shrink-0 items-center justify-center px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-red-500/10 text-red-400 border border-red-500/30 text-[11px] font-semibold transition">
+              class="proxied-bulk-btn panel-btn panel-btn-sm panel-btn-danger shrink-0">
               <i data-feather="trash-2" class="w-3.5 h-3.5"></i>
             </button>
           </div>
@@ -1938,7 +1938,7 @@
             <div id="proxied-sentinel" class="proxied-sentinel" aria-hidden="true"></div>
           </div>
           <button type="button" id="proxied-load-more"
-            class="hidden px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition">Load more</button>
+            class="panel-btn panel-btn-sm panel-btn-soft hidden">Load more</button>
         </div>
 
         </div><!-- /grid -->
@@ -2255,18 +2255,18 @@
           <div class="flex flex-col sm:flex-row flex-wrap items-center justify-between gap-2.5 sm:gap-3 pb-3 sm:pb-4 border-b border-slate-800">
             <div class="flex items-center gap-2 sm:gap-3 w-full sm:w-auto sm:flex-1 sm:min-w-[180px]">
               <button id="stream-refresh-btn" type="button"
-                class="stream-refresh-btn shrink-0 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center justify-center disabled:opacity-50 disabled:cursor-wait"
+                class="stream-refresh-btn panel-btn panel-btn-neutral shrink-0"
                 title="Refresh live log" aria-label="Refresh live log">
                 <i data-feather="refresh-cw" class="w-4 h-4"></i>
               </button>
               <div class="relative w-full sm:flex-1 sm:min-w-0">
                 <input type="text" id="stream-search" aria-label="Search live queries" placeholder="Search domain or IP..."
-                  class="w-full ps-8 pe-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono">
+                  class="panel-field panel-field-icon w-full font-mono">
                 <i data-feather="search" class="field-icon w-3.5 h-3.5 text-slate-500"></i>
               </div>
 
               <!-- Filter Selector -->
-              <select id="stream-filter" aria-label="Filter live queries by action" class="shrink-0 bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
+              <select id="stream-filter" aria-label="Filter live queries by action" class="panel-field shrink-0 font-mono">
                 <option value="ALL">All Actions</option>
                 <option value="PROXY">PROXY</option>
                 <option value="DIRECT">DIRECT</option>
@@ -2278,7 +2278,7 @@
                    full-table repaint, which is what stopped the live list from flashing. -->
               <label class="flex items-center gap-1.5 text-[11px] text-slate-400 shrink-0">
                 <select id="stream-sort" aria-label="Sort live queries"
-                  class="bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-400 font-mono">
+                  class="panel-field font-mono">
                   <option value="time-desc" selected>Newest first</option>
                   <option value="time-asc">Oldest first</option>
                   <option value="client">Client A–Z</option>
@@ -2291,10 +2291,10 @@
             </div>
 
             <div class="flex items-center gap-2 w-full sm:w-auto sm:ms-auto sm:shrink-0 justify-end">
-              <button id="stream-pause-btn" class="shrink-0 justify-center whitespace-nowrap px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700 flex items-center gap-1.5 transition" aria-pressed="false">
+              <button id="stream-pause-btn" class="panel-btn panel-btn-neutral shrink-0" aria-pressed="false">
                 <i data-feather="pause" class="w-3.5 h-3.5"></i> <span>Pause</span>
               </button>
-              <button id="stream-clear-btn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700 flex items-center gap-1.5 transition">
+              <button id="stream-clear-btn" class="panel-btn panel-btn-neutral">
                 <i data-feather="trash-2" class="w-3.5 h-3.5"></i> <span>Clear</span>
               </button>
             </div>
@@ -2551,7 +2551,7 @@
               <button type="button" class="api-bind-opt" data-bind="__custom__">Custom addresses / CIDRs</button>
             </div>
             <div id="api-bind-custom-wrap" class="flex flex-col gap-2 hidden">
-              <textarea id="api-bind-list-input" aria-label="REST API allowed addresses or CIDR blocks" rows="3" class="w-full min-w-0 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-slate-300 resize-y" placeholder="One per line, e.g.&#10;100.64.0.0/10&#10;203.0.113.5" spellcheck="false" autocomplete="off"></textarea>
+              <textarea id="api-bind-list-input" aria-label="REST API allowed addresses or CIDR blocks" rows="3" class="panel-field w-full min-w-0 font-mono resize-y" placeholder="One per line, e.g.&#10;100.64.0.0/10&#10;203.0.113.5" spellcheck="false" autocomplete="off"></textarea>
               <div class="flex flex-col sm:flex-row gap-2">
                 <input id="api-bind-custom-input" aria-label="Add one API bind address or CIDR" class="panel-field flex-1 min-w-0 font-mono" placeholder="Add one: e.g. 100.64.0.0/10 or 203.0.113.5" spellcheck="false" autocomplete="off">
                 <button id="api-bind-add" class="panel-btn panel-btn-neutral whitespace-nowrap">Add</button>
@@ -3509,7 +3509,7 @@ async function onBuySubscription(ctx, username) {
             </div>
 
             <button type="button" id="bulk-blocked-btn"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-red-300 border border-red-500/30 text-[11px] font-semibold transition">
+              class="panel-btn panel-btn-sm panel-btn-danger">
               <i data-feather="upload-cloud" class="w-3.5 h-3.5"></i> Bulk import
             </button>
 
@@ -3556,7 +3556,7 @@ async function onBuySubscription(ctx, username) {
             <div id="custom-records-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">Loading records…</div></div>
 
             <button type="button" id="bulk-records-btn"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition">
+              class="panel-btn panel-btn-sm panel-btn-soft">
               <i data-feather="upload-cloud" class="w-3.5 h-3.5"></i> Bulk import
             </button>
           </div>

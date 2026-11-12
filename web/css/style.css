@@ -1352,8 +1352,8 @@ input:checked + .slider:before {
 /* A narrow, fixed sort control: "Added (newest)" still fits, but it no longer
    pushes the search and bulk buttons onto a second line. */
 .proxied-sort-select { width: 7.5rem; }
-/* The bulk buttons are compact so the whole toolbar fits one row on a desktop. */
-.proxied-controls .proxied-bulk-btn { padding: 0.375rem 0.5rem; }
+/* The bulk buttons are compact so the whole toolbar fits one row on a desktop.
+   They carry .panel-btn-sm for that; only the disabled state is styled here. */
 .proxied-search-box {
   position: relative;
   /* Take the row's leftover width, so the toolbar ends at the panel edge
@@ -3140,6 +3140,10 @@ textarea.panel-field {
    one and both selectors weigh the same. */
 .panel-field-icon {
   padding-inline-start: 2rem;
+}
+
+.panel-field-end-icon {
+  padding-inline-end: 2.25rem;
 }
 
 /* The glyph inside such a field. Centred from the block axis rather than with

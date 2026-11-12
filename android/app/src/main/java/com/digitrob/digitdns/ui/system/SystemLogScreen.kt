@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
@@ -31,6 +32,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -153,6 +157,13 @@ fun SystemLogScreen(viewModel: SystemLogViewModel = hiltViewModel()) {
             }
             // Markdown-style copy affordance: inside the log surface, top-right,
             // so the operator copies the block they are reading.
+            var logCopied by remember { mutableStateOf(false) }
+            LaunchedEffect(logCopied) {
+                if (logCopied) {
+                    delay(1200)
+                    logCopied = false
+                }
+            }
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -162,17 +173,18 @@ fun SystemLogScreen(viewModel: SystemLogViewModel = hiltViewModel()) {
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
                     .clickable(enabled = state.lines.isNotEmpty()) {
                         clipboard.setText(AnnotatedString(state.text))
+                        logCopied = true
                     },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    Icons.Filled.ContentCopy,
+                    imageVector = if (logCopied) Icons.Filled.Check else Icons.Filled.ContentCopy,
                     contentDescription = "Copy system log",
                     modifier = Modifier.size(14.dp),
-                    tint = if (state.lines.isNotEmpty()) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    tint = when {
+                        logCopied -> DigitDnsTheme.colors.success
+                        state.lines.isNotEmpty() -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     },
                 )
             }
