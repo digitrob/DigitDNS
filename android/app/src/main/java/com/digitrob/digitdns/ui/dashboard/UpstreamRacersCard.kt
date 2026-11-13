@@ -82,6 +82,8 @@ import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.ExtendedColors
 import com.digitrob.digitdns.ui.theme.LocalIsGreyTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
+import com.digitrob.digitdns.ui.theme.transportColor
+import com.digitrob.digitdns.ui.theme.transportLabelRes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -646,7 +648,6 @@ private fun TransportChips(
     onChange: (ResolutionSettings) -> Unit,
 ) {
     val transports = normalizedTransports(base.transports)
-    val colors = DigitDnsTheme.colors
     ChipBlock(label = stringResource(R.string.domains_transports), dimmed = !enabled) {
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -655,28 +656,11 @@ private fun TransportChips(
         ) {
             ALL_TRANSPORTS.forEach { protocol ->
                 val selected = protocol in transports
-                val color = when (protocol.lowercase()) {
-                    "plain" -> colors.info
-                    "dot" -> colors.success
-                    "doh" -> colors.purple
-                    "doh3" -> colors.orange
-                    "doq" -> colors.warning
-                    "dnscrypt" -> colors.fuchsia
-                    else -> MaterialTheme.colorScheme.primary
-                }
-                val label = when (protocol) {
-                    "plain" -> stringResource(R.string.transport_plain)
-                    "dot" -> stringResource(R.string.transport_dot)
-                    "doh" -> stringResource(R.string.transport_doh)
-                    "doh3" -> stringResource(R.string.transport_doh3)
-                    "doq" -> stringResource(R.string.transport_doq)
-                    else -> stringResource(R.string.transport_dnscrypt)
-                }
                 ResolverChip(
-                    label = label,
+                    label = stringResource(transportLabelRes(protocol)),
                     selected = selected,
                     enabled = enabled && !(selected && transports.size == 1),
-                    accent = color,
+                    accent = transportColor(protocol),
                     onClick = {
                         val next = if (selected) transports - protocol else transports + protocol
                         if (next.isNotEmpty()) onChange(base.copy(transports = normalizedTransports(next)))

@@ -230,7 +230,15 @@ private fun AlertChannelRow(
         modifier = Modifier.fillMaxWidth().padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // The channel's own controls: kind selector, channel name, enable switch and
+        // delete. The row fills the card's width so the weighted name field has real
+        // space to take; a wrap-content row gave the weight nothing to distribute and
+        // the field collapsed to nothing on narrow screens.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             androidx.compose.foundation.layout.Box {
                 OutlinedButton(onClick = { expanded = true }) {
                     Text(ALERT_KINDS.firstOrNull { it.first == channel.kind }?.second ?: channel.kind)

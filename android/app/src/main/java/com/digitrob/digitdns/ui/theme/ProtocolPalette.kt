@@ -3,6 +3,7 @@ package com.digitrob.digitdns.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import com.digitrob.digitdns.R
 import java.util.Locale
 
 /**
@@ -39,6 +40,26 @@ fun protocolColor(protocol: String): Color {
     }
 }
 
+/**
+ * The palette colour for a transport key as the resolver chips spell it
+ * ("plain", "dot", "doh", "doh3", "doq", "dnscrypt"). Mapping the settings keys
+ * onto the protocol palette here keeps the chip row, the live log and the history
+ * cards on one set of colours instead of a second local table beside them.
+ */
+@Composable
+fun transportColor(transport: String): Color {
+    val protocol = when (transport.lowercase(Locale.ROOT)) {
+        "plain" -> "UDP"
+        "dot" -> "DoT"
+        "doh" -> "DoH"
+        "doh3" -> "DoH3"
+        "doq" -> "DoQ"
+        "dnscrypt" -> "DNSCrypt"
+        else -> transport
+    }
+    return protocolColor(protocol)
+}
+
 /** The human display form of a protocol wire value. */
 fun protocolLabel(protocol: String): String = when (protocol.uppercase(Locale.ROOT)) {
     "DOT" -> "DoT"
@@ -47,4 +68,19 @@ fun protocolLabel(protocol: String): String = when (protocol.uppercase(Locale.RO
     "DOH3" -> "DoH3"
     "DNSCRYPT" -> "DNSCrypt"
     else -> protocol.trim()
+}
+
+/**
+ * The string resource naming a transport key as the resolver chips spell it
+ * ("plain", "dot", "doh", "doh3", "doq", "dnscrypt"). It lives beside
+ * [transportColor] so a transport's name and colour are resolved by the same
+ * module rather than a second table in whichever screen happens to draw it.
+ */
+fun transportLabelRes(transport: String): Int = when (transport.lowercase(Locale.ROOT)) {
+    "plain" -> R.string.transport_plain
+    "dot" -> R.string.transport_dot
+    "doh" -> R.string.transport_doh
+    "doh3" -> R.string.transport_doh3
+    "doq" -> R.string.transport_doq
+    else -> R.string.transport_dnscrypt
 }
