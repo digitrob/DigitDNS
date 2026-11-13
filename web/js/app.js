@@ -5246,7 +5246,13 @@ function startStatsPolling() {
     }
   });
 
-  pollStatsOnce();
+  // Adaptive: defer the first stats poll by 10 seconds after page load.
+  // This lets the daemon settle after restart (cache warmup, aggregator shard
+  // stabilization, health probe cooldown) so that initial benchmark figures
+  // reflect steady-state performance rather than transient startup noise.
+  if (statsPollTimer === null) {
+    statsPollTimer = setTimeout(pollStatsOnce, 10000);
+  }
 }
 
 async function updateStats() {
