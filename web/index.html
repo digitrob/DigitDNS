@@ -2300,6 +2300,17 @@
             </div>
           </div>
 
+          <!-- Spoken summary of the live log. The table itself is not an aria-live
+               region — a resolver answering a household emits rows faster than anyone
+               can listen to them, and marking the tbody live would queue every one of
+               them into the screen reader's speech buffer. This element is instead
+               written by a coalescing announcer in app.js that holds arrivals and
+               speaks a count plus the most recent query at most every few seconds, so
+               the log is perceivable without being a firehose. `polite`, so it waits
+               for whatever is being read. Empty in the markup: the announcer fills it,
+               and the placeholder states are announced by their own text. -->
+          <p id="stream-live-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+
           <!-- Live Log Stream Table -->
           <!-- Seven monospace columns do not fit a 360px phone, and collapsing a live log to
                stacked cards would cost the density that makes it worth watching. So the table

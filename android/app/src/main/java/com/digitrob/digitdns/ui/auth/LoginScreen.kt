@@ -40,6 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -501,7 +502,19 @@ private fun ConnectionFields(state: LoginUiState, viewModel: LoginViewModel) {
         )
     }
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Switch(checked = state.isHttps, onCheckedChange = viewModel::onHttpsChange)
+        Switch(
+            checked = state.isHttps,
+            onCheckedChange = viewModel::onHttpsChange,
+            // Same knob token the web panel's `--knob-bg` resolves to, so the thumb
+            // does not go pure-white on the two dark themes while every other switch
+            // in the app carries the panel's quieter slate knob. The track keeps
+            // Material's own primary/secondary fills — this is a plain on/off row,
+            // not the green/red engine switch.
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = DigitDnsTheme.colors.knob,
+                uncheckedThumbColor = DigitDnsTheme.colors.knob,
+            ),
+        )
         Spacer(Modifier.width(10.dp))
         Text("Use HTTPS", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.weight(1f))

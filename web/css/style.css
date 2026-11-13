@@ -867,7 +867,14 @@ html.sidebar-collapsed .sidebar-group-label {
   top: 0; left: 0; right: 0; bottom: 0;
   background-color: var(--track-bg);
   border: 1px solid var(--track-border);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  /* Named properties, not `all`. `transition: all` makes the engine watch every
+     animatable property on the track — including layout ones the checked rule never
+     touches — and on a dashboard holding a dozen switches that is work spent per
+     frame on values that cannot change. Only the three that the :checked rule
+     actually rewrites are listed; `border-radius` is static. */
+  transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 34px;
 }
 
@@ -882,7 +889,12 @@ html.sidebar-collapsed .sidebar-group-label {
   inset-inline-start: 3px;
   bottom: 3px;
   background-color: var(--knob-bg);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  /* `transform` is the slide; `background-color` and `box-shadow` are the checked
+     colour/glow. Nothing else on the knob animates, so `all` here only widened the
+     watch list. See the note on .slider. */
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50%;
 }
 

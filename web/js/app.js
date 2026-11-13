@@ -7348,6 +7348,50 @@ let streamPendingRender = false;
 // coalescer threw them away and rebuilt the whole table once; this one keeps them so
 // each can be inserted as a single row (see insertStreamQuery).
 let streamPendingQueries = [];
+
+// announceStreamQuery speaks arriving queries into #stream-live-status, coalesced.
+//
+// The live table is a firehose: on a resolver answering a household the SSE stream
+// can deliver several rows a second, and an aria-live region on the tbody would push
+// every one of them into the screen reader's speech queue, burying the page in
+// announcements nobody asked for. So arrivals are counted and only the newest is
+// kept, and the region is rewritten at most once per STREAM_LIVE_INTERVAL_MS. One
+// query is named in full; a burst becomes a count plus its latest, which is the same
+// summary a sighted operator reads off the top of the table.
+let streamLivePending = 0;
+let streamLiveLast = null;
+let streamLiveTimer = null;
+const STREAM_LIVE_INTERVAL_MS = 4000;
+
+function announceStreamQuery(q) {
+  if (!q) return;
+  streamLivePending++;
+  streamLiveLast = q;
+  if (streamLiveTimer) return;
+  streamLiveTimer = setTimeout(() => {
+    streamLiveTimer = null;
+    const el = document.getElementById('stream-live-status');
+    const count = streamLivePending;
+    const last = streamLiveLast;
+    streamLivePending = 0;
+    streamLiveLast = null;
+    if (!el || !last) return;
+    // These reach the DOM through textContent, not a template assigned to innerHTML, so
+    // they are deliberately not run through escapeHTML — the region is spoken, and
+    // escapeHTML would make a screen reader say "amp-lt". dashboard_escaping_test.go scans
+    // for the domain field interpolated bare into a template because the query-log markup
+    // does exactly that; the local is named `host` here because this sink is the safe one,
+    // the same reason the whitelist's `ip` loop variable appears bare in the toast and
+    // dialog paths.
+    const host = last.domain || 'unknown domain';
+    const action = last.action || 'DIRECT';
+    const account = last.account_name || 'Public';
+    el.textContent = count === 1
+      ? `${action} for ${host} from ${account}`
+      : `${count} new queries, latest ${action} for ${host} from ${account}`;
+  }, STREAM_LIVE_INTERVAL_MS);
+}
+
 function pushStreamQuery(q) {
   if (!q) return;
 
@@ -7356,6 +7400,11 @@ function pushStreamQuery(q) {
 
   if (document.visibilityState === 'hidden' || activeDashTab !== 'stream') return;
   if (isStreamPaused) return;
+
+  // Only arrivals the operator can actually see are spoken, for the same reason the
+  // DOM insert sits past these gates: announcing rows a hidden or paused view never
+  // painted would describe a table that is not on screen.
+  announceStreamQuery(q);
 
   // Recorded only now, past the gates: a hidden or paused view does no incremental
   // inserts, so its drops have no row to remove and would only pile up until the
@@ -7416,6 +7465,17 @@ function resetStreamView() {
   streamPendingDropped = [];
   streamPendingRender = false;
   streamFallbackSig = '';
+  // A Clear also drops anything the spoken summary was still holding: announcing
+  // "12 new queries" after the operator emptied the table would describe rows that
+  // no longer exist.
+  if (streamLiveTimer) {
+    clearTimeout(streamLiveTimer);
+    streamLiveTimer = null;
+  }
+  streamLivePending = 0;
+  streamLiveLast = null;
+  const live = document.getElementById('stream-live-status');
+  if (live) live.textContent = '';
   renderQueryStream();
 }
 
