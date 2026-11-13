@@ -39,6 +39,12 @@ data class ExtendedColors(
     val orange: Color,
     /** DNSCrypt's category colour. */
     val fuchsia: Color,
+    /**
+     * The switch knob. Mirrors the web panel's `--knob-bg`, which is not white on the
+     * two dark themes: a pure-white dot on a filled track reads as a browser default
+     * rather than the panel's control. See [PanelColors.KnobDark].
+     */
+    val knob: Color,
 )
 
 internal fun digitDnsExtendedColors(dark: Boolean, grey: Boolean = false): ExtendedColors = when {
@@ -63,6 +69,7 @@ internal fun digitDnsExtendedColors(dark: Boolean, grey: Boolean = false): Exten
         blue = PanelColors.Slate300Grey,
         orange = PanelColors.Slate300Grey,
         fuchsia = PanelColors.Slate300Grey,
+        knob = PanelColors.KnobGrey,
     )
     dark -> ExtendedColors(
         bgMain = PanelColors.Slate900Dark,
@@ -83,6 +90,7 @@ internal fun digitDnsExtendedColors(dark: Boolean, grey: Boolean = false): Exten
         blue = PanelColors.Blue400Dark,
         orange = PanelColors.Orange400Dark,
         fuchsia = PanelColors.Fuchsia400Dark,
+        knob = PanelColors.KnobDark,
     )
     else -> ExtendedColors(
         bgMain = PanelColors.Slate900Light,
@@ -103,6 +111,7 @@ internal fun digitDnsExtendedColors(dark: Boolean, grey: Boolean = false): Exten
         blue = PanelColors.Blue400Light,
         orange = PanelColors.Orange400Light,
         fuchsia = PanelColors.Fuchsia400Light,
+        knob = PanelColors.KnobLight,
     )
 }
 

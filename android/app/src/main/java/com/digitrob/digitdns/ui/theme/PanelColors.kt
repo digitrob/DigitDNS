@@ -74,6 +74,10 @@ internal object PanelColors {
     val BgCardDark = Color(0xB8121C38) // rgba(13, 20, 38, 0.72)
     val BgCardHoverDark = Color(0xE6141E3A) // rgba(20, 30, 58, 0.9)
     val BgTileDark = Color(0xB3030712) // slate-950/70 — the inset inner tile
+    // The switch knob. The web panel does not paint it pure white: --knob-bg is
+    // slate-300 in dark, zinc-300 in graphite and only white on the light page, so a
+    // filled green/red track keeps a quiet knob instead of a paper-white dot.
+    val KnobDark = Color(0xFFCBD5E1)
     val BorderColorDark = Color(0x2938BDF8) // rgba(56, 189, 248, 0.16)
     val BorderGlowDark = Color(0x8C00F0FF) // rgba(0, 240, 255, 0.55)
     val AccentGreenDark = Color(0xFF10B981)
@@ -130,6 +134,7 @@ internal object PanelColors {
     val BgCardLight = Color(0xEBFFFFFF) // rgba(255, 255, 255, 0.92)
     val BgCardHoverLight = Color(0xFFFFFFFF)
     val BgTileLight = Color(0x0F0F172A) // slate-900/6 — the inset inner tile
+    val KnobLight = Color(0xFFFFFFFF) // --knob-bg on the light page
     val BorderColorLight = Color(0x1A0F172A) // rgba(15, 23, 42, 0.1)
     val BorderGlowLight = Color(0x730891B6) // rgba(8, 145, 178, 0.45)
     val AccentGreenLight = Color(0xFF065840)
@@ -162,6 +167,7 @@ internal object PanelColors {
     val BgCardGrey = Color(0xC727272A) // rgba(39, 39, 42, 0.78)
     val BgCardHoverGrey = Color(0xEB2D2D30) // rgba(45, 45, 48, 0.92)
     val BgTileGrey = Color(0xB309090B) // slate-950/70
+    val KnobGrey = Color(0xFFD4D4D8) // --knob-bg in the graphite theme
     val BorderColorGrey = Color(0x2EA1A1AA) // rgba(161, 161, 170, 0.18)
     val BorderGlowGrey = Color(0x38FFFFFF) // rgba(255, 255, 255, 0.22)
     val AccentGreenGrey = Color(0xFF10B981)

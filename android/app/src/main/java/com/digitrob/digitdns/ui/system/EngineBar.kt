@@ -22,7 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -106,10 +105,10 @@ fun EngineBar(
             enabled = known,
             onCheckedChange = viewModel::setEnabled,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
+                checkedThumbColor = DigitDnsTheme.colors.knob,
                 checkedTrackColor = DigitDnsTheme.colors.success,
                 checkedBorderColor = DigitDnsTheme.colors.success,
-                uncheckedThumbColor = Color.White,
+                uncheckedThumbColor = DigitDnsTheme.colors.knob,
                 uncheckedTrackColor = DigitDnsTheme.colors.danger,
                 uncheckedBorderColor = DigitDnsTheme.colors.danger,
             ),

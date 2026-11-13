@@ -22,7 +22,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.digitrob.digitdns.R
@@ -75,8 +74,11 @@ fun AppLockScreen(
                 )
                 Text(
                     text = "DigitDNS",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
+                    // The same wordmark the sign-in screen opens with: the gate and the
+                    // login form are the two screens shown before the panel exists, and
+                    // they should read as one surface, not two designs.
+                    style = MaterialTheme.typography.displaySmall,
+                    color = MaterialTheme.colorScheme.primary,
                 )
                 Text(
                     text = stringResource(R.string.biometric_unlock_title),
@@ -103,6 +105,10 @@ fun AppLockScreen(
                         CircularProgressIndicator(
                             modifier = Modifier.padding(end = 8.dp).size(16.dp),
                             strokeWidth = 2.dp,
+                            // On the primary fill, which is what the button behind it
+                            // paints; the indicator's default is the same primary, so
+                            // without this the spinner is invisible while unlocking.
+                            color = MaterialTheme.colorScheme.onPrimary,
                         )
                     }
                     Text(

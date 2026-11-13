@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -65,6 +66,7 @@ import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.domain.model.CredentialMode
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.components.PanelDialog
+import com.digitrob.digitdns.ui.components.PanelSwitch
 
 /**
  * The first screen: where the install is, and how the app authenticates to it.
@@ -156,7 +158,12 @@ fun LoginScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp)
+                        // A minimum, not a fixed height: the 220 dp keeps the submit
+                        // button steady while switching Account/API key, but a fixed
+                        // height also meant the two-factor field, once the server
+                        // asked for it, overflowed the box and drew over the error
+                        // line and the button below.
+                        .heightIn(min = 220.dp)
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         when (state.credentialMode) {
@@ -363,14 +370,11 @@ private fun SubscriberFields(
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Switch(checked = state.saveSubscriber, onCheckedChange = viewModel::onSaveSubscriberChange)
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text = stringResource(R.string.login_save_subscription),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
+    PanelSwitch(
+        label = stringResource(R.string.login_save_subscription),
+        checked = state.saveSubscriber,
+        onCheckedChange = viewModel::onSaveSubscriberChange,
+    )
 
     Button(
         onClick = viewModel::submitSubscriber,
@@ -594,21 +598,12 @@ private fun SessionFields(state: LoginUiState, viewModel: LoginViewModel) {
  */
 @Composable
 private fun SaveCredentialsToggle(state: LoginUiState, viewModel: LoginViewModel) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(
-            checked = state.saveCredentials,
-            onCheckedChange = viewModel::onSaveCredentialsChange,
-        )
-        Spacer(Modifier.width(8.dp))
-        Column {
-            Text("Save credentials", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                text = stringResource(R.string.login_save_credentials_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+    PanelSwitch(
+        label = "Save credentials",
+        checked = state.saveCredentials,
+        onCheckedChange = viewModel::onSaveCredentialsChange,
+        supporting = stringResource(R.string.login_save_credentials_hint),
+    )
 }
 
 @Composable
