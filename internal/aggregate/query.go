@@ -550,7 +550,7 @@ func (a *Aggregator) buckets(spec windowSpec) ([]timedBucket, error) {
 			if b == nil {
 				// Try any shard key for this hour.
 				for i := 0; i < shardCount; i++ {
-					shardKey := key + "-shard-" + string(rune('0' + i))
+					shardKey := key + "-shard-" + string(rune('0'+i))
 					b = snapshot[shardKey]
 					if b != nil {
 						break

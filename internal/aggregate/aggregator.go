@@ -113,7 +113,7 @@ type Aggregator struct {
 
 	mu         sync.Mutex // guards rollover, pending and daily state only
 	closed     atomic.Bool
-	currentKey atomic.Value // string
+	currentKey atomic.Value              // string
 	current    atomic.Pointer[[]*Bucket] // sharded current buckets; each has its own mu
 	pending    []bucketPair
 	lastDay    string
@@ -221,7 +221,7 @@ func (a *Aggregator) RecordDetail(item database.QueryLogItem) {
 // shard picks a shard index from 0 to shardCount-1 for the given key.
 // RecordTotal uses shardKey=0 (always shard 0). RecordDetail uses a hash of
 // (clientIP+domain) to distribute across shards.
-func shardKeyFromInt(key int) uint64 { return uint64(key) }
+func shardKeyFromInt(key int) uint64   { return uint64(key) }
 func shardKeyFromHash(h uint64) uint64 { return h }
 
 // withBucket selects a shard by shardKey and locks only that shard's mutex.
@@ -367,27 +367,27 @@ func (a *Aggregator) flush() error {
 			merged.TopDomains.merge(shards[i].TopDomains, a.cfg.TopDomains)
 			merged.TopBlockedDomains.merge(shards[i].TopBlockedDomains, a.cfg.TopDomains)
 			merged.TopClients.merge(shards[i].TopClients, a.cfg.TopClients)
-		// Merge HLL registers across shards so the aggregated bucket has accurate
-		// distinct client counts. Seed from the first shard that has complete registers.
-		if len(merged.ClientHLL) == 0 {
-			merged.ClientHLL = append([]byte(nil), shards[i].ClientHLL...)
-			merged.ClientHLLComplete = shards[i].ClientHLLComplete
-		}
-		if shards[i].ClientHLLComplete && len(shards[i].ClientHLL) == hllRegisters {
-			if !merged.ClientHLLComplete || len(merged.ClientHLL) != hllRegisters {
-				merged.ClientHLL = newHLL()
+			// Merge HLL registers across shards so the aggregated bucket has accurate
+			// distinct client counts. Seed from the first shard that has complete registers.
+			if len(merged.ClientHLL) == 0 {
+				merged.ClientHLL = append([]byte(nil), shards[i].ClientHLL...)
+				merged.ClientHLLComplete = shards[i].ClientHLLComplete
+			}
+			if shards[i].ClientHLLComplete && len(shards[i].ClientHLL) == hllRegisters {
+				if !merged.ClientHLLComplete || len(merged.ClientHLL) != hllRegisters {
+					merged.ClientHLL = newHLL()
+					merged.ClientHLLComplete = false
+				}
+				hllMerge(merged.ClientHLL, shards[i].ClientHLL)
+			} else if len(shards[i].TopClients.Items) > 0 {
+				if len(merged.ClientHLL) != hllRegisters {
+					merged.ClientHLL = newHLL()
+				}
+				for key := range shards[i].TopClients.Items {
+					hllAdd(merged.ClientHLL, key)
+				}
 				merged.ClientHLLComplete = false
 			}
-			hllMerge(merged.ClientHLL, shards[i].ClientHLL)
-		} else if len(shards[i].TopClients.Items) > 0 {
-			if len(merged.ClientHLL) != hllRegisters {
-				merged.ClientHLL = newHLL()
-			}
-			for key := range shards[i].TopClients.Items {
-				hllAdd(merged.ClientHLL, key)
-			}
-			merged.ClientHLLComplete = false
-		}
 		}
 	}
 	a.mu.Unlock()
