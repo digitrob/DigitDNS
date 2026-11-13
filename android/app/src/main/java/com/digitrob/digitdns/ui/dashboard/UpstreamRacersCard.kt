@@ -634,15 +634,11 @@ private fun AdaptiveForceButton(
     )
 }
 
-private val TRANSPORT_COLORS = mapOf(
-    "plain" to Color(0xFF22D3EE),
-    "dot" to Color(0xFF34D399),
-    "doh" to Color(0xFFC084FC),
-    "doh3" to Color(0xFFFB923C),
-    "doq" to Color(0xFFFBBF24),
-    "dnscrypt" to Color(0xFFE879F9),
-)
-
+/* One colour per transport, read from the panel theme instead of a file-level map:
+   the same seven roles the web renders as .proto-* carry, so a transport means one
+   colour on this chip row and on the live-log / history protocol cards alike. A top
+   level val cannot read a CompositionLocal, so the lookup lives here in the composable
+   that owns the row. */
 @Composable
 private fun TransportChips(
     base: ResolutionSettings,
@@ -650,6 +646,7 @@ private fun TransportChips(
     onChange: (ResolutionSettings) -> Unit,
 ) {
     val transports = normalizedTransports(base.transports)
+    val colors = DigitDnsTheme.colors
     ChipBlock(label = stringResource(R.string.domains_transports), dimmed = !enabled) {
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -658,7 +655,15 @@ private fun TransportChips(
         ) {
             ALL_TRANSPORTS.forEach { protocol ->
                 val selected = protocol in transports
-                val color = TRANSPORT_COLORS[protocol] ?: MaterialTheme.colorScheme.primary
+                val color = when (protocol.lowercase()) {
+                    "plain" -> colors.info
+                    "dot" -> colors.success
+                    "doh" -> colors.purple
+                    "doh3" -> colors.orange
+                    "doq" -> colors.warning
+                    "dnscrypt" -> colors.fuchsia
+                    else -> MaterialTheme.colorScheme.primary
+                }
                 val label = when (protocol) {
                     "plain" -> stringResource(R.string.transport_plain)
                     "dot" -> stringResource(R.string.transport_dot)

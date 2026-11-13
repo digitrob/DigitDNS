@@ -85,7 +85,8 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 /** The status pill and tick for an active list; upstream brand green, not the cyan accent. */
-private val ActiveGreen = Color(0xFF10B981)
+@Composable
+private fun ActiveGreen(): Color = DigitDnsTheme.colors.success
 
 /** The blocklist roster and policy, mirroring the web Ad Blocking page. */
 @Composable
@@ -295,7 +296,7 @@ private fun RuleTestResultRow(result: RuleTestDto) {
     val actionColor = when (result.action.uppercase()) {
         "BLOCK" -> DigitDnsTheme.colors.danger
         "PROXY" -> MaterialTheme.colorScheme.primary
-        else -> ActiveGreen
+        else -> ActiveGreen()
     }
     val how = when {
         result.pattern.startsWith("*.") -> "parent wildcard ${result.pattern}"
@@ -530,7 +531,7 @@ private fun PresetRowCard(
                     onCheckedChange = onToggle,
                     enabled = !row.adding && !row.updating,
                     colors = if (row.isInstalled && row.isEnabled) {
-                        CheckboxDefaults.colors(checkedColor = ActiveGreen)
+                        CheckboxDefaults.colors(checkedColor = ActiveGreen())
                     } else {
                         CheckboxDefaults.colors()
                     },
@@ -622,7 +623,7 @@ private fun PresetBadges(row: PresetRow) {
             row.adding -> TinyBadge("ADDING…", colors.warning)
             row.isInstalled -> TinyBadge(
                 if (row.isEnabled) "ACTIVE" else "DISABLED",
-                if (row.isEnabled) ActiveGreen else colors.warning,
+                if (row.isEnabled) ActiveGreen() else colors.warning,
             )
         }
     }
@@ -646,7 +647,7 @@ private fun CustomRow(
                     onCheckedChange = onToggle,
                     enabled = !updating,
                     colors = if (list.enabled) {
-                        CheckboxDefaults.colors(checkedColor = ActiveGreen)
+                        CheckboxDefaults.colors(checkedColor = ActiveGreen())
                     } else {
                         CheckboxDefaults.colors()
                     },
@@ -661,7 +662,7 @@ private fun CustomRow(
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         TinyBadge(
                             if (list.enabled) "ACTIVE" else "DISABLED",
-                            if (list.enabled) ActiveGreen else colors.warning,
+                            if (list.enabled) ActiveGreen() else colors.warning,
                         )
                     }
                     Text(

@@ -337,14 +337,29 @@ func (ws *WebServer) handleRegisterIPAPI(w http.ResponseWriter, r *http.Request)
 // opened /ip/<token> with GET. The verb that used to auto-register is gone on
 // purpose (C-03); this page says what the address is for and where the portal
 // lives, in English, with no script.
+//
+// The page shares /css/portal.css with the /sub/ portal and its error card, so it
+// takes the same theme the sibling pages take: data-theme comes from the same
+// server-side negotiation (query → hdns_theme cookie → dark), and the toggle link
+// is written the same way, so a subscriber who picked light on /sub/ lands here in
+// light too instead of being pinned to the dark ramp.
 func (ws *WebServer) handleIPPage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	const page = `<!DOCTYPE html>
-<html lang="en" dir="ltr">
+	theme := negotiatePortalTheme(w, r)
+	themeHref := "?theme=light"
+	themeIcon := "ico ico-sun"
+	themeLabel := "Light mode"
+	if theme == portalThemeLight {
+		themeHref = "?theme=dark"
+		themeIcon = "ico ico-moon"
+		themeLabel = "Dark mode"
+	}
+	page := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en" dir="ltr" data-theme="%s">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -364,11 +379,21 @@ func (ws *WebServer) handleIPPage(w http.ResponseWriter, r *http.Request) {
         <div class="label">Endpoint</div>
         <div class="value-lg mono" style="font-size:.9rem">POST your new address here with your registration secret.<br>Open your <b>/sub/…</b> portal link to manage your IP.</div>
       </div>
+
+      <!-- The theme link is a plain relative href, so it works with no script and keeps
+           the token in the path; the handler resolves ?theme= into the cookie that
+           carries the choice to the next visit, and the link it writes points at the
+           palette the page is not already in. Same shape as the portal error card, minus
+           the i18n: this page is English-only. -->
+      <div class="tools">
+        <a class="btn" href="%s" title="Switch between light and dark"><i class="%s" aria-hidden="true"></i>%s</a>
+      </div>
+
       <div class="footer">DigitDNS</div>
     </div>
   </div>
 </body>
-</html>`
+</html>`, theme, themeHref, themeIcon, themeLabel)
 	_, _ = w.Write([]byte(page))
 }
 
