@@ -5298,6 +5298,13 @@ async function updateStats() {
     const num = (v, digits) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(digits) : '—';
     const count = (v) => (typeof v === 'number' && isFinite(v)) ? v.toLocaleString() : '—';
 
+    // The tiles write through compare-guarded setters, so the cheap reads above
+    // are safe on any tab. The list and the chart are the expensive ones: skip
+    // repainting the resolver list while the dashboard is not the visible tab, the
+    // poll keeps running, and the next dashboard paint simply reads the latest
+    // values.
+    const paintingDashboard = activeDashTab === 'dashboard';
+
     setTxt('stat-qps', num(data.qps, 1));
     setTxt('stat-total-queries', count(data.total_queries));
     setTxt('stat-cache-ratio', typeof data.cache_hit_ratio === 'number' ? num(data.cache_hit_ratio, 1) + '%' : '—');
@@ -5325,13 +5332,17 @@ async function updateStats() {
     renderProxyDrops(data);
 
     // Render upstreams list
-    renderUpstreams(data.upstreams);
+    if (paintingDashboard) {
+      renderUpstreams(data.upstreams);
+    }
 
     // Fold the same health data into the global banner; this only repaints when
     // the set of degraded resolvers changes.
 
     // Push QPS point to chart
-    pushChartData(data.qps);
+    if (paintingDashboard) {
+      pushChartData(data.qps);
+    }
 
     markStatsHealth(true);
   } catch (e) {
@@ -5455,17 +5466,18 @@ function renderLatency(miss, all) {
 
   const badge = document.getElementById('stat-lat-count');
   if (badge) {
+    let badgeText = 'no data yet';
+    let badgeTitle = 'The resolver has not answered a query yet';
     if (haveMiss) {
-      badge.textContent = `${miss.count.toLocaleString()} resolved`;
-      badge.title = 'Queries answered by an upstream rather than from cache, since the daemon started';
+      badgeText = `${miss.count.toLocaleString()} resolved`;
+      badgeTitle = 'Queries answered by an upstream rather than from cache, since the daemon started';
     } else if (all && all.count > 0) {
       // A real and reassuring state, not an error: nothing has needed an upstream.
-      badge.textContent = 'every answer from cache';
-      badge.title = 'No query has needed an upstream resolver yet';
-    } else {
-      badge.textContent = 'no data yet';
-      badge.title = 'The resolver has not answered a query yet';
+      badgeText = 'every answer from cache';
+      badgeTitle = 'No query has needed an upstream resolver yet';
     }
+    if (badge.textContent !== badgeText) badge.textContent = badgeText;
+    if (badge.title !== badgeTitle) badge.title = badgeTitle;
   }
 
   // p50 carries the colour because it is the everyday experience. The thresholds
@@ -5503,25 +5515,30 @@ function renderCacheHealth(data) {
   const failed = data.refresh_failed || 0;
   const dropped = data.refresh_dropped || 0;
 
-  if (!served && !started && !failed && !dropped) {
-    el.textContent = 'Cache refresh: healthy';
-    el.className = 'text-slate-500';
-    el.title = 'No background refresh has run yet, no stale answer has been served';
-    return;
+  const healthy = !served && !started && !failed && !dropped;
+  const text = healthy
+    ? 'Cache refresh: healthy'
+    : `Cache refresh: ${served.toLocaleString()} stale · ${failed.toLocaleString()} failed · ${dropped.toLocaleString()} skipped`;
+  // A 1 Hz poll rewrites text, class and tooltip even when none of them moved,
+  // which invalidates style for the whole dashboard on every tick. The values
+  // only change when a refresh actually happened, so compare before writing.
+  if (el.textContent !== text) {
+    el.textContent = text;
+  }
+  const cls = failed > 0 ? 'text-amber-400 font-bold' : 'text-slate-400';
+  if (el.className !== cls) {
+    el.className = cls;
   }
 
-  // Share of attempts that failed. Only meaningful once something was attempted;
-  // a failure with no attempt recorded would be a counter bug, not a bad upstream.
-  const failRate = started > 0 ? (failed / started) * 100 : 0;
-
-  el.textContent = `Cache refresh: ${served.toLocaleString()} stale · ${failed.toLocaleString()} failed · ${dropped.toLocaleString()} skipped`;
-  el.className = failed > 0 ? 'text-amber-400 font-bold' : 'text-slate-400';
-  if (failed > 0) {
-    el.title = `${failed.toLocaleString()} of ${started.toLocaleString()} background refreshes failed (${failRate.toFixed(1)}%) while ${served.toLocaleString()} stale answer(s) were served. Clients are getting instant replies from a cache nothing is refilling — check the upstream resolvers before the grace window closes.`;
-  } else if (dropped > 0) {
-    el.title = `${started.toLocaleString()} background refresh(es) succeeded, ${dropped.toLocaleString()} were skipped because the refresh worker pool was saturated. Skipped renewals are not errors; they simply expire normally.`;
-  } else {
-    el.title = `${started.toLocaleString()} background refresh(es) run, none failed. ${served.toLocaleString()} expired entry/entries were served instantly while being renewed.`;
+  let title = healthy
+    ? 'No background refresh has run yet, no stale answer has been served'
+    : failed > 0
+      ? `${failed.toLocaleString()} of ${started.toLocaleString()} background refreshes failed (${(started > 0 ? (failed / started) * 100 : 0).toFixed(1)}%) while ${served.toLocaleString()} stale answer(s) were served. Clients are getting instant replies from a cache nothing is refilling — check the upstream resolvers before the grace window closes.`
+      : dropped > 0
+        ? `${started.toLocaleString()} background refresh(es) succeeded, ${dropped.toLocaleString()} were skipped because the refresh worker pool was saturated. Skipped renewals are not errors; they simply expire normally.`
+        : `${started.toLocaleString()} background refresh(es) run, none failed. ${served.toLocaleString()} expired entry/entries were served instantly while being renewed.`;
+  if (el.title !== title) {
+    el.title = title;
   }
 }
 
@@ -5566,17 +5583,22 @@ function renderProxyDrops(data) {
   const breakdown = `Actionable refusals ${actionableRefused.toLocaleString()} (blocked ${blocked.toLocaleString()}, self ${selfDial.toLocaleString()}, quota ${quota.toLocaleString()}, table full ${tableFull.toLocaleString()}, resolve failed ${resolveFailed.toLocaleString()}) · flood attempts ${flood.toLocaleString()} (excluded) · malformed probes ${malformed.toLocaleString()} (excluded)`;
 
   if (refusedEl) {
-    refusedEl.textContent = actionableRefused.toLocaleString();
-    refusedEl.className = actionableRefused > 0 ? 'text-slate-300 font-bold' : 'text-slate-400';
-    refusedEl.title = breakdown;
+    const refusedText = actionableRefused.toLocaleString();
+    const refusedCls = actionableRefused > 0 ? 'text-slate-300 font-bold' : 'text-slate-400';
+    if (refusedEl.textContent !== refusedText) refusedEl.textContent = refusedText;
+    if (refusedEl.className !== refusedCls) refusedEl.className = refusedCls;
+    if (refusedEl.title !== breakdown) refusedEl.title = breakdown;
   }
 
   if (unreadableEl) {
-    unreadableEl.textContent = unreadable.toLocaleString();
-    unreadableEl.className = unreadable > 0 ? 'text-amber-400 font-bold' : 'text-slate-400';
-    unreadableEl.title = unreadable > 0
+    const unreadableText = unreadable.toLocaleString();
+    const unreadableCls = unreadable > 0 ? 'text-amber-400 font-bold' : 'text-slate-400';
+    if (unreadableEl.textContent !== unreadableText) unreadableEl.textContent = unreadableText;
+    if (unreadableEl.className !== unreadableCls) unreadableEl.className = unreadableCls;
+    const unreadableTitle = unreadable > 0
       ? `${unreadable.toLocaleString()} connection(s) arrived without naming a destination — no TLS SNI and no HTTP Host header. A few are port scans. A rising count means a proxied name is sending clients here for traffic this relay cannot carry; check the server log for the sampled "unreadable destination" lines, which name the port and the first bytes.`
       : 'Every connection that reached the proxy named a destination and was relayed';
+    if (unreadableEl.title !== unreadableTitle) unreadableEl.title = unreadableTitle;
   }
 }
 
@@ -6198,10 +6220,14 @@ function renderUpstreams(upstreams) {
       row.classList.toggle('is-dimmed', dimmed);
       row.classList.toggle('is-adaptive-current', adaptiveCurrent);
       const dot = row.querySelector('.upstream-dot');
-      if (dot) dot.className = 'upstream-dot shrink-0 ' + dotClass;
+      const dotCls = 'upstream-dot shrink-0 ' + dotClass;
+      if (dot) {
+        if (dot.className !== dotCls) dot.className = dotCls;
+      }
       const badge = row.querySelector('.upstream-latency-badge');
       if (badge) {
-        badge.className = 'upstream-latency-badge shrink-0 px-2 py-0.5 rounded border ' + badgeClass + ' text-[10px] font-bold font-mono whitespace-nowrap';
+        const badgeCls = 'upstream-latency-badge shrink-0 px-2 py-0.5 rounded border ' + badgeClass + ' text-[10px] font-bold font-mono whitespace-nowrap';
+        if (badge.className !== badgeCls) badge.className = badgeCls;
         if (badge.textContent !== latText) badge.textContent = latText;
         if (badge.title !== latTitle) badge.title = latTitle;
       }
