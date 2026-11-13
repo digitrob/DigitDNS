@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"digitdns/internal/database"
@@ -56,15 +57,27 @@ type QueryLogService struct {
 	queue   chan database.QueryLogItem
 	done    chan struct{}
 	started bool
+
+	// cache is the query-path view of the saved settings. Push reads only this,
+	// never the database: query logging is off by default, so a per-query DB read
+	// would make every query pay for history that is not being kept. SaveSettings
+	// and the constructor keep it current; the admin Settings() still reads the
+	// store so it reports exactly what is persisted.
+	cache atomic.Pointer[QueryLogSettings]
 }
 
 var queryLogBuckets = [][]byte{[]byte("queries"), []byte("meta")}
 
 func NewQueryLogService(db *database.DB, path string) *QueryLogService {
-	return &QueryLogService{db: db, path: path, queue: make(chan database.QueryLogItem, 2048)}
+	s := &QueryLogService{db: db, path: path, queue: make(chan database.QueryLogItem, 2048)}
+	settings := s.readSettings()
+	s.cache.Store(&settings)
+	return s
 }
 
-func (s *QueryLogService) Settings() QueryLogSettings {
+// readSettings loads and normalizes the persisted config, defaulting when the
+// record is absent or unreadable.
+func (s *QueryLogService) readSettings() QueryLogSettings {
 	var out QueryLogSettings
 	if s == nil || s.db == nil {
 		return DefaultQueryLogSettings()
@@ -78,6 +91,10 @@ func (s *QueryLogService) Settings() QueryLogSettings {
 	return out.normalized()
 }
 
+func (s *QueryLogService) Settings() QueryLogSettings {
+	return s.readSettings()
+}
+
 func (s *QueryLogService) SaveSettings(in QueryLogSettings) error {
 	if s == nil || s.db == nil {
 		return nil
@@ -86,6 +103,7 @@ func (s *QueryLogService) SaveSettings(in QueryLogSettings) error {
 	if err := s.db.SetSetting("query_log", in); err != nil {
 		return err
 	}
+	s.cache.Store(&in)
 	if in.Enabled {
 		return s.ensureOpen()
 	}
@@ -128,11 +146,11 @@ func (s *QueryLogService) Push(item database.QueryLogItem) {
 	if s == nil {
 		return
 	}
-	settings := s.Settings()
-	if !settings.Enabled {
+	settings := s.cache.Load()
+	if settings == nil || !settings.Enabled {
 		return
 	}
-	item = s.privacy(item, settings)
+	item = s.privacy(item, *settings)
 	select {
 	case s.queue <- item:
 	default:

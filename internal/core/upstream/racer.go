@@ -40,6 +40,12 @@ type UpstreamPool struct {
 	racing      bool
 	ecsClientIP net.IP
 	stats       map[string]*upstreamStatInternal
+	// statsView is the read-only query-path view of stats. The map only changes
+	// when the upstream list does, so publishing an immutable copy lets the
+	// per-query path do one atomic load instead of taking mu for every answer.
+	// The values are pointers, so a published view never aliases mutable data:
+	// only the map itself is copied.
+	statsView atomic.Pointer[map[string]*upstreamStatInternal]
 	// Policy: the global defaults and the per-domain overrides. Guarded by mu
 	// like the list itself, so a settings save takes effect on the next query
 	// without a restart.
@@ -58,13 +64,12 @@ type UpstreamPool struct {
 	// it wholesale, so a query never copies a slice or takes the settings lock.
 	snap atomic.Pointer[poolSnapshot]
 
-	// orderMu guards the cached latency order used by Hedged and Best Known. The
-	// order changes only when a measurement does, so rebuilding it at most once
-	// per second keeps those strategies from sorting the pool on every miss.
-	orderMu    sync.Mutex
-	orderBuilt time.Time
-	orderFor   []string
-	order      []string
+	// orderMu guards rebuilds of the latency order used by Hedged and Best Known.
+	// The order itself is published atomically: a query reads one pointer instead
+	// of taking a lock that every other query also needs. The order changes only
+	// when a measurement does, so it is rebuilt at most once per second.
+	orderMu   sync.Mutex
+	orderView atomic.Pointer[latencyOrder]
 
 	// openCircuits is a fast-path count: zero means no candidate can be skipped,
 	// so the query path returns the snapshot list without touching any stat lock.
@@ -76,6 +81,14 @@ type UpstreamPool struct {
 	dotPools   map[string]*dotConnPool
 	doqMu      sync.Mutex
 	doqConns   map[string]*doqConn
+}
+
+// latencyOrder is an immutable snapshot of the pool ordered by measured latency.
+// A rebuild publishes a new one; readers keep using the old slice safely.
+type latencyOrder struct {
+	built   time.Time
+	forList []string
+	order   []string
 }
 
 // poolSnapshot is the read-only query-path state. Every field is immutable once
@@ -679,6 +692,7 @@ func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecs
 	for _, u := range normalized {
 		pool.stats[u] = &upstreamStatInternal{lastUpdated: time.Now()}
 	}
+	pool.publishStatsLocked()
 	pool.rebuildSnapshotLocked()
 
 	// No probe from here. The pool is usable the instant it is built; the caller
@@ -695,11 +709,24 @@ func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecs
 	return pool
 }
 
-func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOutcome, reason string, probe bool) {
-	p.mu.RLock()
-	stat, ok := p.stats[addr]
-	p.mu.RUnlock()
+// publishStatsLocked copies the stats map and publishes it for the query path.
+// Callers must hold mu for writing. The copy is cheap because the map only
+// changes when the upstream list does, never per query; the values are shared
+// pointers, and their own mutexes still guard the counters inside them.
+func (p *UpstreamPool) publishStatsLocked() {
+	view := make(map[string]*upstreamStatInternal, len(p.stats))
+	for addr, st := range p.stats {
+		view[addr] = st
+	}
+	p.statsView.Store(&view)
+}
 
+func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOutcome, reason string, probe bool) {
+	view := p.statsView.Load()
+	if view == nil {
+		return
+	}
+	stat, ok := (*view)[addr]
 	if !ok {
 		return
 	}
@@ -790,9 +817,11 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 // It reads only the atomic openUntil, so the query path can test every candidate
 // without taking any per-stat mutex.
 func (p *UpstreamPool) upstreamAvailable(addr string, now time.Time) bool {
-	p.mu.RLock()
-	stat := p.stats[addr]
-	p.mu.RUnlock()
+	view := p.statsView.Load()
+	if view == nil {
+		return true
+	}
+	stat := (*view)[addr]
 	if stat == nil {
 		return true
 	}
@@ -1236,10 +1265,19 @@ func (p *UpstreamPool) orderedByLatency(upstreams []string) []string {
 		return upstreams
 	}
 
+	// One atomic read per query. The cached order is immutable once published, so
+	// handing out the previous slice is safe while a rebuild runs.
+	if cached := p.orderView.Load(); cached != nil &&
+		time.Since(cached.built) < time.Second && sameUpstreams(cached.forList, upstreams) {
+		return cached.order
+	}
+
 	p.orderMu.Lock()
 	defer p.orderMu.Unlock()
-	if !p.orderBuilt.IsZero() && time.Since(p.orderBuilt) < time.Second && sameUpstreams(p.orderFor, upstreams) {
-		return p.order
+
+	if cached := p.orderView.Load(); cached != nil &&
+		time.Since(cached.built) < time.Second && sameUpstreams(cached.forList, upstreams) {
+		return cached.order
 	}
 
 	stats := p.GetUpstreamStats()
@@ -1261,9 +1299,7 @@ func (p *UpstreamPool) orderedByLatency(upstreams []string) []string {
 			return cmp.Compare(la, lb)
 		}
 	})
-	p.orderFor = slices.Clone(upstreams)
-	p.order = out
-	p.orderBuilt = time.Now()
+	p.orderView.Store(&latencyOrder{built: time.Now(), forList: slices.Clone(upstreams), order: out})
 	return out
 }
 
@@ -2326,6 +2362,7 @@ func (p *UpstreamPool) SetUpstreams(list []string) {
 			delete(p.stats, addr)
 		}
 	}
+	p.publishStatsLocked()
 	p.rebuildSnapshotLocked()
 	p.mu.Unlock()
 
