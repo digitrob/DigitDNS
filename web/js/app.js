@@ -442,7 +442,6 @@ function applyRememberedLogin() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  safeFeatherReplace();
   // Chart.js is not loaded here. The first successful stats poll reaches
   // pushChartData, which calls initChart after the dashboard has painted. Loading
   // its 201 KB on DOMContentLoaded also did so on the login page, where no chart
@@ -10864,6 +10863,11 @@ function switchTab(target, updateUrl = true, loadData = true) {
   const targetEl = document.getElementById(`tab-${target}`);
   if (targetEl) {
     targetEl.classList.remove('hidden');
+    // Initialize feather icons for the dashboard tab (deferred from page load
+    // to make initial dashboard load faster). Other tabs may have fewer icons.
+    if (target === 'dashboard') {
+      safeFeatherReplace();
+    }
     if (loadData) {
       if (target === 'clients') {
         loadClients();
