@@ -64,29 +64,5 @@
                 android:value="true" />
         </service>
 
-        <!-- Home-screen status widget: blocked today + query rate, opens the app on tap. -->
-        <receiver
-            android:name=".core.widget.DigitDnsStatusWidgetProvider"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/digitdns_status_widget_info" />
-        </receiver>
-
-        <!-- Home-screen toggle widget: shows filtering on/off, opens the app on tap. -->
-        <receiver
-            android:name=".core.widget.DigitDnsToggleWidgetProvider"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/digitdns_toggle_widget_info" />
-        </receiver>
-
     </application>
 </manifest>

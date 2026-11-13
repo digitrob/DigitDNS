@@ -61,4 +61,5 @@ import "embed"
 //go:embed js/chart.umd.min.js
 //go:embed img
 //go:embed flags
+//go:embed fonts/vazirmatn-var.woff2
 var StaticFS embed.FS

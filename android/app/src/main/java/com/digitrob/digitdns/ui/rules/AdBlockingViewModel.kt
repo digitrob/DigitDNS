@@ -7,10 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
 import com.digitrob.digitdns.core.network.FilterListDto
 import com.digitrob.digitdns.core.network.FilterPresetDto
-import android.content.Context
-import dagger.hilt.android.qualifiers.ApplicationContext
 import com.digitrob.digitdns.core.network.FilteringSettingsDto
-import com.digitrob.digitdns.core.widget.DigitDnsToggleWidgetProvider
 import com.digitrob.digitdns.core.network.FilteringSettingsRequest
 import com.digitrob.digitdns.core.network.FilteringStatusDto
 import com.digitrob.digitdns.data.FilteringRepository
@@ -102,7 +99,6 @@ private val GROUP_ORDER = listOf(
 @Suppress("TooManyFunctions")
 class AdBlockingViewModel @Inject constructor(
     private val repository: FilteringRepository,
-    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AdBlockingUiState())
@@ -242,7 +238,6 @@ class AdBlockingViewModel @Inject constructor(
                 )
                 lastStatus = status
                 applyStatus(status, includeSettings = true)
-                DigitDnsToggleWidgetProvider.updateAll(appContext, status.settings.enabled)
                 _state.update { it.copy(isSavingSettings = false, message = "Ad blocking settings saved.") }
             } catch (e: Throwable) {
                 _state.update { it.copy(isSavingSettings = false, error = errorText(e)) }

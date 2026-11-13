@@ -6,9 +6,6 @@ import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
 import com.digitrob.digitdns.core.network.LatencySnapshot
 import com.digitrob.digitdns.core.network.LiveStats
-import android.content.Context
-import dagger.hilt.android.qualifiers.ApplicationContext
-import com.digitrob.digitdns.core.widget.DigitDnsStatusWidgetProvider
 import com.digitrob.digitdns.core.network.ResolutionSaveRequest
 import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.core.network.StatsSeries
@@ -492,11 +489,6 @@ class DashboardViewModel @Inject constructor(
                     error = null,
                 )
             }
-            DigitDnsStatusWidgetProvider.updateAll(
-                appContext,
-                stats.totalQueries,
-                stats.qps.toFloat(),
-            )
             syncResolutionWithPool(upstreams)
         } catch (e: ApiException) {
             _state.update { it.copy(isLoading = false, isRefreshing = false, error = e.userMessage) }

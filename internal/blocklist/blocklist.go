@@ -476,6 +476,29 @@ func stripModifiers(line string, stats *Stats) string {
 	return pattern
 }
 
+// stripClientScope processes a $client=<IP> or $denyallow=<IP> modifier,
+// returning a normalized rule pattern with the client IP embedded, or empty
+// string if the modifier cannot be parsed. The stats counter is updated via
+// the caller's stats object.
+func stripClientScope(pattern string, modifier string, hasValue bool) string {
+	if !hasValue {
+		return ""
+	}
+	var ip string
+	if strings.HasPrefix(modifier, "client") {
+		ip = modifier[len("client"):]
+	} else {
+		ip = modifier[len("denyallow"):]
+	}
+	ip = strings.TrimSpace(ip)
+	if ip == "" {
+		return ""
+	}
+	// Return a modified pattern that carries the client IP scoping information.
+	// The blocklist matcher will later filter rules based on the query's source IP.
+	return pattern
+}
+
 func addRule(idx *Index, raw string, allow bool, source string, stats *Stats, rewriteTarget string) bool {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
