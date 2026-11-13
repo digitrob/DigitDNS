@@ -1,6 +1,5 @@
 package com.digitrob.digitdns.ui.dashboard
 
-import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -28,7 +27,6 @@ import com.digitrob.digitdns.data.stream.StreamStatus
 import com.digitrob.digitdns.domain.model.HistoryRange
 import com.digitrob.digitdns.domain.model.TopDimension
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -130,7 +128,6 @@ class DashboardViewModel @Inject constructor(
     private val liveStream: LiveQueryStream,
     private val appPreferences: AppPreferences,
     connectionStore: ConnectionStore,
-    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DashboardUiState())

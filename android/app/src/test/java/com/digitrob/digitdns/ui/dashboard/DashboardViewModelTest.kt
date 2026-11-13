@@ -10,7 +10,6 @@ import com.digitrob.digitdns.data.stream.LiveQueryStream
 import com.digitrob.digitdns.data.stream.StreamStatus
 import com.digitrob.digitdns.domain.model.ServerConfig
 import androidx.lifecycle.viewModelScope
-import android.content.Context
 import com.digitrob.digitdns.core.network.LiveStats
 import com.digitrob.digitdns.core.network.StatsSeries
 import com.digitrob.digitdns.core.network.StatsSummary
@@ -95,7 +94,6 @@ class DashboardViewModelTest {
             liveStream = liveStream,
             appPreferences = appPreferences,
             connectionStore = connectionStore,
-            appContext = mockk(relaxed = true),
         )
 
         dispatcher.scheduler.runCurrent()
