@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - 'v*'
+  # A manual run exercises the whole pipeline — including the signing key — without
+  # publishing anything. Use it to prove a release will not fail before tagging.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build and verify everything, but do not publish a GitHub release'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -115,9 +123,10 @@ jobs:
       # Sign checksums.txt with the release key (audit fix: the self-update
       # channel must authenticate the expected hash, not merely compare it
       # against itself). The private half comes from the RELEASE_SIGNING_KEY
-      # Actions secret as base64 of the raw 32-byte ed25519 key; the public half
-      # is pinned in internal/selfupdate (ReleasePubKey), which refuses any
-      # bundle whose checksums signature does not verify.
+      # Actions secret as base64 of the raw ed25519 key — either the 64-byte
+      # private key (seed || public) or its 32-byte seed, which the signer accepts
+      # both of. The public half is pinned in internal/selfupdate (ReleasePubKey),
+      # which refuses any bundle whose checksums signature does not verify.
       #
       # The signature is published as a release ASSET (checksums.sig), not a
       # response header: GitHub serves release assets from its CDN and passes
@@ -168,7 +177,7 @@ jobs:
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && inputs.dry_run != true
         with:
           name: DigitDNS ${{ github.ref_name }} — complete DNS, relay and ad blocking
           files: |

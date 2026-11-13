@@ -21,6 +21,11 @@ on:
       - 'android/**'
       - '.github/workflows/android.yml'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build and sign the release APK, but do not attach it to a release'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -83,8 +88,10 @@ jobs:
 
   release:
     name: Build, sign and attach the release APK
-    # Only a tag builds a release; a branch or PR push stops at the build job above.
-    if: startsWith(github.ref, 'refs/tags/android-v')
+    # A tag builds a release; a manual dry run builds and signs one too, but the
+    # upload step below is skipped so nothing is published. Branch/PR pushes stop
+    # at the build job above.
+    if: startsWith(github.ref, 'refs/tags/android-v') || inputs.dry_run == true
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -177,6 +184,7 @@ jobs:
       # void. `--clobber` keeps re-pushing the same android tag idempotent: the
       # same-named APK files are replaced, never duplicated.
       - name: Wait for the server release, then attach the APKs
+        if: inputs.dry_run != true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

@@ -229,14 +229,14 @@ func shardKeyFromHash(h uint64) uint64 { return h }
 // locks only the chosen shard; the slow path (new hour) takes the global mu,
 // rotates all shards, and retries.
 func (a *Aggregator) withBucket(at time.Time, shardKey uint64, fn func(*Bucket, *Chunk)) {
-	// Fast path: if the hour already matches, lock just the chosen shard.
+	// Fast path: the hour has not rotated, so only the chosen shard's mutex is
+	// needed.
 	key := hourKey(at)
 	curKey, _ := a.currentKey.Load().(string)
-	if curKey != "" && key >= curKey {
+	if curKey == key {
 		shards := *a.current.Load() // *[]*Bucket → []*Bucket
 		if shards != nil {
-			b := shards[shardKey%shardCount]
-			if b != nil && curKey == key {
+			if b := shards[shardKey%shardCount]; b != nil {
 				b.mu.Lock()
 				fn(b, &b.Chunks[chunkSlot(at)])
 				b.mu.Unlock()
@@ -261,8 +261,45 @@ func (a *Aggregator) withBucket(at time.Time, shardKey uint64, fn func(*Bucket, 
 
 	// Ensure the hour key is set.
 	if curKey == "" {
-		curKey = hourKey(at)
+		curKey = key
 		a.currentKey.Store(curKey)
+	}
+
+	// A record for an hour that has already rotated cannot go into the live
+	// shards. Fold it into that hour's pending bucket instead, seeding from the
+	// persisted copy when the pending list has already been flushed.
+	if key < curKey {
+		target := a.pendingBucketLocked(key)
+		target.mu.Lock()
+		fn(target, &target.Chunks[chunkSlot(at)])
+		target.mu.Unlock()
+		return
+	}
+
+	// If the hour changed, rotate the previous hour's shards into pending.
+	if key != curKey {
+		// RecordDetail spreads one hour's detail across every shard, so the
+		// finished hour must be merged into a single bucket before it is queued
+		// for persistence. Cloning also takes each shard's lock, so the merge
+		// cannot read a shard mid-record.
+		finished := newBucket()
+		for _, sb := range shards {
+			if sb != nil {
+				finished.merge(sb.clone(), a.cfg)
+			}
+		}
+		a.pending = append(a.pending, bucketPair{key: curKey, bucket: finished})
+		a.currentKey.Store(key)
+		// Publish a fresh shard slice so RecordTotal/RecordDetail see the new hour.
+		shards = make([]*Bucket, shardCount)
+		for i := range shards {
+			shards[i] = newBucket()
+		}
+		a.current.Store(&shards)
+		select {
+		case a.flushCh <- struct{}{}:
+		default:
+		}
 	}
 
 	b := shards[shardKey%shardCount]
@@ -270,29 +307,27 @@ func (a *Aggregator) withBucket(at time.Time, shardKey uint64, fn func(*Bucket, 
 		b = newBucket()
 		shards[shardKey%shardCount] = b
 	}
-
-	// If the hour changed, rotate the previous hour's shards into pending.
-	if curKey != key {
-		shards := *a.current.Load()
-		if shards != nil {
-			a.pending = append(a.pending, bucketPair{key: curKey, bucket: shards[shardKey%shardCount].clone()})
-		}
-		a.currentKey.Store(key)
-		// Publish a fresh shard slice soRecordTotal/RecordDetail see the new hour.
-		newShards := make([]*Bucket, shardCount)
-		for i := range newShards {
-			newShards[i] = newBucket()
-		}
-		a.current.Store(&newShards)
-		select {
-		case a.flushCh <- struct{}{}:
-		default:
-		}
-	}
-
 	b.mu.Lock()
 	fn(b, &b.Chunks[chunkSlot(at)])
 	b.mu.Unlock()
+}
+
+// pendingBucketLocked returns the pending bucket for key, creating it when no
+// pending copy exists. A new entry is seeded from the persisted hour so a late
+// record does not overwrite counts that were already flushed. a.mu must be held.
+func (a *Aggregator) pendingBucketLocked(key string) *Bucket {
+	for i := range a.pending {
+		if a.pending[i].key == key && a.pending[i].bucket != nil {
+			return a.pending[i].bucket
+		}
+	}
+	b := newBucket()
+	if stored, err := a.store.readHour(key); err == nil && stored != nil {
+		stored.ensureMaps()
+		b = stored
+	}
+	a.pending = append(a.pending, bucketPair{key: key, bucket: b})
+	return b
 }
 
 // chunkSlot maps an instant to its five-minute slice of the UTC hour.
@@ -345,55 +380,20 @@ func (a *Aggregator) flush() error {
 	// The in-memory shards distribute RecordDetail across shards, but the
 	// persisted bucket is a single merged record so all read paths (snapshot,
 	// buckets, series, summary) continue to work without modification.
+	// clone() locks each shard, so this never reads one mid-record.
 	shards := *a.current.Load()
 	merged := newBucket()
-	for i := 0; i < shardCount; i++ {
-		if shards[i] != nil {
-			merged.Queries += shards[i].Queries
-			merged.Blocked += shards[i].Blocked
-			merged.Proxied += shards[i].Proxied
-			merged.Cached += shards[i].Cached
-			merged.Failed += shards[i].Failed
-			merged.LatencySumMs += shards[i].LatencySumMs
-			merged.LatencyCount += shards[i].LatencyCount
-			// Merge maps/topN from each shard.
-			merged.ensureMaps()
-			mergeMap(merged.ByAction, shards[i].ByAction)
-			mergeMap(merged.ByProtocol, shards[i].ByProtocol)
-			mergeMap(merged.ByUpstream, shards[i].ByUpstream)
-			mergeMap(merged.ByRelayCountry, shards[i].ByRelayCountry)
-			mergeMap(merged.ByQType, shards[i].ByQType)
-			mergeMap(merged.ByRcode, shards[i].ByRcode)
-			merged.TopDomains.merge(shards[i].TopDomains, a.cfg.TopDomains)
-			merged.TopBlockedDomains.merge(shards[i].TopBlockedDomains, a.cfg.TopDomains)
-			merged.TopClients.merge(shards[i].TopClients, a.cfg.TopClients)
-			// Merge HLL registers across shards so the aggregated bucket has accurate
-			// distinct client counts. Seed from the first shard that has complete registers.
-			if len(merged.ClientHLL) == 0 {
-				merged.ClientHLL = append([]byte(nil), shards[i].ClientHLL...)
-				merged.ClientHLLComplete = shards[i].ClientHLLComplete
-			}
-			if shards[i].ClientHLLComplete && len(shards[i].ClientHLL) == hllRegisters {
-				if !merged.ClientHLLComplete || len(merged.ClientHLL) != hllRegisters {
-					merged.ClientHLL = newHLL()
-					merged.ClientHLLComplete = false
-				}
-				hllMerge(merged.ClientHLL, shards[i].ClientHLL)
-			} else if len(shards[i].TopClients.Items) > 0 {
-				if len(merged.ClientHLL) != hllRegisters {
-					merged.ClientHLL = newHLL()
-				}
-				for key := range shards[i].TopClients.Items {
-					hllAdd(merged.ClientHLL, key)
-				}
-				merged.ClientHLLComplete = false
-			}
+	for _, sb := range shards {
+		if sb != nil {
+			merged.merge(sb.clone(), a.cfg)
 		}
 	}
+	// Read the hour key under the same lock as the shard snapshot: a rotation
+	// between them would otherwise label the old hour's data with the new key.
+	currentKey, _ := a.currentKey.Load().(string)
 	a.mu.Unlock()
 
 	// Write the merged bucket as the current hour's record.
-	currentKey, _ := a.currentKey.Load().(string)
 	mergedPair := bucketPair{key: currentKey, bucket: merged}
 	pairs := append([]bucketPair{}, pending...)
 	pairs = append(pairs, mergedPair)

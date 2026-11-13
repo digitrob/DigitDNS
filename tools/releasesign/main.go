@@ -3,8 +3,9 @@
 // (ReleasePubKey). It exists for the release workflow only: nothing in the
 // daemon or the installer imports it, and the private key never enters the
 // repository — RELEASE_SIGNING_KEY comes from the Actions secret as base64 of
-// the raw 64-byte ed25519 private key (seed || public), NOT the 32-byte public
-// half. decodeKey below enforces that size.
+// the raw 64-byte ed25519 private key (seed || public) or its 32-byte seed.
+// Both encode the same keypair; decodeKey accepts either so a release cannot
+// fail on which half of the pair the secret happens to store.
 //
 // The signature is detached: it covers exactly the bytes of checksums.txt as
 // published, and is published as the release asset checksums.sig (GitHub passes
@@ -92,8 +93,14 @@ func decodeKey(b64 string) (ed25519.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(raw) != ed25519.PrivateKeySize {
-		return nil, fmt.Errorf("expected %d raw bytes, got %d", ed25519.PrivateKeySize, len(raw))
+	switch len(raw) {
+	case ed25519.PrivateKeySize:
+		return ed25519.PrivateKey(raw), nil
+	case ed25519.SeedSize:
+		// A 32-byte secret is the seed of the same keypair; derive the private
+		// half rather than rejecting a perfectly usable signing key.
+		return ed25519.NewKeyFromSeed(raw), nil
+	default:
+		return nil, fmt.Errorf("expected %d raw bytes (seed||public) or %d (seed), got %d", ed25519.PrivateKeySize, ed25519.SeedSize, len(raw))
 	}
-	return ed25519.PrivateKey(raw), nil
 }

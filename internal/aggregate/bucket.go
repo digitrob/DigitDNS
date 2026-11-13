@@ -209,6 +209,19 @@ func (b *Bucket) merge(other *Bucket, cfg Config) {
 	b.LatencySumMs += other.LatencySumMs
 	b.LatencyCount += other.LatencyCount
 
+	// Chunks hold the five-minute slices of the current hour. Shards each hold
+	// part of an hour, so merging them must add the slices too, otherwise the
+	// 1h graph loses everything outside shard 0.
+	for i := range other.Chunks {
+		b.Chunks[i].Queries += other.Chunks[i].Queries
+		b.Chunks[i].Blocked += other.Chunks[i].Blocked
+		b.Chunks[i].Proxied += other.Chunks[i].Proxied
+		b.Chunks[i].Cached += other.Chunks[i].Cached
+		b.Chunks[i].Failed += other.Chunks[i].Failed
+		b.Chunks[i].LatencySumMs += other.Chunks[i].LatencySumMs
+		b.Chunks[i].LatencyCount += other.Chunks[i].LatencyCount
+	}
+
 	b.ensureMaps()
 	mergeMap(b.ByAction, other.ByAction)
 	mergeMap(b.ByProtocol, other.ByProtocol)
