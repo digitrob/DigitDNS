@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.ui.dashboard
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
@@ -45,6 +46,7 @@ import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 
 /** The live window the dashboard shows, derived from the shared stream. */
+@Immutable
 data class LiveWindow(
     /** Queries in the shared buffer — the recent window, not the all-time counter. */
     val recentQueries: Int = 0,
@@ -54,6 +56,7 @@ data class LiveWindow(
 )
 
 /** The operator's chosen dashboard layout, read from [AppPreferences]. */
+@Immutable
 data class DashboardLayout(
     val order: List<DashboardCard> = DashboardCard.defaultOrder,
     val disabled: Set<DashboardCard> = DashboardCard.defaultDisabled,
@@ -63,6 +66,7 @@ data class DashboardLayout(
 }
 
 /** The aggregate-history cards, loaded at most once per range and refreshed slowly. */
+@Immutable
 data class HistoryUiState(
     val range: HistoryRange = HistoryRange.LAST_24H,
     val summary: StatsSummary? = null,
@@ -78,6 +82,7 @@ data class HistoryUiState(
 private val DashboardCard.isHistory: Boolean
     get() = name.startsWith("HISTORY_")
 
+@Immutable
 data class DashboardUiState(
     val stats: LiveStats? = null,
     val upstreams: List<UpstreamStat> = emptyList(),
@@ -473,10 +478,14 @@ class DashboardViewModel @Inject constructor(
                     Timber.d(it, "upstream stats poll failed; keeping last rows")
                     _state.value.upstreams
                 }
+            // Keep the same upstreams instance when nothing moved: Compose then skips
+            // recomposing the resolver card (and its rows) on a tick that changed
+            // nothing, which is the common case at 3 s cadence.
+            val newUpstreams = if (upstreams == _state.value.upstreams) _state.value.upstreams else upstreams
             _state.update {
                 it.copy(
                     stats = stats,
-                    upstreams = upstreams,
+                    upstreams = newUpstreams,
                     qpsHistory = pushQps(it.qpsHistory, stats.qps),
                     isLoading = false,
                     isRefreshing = false,

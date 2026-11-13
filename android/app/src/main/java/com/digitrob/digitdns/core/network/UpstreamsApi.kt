@@ -1,5 +1,7 @@
 package com.digitrob.digitdns.core.network
 
+import androidx.compose.runtime.Immutable
+
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 import retrofit2.http.Body
@@ -74,6 +76,7 @@ data class UpstreamStatsResponse(
  * nanosecond field only if it is absent.
  */
 @Serializable
+@Immutable
 data class UpstreamStat(
     val address: String = "",
     val latency: Long = 0,

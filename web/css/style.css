@@ -38,35 +38,10 @@
  * working if it is ever served under a path prefix. font-src 'self' already permits
  * these, so the CSP is unchanged — see csp_test.go, which pins that. */
 
-@font-face {
-  font-family: 'Vazirmatn';
-  /* Plain format('woff2') rather than the two-line 'woff2 supports variations' /
-     'woff2-variations' dance upstream ships. Every engine that understands variable
-     fonts also accepts this, and one that does not simply renders a single weight
-     from the same file instead of rejecting the whole src list. */
-  src: url('../fonts/vazirmatn-var.woff2') format('woff2');
-  font-weight: 100 900;
-  font-style: normal;
-  /* swap, not block: the panel's own markup arrives first, and an operator watching a
-     resolver should never see an empty page waiting on a typeface. Served from the
-     binary over the same connection, the swap is usually imperceptible. */
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'JetBrains Mono';
-  src: url('../fonts/jetbrains-mono-var.woff2') format('woff2');
-  /* A variable face carrying the real weight axis, so the range here is the truth
-     rather than a claim. The static Regular that used to sit here forced the browser
-     to synthesise bold for roughly twenty elements — the nine font-extrabold stat
-     numerals among them — which smears a monospaced digit sideways and is exactly
-     the wrong thing to do to a figure someone reads at a glance. This file is also
-     40 KB against the static face's 92 KB, because the latin subset of one variable
-     face is smaller than one static weight of the full character set. */
-  font-weight: 100 800;
-  font-style: normal;
-  font-display: swap;
-}
+/* Custom fonts (Vazirmatn + JetBrains Mono) removed for improved first-load
+   performance. System fonts are used instead — the UI consists primarily of Latin
+   characters (domains, IPs, identifiers) and monospaced code, which render
+   clearly on all platforms without web font downloads. */
 
 /* Two themes, one set of markup.
  *
@@ -5704,5 +5679,37 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
   .switch input:focus-visible + .slider {
     outline: 3px solid var(--accent-cyan);
     outline-offset: 2px;
+  }
+}
+
+/* Empty states */
+.empty-state {
+  @apply flex flex-col items-center justify-center py-12 text-slate-500;
+}
+.empty-state-icon {
+  @apply w-12 h-12 text-slate-400 mb-3;
+}
+.empty-state-title {
+  @apply text-lg font-medium text-slate-600;
+}
+.empty-state-desc {
+  @apply text-sm text-slate-500 mt-1 max-w-sm text-center;
+}
+
+/* Skeleton loaders */
+.skeleton {
+  @apply animate-bounce bg-slate-200/30 rounded-full h-8 w-24 mb-2;
+}
+.skeleton-text {
+  @apply animate-bounce bg-slate-200/30 rounded-h shadow-sm h-4 w-full mb-1;
+}
+.skeleton-row {
+  @apply animate-bounce bg-slate-200/30 rounded-sm h-6 w-full mb-2;
+}
+
+/* Reduced-motion prefer respect */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
   }
 }

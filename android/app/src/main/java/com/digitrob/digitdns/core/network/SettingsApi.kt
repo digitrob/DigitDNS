@@ -1,5 +1,7 @@
 package com.digitrob.digitdns.core.network
 
+import androidx.compose.runtime.Immutable
+
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import retrofit2.http.Body
@@ -249,6 +251,7 @@ fun normalizedTransports(value: List<String>): List<String> {
  * the save body must not carry it (the server decodes with DisallowUnknownFields).
  */
 @Serializable
+@Immutable
 data class ResolutionSettings(
     val transport: String = "any",
     /** Enabled upstream protocols: plain, dot, doh, doh3, doq, dnscrypt. */

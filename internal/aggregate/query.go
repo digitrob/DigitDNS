@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -544,7 +545,18 @@ func (a *Aggregator) buckets(spec windowSpec) ([]timedBucket, error) {
 	if spec.hourly {
 		for t := spec.start; !t.After(spec.end); t = t.Add(time.Hour) {
 			key := hourKey(t)
+			// Try the plain hour key first (backward compat: first shard).
 			b := snapshot[key]
+			if b == nil {
+				// Try any shard key for this hour.
+				for i := 0; i < shardCount; i++ {
+					shardKey := key + "-shard-" + string(rune('0' + i))
+					b = snapshot[shardKey]
+					if b != nil {
+						break
+					}
+				}
+			}
 			if b == nil {
 				var err error
 				b, err = a.store.readHour(key)
@@ -578,9 +590,20 @@ func (a *Aggregator) snapshot() map[string]*Bucket {
 			out[pair.key] = pair.bucket.clone()
 		}
 	}
-	if b := a.current.Load(); b != nil {
+	shards := *a.current.Load() // *[]*Bucket → []*Bucket
+	if shards != nil {
 		key, _ := a.currentKey.Load().(string)
-		out[key] = b.clone()
+		// Include all 16 shards under distinct keys so the caller can merge
+		// them as needed (e.g. dayBucket sums all shards for the day).
+		for i, b := range shards {
+			if b != nil {
+				out[key+"-shard-"+string(rune('0'+i))] = b.clone()
+			}
+		}
+		// Also keep the first shard under the plain hour key for backward compat.
+		if b := shards[0]; b != nil {
+			out[key] = b.clone()
+		}
 	}
 	return out
 }
@@ -598,8 +621,11 @@ func (a *Aggregator) dayBucket(day string, snapshot map[string]*Bucket) (*Bucket
 	if err != nil {
 		return nil, err
 	}
+	// First, try to find hour keys from the store.
 	for _, key := range keys {
 		if snapshot[key] != nil {
+			// Already have this hour's data in snapshot; merge it.
+			out.merge(snapshot[key], a.cfg)
 			continue
 		}
 		b, err := a.store.readHour(key)
@@ -610,9 +636,24 @@ func (a *Aggregator) dayBucket(day string, snapshot map[string]*Bucket) (*Bucket
 			out.merge(b, a.cfg)
 		}
 	}
+	// Now merge all shard entries from the snapshot that belong to this day.
 	for key, b := range snapshot {
 		if strings.HasPrefix(key, day) {
 			out.merge(b, a.cfg)
+		}
+		// Also handle shard keys like "20261104-shard-0"
+		if len(key) > len(day)+6 && key[:len(day)] == day && strings.HasSuffix(key, "-shard-") {
+			// Find the shard index
+			rest := key[len(day)+7:]
+			if n, err := strconv.Atoi(rest); err == nil && n >= 0 && n < shardCount {
+				// Look up the shard directly from current
+				shards := *a.current.Load()
+				if shards != nil && n < len(shards) {
+					if sb := shards[n]; sb != nil {
+						out.merge(sb, a.cfg)
+					}
+				}
+			}
 		}
 	}
 	return out, nil

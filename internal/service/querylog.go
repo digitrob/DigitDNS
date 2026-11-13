@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -430,11 +429,6 @@ func (s *QueryLogService) Stop() {
 	if db != nil {
 		_ = db.Close()
 	}
-}
-
-// Ensure deterministic ordering helper used by export.
-func sortQueryLog(items []database.QueryLogItem) {
-	sort.SliceStable(items, func(i, j int) bool { return items[i].Timestamp.After(items[j].Timestamp) })
 }
 
 var _ = fmt.Sprintf

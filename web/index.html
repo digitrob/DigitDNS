@@ -80,9 +80,6 @@
        concatenates from variables at runtime. When markup or JS gains new
        utility classes, re-run the compile and commit the result. -->
   <link rel="stylesheet" href="/css/tailwind.purged.css">
-  
-  <!-- Local Vendor Scripts & Styles -->
-  <script src="/js/feather.min.js"></script>
   <!-- Chart.js is loaded on demand by initChart/ensureHistoryChart. It is the
        largest script on the page and the first screen is useful without it. -->
   <link rel="stylesheet" href="/css/style.css">
@@ -1158,6 +1155,13 @@
           
           <!-- Card 1: QPS -->
           <div data-dash-card="qps" class="glass-panel panel-card p-3.5 sm:p-4 relative overflow-hidden">
+            <div class="empty-state">
+              <div class="empty-state-icon">
+                <i data-feather="zap" class="w-6 h-6 text-slate-400"></i>
+              </div>
+              <h3 class="empty-state-title">No queries yet</h3>
+              <p class="empty-state-desc">Start receiving queries to see the query rate</p>
+            </div>
             <div class="flex items-center justify-between mb-1 sm:mb-2">
               <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Query Rate</span>
               <div class="p-1 sm:p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400"><i data-feather="zap" class="w-3.5 h-3.5"></i></div>
@@ -4405,6 +4409,7 @@ async function onBuySubscription(ctx, username) {
   <script src="/js/i18n.js"></script>
   <!-- The settings panels are ES modules: deferred, strict, and able to
        read the app.js bridge (window.__hdns) at call time. -->
+  <script src="/js/feather.min.js"></script>
   <script type="module" src="/js/modules/twofa.js"></script>
 </body>
 </html>

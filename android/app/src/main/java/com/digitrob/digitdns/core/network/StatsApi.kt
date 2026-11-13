@@ -1,5 +1,7 @@
 package com.digitrob.digitdns.core.network
 
+import androidx.compose.runtime.Immutable
+
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import retrofit2.http.GET
@@ -19,6 +21,7 @@ interface StatsApi {
 }
 
 @Serializable
+@Immutable
 data class LiveStats(
     @SerialName("total_queries") val totalQueries: Long = 0,
     val qps: Double = 0.0,
@@ -70,6 +73,7 @@ data class LiveStats(
 
 /** Service-time percentiles in milliseconds, from `internal/service/latency.go`. */
 @Serializable
+@Immutable
 data class LatencySnapshot(
     val count: Long = 0,
     @SerialName("avg_ms") val avgMs: Double = 0.0,

@@ -106,11 +106,6 @@ func (rs *ruleSet) unindex(domain string) {
 
 // lookup returns the rule matching d, walking from the most specific candidate to
 // the least.
-func (rs *ruleSet) lookup(d string) (string, bool) {
-	name, _, ok := rs.lookupPattern(d)
-	return name, ok
-}
-
 // lookupPattern is lookup plus the pattern that matched: the exact host, or
 // "*.base" for a wildcard. The query log needs the pattern to show whether a
 // host or a parent wildcard applied; the rule label alone cannot say.

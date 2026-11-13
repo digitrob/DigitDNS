@@ -59,8 +59,6 @@ import "embed"
 //go:embed js/portal.js
 //go:embed js/feather.min.js
 //go:embed js/chart.umd.min.js
-//go:embed fonts/vazirmatn-var.woff2
-//go:embed fonts/jetbrains-mono-var.woff2
 //go:embed img
 //go:embed flags
 var StaticFS embed.FS

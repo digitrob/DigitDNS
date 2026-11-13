@@ -215,7 +215,7 @@ func TestLongestSuffixWins(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.domain, func(t *testing.T) {
-			name, ok := rs.lookup(tc.domain)
+			name, _, ok := rs.lookupPattern(tc.domain)
 			if ok != (tc.want != "") || name != tc.want {
 				t.Errorf("lookup(%q) = (%q, %v), want %q", tc.domain, name, ok, tc.want)
 			}
@@ -262,10 +262,10 @@ func TestIndexRejectsUnsupportedPatterns(t *testing.T) {
 	if n := rs.size(); n != 2 {
 		t.Fatalf("index size = %d, want 2", n)
 	}
-	if name, ok := rs.lookup("host.bar.example"); !ok || name != "Kept" {
+	if name, _, ok := rs.lookupPattern("host.bar.example"); !ok || name != "Kept" {
 		t.Errorf("lookup of a normalized wildcard = (%q, %v), want (\"Kept\", true)", name, ok)
 	}
-	if name, ok := rs.lookup("foo.com"); !ok || name != "Kept" {
+	if name, _, ok := rs.lookupPattern("foo.com"); !ok || name != "Kept" {
 		t.Errorf("lookup of a normalized plain rule = (%q, %v), want (\"Kept\", true)", name, ok)
 	}
 }
