@@ -5295,8 +5295,8 @@ async function updateStats() {
     // TypeError lands in the catch below, and every tile *after* the failing line
     // keeps whatever it showed two seconds ago, forever, while the page looks alive.
     // num() makes one missing field cost one dash instead of the whole update.
-    const num = (v, digits) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(digits) : '—';
-    const count = (v) => (typeof v === 'number' && isFinite(v)) ? v.toLocaleString() : '—';
+    const num = (v, digits) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(digits) : v === 0 ? '0' : '—';
+    const count = (v) => (typeof v === 'number' && isFinite(v)) ? v.toLocaleString() : v === 0 ? '0' : '—';
 
     // The tiles write through compare-guarded setters, so the cheap reads above
     // are safe on any tab. The list and the chart are the expensive ones: skip
