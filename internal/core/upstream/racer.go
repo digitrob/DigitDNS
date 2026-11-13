@@ -1470,10 +1470,16 @@ func adaptiveLatency(s UpstreamStat) time.Duration {
 }
 
 // adaptiveHealthy applies the same health rules the dashboard uses, minus the
-// "never probed" false positive: an unmeasured resolver cannot win an Adaptive
-// run, and an open/half-open circuit or a failed latest probe cannot either.
+// "never probed" false positive: a resolver that has been successfully probed
+// (the Force button's benchmark, or a scheduled Adaptive run) is eligible even
+// if it has not yet served live traffic, and an open/half-open circuit or a
+// failed latest probe cannot win either.
 func adaptiveHealthy(s UpstreamStat) bool {
-	if !s.Measured || s.LatencyNs <= 0 {
+	hasProbe := s.LastProbeOK && s.LastProbeMs > 0
+	if !s.Measured && !hasProbe {
+		return false
+	}
+	if s.Measured && s.LatencyNs <= 0 && !hasProbe {
 		return false
 	}
 	if s.CircuitOpen || s.CircuitState == "open" || s.CircuitState == "half-open" {

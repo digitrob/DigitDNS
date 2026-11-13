@@ -512,6 +512,8 @@ private fun ConnectionFields(state: LoginUiState, viewModel: LoginViewModel) {
             // not the green/red engine switch.
             colors = SwitchDefaults.colors(
                 checkedThumbColor = DigitDnsTheme.colors.knob,
+                checkedTrackColor = DigitDnsTheme.colors.success,
+                checkedBorderColor = DigitDnsTheme.colors.success,
                 uncheckedThumbColor = DigitDnsTheme.colors.knob,
             ),
         )

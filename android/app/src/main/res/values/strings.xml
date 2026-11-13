@@ -840,4 +840,9 @@
     <string name="egress_status_unknown">unknown</string>
     <string name="settings_system_log">System Log</string>
     <string name="egress_upload_conf">Upload .conf</string>
+    <!-- Widget strings (toggle) -->
+    <string name="widget_toggle_description">Toggle DigitDNS ad blocking</string>
+    <string name="widget_toggle_on">Filtering on</string>
+    <string name="widget_toggle_off">Filtering off</string>
+    <string name="widget_toggle_open">Open app</string>
 </resources>

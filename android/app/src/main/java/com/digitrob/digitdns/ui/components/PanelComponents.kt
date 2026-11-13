@@ -431,6 +431,7 @@ fun PanelToggle(
     colors: SwitchColors? = null,
 ) {
     val knob = DigitDnsTheme.colors.knob
+    val trackOn = DigitDnsTheme.colors.success
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
@@ -438,6 +439,8 @@ fun PanelToggle(
         enabled = enabled,
         colors = colors ?: SwitchDefaults.colors(
             checkedThumbColor = knob,
+            checkedTrackColor = trackOn,
+            checkedBorderColor = trackOn,
             uncheckedThumbColor = knob,
         ),
     )
