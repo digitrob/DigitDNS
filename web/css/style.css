@@ -688,6 +688,13 @@ body::before {
   filter: drop-shadow(0 0 8px rgb(var(--c-cyan-400) / 0.6));
 }
 
+.sidebar-nav-item:focus-visible {
+  outline: none;
+  color: var(--text-main);
+  background: var(--hover-veil);
+  box-shadow: inset 0 0 0 2px var(--accent-cyan);
+}
+
 /* Section captions for the sidebar. The eleven destinations are one flat column
  * otherwise, and "Tools" next to "Settings" next to "Guide" gives the eye no
  * structure to hold on to. They are labels, not controls: no hover, not focusable,
@@ -828,7 +835,7 @@ html.sidebar-collapsed .sidebar-group-label {
 /* A pause control that cannot apply to the row's status: keep the switch and
    label in place so the action set does not reflow, but dim it and make it inert. */
 .pause-unavailable {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
   pointer-events: none;
 }
 
@@ -1111,18 +1118,6 @@ input:checked + .slider:before {
  * cards below carry no brand class at all — their titles are cyan-400, which is what
  * .policy-card already defaults to. */
 
-/* Quick Action Profile Buttons */
-.quick-mode-btn {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.quick-mode-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 240, 255, 0.2);
-}
-.quick-mode-btn:active {
-  transform: scale(0.97);
-}
-
 /* Mobile Bottom Navigation Glow */
 /* Sizing lives here rather than on seven class lists. Each item fills the bar's height
    instead of floating inside it: the bar used to be `py-2` around a 32px column — 48px of
@@ -1165,6 +1160,13 @@ input:checked + .slider:before {
 .mobile-nav-item.active svg,
 .mobile-nav-item.active i {
   filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.6));
+}
+
+.mobile-nav-item:focus-visible {
+  outline: none;
+  color: var(--text-main);
+  background: var(--hover-veil);
+  border-radius: var(--radius-sm);
 }
 
 /* ── Mobile "More" sheet ────────────────────────────────────────────────────────
@@ -1374,7 +1376,7 @@ input:checked + .slider:before {
   margin-inline-start: auto;
 }
 .proxied-bulk-btn:disabled {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 /* Below this the SERVICE/ACTIONS columns would eat the domain column: with
@@ -1574,11 +1576,13 @@ input:checked + .slider:before {
   outline: 2px solid var(--switch-on, var(--accent-cyan));
   outline-offset: 2px;
 }
+/* The label steps back less than the track: 0.55 keeps a disabled row's name
+   readable, while the switch itself carries the shared disabled level. */
 .transport-toggle-input:disabled + .transport-toggle-label {
   opacity: 0.55;
 }
 .transport-toggle-input:disabled + .transport-toggle-label + .transport-toggle-track {
-  opacity: 0.45;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 .switch-cyan { --switch-on: rgb(34 211 238); }
@@ -1960,7 +1964,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   cursor: pointer;
 }
 .stream-action-scope:hover { color: rgb(var(--c-slate-200)); }
-.stream-action-scope:disabled { opacity: 0.38; cursor: not-allowed; }
+.stream-action-scope:disabled { opacity: var(--disabled-opacity); cursor: not-allowed; }
 .stream-action-scope:disabled:hover { color: rgb(var(--c-slate-400)); }
 .stream-action-scope.is-active {
   color: rgb(var(--c-cyan-400));
@@ -2162,7 +2166,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 }
 .upstream-preset-server:disabled {
   cursor: default;
-  opacity: 0.55;
+  opacity: var(--disabled-opacity);
 }
 .upstream-preset-server.is-added {
   color: rgb(var(--c-slate-400));
@@ -2444,12 +2448,12 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 }
 
 .resolver-chip:disabled {
-  opacity: 0.38;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 
 .resolver-chip-block.is-disabled .resolver-chip-label {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
 }
 
 /* Transport names are the longest labels. Give this label its natural width and
@@ -2528,7 +2532,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 }
 
 .resolver-refresh-btn:disabled {
-  opacity: 0.35;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 
@@ -2642,12 +2646,12 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 }
 
 .resolver-single-button:disabled {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 
 .resolver-mode-switch.is-disabled {
-  opacity: 0.45;
+  opacity: var(--disabled-opacity);
   pointer-events: none;
 }
 
@@ -2770,7 +2774,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 }
 
 .resolution-adaptive-disabled {
-  opacity: 0.5;
+  opacity: var(--disabled-opacity);
 }
 
 /* The interval select and its Check now button share the value column. The
@@ -2940,6 +2944,13 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   --text-lg: 16px;
 
   --control-height: 36px;
+
+  /* One dimming level for every control that is unavailable. The panel had
+     drifted to seven values between 0.35 and 0.55, which read as seven
+     different reasons to be off. Decorative dimming (a row that is merely
+     outranked, a track whose label is already one step back) is not this
+     token and stays its own value. */
+  --disabled-opacity: 0.45;
 }
 
 /* The card surface. `.glass-panel` remains the historical name; new markup can
@@ -3034,8 +3045,19 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 }
 
 .panel-btn:disabled {
-  opacity: 0.45;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
+}
+
+/* :focus-visible, not :focus: a mouse click should not draw a ring, and the
+   keyboard user the ring exists for should not get a stray one either. The panel
+   previously relied on the browser's default focus ring for plain .panel-btn
+   elements, which meant it was inconsistent across browsers and disappeared
+   entirely on the controls whose focus colour was handled by :where() instead. */
+.panel-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px rgb(var(--c-slate-100) / 0.14);
 }
 
 /* The commit action of a modal or a full-width form block: same anatomy as
@@ -3091,6 +3113,51 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   background: rgb(var(--c-red-500) / 0.1);
 }
 
+/* Inline text action. The small secondary verb that lives in a field's header
+   row (Clear lifetime, Regenerate UUID/secret): no box, no height, so it never
+   pushes the label row taller. It is still a real button — padding-block gives
+   it a 16px hit area and the focus ring below is shared with the boxed controls.
+   The accent variant is for verbs that act on a value already shown in cyan. */
+.panel-text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-block: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.panel-text-btn:hover:not(:disabled) {
+  color: var(--accent-cyan);
+}
+
+.panel-text-btn:disabled {
+  opacity: var(--disabled-opacity);
+  cursor: not-allowed;
+}
+
+.panel-text-btn:focus-visible {
+  outline: none;
+  color: var(--accent-cyan);
+}
+
+.panel-text-btn-accent {
+  color: var(--accent-cyan);
+  font-family: var(--font-mono);
+}
+
+.panel-text-btn-accent:hover:not(:disabled) {
+  color: rgb(var(--c-cyan-300));
+}
+
 /* Form control surface. */
 .panel-field {
   min-height: var(--control-height);
@@ -3132,6 +3199,18 @@ textarea.panel-field {
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
+}
+
+/* The two time selects in the expiry picker. They are .panel-field-sm, but a
+   native select sizes itself to its widest option, so "00"-"59" would leave the
+   HH:MM pair wider than the two digits need. Pinning the width keeps it on one
+   line beside "Time:" and the Now button. The accent colour is the value colour
+   the picker already used; it has to be set here because .panel-field's own
+   colour would otherwise win over a text-* utility in the earlier sheet. */
+.datepicker-time-select {
+  width: 3.25rem;
+  color: var(--accent-cyan);
+  font-family: var(--font-mono);
 }
 
 /* A field that carries its icon inside the box, like the client search. The
@@ -3260,22 +3339,16 @@ textarea.panel-field {
   color: var(--accent-cyan);
 }
 
+.panel-chip:focus-visible {
+  outline: none;
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px rgb(var(--c-slate-100) / 0.14);
+}
+
 /* The Service column: a native select, because it is a label picker with few
    options and the whole point is that changing it is a one-click act. Sized to
    shrink, so a long domain keeps the space it needs. */
 .proxied-col-service { width: 10rem; }
-.proxied-service-select {
-  width: 100%;
-  min-width: 0;
-  padding: 2px 6px;
-  border-radius: 6px;
-  border: 1px solid rgb(var(--c-slate-700));
-  background: rgb(var(--c-slate-950));
-  color: var(--text-muted);
-  font-family: var(--font-body);
-  font-size: 11px;
-}
-.proxied-service-select:focus { outline: none; border-color: var(--accent-cyan); }
 
 /* Services + Domains. Plain CSS rather than utilities because the two-column
    template needs an arbitrary value, and arbitrary values are not in the purged
@@ -3469,7 +3542,7 @@ textarea.panel-field {
   white-space: nowrap;
 }
 .proxied-bulk-service:disabled {
-  opacity: 0.5;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 .proxied-bulk-menu {
@@ -3504,23 +3577,32 @@ textarea.panel-field {
 
 /* The per-row SERVICE control: a button, because a native select cannot show
    the service's favicon in its options. The menu is a body-level fixed popup
-   (see .service-picker-popup) so the table's scroll container cannot clip it. */
+   (see .service-picker-popup) so the table's scroll container cannot clip it.
+   Geometry comes from .panel-field-sm so a row-level trigger and a dense inline
+   field agree on height, radius and type; only the flex layout (favicon + label)
+   lives here. */
 .proxied-service-trigger {
   display: flex;
   align-items: center;
   gap: 5px;
   width: 100%;
   min-width: 0;
-  padding: 2px 6px;
-  border-radius: 6px;
+  min-height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
   border: 1px solid rgb(var(--c-slate-700));
   background: rgb(var(--c-slate-950));
   color: var(--text-muted);
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-align: left;
 }
 .proxied-service-trigger:hover { border-color: rgba(34, 211, 238, 0.5); }
+.proxied-service-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px rgb(var(--c-slate-100) / 0.14);
+}
 .proxied-service-trigger .service-mark {
   width: 16px;
   height: 16px;
