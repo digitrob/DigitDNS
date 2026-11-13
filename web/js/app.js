@@ -5307,6 +5307,11 @@ async function updateStats() {
 
     setTxt('stat-qps', num(data.qps, 1));
     setTxt('stat-total-queries', count(data.total_queries));
+    // Hide the "No queries yet" empty state when the dashboard receives queries.
+    const emptyState = document.querySelector('.panel-card[data-dash-card="qps"] .empty-state');
+    if (emptyState) {
+      emptyState.hidden = data.total_queries > 0 || data.qps > 0;
+    }
     setTxt('stat-cache-ratio', typeof data.cache_hit_ratio === 'number' ? num(data.cache_hit_ratio, 1) + '%' : '—');
     setTxt('stat-cache-entries', count(data.cache_entries));
     setTxt('stat-proxy-active', count(data.active_proxy_conns));
