@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 	"time"
@@ -225,17 +226,94 @@ func (a *API) BindGateDocs(next http.HandlerFunc) http.HandlerFunc {
 		}
 		list, single := a.settings.GetAPIExposure()
 		if !apiExposureAllows(list, single, netutil.PeerIP(r)) {
-			a.writeDocsForbidden(w, apiExposureLabel(list, single))
+			a.writeDocsForbidden(w, r, apiExposureLabel(list, single))
 			return
 		}
 		next(w, r)
 	}
 }
 
+// dashboardThemeCookie mirrors the dashboard's own theme choice. The dashboard
+// keeps it in localStorage (see web/js/i18n.js), which a server-rendered page
+// cannot read, so i18n.js also writes it to this cookie. The documentation pages
+// are rendered here, in a package that cannot import internal/web, and they read
+// the cookie so an operator who picked light in the panel does not get a dark
+// documentation page in the next tab.
+const dashboardThemeCookie = "digitdns_theme"
+
+// docsPalette is the small set of colours the two self-contained docs pages
+// paint. They are the dashboard's own token values rather than new ones: the docs
+// are reached from the panel, so they should look like the panel. The three theme
+// names match the dashboard's dark -> grey -> light cycle.
+type docsPalette struct {
+	Theme    string
+	Scheme   string
+	Page     string
+	Card     string
+	Border   string
+	Heading  string
+	Text     string
+	Muted    string
+	Inset    string
+	Accent   string
+	Warn     string
+	WarnText string
+	// Swagger turns the vendored light Swagger stylesheet into this palette.
+	// Empty means the sheet is already correct (light).
+	Swagger string
+}
+
+func docsPaletteFor(theme string) docsPalette {
+	switch theme {
+	case "light":
+		return docsPalette{
+			Theme: "light", Scheme: "light",
+			Page: "#f7f9fc", Card: "#ffffff", Border: "#dde3ec",
+			Heading: "#111823", Text: "#3c4654", Muted: "#4a5464",
+			Inset: "#eef3fa", Accent: "#0e7490",
+			Warn: "#f59e0b", WarnText: "#b45309",
+		}
+	case "grey":
+		return docsPalette{
+			Theme: "grey", Scheme: "dark",
+			Page: "#18181b", Card: "#27272a", Border: "#3f3f46",
+			Heading: "#f4f4f5", Text: "#d4d4d8", Muted: "#a1a1aa",
+			Inset: "#09090b", Accent: "#e4e4e7",
+			Warn: "#f59e0b", WarnText: "#fbbf24",
+			Swagger: "invert(88%) grayscale(1)",
+		}
+	default:
+		return docsPalette{
+			Theme: "dark", Scheme: "dark",
+			Page: "#060913", Card: "#0d1426", Border: "#16213e",
+			Heading: "#f8fafc", Text: "#cbd5e1", Muted: "#94a3b8",
+			Inset: "#030712", Accent: "#67e8f9",
+			Warn: "#f59e0b", WarnText: "#fbbf24",
+			Swagger: "invert(88%) hue-rotate(180deg)",
+		}
+	}
+}
+
+// docsPaletteForRequest resolves the palette: an explicit ?theme= wins (these
+// pages carry no script, so a link is the whole switch), then the dashboard
+// cookie, then dark, which is the panel's default.
+func docsPaletteForRequest(r *http.Request) docsPalette {
+	switch v := r.URL.Query().Get("theme"); v {
+	case "dark", "grey", "light":
+		return docsPaletteFor(v)
+	}
+	if c, err := r.Cookie(dashboardThemeCookie); err == nil {
+		return docsPaletteFor(c.Value)
+	}
+	return docsPaletteFor("")
+}
+
 // writeDocsForbidden renders the gated-docs page. It is deliberately
 // self-contained (inline CSS, no external assets) and lives in this package
 // because internal/api cannot import internal/web to reuse the landing page.
-func (a *API) writeDocsForbidden(w http.ResponseWriter, exposure string) {
+// The colours come from docsPaletteForRequest, so the page carries the panel's
+// dark, grey or light palette instead of a fourth, slightly different dark.
+func (a *API) writeDocsForbidden(w http.ResponseWriter, r *http.Request, exposure string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusForbidden)
 	admin := a.settings.GetAdminPath()
@@ -243,27 +321,42 @@ func (a *API) writeDocsForbidden(w http.ResponseWriter, exposure string) {
 	if admin != "" {
 		docsPath = "/" + admin + "/api/v3/docs"
 	}
-	_, _ = fmt.Fprintf(w, `<!DOCTYPE html>
-<html lang="en">
+	p := docsPaletteForRequest(r)
+	current := func(theme string) string {
+		if p.Theme == theme {
+			return ` class="is-current" aria-current="true"`
+		}
+		return ""
+	}
+	page := `<!DOCTYPE html>
+<html lang="en" data-theme="{{theme}}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DigitDNS API Docs — Not Exposed</title>
   <style>
-    :root { color-scheme: dark; }
+    :root { color-scheme: {{scheme}};
+            --page: {{page}}; --card: {{card}}; --border: {{border}};
+            --heading: {{heading}}; --text: {{text}}; --muted: {{muted}};
+            --inset: {{inset}}; --accent: {{accent}};
+            --warn: {{warn}}; --warn-text: {{warnText}}; }
     body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-           background: #0b1020; color: #e6e7eb;
+           background: var(--page); color: var(--text);
            font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
-    .card { max-width: 640px; margin: 2rem; padding: 2rem 2.25rem; background: #121a30;
-            border: 1px solid #24304f; border-radius: 16px; }
-    h1 { margin: 0 0 .5rem; font-size: 1.25rem; color: #fff; }
-    p { line-height: 1.55; color: #c3c8d4; }
-    code { background: #0b1020; border: 1px solid #24304f; border-radius: 6px;
-           padding: .1rem .35rem; font-size: .9em; color: #a9d2ff; }
-    .rule { margin: .75rem 0; padding: .6rem .8rem; background: #0b1020; border-left: 3px solid #f59e0b;
-            border-radius: 6px; font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-size: .85rem; color: #fcd34d; }
-    ol { color: #c3c8d4; line-height: 1.7; padding-left: 1.2rem; }
-    a { color: #67e8f9; }
+    .card { max-width: 640px; margin: 2rem; padding: 2rem 2.25rem; background: var(--card);
+            border: 1px solid var(--border); border-radius: 16px; }
+    h1 { margin: 0 0 .5rem; font-size: 1.25rem; color: var(--heading); }
+    p { line-height: 1.55; color: var(--text); }
+    code { background: var(--inset); border: 1px solid var(--border); border-radius: 6px;
+           padding: .1rem .35rem; font-size: .9em; color: var(--accent); }
+    .rule { margin: .75rem 0; padding: .6rem .8rem; background: var(--inset); border-left: 3px solid var(--warn);
+            border-radius: 6px; font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-size: .85rem; color: var(--warn-text); }
+    ol { color: var(--text); line-height: 1.7; padding-left: 1.2rem; }
+    a { color: var(--accent); }
+    .themes { display: flex; gap: .9rem; margin: 1.4rem 0 0; font-size: .8rem; }
+    .themes a { color: var(--muted); text-decoration: none; }
+    .themes a:hover { color: var(--heading); }
+    .themes a.is-current { color: var(--accent); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -271,20 +364,48 @@ func (a *API) writeDocsForbidden(w http.ResponseWriter, exposure string) {
     <h1>Documentation is not exposed to this address</h1>
     <p>This DigitDNS instance binds its REST API (and these docs) to specific
       addresses. Your current address is not one of them, so the page is withheld.</p>
-    <div class="rule">%s</div>
+    <div class="rule">{{exposure}}</div>
     <p>To reach the docs, either:</p>
     <ol>
       <li>Add your current IP or its CIDR in <code>Settings &rarr; API Network Binding</code>, then reload this page.</li>
       <li>Connect over a network already permitted by the rule above (for example a VPN/tailnet address), then reload.</li>
       <li>Open an SSH tunnel and browse over loopback, which is always allowed:<br>
         <code>ssh -L 8080:127.0.0.1:&lt;web-port&gt; root@&lt;server&gt;</code><br>
-        then open <code>http://127.0.0.1:8080%s</code></li>
+        then open <code>http://127.0.0.1:8080{{docsPath}}</code></li>
     </ol>
-    <p style="color:#8b93a7;font-size:.85rem">The API itself is running normally; only this
+    <p style="color:var(--muted);font-size:.85rem">The API itself is running normally; only this
       documentation page is gated. HTTP 403.</p>
+    <div class="themes" role="group" aria-label="Theme">
+      <a href="?theme=dark"{{darkCurrent}}>Dark</a>
+      <a href="?theme=grey"{{greyCurrent}}>Grey</a>
+      <a href="?theme=light"{{lightCurrent}}>Light</a>
+    </div>
   </div>
 </body>
-</html>`, exposure, docsPath)
+</html>`
+	_, _ = w.Write([]byte(strings.Replace(
+		strings.NewReplacer(
+			"{{theme}}", p.Theme,
+			"{{scheme}}", p.Scheme,
+			"{{page}}", p.Page,
+			"{{card}}", p.Card,
+			"{{border}}", p.Border,
+			"{{heading}}", p.Heading,
+			"{{text}}", p.Text,
+			"{{muted}}", p.Muted,
+			"{{inset}}", p.Inset,
+			"{{accent}}", p.Accent,
+			"{{warnText}}", p.WarnText,
+			"{{warn}}", p.Warn,
+			"{{docsPath}}", html.EscapeString(docsPath),
+			"{{darkCurrent}}", current("dark"),
+			"{{greyCurrent}}", current("grey"),
+			"{{lightCurrent}}", current("light"),
+		).Replace(page),
+		// The exposure rule is operator data, so it goes in last and in one pass:
+		// a value that happens to contain one of the palette tokens above is then
+		// never re-read as markup.
+		"{{exposure}}", html.EscapeString(exposure), 1)))
 }
 
 // apiExposureAllows applies the resolved exposure rule: a non-empty list is the
@@ -374,27 +495,45 @@ func (a *API) writeDocsPage(w http.ResponseWriter, r *http.Request, title string
 	// JSON.parse accepts <\/ for /; escaping every closing tag keeps a spec
 	// description containing </script> from terminating the data block.
 	payload := strings.ReplaceAll(string(spec), "</", "<\\/")
-	html := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="en">
+	p := docsPaletteForRequest(r)
+	swaggerFilter := ""
+	if p.Swagger != "" {
+		swaggerFilter = ".swagger-ui { filter: " + p.Swagger + "; }"
+	}
+	document := `<!DOCTYPE html>
+<html lang="en" data-theme="{{theme}}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>%s</title>
-  <link rel="stylesheet" type="text/css" href="%s/swagger/swagger-ui.css">
+  <title>{{title}}</title>
+  <link rel="stylesheet" type="text/css" href="{{base}}/swagger/swagger-ui.css">
   <style>
-    body { margin: 0; background: #0b1020; color: #e6e7eb; font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
-    .swagger-ui { filter: invert(88%%) hue-rotate(180deg); }
+    :root { color-scheme: {{scheme}}; }
+    body { margin: 0; background: {{page}}; color: {{text}}; font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+    {{swaggerFilter}}
     .swagger-ui .topbar { display: none; }
   </style>
 </head>
 <body>
   <div id="swagger-ui"></div>
-  <script id="openapi-spec" type="application/json">%s</script>
-  <script src="%s/swagger/swagger-ui-bundle.js"></script>
-  <script src="%s/js/api-docs.js"></script>
+  <script id="openapi-spec" type="application/json">{{payload}}</script>
+  <script src="{{base}}/swagger/swagger-ui-bundle.js"></script>
+  <script src="{{base}}/js/api-docs.js"></script>
 </body>
-</html>`, title, base, payload, base, base)
-	_, _ = w.Write([]byte(html))
+</html>`
+	document = strings.NewReplacer(
+		"{{theme}}", p.Theme,
+		"{{scheme}}", p.Scheme,
+		"{{page}}", p.Page,
+		"{{text}}", p.Text,
+		"{{swaggerFilter}}", swaggerFilter,
+		"{{title}}", html.EscapeString(title),
+		"{{base}}", html.EscapeString(base),
+	).Replace(document)
+	// The spec is JSON, not markup, and it goes in last: a description that
+	// happens to spell one of the tokens above is then never re-read.
+	document = strings.Replace(document, "{{payload}}", payload, 1)
+	_, _ = w.Write([]byte(document))
 }
 
 //go:embed openapi/v2.json

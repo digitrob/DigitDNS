@@ -42,6 +42,17 @@
     if (persist !== false) {
       try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* private mode */ }
     }
+    /* Mirrored on every apply, including the no-persist call init() makes, because
+       this is not a new choice being stored — it is the palette the page is
+       actually painting right now. The API documentation pages are rendered by
+       the Go server, in a package that cannot read this origin's localStorage, so
+       the cookie is the only channel that reaches them. Without it an operator on
+       the light theme opens API Reference and gets a dark page in the next tab.
+       Same key, same three values; the docs pages fall back to dark when the
+       cookie is absent, which is this panel's default anyway. */
+    try {
+      document.cookie = THEME_KEY + '=' + theme + '; path=/; max-age=31536000; SameSite=Lax';
+    } catch (e) { /* cookies disabled */ }
     syncSwitchLabels();
     document.dispatchEvent(new CustomEvent('digitdns:theme', { detail: { theme: theme } }));
   }

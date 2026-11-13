@@ -159,3 +159,66 @@ func TestDocsAcceptTheDashboardDocumentCookie(t *testing.T) {
 		t.Errorf("GET /api/v3/docs with a bogus cookie answered %d, want 403", w.Code)
 	}
 }
+
+// TestDocsPagesFollowTheDashboardTheme pins the palette handoff: the dashboard
+// keeps its theme in localStorage, which the server cannot read, so i18n.js
+// mirrors it into the digitdns_theme cookie and the docs pages render in that
+// palette instead of a fourth, slightly different dark. ?theme= stays available
+// because the refused page has no script to toggle with.
+func TestDocsPagesFollowTheDashboardTheme(t *testing.T) {
+	apiInst, _, settings, cleanup := setupTestAPI(t)
+	defer cleanup()
+	setAPIBind(t, settings, "127.0.0.1")
+
+	mux := http.NewServeMux()
+	apiInst.RegisterRoutes(mux)
+
+	for _, theme := range []string{"dark", "grey", "light"} {
+		// The Swagger shell, reached from the dashboard with the cookie set.
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v3/docs", nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		req.AddCookie(&http.Cookie{Name: dashboardThemeCookie, Value: theme})
+		mux.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET /api/v3/docs in %s = %d", theme, w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `data-theme="`+theme+`"`) {
+			t.Errorf("docs page in %s does not carry data-theme=%q", theme, theme)
+		}
+		if theme == "light" && strings.Contains(body, "invert(88%)") {
+			t.Error("the light docs page still inverts the vendored Swagger sheet")
+		}
+		if theme != "light" && !strings.Contains(body, "invert(88%)") {
+			t.Errorf("the %s docs page does not invert the vendored light Swagger sheet", theme)
+		}
+	}
+
+	// The refused page: the query wins over the cookie, so the theme links work
+	// without a script.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/docs?theme=light", nil)
+	req.RemoteAddr = "198.51.100.7:40000"
+	req.AddCookie(&http.Cookie{Name: dashboardThemeCookie, Value: "dark"})
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("GET /api/v3/docs?theme=light from a refused peer = %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `data-theme="light"`) {
+		t.Error("the refused page ignored ?theme=light")
+	}
+	if !strings.Contains(body, `href="?theme=dark"`) || !strings.Contains(body, `href="?theme=grey"`) {
+		t.Error("the refused page does not offer the other two themes")
+	}
+
+	// No cookie and no query is the panel's default, not a third palette.
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v3/docs", nil)
+	req.RemoteAddr = "198.51.100.7:40000"
+	mux.ServeHTTP(w, req)
+	if body := w.Body.String(); !strings.Contains(body, `data-theme="dark"`) {
+		t.Error("the refused page does not default to dark")
+	}
+}
