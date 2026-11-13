@@ -8338,6 +8338,7 @@ function renderFiltering(status) {
   set('filtering-ttl-input', settings.block_ttl || 10);
   set('filtering-interval-input', settings.update_interval_hours || 24);
   set('filtering-allowlist-input', Array.isArray(settings.allowlist) ? settings.allowlist.join('\n') : '');
+  set('filtering-custom-rules-input', typeof settings.custom_rules === 'string' ? settings.custom_rules : '');
 
   const lists = Array.isArray(status.lists) ? status.lists : [];
   filteringInstalledLists = lists;
@@ -8578,6 +8579,7 @@ async function saveFilteringSettings() {
   const interval = Number(document.getElementById('filtering-interval-input')?.value);
   const allowlist = (document.getElementById('filtering-allowlist-input')?.value || '')
     .split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const customRules = document.getElementById('filtering-custom-rules-input')?.value || '';
   if (!Number.isInteger(ttl) || ttl < 1 || ttl > 3600) {
     showToast('Block TTL must be between 1 and 3600 seconds.', 'error');
     return;
@@ -8592,6 +8594,7 @@ async function saveFilteringSettings() {
     block_ttl: ttl,
     update_interval_hours: interval,
     allowlist,
+    custom_rules: customRules,
   };
   // Normalise the stored form before diffing: the server returns null for an
   // empty allowlist while the form sends [], and a null-to-empty-list line is
@@ -8604,6 +8607,9 @@ async function saveFilteringSettings() {
     allowlist: Array.isArray(filteringSettings && filteringSettings.allowlist)
       ? filteringSettings.allowlist
       : [],
+    custom_rules: typeof (filteringSettings && filteringSettings.custom_rules) === 'string'
+      ? filteringSettings.custom_rules
+      : '',
   };
   if (!(await showDiffConfirm('Save ad-blocking settings?', beforeFiltering, payload, 'Save settings'))) {
     return;

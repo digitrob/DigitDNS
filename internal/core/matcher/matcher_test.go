@@ -353,6 +353,51 @@ func TestCustomRecordNormalization(t *testing.T) {
 	}
 }
 
+func TestBlocklistDNSRewriteIsServedAndExplainedAsCustomRecord(t *testing.T) {
+	m := NewMatcher()
+	index, _ := blocklist.Build([]blocklist.Source{{
+		Name:    "custom rules",
+		Enabled: true,
+		Text:    "||rewrite.example^$dnsrewrite=192.0.2.44\n",
+	}}, nil)
+	m.SetBlockIndex(index)
+
+	for _, domain := range []string{"rewrite.example", "child.rewrite.example"} {
+		if ip, ok := m.GetCustomRecord(domain); !ok || ip != "192.0.2.44" {
+			t.Errorf("GetCustomRecord(%q) = (%q, %v), want (192.0.2.44, true)", domain, ip, ok)
+		}
+		explanation := m.Explain(domain)
+		if explanation.Action != "CUSTOM" || explanation.Source != "blocklist" ||
+			explanation.CustomRecord != "192.0.2.44" {
+			t.Errorf("Explain(%q) = %#v, want blocklist custom record", domain, explanation)
+		}
+	}
+}
+
+func TestBlocklistRegexUsesAllowBeforeBlockPrecedence(t *testing.T) {
+	m := NewMatcher()
+	index, _ := blocklist.Build([]blocklist.Source{{
+		Name:       "custom rules",
+		Enabled:    true,
+		AllowRegex: true,
+		Text: "||ads.example^\n" +
+			"/^regex-[0-9]+\\.example$/\n" +
+			"@@/^ads\\.example$/\n",
+	}}, nil)
+	m.SetBlockIndex(index)
+
+	if action, rule := m.Match("regex-42.example"); action != ActionBlock || rule != "Blocklist: custom rules" {
+		t.Errorf("regex block = (%v, %q), want BLOCK from custom rules", action, rule)
+	}
+	if action, _ := m.Match("ads.example"); action != ActionDirect {
+		t.Errorf("regex exception action = %v, want DIRECT", action)
+	}
+	if explanation := m.Explain("regex-42.example"); explanation.Action != "BLOCK" ||
+		explanation.BlocklistSource != "custom rules" {
+		t.Errorf("regex block explanation = %#v", explanation)
+	}
+}
+
 // The index is replaced wholesale on every dashboard save while queries are being
 // served, so readers must never observe a half-built rule set. The race detector is
 // unavailable in this environment (no C compiler), so this is a stress substitute: it

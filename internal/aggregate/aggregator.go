@@ -8,6 +8,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"digitdns/internal/database"
@@ -105,10 +106,10 @@ type Aggregator struct {
 	now        func() time.Time
 	clientSalt []byte
 
-	mu         sync.Mutex
-	closed     bool
-	currentKey string
-	current    *Bucket
+	mu         sync.Mutex // guards rollover, pending and daily state only
+	closed     atomic.Bool
+	currentKey atomic.Value // string
+	current    atomic.Pointer[Bucket]
 	pending    []bucketPair
 	lastDay    string
 
@@ -133,23 +134,23 @@ func Open(path string, cfg Config) (*Aggregator, error) {
 	}
 	now := cfg.Now()
 	a := &Aggregator{
-		cfg:        cfg,
-		store:      store,
-		now:        cfg.Now,
-		currentKey: hourKey(now),
-		lastDay:    dayKey(now),
-		cache:      make(map[string]cacheEntry),
-		flushCh:    make(chan struct{}, 1),
-		stop:       make(chan struct{}),
-		done:       make(chan struct{}),
+		cfg:     cfg,
+		store:   store,
+		now:     cfg.Now,
+		lastDay: dayKey(now),
+		cache:   make(map[string]cacheEntry),
+		flushCh: make(chan struct{}, 1),
+		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
 	}
-	if b, readErr := store.readHour(a.currentKey); readErr != nil {
+	a.currentKey.Store(hourKey(now))
+	if b, readErr := store.readHour(hourKey(now)); readErr != nil {
 		log.Printf("[Stats] could not read current stats hour: %v", readErr)
 	} else if b != nil {
-		a.current = b
+		a.current.Store(b)
 	}
-	if a.current == nil {
-		a.current = newBucket()
+	if a.current.Load() == nil {
+		a.current.Store(newBucket())
 	}
 	salt, saltErr := store.clientSalt()
 	if saltErr != nil {
@@ -206,27 +207,47 @@ func (a *Aggregator) RecordDetail(item database.QueryLogItem) {
 
 func (a *Aggregator) withBucket(at time.Time, fn func(*Bucket, *Chunk)) {
 	key := hourKey(at)
+
+	curKey, _ := a.currentKey.Load().(string)
+	if curKey != "" && key >= curKey {
+		b := a.current.Load()
+		if b != nil && curKey == key {
+			b.mu.Lock()
+			fn(b, &b.Chunks[chunkSlot(at)])
+			b.mu.Unlock()
+			return
+		}
+	}
+
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.closed {
+	if a.closed.Load() {
+		a.mu.Unlock()
 		return
 	}
-	// A clock jump backwards must not strand the current bucket in a past key.
-	if key < a.currentKey {
-		key = a.currentKey
+	curKey, _ = a.currentKey.Load().(string)
+	if curKey == "" {
+		curKey = hourKey(at)
+		a.currentKey.Store(curKey)
 	}
-	if key != a.currentKey {
-		if a.current != nil {
-			a.pending = append(a.pending, bucketPair{key: a.currentKey, bucket: a.current.clone()})
+	if key < curKey {
+		key = curKey
+	}
+	if key != curKey {
+		if b := a.current.Load(); b != nil {
+			a.pending = append(a.pending, bucketPair{key: curKey, bucket: b.clone()})
 		}
-		a.currentKey = key
-		a.current = newBucket()
+		a.currentKey.Store(key)
+		a.current.Store(newBucket())
 		select {
 		case a.flushCh <- struct{}{}:
 		default:
 		}
 	}
-	fn(a.current, &a.current.Chunks[chunkSlot(at)])
+	b := a.current.Load()
+	a.mu.Unlock()
+	b.mu.Lock()
+	fn(b, &b.Chunks[chunkSlot(at)])
+	b.mu.Unlock()
 }
 
 // chunkSlot maps an instant to its five-minute slice of the UTC hour.
@@ -275,10 +296,10 @@ func (a *Aggregator) flush() error {
 	a.mu.Lock()
 	pendingCount := len(a.pending)
 	pending := append([]bucketPair(nil), a.pending...)
-	currentKey := a.currentKey
+	currentKey, _ := a.currentKey.Load().(string)
 	var current *Bucket
-	if a.current != nil {
-		current = a.current.clone()
+	if b := a.current.Load(); b != nil {
+		current = b.clone()
 	}
 	a.mu.Unlock()
 
@@ -409,9 +430,7 @@ func (a *Aggregator) Close() {
 		return
 	}
 	a.closeOnce.Do(func() {
-		a.mu.Lock()
-		a.closed = true
-		a.mu.Unlock()
+		a.closed.Store(true)
 		close(a.stop)
 		<-a.done
 	})

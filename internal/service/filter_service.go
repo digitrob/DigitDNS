@@ -641,7 +641,7 @@ func (s *FilterService) rebuild() {
 		log.Printf("[Filters] rebuild lists: %v", err)
 		return
 	}
-	sources := make([]blocklist.Source, 0, len(lists))
+	sources := make([]blocklist.Source, 0, len(lists)+1)
 	for _, list := range lists {
 		if !list.Enabled {
 			continue
@@ -651,6 +651,9 @@ func (s *FilterService) rebuild() {
 			continue
 		}
 		sources = append(sources, blocklist.Source{Name: list.Name, Text: text, Enabled: true})
+	}
+	if trimmed := strings.TrimSpace(settings.CustomRules); trimmed != "" {
+		sources = append(sources, blocklist.Source{Name: "Custom rules", Text: trimmed, Enabled: true, AllowRegex: true})
 	}
 	index, _ := blocklist.Build(sources, settings.Allowlist)
 	count := index.RuleCount()
@@ -666,8 +669,8 @@ func (s *FilterService) rebuild() {
 	s.matcher.SetBlockIndex(index)
 	s.rules.Store(int64(count))
 	s.domains.Store(int64(domains))
-	log.Printf("[Filters] compiled %d lookup rules (%d exact + %d suffix) / %d unique domains from %d list(s)",
-		count, index.ExactCount(), index.SuffixCount(), domains, len(sources))
+	log.Printf("[Filters] compiled %d lookup rules (%d exact + %d suffix + %d regex) / %d unique domains from %d list(s)",
+		count, index.ExactCount(), index.SuffixCount(), index.RegexCount(), domains, len(sources))
 }
 
 func (s *FilterService) fetch(rawURL, etag, lastModified string) (body, newETag, newLastModified string, notModified bool, err error) {

@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.ApiException
 import com.digitrob.digitdns.core.network.LatencySnapshot
 import com.digitrob.digitdns.core.network.LiveStats
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import com.digitrob.digitdns.core.widget.DigitDnsStatusWidgetProvider
 import com.digitrob.digitdns.core.network.ResolutionSaveRequest
 import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.core.network.StatsSeries
@@ -113,7 +116,7 @@ data class DashboardUiState(
  * aggregate metrics (CPU, RAM, uptime, totals) are not on the stream, so those still
  * poll `/stats`, at the panel's own three-second cadence. Both stop with the ViewModel.
  */
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LongParameterList")
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val statsRepository: StatsRepository,
@@ -123,6 +126,7 @@ class DashboardViewModel @Inject constructor(
     private val liveStream: LiveQueryStream,
     private val appPreferences: AppPreferences,
     connectionStore: ConnectionStore,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DashboardUiState())
@@ -479,6 +483,11 @@ class DashboardViewModel @Inject constructor(
                     error = null,
                 )
             }
+            DigitDnsStatusWidgetProvider.updateAll(
+                appContext,
+                stats.totalQueries,
+                stats.qps.toFloat(),
+            )
             syncResolutionWithPool(upstreams)
         } catch (e: ApiException) {
             _state.update { it.copy(isLoading = false, isRefreshing = false, error = e.userMessage) }

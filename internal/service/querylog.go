@@ -110,6 +110,18 @@ func (s *QueryLogService) SaveSettings(in QueryLogSettings) error {
 	return nil
 }
 
+// Enabled reports whether query logging is on, from the cached settings so the
+// DNS hot path never touches the database to ask.
+func (s *QueryLogService) Enabled() bool {
+	if s == nil {
+		return false
+	}
+	if v := s.cache.Load(); v != nil {
+		return v.Enabled
+	}
+	return false
+}
+
 func (s *QueryLogService) ensureOpen() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

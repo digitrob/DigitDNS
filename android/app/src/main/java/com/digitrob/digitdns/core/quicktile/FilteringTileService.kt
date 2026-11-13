@@ -71,6 +71,7 @@ class FilteringTileService : TileService() {
                         blockTtl = settings.blockTtl,
                         updateIntervalHours = settings.updateIntervalHours,
                         allowlist = settings.allowlist ?: emptyList(),
+                        customRules = settings.customRules,
                     ),
                 )
             }.getOrNull()

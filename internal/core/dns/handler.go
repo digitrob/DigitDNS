@@ -28,6 +28,8 @@ type AccessProvider interface {
 type TelemetrySink interface {
 	PushQueryLog(item database.QueryLogItem)
 	RecordQuery()
+	// SSESubscribers reports how many live query-log streams are open.
+	SSESubscribers() int64
 }
 
 // QuotaEnforcer reports whether a client has spent its traffic allowance. It is
@@ -587,6 +589,24 @@ func makeAAAARecord(name string, ttl uint32, ip net.IP) *dns.AAAA {
 	}
 }
 
+func makeCNAMERecord(name string, ttl uint32, target string) *dns.CNAME {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return nil
+	}
+	target = dns.Fqdn(target)
+	if target == "." {
+		return nil
+	}
+	if _, ok := dns.IsDomainName(target); !ok {
+		return nil
+	}
+	return &dns.CNAME{
+		Hdr:    dns.RR_Header{Name: name, Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: ttl},
+		Target: target,
+	}
+}
+
 // udpSize is the largest UDP payload this client will accept: its EDNS0
 // advertised buffer, or the RFC 1035 512-byte floor when the query carries no
 // OPT record. Clamped to 4096 so an absurd advertisement cannot be used to
@@ -619,14 +639,15 @@ func firstQuestionType(r *dns.Msg) uint16 {
 }
 
 func normalizeProto(p string) string {
-	switch strings.ToLower(strings.TrimSpace(p)) {
-	case "udp", "udp4", "udp6":
+	p = strings.TrimSpace(p)
+	switch {
+	case strings.EqualFold(p, "udp"), strings.EqualFold(p, "udp4"), strings.EqualFold(p, "udp6"):
 		return "UDP"
-	case "tcp", "tcp4", "tcp6":
+	case strings.EqualFold(p, "tcp"), strings.EqualFold(p, "tcp4"), strings.EqualFold(p, "tcp6"):
 		return "TCP"
-	case "dot", "tcp-tls":
+	case strings.EqualFold(p, "dot"), strings.EqualFold(p, "tcp-tls"):
 		return "DoT"
-	case "doh", "https":
+	case strings.EqualFold(p, "doh"), strings.EqualFold(p, "https"):
 		return "DoH"
 	}
 	return p
@@ -772,8 +793,10 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	// families are answered here — previously only A was intercepted, so a
 	// client could reach the real host by asking for AAAA instead.
 	if !engineOff {
-		if customIP, ok := h.matcher.GetCustomRecord(domain); ok && (q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA) {
-			if ip := net.ParseIP(strings.TrimSpace(customIP)); ip != nil {
+		if customVal, ok := h.matcher.GetCustomRecord(domain); ok {
+			customVal = strings.TrimSpace(customVal)
+			ip := net.ParseIP(customVal)
+			if ip != nil && (q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA || q.Qtype == dns.TypeCNAME) {
 				m := new(dns.Msg)
 				m.SetReply(r)
 				isV4 := ip.To4() != nil
@@ -787,6 +810,16 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 					}
 				}
 				// The other family deliberately gets an empty NOERROR.
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+				return m
+			}
+			// A non-IP value is treated as a CNAME target ($dnsrewrite=host).
+			if ip == nil && (q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA || q.Qtype == dns.TypeCNAME) {
+				m := new(dns.Msg)
+				m.SetReply(r)
+				if rr := makeCNAMERecord(q.Name, 60, customVal); rr != nil {
+					m.Answer = append(m.Answer, rr)
+				}
 				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
 				return m
 			}

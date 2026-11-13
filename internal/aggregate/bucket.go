@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 
 	"digitdns/internal/database"
 
@@ -35,6 +36,11 @@ type Chunk struct {
 // RecordDetail from the query-log entry. That split matters: the live log
 // samples rate-limit refusals, but the total card must still count every packet.
 type Bucket struct {
+	// mu guards the maps and top-N tables below. Simple counters are updated
+	// under it too, so a single lock covers the whole record; sharding by query
+	// hash would move this lock per shard.
+	mu sync.Mutex
+
 	Queries uint64 `json:"queries"`
 	Blocked uint64 `json:"blocked"`
 	Proxied uint64 `json:"proxied"`
@@ -251,6 +257,12 @@ func (b *Bucket) clone() *Bucket {
 	if b == nil {
 		return nil
 	}
+	// The current bucket is recorded concurrently while flushes and query
+	// snapshots take copies. Keep the copy on the same lock as record(), or its
+	// maps and counters can be read while a resolver goroutine is changing them.
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	out := &Bucket{
 		Queries:           b.Queries,
 		Blocked:           b.Blocked,

@@ -1,14 +1,15 @@
 // Package blocklist compiles DNS blocklists into an immutable index.
 //
-// It deliberately supports only rules that can be answered from a domain name:
-// hosts lines, domains-only lists, and Adblock/uBO network rules. Cosmetic rules,
-// scriptlets, regex rules and modifiers that need the full URL are skipped and
-// counted, never guessed at. The hot path is one exact lookup plus a suffix walk;
-// there is no per-rule scan and no regex.
+// It supports rules that can be answered from a domain name: hosts lines,
+// domains-only lists, Adblock/uBO network rules, and bounded RE2 expressions
+// only for operator-supplied custom rules. Cosmetic rules, scriptlets, regex
+// rules from downloaded lists and modifiers that need client or URL context are
+// skipped rather than guessed at.
 package blocklist
 
 import (
 	"net"
+	"regexp"
 	"strings"
 
 	"golang.org/x/net/idna"
@@ -20,6 +21,9 @@ type Source struct {
 	Name    string
 	Text    string
 	Enabled bool
+	// AllowRegex opts operator-supplied custom rules into bounded RE2 matching.
+	// Downloaded lists and upload analysis leave this false.
+	AllowRegex bool
 }
 
 // Stats reports what one parse or a combined build retained.
@@ -41,7 +45,25 @@ type Index struct {
 	blockWildcard map[string]string
 	allowExact    map[string]string
 	allowWildcard map[string]string
+	// rewrites holds $dnsrewrite targets (IP addresses or CNAME names): exact
+	// keys and suffix (parent) keys.
+	rewriteExact  map[string]string
+	rewriteSuffix map[string]string
+	// regex rules, only populated when the source opts in (custom rules).
+	blockRegex []compiledRegex
+	allowRegex []compiledRegex
 }
+
+// compiledRegex is one compiled AdGuard regex rule with its source label.
+type compiledRegex struct {
+	re     *regexp.Regexp
+	source string
+}
+
+const (
+	maxCustomRegexRules       = 64
+	maxCustomRegexPatternSize = 512
+)
 
 func newIndex() *Index {
 	return &Index{
@@ -49,6 +71,8 @@ func newIndex() *Index {
 		blockWildcard: make(map[string]string),
 		allowExact:    make(map[string]string),
 		allowWildcard: make(map[string]string),
+		rewriteExact:  make(map[string]string),
+		rewriteSuffix: make(map[string]string),
 	}
 }
 
@@ -62,10 +86,10 @@ func Build(sources []Source, allowlist []string) (*Index, Stats) {
 			continue
 		}
 		stats.Sources++
-		parseInto(idx, src.Name, src.Text, &stats)
+		parseInto(idx, src.Name, src.Text, src.AllowRegex, &stats)
 	}
 	for _, domain := range allowlist {
-		addRule(idx, domain, true, "Allowlist", &stats)
+		addRule(idx, domain, true, "Allowlist", &stats, "")
 	}
 	stats.Domains = idx.DomainCount()
 	return idx, stats
@@ -76,7 +100,7 @@ func Build(sources []Source, allowlist []string) (*Index, Stats) {
 func Analyze(text string) Stats {
 	idx := newIndex()
 	var stats Stats
-	parseInto(idx, "upload", text, &stats)
+	parseInto(idx, "upload", text, false, &stats)
 	stats.Domains = idx.DomainCount()
 	return stats
 }
@@ -96,8 +120,9 @@ func (i *Index) Match(domain string) (blocked bool, source, pattern string) {
 }
 
 // MatchNormalized is Match for a name the caller has already lowercased and
-// trimmed. The resolver and matcher normalize once per query; this avoids a
-// second scan of the same bytes when a blocklist is installed.
+// trimmed. It checks bounded regex rules only when a source opted in; the
+// resolver and matcher otherwise use the exact lookup plus suffix walk without
+// a per-rule scan.
 func (i *Index) MatchNormalized(d string) (blocked bool, source, pattern string) {
 	if i == nil || d == "" {
 		return false, "", ""
@@ -108,13 +133,49 @@ func (i *Index) MatchNormalized(d string) (blocked bool, source, pattern string)
 	if _, _, ok := lookupSuffix(i.allowWildcard, d); ok {
 		return false, "", ""
 	}
+	if regexSource(i.allowRegex, d) != "" {
+		return false, "", ""
+	}
 	if name, ok := i.blockExact[d]; ok {
 		return true, name, d
 	}
 	if name, pat, ok := lookupSuffix(i.blockWildcard, d); ok {
 		return true, name, pat
 	}
+	if name := regexSource(i.blockRegex, d); name != "" {
+		return true, name, d
+	}
 	return false, "", ""
+}
+
+func regexSource(rules []compiledRegex, domain string) string {
+	for _, rule := range rules {
+		if rule.re.MatchString(domain) {
+			return rule.source
+		}
+	}
+	return ""
+}
+
+// MatchRewriteNormalized returns the target a $dnsrewrite= rule answers with
+// for d, if any. Exact matches win; a suffix rule covers every strict subdomain.
+func (i *Index) MatchRewriteNormalized(d string) (target string, ok bool) {
+	if i == nil || d == "" {
+		return "", false
+	}
+	if target, ok := i.rewriteExact[d]; ok {
+		return target, true
+	}
+	// Suffix walk: a rewrite on a parent domain covers its subdomains.
+	for j := 0; j < len(d); j++ {
+		if d[j] != '.' {
+			continue
+		}
+		if target, ok := i.rewriteSuffix[d[j+1:]]; ok {
+			return target, true
+		}
+	}
+	return "", false
 }
 
 // BlockMatchNormalized returns the blocklist rule for d without consulting the
@@ -131,6 +192,9 @@ func (i *Index) BlockMatchNormalized(d string) (blocked bool, source, pattern st
 	if name, pat, ok := lookupSuffix(i.blockWildcard, d); ok {
 		return true, name, pat
 	}
+	if name := regexSource(i.blockRegex, d); name != "" {
+		return true, name, d
+	}
 	return false, "", ""
 }
 
@@ -145,32 +209,43 @@ func (i *Index) AllowMatchNormalized(d string) (source, pattern string, ok bool)
 	if name, pat, ok := lookupSuffix(i.allowWildcard, d); ok {
 		return name, pat, true
 	}
+	if name := regexSource(i.allowRegex, d); name != "" {
+		return name, d, true
+	}
 	return "", "", false
 }
 
-// DomainCount is the number of unique blocked names, counting an exact rule and
-// its suffix form once.
+// DomainCount is the number of unique blocked or rewritten names, counting an
+// exact rule and its suffix form once.
 func (i *Index) DomainCount() int {
 	if i == nil {
 		return 0
 	}
-	n := len(i.blockExact)
-	for domain := range i.blockWildcard {
-		if _, ok := i.blockExact[domain]; !ok {
-			n++
-		}
+	domains := make(map[string]struct{}, len(i.blockExact)+len(i.blockWildcard)+len(i.rewriteExact)+len(i.rewriteSuffix))
+	for domain := range i.blockExact {
+		domains[domain] = struct{}{}
 	}
-	return n
+	for domain := range i.blockWildcard {
+		domains[domain] = struct{}{}
+	}
+	for domain := range i.rewriteExact {
+		domains[domain] = struct{}{}
+	}
+	for domain := range i.rewriteSuffix {
+		domains[domain] = struct{}{}
+	}
+	return len(domains)
 }
 
-// RuleCount is the number of blocked lookup entries. A plain domain is stored
+// RuleCount is the number of compiled lookup entries. A plain domain is stored
 // twice on purpose — once as an exact entry for the name and once as a suffix
 // entry for its subdomains — so this is normally about twice DomainCount.
 func (i *Index) RuleCount() int {
 	if i == nil {
 		return 0
 	}
-	return len(i.blockExact) + len(i.blockWildcard)
+	return len(i.blockExact) + len(i.blockWildcard) + len(i.rewriteExact) + len(i.rewriteSuffix) +
+		len(i.blockRegex) + len(i.allowRegex)
 }
 
 // ExactCount is the number of names matched exactly.
@@ -178,7 +253,7 @@ func (i *Index) ExactCount() int {
 	if i == nil {
 		return 0
 	}
-	return len(i.blockExact)
+	return len(i.blockExact) + len(i.rewriteExact)
 }
 
 // SuffixCount is the number of suffix entries covering subdomains.
@@ -186,7 +261,15 @@ func (i *Index) SuffixCount() int {
 	if i == nil {
 		return 0
 	}
-	return len(i.blockWildcard)
+	return len(i.blockWildcard) + len(i.rewriteSuffix)
+}
+
+// RegexCount is the number of compiled custom regex rules.
+func (i *Index) RegexCount() int {
+	if i == nil {
+		return 0
+	}
+	return len(i.blockRegex) + len(i.allowRegex)
 }
 
 func (i *Index) addBlock(domain string, exact, suffix bool, source string) {
@@ -233,7 +316,7 @@ func lookupSuffix(set map[string]string, d string) (string, string, bool) {
 	return "", "", false
 }
 
-func parseInto(idx *Index, source, text string, stats *Stats) {
+func parseInto(idx *Index, source, text string, allowRegex bool, stats *Stats) {
 	for lineNo, raw := range strings.Split(text, "\n") {
 		line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
 		if lineNo == 0 {
@@ -259,14 +342,43 @@ func parseInto(idx *Index, source, text string, stats *Stats) {
 			allow = true
 			line = strings.TrimSpace(line[2:])
 		}
-		line = stripModifiers(line, stats)
-		if line == "" {
+		// Regex syntax can itself contain '$', so recognize the entire /.../
+		// line before looking for modifier delimiters.
+		if strings.HasPrefix(line, "/") && strings.HasSuffix(line, "/") {
+			if !allowRegex {
+				stats.Skipped++
+				continue
+			}
+			pattern := line[1 : len(line)-1]
+			if len(pattern) > maxCustomRegexPatternSize ||
+				len(idx.blockRegex)+len(idx.allowRegex) >= maxCustomRegexRules {
+				stats.Skipped++
+				continue
+			}
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				stats.Skipped++
+				continue
+			}
+			if allow {
+				idx.allowRegex = append(idx.allowRegex, compiledRegex{re: re, source: source})
+				stats.Allowed++
+			} else {
+				idx.blockRegex = append(idx.blockRegex, compiledRegex{re: re, source: source})
+				stats.Blocked++
+			}
 			continue
 		}
-
-		if strings.HasPrefix(line, "/") && strings.HasSuffix(line, "/") {
-			// Regex rules are intentionally not compiled in the hot path.
+		// Validate rewrites before stripping modifiers. A malformed rewrite must
+		// not silently degrade into an ordinary block, and rewrite syntax is not
+		// meaningful on an allow exception.
+		rewriteTarget, hasRewrite, validRewrite := dnsRewriteModifier(line)
+		if !validRewrite || (allow && hasRewrite) {
 			stats.Skipped++
+			continue
+		}
+		line = stripModifiers(line, stats)
+		if line == "" {
 			continue
 		}
 
@@ -278,7 +390,7 @@ func parseInto(idx *Index, source, text string, stats *Stats) {
 				if strings.HasPrefix(host, "#") {
 					break
 				}
-				if addRule(idx, host, allow, source, stats) {
+				if addRule(idx, host, allow, source, stats, rewriteTarget) {
 					added = true
 				}
 			}
@@ -288,11 +400,45 @@ func parseInto(idx *Index, source, text string, stats *Stats) {
 			continue
 		}
 
-		if addRule(idx, fields[0], allow, source, stats) {
+		if addRule(idx, fields[0], allow, source, stats, rewriteTarget) {
 			continue
 		}
 		stats.Skipped++
 	}
+}
+
+// dnsRewriteModifier extracts and validates a single $dnsrewrite target.
+// Duplicate, empty and invalid IP/domain values are rejected rather than being
+// interpreted as a different rule type.
+func dnsRewriteModifier(line string) (target string, found bool, valid bool) {
+	i := strings.IndexByte(line, '$')
+	if i < 0 {
+		return "", false, true
+	}
+	for _, mod := range strings.Split(line[i+1:], ",") {
+		mod = strings.TrimSpace(mod)
+		name, value, hasValue := strings.Cut(mod, "=")
+		if !strings.EqualFold(name, "dnsrewrite") {
+			continue
+		}
+		if found || !hasValue {
+			return "", true, false
+		}
+		found = true
+		var ok bool
+		target, ok = normalizeRewriteTarget(strings.TrimSpace(value))
+		if !ok {
+			return "", true, false
+		}
+	}
+	return target, found, true
+}
+
+func normalizeRewriteTarget(target string) (string, bool) {
+	if ip := net.ParseIP(target); ip != nil {
+		return ip.String(), true
+	}
+	return normalizeRule(target)
 }
 
 // stripModifiers removes $important and $badfilter-compatible modifiers. Any
@@ -306,11 +452,20 @@ func stripModifiers(line string, stats *Stats) string {
 	pattern := strings.TrimSpace(line[:i])
 	for _, mod := range strings.Split(line[i+1:], ",") {
 		mod = strings.TrimSpace(mod)
-		switch mod {
-		case "", "important":
+		modifier, _, hasValue := strings.Cut(mod, "=")
+		switch {
+		case mod == "" || strings.EqualFold(mod, "important"):
 			// Supported: no special DNS behaviour beyond the match itself.
-		case "badfilter":
-			// badfilter disables another rule; keeping the rule would be wrong.
+		case strings.EqualFold(mod, "badfilter"):
+			// badfilter disables a separate rule, which this single-pass builder
+			// does not resolve. Skip the directive rather than claim to apply it.
+			stats.Skipped++
+			return ""
+		case hasValue && strings.EqualFold(modifier, "dnsrewrite"):
+			// Supported: answer with the given IP instead of blocking.
+		case strings.EqualFold(modifier, "client"), strings.EqualFold(modifier, "denyallow"):
+			// Scoping is not implemented. Do not broaden a rule or an exception
+			// by silently dropping a modifier that changes its target set.
 			stats.Skipped++
 			return ""
 		default:
@@ -321,7 +476,7 @@ func stripModifiers(line string, stats *Stats) string {
 	return pattern
 }
 
-func addRule(idx *Index, raw string, allow bool, source string, stats *Stats) bool {
+func addRule(idx *Index, raw string, allow bool, source string, stats *Stats, rewriteTarget string) bool {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return false
@@ -350,6 +505,21 @@ func addRule(idx *Index, raw string, allow bool, source string, stats *Stats) bo
 	d, ok := normalizeRule(raw)
 	if !ok {
 		return false
+	}
+	if rewriteTarget != "" {
+		var ok bool
+		rewriteTarget, ok = normalizeRewriteTarget(rewriteTarget)
+		if !ok {
+			return false
+		}
+		if exact {
+			idx.rewriteExact[d] = rewriteTarget
+		}
+		if suffix {
+			idx.rewriteSuffix[d] = rewriteTarget
+		}
+		stats.Blocked++
+		return true
 	}
 	if allow {
 		idx.addAllow(d, exact, suffix, source)

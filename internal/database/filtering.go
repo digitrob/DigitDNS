@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -17,6 +18,7 @@ type FilteringSettings struct {
 	BlockTTL            int      `json:"block_ttl"`
 	UpdateIntervalHours int      `json:"update_interval_hours"`
 	Allowlist           []string `json:"allowlist"`
+	CustomRules         string   `json:"custom_rules,omitempty"`
 }
 
 const (
@@ -31,6 +33,7 @@ const (
 	MinFilteringUpdateHours      = 1
 	MaxFilteringUpdateHours      = 168
 	MaxFilteringAllowlistEntries = 10000
+	MaxFilteringCustomRulesBytes = 1 << 20
 )
 
 func DefaultFilteringSettings() FilteringSettings {
@@ -55,6 +58,14 @@ func (s FilteringSettings) Normalize() FilteringSettings {
 		s.UpdateIntervalHours = DefaultFilteringUpdateHours
 	}
 	s.Allowlist = normalizeDomains(s.Allowlist, MaxFilteringAllowlistEntries)
+	s.CustomRules = strings.ToValidUTF8(strings.TrimSpace(s.CustomRules), "")
+	if len(s.CustomRules) > MaxFilteringCustomRulesBytes {
+		end := MaxFilteringCustomRulesBytes
+		for end > 0 && !utf8.RuneStart(s.CustomRules[end]) {
+			end--
+		}
+		s.CustomRules = s.CustomRules[:end]
+	}
 	return s
 }
 

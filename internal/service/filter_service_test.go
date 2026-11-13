@@ -77,6 +77,39 @@ func TestFilterServiceCompilesAndAppliesPolicy(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 }
 
+func TestFilterServiceKeepsRewriteOnlyCustomRulesInTheIndex(t *testing.T) {
+	db := openFilterTestDB(t)
+	m := matcher.NewMatcher()
+	f := NewFilterService(db, m)
+
+	settings := database.DefaultFilteringSettings()
+	settings.CustomRules = "||rewrite.example^$dnsrewrite=192.0.2.44"
+	if err := db.SaveFilteringSettings(settings); err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+	f.rebuild()
+
+	if ip, ok := m.GetCustomRecord("child.rewrite.example"); !ok || ip != "192.0.2.44" {
+		t.Fatalf("custom rewrite = (%q, %v), want (192.0.2.44, true)", ip, ok)
+	}
+	status, err := f.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if status.TotalRules == 0 || status.TotalDomains == 0 {
+		t.Fatalf("rewrite-only index was discarded: rules=%d domains=%d", status.TotalRules, status.TotalDomains)
+	}
+
+	settings.Enabled = false
+	if err := db.SaveFilteringSettings(settings); err != nil {
+		t.Fatalf("disable settings: %v", err)
+	}
+	f.rebuild()
+	if ip, ok := m.GetCustomRecord("child.rewrite.example"); ok {
+		t.Fatalf("disabled filtering still rewrites to %q", ip)
+	}
+}
+
 func TestFilterServiceRejectsPrivateURLs(t *testing.T) {
 	if err := validateListURL("https://127.0.0.1/list.txt"); err == nil {
 		t.Fatal("private URL was accepted")

@@ -403,6 +403,12 @@ func (m *Matcher) Explain(domain string) Explanation {
 			CustomRecord: record,
 		}
 	}
+	if record, ok := snap.blockIndex.MatchRewriteNormalized(d); ok {
+		return Explanation{
+			Action: "CUSTOM", Rule: "Custom Record", Source: "blocklist",
+			CustomRecord: record,
+		}
+	}
 	if name, pattern, ok := snap.direct.lookupPattern(d); ok {
 		return Explanation{Action: "DIRECT", Rule: name, Pattern: pattern, Source: "custom"}
 	}
@@ -418,6 +424,8 @@ func (m *Matcher) Explain(domain string) Explanation {
 			Source: "blocklist", BlocklistSource: blockSource, BlocklistPattern: blockPattern,
 		}
 	}
+	// Regex blocks are already surfaced through BlockMatchNormalized above, since
+	// that consults blockRegex. Nothing more to do here.
 	// An allowlist entry that suppressed a real block is part of the answer, not
 	// noise: the operator needs to see why a listed name still resolves.
 	suppressedSource, suppressedPattern := "", ""
@@ -453,8 +461,15 @@ func (m *Matcher) GetCustomRecord(domain string) (string, bool) {
 	if snap == nil {
 		return "", false
 	}
-	ip, ok := snap.customRecords[d]
-	return ip, ok
+	if ip, ok := snap.customRecords[d]; ok {
+		return ip, true
+	}
+	if snap.blockIndex != nil {
+		if ip, ok := snap.blockIndex.MatchRewriteNormalized(d); ok {
+			return ip, true
+		}
+	}
+	return "", false
 }
 
 // RuleCounts is the number of distinct rule domains indexed per action.

@@ -105,6 +105,11 @@
     <string name="tile_filtering_on">Filtering on</string>
     <string name="tile_filtering_off">Filtering off</string>
     <string name="tile_filtering_offline">Sign in to DigitDNS</string>
+    <string name="widget_status_description">DigitDNS status: total queries and current query rate</string>
+    <string name="widget_status_title">DigitDNS</string>
+    <string name="widget_status_queries">Total queries</string>
+    <string name="widget_status_qps">Queries / s</string>
+    <string name="widget_status_open">Open</string>
     <string name="agents_domains">Domains</string>
     <string name="agents_traffic_service_none">%1$s relayed · No service default</string>
     <string name="agents_traffic_services">%1$s relayed · Services: %2$s</string>

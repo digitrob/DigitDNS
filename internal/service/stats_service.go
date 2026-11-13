@@ -19,27 +19,33 @@ import (
 )
 
 type StatsService struct {
-	db             *database.DB
-	startedAt      time.Time
-	totalQueries   atomic.Uint64
-	logCounter     atomic.Uint64
-	telemetryMu    sync.Mutex // guards qps window, speeds & cached runtime metrics
-	qpsWindow      [10]uint64
-	qpsIndex       int
-	qpsRate        float64
-	cachedRAMMB    float64
-	cachedSysMB    float64
-	cachedCPUPct   float64
-	numGoroutines  int
-	numCPU         int
-	speedInKBps    float64
-	speedOutKBps   float64
-	lastBytesSent  uint64
-	lastBytesRecv  uint64
-	recentLogs     []database.QueryLogItem
-	recentLogHead  int
-	recentLogCount int
-	logMu          sync.RWMutex
+	db           *database.DB
+	startedAt    time.Time
+	totalQueries atomic.Uint64
+	logCounter   atomic.Uint64
+	telemetryMu  sync.Mutex // guards qps window, speeds & cached runtime metrics
+	qpsWindow    [10]uint64
+	qpsIndex     int
+	qpsRate      float64
+	cachedRAMMB  float64
+	cachedSysMB  float64
+	cachedCPUPct float64
+	// System-wide (machine) metrics, sampled once per second by telemetryLoop so
+	// GetLiveStats (1 Hz per dashboard) does not read /proc on every call.
+	cachedSysCPUPct     float64
+	cachedSysMemUsedMB  float64
+	cachedSysMemTotalMB float64
+	cachedSysMemPct     float64
+	numGoroutines       int
+	numCPU              int
+	speedInKBps         float64
+	speedOutKBps        float64
+	lastBytesSent       uint64
+	lastBytesRecv       uint64
+	recentLogs          []database.QueryLogItem
+	recentLogHead       atomic.Int64
+	recentLogCount      atomic.Int64
+	logMu               sync.RWMutex
 	// sseSubscribers counts open live-log streams. It is read on the query path
 	// to skip JSON encoding and fan-out when no dashboard is watching; the map
 	// itself is only consulted when the count says there is someone to send to.
@@ -148,6 +154,16 @@ func (s *StatsService) RecordQuery() {
 
 // SetAggregator attaches the 90-day aggregate store. Call it once during
 // startup, before the DNS listeners are accepting.
+// SSESubscribers reports how many live query-log streams are open. The DNS hot
+// path uses it to skip work (frame marshalling, ProtocolOf parsing) when no
+// dashboard is watching.
+func (s *StatsService) SSESubscribers() int64 {
+	if s == nil {
+		return 0
+	}
+	return s.sseSubscribers.Load()
+}
+
 func (s *StatsService) SetAggregator(a *aggregate.Aggregator) {
 	s.aggregator.Store(a)
 }
@@ -225,22 +241,26 @@ func (s *StatsService) PushQueryLog(item database.QueryLogItem) {
 		s.latencyResolve.observe(item.LatencyMs)
 	}
 
-	s.logMu.Lock()
-	if s.recentLogCount < recentLogsCap {
-		idx := s.recentLogHead + s.recentLogCount
-		if idx >= recentLogsCap {
-			idx -= recentLogsCap
-		}
-		s.recentLogs[idx] = item
-		s.recentLogCount++
-	} else {
-		s.recentLogs[s.recentLogHead] = item
-		s.recentLogHead++
-		if s.recentLogHead >= recentLogsCap {
-			s.recentLogHead = 0
+	// Lock-free ring buffer: each writer claims a slot via CAS so the per-query
+	// path no longer takes logMu. The slot write happens before the CAS, so a
+	// reader that observes the new count sees a populated slot.
+	for {
+		head := s.recentLogHead.Load()
+		count := s.recentLogCount.Load()
+		if count < recentLogsCap {
+			idx := (head + count) % recentLogsCap
+			s.recentLogs[idx] = item
+			if s.recentLogCount.CompareAndSwap(count, count+1) {
+				break
+			}
+		} else {
+			idx := head
+			s.recentLogs[idx] = item
+			if s.recentLogHead.CompareAndSwap(head, (head+1)%recentLogsCap) {
+				break
+			}
 		}
 	}
-	s.logMu.Unlock()
 
 	// Nobody is watching the live log: the histogram and aggregate above still
 	// need the item, but encoding it and walking the SSE map would be pure waste.
@@ -276,13 +296,11 @@ func (s *StatsService) PushQueryLog(item database.QueryLogItem) {
 // the ring still held the entries, so the next SSE reconnect replayed them and the
 // table refilled with the "cleared" queries.
 func (s *StatsService) ClearRecentLogs() {
-	s.logMu.Lock()
 	for i := range s.recentLogs {
 		s.recentLogs[i] = database.QueryLogItem{}
 	}
-	s.recentLogHead = 0
-	s.recentLogCount = 0
-	s.logMu.Unlock()
+	s.recentLogHead.Store(0)
+	s.recentLogCount.Store(0)
 
 	s.sseMu.RLock()
 	for ch := range s.sseClients {
@@ -295,14 +313,11 @@ func (s *StatsService) ClearRecentLogs() {
 }
 
 func (s *StatsService) GetRecentLogs() []database.QueryLogItem {
-	s.logMu.RLock()
-	defer s.logMu.RUnlock()
-	res := make([]database.QueryLogItem, s.recentLogCount)
-	for i := 0; i < s.recentLogCount; i++ {
-		idx := s.recentLogHead + i
-		if idx >= recentLogsCap {
-			idx -= recentLogsCap
-		}
+	count := s.recentLogCount.Load()
+	head := s.recentLogHead.Load()
+	res := make([]database.QueryLogItem, count)
+	for i := int64(0); i < count; i++ {
+		idx := (head + i) % recentLogsCap
 		res[i] = s.recentLogs[idx]
 	}
 	return res
@@ -478,6 +493,12 @@ func (s *StatsService) telemetryLoop() {
 		cpuPct, haveCPU := sampleCPU(&cpuRing, numCPU)
 		goroutines := runtime.NumGoroutine()
 
+		// System-wide (machine) metrics: sample here, once per second, instead of
+		// on every /api/stats call. sysmetrics reads /proc/stat and /proc/meminfo,
+		// which is cheap but not free, and GetLiveStats runs at 1 Hz per dashboard.
+		sysCPUPct := sysmetrics.CPUPercent()
+		sysMemUsed, sysMemTotal, sysMemPct := sysmetrics.Memory()
+
 		s.telemetryMu.Lock()
 
 		s.qpsWindow[s.qpsIndex] = delta
@@ -510,6 +531,11 @@ func (s *StatsService) telemetryLoop() {
 		}
 		s.numGoroutines = goroutines
 		s.numCPU = numCPU
+
+		s.cachedSysCPUPct = sysCPUPct
+		s.cachedSysMemUsedMB = sysMemUsed
+		s.cachedSysMemTotalMB = sysMemTotal
+		s.cachedSysMemPct = sysMemPct
 
 		s.telemetryMu.Unlock()
 
@@ -631,8 +657,6 @@ type LiveStatsResponse struct {
 }
 
 func (s *StatsService) GetLiveStats() LiveStatsResponse {
-	sysmemCPU := sysmetrics.CPUPercent()
-	sysmemUsed, sysmemTotal, sysmemPct := sysmetrics.Memory()
 	var activeRelays int64
 	var totalRelays, bytesSent, bytesRecv uint64
 	if s.getProxyStats != nil {
@@ -683,6 +707,10 @@ func (s *StatsService) GetLiveStats() LiveStatsResponse {
 	numGoroutines := s.numGoroutines
 	speedIn := s.speedInKBps
 	speedOut := s.speedOutKBps
+	sysCPU := s.cachedSysCPUPct
+	sysMemUsed := s.cachedSysMemUsedMB
+	sysMemTotal := s.cachedSysMemTotalMB
+	sysMemPct := s.cachedSysMemPct
 	s.telemetryMu.Unlock()
 
 	return LiveStatsResponse{
@@ -732,10 +760,10 @@ func (s *StatsService) GetLiveStats() LiveStatsResponse {
 
 		// Machine-wide load (internal/sysmetrics): the whole server's CPU and
 		// RAM, as opposed to the process-only figures above.
-		SystemCPUPercent: sysmemCPU,
-		SystemMemUsedMB:  sysmemUsed,
-		SystemMemTotalMB: sysmemTotal,
-		SystemMemPercent: sysmemPct,
+		SystemCPUPercent: sysCPU,
+		SystemMemUsedMB:  sysMemUsed,
+		SystemMemTotalMB: sysMemTotal,
+		SystemMemPercent: sysMemPct,
 	}
 }
 

@@ -79,6 +79,7 @@ data class FilteringSettingsDto(
     @SerialName("update_interval_hours") val updateIntervalHours: Int = 24,
     /** The server encodes an empty Go slice as `null`; both mean "no entries". */
     val allowlist: List<String>? = null,
+    @SerialName("custom_rules") val customRules: String = "",
 )
 
 /**
@@ -93,6 +94,7 @@ data class FilteringSettingsRequest(
     @SerialName("block_ttl") val blockTtl: Int,
     @SerialName("update_interval_hours") val updateIntervalHours: Int,
     val allowlist: List<String>,
+    @SerialName("custom_rules") val customRules: String,
 )
 
 @Serializable

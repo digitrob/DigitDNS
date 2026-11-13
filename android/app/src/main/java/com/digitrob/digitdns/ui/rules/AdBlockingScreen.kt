@@ -463,6 +463,30 @@ private fun PolicyCard(state: AdBlockingUiState, viewModel: AdBlockingViewModel)
                 modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp),
             )
 
+            OutlinedTextField(
+                value = state.customRules,
+                onValueChange = viewModel::setCustomRules,
+                label = { Text("Custom filtering rules (AdGuard syntax)") },
+                placeholder = {
+                    Text(
+                        "||ads.example.com^\n@@||allowed.example.com^\n" +
+                            "||tracking.example.com^\$important",
+                    )
+                },
+                minLines = 4,
+                maxLines = 10,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 112.dp),
+            )
+            Text(
+                "AdGuard/uBlock rules; \$dnsrewrite=IP answers A/AAAA with that IP, " +
+                    "and \$dnsrewrite=host returns a CNAME. Custom " +
+                    "regex uses RE2 (max 64 patterns, 512 characters each). Downloaded-list " +
+                    "regex, cosmetic rules, and scoped \$client, \$denyallow and " +
+                    "\$badfilter modifiers are skipped.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
             Button(
                 onClick = viewModel::saveSettings,
                 enabled = !state.isSavingSettings,

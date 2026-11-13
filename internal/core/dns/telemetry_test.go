@@ -18,6 +18,8 @@ func (r *recordingTelemetry) RecordQuery() { r.total++ }
 func (r *recordingTelemetry) PushQueryLog(item database.QueryLogItem) {
 	r.items = append(r.items, item)
 }
+func (r *recordingTelemetry) SSESubscribers() int64 { return 0 }
+func (r *recordingTelemetry) QueryLogEnabled() bool { return false }
 
 func TestProcessQueryLogsQTypeAndRcode(t *testing.T) {
 	m := matcher.NewMatcher()

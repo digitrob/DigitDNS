@@ -1561,7 +1561,7 @@
             </div>
             <div data-dash-card="history-top-upstreams" class="glass-panel panel-card p-4 sm:col-span-1 md:col-span-1 history-top-card">
               <div class="history-top-head">
-                <h3 class="panel-card-header"><i data-feather="radio" class="w-4 h-4 text-sky-400"></i> Top upstreams</h3>
+                <h3 class="panel-card-header"><i data-feather="radio" class="w-4 h-4 text-cyan-400"></i> Top upstreams</h3>
                 <button id="history-top-upstreams-toggle" type="button"
                   class="history-top-provider-toggle" aria-pressed="false"
                   title="Group the ranking by DNS provider">By Provider</button>
@@ -1569,7 +1569,7 @@
               <div id="history-top-upstreams" class="history-top-body mt-1.5 text-xs text-slate-500">Waiting for history…</div>
             </div>
             <div data-dash-card="history-top-protocols" class="glass-panel panel-card p-4 sm:col-span-1 md:col-span-1 history-top-card">
-              <h3 class="panel-card-header"><i data-feather="share-2" class="w-4 h-4 text-violet-400"></i> Protocols</h3>
+              <h3 class="panel-card-header"><i data-feather="share-2" class="w-4 h-4 text-purple-400"></i> Protocols</h3>
               <div id="history-top-protocols" class="history-top-body mt-1.5 text-xs text-slate-500">Waiting for history…</div>
             </div>
             <div data-dash-card="history-top-relay" class="glass-panel panel-card p-4 sm:col-span-1 md:col-span-1 history-top-card">
@@ -1626,6 +1626,14 @@
                   class="panel-field mt-1 w-full font-mono text-xs"
                   placeholder="example.com&#10;*.trusted.example"
                   aria-label="Filtering allowlist"></textarea>
+              </label>
+
+              <label class="filtering-field filtering-allowlist">Custom filtering rules (AdGuard syntax)
+                <textarea id="filtering-custom-rules-input" rows="6" spellcheck="false"
+                  class="panel-field mt-1 w-full font-mono text-xs"
+                  placeholder="||ads.example.com^&#10;@@||allowed.example.com^&#10;||tracking.example.com^$important"
+                  aria-label="Custom filtering rules"></textarea>
+                <span class="text-[10px] text-slate-500 mt-1 block">AdGuard/uBlock network rules: ||domain^ blocks, @@||domain^ allows, $dnsrewrite=IP answers A/AAAA with that IP, and $dnsrewrite=host returns a CNAME. Custom regex uses RE2 (max 64 patterns, 512 characters each). Downloaded-list regex, cosmetic rules, and scoped $client, $denyallow and $badfilter modifiers are skipped.</span>
               </label>
 
               <div class="filtering-settings-actions">
@@ -2724,7 +2732,7 @@ async function onBuySubscription(ctx, username) {
              page never asks for it. -->
         <div class="glass-panel panel-card p-5 sm:p-6 space-y-4" id="twofa-card">
           <div class="flex items-center gap-3">
-            <div class="p-2 rounded-xl bg-sky-500/20 text-sky-400">
+            <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
               <i data-feather="smartphone" class="w-5 h-5"></i>
             </div>
             <div>
@@ -2741,7 +2749,7 @@ async function onBuySubscription(ctx, username) {
               <form id="twofa-enable-form" class="flex-1 min-w-0">
                 <input type="text" name="username" autocomplete="username" hidden aria-hidden="true" tabindex="-1">
                 <input type="password" id="twofa-enable-password" aria-label="Current password, to enable two-factor" placeholder="Current password"
-                  class="panel-field w-full font-mono focus:border-sky-400">
+                  class="panel-field w-full font-mono focus:border-cyan-400">
               </form>
               <button id="twofa-begin-btn" type="button"
                 class="panel-btn panel-btn-primary">
@@ -2762,7 +2770,7 @@ async function onBuySubscription(ctx, username) {
                 Cancel enrollment
               </button>
             </div>
-            <div id="twofa-enroll-box" class="hidden space-y-3 border border-sky-500/30 rounded-lg p-3">
+            <div id="twofa-enroll-box" class="hidden space-y-3 border border-cyan-500/30 rounded-lg p-3">
               <!-- The confirm step re-asks the password on purpose — a hijacked
                    session must not be able to finish an enrollment with the code
                    alone — so the box carries its own password field rather than
@@ -2771,15 +2779,15 @@ async function onBuySubscription(ctx, username) {
                    code and the server answered "Invalid credentials" on the
                    empty password, which reads exactly like a wrong code. -->
               <p class="text-[11px] text-slate-300">Add this secret to your authenticator app, then re-enter your password and the code it shows:</p>
-              <p id="twofa-secret-display" class="px-3 py-2 rounded bg-slate-950 border border-slate-700 text-xs font-mono text-sky-300 break-all select-all"></p>
+              <p id="twofa-secret-display" class="px-3 py-2 rounded bg-slate-950 border border-slate-700 text-xs font-mono text-cyan-300 break-all select-all"></p>
               <p id="twofa-uri-display" class="text-[11px] text-slate-500 font-mono break-all"></p>
               <div class="flex flex-col sm:flex-row gap-2">
                 <form id="twofa-confirm-form" class="contents">
                   <input type="text" name="username" autocomplete="username" hidden aria-hidden="true" tabindex="-1">
                   <input type="password" id="twofa-confirm-password" aria-label="Current password, to confirm enrollment" placeholder="Current password" autocomplete="current-password"
-                    class="panel-field flex-1 min-w-0 font-mono focus:border-sky-400">
+                    class="panel-field flex-1 min-w-0 font-mono focus:border-cyan-400">
                   <input type="text" id="twofa-enable-code" aria-label="Six-digit code, to enable two-factor" placeholder="6-digit code" inputmode="numeric" maxlength="6"
-                    class="panel-field flex-1 min-w-0 font-mono focus:border-sky-400">
+                    class="panel-field flex-1 min-w-0 font-mono focus:border-cyan-400">
                 </form>
                 <button id="twofa-confirm-btn" type="button"
                   class="panel-btn panel-btn-primary">
@@ -3228,7 +3236,7 @@ async function onBuySubscription(ctx, username) {
           <div class="space-y-2">
             <div class="flex items-start justify-between gap-3 flex-wrap">
               <div class="flex items-center gap-3 flex-1 min-w-0">
-                <div class="p-2 rounded-xl bg-sky-500/20 text-sky-400">
+                <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
                   <i data-feather="zap" class="w-5 h-5"></i>
                 </div>
                 <h3 class="panel-card-title">Client Transports</h3>
@@ -3288,15 +3296,15 @@ async function onBuySubscription(ctx, username) {
               </div>
               <div>
                 <label for="dot-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">TCP port</label>
-                <input type="number" id="dot-port-input" min="1" max="65535" step="1" value="853" aria-label="DoT port" class="panel-field w-full font-mono text-xs focus:border-sky-400">
+                <input type="number" id="dot-port-input" min="1" max="65535" step="1" value="853" aria-label="DoT port" class="panel-field w-full font-mono text-xs focus:border-cyan-400">
               </div>
               <button type="button" class="code-box w-full cursor-pointer" data-copy-target="dot-endpoint" aria-label="Copy DoT URL">
-                <span id="dot-endpoint" class="font-mono text-sky-300 break-all">—</span>
+                <span id="dot-endpoint" class="font-mono text-cyan-300 break-all">—</span>
                 <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
               </button>
               <div>
                 <label for="dot-auth-select" class="block text-[10px] font-semibold text-slate-400 mb-1">Authentication</label>
-                <select id="dot-auth-select" class="panel-field w-full text-xs focus:border-sky-400">
+                <select id="dot-auth-select" class="panel-field w-full text-xs focus:border-cyan-400">
                   <option value="ip">IP allowlist</option>
                   <option value="sni-token">SNI token</option>
                 </select>
@@ -3304,10 +3312,10 @@ async function onBuySubscription(ctx, username) {
               <div id="dot-token-fields" class="space-y-2">
                 <div>
                   <label for="dot-token-domain-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Token domain</label>
-                  <input type="text" id="dot-token-domain-input" placeholder="dot.example.com" class="panel-field w-full font-mono text-xs focus:border-sky-400">
+                  <input type="text" id="dot-token-domain-input" placeholder="dot.example.com" class="panel-field w-full font-mono text-xs focus:border-cyan-400">
                 </div>
                 <div class="flex gap-2">
-                  <input type="text" id="new-dot-token-input" aria-label="New DoT token label" placeholder="token label (e.g. phone)" class="panel-field flex-1 min-w-0 font-mono text-xs focus:border-sky-400">
+                  <input type="text" id="new-dot-token-input" aria-label="New DoT token label" placeholder="token label (e.g. phone)" class="panel-field flex-1 min-w-0 font-mono text-xs focus:border-cyan-400">
                   <button type="button" id="add-dot-token-btn" class="panel-btn panel-btn-primary panel-btn-sm">Add</button>
                 </div>
                 <div id="dot-tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">No DoT tokens yet</div></div>
@@ -3582,7 +3590,7 @@ async function onBuySubscription(ctx, username) {
             <div class="flex items-center justify-between gap-2">
               <div>
                 <h3 class="panel-card-header">
-                  <i data-feather="layers" class="w-4 h-4 text-violet-400"></i> Custom Policy Groups
+                  <i data-feather="layers" class="w-4 h-4 text-purple-400"></i> Custom Policy Groups
                 </h3>
                 <p class="text-[11px] text-slate-400 mt-0.5">Named bundles of domains with one action (proxy / direct / block), switchable as a unit.</p>
               </div>
@@ -3597,11 +3605,11 @@ async function onBuySubscription(ctx, username) {
                 <div>
                   <label for="custom-group-name" class="block text-[11px] font-semibold text-slate-400 mb-1">Group name</label>
                   <input type="text" id="custom-group-name" placeholder="e.g. My Streaming Bundle"
-                    class="panel-field w-full focus:border-violet-400">
+                    class="panel-field w-full focus:border-purple-400">
                 </div>
                 <div>
                   <label for="custom-group-action" class="block text-[11px] font-semibold text-slate-400 mb-1">Action</label>
-                  <select id="custom-group-action" class="panel-field w-full focus:border-violet-400">
+                  <select id="custom-group-action" class="panel-field w-full focus:border-purple-400">
                     <option value="proxy">Proxy (SNI)</option>
                     <option value="direct">Direct</option>
                     <option value="block">Block</option>
@@ -3611,10 +3619,10 @@ async function onBuySubscription(ctx, username) {
               <div>
                 <label for="custom-group-domains" class="block text-[11px] font-semibold text-slate-400 mb-1">Domains (one per line; <code>*.example.com</code> covers subdomains)</label>
                 <textarea id="custom-group-domains" rows="4" placeholder="example.com&#10;*.example.com"
-                  class="panel-field w-full font-mono focus:border-violet-400"></textarea>
+                  class="panel-field w-full font-mono focus:border-purple-400"></textarea>
               </div>
               <label class="flex items-center gap-2 text-xs text-slate-300">
-                <input type="checkbox" id="custom-group-enabled" checked class="accent-violet-500"> Enabled
+                <input type="checkbox" id="custom-group-enabled" checked class="accent-purple-500"> Enabled
               </label>
               <!-- Group icon: one SVG or PNG per group, validated and stored
                    server-side. The Feather placeholder shows until a real icon loads. -->
@@ -4082,7 +4090,7 @@ async function onBuySubscription(ctx, username) {
             <!-- Guide 5: DNS-over-QUIC (DoQ), shown only when the operator enables it -->
             <div id="guide-doq-card" class="hidden p-5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
               <div class="flex items-center gap-2.5">
-                <i data-feather="zap" class="text-sky-400 w-5 h-5"></i>
+                <i data-feather="zap" class="text-cyan-400 w-5 h-5"></i>
                 <h4 class="text-xs sm:text-sm font-bold text-white font-heading">DNS-over-QUIC (DoQ)</h4>
               </div>
               <ol class="text-[11px] sm:text-xs text-slate-300 space-y-1.5 list-decimal list-inside leading-relaxed">

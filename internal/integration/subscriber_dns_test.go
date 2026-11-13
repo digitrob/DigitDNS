@@ -65,6 +65,8 @@ func (r *recorder) RecordQuery() {
 	defer r.mu.Unlock()
 	r.queries++
 }
+func (r *recorder) SSESubscribers() int64 { return 0 }
+func (r *recorder) QueryLogEnabled() bool { return false }
 
 func (r *recorder) last(t *testing.T) database.QueryLogItem {
 	t.Helper()

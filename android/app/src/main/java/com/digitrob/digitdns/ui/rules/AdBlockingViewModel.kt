@@ -54,6 +54,7 @@ data class AdBlockingUiState(
     val blockTtl: String = "10",
     val updateIntervalHours: String = "24",
     val allowlist: String = "",
+    val customRules: String = "",
     val totalDomains: Int = 0,
     val activeCount: Int = 0,
     val listCount: Int = 0,
@@ -144,6 +145,7 @@ class AdBlockingViewModel @Inject constructor(
                 } else {
                     it.allowlist
                 },
+                customRules = if (includeSettings) settings.customRules else it.customRules,
                 groups = buildGroups(status, it.addingPresetIds, it.search),
                 customLists = buildCustomLists(status, it.search),
                 totalDomains = status.totalDomains,
@@ -204,6 +206,7 @@ class AdBlockingViewModel @Inject constructor(
     fun setBlockTtl(value: String) = _state.update { it.copy(blockTtl = value.filter { c -> c.isDigit() }) }
     fun setUpdateInterval(value: String) = _state.update { it.copy(updateIntervalHours = value.filter { c -> c.isDigit() }) }
     fun setAllowlist(value: String) = _state.update { it.copy(allowlist = value) }
+    fun setCustomRules(value: String) = _state.update { it.copy(customRules = value) }
     fun dismissMessage() = _state.update { it.copy(message = null) }
     fun dismissError() = _state.update { it.copy(error = null) }
 
@@ -230,6 +233,7 @@ class AdBlockingViewModel @Inject constructor(
                         blockTtl = ttl,
                         updateIntervalHours = interval,
                         allowlist = allowlist,
+                        customRules = current.customRules,
                     ),
                 )
                 lastStatus = status

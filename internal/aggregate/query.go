@@ -578,8 +578,9 @@ func (a *Aggregator) snapshot() map[string]*Bucket {
 			out[pair.key] = pair.bucket.clone()
 		}
 	}
-	if a.current != nil {
-		out[a.currentKey] = a.current.clone()
+	if b := a.current.Load(); b != nil {
+		key, _ := a.currentKey.Load().(string)
+		out[key] = b.clone()
 	}
 	return out
 }

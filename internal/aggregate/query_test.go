@@ -305,10 +305,10 @@ func TestLegacyReverseDNSIsFilteredFromTop(t *testing.T) {
 		CacheTTL:      -1,
 	})
 
-	a.current.TopDomains.add("9.63.90.77.in-addr.arpa", 5, 10)
-	a.current.TopDomains.add("legacy.example", 2, 10)
-	a.current.TopBlockedDomains.add("x.ip6.arpa", 3, 10)
-	a.current.TopBlockedDomains.add("legacy-blocked.example", 1, 10)
+	a.current.Load().TopDomains.add("9.63.90.77.in-addr.arpa", 5, 10)
+	a.current.Load().TopDomains.add("legacy.example", 2, 10)
+	a.current.Load().TopBlockedDomains.add("x.ip6.arpa", 3, 10)
+	a.current.Load().TopBlockedDomains.add("legacy-blocked.example", 1, 10)
 
 	top, err := a.Top(Range24h, "domain", 10)
 	if err != nil {

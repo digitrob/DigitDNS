@@ -129,12 +129,12 @@ class FilteringApiTest {
     fun saveSettingsSendsEveryFieldEvenWhenTheValueIsTheDefault() = runTest {
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"settings":{},"lists":[],"presets":[]}"""))
 
-        repo.saveSettings(FilteringSettingsRequest(true, "null_ip", 15, 24, emptyList()))
+        repo.saveSettings(FilteringSettingsRequest(true, "null_ip", 15, 24, emptyList(), ""))
 
         val request = server.takeRequest()
         assertEquals("/filtering/settings", request.path)
         assertEquals(
-            """{"enabled":true,"block_mode":"null_ip","block_ttl":15,"update_interval_hours":24,"allowlist":[]}""",
+            """{"enabled":true,"block_mode":"null_ip","block_ttl":15,"update_interval_hours":24,"allowlist":[],"custom_rules":""}""",
             request.body.readUtf8(),
         )
     }
