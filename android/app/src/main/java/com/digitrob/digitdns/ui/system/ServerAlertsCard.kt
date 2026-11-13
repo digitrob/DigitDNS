@@ -1,19 +1,31 @@
 package com.digitrob.digitdns.ui.system
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -34,6 +46,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -43,14 +58,34 @@ import com.digitrob.digitdns.core.network.AlertChannelDto
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 
-private val ALERT_KINDS = listOf(
-    "ntfy" to "ntfy",
-    "telegram" to "Telegram",
-    "discord" to "Discord",
-    "slack" to "Slack",
-    "gotify" to "Gotify",
-    "webhook" to "Webhook",
+private data class AlertKind(
+    val key: String,
+    val label: String,
+    val icon: ImageVector,
 )
+
+private val ALERT_KINDS = listOf(
+    AlertKind("ntfy", "ntfy", Icons.Filled.Notifications),
+    AlertKind("telegram", "Telegram", Icons.AutoMirrored.Filled.Send),
+    AlertKind("discord", "Discord", Icons.Filled.Forum),
+    AlertKind("slack", "Slack", Icons.Filled.Tag),
+    AlertKind("gotify", "Gotify", Icons.Filled.NotificationsActive),
+    AlertKind("webhook", "Webhook", Icons.Filled.Link),
+)
+
+private fun alertKind(key: String): AlertKind =
+    ALERT_KINDS.firstOrNull { it.key == key } ?: ALERT_KINDS.first()
+
+/** One tint per destination, taken from the panel palette so the chips match the theme. */
+@Composable
+private fun alertKindTint(kind: AlertKind): Color = when (kind.key) {
+    "ntfy" -> DigitDnsTheme.colors.info
+    "telegram" -> DigitDnsTheme.colors.blue
+    "discord" -> DigitDnsTheme.colors.discord
+    "slack" -> DigitDnsTheme.colors.purple
+    "gotify" -> DigitDnsTheme.colors.warning
+    else -> DigitDnsTheme.colors.success
+}
 
 private val ALERT_EVENTS = listOf(
     "agents" to "Relay agents",
@@ -87,6 +122,14 @@ fun ServerAlertsCard(viewModel: ServerAlertsViewModel = hiltViewModel()) {
                     channel = channel,
                     onChange = { transform -> viewModel.updateChannel(index, transform) },
                     onRemove = { viewModel.removeChannel(index) },
+                )
+            }
+
+            if (s.channels.isEmpty()) {
+                Text(
+                    "No channels yet — add one to receive alerts.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -225,71 +268,141 @@ private fun AlertChannelRow(
     onChange: ((AlertChannelDto) -> AlertChannelDto) -> Unit,
     onRemove: () -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    val colors = DigitDnsTheme.colors
+    val kind = alertKind(channel.kind)
     Column(
-        modifier = Modifier.fillMaxWidth().padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.bgTile)
+            .border(1.dp, colors.borderColor, RoundedCornerShape(12.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        // The channel's own controls: kind selector, channel name, enable switch and
-        // delete. The row fills the card's width so the weighted name field has real
-        // space to take; a wrap-content row gave the weight nothing to distribute and
-        // the field collapsed to nothing on narrow screens.
+        // Header: the destination pictogram opens the type menu, then the enable
+        // switch and delete. The channel name keeps its own full-width row below, so
+        // it can never be squeezed by the controls beside it on a narrow phone.
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            androidx.compose.foundation.layout.Box {
-                OutlinedButton(onClick = { expanded = true }) {
-                    Text(ALERT_KINDS.firstOrNull { it.first == channel.kind }?.second ?: channel.kind)
-                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
-                }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    ALERT_KINDS.forEach { (kind, label) ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            onClick = {
-                                expanded = false
-                                onChange { it.copy(kind = kind) }
-                            },
-                        )
-                    }
-                }
-            }
-            OutlinedTextField(
-                value = channel.name,
-                onValueChange = { value -> onChange { it.copy(name = value) } },
-                label = { Text("Channel name") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
+            AlertKindPicker(
+                selected = kind,
+                onPick = { key -> onChange { it.copy(kind = key) } },
             )
-            Switch(checked = channel.enabled, onCheckedChange = { value -> onChange { it.copy(enabled = value) } })
+            Spacer(Modifier.weight(1f))
+            Text(
+                "Enabled",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textMuted,
+            )
+            Switch(
+                checked = channel.enabled,
+                onCheckedChange = { value -> onChange { it.copy(enabled = value) } },
+            )
             IconButton(onClick = onRemove) {
-                Icon(Icons.Filled.Delete, contentDescription = "Remove channel", tint = DigitDnsTheme.colors.danger)
+                Icon(Icons.Filled.Delete, contentDescription = "Remove channel", tint = colors.danger)
             }
         }
-        OutlinedTextField(
-            value = channel.url,
-            onValueChange = { value -> onChange { it.copy(url = value) } },
-            label = { Text("Webhook / ntfy / Gotify URL") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = if (channel.token.startsWith("••")) "" else channel.token,
-            onValueChange = { value -> onChange { it.copy(token = value) } },
-            label = { Text("Bot token / Gotify token") },
-            placeholder = { Text(if (channel.token.startsWith("••")) "Saved — leave blank to keep" else "") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = channel.chatId,
-            onValueChange = { value -> onChange { it.copy(chatId = value) } },
-            label = { Text("Telegram chat ID") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        AlertChannelFields(channel = channel, onChange = onChange)
     }
+}
+
+/**
+ * The channel-type control: a pictogram once a type is chosen, and a menu that
+ * pairs every option with the same pictogram so the row never relies on a text
+ * label that a narrow phone would clip.
+ */
+@Composable
+private fun AlertKindPicker(
+    selected: AlertKind,
+    onPick: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val colors = DigitDnsTheme.colors
+    Box {
+        OutlinedButton(
+            onClick = { expanded = true },
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+        ) {
+            Icon(
+                imageVector = selected.icon,
+                contentDescription = "Channel type: ${selected.label}",
+                tint = alertKindTint(selected),
+                modifier = Modifier.size(18.dp),
+            )
+            Icon(
+                imageVector = Icons.Filled.ArrowDropDown,
+                contentDescription = null,
+                tint = colors.textMuted,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            ALERT_KINDS.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.label) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = option.icon,
+                            contentDescription = null,
+                            tint = alertKindTint(option),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    trailingIcon = {
+                        if (option.key == selected.key) {
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onPick(option.key)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlertChannelFields(
+    channel: AlertChannelDto,
+    onChange: ((AlertChannelDto) -> AlertChannelDto) -> Unit,
+) {
+    OutlinedTextField(
+        value = channel.name,
+        onValueChange = { value -> onChange { it.copy(name = value) } },
+        label = { Text("Channel name") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = channel.url,
+        onValueChange = { value -> onChange { it.copy(url = value) } },
+        label = { Text("Webhook / ntfy / Gotify URL") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = if (channel.token.startsWith("••")) "" else channel.token,
+        onValueChange = { value -> onChange { it.copy(token = value) } },
+        label = { Text("Bot token / Gotify token") },
+        placeholder = { Text(if (channel.token.startsWith("••")) "Saved — leave blank to keep" else "") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = channel.chatId,
+        onValueChange = { value -> onChange { it.copy(chatId = value) } },
+        label = { Text("Telegram chat ID") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }

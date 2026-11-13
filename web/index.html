@@ -4130,6 +4130,11 @@ async function onBuySubscription(ctx, username) {
       </button>
     </div>
 
+    <!-- One shared menu for every alert channel's type picker. Like the stream
+         quick-action menu above, it is positioned on open and re-rendered with the
+         current selection, so a card with several channels keeps one menu node. -->
+    <div id="alert-kind-menu" role="menu" aria-label="Channel type" class="stream-action-menu alert-kind-menu hidden"></div>
+
     <!-- MOBILE STICKY BOTTOM NAVIGATION BAR -->
     <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800 px-1 py-1 flex items-stretch justify-around">
       <button id="engine-toggle-mobile" type="button" class="engine-mobile-pill is-on"

@@ -1997,6 +1997,40 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   color: rgb(248 113 113);
 }
 
+/* The alert channel's type picker: one pictogram and a caret instead of a native
+   <select>, so the menu can pair each destination with its own glyph. Sized to the
+   dense field it replaces, and tinted from the same tokens as the rest of the panel. */
+.alert-kind-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: rgb(var(--c-slate-950) / 0.6);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.alert-kind-btn:hover { border-color: var(--accent-cyan); }
+.alert-kind-btn:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+}
+.alert-kind-btn .alert-kind-icon { width: 16px; height: 16px; }
+.alert-kind-btn .alert-kind-caret { width: 12px; height: 12px; color: var(--text-muted); }
+/* One tint per destination, from the panel tokens so every theme keeps its step.
+   Discord is brand-fixed because it has no Tailwind colour of its own. */
+.alert-kind-ntfy { color: var(--accent-cyan); }
+.alert-kind-telegram { color: rgb(var(--c-blue-400)); }
+.alert-kind-discord { color: var(--accent-discord); }
+.alert-kind-slack { color: var(--accent-purple); }
+.alert-kind-gotify { color: var(--accent-amber); }
+.alert-kind-webhook { color: var(--accent-green); }
+.alert-kind-check { margin-left: auto; width: 14px; height: 14px; }
+.alert-kind-menu { width: min(16rem, calc(100vw - 1rem)); }
+
 /* ---- About & legal (AGPL-3.0 attribution) -----------------------------------
    The footer line and the Settings About card carry the fork's identity and the
    upstream notice. Both are plain CSS rather than Tailwind utilities so the

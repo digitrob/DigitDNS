@@ -12009,6 +12009,94 @@ const ALERT_KINDS = [
   ['slack', 'Slack'], ['gotify', 'Gotify'], ['webhook', 'Webhook'],
 ];
 
+// One pictogram and tint per destination, used by the row's trigger and by the
+// shared type menu. The tints are panel tokens, so they follow dark, grey and light
+// themes; Discord keeps its brand colour because it has no Tailwind step.
+const ALERT_KIND_META = {
+  ntfy: { icon: 'bell', tint: 'alert-kind-ntfy' },
+  telegram: { icon: 'send', tint: 'alert-kind-telegram' },
+  discord: { icon: 'message-circle', tint: 'alert-kind-discord' },
+  slack: { icon: 'hash', tint: 'alert-kind-slack' },
+  gotify: { icon: 'zap', tint: 'alert-kind-gotify' },
+  webhook: { icon: 'link', tint: 'alert-kind-webhook' },
+};
+
+function alertKindMeta(kind) {
+  return ALERT_KIND_META[kind] || ALERT_KIND_META.ntfy;
+}
+
+function alertKindLabel(kind) {
+  const found = ALERT_KINDS.find(([value]) => value === kind);
+  return found ? found[1] : kind;
+}
+
+// alertKindIcon builds the pictogram as a node. The name and tint come from the
+// table above, so nothing is interpolated into an HTML attribute; the tint class
+// is a panel token, which also keeps it out of the Tailwind purge.
+function alertKindIcon(kind, cls) {
+  const meta = alertKindMeta(kind);
+  const icon = document.createElement('i');
+  icon.dataset.feather = meta.icon;
+  icon.className = cls ? cls + ' ' + meta.tint : meta.tint;
+  return icon;
+}
+
+function paintAlertKindTrigger(button, kind) {
+  button.textContent = '';
+  button.dataset.alertKind = kind;
+  button.title = `Channel type: ${alertKindLabel(kind)}`;
+  button.append(alertKindIcon(kind, 'alert-kind-icon'));
+  const caret = document.createElement('i');
+  caret.dataset.feather = 'chevron-down';
+  caret.className = 'alert-kind-caret';
+  button.append(caret);
+}
+
+// One menu element is reused and positioned on open, the same way the stream
+// quick-action menu works, so a card with several channels never leaves hidden
+// menus stacked in the document. Each item carries its own click handler, so the
+// choice does not depend on a shared "current row" variable surviving the render.
+function openAlertKindMenu(trigger, current, onPick) {
+  const menu = document.getElementById('alert-kind-menu');
+  if (!menu) return;
+  menu.textContent = '';
+  ALERT_KINDS.forEach(([key, label]) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'stream-action-item';
+    item.setAttribute('role', 'menuitemradio');
+    item.setAttribute('aria-checked', String(key === current));
+    item.dataset.alertKind = key;
+    item.append(alertKindIcon(key, 'stream-action-icon'));
+    const text = document.createElement('span');
+    text.textContent = label;
+    item.append(text);
+    if (key === current) {
+      const check = document.createElement('i');
+      check.dataset.feather = 'check';
+      check.className = 'alert-kind-check';
+      item.append(check);
+    }
+    item.onclick = (e) => {
+      e.stopPropagation();
+      closeAlertKindMenu();
+      onPick(key);
+    };
+    menu.append(item);
+  });
+  menu.classList.remove('hidden');
+  positionStreamActionMenu(trigger, menu);
+  trigger.setAttribute('aria-expanded', 'true');
+  safeFeatherReplace();
+}
+
+function closeAlertKindMenu() {
+  const menu = document.getElementById('alert-kind-menu');
+  if (menu) menu.classList.add('hidden');
+  document.querySelectorAll('.alert-kind-btn[aria-expanded="true"]')
+    .forEach((b) => b.setAttribute('aria-expanded', 'false'));
+}
+
 function alertInput(value, placeholder, cls) {
   const input = document.createElement('input');
   input.type = 'text';
@@ -12034,21 +12122,38 @@ function renderAlertChannels() {
     row.className = 'p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2';
     row.dataset.alertId = ch.id || '';
 
+    // The type is held here rather than in a hidden input: the row is rebuilt only
+    // when a channel is added or removed, so the closure survives every keystroke.
+    let kindValue = ch.kind || 'ntfy';
+
     const top = document.createElement('div');
     top.className = 'flex items-center gap-2 flex-wrap';
-    const kind = document.createElement('select');
-    kind.className = 'panel-field text-xs w-32';
-    ALERT_KINDS.forEach(([value, label]) => {
-      const opt = document.createElement('option');
-      opt.value = value; opt.textContent = label;
-      if (value === ch.kind) opt.selected = true;
-      kind.appendChild(opt);
-    });
+
+    const kind = document.createElement('button');
+    kind.type = 'button';
+    kind.className = 'alert-kind-btn';
+    kind.setAttribute('aria-haspopup', 'menu');
+    kind.setAttribute('aria-expanded', 'false');
+    paintAlertKindTrigger(kind, kindValue);
+    kind.onclick = (e) => {
+      e.stopPropagation();
+      openAlertKindMenu(kind, kindValue, (key) => {
+        kindValue = key;
+        paintAlertKindTrigger(kind, key);
+        safeFeatherReplace();
+      });
+    };
+
     const name = alertInput(ch.name, 'Channel name', 'panel-field text-xs flex-1 min-w-[140px]');
-    const enabled = document.createElement('input');
-    enabled.type = 'checkbox'; enabled.checked = ch.enabled !== false;
-    enabled.className = 'w-4 h-4 accent-cyan-500';
+    const enabled = document.createElement('label');
+    enabled.className = 'switch';
     enabled.title = 'Enabled';
+    const enabledInput = document.createElement('input');
+    enabledInput.type = 'checkbox';
+    enabledInput.checked = ch.enabled !== false;
+    const enabledTrack = document.createElement('span');
+    enabledTrack.className = 'slider';
+    enabled.append(enabledInput, enabledTrack);
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'text-slate-500 hover:text-red-400 p-1 rounded transition';
@@ -12072,12 +12177,12 @@ function renderAlertChannels() {
     row.append(top, fields);
     row._collect = () => ({
       id: row.dataset.alertId || '',
-      kind: kind.value,
+      kind: kindValue,
       name: name.value.trim(),
       url: url.value.trim(),
       token: token.value.trim(),
       chat_id: chat.value.trim(),
-      enabled: enabled.checked,
+      enabled: enabledInput.checked,
     });
     host.appendChild(row);
   });
@@ -12203,6 +12308,16 @@ async function testAlerts() {
 }
 
 function initAlerts() {
+  // The two ways out of the shared type menu, matching the other panel menus. The
+  // items carry their own handlers, so there is no per-open state to reset here.
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.alert-kind-btn') || e.target.closest('#alert-kind-menu')) return;
+    closeAlertKindMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAlertKindMenu();
+  });
+
   document.getElementById('add-alert-channel')?.addEventListener('click', () => {
     alertsCache.channels = [...(alertsCache.channels || []), { kind: 'ntfy', name: '', url: '', token: '', chat_id: '', enabled: true }];
     renderAlertChannels();
