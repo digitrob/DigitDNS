@@ -56,7 +56,7 @@ func TestProxiedHTTPSAndSVCBAreSunk(t *testing.T) {
 		}
 
 		q := dns.Question{Name: "proxied.test.", Qtype: qtype, Qclass: dns.ClassINET}
-		if got, ok := c.Get(q); ok && got != nil {
+		if got := c.Get(q); got != nil {
 			t.Errorf("%s: synthetic sink entered the cache: %v", dns.TypeToString[qtype], got.Answer)
 		}
 	}
@@ -72,7 +72,7 @@ func TestProxiedHTTPSGuardWinsOverCachedUpstream(t *testing.T) {
 	q := dns.Question{Name: "proxied.test.", Qtype: dns.TypeHTTPS, Qclass: dns.ClassINET}
 	opts := cache.QueryOptions{EDNS: true, DO: true}
 	c.PutWithOptions(q, httpsHintMsg("proxied.test."), opts)
-	if _, ok := c.GetWithOptions(q, opts); !ok {
+	if c.GetWithOptions(q, opts) == nil {
 		t.Fatal("test setup failed: the upstream HTTPS answer was not cached")
 	}
 

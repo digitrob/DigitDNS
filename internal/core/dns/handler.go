@@ -1127,11 +1127,13 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 }
 
 func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern string, qtype uint16, rcode int) {
-	// Quick win: skip building the full QueryLogItem when nobody is watching.
-	// The TelemetrySink already gates SSE fan-out on subscriber count, but it still
-	// does the aggregator.RecordDetail, histogram observe, and ring buffer write.
-	// If no SSE subscribers and no persistent query log, skip the entire call.
-	if (h.telemetry == nil || h.telemetry.SSESubscribers() == 0) && h.queryLog == nil {
+	// Quick win: skip building the full QueryLogItem when there is nothing
+	// consuming it — no telemetry sink and no persistent query log both unset.
+	// The TelemetrySink itself already gates SSE fan-out on subscriber count
+	// while still doing the aggregator/histogram/ring-buffer work, and the
+	// persistent log lives behind the optional queryLog sink, so the handler
+	// only short-circuits when neither exists to write to at all.
+	if h.telemetry == nil && h.queryLog == nil {
 		return
 	}
 
@@ -1163,7 +1165,7 @@ func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, ac
 // name. The local relay path keeps using logQuery, so its payload is unchanged.
 func (h *Handler) logQueryRelay(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern string, target RelayTarget, qtype uint16, rcode int) {
 	// Same gating as logQuery: skip item construction when nobody is watching.
-	if (h.telemetry == nil || h.telemetry.SSESubscribers() == 0) && h.queryLog == nil {
+	if h.telemetry == nil && h.queryLog == nil {
 		return
 	}
 
