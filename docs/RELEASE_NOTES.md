@@ -1,43 +1,43 @@
-# DigitDNS v5.8.1 — alert pictograms and resolver hot-path
+# DigitDNS v5.8.2 — AdGuard custom rules, command palette, performance
 
-A minor release on top of v5.8.0. No database schema migration is required;
+A minor release on top of v5.8.1. No database schema migration is required;
 existing settings, clients, blocklists, certificates, relay agents and egress
 options are preserved.
 
 ## Added
 
-- **Alert channel pictograms.** Web and Android alert channel rows show a
-  destination pictogram (ntfy, Telegram, Discord, Slack, Gotify, Webhook) in the
-  kind picker and on the card, with a check on the active choice. The web
-  picker is a custom menu so the glyphs render in dark, grey and light themes.
-- **Android alert channel cards.** Each channel is its own bordered tile: the
-  kind pictogram opens the type menu, "Enabled" is labelled, and the channel
-  name gets its own full-width row so it can never collapse on a phone.
-- **Empty state.** "No channels yet — add one to receive alerts." on both
-  clients when there are no channels.
-- **Benchmarks.** `BenchmarkOrderedByLatencyWarm`, `BenchmarkRecordStat` and
-  `BenchmarkQueryLogPushDisabled` in the upstream and service packages.
+- **AdGuard-syntax custom filtering rules.** A text area on the Ad Blocking card
+  (web + Android) accepts AdGuard/uBlock network rules (`||domain^`, `@@||`,
+  `$dnsrewrite=`, `$important`, hosts format). Rules compile into the same index
+  as your blocklists.
+- **`$dnsrewrite` support.** `$dnsrewrite=IP` (A/AAAA), `$dnsrewrite=host`
+  (CNAME), `$dnsrewrite=TXT "text"`, and `$dnsrewrite=NXDOMAIN/REFUSED/SERVFAIL`.
+- **Command palette.** Ctrl/Cmd+K opens a fuzzy search over tabs, settings
+  sections and global actions (theme toggle, sign out) on the web panel.
+- **Android status widget.** A 2×1 home-screen widget showing queries today and
+  the live query rate; tap to open the app.
+- **Android toggle widget.** A 1×1 widget showing filtering on/off; tap opens
+  the app's Ad Blocking page.
+- **Android switches contrast.** Switches in the grey theme now use the success
+  colour for the checked track (was nearly white).
 
 ## Changed
 
-- **Resolver hot path.** Upstream stats are published through an
-  `atomic.Pointer` so `recordStat` and `upstreamAvailable` no longer take the
-  pool `RLock` on every answer; the cached latency order is an immutable
-  snapshot read with a single atomic load (Hedged/Best Known). The query-log
-  service caches its settings, so `Push` no longer reads (and decrypts) the
-  setting from bbolt on every DNS query — the default, with logging off, is
-  8.5 ns/op, 0 allocs.
-- **Dashboard 1 Hz polish.** `renderCacheHealth`, `renderProxyDrops` and the
-  latency badge compare before writing, and the resolver list and QPS chart are
-  skipped while another tab is visible — the poll keeps running, only the paint
-  is deferred.
-- **Transport palette sharing.** The Android resolver chips resolve their colour
-  and label from the theme's `ProtocolPalette` (`transportColor` /
-  `transportLabelRes`) instead of a second local table, matching the live log
-  and history cards.
+- **Resolver hot path.** System metrics sampled once per second in
+  `telemetryLoop` instead of on every `/api/stats` call. `normalizeProto` uses
+  `EqualFold` (zero alloc per query). Aggregator uses a per-bucket mutex and an
+  atomic current-bucket pointer.
+- **Web theming.** Non-theme-mapped `sky-*` and `violet-*` Tailwind utilities
+  replaced with theme-mapped `cyan-*`/`purple-*` across DoT settings, custom
+  policy groups, the top-upstreams icon, the 2FA card and the zap icon.
+- **Adaptive selection.** `adaptiveHealthy` now accepts resolvers that have a
+  successful probe, so the Force button switches to the fastest probed resolver
+  even if it never served live traffic. The timer resets after each forced run.
 
 ## Fixed
 
+- **Upstream Force button.** Not all the time did it switch to the fastest
+  resolver (probed-but-unmeasured resolvers were excluded). Fixed.
 - **Android detekt.** `TransportChips` no longer exceeds the
   cyclomatic-complexity threshold (the transport colour/label lookup moved to
   the theme).
@@ -52,17 +52,17 @@ options are preserved.
 In-place upgrades from the dashboard are supported. The release assets include
 the Linux amd64/arm64 hub binary, relay-agent binaries, the offline bundle,
 checksums and their ed25519 signature, and the Android APKs attached from the
-`android-v5.8.1` tag.
+`android-v5.8.2` tag.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.8.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.8.2/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.8.1
-docker pull ghcr.io/digitrob/digitdns-agent:5.8.1
-docker pull robmeister/digitdns:5.8.1
-docker pull robmeister/digitdns-agent:5.8.1
+docker pull ghcr.io/digitrob/digitdns:5.8.2
+docker pull ghcr.io/digitrob/digitdns-agent:5.8.2
+docker pull robmeister/digitdns:5.8.2
+docker pull robmeister/digitdns-agent:5.8.2
 ```

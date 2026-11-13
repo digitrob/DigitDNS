@@ -607,6 +607,17 @@ func makeCNAMERecord(name string, ttl uint32, target string) *dns.CNAME {
 	}
 }
 
+func makeTXTRecord(name string, ttl uint32, text string) *dns.TXT {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	return &dns.TXT{
+		Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: ttl},
+		Txt: []string{text},
+	}
+}
+
 // udpSize is the largest UDP payload this client will accept: its EDNS0
 // advertised buffer, or the RFC 1035 512-byte floor when the query carries no
 // OPT record. Clamped to 4096 so an absurd advertisement cannot be used to
@@ -790,13 +801,11 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	engineOff := h.engineDisabled.Load()
 
 	// 3. Custom record overrides outrank every other rule. Both address
-	// families are answered here — previously only A was intercepted, so a
-	// client could reach the real host by asking for AAAA instead.
 	if !engineOff {
 		if customVal, ok := h.matcher.GetCustomRecord(domain); ok {
 			customVal = strings.TrimSpace(customVal)
 			ip := net.ParseIP(customVal)
-			if ip != nil && (q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA || q.Qtype == dns.TypeCNAME) {
+			if ip != nil && (q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA) {
 				m := new(dns.Msg)
 				m.SetReply(r)
 				isV4 := ip.To4() != nil
@@ -813,6 +822,46 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
 				return m
 			}
+			// An IP rewrite queried for a non-matching type (CNAME, TXT, MX, ...)
+			// returns an empty NOERROR rather than falling through to upstream.
+			if ip != nil {
+				m := new(dns.Msg)
+				m.SetReply(r)
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+				return m
+			}
+			// Special response codes (AdGuard $dnsrewrite=NXDOMAIN/REFUSED/SERVFAIL).
+			upper := strings.ToUpper(customVal)
+			switch upper {
+			case "NXDOMAIN":
+				m := new(dns.Msg)
+				m.SetRcode(r, dns.RcodeNameError)
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+				return m
+			case "REFUSED":
+				m := new(dns.Msg)
+				m.SetRcode(r, dns.RcodeRefused)
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+				return m
+			case "SERVFAIL":
+				m := new(dns.Msg)
+				m.SetRcode(r, dns.RcodeServerFailure)
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+				return m
+			}
+			// TXT rewrite: $dnsrewrite=TXT "text".
+			if strings.HasPrefix(upper, "TXT ") {
+				text := strings.Trim(strings.TrimSpace(customVal[4:]), "\"")
+				if q.Qtype == dns.TypeTXT || q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA {
+					m := new(dns.Msg)
+					m.SetReply(r)
+					if rr := makeTXTRecord(q.Name, 60, text); rr != nil {
+						m.Answer = append(m.Answer, rr)
+					}
+					h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+					return m
+				}
+			}
 			// A non-IP value is treated as a CNAME target ($dnsrewrite=host).
 			if ip == nil && (q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA || q.Qtype == dns.TypeCNAME) {
 				m := new(dns.Msg)
@@ -824,7 +873,6 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				return m
 			}
 		}
-
 	}
 
 	// 4. Rule matcher. Every client is matched against the same admin-wide

@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.8.2] — AdGuard custom rules, command palette, performance
+
+### Added
+- **AdGuard-syntax custom filtering rules.** A text area on the Ad Blocking card
+  (web + Android) accepts AdGuard/uBlock network rules (`||domain^`, `@@||`,
+  `$dnsrewrite=`, `$important`, hosts format). Rules compile into the same index
+  as subscribed blocklists.
+- **`$dnsrewrite` support.** `$dnsrewrite=IP` (A/AAAA), `$dnsrewrite=host`
+  (CNAME), `$dnsrewrite=TXT "text"`, and `$dnsrewrite=NXDOMAIN/REFUSED/SERVFAIL`.
+- **Command palette.** Ctrl/Cmd+K opens a fuzzy search over tabs, settings
+  sections and global actions (theme toggle, sign out) on the web panel.
+- **Android status widget.** A 2×1 home-screen widget showing queries today and
+  the live query rate; tap to open the app. The dashboard's polling loop keeps it
+  fresh.
+- **Android toggle widget.** A 1×1 widget showing filtering on/off; tap opens the
+  app's Ad Blocking page.
+- **Android switches contrast.** Switches in the grey theme now use the success
+  colour for the checked track (was nearly white).
+
+### Changed
+- **Resolver hot path.** System metrics are sampled once per second in
+  `telemetryLoop` instead of on every `/api/stats` call. `normalizeProto` uses
+  `EqualFold` (zero alloc per query). Aggregator uses a per-bucket mutex and an
+  atomic current-bucket pointer (cleaner design, enables future sharding).
+- **Web theming.** Non-theme-mapped `sky-*` and `violet-*` Tailwind utilities
+  replaced with theme-mapped `cyan-*`/`purple-*` across DoT settings, custom
+  policy groups, the top-upstreams icon, the 2FA card and the zap icon — all
+  three themes now render consistently.
+- **Adaptive selection.** `adaptiveHealthy` now accepts resolvers that have a
+  successful probe, so the Force button switches to the fastest probed resolver
+  even if it never served live traffic. The timer resets after each forced run.
+
+### Fixed
+- **Upstream Force button.** Not all the time did it switch to the fastest
+  resolver (probed-but-unmeasured resolvers were excluded). Fixed.
+- **AdBlockingScreen compile.** `LongParameterList` and `MaxLineLength` detekt
+  gates kept green after adding the custom-rules field.
+
+### Notes
+- No database schema migration is required; existing settings, clients,
+  blocklists, certificates, relay agents and egress options are preserved.
+
 ## 🏷️ [v5.8.1] — alert pictograms and resolver hot-path
 
 ### Added

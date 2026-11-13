@@ -12393,6 +12393,115 @@ function initAlerts() {
   loadAlerts();
 }
 
+function initCommandPalette() {
+  const palette = document.getElementById('command-palette');
+  const input = document.getElementById('command-palette-input');
+  const list = document.getElementById('command-palette-list');
+  if (!palette || !input || !list) return;
+
+  const commands = [];
+  document.querySelectorAll('.sidebar-nav-item, .nav-tab').forEach((btn) => {
+    const tab = btn.dataset.tab;
+    const label = (btn.textContent || '').trim() || tab;
+    if (!tab || commands.some((c) => c.id === 'tab:' + tab)) return;
+    commands.push({ id: 'tab:' + tab, group: 'Tab', label, action: () => switchTab(tab) });
+  });
+  document.querySelectorAll('[data-settings-jump]').forEach((btn) => {
+    const target = btn.dataset.settingsJump;
+    const label = (btn.textContent || '').trim() || target;
+    if (!target || commands.some((c) => c.id === 'jump:' + target)) return;
+    commands.push({ id: 'jump:' + target, group: 'Settings', label, action: () => {
+      if (activeDashTab !== 'rules') switchTab('rules');
+      requestAnimationFrame(() => {
+        const el = document.getElementById(target);
+        if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
+    }});
+  });
+  commands.push({ id: 'act:theme', group: 'Action', label: 'Switch theme', action: () => {
+    const btn = document.querySelector('[data-theme-toggle]');
+    if (btn) btn.click();
+  }});
+  commands.push({ id: 'act:signout', group: 'Action', label: 'Sign out', action: () => {
+    const btn = document.getElementById('logout-btn');
+    if (btn) btn.click();
+  }});
+
+  let activeIndex = 0;
+  let filtered = commands.slice();
+
+  function render() {
+    list.innerHTML = '';
+    if (!filtered.length) {
+      const empty = document.createElement('div');
+      empty.className = 'command-palette-empty';
+      empty.textContent = 'No matches';
+      list.appendChild(empty);
+      return;
+    }
+    filtered.forEach((cmd, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'command-palette-item' + (i === activeIndex ? ' is-active' : '');
+      btn.innerHTML = `<span>${escapeHTML(cmd.label)}</span><span class="command-palette-group">${escapeHTML(cmd.group)}</span>`;
+      btn.onclick = () => { close(); cmd.action(); };
+      list.appendChild(btn);
+    });
+  }
+
+  function filter(q) {
+    const needle = (q || '').trim().toLowerCase();
+    filtered = needle
+      ? commands.filter((c) => c.label.toLowerCase().includes(needle) || c.group.toLowerCase().includes(needle))
+      : commands.slice();
+    activeIndex = 0;
+    render();
+  }
+
+  function open() {
+    palette.classList.remove('hidden');
+    input.value = '';
+    filter('');
+    requestAnimationFrame(() => input.focus());
+  }
+  function close() {
+    palette.classList.add('hidden');
+  }
+
+  input.addEventListener('input', () => filter(input.value));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIndex = Math.min(activeIndex + 1, filtered.length - 1);
+      render();
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+      render();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const cmd = filtered[activeIndex];
+      if (cmd) { close(); cmd.action(); }
+      return;
+    }
+  });
+  palette.querySelector('.command-palette-backdrop')?.addEventListener('click', close);
+
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      if (palette.classList.contains('hidden')) open(); else close();
+    }
+  });
+
+  window.openCommandPalette = open;
+}
+
 function initEventListeners() {
   initUpstreamAddressScroll();
   initUpstreamPresetBrowser();
@@ -12403,6 +12512,7 @@ function initEventListeners() {
   initExplainTool();
   initToolsPage();
   initAlerts();
+  initCommandPalette();
   initOnboarding();
   initDiffModal();
   // Tabs Navigation (Sidebar & Mobile Bottom Bar)

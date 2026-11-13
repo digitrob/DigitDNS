@@ -4155,6 +4155,23 @@ async function onBuySubscription(ctx, username) {
          current selection, so a card with several channels keeps one menu node. -->
     <div id="alert-kind-menu" role="menu" aria-label="Channel type" class="stream-action-menu alert-kind-menu hidden"></div>
 
+    <!-- Command palette: Ctrl/Cmd+K opens a fuzzy search over tabs, settings and
+         actions. The list is rebuilt from the sidebar and settings jump bar so it
+         never drifts from the navigation the operator already has. -->
+    <div id="command-palette" class="command-palette hidden" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="command-palette-backdrop"></div>
+      <div class="command-palette-panel">
+        <input id="command-palette-input" type="text" autocomplete="off" spellcheck="false"
+          placeholder="Search tabs, settings, actions…" aria-label="Search tabs, settings and actions" class="command-palette-input">
+        <div id="command-palette-list" class="command-palette-list"></div>
+        <div class="command-palette-hint">
+          <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+          <span><kbd>Enter</kbd> open</span>
+          <span><kbd>Esc</kbd> close</span>
+        </div>
+      </div>
+    </div>
+
     <!-- MOBILE STICKY BOTTOM NAVIGATION BAR -->
     <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800 px-1 py-1 flex items-stretch justify-around">
       <button id="engine-toggle-mobile" type="button" class="engine-mobile-pill is-on"
