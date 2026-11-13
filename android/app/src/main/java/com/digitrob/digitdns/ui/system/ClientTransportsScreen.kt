@@ -29,7 +29,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,6 +48,7 @@ import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelCopyIconButton
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
+import com.digitrob.digitdns.ui.components.PanelToggle
 import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
@@ -221,7 +221,7 @@ private fun TransportHeader(
             Box(modifier = Modifier.width(132.dp), contentAlignment = Alignment.CenterEnd) {
                 status()
             }
-            Switch(checked = enabled, onCheckedChange = onToggle, enabled = toggleEnabled)
+            PanelToggle(checked = enabled, onCheckedChange = onToggle, enabled = toggleEnabled)
         }
     }
 }

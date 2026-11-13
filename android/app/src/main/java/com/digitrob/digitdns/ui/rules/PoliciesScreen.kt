@@ -20,7 +20,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +34,7 @@ import com.digitrob.digitdns.domain.model.Policy
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
+import com.digitrob.digitdns.ui.components.PanelToggle
 import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.components.clickableText
@@ -133,7 +133,7 @@ private fun PolicyRow(
                 color = if (policy.enabled) DigitDnsTheme.colors.success else DigitDnsTheme.colors.textMuted,
                 modifier = Modifier.padding(start = 8.dp),
             )
-            Switch(
+            PanelToggle(
                 checked = policy.enabled,
                 onCheckedChange = { onToggle() },
                 enabled = !busy,
@@ -187,7 +187,7 @@ private fun PolicyEditor(viewModel: PoliciesViewModel) {
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Enabled", modifier = Modifier.weight(1f))
-                    Switch(checked = state.draftEnabled, onCheckedChange = viewModel::onEnabledChange)
+                    PanelToggle(checked = state.draftEnabled, onCheckedChange = viewModel::onEnabledChange)
                 }
             }
         },

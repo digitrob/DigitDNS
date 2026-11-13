@@ -32,7 +32,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Switch
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -69,6 +68,7 @@ import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.PanelScreenHeader
 import com.digitrob.digitdns.ui.components.PanelSnackbarHost
+import com.digitrob.digitdns.ui.components.PanelToggle
 import com.digitrob.digitdns.ui.components.SwipeToDeleteRow
 import com.digitrob.digitdns.ui.components.QuotaBar
 import com.digitrob.digitdns.ui.components.StatusBadge
@@ -209,7 +209,7 @@ private fun ClientsTopBar(
         Spacer(Modifier.width(4.dp))
         Text(stringResource(R.string.clients_public_mode), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.width(8.dp))
-        Switch(
+        PanelToggle(
             checked = !allowAll,
             onCheckedChange = { onAccessModeChange(!it) },
         )

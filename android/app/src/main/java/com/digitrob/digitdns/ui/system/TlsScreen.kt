@@ -22,7 +22,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,6 +44,7 @@ import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.PanelSnackbarHost
+import com.digitrob.digitdns.ui.components.PanelToggle
 import com.digitrob.digitdns.ui.components.showPanelToast
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
@@ -431,7 +431,7 @@ private fun SelfSignedRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit) 
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        PanelToggle(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -461,7 +461,7 @@ private fun SubscriptionAutoRenewCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(
+            PanelToggle(
                 checked = enabled,
                 onCheckedChange = onToggle,
                 enabled = ready && !busy,
@@ -482,7 +482,7 @@ private fun AutoRenewCard(autoRenew: Boolean, onToggle: (Boolean) -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(checked = autoRenew, onCheckedChange = onToggle)
+            PanelToggle(checked = autoRenew, onCheckedChange = onToggle)
         }
     }
 }

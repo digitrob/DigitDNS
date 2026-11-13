@@ -36,7 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -73,6 +72,7 @@ import com.digitrob.digitdns.core.network.normalizedTransports
 import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRowDefaults
+import com.digitrob.digitdns.ui.components.PanelToggle
 import com.digitrob.digitdns.ui.components.SwipeToDeleteRow
 import com.digitrob.digitdns.ui.components.UpstreamPresetBrowser
 import com.digitrob.digitdns.ui.components.UpstreamPresetBrowserActions
@@ -687,7 +687,7 @@ private fun SingleServerRow(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(stringResource(R.string.upstream_mode_pool), style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp))
-        Switch(
+        PanelToggle(
             checked = single,
             onCheckedChange = { on ->
                 if (on) {

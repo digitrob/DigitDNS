@@ -21,7 +21,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +48,7 @@ import com.digitrob.digitdns.core.security.BiometricAvailability
 import com.digitrob.digitdns.data.DashboardCard
 import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.PanelToggle
 import com.digitrob.digitdns.ui.security.findFragmentActivity
 
 /**
@@ -155,7 +155,7 @@ private fun BiometricLoginRow(
                 )
             }
         }
-        Switch(
+        PanelToggle(
             checked = enabled,
             onCheckedChange = onToggle,
             enabled = availability == BiometricAvailability.AVAILABLE || enabled,
@@ -280,7 +280,7 @@ private fun DashboardCardRow(
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
         )
-        Switch(checked = enabled, onCheckedChange = onToggle)
+        PanelToggle(checked = enabled, onCheckedChange = onToggle)
     }
 }
 

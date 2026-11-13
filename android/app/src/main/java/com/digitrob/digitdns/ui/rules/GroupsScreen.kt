@@ -22,7 +22,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,6 +37,7 @@ import com.digitrob.digitdns.domain.model.GroupAction
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
+import com.digitrob.digitdns.ui.components.PanelToggle
 import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.components.SwipeToDeleteRow
@@ -191,7 +191,7 @@ private fun GroupEditor(viewModel: GroupsViewModel) {
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Enabled", modifier = Modifier.weight(1f))
-                    Switch(checked = state.draftEnabled, onCheckedChange = viewModel::onEnabledChange)
+                    PanelToggle(checked = state.draftEnabled, onCheckedChange = viewModel::onEnabledChange)
                 }
             }
         },

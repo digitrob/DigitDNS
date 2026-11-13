@@ -707,7 +707,8 @@ body::before {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
-  opacity: 0.7;
+  /* Keep the theme's tested muted-text contrast. Applying opacity here made
+     the already-muted label fail WCAG AA in light mode. */
   user-select: none;
 }
 .sidebar-group-label:first-of-type {
@@ -2476,6 +2477,11 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 }
 
 .resolver-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
   padding: 0.1rem 0.3rem;
   border-radius: 0.45rem;
   border: 1px solid rgb(var(--c-slate-700));
@@ -4961,6 +4967,9 @@ textarea.panel-field {
    utility: keeping the definition here means the class inventory treats it as a
    custom class and the button stays styled even if the purge output changes. */
 .global-notice-btn {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -5061,7 +5070,7 @@ textarea.panel-field {
   display: block;
   margin-top: 2px;
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--text-main);
   line-height: 1.4;
 }
 
@@ -5485,6 +5494,9 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
 }
 .history-top-provider-toggle {
   flex-shrink: 0;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
   padding: 2px 7px;
   border-radius: 999px;
   border: 1px solid rgb(var(--c-slate-700));
@@ -5572,4 +5584,26 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
   font-size: clamp(1.65rem, 9cqi, 2.5rem);
   line-height: 1.02;
   font-variant-numeric: tabular-nums;
+}
+
+/* Respect the OS high-contrast preference without changing the selected theme.
+   Use each theme's tested slate-500 as a solid boundary, make disabled controls
+   easier (not harder) to distinguish, and strengthen keyboard focus rings where
+   the normal density styles intentionally use a thin outline or none. */
+@media (prefers-contrast: more) {
+  :root {
+    --border-color: rgb(var(--c-slate-500) / 1);
+    --track-border: rgb(var(--c-slate-500) / 1);
+    --disabled-opacity: 0.65;
+  }
+
+  :where(button, a, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+    outline: 3px solid var(--accent-cyan) !important;
+    outline-offset: 2px;
+  }
+
+  .switch input:focus-visible + .slider {
+    outline: 3px solid var(--accent-cyan);
+    outline-offset: 2px;
+  }
 }

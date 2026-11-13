@@ -23,6 +23,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchColors
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
@@ -416,6 +418,32 @@ private val HEADER_CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss")
     .withZone(ZoneId.systemDefault())
 
 /**
+ * The panel's compact switch control. Keep the thumb tied to the shared theme token;
+ * callers may supply colors when the track itself carries a semantic state (for
+ * example, the engine's green-on/red-off control).
+ */
+@Composable
+fun PanelToggle(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    colors: SwitchColors? = null,
+) {
+    val knob = DigitDnsTheme.colors.knob
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        modifier = modifier,
+        enabled = enabled,
+        colors = colors ?: SwitchDefaults.colors(
+            checkedThumbColor = knob,
+            uncheckedThumbColor = knob,
+        ),
+    )
+}
+
+/**
  * The panel's switch: a labelled toggle row. Shared so every settings screen turns a
  * boolean on and off the same way, rather than each growing its own label/switch pair.
  */
@@ -446,7 +474,7 @@ fun PanelSwitch(
                 )
             }
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        PanelToggle(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
 

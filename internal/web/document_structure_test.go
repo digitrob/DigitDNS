@@ -86,11 +86,14 @@ func TestIndexHTMLFooterIsInsideMain(t *testing.T) {
 func TestIndexHTMLHasAccessibleDocumentAnchors(t *testing.T) {
 	doc := readAsset(t, "index.html")
 	checks := map[string]string{
-		"skip link":           `<a href="#main-content" class="skip-link">`,
-		"main target":         `<main id="main-content"`,
-		"page heading":        `<h1 id="login-title"`,
-		"query log caption":   `<caption class="sr-only">Live DNS query log</caption>`,
-		"enabled field group": `<fieldset class="contents">`,
+		"skip link":                            `<a href="#main-content" class="skip-link">`,
+		"main target":                          `<main id="main-content"`,
+		"page heading":                         `<h1 id="login-title"`,
+		"dashboard onboarding section heading": `<h2 class="panel-card-title">Finish setting up DigitDNS</h2>`,
+		"query log caption":                    `<caption class="sr-only">Live DNS query log</caption>`,
+		"enabled field group":                  `<fieldset class="contents">`,
+		"resolver mode switch name": `id="resolution-single-switch"
+                      aria-label="Use a single upstream resolver"`,
 	}
 	for name, fragment := range checks {
 		if !strings.Contains(doc, fragment) {

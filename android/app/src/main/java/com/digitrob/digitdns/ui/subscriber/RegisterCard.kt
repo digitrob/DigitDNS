@@ -16,7 +16,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,6 +25,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.digitrob.digitdns.R
+import com.digitrob.digitdns.ui.components.PanelToggle
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 
 /**
@@ -67,7 +67,7 @@ internal fun RegisterCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.width(8.dp))
-            Switch(
+            PanelToggle(
                 checked = form.saveSecret,
                 onCheckedChange = { onChange(form.copy(saveSecret = it)) },
                 modifier = Modifier.height(28.dp),

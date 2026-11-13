@@ -42,7 +42,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -83,6 +82,7 @@ import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelCopyIconButton
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
+import com.digitrob.digitdns.ui.components.PanelToggle
 import com.digitrob.digitdns.ui.components.SettingsLoadingSkeleton
 import com.digitrob.digitdns.ui.components.PanelSnackbarHost
 import com.digitrob.digitdns.ui.components.StatusBadge
@@ -468,7 +468,7 @@ private fun RelayGlobalSwitch(enabled: Boolean, onChange: (Boolean) -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(checked = enabled, onCheckedChange = onChange)
+            PanelToggle(checked = enabled, onCheckedChange = onChange)
         }
     }
 }
@@ -1067,7 +1067,7 @@ private fun ToggleRow(
             )
         }
         Spacer(Modifier.width(8.dp))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        PanelToggle(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -1471,7 +1471,7 @@ private fun AgentFormDialog(
                             )
                         }
                         Spacer(Modifier.width(8.dp))
-                        Switch(
+                        PanelToggle(
                             checked = ipv6Enabled,
                             onCheckedChange = { ipv6Enabled = it },
                         )

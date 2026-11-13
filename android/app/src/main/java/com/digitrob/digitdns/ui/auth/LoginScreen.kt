@@ -39,7 +39,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.domain.model.CredentialMode
+import com.digitrob.digitdns.ui.components.PanelToggle
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelSwitch
@@ -502,7 +502,7 @@ private fun ConnectionFields(state: LoginUiState, viewModel: LoginViewModel) {
         )
     }
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Switch(
+        PanelToggle(
             checked = state.isHttps,
             onCheckedChange = viewModel::onHttpsChange,
             // Same knob token the web panel's `--knob-bg` resolves to, so the thumb

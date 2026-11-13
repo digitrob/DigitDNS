@@ -22,7 +22,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,6 +43,7 @@ import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
+import com.digitrob.digitdns.ui.components.PanelToggle
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
@@ -229,7 +229,7 @@ private fun DnssecSwitch(state: DnssecSettingsUiState, viewModel: DnssecSettings
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
         )
-        Switch(
+        PanelToggle(
             checked = state.enabled,
             onCheckedChange = viewModel::onEnabledChange,
             enabled = state.loaded && !state.isSaving,
@@ -456,7 +456,7 @@ private fun ProxyLeakHeader(
                 )
                 Spacer(Modifier.width(8.dp))
                 val switchLabel = stringResource(R.string.proxy_leak_settings_enabled)
-                Switch(
+                PanelToggle(
                     checked = state.enabled,
                     onCheckedChange = onCheckedChange,
                     enabled = state.loaded && !state.isSaving,

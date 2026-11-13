@@ -4,6 +4,7 @@ import (
 	"math"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -201,6 +202,66 @@ func TestThemeTextContrast(t *testing.T) {
 		if r := contrastRatio(white, fill); r < minContrastAA {
 			t.Errorf("%s theme: on-fill label (white on --c-red-600) is %.2f:1, below the %.1f:1 AA floor",
 				th.name, r, minContrastAA)
+		}
+	}
+}
+
+// These two small captions sit over component backgrounds rather than the simple
+// slate-900/slate-800 surfaces above. Their colors are checked structurally here
+// so they stay on the theme's text tokens without parent opacity reducing contrast.
+func TestDashboardCaptionsKeepThemeContrast(t *testing.T) {
+	css := readCSSRules(t, "css/style.css")
+
+	sidebar := cssRule(t, css, ".sidebar-group-label")
+	if !regexp.MustCompile(`color:\s*var\(--text-muted\)\s*;`).MatchString(sidebar) {
+		t.Error(".sidebar-group-label must use the theme's contrast-tested --text-muted color")
+	}
+	if regexp.MustCompile(`opacity\s*:`).MatchString(sidebar) {
+		t.Error(".sidebar-group-label must not reduce its already-muted text color with opacity")
+	}
+
+	onboarding := cssRule(t, css, ".onboarding-step-desc")
+	if !regexp.MustCompile(`color:\s*var\(--text-main\)\s*;`).MatchString(onboarding) {
+		t.Error(".onboarding-step-desc must use --text-main to remain readable on its tinted step background")
+	}
+}
+
+// The resolver strategy/transport chips and the two compact dashboard actions
+// were 17-20px tall: smaller than WCAG 2.2 AA's 24px pointer-target minimum.
+// Keep them comfortably tappable without imposing full-size form-control height
+// on these dense, grouped controls.
+func TestCompactDashboardButtonsMeetPointerTargetFloor(t *testing.T) {
+	css := readCSSRules(t, "css/style.css")
+	for _, selector := range []string{
+		".resolver-chip",
+		".global-notice-btn",
+		".history-top-provider-toggle",
+	} {
+		rule := cssRule(t, css, selector)
+		m := regexp.MustCompile(`min-height:\s*(\d+)px\s*;`).FindStringSubmatch(rule)
+		if m == nil {
+			t.Errorf("%s has no explicit minimum target height", selector)
+			continue
+		}
+		height, err := strconv.Atoi(m[1])
+		if err != nil || height < 24 {
+			t.Errorf("%s minimum target height is %qpx; want at least 24px", selector, m[1])
+		}
+	}
+}
+
+func TestSystemHighContrastPreferenceStrengthensControls(t *testing.T) {
+	css := readCSSRules(t, "css/style.css")
+	rule := cssRule(t, css, "@media (prefers-contrast: more)")
+	for _, declaration := range []string{
+		"--border-color: rgb(var(--c-slate-500) / 1);",
+		"--track-border: rgb(var(--c-slate-500) / 1);",
+		"--disabled-opacity: 0.65;",
+		"outline: 3px solid var(--accent-cyan) !important;",
+		".switch input:focus-visible + .slider",
+	} {
+		if !strings.Contains(rule, declaration) {
+			t.Errorf("high-contrast preference is missing %q", declaration)
 		}
 	}
 }

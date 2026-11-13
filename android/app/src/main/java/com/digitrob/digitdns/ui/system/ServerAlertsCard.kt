@@ -36,7 +36,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,6 +55,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.core.network.AlertChannelDto
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.PanelToggle
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 
 private data class AlertKind(
@@ -114,7 +114,7 @@ fun ServerAlertsCard(viewModel: ServerAlertsViewModel = hiltViewModel()) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Switch(checked = s.enabled, onCheckedChange = viewModel::setEnabled)
+                PanelToggle(checked = s.enabled, onCheckedChange = viewModel::setEnabled)
             }
 
             s.channels.forEachIndexed { index, channel ->
@@ -297,7 +297,7 @@ private fun AlertChannelRow(
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
-            Switch(
+            PanelToggle(
                 checked = channel.enabled,
                 onCheckedChange = { value -> onChange { it.copy(enabled = value) } },
             )
