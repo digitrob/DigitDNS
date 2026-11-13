@@ -1,5 +1,5 @@
 ========================================================================
-   DigitDNS v5.8.2 — OFFLINE INSTALLER
+   DigitDNS v5.8.8 — OFFLINE INSTALLER
    Standalone · Single Binary · Pre-packaged Assets
 ========================================================================
 
