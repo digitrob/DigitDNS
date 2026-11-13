@@ -172,3 +172,33 @@ func TestLoginDocumentSurvivesAnEmptyAssetTree(t *testing.T) {
 		t.Fatal("serveLogin reported success with no assets embedded")
 	}
 }
+
+// TestLoginDocumentMirrorsPanelControlGeometry: the standalone sign-in page cannot
+// load the dashboard sheet, so it declares its own tokens. This pins the values it
+// is supposed to mirror — a 44px primary action on the panel's 10px radius, a 36px
+// field on the same radius — because "self-contained" is what let those numbers
+// drift apart in the first place. The page is the first screen an operator sees; a
+// card here that is shaped differently from the panel's own login modal reads as a
+// different product before anything has been configured.
+func TestLoginDocumentMirrorsPanelControlGeometry(t *testing.T) {
+	doc := readAsset(t, "login.html")
+	for _, want := range []string{
+		"--radius-md: 10px",
+		"--control-height: 36px",
+		"border-radius: var(--radius-lg)",
+		"min-height: var(--control-height)",
+		"min-height: 44px",
+		"background: var(--accent-solid)",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("login.html no longer carries %q — the standalone page has drifted "+
+				"from the panel's control metrics", want)
+		}
+	}
+	// The submit was a cyan-to-indigo gradient while .panel-btn-primary is one solid
+	// face. The gradient is the exact thing this test keeps from coming back.
+	if strings.Contains(doc, "linear-gradient(90deg, var(--accent)") {
+		t.Error("login.html's submit button is a gradient again; the panel's primary " +
+			"action is a solid fill and the two sign-in surfaces have to match")
+	}
+}

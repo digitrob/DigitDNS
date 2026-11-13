@@ -1265,7 +1265,6 @@ const portalPageHTML = `<!DOCTYPE html>
          data-msg-register-ok="{{.T.MsgRegisterOK}}"
          data-msg-register-fail="{{.T.MsgRegisterFail}}"
          data-msg-register-denied="{{.T.MsgRegisterDenied}}"
-         data-msg-reason-secret="{{.T.MsgRegisterDenied}}"
          data-msg-reason-invalid="{{.T.MsgRegisterFail}}"
          data-msg-reason-suspended="{{.T.MsgRegisterSuspended}}"
          data-msg-reason-expired="{{.T.MsgRegisterExpired}}"

@@ -339,6 +339,8 @@
             showToast(msg('reason-quota'), 'is-bad');
           } else if (reason === 'conflict') {
             showToast(msg('reason-conflict'), 'is-bad');
+          } else if (reason === 'secret') {
+            showToast(msg('register-denied'), 'is-bad');
           } else if (reason === 'invalid') {
             showToast(msg('reason-invalid'), 'is-bad');
           } else {

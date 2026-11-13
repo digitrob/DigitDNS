@@ -150,6 +150,17 @@
   --radius: 18px;
   --radius-sm: 12px;
   --radius-xs: 8px;
+
+  /* Control metrics, mirrored from the dashboard's style.css so an action on this
+     page has the same height and corner as an action in the panel: .panel-btn is
+     36px tall on a 10px radius with 12px horizontal padding and 12px type. The
+     portal keeps its own colour tokens (its palette is a subscriber's, not an
+     operator's) but the geometry is one system. */
+  --control-height: 36px;
+  --radius-md: 10px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --text-sm: 12px;
 }
 
 *,
@@ -538,24 +549,28 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  padding: 0.55rem 0.9rem;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--btn-face);
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 700;
+  line-height: 1;
   text-decoration: none;
   white-space: nowrap;
   transition: filter 0.2s ease, transform 0.15s ease;
 }
 
+/* Solid accent fill, not a gradient: the dashboard's .panel-btn-primary is one
+   flat cyan face with near-black text, and a sign-in-to-portal trip should not
+   change what "the primary action" looks like. */
 .btn-primary {
   border-color: transparent;
   color: var(--on-accent);
-  background: linear-gradient(135deg, var(--cyan), var(--cyan-deep));
-  box-shadow: 0 8px 20px rgba(56, 189, 248, 0.22);
+  background: var(--cyan);
 }
 
 .btn:hover {
@@ -1044,7 +1059,8 @@
 .btn:focus-visible,
 .copy-btn:focus-visible,
 .copy-card:focus-visible,
-.tab:focus-visible {
+.tab:focus-visible,
+.reg-input:focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
 }

@@ -42,7 +42,6 @@
       --text: #e2e8f0;
       --muted: #94a3b8;
       --accent: #00f0ff;
-      --accent-2: #6366f1;
       --danger: #f87171;
       --danger-bg: rgba(248, 113, 113, .08);
       --field: rgba(2, 6, 23, .8);
@@ -50,6 +49,24 @@
       --field-border: var(--border);
       --focus-shadow: rgba(0, 240, 255, .12);
       --placeholder: #475569;
+
+      /* The submit fill is the dashboard's --c-cyan-500 (#00d2df), not --accent.
+         .panel-btn-primary is a solid cyan-500 face with near-black text, and the
+         sign-in modal inside the panel uses exactly that button; --accent stays the
+         brand/focus glow at cyan-400. */
+      --accent-solid: #00d2df;
+      --accent-solid-hover: #00f0ff;
+      --accent-solid-ink: #030712;
+
+      /* Geometry mirrored from the dashboard's style.css: .panel-btn-lg is 44px on
+         a 10px radius, .panel-field is 36px on the same radius, and --radius-lg is
+         16px for the card. Only the colour tokens are local — this page cannot
+         fetch the panel sheet (see the note above body). */
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --control-height: 36px;
+      --text-sm: 12px;
+      --text-md: 13px;
     }
     /* The dashboard's neutral grey theme, mirrored here so the sign-in page
        does not flash back to the blue-black palette after the operator picks
@@ -63,7 +80,9 @@
       --text: #f4f4f5;
       --muted: #a1a1aa;
       --accent: #e4e4e7;
-      --accent-2: #a1a1aa;
+      --accent-solid: #e4e4e7;
+      --accent-solid-hover: #f4f4f5;
+      --accent-solid-ink: #09090b;
       --field: rgba(9, 9, 11, .8);
       --field-border: #71717a;
       --checkbox: #71717a;
@@ -81,14 +100,6 @@
       background: linear-gradient(135deg, rgba(255, 255, 255, .12), rgba(255, 255, 255, .04));
       border-color: rgba(255, 255, 255, .24);
     }
-    html[data-theme="grey"] button[type="submit"] {
-      background: #e4e4e7;
-      color: #09090b;
-    }
-    html[data-theme="grey"] button[type="submit"]:hover {
-      background: #f4f4f5;
-      filter: none;
-    }
 
     html[data-theme="light"] {
       --bg: #f7f9fc;
@@ -98,7 +109,9 @@
       --text: #111827;
       --muted: #475569;
       --accent: #0e7490;
-      --accent-2: #155e75;
+      --accent-solid: #0e7490;
+      --accent-solid-hover: #155e75;
+      --accent-solid-ink: #ffffff;
       --danger: #b91c1c;
       --danger-bg: rgba(185, 28, 28, .08);
       --field: #eef3fa;
@@ -117,14 +130,6 @@
     html[data-theme="light"] .brand-logo {
       background: linear-gradient(135deg, rgba(14, 116, 144, .12), rgba(15, 23, 42, .05));
       border-color: rgba(14, 116, 144, .25);
-    }
-    html[data-theme="light"] button[type="submit"] {
-      background: #0e7490;
-      color: #ffffff;
-    }
-    html[data-theme="light"] button[type="submit"]:hover {
-      background: #155e75;
-      filter: none;
     }
 
     html[data-theme="grey"] ::selection {
@@ -163,7 +168,7 @@
       max-width: 24.5rem;
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 1.1rem;
+      border-radius: var(--radius-lg);
       padding: 1.75rem 1.6rem 1.5rem;
       box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
       backdrop-filter: blur(8px);
@@ -179,17 +184,18 @@
     .brand-logo svg { width: 1.3rem; height: 1.3rem; stroke: var(--accent); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .brand-name { font-size: 1.25rem; font-weight: 800; letter-spacing: .01em; }
     .brand-sub { font-size: .68rem; font-weight: 700; letter-spacing: .22em; color: var(--accent); text-transform: uppercase; }
-    label { display: block; font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: .95rem 0 .35rem; }
+    label { display: block; font-size: var(--text-sm); font-weight: 600; color: var(--muted); margin: .95rem 0 .35rem; }
     input {
       width: 100%;
+      min-height: var(--control-height);
       background: var(--field);
       border: 1px solid var(--field-border);
-      border-radius: .6rem;
+      border-radius: var(--radius-md);
       color: var(--text);
-      font-size: .95rem;
+      font-size: var(--text-sm);
       font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', 'SF Mono', Menlo,
         Consolas, monospace;
-      padding: .62rem .75rem;
+      padding: 0 .75rem;
       outline: none;
       transition: border-color .15s;
     }
@@ -204,16 +210,15 @@
       align-items: center;
       gap: .5rem;
       margin-top: .95rem;
-      font-size: .82rem;
+      font-size: var(--text-sm);
       font-weight: 500;
-      letter-spacing: normal;
-      text-transform: none;
       color: var(--muted);
       cursor: pointer;
     }
     .remember input {
       width: 1rem;
       height: 1rem;
+      min-height: 0;
       flex: none;
       margin: 0;
       padding: 0;
@@ -227,27 +232,28 @@
       padding: .55rem .75rem;
       border: 1px solid rgba(248, 113, 113, .35);
       background: var(--danger-bg);
-      border-radius: .55rem;
+      border-radius: var(--radius-md);
       color: var(--danger);
-      font-size: .82rem;
+      font-size: var(--text-sm);
     }
     .error.is-shown { display: block; }
     button[type="submit"] {
       width: 100%;
       margin-top: 1.2rem;
-      padding: .72rem;
+      min-height: 44px;
+      padding: 0 1rem;
       border: 0;
-      border-radius: .6rem;
-      font-size: .9rem;
-      font-weight: 800;
-      letter-spacing: .04em;
-      color: #04121a;
-      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      border-radius: var(--radius-md);
+      font-size: var(--text-md);
+      font-weight: 700;
+      color: var(--accent-solid-ink);
+      background: var(--accent-solid);
       cursor: pointer;
-      transition: filter .15s, transform .05s;
+      transition: background-color .15s, transform .05s;
     }
-    button[type="submit"]:hover { filter: brightness(1.08); }
+    button[type="submit"]:hover { background: var(--accent-solid-hover); }
     button[type="submit"]:active { transform: translateY(1px); }
+    button[type="submit"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     button[type="submit"]:disabled { opacity: .6; cursor: wait; }
     .foot {
       margin-top: 1.15rem;

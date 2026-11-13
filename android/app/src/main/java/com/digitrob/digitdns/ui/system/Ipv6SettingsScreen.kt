@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -29,12 +28,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
@@ -152,7 +151,7 @@ private fun Ipv6PolicyCard(state: Ipv6SettingsUiState, viewModel: Ipv6SettingsVi
 
 @Composable
 private fun Ipv6DisableDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    AlertDialog(
+    PanelDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ipv6_settings_disable_title)) },
         text = { Text(stringResource(R.string.ipv6_settings_disable_message)) },
@@ -161,7 +160,6 @@ private fun Ipv6DisableDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
                 Text(
                     text = stringResource(R.string.ipv6_settings_disable_confirm),
                     color = DigitDnsTheme.colors.danger,
-                    fontWeight = FontWeight.Bold,
                 )
             }
         },

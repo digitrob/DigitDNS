@@ -17,7 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -36,7 +35,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,6 +42,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.components.PanelCard
+import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
@@ -358,7 +357,7 @@ private fun ProxyLeakPolicyCard(
 ) {
     var confirmDisable by rememberSaveable { mutableStateOf(false) }
     if (confirmDisable) {
-        AlertDialog(
+        PanelDialog(
             onDismissRequest = { confirmDisable = false },
             title = { Text(stringResource(R.string.proxy_leak_settings_disable_title)) },
             text = { Text(stringResource(R.string.proxy_leak_settings_disable_message)) },
@@ -372,7 +371,6 @@ private fun ProxyLeakPolicyCard(
                     Text(
                         text = stringResource(R.string.proxy_leak_settings_disable_confirm),
                         color = DigitDnsTheme.colors.danger,
-                        fontWeight = FontWeight.Bold,
                     )
                 }
             },

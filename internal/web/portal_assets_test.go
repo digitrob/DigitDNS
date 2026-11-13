@@ -205,6 +205,22 @@ func TestPortalAssetsAreEmbeddedAndWired(t *testing.T) {
 				"renders this page", prop)
 		}
 	}
+
+	// The portal's action geometry is mirrored from the dashboard's .panel-btn, and
+	// this is the check that keeps it mirrored. An operator and a subscriber are the
+	// same person on two screens; a 12px-radius gradient button here and a 10px solid
+	// one there is exactly the drift this pair of tokens exists to stop.
+	for _, want := range []string{
+		"--control-height: 36px",
+		"--radius-md: 10px",
+		"min-height: var(--control-height)",
+		"border-radius: var(--radius-md)",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("css/portal.css no longer carries %q — the portal's buttons have "+
+				"drifted from the panel's control metrics", want)
+		}
+	}
 }
 
 // The inventory, in both directions. A framework cannot be half removed, and this is
