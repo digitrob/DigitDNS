@@ -5825,3 +5825,7 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
     animation: none;
   }
 }
+
+/* Info tooltip for stream log rows */
+.stream-info-tooltip {
+}

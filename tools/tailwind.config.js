@@ -109,6 +109,7 @@ module.exports = {
     },
   },
   safelist: [
+    'opacity-70', 'transition-colors', 'stream-info-tooltip', 'font-medium',
     'text-emerald-400', 'text-red-400', 'text-amber-400', 'text-slate-300',
     'remove-proxied', 'remove-blocked', 'remove-token',
     'w-2', 'h-2', 'rounded-full', 'bg-slate-600', 'bg-emerald-400', 'bg-yellow-400', 'bg-red-400',

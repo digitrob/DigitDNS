@@ -99,6 +99,11 @@ type QueryLogItem struct {
 	// aggregate stats reader treats zero as UNKNOWN/NOERROR.
 	QType uint16 `json:"qtype,omitempty"`
 	Rcode int    `json:"rcode,omitempty"`
+	// ResolvedIPs holds the A/AAAA answer IP addresses returned by the DNS
+	// resolver. Empty when the answer is not an address record (e.g. CNAME,
+	// NXDOMAIN, BLOCK, cache, direct). Omitted from JSON when nil so existing
+	// consumers see no change.
+	ResolvedIPs []string `json:"resolved_ips,omitempty"`
 	// Upstream is the resolver that produced the answer: empty for a blocked,
 	// proxied or locally-answered name, "cache" for a RAM hit, and the racer's
 	// winning address otherwise. Omitted from JSON when empty so existing

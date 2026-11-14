@@ -698,7 +698,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		// the amplification this check exists to remove. Sampling keeps the
 		// offending source visible at bounded cost.
 		if n%rateLimitLogSample == 1 {
-			h.logQuery(start, clientIP, "Public", proto, questionName(r), "Rate limit", "RATELIMIT", false, "", "", firstQuestionType(r), dns.RcodeRefused)
+			h.logQuery(start, clientIP, "Public", proto, questionName(r), "Rate limit", "RATELIMIT", false, "", "", firstQuestionType(r), dns.RcodeRefused, nil)
 		}
 		if proto == "UDP" {
 			return nil
@@ -746,7 +746,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		}
 		// The other address family (or a missing public address) is a deliberate
 		// empty NOERROR: the name exists here, that family just has no address.
-		h.logQuery(start, clientIP, "Self", proto, domain, "Self-service", "SELF", false, "", "", q.Qtype, m.Rcode)
+		h.logQuery(start, clientIP, "Self", proto, domain, "Self-service", "SELF", false, "", "", q.Qtype, m.Rcode, nil)
 		return m
 	}
 
@@ -785,7 +785,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	if activeClient != nil && h.quota != nil && h.quota.QuotaExceeded(activeClient) {
 		m := new(dns.Msg)
 		m.SetRcode(r, dns.RcodeRefused)
-		h.logQuery(start, clientIP, accountName, proto, q.Name, "Traffic quota exceeded", "QUOTA", false, "", "", q.Qtype, dns.RcodeRefused)
+		h.logQuery(start, clientIP, accountName, proto, q.Name, "Traffic quota exceeded", "QUOTA", false, "", "", q.Qtype, dns.RcodeRefused, nil)
 		return m
 	}
 
@@ -794,7 +794,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	if q.Qtype == dns.TypeANY {
 		m := new(dns.Msg)
 		m.SetRcode(r, dns.RcodeRefused)
-		h.logQuery(start, clientIP, accountName, proto, domain, "ANY refused", "BLOCK", false, "", "", q.Qtype, dns.RcodeRefused)
+		h.logQuery(start, clientIP, accountName, proto, domain, "ANY refused", "BLOCK", false, "", "", q.Qtype, dns.RcodeRefused, nil)
 		return m
 	}
 
@@ -819,7 +819,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 					}
 				}
 				// The other family deliberately gets an empty NOERROR.
-				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractResolvedIPs(m))
 				return m
 			}
 			// An IP rewrite queried for a non-matching type (CNAME, TXT, MX, ...)
@@ -827,7 +827,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			if ip != nil {
 				m := new(dns.Msg)
 				m.SetReply(r)
-				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractResolvedIPs(m))
 				return m
 			}
 			// Special response codes (AdGuard $dnsrewrite=NXDOMAIN/REFUSED/SERVFAIL).
@@ -836,17 +836,17 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			case "NXDOMAIN":
 				m := new(dns.Msg)
 				m.SetRcode(r, dns.RcodeNameError)
-				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractResolvedIPs(m))
 				return m
 			case "REFUSED":
 				m := new(dns.Msg)
 				m.SetRcode(r, dns.RcodeRefused)
-				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractResolvedIPs(m))
 				return m
 			case "SERVFAIL":
 				m := new(dns.Msg)
 				m.SetRcode(r, dns.RcodeServerFailure)
-				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractResolvedIPs(m))
 				return m
 			}
 			// TXT rewrite: $dnsrewrite=TXT "text".
@@ -858,7 +858,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 					if rr := makeTXTRecord(q.Name, 60, text); rr != nil {
 						m.Answer = append(m.Answer, rr)
 					}
-					h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+					h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractResolvedIPs(m))
 					return m
 				}
 			}
@@ -869,7 +869,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				if rr := makeCNAMERecord(q.Name, 60, customVal); rr != nil {
 					m.Answer = append(m.Answer, rr)
 				}
-				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode)
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractResolvedIPs(m))
 				return m
 			}
 		}
@@ -903,7 +903,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				m.Answer = append(m.Answer, makeARecord(q.Name, ttl, net.IPv4zero))
 			}
 		}
-		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "BLOCK", false, "", matchedPattern, q.Qtype, m.Rcode)
+		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "BLOCK", false, "", matchedPattern, q.Qtype, m.Rcode, extractResolvedIPs(m))
 		return m
 
 	case matcher.ActionProxy:
@@ -938,7 +938,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		if target.Kind == "egress" && target.FailClosed && !target.Healthy {
 			m := new(dns.Msg)
 			m.SetReply(r)
-			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure)
+			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure, extractResolvedIPs(r))
 			m.SetRcode(r, dns.RcodeServerFailure)
 			return m
 		}
@@ -949,7 +949,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				m.SetReply(r)
 				// An agent with no IPv4 must not fall through to the cache or an
 				// upstream answer: that would expose the real host address.
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure)
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure, extractResolvedIPs(r))
 				m.SetRcode(r, dns.RcodeServerFailure)
 				return m
 			}
@@ -968,12 +968,12 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				// means a future regression can never masquerade as a successful
 				// proxy answer again (v2.1.0 B-13 remediation).
 				log.Printf("[DNS] Could not build proxied A record for %s from %s", q.Name, targetIPv4)
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure)
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure, extractResolvedIPs(r))
 				m.SetRcode(r, dns.RcodeServerFailure)
 				return m
 			}
 			m.Answer = append(m.Answer, rr)
-			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, target, q.Qtype, m.Rcode)
+			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, target, q.Qtype, m.Rcode, extractResolvedIPs(r))
 			return m
 		}
 		if q.Qtype == dns.TypeAAAA {
@@ -990,14 +990,14 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				}
 				if rr := makeAAAARecord(q.Name, ttl, targetIPv6); rr != nil {
 					m.Answer = append(m.Answer, rr)
-					h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, target, q.Qtype, m.Rcode)
+					h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, target, q.Qtype, m.Rcode, extractResolvedIPs(r))
 					return m
 				}
 			}
 			if target.Kind == "agent" || target.Kind == "egress" || target.FallbackReason != "" {
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, target, q.Qtype, m.Rcode)
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, target, q.Qtype, m.Rcode, extractResolvedIPs(r))
 			} else {
-				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, q.Qtype, m.Rcode)
+				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, q.Qtype, m.Rcode, extractResolvedIPs(r))
 			}
 			return m
 		}
@@ -1016,9 +1016,9 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			m.SetReply(r)
 			m.AuthenticatedData = false
 			if target.Kind == "agent" || target.Kind == "egress" || target.FallbackReason != "" {
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_HTTPS_SINK", false, "", matchedPattern, target, q.Qtype, m.Rcode)
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_HTTPS_SINK", false, "", matchedPattern, target, q.Qtype, m.Rcode, extractResolvedIPs(r))
 			} else {
-				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_HTTPS_SINK", false, "", matchedPattern, q.Qtype, m.Rcode)
+				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_HTTPS_SINK", false, "", matchedPattern, q.Qtype, m.Rcode, nil)
 			}
 			return m
 		}
@@ -1046,7 +1046,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				// upstream that has stopped answering, not at a healthy cache.
 				rule, act = "Cached (stale, refreshing)", "STALE"
 			}
-			h.logQuery(start, clientIP, accountName, proto, domain, rule, act, true, "cache", "", q.Qtype, cachedResp.Rcode)
+			h.logQuery(start, clientIP, accountName, proto, domain, rule, act, true, "cache", "", q.Qtype, cachedResp.Rcode, extractResolvedIPs(cachedResp))
 			return cachedResp
 		}
 	}
@@ -1068,7 +1068,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		log.Printf("[DNS] Upstream query error for %s: %v", domain, err)
 		m := new(dns.Msg)
 		m.SetRcode(r, dns.RcodeServerFailure)
-		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "SERVFAIL", false, "", matchedPattern, q.Qtype, dns.RcodeServerFailure)
+		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "SERVFAIL", false, "", matchedPattern, q.Qtype, dns.RcodeServerFailure, nil)
 		return m
 	}
 
@@ -1082,7 +1082,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			m := new(dns.Msg)
 			m.SetRcode(r, dns.RcodeServerFailure)
 			attachBogusEDE(m, r)
-			h.logQuery(start, clientIP, accountName, proto, domain, "DNSSEC Bogus", "BOGUS", false, "", matchedPattern, q.Qtype, dns.RcodeServerFailure)
+			h.logQuery(start, clientIP, accountName, proto, domain, "DNSSEC Bogus", "BOGUS", false, "", matchedPattern, q.Qtype, dns.RcodeServerFailure, nil)
 			return m
 		}
 	}
@@ -1122,11 +1122,30 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		return m
 	}
 
-	h.logQuery(start, clientIP, accountName, proto, domain, ruleName, action.String(), false, upstream, matchedPattern, q.Qtype, resp.Rcode)
+	h.logQuery(start, clientIP, accountName, proto, domain, ruleName, action.String(), false, upstream, matchedPattern, q.Qtype, resp.Rcode, extractResolvedIPs(resp))
 	return resp
 }
 
-func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern string, qtype uint16, rcode int) {
+func extractResolvedIPs(resp *dns.Msg) []string {
+	if resp == nil {
+		return nil
+	}
+	var ips []string
+	for _, answer := range resp.Answer {
+		switch ans := answer.(type) {
+		case *dns.A:
+			ips = append(ips, ans.A.String())
+		case *dns.AAAA:
+			ips = append(ips, ans.AAAA.String())
+		}
+	}
+	if len(ips) > 0 {
+		return ips
+	}
+	return nil
+}
+
+func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern string, qtype uint16, rcode int, resolvedIPs []string) {
 	// Quick win: skip building the full QueryLogItem when there is nothing
 	// consuming it — no telemetry sink and no persistent query log both unset.
 	// The TelemetrySink itself already gates SSE fan-out on subscriber count
@@ -1152,6 +1171,7 @@ func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, ac
 		Upstream:         upstreamAddr,
 		UpstreamProtocol: upstream.ProtocolOf(upstreamAddr),
 		MatchedPattern:   matchedPattern,
+		ResolvedIPs:      resolvedIPs,
 	}
 	if h.telemetry != nil {
 		h.telemetry.PushQueryLog(item)
@@ -1163,7 +1183,7 @@ func (h *Handler) logQuery(start time.Time, ip, account, proto, domain, rule, ac
 
 // logQueryRelay is logQuery with the relay target that answered the proxied
 // name. The local relay path keeps using logQuery, so its payload is unchanged.
-func (h *Handler) logQueryRelay(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern string, target RelayTarget, qtype uint16, rcode int) {
+func (h *Handler) logQueryRelay(start time.Time, ip, account, proto, domain, rule, action string, cached bool, upstreamAddr, matchedPattern string, target RelayTarget, qtype uint16, rcode int, resolvedIPs []string) {
 	// Same gating as logQuery: skip item construction when nobody is watching.
 	if h.telemetry == nil && h.queryLog == nil {
 		return
@@ -1191,6 +1211,7 @@ func (h *Handler) logQueryRelay(start time.Time, ip, account, proto, domain, rul
 		RelayEgressName:     target.EgressName,
 		RelayEgressKind:     target.EgressKind,
 		RelayFallbackReason: target.FallbackReason,
+		ResolvedIPs:        resolvedIPs,
 	}
 	if h.telemetry != nil {
 		h.telemetry.PushQueryLog(item)

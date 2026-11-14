@@ -6809,6 +6809,8 @@ const STREAM_ACTION_BADGES = {
   DIRECT: '<span class="badge badge-direct">DIRECT</span>',
 };
 
+const infoButton = '<button type="button" class="info-stream-btn rounded-full p-1 opacity-70 hover:bg-slate-900 hover:opacity-100 transition-colors" aria-label="Show DNS response details" aria-expanded="false"><i data-feather="info" class="w-4 h-4 text-slate-400"></i></button>';
+
 // Colour per protocol for the PROTO column. The shown value is the transport that
 // resolved the query (upstream_protocol), falling back to the client protocol when
 // nothing upstream answered. Unknown or blank values stay muted.
@@ -6961,7 +6963,7 @@ function queryRowHTML(q) {
     </td>
     <td class="stream-col-rule py-2.5 px-2 sm:px-3 text-slate-400 hidden sm:table-cell">${escapeHTML(ruleStr)}</td>
     <td class="stream-col-relay py-2.5 px-2 sm:px-3">${relayCell}</td>
-    <td class="stream-col-action py-2.5 px-2 sm:px-3">${actBadge}${cacheBadge}</td>
+    <td class="stream-col-action py-2.5 px-2 sm:px-3">${infoButton}${actBadge}${cacheBadge}</td>
     <td class="stream-col-latency py-2.5 px-2 sm:px-3 text-end text-emerald-400 font-mono">${latStr}</td>
   `;
 }
@@ -7377,9 +7379,81 @@ function closeStreamActionMenu() {
     .forEach((b) => b.setAttribute('aria-expanded', 'false'));
 }
 
-// The log badge an applied action should show, so the row reflects the choice
-// immediately instead of waiting for the next matching query.
-const STREAM_ACTION_LOG_BADGE = { proxy: 'PROXY', block: 'BLOCK', direct: 'DIRECT' };
+// Stream info tooltip logic
+
+function openStreamInfoTooltip(trigger) {
+  const row = trigger.closest('tr');
+  if (!row) return;
+  const domain = trigger.dataset.domain || '';
+  const data = streamQueryData.get(domain);
+  if (!data) return;
+
+  // Create tooltip element
+  let tooltip = document.getElementById('stream-info-tooltip');
+  if (!tooltip) {
+    tooltip = document.createElement('div');
+    tooltip.id = 'stream-info-tooltip';
+    tooltip.className = 'stream-info-tooltip absolute z-10 max-w-sm p-3 bg-slate-950/90 rounded-lg border border-slate-800 text-sm shadow-lg';
+    tooltip.style.position = 'fixed';
+    tooltip.style.pointerEvents = 'none';
+    document.body.appendChild(tooltip);
+  }
+
+  // Get trigger position
+  const triggerRect = trigger.getBoundingClientRect();
+
+  // Show details: status, resolved IPs, latency, protocol, rcode, qtype
+  const details = [];
+  if (data.action) details.push(`Status: ${data.action}`);
+  if (data.resolved_ips && data.resolved_ips.length > 0) details.push(`Resolved IPs: ${data.resolved_ips.join(', ')}`);
+  if (data.latency_ms !== undefined) details.push(`Latency: ${data.latency_ms.toFixed(1)} ms`);
+  if (data.protocol) details.push(`Protocol: ${data.protocol}`);
+  if (data.rcode !== undefined) details.push(`RCode: ${data.rcode}`);
+  if (data.qtype !== undefined) details.push(`QType: ${data.qtype}`);
+  // blocked-source line if blocked
+  if (data.action === 'BLOCK' && data.blocked_source) details.push(`Blocked by: ${data.blocked_source}`);
+
+  tooltip.innerHTML = `
+    <div class="text-sm font-medium">${escapeHTML(domain)}</div>
+    <div class="text-xs text-slate-400">${details.join('<br>')}</div>
+  `;
+
+  // Position tooltip near the trigger
+  tooltip.style.left = Math.max(8, triggerRect.left + triggerRect.width / 2 - 120) + 'px';
+  tooltip.style.top = triggerRect.bottom + 8 + 'px';
+  tooltip.style.width = '240px';
+  tooltip.style.pointerEvents = 'auto';
+  tooltip.classList.remove('hidden');
+}
+
+function closeStreamInfoTooltip() {
+  const tooltip = document.getElementById('stream-info-tooltip');
+  if (tooltip) {
+    tooltip.classList.add('hidden');
+    tooltip.remove();
+  }
+}
+
+function onStreamInfoBtnClick(e) {
+  e.stopPropagation();
+  const trigger = e.target.closest('.info-stream-btn');
+  if (!trigger) return;
+  // Close any existing tooltip
+  closeStreamInfoTooltip();
+  // Open new tooltip
+  openStreamInfoTooltip(trigger);
+}
+
+// Close tooltip when clicking outside
+document.body.addEventListener('click', (e) => {
+  if (!e.target.closest('.info-stream-btn') && !document.getElementById('stream-info-tooltip')?.contains(e.target)) {
+    closeStreamInfoTooltip();
+  }
+});
+
+// Initialize stream query data from the live log entries
+// This will be populated by the SSE handler
+const streamQueryData = {};
 
 function applyStreamAction(action) {
   if (!currentConfig || !currentConfig.rules || !streamActionDomain) return;
