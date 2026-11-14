@@ -498,8 +498,9 @@ private fun QueryRow(
 }
 
 
-/** The read-only DNS response detail opened by the info button in a live-log row. */
+/** The read-only DNS response detail opened by tapping a live-log row's domain. */
 @Composable
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 private fun DnsDetailsDialog(event: QueryEvent, onDismiss: () -> Unit) {
     // The qtype/rcode the server sends are the wire numbers; the tooltip names them
     // so an operator does not have to remember that 28 is AAAA or 3 is NXDOMAIN.
@@ -584,13 +585,21 @@ private fun DnsDetailsDialog(event: QueryEvent, onDismiss: () -> Unit) {
                 }
                 val resolutionProto = protocolLabel(event.upstreamProtocol)
                 if (resolutionProto.isNotBlank()) {
-                    DetailRow(stringResource(R.string.live_log_info_resolved_via), resolutionProto, protocolColor(event.upstreamProtocol))
+                    DetailRow(
+                        stringResource(R.string.live_log_info_resolved_via),
+                        resolutionProto,
+                        protocolColor(event.upstreamProtocol),
+                    )
                 }
                 if (event.upstream.isNotBlank()) {
                     DetailRow(stringResource(R.string.live_log_info_upstream), event.upstream, colors.textMain)
                 }
                 if (event.cached) {
-                    DetailRow(stringResource(R.string.live_log_info_cache), stringResource(R.string.live_log_info_cache_hit), colors.textMain)
+                    DetailRow(
+                        stringResource(R.string.live_log_info_cache),
+                        stringResource(R.string.live_log_info_cache_hit),
+                        colors.textMain,
+                    )
                 }
                 if (qtype.isNotBlank()) {
                     DetailRow(stringResource(R.string.live_log_info_qtype), qtype, colors.textMain)
@@ -638,12 +647,16 @@ private fun DetailRow(label: String, value: String, valueColor: Color) {
  * rounds those to "0 ms", which reads as a missing measurement. Below 1 ms this
  * keeps three decimals so the figure is visibly real.
  */
+private const val MS_IN_SECOND = 1000.0
+private const val SUB_MILLISECOND = 1.0
+private const val TEN_MILLISECONDS = 10.0
+
 private fun formatLatencyMs(ms: Double): String = when {
     ms <= 0.0 -> "0 ms"
-    ms < 1.0 -> String.format(Locale.US, "%.3f ms", ms)
-    ms < 10.0 -> String.format(Locale.US, "%.2f ms", ms)
-    ms < 1000.0 -> String.format(Locale.US, "%.1f ms", ms)
-    else -> String.format(Locale.US, "%.1f s", ms / 1000.0)
+    ms < SUB_MILLISECOND -> String.format(Locale.US, "%.3f ms", ms)
+    ms < TEN_MILLISECONDS -> String.format(Locale.US, "%.2f ms", ms)
+    ms < MS_IN_SECOND -> String.format(Locale.US, "%.1f ms", ms)
+    else -> String.format(Locale.US, "%.1f s", ms / MS_IN_SECOND)
 }
 
 private val QTYPE_LABELS = mapOf(
