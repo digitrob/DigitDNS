@@ -323,3 +323,27 @@ func TestConfigRulesKeepsProvidedAddedStamps(t *testing.T) {
 		t.Error("fresh.example has no seeded stamp")
 	}
 }
+
+// A pasted list used to be accepted as one entry: the Domains page showed one
+// row and the matcher never blocked any of the names in it. A save must split
+// the blob into the individual domains, in the database and in the live matcher.
+func TestConfigRulesSplitsPastedDomainBlob(t *testing.T) {
+	ws, h, tok, cleanup := authedServer(t)
+	defer cleanup()
+
+	body := `{"custom_blocked":["ads.one.example ads.two.example,ads.three.example;ads.four.example"]}`
+	if w := postJSON(t, h, "/api/config/rules", body, tok); w.Code != http.StatusOK {
+		t.Fatalf("save = %d — %s", w.Code, w.Body.String())
+	}
+
+	rules := rulesFromConfig(t, h, tok)
+	want := []string{"ads.four.example", "ads.one.example", "ads.three.example", "ads.two.example"}
+	if got := domainsAt(t, rules, "custom_blocked"); !slices.Equal(got, want) {
+		t.Errorf("custom_blocked = %v, want %v", got, want)
+	}
+	for _, domain := range []string{"ads.one.example", "ads.two.example", "ads.three.example", "ads.four.example"} {
+		if action, _ := ws.matcher.Match(domain); action != matcher.ActionBlock {
+			t.Errorf("Match(%q) = %v, want ActionBlock", domain, action)
+		}
+	}
+}

@@ -72,6 +72,10 @@
       } catch (e) { /* the markup's dashboard default stands */ }
     })();
   </script>
+  <!-- app.js sits at the end of the body, so without this the browser only
+       discovers it after parsing the whole document. The server appends the
+       same content fingerprint to both the preload and the script tag. -->
+  <link rel="preload" href="/js/app.js" as="script">
   <!-- Purged, committed Tailwind stylesheet: the Play CDN JIT engine and
        its 397 KB + 'unsafe-eval' cost are gone. The utility set was compiled
        ahead of time by tools/tailwind.config.js (dev machine only — the output
@@ -906,7 +910,7 @@
         <div class="sidebar-group-label" aria-hidden="true">Routing &amp; policy</div>
         <button class="sidebar-nav-item" data-tab="proxied" data-route="/proxied">
           <i data-feather="shield" class="w-4 h-4"></i>
-          <span>Domains</span>
+          <span>Domains/Blocklists</span>
         </button>
         <button class="sidebar-nav-item" data-tab="filters" data-route="/filters">
           <i data-feather="slash" class="w-4 h-4"></i>
@@ -1930,7 +1934,7 @@
                   <th class="proxied-col-check py-2.5 px-3 text-center">
                     <input type="checkbox" id="proxied-select-all" aria-label="Select all managed domains" class="proxied-check">
                   </th>
-                  <th class="proxied-col-domain py-2.5 px-3 text-start">DOMAIN</th>
+                  <th class="proxied-col-domain py-2.5 px-3 text-start">Domain/Blocklist</th>
                   <th class="proxied-col-service py-2.5 px-3 text-start">SERVICE</th>
                   <th class="proxied-col-relay py-2.5 px-3 text-start">RELAY</th>
                   <th class="proxied-col-actions py-2.5 px-3 text-center">ACTIONS</th>

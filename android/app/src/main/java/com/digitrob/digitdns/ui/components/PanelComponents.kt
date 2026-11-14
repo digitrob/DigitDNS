@@ -275,6 +275,7 @@ fun StatusBadge(
     color: Color,
     modifier: Modifier = Modifier,
     maxLines: Int = 1,
+    uppercase: Boolean = true,
 ) {
     // Match the web's .badge chip: 20px radius, 4x8 padding, 10px bold
     // uppercase text with the same 0.5px tracking.
@@ -288,7 +289,7 @@ fun StatusBadge(
         horizontalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = text.uppercase(),
+            text = if (uppercase) text.uppercase() else text,
             style = MaterialTheme.typography.labelSmall.copy(
                 fontWeight = FontWeight.Bold,
                 fontSize = 10.sp,

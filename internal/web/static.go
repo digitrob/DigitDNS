@@ -59,8 +59,10 @@ type staticAsset struct {
 	contentType string
 	body        []byte // the identity encoding, always present
 	gzipped     []byte // nil when compression was skipped or did not pay
+	br          []byte // precompressed brotli sidecar; nil when absent
 	etag        string // strong validator over body, already quoted
 	gzipETag    string // the same, marked as a different representation
+	brETag      string // the brotli representation's validator
 }
 
 // staticServer holds every embedded asset, keyed by its slash path with no
@@ -116,6 +118,10 @@ type staticServer struct {
 var minifiedAliases = map[string]string{
 	"js/app.js":     "js/app.min.js",
 	"css/style.css": "css/style.min.css",
+	// The dashboard document is minified too. The CSP hashes the served bytes,
+	// so a reflowed inline script is still authorized; comments and inter-tag
+	// whitespace account for roughly a third of its size.
+	"index.html": "index.min.html",
 }
 
 // newStaticServer reads the whole asset tree once. A file that cannot be read is
@@ -131,6 +137,11 @@ func newStaticServer(fsys fs.FS) *staticServer {
 		if err != nil || d.IsDir() {
 			return nil
 		}
+		// A .br file is a sidecar for the asset of the same name without the
+		// suffix. It is attached below and must not be reachable as a URL.
+		if strings.HasSuffix(p, ".br") {
+			return nil
+		}
 		body, readErr := fs.ReadFile(fsys, p)
 		if readErr != nil {
 			return nil
@@ -139,11 +150,24 @@ func newStaticServer(fsys fs.FS) *staticServer {
 		return nil
 	})
 
+	// Attach the brotli sidecars produced by scripts/build-web-assets.sh. The Go
+	// toolchain has no brotli encoder, and compressing at startup would add both a
+	// dependency and a boot-time cost for a body that never changes.
+	for name, a := range s.assets {
+		if br, err := fs.ReadFile(fsys, name+".br"); err == nil && len(br) > 0 && len(br) < len(a.body) {
+			a.br = br
+			a.brETag = strings.TrimSuffix(a.etag, `"`) + `+br"`
+		}
+	}
+
 	// Serve the minified bytes under the canonical URL. Test fixtures with no
 	// minified companion simply keep their source bytes.
 	for public, minified := range minifiedAliases {
 		if a := s.assets[minified]; a != nil {
-			s.assets[public] = newStaticAsset(public, a.body)
+			aliasAsset := newStaticAsset(public, a.body)
+			aliasAsset.br = a.br
+			aliasAsset.brETag = a.brETag
+			s.assets[public] = aliasAsset
 			delete(s.assets, minified)
 		}
 	}
@@ -467,7 +491,13 @@ func (s *staticServer) write(w http.ResponseWriter, r *http.Request, a *staticAs
 	h.Set("Vary", "Accept-Encoding")
 
 	body, etag := a.body, a.etag
-	if a.gzipped != nil && acceptsGzip(r) {
+	switch {
+	case len(a.br) > 0 && acceptsEncoding(r, "br"):
+		// Brotli first: it is the smallest representation, and the sidecar was
+		// built once by the asset script rather than at request time.
+		body, etag = a.br, a.brETag
+		h.Set("Content-Encoding", "br")
+	case a.gzipped != nil && acceptsEncoding(r, "gzip"):
 		body, etag = a.gzipped, a.gzipETag
 		h.Set("Content-Encoding", "gzip")
 	}
@@ -492,16 +522,16 @@ func (s *staticServer) write(w http.ResponseWriter, r *http.Request, a *staticAs
 	_, _ = w.Write(body)
 }
 
-// acceptsGzip reads Accept-Encoding far enough to be correct about the one case
-// that matters. Every browser sends "gzip, deflate, br" or similar, so a substring
-// check would work in practice; what it would get wrong is "gzip;q=0", which is how
-// a client — or a debugging proxy — explicitly asks for the identity encoding.
-// Honouring that is the difference between a diagnosable server and one that
-// insists on compressing.
-func acceptsGzip(r *http.Request) bool {
+// acceptsEncoding reads Accept-Encoding far enough to be correct about the one
+// case that matters. Every browser sends "gzip, deflate, br" or similar, so a
+// substring check would work in practice; what it would get wrong is
+// "gzip;q=0", which is how a client — or a debugging proxy — explicitly asks for
+// the identity encoding. Honouring that is the difference between a diagnosable
+// server and one that insists on compressing.
+func acceptsEncoding(r *http.Request, encoding string) bool {
 	for part := range strings.SplitSeq(r.Header.Get("Accept-Encoding"), ",") {
 		fields := strings.Split(strings.TrimSpace(part), ";")
-		if !strings.EqualFold(strings.TrimSpace(fields[0]), "gzip") {
+		if !strings.EqualFold(strings.TrimSpace(fields[0]), encoding) {
 			continue
 		}
 		for _, param := range fields[1:] {

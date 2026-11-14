@@ -21,6 +21,7 @@ func TestMinifiedAssetsMatchSource(t *testing.T) {
 	}{
 		{"js/app.js", "js/app.min.js"},
 		{"css/style.css", "css/style.min.css"},
+		{"index.html", "index.min.html"},
 	}
 	for _, tc := range cases {
 		source, err := fs.ReadFile(webAssets.StaticFS, tc.source)
@@ -48,7 +49,7 @@ func TestMinifiedAssetsMatchSource(t *testing.T) {
 // file that happens to share the name.
 func TestStaticServerServesMinifiedAliases(t *testing.T) {
 	s := newStaticServer(webAssets.StaticFS)
-	for _, name := range []string{"js/app.js", "css/style.css"} {
+	for _, name := range []string{"js/app.js", "css/style.css", "index.html"} {
 		asset := s.assets[name]
 		if asset == nil {
 			t.Fatalf("%s is not in the static server", name)

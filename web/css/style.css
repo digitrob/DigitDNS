@@ -767,6 +767,9 @@ html.sidebar-collapsed .sidebar-group-label {
   background: rgb(var(--c-red-400) / 0.15);
   color: var(--accent-red);
   border: 1px solid rgb(var(--c-red-400) / 0.4);
+  /* The blocked status is written "Blocked" to match the filter chip and the
+     Android app; the other badges stay uppercase. */
+  text-transform: none;
 }
 
 .badge-rewrite {
@@ -1307,6 +1310,13 @@ input:checked + .slider:before {
 .proxied-table td {
   vertical-align: middle;
 }
+/* A long header ("Domain/Blocklist") must wrap inside its column instead of
+   spilling into SERVICE: table-layout:fixed gives the auto column its space but
+   does not shrink or wrap a header that is wider than it. */
+.proxied-table thead th {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 /* Zebra rows. A long routing list is otherwise one undifferentiated block of
  * monospace, and the eye loses the line it was on between the domain and its
  * status badge. The tint is the theme's own slate token, so the light theme gets
@@ -1327,6 +1337,41 @@ input:checked + .slider:before {
 .proxied-table tbody tr.is-paused:hover {
   background-color: rgb(var(--c-amber-400) / 0.13);
 }
+/* The collapsed Custom Blocklist entry. It is a normal table row: the title sits
+ * in the domain column and the Blocked pill in the status column, so it lines up
+ * with every other row instead of spanning the table. */
+.sinkhole-group-row { background-color: rgb(var(--c-red-500) / 0.08); }
+.sinkhole-group-row:hover { background-color: rgb(var(--c-red-500) / 0.14); }
+.sinkhole-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: rgb(var(--c-slate-200));
+  font-size: 0.75rem;
+  text-align: start;
+  cursor: pointer;
+}
+.sinkhole-group-toggle:hover { color: rgb(var(--c-slate-100)); }
+.sinkhole-group-toggle:focus-visible {
+  outline: 2px solid rgb(var(--c-cyan-400));
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+.sinkhole-group-title { font-weight: 600; }
+.sinkhole-group-count {
+  color: rgb(var(--c-slate-400));
+  font-family: var(--font-mono);
+}
+/* A member row belongs to the entry above it: a left rule and a small indent
+ * make the parent/child relationship legible without changing the columns. */
+.sinkhole-member-row > td:first-child {
+  border-inline-start: 2px solid rgb(var(--c-red-500) / 0.45);
+}
+.sinkhole-member-row > td:nth-child(2) { padding-inline-start: 1.4rem; }
+.sinkhole-more-row > td { padding-top: 0.15rem; padding-bottom: 0.15rem; }
 /* One control row above the list: sort + count, the live filter, then the bulk
  * actions. The filter is a flex item with a basis and a floor rather than
  * `flex-1 min-w-0`: it should shrink first, but not to nothing, and once it can

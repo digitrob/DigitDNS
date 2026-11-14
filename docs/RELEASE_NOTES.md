@@ -1,68 +1,67 @@
-# DigitDNS v5.8.2 — AdGuard custom rules, command palette, performance
+# DigitDNS v5.8.9 — sinkhole groups, faster dashboard, pasted-list repair
 
-A minor release on top of v5.8.1. No database schema migration is required;
+A minor release on top of v5.8.8. No database schema migration is required;
 existing settings, clients, blocklists, certificates, relay agents and egress
 options are preserved.
 
 ## Added
 
-- **AdGuard-syntax custom filtering rules.** A text area on the Ad Blocking card
-  (web + Android) accepts AdGuard/uBlock network rules (`||domain^`, `@@||`,
-  `$dnsrewrite=`, `$important`, hosts format). Rules compile into the same index
-  as your blocklists.
-- **`$dnsrewrite` support.** `$dnsrewrite=IP` (A/AAAA), `$dnsrewrite=host`
-  (CNAME), `$dnsrewrite=TXT "text"`, and `$dnsrewrite=NXDOMAIN/REFUSED/SERVFAIL`.
-- **Command palette.** Ctrl/Cmd+K opens a fuzzy search over tabs, settings
-  sections and global actions (theme toggle, sign out) on the web panel.
-- **Android status widget.** A 2×1 home-screen widget showing queries today and
-  the live query rate; tap to open the app.
-- **Android toggle widget.** A 1×1 widget showing filtering on/off; tap opens
-  the app's Ad Blocking page.
-- **Android switches contrast.** Switches in the grey theme now use the success
-  colour for the checked track (was nearly white).
+- **Custom Blocklist (Sinkhole) is now one entry in the Domains list.** The
+  blocked set collapses into a single expandable row with a live domain count;
+  the chevron reveals every blocked name inline, each with its normal checkbox,
+  service, relay, Remove and status pill. Expanding a large sinkhole grows 50
+  members at a time. The same grouping ships in the Android app.
+- **Android live-log copy.** Long-press a domain in the Live Log to copy it, with
+  long-press haptics and a confirmation toast. TalkBack gets the long-click
+  action too.
 
 ## Changed
 
-- **Resolver hot path.** System metrics sampled once per second in
-  `telemetryLoop` instead of on every `/api/stats` call. `normalizeProto` uses
-  `EqualFold` (zero alloc per query). Aggregator uses a per-bucket mutex and an
-  atomic current-bucket pointer.
-- **Web theming.** Non-theme-mapped `sky-*` and `violet-*` Tailwind utilities
-  replaced with theme-mapped `cyan-*`/`purple-*` across DoT settings, custom
-  policy groups, the top-upstreams icon, the 2FA card and the zap icon.
-- **Adaptive selection.** `adaptiveHealthy` now accepts resolvers that have a
-  successful probe, so the Force button switches to the fastest probed resolver
-  even if it never served live traffic. The timer resets after each forced run.
+- **Faster dashboard loading.** The dashboard document is minified at build time
+  (287 KB → 195 KB; 58 KB → 37 KB gzipped), JavaScript and CSS are served as
+  Brotli sidecars (app.js 108 KB → 87 KB), and `app.js` is preloaded. The
+  ten-second delay before the first stats poll is gone, so the dashboard fills
+  immediately; the stats settings card is fetched on first Settings visit instead
+  of on every boot.
+- **Startup benchmark.** The first upstream benchmark waits ten seconds after the
+  listeners are up, so its figures describe the steady state rather than boot
+  contention. Adaptive mode performs one forced selection at that point and then
+  sleeps until the configured interval, instead of probing twice at startup.
+- **Blocked status naming.** The blocked status reads **“Blocked”** everywhere
+  (web and Android), matching the filter chip and the Android app. Other status
+  labels are unchanged.
+- **Domains table.** The domain column is now **Domain/Blocklist** and the web
+  sidebar page is **Domains/Blocklists**. The blocked pill sits in the STATUS
+  column; the sinkhole title stays in the Domain column.
 
 ## Fixed
 
-- **Upstream Force button.** Not all the time did it switch to the fastest
-  resolver (probed-but-unmeasured resolvers were excluded). Fixed.
-- **Android detekt.** `TransportChips` no longer exceeds the
-  cyclomatic-complexity threshold (the transport colour/label lookup moved to
-  the theme).
-- **Android alert channel name collapse.** The `weight(1f)` field now has a
-  real row to fill instead of being squeezed beside the kind selector, switch
-  and delete button.
-- **Web alert type picker.** The native `<select>` (which cannot render icons)
-  was replaced with a pictogram menu.
+- **Pasted blocklists were stored as one unmatched pattern.** Pasting a list into
+  the single-line **Block** or **Add** box used to save the whole blob as one
+  space-separated entry: the Domains page showed one row and the matcher blocked
+  none of the names. The Add boxes now split on whitespace, commas and
+  semicolons, and the server splits any existing blob on load and save. Existing
+  installs are repaired automatically.
+- **Android sinkhole expansion.** Expanded member domains now render directly
+  under the group instead of after the flat list.
+- **Domain/Blocklist header** no longer overlaps SERVICE at narrow widths.
 
 ## Upgrade
 
 In-place upgrades from the dashboard are supported. The release assets include
 the Linux amd64/arm64 hub binary, relay-agent binaries, the offline bundle,
 checksums and their ed25519 signature, and the Android APKs attached from the
-`android-v5.8.2` tag.
+`android-v5.8.9` tag.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.8.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.8.9/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.8.2
-docker pull ghcr.io/digitrob/digitdns-agent:5.8.2
-docker pull robmeister/digitdns:5.8.2
-docker pull robmeister/digitdns-agent:5.8.2
+docker pull ghcr.io/digitrob/digitdns:5.8.9
+docker pull ghcr.io/digitrob/digitdns-agent:5.8.9
+docker pull robmeister/digitdns:5.8.9
+docker pull robmeister/digitdns-agent:5.8.9
 ```

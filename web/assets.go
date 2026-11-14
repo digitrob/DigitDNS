@@ -44,6 +44,7 @@ import "embed"
 // old practice of handing the full dashboard shell to unauthenticated visitors.
 
 //go:embed index.html
+//go:embed index.min.html
 //go:embed login.html
 //go:embed css/tailwind.purged.css
 //go:embed css/style.css
@@ -51,14 +52,20 @@ import "embed"
 //go:embed css/portal.css
 //go:embed js/app.js
 //go:embed js/app.min.js
+//go:embed js/app.min.js.br
 //go:embed js/i18n.js
+//go:embed js/i18n.js.br
 //go:embed js/api-docs.js
 //go:embed js/modules/twofa.js
 //go:embed swagger/swagger-ui.css
 //go:embed swagger/swagger-ui-bundle.js
 //go:embed js/portal.js
 //go:embed js/feather.min.js
+//go:embed js/feather.min.js.br
 //go:embed js/chart.umd.min.js
+//go:embed js/chart.umd.min.js.br
+//go:embed css/style.min.css.br
+//go:embed css/tailwind.purged.css.br
 //go:embed img
 //go:embed flags
 //go:embed fonts/vazirmatn-var.woff2

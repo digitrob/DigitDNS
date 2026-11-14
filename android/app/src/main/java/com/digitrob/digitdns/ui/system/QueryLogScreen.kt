@@ -71,6 +71,7 @@ private fun ActionFilter(
                         label,
                         actionTone(value),
                         modifier = Modifier.weight(1f, fill = false),
+                        uppercase = false,
                     )
                     if (selected.size > 1) {
                         Text(
@@ -89,7 +90,7 @@ private fun ActionFilter(
         androidx.compose.material3.DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             QUERYLOG_ACTIONS.forEach { (value, label) ->
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { StatusBadge(label, actionTone(value)) },
+                    text = { StatusBadge(label, actionTone(value), uppercase = false) },
                     trailingIcon = {
                         if (selected.contains(value)) {
                             androidx.compose.material3.Icon(

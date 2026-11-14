@@ -171,6 +171,41 @@ func TestStaticCompressesWhenAcceptedAndWorthwhile(t *testing.T) {
 	}
 }
 
+// The brotli sidecar is the smallest representation, so it wins when the client
+// accepts it; a gzip-only client still gets gzip, and the sidecar itself must not
+// be reachable as a URL.
+func TestStaticServesBrotliSidecarWhenPresent(t *testing.T) {
+	const brBody = "brotli-encoded-bytes"
+	s := newStaticServer(fstest.MapFS{
+		"js/app.js":    {Data: bigJS},
+		"js/app.js.br": {Data: []byte(brBody)},
+	})
+
+	w := get(t, s, "/js/app.js", http.Header{"Accept-Encoding": {"gzip, deflate, br"}})
+	if got := w.Header().Get("Content-Encoding"); got != "br" {
+		t.Fatalf("Content-Encoding = %q, want br", got)
+	}
+	if got := w.Body.String(); got != brBody {
+		t.Errorf("body = %q, want the sidecar", got)
+	}
+	if got := w.Header().Get("Content-Length"); got != strconv.Itoa(len(brBody)) {
+		t.Errorf("Content-Length = %q, want %d", got, len(brBody))
+	}
+	identity := get(t, s, "/js/app.js", nil).Header().Get("ETag")
+	if w.Header().Get("ETag") == identity {
+		t.Error("brotli and identity responses share an ETag; a cache would serve the wrong bytes")
+	}
+
+	gz := get(t, s, "/js/app.js", http.Header{"Accept-Encoding": {"gzip"}})
+	if got := gz.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Errorf("gzip-only Content-Encoding = %q, want gzip", got)
+	}
+
+	if got := get(t, s, "/js/app.js.br", nil).Code; got != http.StatusNotFound {
+		t.Errorf("/js/app.js.br = %d, want 404 (sidecars are not URLs)", got)
+	}
+}
+
 // The three cases where compressing would be wrong even though the client asked.
 func TestStaticSkipsCompressionWhenItWouldNotHelp(t *testing.T) {
 	s := testAssets()

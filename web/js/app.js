@@ -3021,6 +3021,17 @@ let proxiedHasMore = false;
 // because the sentinel is a sibling of the rows container rather than a child of
 // it: renderProxiedList rewrites the rows' innerHTML and never touches it.
 let proxiedObserver = null;
+// The Custom Blocklist (Sinkhole) can hold hundreds of names. In the plain
+// "all domains" view a flat row per blocked name buries every proxied and direct
+// rule, so the blocked set collapses into one expandable entry at the top of the
+// table. This is view state only: the stored lists, the matcher and every
+// per-row action are unchanged.
+let blockedGroupExpanded = false;
+// How many member domains the expanded sinkhole entry shows at a time. Growing
+// it is a button inside the entry, not the table's own sentinel: the sinkhole is
+// one entry in the page's flow, so its members must not compete with the flat
+// rows for the same pagination budget.
+let blockedGroupVisible = PROXIED_BATCH;
 
 // proxiedOrderedRows is the whole list in the operator's chosen order. Insertion
 // order is array order: a new domain is pushed onto the end, so "Added (newest)"
@@ -3036,7 +3047,7 @@ const DOMAIN_STATUS_RANK = { proxy: 0, blocked: 1, paused: 2, direct: 3 };
 const DOMAIN_STATUS_META = {
   proxy: { label: 'PROXY', badge: 'badge-proxy', domainClass: 'proxy-status-text' },
   paused: { label: 'PAUSED', badge: 'badge-unknown', domainClass: 'text-slate-400' },
-  blocked: { label: 'BLOCKED', badge: 'badge-block', domainClass: 'text-red-300' },
+  blocked: { label: 'Blocked', badge: 'badge-block', domainClass: 'text-red-300' },
   direct: { label: 'DIRECT', badge: 'badge-direct', domainClass: 'text-emerald-300' },
 };
 
@@ -4549,7 +4560,7 @@ function renderProxiedList() {
         : proxiedStatusFilter
           ? `No ${statusLabel} domains yet.`
           : 'No domains yet.';
-    container.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500 text-xs">${empty}</td></tr>`;
+    container.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-500 text-xs">${empty}</td></tr>`;
     proxiedHasMore = false;
     if (countEl) {
       countEl.textContent = needle
@@ -4563,22 +4574,32 @@ function renderProxiedList() {
     return;
   }
 
-  const rows = serviceScoped.slice(0, proxiedVisible);
-  proxiedHasMore = rows.length < total;
+  // In the plain "all domains" view the sinkhole collapses to one entry; a
+  // status chip or a search means the operator is hunting a specific name, so
+  // those stay flat. buildDomainEntries owns the split.
+  const groupSinkhole = !needle && !proxiedStatusFilter;
+  const entries = buildDomainEntries(serviceScoped, {
+    groupSinkhole,
+    expanded: blockedGroupExpanded,
+    visible: blockedGroupVisible,
+  });
+  const flatShown = entries.flat.slice(0, proxiedVisible);
+  proxiedHasMore = flatShown.length < entries.flat.length;
+  const shown = entries.head.concat(flatShown);
   if (countEl) {
     if (needle) {
       countEl.textContent = proxiedHasMore
-        ? `Showing ${rows.length} of ${total} matches`
+        ? `Showing ${shown.length} of ${total} matches`
         : `${total} match${total === 1 ? '' : 'es'}`;
     } else if (proxiedStatusFilter) {
       countEl.textContent = (proxiedHasMore
-        ? `Showing ${rows.length} of ${total} ${statusLabel} domains`
+        ? `Showing ${shown.length} of ${total} ${statusLabel} domains`
         : `${total} ${statusLabel} domain${total === 1 ? '' : 's'}`) +
         (serviceScope ? ` in ${serviceScope}` : '');
     } else {
-      countEl.textContent = (proxiedHasMore
-        ? `Showing ${rows.length} of ${total}`
-        : `${total} domain${total === 1 ? '' : 's'}`) +
+      // The collapsed sinkhole entry stands for many domains, so "Showing N of M"
+      // would undercount what is on screen. The domain total is the honest label.
+      countEl.textContent = `${total} domain${total === 1 ? '' : 's'}` +
         (serviceScope ? ` in ${serviceScope}` : '');
     }
   }
@@ -4586,10 +4607,12 @@ function renderProxiedList() {
 
   renderServices();
   const wildcardIndex = proxiedPatternIndex();
-  rows.forEach(({ domain, status }) => {
+  const renderDomainRow = (domain, status, nested) => {
     const meta = DOMAIN_STATUS_META[status] || DOMAIN_STATUS_META.direct;
     const row = document.createElement('tr');
-    row.className = 'hover:bg-slate-800/40 transition' + (status === 'paused' ? ' is-paused' : '');
+    row.className = 'hover:bg-slate-800/40 transition' +
+      (status === 'paused' ? ' is-paused' : '') +
+      (nested ? ' sinkhole-member-row' : '');
     // The colour classes come from a fixed status table, never from operator data;
     // they are the two entries the escaping sweep allows by name.
     const domainClass = meta.domainClass;
@@ -4721,9 +4744,110 @@ function renderProxiedList() {
     });
     row.style.cursor = 'pointer';
     container.appendChild(row);
+  };
+  shown.forEach((entry) => {
+    if (entry.kind === 'sinkhole') {
+      container.appendChild(sinkholeGroupRow(entry.count));
+      return;
+    }
+    if (entry.kind === 'sinkhole-more') {
+      container.appendChild(sinkholeMoreRow(entry.remaining));
+      return;
+    }
+    renderDomainRow(entry.domain, entry.status, entry.nested);
   });
   safeFeatherReplace();
   updateProxiedBulkBar();
+}
+
+// buildDomainEntries splits the filtered rows into the entries the table draws.
+//
+// With [groupSinkhole] the blocked rows become one head entry: a collapsed
+// summary by default, or the first [visible] members (plus a "show more" entry)
+// when expanded. Everything else stays a flat row. Filtering by status or
+// searching passes groupSinkhole = false, so the operator sees the exact rows
+// they asked for instead of a summary.
+//
+// [head] renders before the paginated flat list, which is what keeps the
+// sinkhole at the top of the table and its members independent of the table's
+// own 50-row window.
+function buildDomainEntries(rows, opts) {
+  const { groupSinkhole, expanded, visible } = opts;
+  const head = [];
+  const flat = [];
+  const blocked = [];
+  for (const row of rows) {
+    if (groupSinkhole && row.status === 'blocked') blocked.push(row);
+    else flat.push({ kind: 'row', domain: row.domain, status: row.status });
+  }
+  if (blocked.length) {
+    head.push({ kind: 'sinkhole', count: blocked.length });
+    if (expanded) {
+      blocked.slice(0, visible).forEach((row) => {
+        head.push({ kind: 'row', domain: row.domain, status: row.status, nested: true });
+      });
+      if (blocked.length > visible) {
+        head.push({ kind: 'sinkhole-more', remaining: blocked.length - visible });
+      }
+    }
+  }
+  return { head, flat };
+}
+
+// sinkholeGroupRow is the one-line entry that stands in for the whole Custom
+// Blocklist. The title lives in the domain column and the status pill in the
+// status column, so the row reads like every other table row. The chevron is the
+// only control: expanding it reveals the member domains, each with the same
+// checkbox and actions a flat row carries.
+function sinkholeGroupRow(count) {
+  const row = document.createElement('tr');
+  row.className = 'sinkhole-group-row';
+  row.innerHTML = `
+    <td class="py-1.5 px-3 text-center"></td>
+    <td class="py-1.5 px-3 text-start" colspan="3">
+      <button type="button" class="sinkhole-group-toggle">
+        <i data-feather="chevron-right" class="w-4 h-4"></i>
+        <span class="sinkhole-group-title">Custom Blocklist (Sinkhole)</span>
+        <span class="sinkhole-group-count"></span>
+      </button>
+    </td>
+    <td class="py-1.5 px-3 text-center"></td>
+    <td class="py-1.5 px-3 text-center"><span class="badge badge-block">Blocked</span></td>`;
+  const button = row.querySelector('.sinkhole-group-toggle');
+  // The state is written through the DOM rather than interpolated into the
+  // template: a quoted attribute built from an expression is the pattern the
+  // dashboard's escaping sweep rejects, and there is no reason to exempt it.
+  button.setAttribute('aria-expanded', blockedGroupExpanded ? 'true' : 'false');
+  row.querySelector('.sinkhole-group-count').textContent =
+    count === 1 ? '1 domain' : `${count} domains`;
+  if (blockedGroupExpanded) {
+    row.querySelector('i[data-feather]').setAttribute('data-feather', 'chevron-down');
+  }
+  button.addEventListener('click', () => {
+    blockedGroupExpanded = !blockedGroupExpanded;
+    if (!blockedGroupExpanded) blockedGroupVisible = PROXIED_BATCH;
+    renderProxiedList();
+  });
+  return row;
+}
+
+// sinkholeMoreRow grows the expanded member list by one batch. It is separate
+// from the table's sentinel so a large sinkhole cannot starve the flat rows.
+function sinkholeMoreRow(remaining) {
+  const row = document.createElement('tr');
+  row.className = 'sinkhole-more-row';
+  const step = Math.min(PROXIED_BATCH, remaining);
+  row.innerHTML = `
+    <td colspan="6" class="py-1.5 px-3">
+      <button type="button" class="panel-btn panel-btn-sm panel-btn-soft">
+        Show ${step} more · ${remaining} hidden
+      </button>
+    </td>`;
+  row.querySelector('button').addEventListener('click', () => {
+    blockedGroupVisible += PROXIED_BATCH;
+    renderProxiedList();
+  });
+  return row;
 }
 
 // Size the table viewport to the space left below the toolbar and above the
@@ -5246,12 +5370,12 @@ function startStatsPolling() {
     }
   });
 
-  // Adaptive: defer the first stats poll by 10 seconds after page load.
-  // This lets the daemon settle after restart (cache warmup, aggregator shard
-  // stabilization, health probe cooldown) so that initial benchmark figures
-  // reflect steady-state performance rather than transient startup noise.
+  // Poll immediately. The daemon delays its own startup benchmark until the
+  // listeners have settled, so waiting here would only leave the dashboard
+  // empty for ten seconds after every load — including ordinary reloads where
+  // the daemon has been up for days.
   if (statsPollTimer === null) {
-    statsPollTimer = setTimeout(pollStatsOnce, 10000);
+    pollStatsOnce();
   }
 }
 
@@ -6676,7 +6800,7 @@ const STREAM_ACTION_BADGES = {
   PROXY_HTTPS_SINK: '<span class="badge badge-proxy">PROXY · HTTPS SINK</span>',
   PROXY_FAILED: '<span class="badge badge-block">PROXY FAILED</span>',
   SERVFAIL: '<span class="badge badge-block">SERVFAIL</span>',
-  BLOCK: '<span class="badge badge-block">BLOCK</span>',
+  BLOCK: '<span class="badge badge-block">Blocked</span>',
   RATELIMIT: '<span class="badge badge-block">RATE LIMITED</span>',
   QUOTA: '<span class="badge badge-block">QUOTA</span>',
   CUSTOM: '<span class="badge badge-rewrite">Rewrite</span>',
@@ -8282,7 +8406,9 @@ function initStatsSettings() {
   if (statsSettingsInitialized) return;
   statsSettingsInitialized = true;
   document.getElementById('save-stats-settings-btn')?.addEventListener('click', saveStatsSettings);
-  loadStatsSettings();
+  // The card lives in Settings, which most sessions never open. switchTab loads
+  // it on first visit; fetching it during boot only added a round trip in front
+  // of the dashboard.
 }
 
 // ── Ad blocking ───────────────────────────────────────────────────────────────
@@ -10924,6 +11050,7 @@ function switchTab(target, updateUrl = true, loadData = true) {
         loadDNSSECSettings();
         loadProxyLeakSettings();
         loadResolutionSettings();
+        loadStatsSettings();
       }
       if (target === 'dashboard') {
         loadHistory();
@@ -13413,39 +13540,57 @@ function initEventListeners() {
   // Add Custom Proxied
   document.getElementById('add-proxied-btn')?.addEventListener('click', () => {
     const input = document.getElementById('new-proxied-input');
-    const val = input ? input.value.trim().toLowerCase() : '';
-    if (!val || !currentConfig) return;
+    if (!input || !currentConfig) return;
     if (!currentConfig.rules.custom_proxied_disabled) currentConfig.rules.custom_proxied_disabled = [];
-    // Re-adding a domain that sits in the disabled list turns it back on, rather
-    // than leaving the same name in both lists.
-    const wasDisabled = currentConfig.rules.custom_proxied_disabled.includes(val);
-    currentConfig.rules.custom_proxied_disabled = currentConfig.rules.custom_proxied_disabled.filter(x => x !== val);
-    const alreadyActive = currentConfig.rules.custom_proxied.includes(val);
-    if (!alreadyActive) currentConfig.rules.custom_proxied.push(val);
-    if (!alreadyActive || wasDisabled) {
-      if (input) input.value = '';
-      saveRules();
-      renderConfig(currentConfig);
+    const active = Array.isArray(currentConfig.rules.custom_proxied)
+      ? currentConfig.rules.custom_proxied
+      : [];
+    // A pasted list is many domains, not one. parseDomainList splits on whitespace,
+    // commas and semicolons and rejects malformed tokens, so the Add box behaves
+    // like Bulk import for the common paste-a-list case.
+    const { accepted, duplicates, invalid } = parseDomainList(input.value, active);
+    if (!accepted.length) {
+      // Nothing changed: the domain is already listed and already on. Say so instead
+      // of swallowing the click — the autocomplete narrows the list to it but a list
+      // of one row is not an explanation on its own.
+      if (duplicates.length) showToast(`${duplicates[0]} is already listed`, 'info');
+      else if (invalid.length) showToast(`${invalid.length} invalid domain(s)`, 'error');
       return;
     }
-    // Nothing changed: the domain is already listed and already on. Say so instead of
-    // swallowing the click — the autocomplete narrows the list to it but a list of one
-    // row is not an explanation on its own. The box keeps its text so the filtered row
-    // stays on screen.
-    showToast(`${val} is already listed`, 'info');
+    for (const d of accepted) {
+      // Re-adding a domain that sits in the disabled list turns it back on, rather
+      // than leaving the same name in both lists.
+      currentConfig.rules.custom_proxied_disabled =
+        currentConfig.rules.custom_proxied_disabled.filter((x) => x !== d);
+      if (!active.includes(d)) active.push(d);
+    }
+    currentConfig.rules.custom_proxied = active;
+    input.value = '';
+    saveRules();
+    renderConfig(currentConfig);
+    if (invalid.length) showToast(`Added ${accepted.length}; ${invalid.length} invalid`, 'error');
   });
 
-  // Add Custom Blocked
+  // Add Custom Blocked. The box accepts a pasted list: parseDomainList splits on
+  // whitespace, commas and semicolons, so a paste can no longer be stored as one
+  // space-separated pattern the matcher would never match.
   document.getElementById('add-blocked-btn')?.addEventListener('click', () => {
     const input = document.getElementById('new-blocked-input');
-    const val = input ? input.value.trim().toLowerCase() : '';
-    if (!val || !currentConfig) return;
-    if (!currentConfig.rules.custom_blocked.includes(val)) {
-      currentConfig.rules.custom_blocked.push(val);
-      if (input) input.value = '';
-      saveRules();
-      renderConfig(currentConfig);
+    if (!input || !currentConfig) return;
+    const existing = Array.isArray(currentConfig.rules.custom_blocked)
+      ? currentConfig.rules.custom_blocked
+      : [];
+    const { accepted, duplicates, invalid } = parseDomainList(input.value, existing);
+    if (!accepted.length) {
+      if (duplicates.length) showToast(`${duplicates.length} domain(s) already listed`, 'info');
+      else if (invalid.length) showToast(`${invalid.length} invalid domain(s)`, 'error');
+      return;
     }
+    currentConfig.rules.custom_blocked = existing.concat(accepted);
+    input.value = '';
+    saveRules();
+    renderConfig(currentConfig);
+    if (invalid.length) showToast(`Added ${accepted.length}; ${invalid.length} invalid`, 'error');
   });
 
   // Add DoH Token
@@ -13828,7 +13973,7 @@ function diagStatusFor(host) {
     const ms = Number.isFinite(r.latency_ms) ? r.latency_ms.toFixed(1) : '?';
     return { dot: 'bg-emerald-400', text: `${ms} ms`, cls: 'text-emerald-400' };
   }
-  return { dot: 'bg-red-400', text: 'BLOCKED', cls: 'text-red-400' };
+  return { dot: 'bg-red-400', text: 'Blocked', cls: 'text-red-400' };
 }
 
 function renderDiagTargets() {

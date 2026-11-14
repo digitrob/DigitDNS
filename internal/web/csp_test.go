@@ -248,6 +248,17 @@ func TestCSPAllowsCrossOriginServiceIcons(t *testing.T) {
 	}
 }
 
+// servedDashboardDocument is the copy the static server actually sends: the
+// minified document when the build produced one, else the source. Tests that
+// assert what a browser receives must read this, not the working-tree source.
+func servedDashboardDocument(t *testing.T) []byte {
+	t.Helper()
+	if assetExists("index.min.html") {
+		return []byte(readAsset(t, "index.min.html"))
+	}
+	return []byte(readAsset(t, "index.html"))
+}
+
 // Each inline block the dashboard serves must be authorized by its own hash.
 // 'unsafe-inline' is gone from script-src, so a block that is not listed here
 // would simply not run — the failure mode this test exists to catch before a
@@ -256,10 +267,10 @@ func TestInlineScriptsAreAuthorizedByHash(t *testing.T) {
 	if strings.Contains(contentSecurityPolicy, "script-src 'self' 'unsafe-inline'") {
 		t.Fatal("script-src still allows 'unsafe-inline'; hashes are what replaced it")
 	}
-	html := []byte(readAsset(t, "index.html"))
+	html := servedDashboardDocument(t)
 	hashes := inlineScriptHashes(html)
 	if len(hashes) != 2 {
-		t.Fatalf("index.html yielded %d inline-script hashes, want 2", len(hashes))
+		t.Fatalf("served dashboard document yielded %d inline-script hashes, want 2", len(hashes))
 	}
 	for _, h := range hashes {
 		if !strings.Contains(contentSecurityPolicy, h) {

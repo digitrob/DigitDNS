@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode"
 
 	"digitdns/internal/blocklist"
 )
@@ -290,6 +291,25 @@ func normalizeDomain(domain string) string {
 	return strings.ToLower(d)
 }
 
+// SplitDomainEntries flattens a list that may carry several names in one entry.
+// The dashboard's single-line "Add" box used to store a pasted list as one
+// space-separated string, which the matcher could never match — every domain in
+// it stayed unblocked and the Domains page showed one meaningless row. Splitting
+// here repairs those records on load and keeps every client honest.
+func SplitDomainEntries(list []string) []string {
+	out := make([]string, 0, len(list))
+	for _, entry := range list {
+		for _, d := range strings.FieldsFunc(entry, func(r rune) bool {
+			return r == ',' || r == ';' || unicode.IsSpace(r)
+		}) {
+			if d != "" {
+				out = append(out, d)
+			}
+		}
+	}
+	return out
+}
+
 // Match resolves a domain against the global rule set.
 func (m *Matcher) Match(domain string) (Action, string) {
 	return m.match(domain, nil)
@@ -482,9 +502,9 @@ func (m *Matcher) SetCustomRules(customProxied, customBlocked, customDirect []st
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.customProxied = slices.Clone(customProxied)
-	m.customBlocked = slices.Clone(customBlocked)
-	m.customDirect = slices.Clone(customDirect)
+	m.customProxied = SplitDomainEntries(customProxied)
+	m.customBlocked = SplitDomainEntries(customBlocked)
+	m.customDirect = SplitDomainEntries(customDirect)
 
 	m.customRecords = make(map[string]string, len(customRecords))
 	for d, ip := range customRecords {

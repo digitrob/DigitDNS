@@ -1,6 +1,7 @@
 package com.digitrob.digitdns.ui.stream
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -43,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -52,8 +54,14 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -65,6 +73,7 @@ import androidx.compose.ui.draw.clip
 import com.digitrob.digitdns.ui.components.CountryFlag
 import com.digitrob.digitdns.ui.components.PanelDialog
 import java.util.Locale
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.IntSize
@@ -109,6 +118,17 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
+    val clipboard = LocalClipboardManager.current
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val domainCopied = stringResource(R.string.live_log_domain_copied)
+    // Long-pressing a domain is the phone's equivalent of selecting the text:
+    // copy it and confirm with the same toast the row menu uses.
+    val copyDomain: (String) -> Unit = { domain ->
+        clipboard.setText(AnnotatedString(domain))
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        scope.launch { snackbar.showPanelToast(domainCopied) }
+    }
 
     LifecycleResumeEffect(Unit) {
         viewModel.onResume()
@@ -168,6 +188,7 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
                                 onAction = { action, targets ->
                                     viewModel.applyQuickAction(event.domain, action, targets)
                                 },
+                                onCopyDomain = copyDomain,
                                 patterns = state.patterns,
                             )
                         }
@@ -330,6 +351,7 @@ private fun EmptyState(state: LiveQueryLogUiState) {
 private fun QueryRow(
     event: QueryEvent,
     onAction: (RouteAction, List<String>) -> Unit,
+    onCopyDomain: (String) -> Unit,
     patterns: Set<String>,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -352,8 +374,28 @@ private fun QueryRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                val copyLabel = stringResource(R.string.live_log_domain_copied)
                 Text(
                     text = event.domain.ifBlank { "—" },
+                    // Long-press copies the domain, the phone equivalent of
+                    // selecting the name out of the table. pointerInput rather
+                    // than combinedClickable keeps a plain tap inert (no ripple
+                    // for an action that does not exist); the semantics action
+                    // keeps the gesture reachable through TalkBack.
+                    modifier = Modifier
+                        .pointerInput(event.domain) {
+                            detectTapGestures(
+                                onLongPress = {
+                                    if (event.domain.isNotBlank()) onCopyDomain(event.domain)
+                                },
+                            )
+                        }
+                        .semantics {
+                            onLongClick(label = copyLabel) {
+                                if (event.domain.isNotBlank()) onCopyDomain(event.domain)
+                                event.domain.isNotBlank()
+                            }
+                        },
                     style = MaterialTheme.typography.bodyLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -495,6 +537,6 @@ private fun ActionBadge(action: String, onClick: () -> Unit, enabled: Boolean) {
         QueryActionTone.Muted -> colors.textMuted
     }
     Box(modifier = if (enabled) Modifier.clickable(onClick = onClick) else Modifier) {
-        StatusBadge(text = style.label, color = color)
+        StatusBadge(text = style.label, color = color, uppercase = false)
     }
 }

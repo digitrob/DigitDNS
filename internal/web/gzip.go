@@ -33,7 +33,7 @@ func (ws *WebServer) withGzip(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// HEAD carries no body, Range is not an API shape, and the SSE routes
 		// are deliberately excluded before they reach this wrapper.
-		if r.Method == http.MethodHead || r.Header.Get("Range") != "" || !acceptsGzip(r) {
+		if r.Method == http.MethodHead || r.Header.Get("Range") != "" || !acceptsEncoding(r, "gzip") {
 			next(w, r)
 			return
 		}

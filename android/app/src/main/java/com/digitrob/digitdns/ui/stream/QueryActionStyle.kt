@@ -18,7 +18,7 @@ fun queryActionStyle(action: String): QueryActionStyle = when (action.uppercase(
     "PROXY_IPV6_SINK" -> QueryActionStyle("Proxy IPv6 Sink", QueryActionTone.Proxy)
     "PROXY_HTTPS_SINK" -> QueryActionStyle("Proxy HTTPS Sink", QueryActionTone.Proxy)
     "PROXY_FAILED" -> QueryActionStyle("Proxy Failed", QueryActionTone.Danger)
-    "BLOCK" -> QueryActionStyle("Block", QueryActionTone.Danger)
+    "BLOCK" -> QueryActionStyle("Blocked", QueryActionTone.Danger)
     "RATELIMIT" -> QueryActionStyle("Rate Limited", QueryActionTone.Danger)
     "QUOTA" -> QueryActionStyle("Quota", QueryActionTone.Danger)
     "CUSTOM" -> QueryActionStyle("Rewrite", QueryActionTone.Purple)

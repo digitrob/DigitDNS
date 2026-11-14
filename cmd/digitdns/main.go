@@ -27,6 +27,7 @@ import (
 
 	"digitdns/internal/core/matcher"
 	"digitdns/internal/core/proxy"
+	"digitdns/internal/core/resolution"
 	"digitdns/internal/core/upstream"
 	"digitdns/internal/crypto"
 	"digitdns/internal/database"
@@ -463,10 +464,11 @@ func main() {
 		AdaptiveCurrent: dnsSettings.AdaptiveCurrent,
 		Profiles:        dnsSettings.Profiles,
 	})
-	// Measure the pool once at startup. The constructor only seeds an estimate; this
-	// is the one place that has to pay for the real numbers, and it runs detached so
-	// a slow or blackholed upstream cannot delay the listeners coming up.
-	go u.BenchmarkAll()
+	// The pool is deliberately not probed here. The constructor only seeds an
+	// empty estimate, and a benchmark issued during boot competes with ACME, TLS
+	// setup and the panel's own initialization — its figures describe that
+	// contention, not the resolvers. The first probe is scheduled once the
+	// listeners are up, below.
 	// Keep probe health fresh and turn a quiet degradation into one log line,
 	// without adding a probe to the query path.
 	stopUpstreamHealth := u.RunHealthMonitor(0)
@@ -1165,6 +1167,17 @@ func main() {
 	// The Adaptive strategy's one scheduler. It is independent of a browser
 	// session: an install with the panel closed still re-benchmarks and moves.
 	webServer.StartAdaptiveScheduler()
+
+	// First benchmark, now that every listener is up and the startup burst is
+	// over. Adaptive mode does not schedule one here: its scheduler runs a single
+	// forced selection after the same delay, so the pool is probed once rather
+	// than twice.
+	if resolution.NormalizeStrategy(dnsSettings.DefaultStrategy) != resolution.StrategyAdaptive {
+		startupBenchmark := time.AfterFunc(upstream.StartupBenchmarkDelay, func() {
+			benchmarkRunner.Start()
+		})
+		defer startupBenchmark.Stop()
+	}
 
 	stopWatcher := clientService.StartExpirationWatcher(1 * time.Minute)
 	defer close(stopWatcher)

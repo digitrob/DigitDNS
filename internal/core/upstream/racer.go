@@ -1017,6 +1017,15 @@ const (
 	upstreamHealthErrorRate  = 0.10
 )
 
+// StartupBenchmarkDelay is how long the daemon waits after its listeners are up
+// before it probes the pool for the first time. A benchmark issued during boot
+// competes with ACME, TLS setup and the panel's own initialization, and records
+// that contention as resolver latency — the numbers then look far worse than the
+// same resolvers on a manual re-run. Waiting lets the first figures describe the
+// steady state. The Adaptive scheduler uses the same delay for its startup run,
+// so the pool is probed once, not twice.
+const StartupBenchmarkDelay = 10 * time.Second
+
 // RunHealthMonitor re-probes every upstream on a slow timer and logs one warning
 // per degraded upstream plus one recovery line. It returns a stop function; the
 // daemon defers it so the goroutine cannot outlive the pool.

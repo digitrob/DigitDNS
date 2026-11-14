@@ -79,11 +79,18 @@ func cspRest() string {
 // prefix rewrite does not touch script bodies, so one set covers every admin
 // namespace.
 var dashboardInlineScripts = func() []string {
-	doc, err := fs.ReadFile(webAssets.StaticFS, "index.html")
-	if err != nil {
-		return nil
+	// Hash the document the static server actually sends. index.html is minified
+	// at build time and served under the canonical URL, and a minifier is free to
+	// reflow whitespace inside an inline script; hashing the source would then
+	// authorize bytes the browser never sees, and the pre-paint blocks would be
+	// refused.
+	for _, name := range []string{"index.min.html", "index.html"} {
+		doc, err := fs.ReadFile(webAssets.StaticFS, name)
+		if err == nil {
+			return inlineScriptHashes(doc)
+		}
 	}
-	return inlineScriptHashes(doc)
+	return nil
 }()
 
 var contentSecurityPolicy = cspWithScriptHashes(dashboardInlineScripts)

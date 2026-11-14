@@ -85,6 +85,33 @@ data class DomainWildcard(
     val status: DomainStatus,
 )
 
+/**
+ * The Domains list split for the sinkhole entry.
+ *
+ * [sinkhole] is the blocked set the plain view collapses into one expandable row;
+ * [flat] is everything else, in the order the active sort produced. A status chip
+ * or a search empties [sinkhole], so the operator sees the exact rows they asked
+ * for instead of a summary.
+ */
+data class DomainListProjection(
+    val sinkhole: List<DomainRow>,
+    val flat: List<DomainRow>,
+)
+
+/**
+ * Splits [rows] into the collapsed sinkhole set and the flat rows. [group] is
+ * false while a status chip or a search is active.
+ */
+fun projectDomainRows(rows: List<DomainRow>, group: Boolean): DomainListProjection {
+    if (!group) return DomainListProjection(emptyList(), rows)
+    val blocked = rows.filter { it.status == DomainStatus.BLOCKED }
+    return if (blocked.isEmpty()) {
+        DomainListProjection(emptyList(), rows)
+    } else {
+        DomainListProjection(blocked, rows.filter { it.status != DomainStatus.BLOCKED })
+    }
+}
+
 /** What "this row's rule" means: a wildcard row owns itself, a plain host its pair. */
 private fun rowPatterns(domain: String): Set<String> {
     val wildcard = domain.startsWith("*.")

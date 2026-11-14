@@ -68,6 +68,7 @@
     <string name="relay_service_default">Default relay</string>
     <string name="relay_service_default_body">Used only by domains with no relay override. This Server is the default.</string>
     <string name="live_log_relay_desc">Relay: %1$s. Tap for details.</string>
+    <string name="live_log_domain_copied">Domain copied</string>
     <string name="live_log_relay_title">Relay for this query</string>
     <string name="live_log_relay_body">This query exited through the relay shown above. Relay assignments are edited on the Domains screen.</string>
     <string name="relay_row_content">Relay: %1$s. Tap to change.</string>
@@ -288,6 +289,11 @@
     <string name="domains_count_one">1 domain</string>
     <string name="domains_empty_service">No domains in %1$s yet.</string>
     <string name="domains_count_filtered">%1$d %2$s domains</string>
+    <string name="domains_sinkhole_group">Custom Blocklist (Sinkhole)</string>
+    <plurals name="domains_sinkhole_count">
+        <item quantity="one">%1$d domain</item>
+        <item quantity="other">%1$d domains</item>
+    </plurals>
     <string name="services_all">All services</string>
     <string name="services_manage">Manage services…</string>
     <string name="services_title">Services</string>

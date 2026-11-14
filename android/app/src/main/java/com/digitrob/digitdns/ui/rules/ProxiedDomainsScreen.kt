@@ -36,6 +36,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.UploadFile
@@ -59,6 +61,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -214,7 +217,11 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
 
 
 @Composable
-@Suppress("LongParameterList")
+// A Compose screen body: the projection, the toolbar rows and the list are one
+// composition. The detekt config raises the general limit to 80 and this screen
+// crosses it by the sinkhole grouping controls; splitting it would only move the
+// same lines into a helper that exists solely for the threshold.
+@Suppress("LongMethod", "LongParameterList")
 private fun DomainsList(
     state: RulesUiState,
     viewModel: RulesViewModel,
@@ -231,6 +238,33 @@ private fun DomainsList(
         // change instead of re-scanning the whole domain set for each access.
         val rows = remember(state.lists, state.search, state.sort, state.filter, state.serviceFilter) {
             state.rows
+        }
+        // The Custom Blocklist can hold hundreds of names. In the plain view the
+        // blocked set collapses into one expandable entry so the proxied and direct
+        // rows are not buried; a status chip or a search keeps it flat.
+        val groupSinkhole = state.filter == null && state.search.isBlank()
+        val projection = remember(rows, groupSinkhole) { projectDomainRows(rows, groupSinkhole) }
+        var sinkholeExpanded by remember { mutableStateOf(false) }
+        val renderDomainRow: @Composable (DomainRow) -> Unit = { row ->
+            DomainRowItem(
+                row = row,
+                onToggle = { viewModel.toggleDomain(row.domain, row.enabled) },
+                onRemove = { viewModel.removeDomain(row.domain) },
+                onAction = { action, targets -> viewModel.routeAction(action, targets, row.domain) },
+                onScopeChange = { scope, previous -> viewModel.changeScope(row.domain, scope, previous) },
+                patterns = state.lists.managedPatterns,
+                hasResolution = state.resolution?.profiles?.containsKey(row.domain) == true,
+                onResolution = { viewModel.loadResolution(); onOpenResolution(row.domain) },
+                serviceLabel = row.serviceId.takeIf { it.isNotEmpty() }?.let(state::serviceName),
+                serviceIconUrl = state.lists.serviceIcons[row.serviceId],
+                onService = { onOpenService(row.domain) },
+                serverCountry = state.serverCountry,
+                onRelay = { onOpenRelay(row.domain) },
+                selected = row.domain in selectedDomains,
+                selectionMode = selectedDomains.isNotEmpty(),
+                onLongSelect = { viewModel.toggleSelection(row.domain) },
+                onToggleSelect = { viewModel.toggleSelection(row.domain) },
+            )
         }
         PanelRefreshBox(
             isRefreshing = state.isRefreshing,
@@ -280,26 +314,30 @@ private fun DomainsList(
                     }
                 }
 
-                items(rows, key = { "${it.status}:${it.domain}" }) { row ->
-                    DomainRowItem(
-                        row = row,
-                        onToggle = { viewModel.toggleDomain(row.domain, row.enabled) },
-                        onRemove = { viewModel.removeDomain(row.domain) },
-                        onAction = { action, targets -> viewModel.routeAction(action, targets, row.domain) },
-                        onScopeChange = { scope, previous -> viewModel.changeScope(row.domain, scope, previous) },
-                        patterns = state.lists.managedPatterns,
-                        hasResolution = state.resolution?.profiles?.containsKey(row.domain) == true,
-                        onResolution = { viewModel.loadResolution(); onOpenResolution(row.domain) },
-                        serviceLabel = row.serviceId.takeIf { it.isNotEmpty() }?.let(state::serviceName),
-                        serviceIconUrl = state.lists.serviceIcons[row.serviceId],
-                        onService = { onOpenService(row.domain) },
-                        serverCountry = state.serverCountry,
-                        onRelay = { onOpenRelay(row.domain) },
-                        selected = row.domain in selectedDomains,
-                        selectionMode = selectedDomains.isNotEmpty(),
-                        onLongSelect = { viewModel.toggleSelection(row.domain) },
-                        onToggleSelect = { viewModel.toggleSelection(row.domain) },
-                    )
+                if (projection.sinkhole.isNotEmpty()) {
+                    item(key = "sinkhole-group") {
+                        SinkholeGroupRow(
+                            count = projection.sinkhole.size,
+                            expanded = sinkholeExpanded,
+                            onToggle = { sinkholeExpanded = !sinkholeExpanded },
+                        )
+                    }
+                    // The members sit directly under the entry that owns them, not
+                    // after the flat list: appending them at the end left the
+                    // operator staring at the group with the expanded rows far
+                    // below the fold.
+                    if (sinkholeExpanded) {
+                        items(
+                            projection.sinkhole,
+                            key = { "sinkhole:${it.status}:${it.domain}" },
+                        ) { row ->
+                            renderDomainRow(row)
+                        }
+                    }
+                }
+
+                items(projection.flat, key = { "${it.status}:${it.domain}" }) { row ->
+                    renderDomainRow(row)
                 }
 
                 item {
@@ -1119,6 +1157,65 @@ private fun FilterChips(
     }
 }
 
+/**
+ * The one-line entry that stands in for the whole Custom Blocklist. The chevron
+ * is the only control: expanding it reveals the member domains, each with the
+ * same checkbox, actions and status pill a flat row carries.
+ */
+@Composable
+private fun SinkholeGroupRow(
+    count: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    val colors = DigitDnsTheme.colors
+    PanelCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle),
+        verticalPadding = 10.dp,
+        contentAlignment = Alignment.CenterStart,
+        highlighted = expanded,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = if (expanded) {
+                    Icons.Filled.KeyboardArrowDown
+                } else {
+                    Icons.Filled.KeyboardArrowRight
+                },
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(4.dp))
+            StatusBadge(
+                text = stringResource(R.string.domains_status_blocked),
+                color = colors.danger,
+                uppercase = false,
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.domains_sinkhole_group),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.domains_sinkhole_count,
+                        count,
+                        count,
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 @Suppress("LongParameterList")
@@ -1383,5 +1480,6 @@ private fun DomainStatusPill(status: DomainStatus, onClick: () -> Unit) {
         text = stringResource(status.labelRes),
         color = color,
         modifier = Modifier.width(pillWidth).clickable(onClick = onClick),
+        uppercase = status != DomainStatus.BLOCKED,
     )
 }

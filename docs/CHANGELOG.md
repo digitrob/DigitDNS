@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.8.9] — sinkhole groups, faster dashboard, pasted-list repair
+
+### Added
+- **Custom Blocklist (Sinkhole) is one entry in the Domains list.** The blocked
+  set collapses into a single expandable row with a live count; the chevron
+  reveals every blocked name inline, each with its normal actions. Large
+  sinkholes grow 50 members at a time. Web and Android.
+- **Android live-log copy.** Long-press a domain to copy it, with haptics, a
+  toast, and a TalkBack long-click action.
+
+### Changed
+- **Dashboard loading.** The document is minified at build time (287 KB → 195 KB;
+  58 KB → 37 KB gzipped), JS/CSS are served as Brotli sidecars (app.js
+  108 KB → 87 KB), and `app.js` is preloaded. The ten-second first-poll delay is
+  gone; the stats settings card loads on first Settings visit.
+- **Startup benchmark.** The first probe waits ten seconds after the listeners
+  are up. Adaptive mode performs one forced selection at that point, then sleeps
+  until the configured interval instead of probing twice at startup.
+- **Blocked status naming** is “Blocked” everywhere (web + Android). The Domains
+  column is now **Domain/Blocklist** and the web sidebar page is
+  **Domains/Blocklists**; the blocked pill sits in the STATUS column.
+
+### Fixed
+- **Pasted blocklists were stored as one unmatched pattern.** The single-line
+  Add boxes now split whitespace/comma/semicolon lists into individual domains,
+  and the server splits existing blobs on load and save. Existing installs are
+  repaired automatically; the matcher now blocks the names.
+- **Android sinkhole expansion** renders members directly under the group.
+- **Domain/Blocklist header** no longer overlaps SERVICE at narrow widths.
+
+### Notes
+- No database schema migration is required; existing settings, clients,
+  blocklists, certificates, relay agents and egress options are preserved.
+
 ## 🏷️ [v5.8.2] — AdGuard custom rules, command palette, performance
 
 ### Added

@@ -283,4 +283,36 @@ class RulesUiStateTest {
         // The parent of example.com is a TLD, so there is no parent wildcard.
         assertNull(MatchScope.Parent.resolve("*.example.com"))
     }
+
+    @Test
+    fun `the plain view collapses the blocked set into one sinkhole entry`() {
+        val rows = listOf(
+            DomainRow("a.com", DomainStatus.PROXY),
+            DomainRow("ads.com", DomainStatus.BLOCKED),
+            DomainRow("tracker.net", DomainStatus.BLOCKED),
+            DomainRow("lan.local", DomainStatus.DIRECT),
+        )
+        val projection = projectDomainRows(rows, group = true)
+        assertEquals(listOf("ads.com", "tracker.net"), projection.sinkhole.map { it.domain })
+        assertEquals(listOf("a.com", "lan.local"), projection.flat.map { it.domain })
+    }
+
+    @Test
+    fun `a chip or a search keeps the blocked rows flat`() {
+        val rows = listOf(
+            DomainRow("a.com", DomainStatus.PROXY),
+            DomainRow("ads.com", DomainStatus.BLOCKED),
+        )
+        val projection = projectDomainRows(rows, group = false)
+        assertTrue(projection.sinkhole.isEmpty())
+        assertEquals(rows, projection.flat)
+    }
+
+    @Test
+    fun `no blocked rows means no sinkhole entry`() {
+        val rows = listOf(DomainRow("a.com", DomainStatus.PROXY))
+        val projection = projectDomainRows(rows, group = true)
+        assertTrue(projection.sinkhole.isEmpty())
+        assertEquals(rows, projection.flat)
+    }
 }

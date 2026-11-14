@@ -416,27 +416,105 @@ func (ws *WebServer) nudgeAdaptive() {
 	}
 }
 
+const (
+	// adaptiveBusyRetry is how soon a run that lost the shared benchmark gate is
+	// retried. Without it the next due check would be immediate (lastRun did not
+	// advance) and the scheduler would spin against a manual benchmark.
+	adaptiveBusyRetry = 5 * time.Second
+	// adaptiveIdleCheck is the slow tick used when the strategy is not Adaptive.
+	// It keeps a strategy switch noticed even if the settings save that made it
+	// never reached nudgeAdaptive.
+	adaptiveIdleCheck = 30 * time.Second
+)
+
 func (ws *WebServer) adaptiveLoop(ctx context.Context) {
-	// A short first delay lets the startup benchmark finish and avoids adding a
-	// second immediate benchmark on every boot.
-	timer := time.NewTimer(5 * time.Second)
-	defer timer.Stop()
+	// The first run waits for the daemon to settle: probes issued during boot
+	// measure startup contention, not the resolvers. In Adaptive mode this run
+	// is also the startup benchmark — it performs one forced selection and starts
+	// the interval timer from that selection.
+	first := true
+	next := upstream.StartupBenchmarkDelay
 	for {
+		timer := time.NewTimer(next)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
 		case <-ws.adaptiveWake:
+			timer.Stop()
+			if first {
+				// A save during boot does not shorten the settle delay.
+				continue
+			}
+			err := ws.runAdaptiveIfDue(ctx)
+			next = ws.nextAdaptiveDelay()
+			if errors.Is(err, errAdaptiveBusy) {
+				next = adaptiveBusyRetry
+			}
+			continue
 		case <-timer.C:
 		}
-		ws.runAdaptiveIfDue(ctx)
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
+
+		if first {
+			first = false
+			err := ws.runAdaptiveStartup(ctx)
+			next = ws.nextAdaptiveDelay()
+			if errors.Is(err, errAdaptiveBusy) {
+				next = adaptiveBusyRetry
 			}
+			continue
 		}
-		timer.Reset(30 * time.Second)
+
+		err := ws.runAdaptiveIfDue(ctx)
+		next = ws.nextAdaptiveDelay()
+		if errors.Is(err, errAdaptiveBusy) {
+			next = adaptiveBusyRetry
+		}
 	}
+}
+
+// runAdaptiveStartup is the one forced selection after boot. It ignores the
+// hysteresis that protects interval runs, so a restart always lands on the
+// fastest healthy resolver, and runAdaptiveNow records the run time so the
+// interval timer restarts from this moment rather than from the previous run.
+func (ws *WebServer) runAdaptiveStartup(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return nil
+	}
+	_, err := ws.runAdaptiveNow(true)
+	switch {
+	case err == nil, errors.Is(err, errAdaptiveNotSelected):
+		return nil
+	case errors.Is(err, errAdaptiveBusy):
+		return err
+	default:
+		log.Printf("[Resolution] Adaptive startup selection failed: %v", err)
+		return err
+	}
+}
+
+// nextAdaptiveDelay is the wait before the next scheduler check. After a run it
+// is the configured interval measured from that run; while Adaptive is not the
+// selected strategy it falls back to a slow idle check.
+func (ws *WebServer) nextAdaptiveDelay() time.Duration {
+	ws.dnsMu.Lock()
+	cfg := ws.mutableDNSLocked()
+	strategy := resolution.NormalizeStrategy(cfg.DefaultStrategy)
+	interval := time.Duration(resolution.NormalizeAdaptiveInterval(cfg.AdaptiveIntervalMinutes)) * time.Minute
+	lastRun := parseAdaptiveLastRun(cfg.AdaptiveLastRun)
+	ws.dnsMu.Unlock()
+
+	if strategy != resolution.StrategyAdaptive {
+		return adaptiveIdleCheck
+	}
+	if lastRun.IsZero() {
+		// Never run: due now, but check again shortly rather than spinning.
+		return time.Second
+	}
+	if remaining := time.Until(lastRun.Add(interval)); remaining > time.Second {
+		return remaining
+	}
+	return time.Second
 }
 
 var (
@@ -520,9 +598,9 @@ func (ws *WebServer) runAdaptiveNow(force bool) (upstream.AdaptiveDecision, erro
 
 // runAdaptiveIfDue is one scheduler tick. The due check is separate from the
 // run so a forced check can reuse the same implementation without waiting.
-func (ws *WebServer) runAdaptiveIfDue(ctx context.Context) {
+func (ws *WebServer) runAdaptiveIfDue(ctx context.Context) error {
 	if ws == nil || ws.upstreams == nil || ws.db == nil {
-		return
+		return nil
 	}
 
 	ws.dnsMu.Lock()
@@ -533,17 +611,19 @@ func (ws *WebServer) runAdaptiveIfDue(ctx context.Context) {
 	ws.dnsMu.Unlock()
 
 	if strategy != resolution.StrategyAdaptive {
-		return
+		return nil
 	}
 	if !lastRun.IsZero() && time.Since(lastRun) < interval {
-		return
+		return nil
 	}
 	if ctx.Err() != nil {
-		return
+		return nil
 	}
-	if _, err := ws.runAdaptiveNow(false); err != nil && !errors.Is(err, errAdaptiveBusy) {
+	_, err := ws.runAdaptiveNow(false)
+	if err != nil && !errors.Is(err, errAdaptiveBusy) {
 		log.Printf("[Resolution] Adaptive run failed: %v", err)
 	}
+	return err
 }
 
 func parseAdaptiveLastRun(value string) time.Time {
@@ -2024,6 +2104,10 @@ func redirectHost(host string) string {
 // with the same key, which crashes that tab on open. One entry per domain is
 // what the operator means.
 func dedupeDomains(in []string) []string {
+	// A record saved before the Add box split pasted lists can hold many names in
+	// one string; flatten it before de-duplicating so the UI and the matcher see
+	// the same individual domains.
+	in = matcher.SplitDomainEntries(in)
 	if len(in) < 2 {
 		return in
 	}
@@ -2320,8 +2404,10 @@ func (ws *WebServer) handleConfigAccess(w http.ResponseWriter, r *http.Request) 
 // rule change saved three empty lists over the operator's custom domains.
 func toStringSlice(val any) []string {
 	add := func(out []string, s string) []string {
-		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
-			return append(out, s)
+		for _, d := range matcher.SplitDomainEntries([]string{s}) {
+			if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
+				out = append(out, d)
+			}
 		}
 		return out
 	}
