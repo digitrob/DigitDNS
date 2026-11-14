@@ -6809,7 +6809,16 @@ const STREAM_ACTION_BADGES = {
   DIRECT: '<span class="badge badge-direct">DIRECT</span>',
 };
 
-const infoButton = '<button type="button" class="info-stream-btn rounded-full p-1 opacity-70 hover:bg-slate-900 hover:opacity-100 transition-colors" aria-label="Show DNS response details" aria-expanded="false"><i data-feather="info" class="w-4 h-4 text-slate-400"></i></button>';
+// The per-row info trigger. A literal inline SVG rather than a Feather <i>: the
+// live table is rebuilt on every render and only some paths call
+// safeFeatherReplace(), so a data-feather placeholder would usually stay an empty
+// <i> — an invisible button. The stroke inherits currentColor, so the hover colour
+// below tints it without another rule.
+// Fixed 24×24 box so every row's icon sits on the same line as the status pill
+// and at the same vertical offset, whatever the row's height. The inline SVG is
+// centred in the box rather than sized by its own padding, which is what made the
+// icon drift when the badge beside it grew.
+const infoButton = '<button type="button" class="info-stream-btn inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 opacity-70 hover:bg-slate-900 hover:opacity-100 hover:text-cyan-300 transition-colors" aria-label="Show DNS response details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>';
 
 // Colour per protocol for the PROTO column. The shown value is the transport that
 // resolved the query (upstream_protocol), falling back to the client protocol when
@@ -6914,7 +6923,7 @@ function queryRowHTML(q) {
   let cacheBadge = q.cached ? '<span class="badge badge-cached ms-1">RAM</span>' : '';
   const timeStr = q.timestamp ? new Date(q.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
   const latVal = (typeof q.latency_ms === 'number') ? q.latency_ms : ((typeof q.latency === 'number') ? q.latency / 1000000 : 0.0);
-  const latStr = latVal.toFixed(1) + ' ms';
+  const latStr = formatLatencyMs(latVal);
   const ruleStr = q.rule_name || q.rule_matched || q.rule || 'Default Direct';
   // The PROTO column describes the resolution leg: the resolver's transport
   // when one answered, and the client's transport only when nothing upstream
@@ -6963,7 +6972,7 @@ function queryRowHTML(q) {
     </td>
     <td class="stream-col-rule py-2.5 px-2 sm:px-3 text-slate-400 hidden sm:table-cell">${escapeHTML(ruleStr)}</td>
     <td class="stream-col-relay py-2.5 px-2 sm:px-3">${relayCell}</td>
-    <td class="stream-col-action py-2.5 px-2 sm:px-3">${infoButton}${actBadge}${cacheBadge}</td>
+    <td class="stream-col-action py-2.5 px-2 sm:px-3"><div class="flex items-center gap-1.5">${infoButton}${actBadge}${cacheBadge}</div></td>
     <td class="stream-col-latency py-2.5 px-2 sm:px-3 text-end text-emerald-400 font-mono">${latStr}</td>
   `;
 }
@@ -6975,6 +6984,11 @@ function newQueryRow(q) {
   const row = document.createElement('tr');
   row.className = 'hover:bg-slate-800/40 transition border-b border-slate-800/40';
   row.innerHTML = queryRowHTML(q);
+  // The info tooltip needs the full query — resolved IPs and rcode are not in the
+  // row markup — so the object rides along on the element that owns it. Both the
+  // full render and the incremental insert build rows here, so this is the one
+  // place that has to remember it.
+  row.__query = q;
   return row;
 }
 
@@ -7379,81 +7393,237 @@ function closeStreamActionMenu() {
     .forEach((b) => b.setAttribute('aria-expanded', 'false'));
 }
 
-// Stream info tooltip logic
+// Stream info tooltip. The row object is stashed on the <tr> itself (see
+// newQueryRow), so the tooltip reads the exact query that produced the row without
+// a parallel id→query map that would have to be pruned in step with the buffer.
+let streamInfoAnchor = null;
+const QTYPE_NAMES = {
+  1: 'A', 2: 'NS', 5: 'CNAME', 6: 'SOA', 12: 'PTR', 15: 'MX', 16: 'TXT',
+  28: 'AAAA', 33: 'SRV', 43: 'DS', 46: 'RRSIG', 48: 'DNSKEY', 64: 'SVCB', 65: 'HTTPS', 255: 'ANY',
+};
+const RCODE_NAMES = {
+  0: 'NOERROR', 1: 'FORMERR', 2: 'SERVFAIL', 3: 'NXDOMAIN', 4: 'NOTIMP', 5: 'REFUSED',
+};
 
-function openStreamInfoTooltip(trigger) {
-  const row = trigger.closest('tr');
-  if (!row) return;
-  const domain = trigger.dataset.domain || '';
-  const data = streamQueryData.get(domain);
-  if (!data) return;
+function qtypeName(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && QTYPE_NAMES[n] ? QTYPE_NAMES[n] : (Number.isFinite(n) ? `TYPE${n}` : '');
+}
 
-  // Create tooltip element
-  let tooltip = document.getElementById('stream-info-tooltip');
-  if (!tooltip) {
-    tooltip = document.createElement('div');
-    tooltip.id = 'stream-info-tooltip';
-    tooltip.className = 'stream-info-tooltip absolute z-10 max-w-sm p-3 bg-slate-950/90 rounded-lg border border-slate-800 text-sm shadow-lg';
-    tooltip.style.position = 'fixed';
-    tooltip.style.pointerEvents = 'none';
-    document.body.appendChild(tooltip);
+function rcodeName(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && RCODE_NAMES[n] !== undefined ? RCODE_NAMES[n] : (Number.isFinite(n) ? `RCODE${n}` : '');
+}
+
+// A friendly category for a block, derived from the list name already stored in
+// rule_matched — no extra DB field. Unknown list names fall through to "blocklist"
+// only when the rule looks like a list rather than a custom rule.
+function blocklistCategory(rule) {
+  const r = String(rule || '').toLowerCase();
+  if (!r) return '';
+  if (/(malware|phish|threat|crypto|ransom|spam|botnet)/.test(r)) return 'Malware';
+  if (/(track|analytics|telemetry)/.test(r)) return 'Tracker';
+  if (/(\bad|ads|advert|easylist|adblock|sponsor)/.test(r)) return 'Ads';
+  return '';
+}
+
+// Sub-millisecond answers are the norm for a cache hit, a block or a proxied
+// name, and toFixed(1) printed every one of them as "0.0 ms". Below 1 ms the
+// value is shown with three decimals so a real figure is still visible.
+function formatLatencyMs(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  if (n < 1) return `${n.toFixed(3)} ms`;
+  if (n < 10) return `${n.toFixed(2)} ms`;
+  return `${n.toFixed(1)} ms`;
+}
+
+function streamInfoRows(q) {
+  const rows = [];
+  // Text values are escaped; the *Html variant takes markup that the caller has
+  // already built from escaped parts, which is how the protocol token keeps its
+  // theme colour without escaping the <span> that carries it.
+  const add = (label, value, valueClass = 'text-slate-200') => {
+    if (value === undefined || value === null || value === '') return;
+    rows.push(`<div class="flex gap-2"><span class="text-slate-500 shrink-0 w-[92px]">${escapeHTML(label)}</span><span class="${escapeHTML(valueClass)} font-mono break-all">${escapeHTML(String(value))}</span></div>`);
+  };
+  const addHtml = (label, valueHtml) => {
+    rows.push(`<div class="flex gap-2"><span class="text-slate-500 shrink-0 w-[92px]">${escapeHTML(label)}</span><span class="font-mono break-all">${valueHtml}</span></div>`);
+  };
+
+  // The response header: how long it took and what the resolver said.
+  if (typeof q.latency_ms === 'number') add('Latency', formatLatencyMs(q.latency_ms));
+  add('Response code', q.rcode === undefined || q.rcode === null ? 'NOERROR' : (rcodeName(q.rcode) || `RCODE${q.rcode}`));
+
+  // The answer section, in the order the resolver returned it. Each line is the
+  // record the way dig prints it, so a CNAME chain reads top to bottom.
+  const answers = Array.isArray(q.answers) ? q.answers.filter((a) => a && a.value) : [];
+  if (answers.length) {
+    const lines = answers
+      .map((a) => `${escapeHTML(String(a.type || '?'))}: ${escapeHTML(String(a.value))} (ttl=${Number(a.ttl) || 0})`)
+      .join('<br>');
+    rows.push(`<div class="flex gap-2"><span class="text-slate-500 shrink-0 w-[92px]">Response</span><span class="text-cyan-300 font-mono break-all">${lines}</span></div>`);
+  } else {
+    // Older servers (before answers were carried) still send resolved_ips.
+    const ips = Array.isArray(q.resolved_ips) ? q.resolved_ips.filter(Boolean) : [];
+    if (ips.length) {
+      const lines = ips.map((ip) => `A: ${escapeHTML(ip)}`).join('<br>');
+      rows.push(`<div class="flex gap-2"><span class="text-slate-500 shrink-0 w-[92px]">Response</span><span class="text-cyan-300 font-mono break-all">${lines}</span></div>`);
+    } else if (String(q.action).toUpperCase() === 'BLOCK') {
+      add('Response', 'Blocked, no upstream answer', 'text-red-300');
+    } else {
+      add('Response', 'No answer records', 'text-slate-400');
+    }
   }
 
-  // Get trigger position
-  const triggerRect = trigger.getBoundingClientRect();
+  add('Status', q.action || '');
+  // Protocol names keep the same theme colour they carry in the PROTO column and
+  // the history cards, so DoT/DoH are recognisable here too.
+  if (q.protocol) {
+    addHtml('Client', `<span class="${escapeHTML(protocolPillClass(q.protocol))} font-semibold">${escapeHTML(protocolLabel(q.protocol))}</span>`);
+  }
+  if (q.upstream_protocol) {
+    addHtml('Resolved via', `<span class="${escapeHTML(protocolPillClass(q.upstream_protocol))} font-semibold">${escapeHTML(protocolLabel(q.upstream_protocol))}</span>`);
+  }
+  if (q.upstream) add('Upstream', q.upstream);
+  if (q.cached) add('Cache', 'RAM hit');
+  if (q.qtype !== undefined) add('Query Type', qtypeName(q.qtype));
 
-  // Show details: status, resolved IPs, latency, protocol, rcode, qtype
-  const details = [];
-  if (data.action) details.push(`Status: ${data.action}`);
-  if (data.resolved_ips && data.resolved_ips.length > 0) details.push(`Resolved IPs: ${data.resolved_ips.join(', ')}`);
-  if (data.latency_ms !== undefined) details.push(`Latency: ${data.latency_ms.toFixed(1)} ms`);
-  if (data.protocol) details.push(`Protocol: ${data.protocol}`);
-  if (data.rcode !== undefined) details.push(`RCode: ${data.rcode}`);
-  if (data.qtype !== undefined) details.push(`QType: ${data.qtype}`);
-  // blocked-source line if blocked
-  if (data.action === 'BLOCK' && data.blocked_source) details.push(`Blocked by: ${data.blocked_source}`);
+  // The blocked source is the answer to "why", and it is only meaningful on a block.
+  if (String(q.action).toUpperCase() === 'BLOCK') {
+    const rule = q.rule_name || q.rule_matched || q.rule || '';
+    const pattern = String(q.matched_pattern || '').trim();
+    const source = [rule, pattern].filter(Boolean).join(' · ');
+    if (source) add('Blocked by', source);
+    const category = blocklistCategory(rule);
+    if (category) add('Category', category);
+  }
 
-  tooltip.innerHTML = `
-    <div class="text-sm font-medium">${escapeHTML(domain)}</div>
-    <div class="text-xs text-slate-400">${details.join('<br>')}</div>
+  // Relay facts belong here too: the RELAY column only names the agent.
+  if (q.relay_agent_name) {
+    const relay = [q.relay_agent_name, q.relay_country, q.relay_egress_name].filter(Boolean).join(' · ');
+    add('Relay', relay);
+  }
+
+  return rows.join('');
+}
+
+// The DNS-response popover sits right beside the (i) button and closes when the
+// pointer leaves it. It is a hover panel, not a modal: no scrim, no close button,
+// and no click needed. #stream-info-tooltip already exists in index.html, so it is
+// reused here rather than created per open.
+let streamInfoHideTimer = null;
+
+function cancelStreamInfoHide() {
+  if (streamInfoHideTimer) {
+    clearTimeout(streamInfoHideTimer);
+    streamInfoHideTimer = null;
+  }
+}
+
+function scheduleStreamInfoHide() {
+  cancelStreamInfoHide();
+  // A grace period lets the pointer travel from the button into the panel (and
+  // back) without the panel vanishing under it. The timer also re-checks hover,
+  // because the live table re-renders under the pointer and fires a mouseout for
+  // a row that is still being read.
+  streamInfoHideTimer = setTimeout(() => {
+    streamInfoHideTimer = null;
+    const pop = document.getElementById('stream-info-tooltip');
+    if (pop && pop.matches(':hover')) return;
+    closeStreamInfoPopover();
+  }, 220);
+}
+
+function openStreamInfoPopover(trigger, q) {
+  const pop = document.getElementById('stream-info-tooltip');
+  if (!pop || !q) return;
+  cancelStreamInfoHide();
+
+  pop.innerHTML = `
+    <div class="text-sm font-semibold text-cyan-300 truncate" title="${escapeHTML(q.domain || '')}">${escapeHTML(q.domain || '')}</div>
+    <div class="mt-1.5 space-y-1 stream-info-body">${streamInfoRows(q)}</div>
   `;
 
-  // Position tooltip near the trigger
-  tooltip.style.left = Math.max(8, triggerRect.left + triggerRect.width / 2 - 120) + 'px';
-  tooltip.style.top = triggerRect.bottom + 8 + 'px';
-  tooltip.style.width = '240px';
-  tooltip.style.pointerEvents = 'auto';
-  tooltip.classList.remove('hidden');
-}
+  // Measure at the target width, then place it to the left of the button when
+  // there is room (the ACTION column is near the right edge) and clamp vertically.
+  const r = trigger.getBoundingClientRect();
+  const width = Math.min(360, Math.max(240, window.innerWidth - 16));
+  pop.style.width = width + 'px';
+  pop.style.display = 'block';
+  pop.style.visibility = 'hidden';
+  const height = pop.offsetHeight;
 
-function closeStreamInfoTooltip() {
-  const tooltip = document.getElementById('stream-info-tooltip');
-  if (tooltip) {
-    tooltip.classList.add('hidden');
-    tooltip.remove();
+  let side = 'left';
+  let left = r.left - width - 8;
+  if (left < 8) {
+    side = 'right';
+    left = Math.min(r.right + 8, window.innerWidth - width - 8);
   }
+  let top = r.top - 6;
+  if (top + height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - height - 8);
+  if (top < 8) top = 8;
+
+  pop.dataset.side = side;
+  // Point the caret at the button's centre line, not the panel's corner.
+  const arrowTop = Math.max(10, Math.min(height - 24, (r.top + r.height / 2) - top - 7));
+  pop.style.setProperty('--arrow-top', arrowTop + 'px');
+  pop.style.left = Math.max(8, left) + 'px';
+  pop.style.top = top + 'px';
+  pop.style.visibility = 'visible';
+  trigger.setAttribute('aria-expanded', 'true');
 }
 
+function closeStreamInfoPopover() {
+  cancelStreamInfoHide();
+  const pop = document.getElementById('stream-info-tooltip');
+  if (pop) {
+    pop.style.visibility = 'hidden';
+    pop.style.display = 'none';
+  }
+  document.querySelectorAll('.info-stream-btn[aria-expanded="true"]')
+    .forEach((b) => b.setAttribute('aria-expanded', 'false'));
+}
+
+// Pointer entry/exit is delegated on the table body because rows are rebuilt on
+// every render. A move within the button (onto its SVG) is not a leave.
+document.getElementById('stream-tbody')?.addEventListener('mouseover', (e) => {
+  const btn = e.target.closest('.info-stream-btn');
+  if (!btn) return;
+  const q = btn.closest('tr')?.__query;
+  if (q) openStreamInfoPopover(btn, q);
+});
+document.getElementById('stream-tbody')?.addEventListener('mouseout', (e) => {
+  const btn = e.target.closest('.info-stream-btn');
+  if (!btn) return;
+  if (e.relatedTarget && btn.contains(e.relatedTarget)) return;
+  scheduleStreamInfoHide();
+});
+
+// Hovering the panel keeps it open; leaving it closes it. Bound once because the
+// element is a permanent placeholder, not re-created per row.
+document.getElementById('stream-info-tooltip')?.addEventListener('mouseenter', cancelStreamInfoHide);
+document.getElementById('stream-info-tooltip')?.addEventListener('mouseleave', scheduleStreamInfoHide);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeStreamInfoPopover();
+});
+// A press anywhere outside the button and panel closes it too, which is what a
+// touch device uses since it has no pointer to move away.
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.info-stream-btn')) return;
+  if (document.getElementById('stream-info-tooltip')?.contains(e.target)) return;
+  closeStreamInfoPopover();
+});
+document.querySelector('.stream-viewport')?.addEventListener('scroll', closeStreamInfoPopover);
+
+// A click still opens it, so a touch tap works even where hover is not emulated.
 function onStreamInfoBtnClick(e) {
   e.stopPropagation();
   const trigger = e.target.closest('.info-stream-btn');
   if (!trigger) return;
-  // Close any existing tooltip
-  closeStreamInfoTooltip();
-  // Open new tooltip
-  openStreamInfoTooltip(trigger);
+  const q = trigger.closest('tr')?.__query;
+  if (q) openStreamInfoPopover(trigger, q);
 }
-
-// Close tooltip when clicking outside
-document.body.addEventListener('click', (e) => {
-  if (!e.target.closest('.info-stream-btn') && !document.getElementById('stream-info-tooltip')?.contains(e.target)) {
-    closeStreamInfoTooltip();
-  }
-});
-
-// Initialize stream query data from the live log entries
-// This will be populated by the SSE handler
-const streamQueryData = {};
 
 function applyStreamAction(action) {
   if (!currentConfig || !currentConfig.rules || !streamActionDomain) return;
@@ -13960,6 +14130,12 @@ function initEventListeners() {
   // every keystroke — a listener bound to the button itself would be discarded by the next
   // render.
   document.getElementById('stream-tbody')?.addEventListener('click', (e) => {
+    // The per-row info button opens the DNS-response tooltip. Checked before the
+    // action badge so the two never both fire; both live in the ACTION cell.
+    if (e.target.closest('.info-stream-btn')) {
+      onStreamInfoBtnClick(e);
+      return;
+    }
     // The ACTION badge opens the quick-action menu. Same delegation reason as the
     // clear button below: the badge is rebuilt with the row on every render.
     const badge = e.target.closest('.stream-action-btn');

@@ -6,6 +6,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,11 +32,13 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,11 +57,13 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -77,6 +82,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -93,7 +100,6 @@ import com.digitrob.digitdns.ui.components.RouteAction
 import com.digitrob.digitdns.ui.components.RouteActionMenu
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.components.showPanelToast
-import com.digitrob.digitdns.ui.formatLatency
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
 import com.digitrob.digitdns.ui.theme.protocolColor
@@ -356,6 +362,10 @@ private fun QueryRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var relayOpen by remember(event.id) { mutableStateOf(false) }
+    // Read-only DNS response detail for this row. Kept separate from relayOpen so
+    // the two dialogs never stack, and keyed on the query id so a recycled row
+    // never inherits the previous query's open state.
+    var infoOpen by remember(event.id) { mutableStateOf(false) }
     var rowSize by remember { mutableStateOf(IntSize.Zero) }
     var rowY by remember { mutableStateOf(0f) }
     Box(modifier = Modifier.onGloballyPositioned { coords -> rowSize = coords.size; rowY = coords.positionInRoot().y }) {
@@ -375,22 +385,28 @@ private fun QueryRow(
             ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 val copyLabel = stringResource(R.string.live_log_domain_copied)
+                val infoLabel = stringResource(R.string.live_log_info_desc)
                 Text(
                     text = event.domain.ifBlank { "—" },
-                    // Long-press copies the domain, the phone equivalent of
-                    // selecting the name out of the table. pointerInput rather
-                    // than combinedClickable keeps a plain tap inert (no ripple
-                    // for an action that does not exist); the semantics action
-                    // keeps the gesture reachable through TalkBack.
+                    // Tap opens the DNS-response popup; long-press copies the name.
+                    // Tapping the domain replaces the old (i) button, which cost a
+                    // 32 dp slot on every row. pointerInput keeps both gestures on
+                    // one target; the semantics actions keep them reachable through
+                    // TalkBack.
                     modifier = Modifier
                         .pointerInput(event.domain) {
                             detectTapGestures(
+                                onTap = { if (event.domain.isNotBlank()) infoOpen = true },
                                 onLongPress = {
                                     if (event.domain.isNotBlank()) onCopyDomain(event.domain)
                                 },
                             )
                         }
                         .semantics {
+                            onClick(label = infoLabel) {
+                                if (event.domain.isNotBlank()) infoOpen = true
+                                event.domain.isNotBlank()
+                            }
                             onLongClick(label = copyLabel) {
                                 if (event.domain.isNotBlank()) onCopyDomain(event.domain)
                                 event.domain.isNotBlank()
@@ -414,7 +430,7 @@ private fun QueryRow(
                                 append(protocolLabel(resolvedBy))
                             }
                         }
-                        if (event.latencyMs > 0) append(" · ${formatLatency(event.latencyMs)}")
+                        if (event.latencyMs > 0) append(" · ${formatLatencyMs(event.latencyMs)}")
                         if (event.upstream.isNotBlank()) append(" · via ${event.upstream}")
                         if (event.timestamp.isNotBlank()) {
                             val t = event.timestamp.substringAfter('T').substringBefore('.').trimEnd('Z')
@@ -428,8 +444,9 @@ private fun QueryRow(
                 )
             }
 
-            // Relay flag + status badge. The flag is a second, read-only detail:
-            // tapping it explains the exit without opening the routing menu.
+            // Relay flag + status badge. The DNS detail opens from the domain text
+            // on the left, so no per-row info button is spent on it; the flag
+            // explains the exit and the badge opens the routing menu.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -461,6 +478,9 @@ private fun QueryRow(
         }
 
         }
+        if (infoOpen) {
+            DnsDetailsDialog(event, onDismiss = { infoOpen = false })
+        }
         if (relayOpen) {
             RelayDetailsDialog(event, onDismiss = { relayOpen = false })
         }
@@ -477,6 +497,180 @@ private fun QueryRow(
     }
 }
 
+
+/** The read-only DNS response detail opened by the info button in a live-log row. */
+@Composable
+private fun DnsDetailsDialog(event: QueryEvent, onDismiss: () -> Unit) {
+    // The qtype/rcode the server sends are the wire numbers; the tooltip names them
+    // so an operator does not have to remember that 28 is AAAA or 3 is NXDOMAIN.
+    val qtype = qtypeLabel(event.qtype)
+    val rcode = rcodeLabel(event.rcode)
+    val resolved = event.resolvedIPs.filter { it.isNotBlank() }
+    val blockedSource = if (event.action.equals("BLOCK", ignoreCase = true)) {
+        listOf(event.ruleMatched, event.matchedPattern)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString(" · ")
+    } else {
+        ""
+    }
+    val relay = listOf(event.relayAgentName, event.relayCountry)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .joinToString(" · ")
+
+    val colors = DigitDnsTheme.colors
+    // A compact custom dialog rather than PanelDialog: this is read-only and needs
+    // no button row, and M3's AlertDialog padding is roomier than the panel this
+    // mirrors. A tap outside (or Back) closes it.
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = true),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 560.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = colors.bgCard.compositeOver(colors.bgMain),
+            contentColor = colors.textMain,
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.live_log_info_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textMain,
+                )
+                Text(
+                    text = event.domain.ifBlank { "—" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.info,
+                    fontFamily = PanelMono,
+                )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                // The time is the answer latency, not the response body: label it
+                // Latency. A cache hit or block is often below 1 ms, so the value
+                // keeps decimals rather than rounding to "0 ms".
+                DetailRow(stringResource(R.string.live_log_info_latency), formatLatencyMs(event.latencyMs), colors.textMain)
+                DetailRow(stringResource(R.string.live_log_info_response_code), rcode.ifBlank { "NOERROR" }, colors.textMain)
+                // The whole answer section is ONE Response field, one record per
+                // line, so a CNAME chain reads top to bottom as a single block
+                // instead of repeating the label for every record.
+                val answers = event.answers.filter { it.value.isNotBlank() }
+                val responseBlock = when {
+                    answers.isNotEmpty() -> answers.joinToString("\n") { a ->
+                        "${a.type.ifBlank { "?" }}: ${a.value} (ttl=${a.ttl})"
+                    }
+                    event.action.equals("BLOCK", ignoreCase = true) -> stringResource(R.string.live_log_info_blocked_answer)
+                    resolved.isNotEmpty() -> resolved.joinToString("\n") { ip -> "A: $ip" }
+                    else -> stringResource(R.string.live_log_info_no_answers)
+                }
+                val responseColor = when {
+                    answers.isNotEmpty() -> colors.info
+                    event.action.equals("BLOCK", ignoreCase = true) -> colors.danger
+                    else -> colors.textMuted
+                }
+                DetailRow(stringResource(R.string.live_log_info_response), responseBlock, responseColor)
+                DetailRow(stringResource(R.string.live_log_info_status), event.action, colors.textMain)
+                val clientProto = protocolLabel(event.protocol)
+                if (clientProto.isNotBlank()) {
+                    DetailRow(stringResource(R.string.live_log_info_client), clientProto, protocolColor(event.protocol))
+                }
+                val resolutionProto = protocolLabel(event.upstreamProtocol)
+                if (resolutionProto.isNotBlank()) {
+                    DetailRow(stringResource(R.string.live_log_info_resolved_via), resolutionProto, protocolColor(event.upstreamProtocol))
+                }
+                if (event.upstream.isNotBlank()) {
+                    DetailRow(stringResource(R.string.live_log_info_upstream), event.upstream, colors.textMain)
+                }
+                if (event.cached) {
+                    DetailRow(stringResource(R.string.live_log_info_cache), stringResource(R.string.live_log_info_cache_hit), colors.textMain)
+                }
+                if (qtype.isNotBlank()) {
+                    DetailRow(stringResource(R.string.live_log_info_qtype), qtype, colors.textMain)
+                }
+                if (blockedSource.isNotBlank()) {
+                    DetailRow(stringResource(R.string.live_log_info_blocked_by), blockedSource, colors.textMain)
+                }
+                val category = blocklistCategory(event.ruleMatched)
+                if (category.isNotBlank()) {
+                    DetailRow(stringResource(R.string.live_log_info_category), category, colors.textMain)
+                }
+                if (relay.isNotBlank()) {
+                    DetailRow(stringResource(R.string.live_log_info_relay), relay, colors.textMain)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailRow(label: String, value: String, valueColor: Color) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.width(84.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = DigitDnsTheme.colors.textMuted,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            color = valueColor,
+            fontFamily = PanelMono,
+        )
+    }
+}
+
+/**
+ * Latency with sub-millisecond resolution. A cache hit, a block or a proxied name
+ * is usually answered in well under a millisecond, and the shared [formatLatency]
+ * rounds those to "0 ms", which reads as a missing measurement. Below 1 ms this
+ * keeps three decimals so the figure is visibly real.
+ */
+private fun formatLatencyMs(ms: Double): String = when {
+    ms <= 0.0 -> "0 ms"
+    ms < 1.0 -> String.format(Locale.US, "%.3f ms", ms)
+    ms < 10.0 -> String.format(Locale.US, "%.2f ms", ms)
+    ms < 1000.0 -> String.format(Locale.US, "%.1f ms", ms)
+    else -> String.format(Locale.US, "%.1f s", ms / 1000.0)
+}
+
+private val QTYPE_LABELS = mapOf(
+    1 to "A", 2 to "NS", 5 to "CNAME", 6 to "SOA", 12 to "PTR", 15 to "MX", 16 to "TXT",
+    28 to "AAAA", 33 to "SRV", 43 to "DS", 46 to "RRSIG", 48 to "DNSKEY", 64 to "SVCB",
+    65 to "HTTPS", 255 to "ANY",
+)
+
+private val RCODE_LABELS = mapOf(
+    0 to "NOERROR", 1 to "FORMERR", 2 to "SERVFAIL", 3 to "NXDOMAIN", 4 to "NOTIMP", 5 to "REFUSED",
+)
+
+/** A friendly category for a block, derived from the list name in rule_matched. */
+private fun blocklistCategory(rule: String): String {
+    val r = rule.lowercase(Locale.US)
+    if (r.isBlank()) return ""
+    return when {
+        Regex("malware|phish|threat|crypto|ransom|spam|botnet").containsMatchIn(r) -> "Malware"
+        Regex("track|analytics|telemetry").containsMatchIn(r) -> "Tracker"
+        Regex("\\bad|ads|advert|easylist|adblock|sponsor").containsMatchIn(r) -> "Ads"
+        else -> ""
+    }
+}
+
+private fun qtypeLabel(value: Int): String = QTYPE_LABELS[value] ?: if (value > 0) "TYPE$value" else ""
+
+private fun rcodeLabel(value: Int): String = RCODE_LABELS[value] ?: if (value > 0) "RCODE$value" else ""
 
 /** The read-only relay explanation opened by the small flag in a live-log row. */
 @Composable

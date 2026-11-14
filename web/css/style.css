@@ -1885,7 +1885,13 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 /* The action column has to hold "PROXY · IPv6 SINK" on one line, and the domain
  * column is the auto one, so the two widths trade against each other: +1.5rem
  * here narrows the domain by the same 24px and stops the status chip wrapping. */
-.stream-col-action { width: 9.5rem; }
+.stream-col-action {
+  width: 9.5rem;
+  /* Top-align the cell so the info button sits at the same vertical offset in
+   * every row. Centred, a blocked row's extra "Blocked by" line made the row
+   * taller and pushed that row's icon below the others. */
+  vertical-align: top;
+}
 /* A badge chip is a label, not prose: it should never break across lines when a
  * column is tight. Scoped to the live log so the other tables keep their own
  * sizing. */
@@ -5826,6 +5832,45 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
   }
 }
 
-/* Info tooltip for stream log rows */
+/* The live-log DNS-response popover. Fixed so the table's scroll container cannot
+ * clip it, and sized in JS to the room left beside the (i) button. */
 .stream-info-tooltip {
+  position: fixed;
+  z-index: 60;
+  display: none;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgb(var(--c-slate-900) / 0.98);
+  border: 1px solid rgb(var(--c-cyan-500) / 0.35);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 0.5);
+  color: rgb(var(--c-slate-200));
+  font-size: 12px;
+  pointer-events: auto;
+}
+
+/* The caret points at the (i) button. It lives on the outer element, which must
+ * not clip, so the scrolling body is a child with its own height cap. */
+.stream-info-tooltip::after {
+  content: '';
+  position: absolute;
+  top: var(--arrow-top, 16px);
+  width: 0;
+  height: 0;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+}
+.stream-info-tooltip[data-side='left']::after {
+  right: -7px;
+  border-left: 7px solid rgb(var(--c-slate-900));
+  filter: drop-shadow(1px 0 0 rgb(var(--c-cyan-500) / 0.35));
+}
+.stream-info-tooltip[data-side='right']::after {
+  left: -7px;
+  border-right: 7px solid rgb(var(--c-slate-900));
+  filter: drop-shadow(-1px 0 0 rgb(var(--c-cyan-500) / 0.35));
+}
+
+.stream-info-body {
+  max-height: 60vh;
+  overflow-y: auto;
 }

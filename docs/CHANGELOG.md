@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.8.13] — live-log DNS response detail
+
+### Added
+- **Per-query DNS response detail in the live log (web and Android).** Every row
+  can show the resolver's actual answer: the CNAME chain and address records in
+  wire order, each with its own TTL (`CNAME: … (ttl=30)`, `A: … (ttl=30)`), plus
+  the response code and the processing latency.
+- **`answers` on the query log item.** The server renders the answer section
+  (A, AAAA, CNAME, NS, PTR, MX, TXT, SRV) into a structured field, so a client no
+  longer has to infer the result from a bare IP list.
+- **Web popover.** Hovering the (i) button opens a panel anchored beside it, with
+  a caret pointing at the button, protocol-tinted values and theme-aware colours.
+  The pointer can move into the panel; leaving it closes it.
+- **Android dialog.** Tapping the domain on a live-log row opens a compact
+  DNS-response dialog; long-press still copies the domain. The per-row info button
+  was removed to save width.
+
+### Changed
+- **Latency keeps sub-millisecond values.** A cache hit, a block or a proxied name
+  is answered in well under a millisecond; these now read `0.042 ms` instead of a
+  rounded `0 ms`.
+- **Protocol colours are shared.** The popup uses the same `.proto-*` roles on web
+  and `protocolColor()` palette on Android as the rest of the panel, including the
+  light and Graphite variants.
+- Labels are now **Latency**, **Response code**, **Response**, **Query Type**, and
+  blocked categories are spelled **Ads**, **Tracker**, **Malware**.
+
+### Fixed
+- **Blocked queries no longer report the null-IP sinkhole as an answer.** The
+  policy reply (`0.0.0.0`) is not a resolution and is no longer shown as one.
+- **DNSCrypt keeps its light-theme contrast** in the response popup.
+
 ## 🏷️ [v5.8.11] — Android sinkhole status alignment
 
 ### Fixed

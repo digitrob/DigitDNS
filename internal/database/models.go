@@ -82,6 +82,15 @@ type Policy struct {
 	CustomDomains []string `json:"custom_domains"` // the domains this entry carries
 }
 
+// DNSAnswer is one record from a resolver's answer section. Type is the RR
+// mnemonic ("A", "AAAA", "CNAME", ...), Value is the record data rendered the way
+// dig prints it, and TTL is the record's remaining time to live in seconds.
+type DNSAnswer struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+	TTL   uint32 `json:"ttl"`
+}
+
 // QueryLogItem represents a real-time DNS telemetry record
 type QueryLogItem struct {
 	ID          uint64    `json:"id"`
@@ -99,10 +108,13 @@ type QueryLogItem struct {
 	// aggregate stats reader treats zero as UNKNOWN/NOERROR.
 	QType uint16 `json:"qtype,omitempty"`
 	Rcode int    `json:"rcode,omitempty"`
-	// ResolvedIPs holds the A/AAAA answer IP addresses returned by the DNS
-	// resolver. Empty when the answer is not an address record (e.g. CNAME,
-	// NXDOMAIN, BLOCK, cache, direct). Omitted from JSON when nil so existing
-	// consumers see no change.
+	// Answers is the resolver's answer section in wire order — the CNAME chain
+	// followed by the address records — with each record's TTL. Empty for
+	// NXDOMAIN, a block, or a cache miss with no address answer. Omitted from
+	// JSON when empty so existing consumers see no change.
+	Answers []DNSAnswer `json:"answers,omitempty"`
+	// ResolvedIPs is the A/AAAA subset of Answers, kept for consumers that only
+	// want addresses. Omitted from JSON when nil.
 	ResolvedIPs []string `json:"resolved_ips,omitempty"`
 	// Upstream is the resolver that produced the answer: empty for a blocked,
 	// proxied or locally-answered name, "cache" for a RAM hit, and the racer's

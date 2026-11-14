@@ -14,8 +14,8 @@ plugins {
 // The app carries its own version, independent of the server's v3.2.x line: a
 // panel release and an app release are different products on different cadences,
 // and tying them would make every server patch look like an app release.
-val appVersionName: String = "5.8.11"
-val appVersionCode: Int = 561
+val appVersionName: String = "5.8.13"
+val appVersionCode: Int = 563
 
 android {
     namespace = "com.digitrob.digitdns"

@@ -4398,6 +4398,11 @@ async function onBuySubscription(ctx, username) {
   <div id="service-relay-menu" class="proxied-bulk-menu service-picker-popup hidden"
     role="listbox" aria-label="Choose the default relay for this service"></div>
 
+  <!-- The live-log DNS-response popover. It must exist before app.js runs, which
+       binds its hover listeners at load; a placeholder created later would leave
+       those listeners unattached. Hidden by CSS display until app.js positions it. -->
+  <div id="stream-info-tooltip" class="stream-info-tooltip" style="visibility: hidden"></div>
+
   <!-- Custom JavaScript -->
   <script src="/js/app.js"></script>
   <!-- Loaded after app.js on purpose: i18n.js redraws the icons it swaps through
@@ -4407,7 +4412,6 @@ async function onBuySubscription(ctx, username) {
   <!-- The settings panels are ES modules: deferred, strict, and able to
        read the app.js bridge (window.__hdns) at call time. -->
   <script src="/js/feather.min.js"></script>
-  <div id="stream-info-tooltip" class="stream-info-tooltip hidden"></div>
 
   <script type="module" src="/js/modules/twofa.js"></script>
 </body>
