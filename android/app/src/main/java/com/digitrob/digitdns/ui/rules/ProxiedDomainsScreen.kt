@@ -72,6 +72,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -1189,12 +1190,11 @@ private fun SinkholeGroupRow(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.width(4.dp))
-            StatusBadge(
-                text = stringResource(R.string.domains_status_blocked),
-                color = colors.danger,
-                uppercase = false,
-            )
-            Spacer(Modifier.width(10.dp))
+            // The title/count take the left of the row; the Blocked pill sits in the
+            // same right-hand column as every domain row's status pill. The trailing
+            // spacer reserves the gap + switch width the domain rows carry, so the
+            // pill lines up with the DIRECT/PROXY/BLOCKED pills below it instead of
+            // floating at the start of the row.
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.domains_sinkhole_group),
@@ -1212,6 +1212,13 @@ private fun SinkholeGroupRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            StatusBadge(
+                text = stringResource(R.string.domains_status_blocked),
+                color = colors.danger,
+                modifier = Modifier.width(rememberDomainStatusPillWidth()),
+                uppercase = false,
+            )
+            Spacer(Modifier.width(DomainRowStatusTrailingWidth))
         }
     }
 }
@@ -1283,7 +1290,7 @@ private fun DomainRowItem(
                     // keep the gear and pause switch visible but disabled, so the row
                     // does not reflow and the unavailable actions stay legible.
                     val canAdjust = row.status == DomainStatus.PROXY || row.status == DomainStatus.PAUSED
-                    Spacer(Modifier.width(2.dp))
+                    Spacer(Modifier.width(4.dp))
                     DomainGearButton(
                         enabled = canAdjust,
                         highlighted = hasResolution,
@@ -1298,7 +1305,7 @@ private fun DomainRowItem(
                             onClick = { menuOpen = true },
                         )
                     }
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(8.dp))
                     CompactSwitch(
                         checked = row.enabled,
                         onCheckedChange = { onToggle() },
@@ -1465,21 +1472,39 @@ private fun DomainStatusPill(status: DomainStatus, onClick: () -> Unit) {
         DomainStatus.PAUSED -> colors.textMuted
         DomainStatus.DIRECT -> colors.success
     }
-    // One width for every status: the widest label at the current font scale.
-    // Measuring it means the pill is as short as it can be without clipping, and
-    // changing PROXY/PAUSED/BLOCKED/DIRECT never resizes it or moves the gear.
+    StatusBadge(
+        text = stringResource(status.labelRes),
+        color = color,
+        modifier = Modifier
+            .width(rememberDomainStatusPillWidth())
+            .clickable(onClick = onClick),
+        uppercase = status != DomainStatus.BLOCKED,
+    )
+}
+
+/**
+ * One width for every status pill: the widest label at the current font scale.
+ * Measuring it means a pill is as short as it can be without clipping, and
+ * changing PROXY/PAUSED/BLOCKED/DIRECT never resizes it or moves the gear.
+ * Shared with [SinkholeGroupRow] so the folded group's Blocked pill lands in the
+ * same right-hand status column as the domain rows it summarises.
+ */
+@Composable
+private fun rememberDomainStatusPillWidth(): Dp {
     val style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium)
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val labels = DomainStatus.entries.map { stringResource(it.labelRes) }
-    val pillWidth = remember(style, density, labels) {
+    return remember(style, density, labels) {
         val widest = labels.maxOf { measurer.measure(it, style).size.width }
         with(density) { widest.toDp() } + 22.dp
     }
-    StatusBadge(
-        text = stringResource(status.labelRes),
-        color = color,
-        modifier = Modifier.width(pillWidth).clickable(onClick = onClick),
-        uppercase = status != DomainStatus.BLOCKED,
-    )
 }
+
+/**
+ * The space a domain row reserves to the right of its status pill: the 8 dp gap
+ * plus the 48 dp [CompactSwitch] touch target. The folded sinkhole row carries no
+ * switch, so it reserves the same width as a trailing spacer to keep its Blocked
+ * pill aligned with the status pills in the rows below.
+ */
+private val DomainRowStatusTrailingWidth = 56.dp
