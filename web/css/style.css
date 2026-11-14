@@ -630,7 +630,7 @@ body::before {
   gap: 12px;
   padding: 12px 16px;
   border-radius: 12px;
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 600;
   color: var(--text-muted);
   border-inline-start: 3px solid transparent;
@@ -677,7 +677,7 @@ body::before {
 .sidebar-group-label {
   padding: 14px 16px 4px;
   font-family: var(--font-heading);
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -733,7 +733,7 @@ html.sidebar-collapsed .sidebar-group-label {
 .badge {
   padding: 4px 8px;
   border-radius: 20px;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -974,7 +974,7 @@ input:checked + .slider:before {
   /* var(), not a second hardcoded 'JetBrains Mono', monospace stack: the token role
      is defined once in the palette above, so every copy box follows it. */
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--accent-cyan);
   display: flex;
   justify-content: space-between;
@@ -1131,7 +1131,7 @@ input:checked + .slider:before {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   color: var(--text-muted);
   flex: 1 1 0%;
@@ -1200,7 +1200,7 @@ input:checked + .slider:before {
 }
 .mobile-more-title {
   font-family: var(--font-heading);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1234,7 +1234,7 @@ input:checked + .slider:before {
   border: 1px solid var(--border-color);
   background: var(--bg-card);
   color: var(--text-main);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
   text-align: start;
 }
@@ -1560,7 +1560,7 @@ input:checked + .slider:before {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   cursor: pointer;
   user-select: none;
@@ -1648,12 +1648,12 @@ input:checked + .slider:before {
   gap: 0.5rem;
   padding-top: 0.55rem;
   border-top: 1px solid var(--border-color);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 .transport-hint {
   margin-top: auto;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.55;
   color: var(--text-muted);
 }
@@ -1665,7 +1665,7 @@ input:checked + .slider:before {
   border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   background: var(--bg-card);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.55;
   color: var(--text-muted);
 }
@@ -1960,7 +1960,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: rgb(var(--c-cyan-400));
 }
 .stream-action-scopes {
@@ -1974,7 +1974,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   -webkit-box-orient: vertical;
   padding: 0 0.5rem 0.35rem;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.45;
   color: rgb(var(--c-slate-500));
   overflow: hidden;
@@ -1989,7 +1989,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: rgb(var(--c-slate-400));
   background: transparent;
   border: 1px solid transparent;
@@ -2010,7 +2010,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   gap: 0.5rem;
   width: 100%;
   padding: 0.45rem 0.5rem;
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-align: start;
   color: rgb(var(--c-slate-200));
   background: transparent;
@@ -2062,7 +2062,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .command-palette-input {
   width: 100%;
   padding: 0.85rem 1rem;
-  font-size: 14px;
+  font-size: var(--text-lg);
   border: 0;
   border-bottom: 1px solid rgb(var(--c-slate-800));
   background: transparent;
@@ -2089,7 +2089,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   border: 0;
   text-align: start;
   width: 100%;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .command-palette-item:hover,
 .command-palette-item.is-active {
@@ -2099,7 +2099,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .command-palette-item .command-palette-icon { width: 14px; height: 14px; opacity: 0.8; }
 .command-palette-item .command-palette-group {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: rgb(var(--c-slate-500));
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -2108,14 +2108,14 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   padding: 1rem;
   text-align: center;
   color: rgb(var(--c-slate-500));
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .command-palette-hint {
   display: flex;
   gap: 0.75rem;
   padding: 0.45rem 0.75rem;
   border-top: 1px solid rgb(var(--c-slate-800));
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: rgb(var(--c-slate-500));
 }
 .command-palette-hint kbd {
@@ -2126,7 +2126,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   background: rgb(var(--c-slate-800));
   color: rgb(var(--c-slate-300));
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--text-2xs);
 }
 
 /* The alert channel's type picker: one pictogram and a caret instead of a native
@@ -2244,7 +2244,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   gap: 8px;
   padding: 3px 6px 6px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -2257,7 +2257,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   height: 20px;
   border-radius: 5px;
   color: var(--text-muted);
-  font-size: 15px;
+  font-size: var(--text-xl);
   line-height: 1;
 }
 .upstream-preset-close:hover {
@@ -2272,7 +2272,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   padding: 6px 8px;
   border-radius: 7px;
   color: rgb(var(--c-slate-200));
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 700;
   text-align: left;
 }
@@ -2299,13 +2299,13 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   flex-shrink: 0;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 600;
 }
 .upstream-preset-chevron {
   flex-shrink: 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
   transition: transform 0.15s ease;
 }
 .upstream-preset-provider[aria-expanded="true"] .upstream-preset-chevron {
@@ -2324,7 +2324,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   border-radius: 6px;
   background: transparent;
   color: rgb(var(--c-slate-300));
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-align: left;
 }
 .upstream-preset-server:hover {
@@ -2354,7 +2354,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .upstream-preset-proto {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 800;
   letter-spacing: 0.04em;
 }
@@ -2396,7 +2396,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   border: 1px solid color-mix(in srgb, currentColor 38%, transparent);
   background: color-mix(in srgb, currentColor 12%, transparent);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 800;
   line-height: 1.5;
   letter-spacing: 0.04em;
@@ -2427,7 +2427,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   flex-shrink: 0;
   width: 20px;
   color: var(--text-muted);
-  font-size: 15px;
+  font-size: var(--text-xl);
   font-weight: 700;
   text-align: center;
 }
@@ -2448,12 +2448,12 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .upstream-preset-loading {
   padding: 10px 8px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 .upstream-preset-note {
   padding: 0 8px 5px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.35;
 }
 @media (max-width: 480px) {
@@ -2510,7 +2510,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   background: rgba(16, 185, 129, 0.10);
   color: var(--accent-green);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: var(--text-2xxs);
   font-weight: 700;
   letter-spacing: 0.06em;
   line-height: 1.5;
@@ -2518,7 +2518,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .upstream-fastest-age {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: var(--text-2xxs);
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;
@@ -2537,7 +2537,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .resolver-chip-label {
   flex: 0 0 4rem;
   padding-top: 0;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.2;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -2606,7 +2606,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   border: 1px solid rgb(var(--c-slate-700));
   background: rgb(var(--c-slate-900));
   color: rgb(var(--c-slate-300));
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
@@ -2693,7 +2693,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 .resolver-force-label {
   flex-shrink: 0;
   color: rgb(var(--c-slate-300));
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -2757,7 +2757,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   gap: 0.35rem;
   flex-shrink: 0;
   color: rgb(var(--c-slate-300));
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -2807,7 +2807,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   background: rgb(var(--c-slate-950));
   color: rgb(var(--c-slate-200));
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-align: left;
   cursor: pointer;
 }
@@ -2865,7 +2865,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   background: transparent;
   color: rgb(var(--c-slate-300));
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-align: left;
   cursor: pointer;
 }
@@ -2882,7 +2882,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 
 .resolver-single-item .resolver-single-proto {
   flex-shrink: 0;
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-weight: 700;
 }
 
@@ -2984,7 +2984,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   background: rgb(var(--c-slate-950) / 0.6);
   color: rgb(var(--c-slate-400));
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s, background-color 0.15s;
@@ -3108,11 +3108,22 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   --radius-xl: 20px;
   --radius-pill: 999px;
 
+  --text-2xxs: 8px;
+  --text-2xxs-line: 11px;
   --text-2xs: 10px;
+  --text-2xs-line: 13px;
   --text-xs: 11px;
+  --text-xs-line: 14px;
   --text-sm: 12px;
-  --text-md: 13px;
-  --text-lg: 16px;
+  --text-sm-line: 16px;
+  --text-base: 13px;
+  --text-base-line: 18px;
+  --text-lg: 14px;
+  --text-lg-line: 20px;
+  --text-xl: 16px;
+  --text-xl-line: 24px;
+  --text-2xl: 20px;
+  --text-2xl-line: 28px;
 
   --control-height: 36px;
 
@@ -3161,7 +3172,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   align-items: center;
   gap: var(--space-2);
   font-family: var(--font-heading);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1rem;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -3182,7 +3193,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
    label. Same type ramp, no uppercase, no icon slot. */
 .panel-card-title {
   font-family: var(--font-heading);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1rem;
   font-weight: 700;
   color: var(--text-main);
@@ -3191,7 +3202,7 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 @media (min-width: 640px) {
   .panel-card-header,
   .panel-card-title {
-    font-size: 14px;
+    font-size: var(--text-lg);
     line-height: 1.25rem;
   }
 }
@@ -3469,6 +3480,61 @@ textarea.panel-field {
    one; the gradient and solid-fill variants were removed when every primary
    button moved to .panel-btn-primary. */
 /* Soft cyan pills and icon buttons: keep the shape, drop the hue. */
+/* Semantic button intent classes — .btn-primary/.btn-ghost/.btn-soft replace the
+   per-class [class*="bg-cyan-500/"] matching. Migration of inline classes in app.js
+   is the next step. */
+.btn-primary {
+  --btn-bg: rgb(var(--c-cyan-500) / 1);
+  --btn-text: rgb(var(--c-slate-950) / 1);
+  --btn-bg-hover: rgb(var(--c-cyan-400) / 1);
+  --btn-border: transparent;
+  background: var(--btn-bg);
+  border-color: var(--btn-border);
+  color: var(--btn-text);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--btn-bg-hover);
+}
+.btn-ghost {
+  --btn-bg: rgb(var(--c-slate-900) / 0.9);
+  --btn-text: var(--accent-cyan);
+  --btn-bg-hover: rgb(var(--c-slate-800) / 0.95);
+  --btn-border: rgb(var(--c-cyan-500) / 0.4);
+  background: var(--btn-bg);
+  border-color: var(--btn-border);
+  color: var(--btn-text);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--btn-bg-hover);
+  border-color: var(--btn-border);
+}
+.btn-soft {
+  --btn-bg: transparent;
+  --btn-text: var(--text-muted);
+  --btn-bg-hover: rgb(var(--c-slate-900) / 0.7);
+  --btn-border: none;
+  background: var(--btn-bg);
+  border: 0;
+  color: var(--btn-text);
+}
+.btn-soft:hover:not(:disabled) {
+  background: var(--btn-bg-hover);
+}
+
+/* Grey-theme adaptation: the semantic classes above render correctly on dark
+   and light. On the grey theme the background wash is lightened slightly so the
+   cyan accent remains legible against the softer surface. */
+[data-theme="grey"] .btn-primary {
+  --btn-bg: rgb(var(--c-slate-900) / 0.9);
+  --btn-text: rgb(var(--c-slate-200));
+  --btn-bg-hover: rgb(var(--c-slate-800) / 0.95);
+}
+[data-theme="grey"] .btn-ghost,
+[data-theme="grey"] .btn-soft {}
+
+/* Deprecated: these substring selectors matched by text fragment and rot when new
+   cyan/sky/purple usages are added. Migration to .btn-primary/.btn-ghost/.btn-soft
+   in app.js is required. */
 [data-theme="grey"] button[class*="bg-cyan-500/"],
 [data-theme="grey"] a[class*="bg-cyan-500/"] {
   background-color: rgba(255, 255, 255, 0.08);
@@ -3480,6 +3546,7 @@ textarea.panel-field {
 [data-theme="grey"] a[class*="bg-cyan-500/"]:hover {
   background-color: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.2);
+}
 }
 
 /* Layout hook only: the resolution grid sizes the select, the surface comes
@@ -3571,7 +3638,7 @@ textarea.panel-field {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 700;
   flex-shrink: 0;
   object-fit: contain;
@@ -3709,7 +3776,7 @@ textarea.panel-field {
   background: rgb(var(--c-slate-950));
   color: rgb(var(--c-slate-300));
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 .proxied-bulk-service:disabled {
@@ -3739,7 +3806,7 @@ textarea.panel-field {
   border-radius: 6px;
   color: rgb(var(--c-slate-300));
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-align: left;
 }
 .proxied-bulk-option:hover { background: rgba(148, 163, 184, 0.12); }
@@ -3778,7 +3845,7 @@ textarea.panel-field {
   width: 16px;
   height: 16px;
   border-radius: 4px;
-  font-size: 9px;
+  font-size: var(--text-2xs);
 }
 .proxied-service-trigger .service-mark svg { width: 14px; height: 14px; }
 .proxied-service-name {
@@ -3798,7 +3865,7 @@ textarea.panel-field {
    card cannot fire mid-edit), and a corner grip resizes it. */
 .dash-hint {
   margin-top: 2px;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
@@ -3919,7 +3986,7 @@ textarea.panel-field {
 .history-top-other {
   padding-top: 6px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
@@ -4192,12 +4259,12 @@ textarea.panel-field {
 }
 .agent-summary-item span {
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: var(--text-2xl);
   font-weight: 700;
   color: var(--text-main);
 }
 .agent-summary-item small {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -4219,8 +4286,8 @@ textarea.panel-field {
 }
 .agent-card-main { display: flex; gap: 11px; min-width: 0; }
 .agent-flag { width: 26px; height: 19px; border-radius: 2px; object-fit: cover; box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.25); flex-shrink: 0; }
-.agent-name { font-family: var(--font-heading); font-size: 13px; font-weight: 700; color: var(--text-main); }
-.agent-meta { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+.agent-name { font-family: var(--font-heading); font-size: var(--text-md); font-weight: 700; color: var(--text-main); }
+.agent-meta { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
 /* The IP/key rows own the left column; the right rail carries the three compact
    stats. Stacking them beside the boxes instead of under them keeps the card from
    growing a second full-width band, and lets the relay-traffic line use the space
@@ -4243,7 +4310,7 @@ textarea.panel-field {
 .agent-side-stat { min-width: 0; }
 .agent-side-stat span {
   display: block;
-  font-size: 9px;
+  font-size: var(--text-2xs);
   line-height: 1.2;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -4251,7 +4318,7 @@ textarea.panel-field {
 }
 .agent-side-stat strong {
   display: block;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.35;
   font-weight: 700;
   color: var(--text-main);
@@ -4271,7 +4338,7 @@ textarea.panel-field {
   padding: 2px 7px;
   border-radius: 999px;
   border: 1px solid rgb(var(--c-slate-700));
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -4296,7 +4363,7 @@ textarea.panel-field {
   background: transparent;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   cursor: pointer;
   transition: color 0.15s, background 0.15s, border-color 0.15s;
@@ -4327,7 +4394,7 @@ textarea.panel-field {
   background: rgb(var(--c-slate-950));
   color: var(--text-main);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -4342,7 +4409,7 @@ textarea.panel-field {
   border: 1px solid rgb(var(--c-slate-700));
   background: rgb(var(--c-slate-950));
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -4371,7 +4438,7 @@ textarea.panel-field {
   background: rgb(var(--c-slate-950));
   color: var(--text-muted);
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-align: left;
 }
 .proxied-relay-trigger:hover { border-color: rgba(34, 211, 238, 0.5); }
@@ -4395,7 +4462,7 @@ textarea.panel-field {
 .proxied-relay-trigger.is-offline { opacity: 0.7; }
 .proxied-relay-offline {
   flex-shrink: 0;
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -4488,7 +4555,7 @@ textarea.panel-field {
   border: 1px solid var(--border-color);
   color: var(--text-main);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -4505,7 +4572,7 @@ textarea.panel-field {
 .filter-list-main { min-width: 0; flex: 1 1 auto; }
 .filter-list-name {
   color: var(--text-main);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4514,7 +4581,7 @@ textarea.panel-field {
 .filter-list-url {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4522,10 +4589,10 @@ textarea.panel-field {
 .filter-list-meta {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   margin-top: 2px;
 }
-.filter-list-error { color: #f59e0b; font-size: 10px; margin-top: 2px; }
+.filter-list-error { color: #f59e0b; font-size: var(--text-2xs); margin-top: 2px; }
 .filter-list-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .filter-list-actions .panel-btn { width: auto; padding: 0 8px; }
 .filter-list-empty {
@@ -4533,7 +4600,7 @@ textarea.panel-field {
   border: 1px dashed var(--border-color);
   border-radius: 10px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-align: center;
 }
 
@@ -4558,7 +4625,7 @@ textarea.panel-field {
   margin: 0;
   color: var(--text-muted);
   font-family: var(--font-heading);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -4586,16 +4653,16 @@ textarea.panel-field {
   gap: 6px;
   flex-wrap: wrap;
   color: var(--text-main);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 700;
 }
 .filtering-preset-desc {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.4;
   margin-top: 2px;
 }
-.filtering-preset-warning { color: var(--accent-amber); font-size: 10px; margin-top: 2px; }
+.filtering-preset-warning { color: var(--accent-amber); font-size: var(--text-2xs); margin-top: 2px; }
 .filtering-preset-links { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; flex-shrink: 0; }
 .filter-link {
   display: inline-flex;
@@ -4617,7 +4684,7 @@ textarea.panel-field {
   flex-shrink: 0;
 }
 .filtering-preset-badge {
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-family: var(--font-mono);
   padding: 1px 5px;
   border-radius: 999px;
@@ -4709,7 +4776,7 @@ textarea.panel-field {
   margin: 0;
   color: var(--text-main);
   font-family: var(--font-heading);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -4717,13 +4784,13 @@ textarea.panel-field {
 .filtering-card-help {
   margin: 0;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1.35;
 }
 .filtering-summary {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   white-space: nowrap;
 }
 .filtering-list-head-actions {
@@ -4737,7 +4804,7 @@ textarea.panel-field {
   align-items: center;
   gap: 8px;
   color: var(--text-main);
-  font-size: 12px;
+  font-size: var(--text-sm);
   flex-shrink: 0;
 }
 .filtering-settings-grid {
@@ -4747,7 +4814,7 @@ textarea.panel-field {
 }
 .filtering-field {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
 }
 .filtering-allowlist { display: flex; flex-direction: column; }
 .filtering-settings-actions {
@@ -4774,7 +4841,7 @@ textarea.panel-field {
 .filtering-license-note {
   margin: 0;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--text-2xs);
   line-height: 1.35;
   flex-shrink: 0;
 }
@@ -4878,7 +4945,7 @@ textarea.panel-field {
 .history-toolbar-status {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   margin-inline-start: 4px;
   white-space: nowrap;
 }
@@ -5105,7 +5172,7 @@ textarea.panel-field {
 .audit-diff-title {
   padding: 7px 10px;
   border-bottom: 1px solid var(--border-color);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -5169,7 +5236,7 @@ textarea.panel-field {
   justify-content: center;
   flex-shrink: 0;
   margin-top: 1px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--text-muted);
 }
@@ -5188,7 +5255,7 @@ textarea.panel-field {
 .onboarding-step-desc {
   display: block;
   margin-top: 2px;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-main);
   line-height: 1.4;
 }
@@ -5230,7 +5297,7 @@ textarea.panel-field {
   flex: 1;
 }
 .cert-upload-title {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-main);
 }
@@ -5239,7 +5306,7 @@ textarea.panel-field {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 .cert-upload-action {
@@ -5248,7 +5315,7 @@ textarea.panel-field {
   border-radius: 999px;
   border: 1px solid var(--border-color);
   color: var(--accent-cyan);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -5308,7 +5375,7 @@ html.dash-layout-pending #tab-dashboard {
 .egress-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
 .egress-name {
   font-family: var(--font-heading);
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 700;
   color: var(--text-main);
   overflow: hidden;
@@ -5324,12 +5391,12 @@ html.dash-layout-pending #tab-dashboard {
   border: 1px solid rgb(var(--c-slate-700));
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.egress-meta { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.egress-meta { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .egress-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .egress-stat {
   min-width: 0;
@@ -5340,7 +5407,7 @@ html.dash-layout-pending #tab-dashboard {
 }
 .egress-stat span {
   display: block;
-  font-size: 9px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -5348,7 +5415,7 @@ html.dash-layout-pending #tab-dashboard {
 .egress-stat strong {
   display: block;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   color: var(--text-main);
   white-space: nowrap;
@@ -5362,7 +5429,7 @@ html.dash-layout-pending #tab-dashboard {
 }
 .egress-error {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--accent-amber);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5375,10 +5442,10 @@ html.dash-layout-pending #tab-dashboard {
   border: 1px dashed rgb(var(--c-slate-800));
   border-radius: 10px;
 }
-.egress-empty p { font-size: 11px; color: var(--text-muted); }
+.egress-empty p { font-size: var(--text-xs); color: var(--text-muted); }
 .proxied-bulk-group {
   padding: 7px 8px 2px;
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -5394,7 +5461,7 @@ html.dash-layout-pending #tab-dashboard {
   margin: 10px 0 -4px;
   padding: 0 4px;
   font-family: var(--font-heading);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -5464,7 +5531,7 @@ html.dash-layout-pending #tab-dashboard {
   background: rgb(var(--c-slate-900) / 0.9);
   color: var(--text-muted);
   font-family: var(--font-heading);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
@@ -5498,7 +5565,7 @@ html.dash-layout-pending #tab-dashboard {
     background: rgb(var(--c-slate-950) / 0.92);
     color: var(--text-muted);
     font-family: var(--font-heading);
-    font-size: 10px;
+    font-size: var(--text-2xs);
     font-weight: 700;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   }
@@ -5622,7 +5689,7 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
   background: rgb(var(--c-slate-900) / 0.8);
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -5673,7 +5740,7 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
   background: rgb(var(--c-slate-950) / 0.8);
   color: rgb(var(--c-slate-300));
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
