@@ -1,6 +1,6 @@
-# DigitDNS v5.8.9 — sinkhole groups, faster dashboard, pasted-list repair
+# DigitDNS v5.8.10 —  — sinkhole groups, faster dashboard, pasted-list repair
 
-A minor release on top of v5.8.8. No database schema migration is required;
+A minor release on top of v5.8.9. No database schema migration is required;
 existing settings, clients, blocklists, certificates, relay agents and egress
 options are preserved.
 
