@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.8.11] — Android sinkhole status alignment
+
+### Fixed
+- **Android: the folded Custom Blocklist (Sinkhole) row now puts its Blocked pill
+  in the right-hand status column.** It used to sit immediately after the
+  chevron, on the left, while every domain row below carried its status pill on
+  the right. The group row now lays the title/count out first and reserves the
+  same gap + switch width as a domain row, so the Blocked pill lines up with the
+  DIRECT/PROXY/BLOCKED pills it summarises. The pill width is shared with the
+  row pills, so the column stays consistent at every font scale.
+
+## 🏷️ [v5.8.10] — design-system consolidation
+
+### Changed
+- **Type scale.** The stylesheet gained a named text-size scale
+  (`--text-2xxs` … `--text-2xl`, with line-height variants) and every hard-coded
+  `font-size: Npx` was replaced with a token reference, so type adjustments are
+  one-token changes rather than a sweep.
+- **Semantic button intents.** `.btn-primary`, `.btn-ghost` and `.btn-soft` carry
+  their own token-based colours and render correctly on dark, light and grey
+  without per-theme overrides. They replace the brittle
+  `[data-theme="grey"] button[class*="bg-cyan-500/"]` substring selectors.
+
 ## 🏷️ [v5.8.9] — sinkhole groups, faster dashboard, pasted-list repair
 
 ### Added
