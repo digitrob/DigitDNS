@@ -1211,7 +1211,7 @@ func (h *Handler) logQueryRelay(start time.Time, ip, account, proto, domain, rul
 		RelayEgressName:     target.EgressName,
 		RelayEgressKind:     target.EgressKind,
 		RelayFallbackReason: target.FallbackReason,
-		ResolvedIPs:        resolvedIPs,
+		ResolvedIPs:         resolvedIPs,
 	}
 	if h.telemetry != nil {
 		h.telemetry.PushQueryLog(item)
