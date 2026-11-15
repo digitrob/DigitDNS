@@ -6,6 +6,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.8.14] — query history parity and honest live-log state
+
+### Added
+- **Cursor-paged query history.** `/api/query-log` returns `next_cursor` and
+  `has_more` derived from the stored record key, so the web panel and the Android
+  app can walk the whole retention window. Default page is 100 records, maximum
+  500; `Search` remains as a slice wrapper for existing callers.
+- **Android history detail.** History rows open the shared DNS-response dialog:
+  answer chain with TTLs, response code, latency, transports, cache state,
+  upstream, block source and relay. `ui/components/DnsDetailsDialog.kt` now owns
+  one `DnsDetails` model used by both the live log and history.
+- **History filters.** Time range, query type, response code and cache state join
+  the domain, client, action and protocol filters. `qtype` and `rcode` accept
+  wire numbers or names (`28` / `AAAA`, `3` / `NXDOMAIN`).
+- **Connectivity is visible.** The web live log shows a `Live`, `Connecting`,
+  `Reconnecting`, `Polling` or `Offline` pill; the Android live log shows the
+  `StreamStatus` it already tracked. Both react to offline/online transitions and
+  reconnect immediately when the network returns.
+- **Query-log storage usage and cap.** The card reports record count and bytes
+  used against the cap, and the cap is editable (64 MB–2 GB).
+
+### Changed
+- **Exports stream the whole result set.** CSV and JSON walk up to 100 000
+  records instead of the first 1000, and set `X-Query-Log-Truncated: true` as a
+  trailer when the ceiling is hit. CSV gained `qtype_name`, `rcode_name`,
+  `upstream`, `resolved_ips` and `answers`.
+- **`/api/stream/recent` serves an ETag** and answers `If-None-Match` with 304,
+  so the two-second fallback poll skips the body and the JSON parse when the
+  ring has not changed.
+- **Cleanup is chunked.** Retention runs every 15 minutes and deletes at most
+  20 000 keys per pass; the size cap sums live key/value bytes and trims oldest
+  records to 90% of the limit.
+- **Batches are marshalled before the write transaction opens,** shortening the
+  query store's write lock.
+- The mobile DNS-response panel is a full-width bottom sheet; the desktop popover
+  keeps its caret and anchor.
+
+### Fixed
+- **Saving query-log settings preserved `opt_out` and `max_mb`.** The web card
+  sent `opt_out: []` and `max_mb: 256` on every save, un-excluding every opted-out
+  client and resetting the cap.
+- **Both time bounds apply.** The descending walk breaks at the lower bound and
+  skips rows newer than the upper bound; an upper bound no longer returns nothing.
+- **`Clear` goes through the writer goroutine,** so a batch already queued cannot
+  be written back after the delete.
+- **Android history no longer hides rows.** It is a `LazyColumn` with a Load older
+  flow instead of a fixed slice behind a "first N" caption.
+
 ## 🏷️ [v5.8.13] — live-log DNS response detail
 
 ### Added

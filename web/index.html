@@ -2301,6 +2301,9 @@
             </div>
 
             <div class="flex items-center gap-2 w-full sm:w-auto sm:ms-auto sm:shrink-0 justify-end">
+              <span id="stream-status" class="stream-status-pill" data-state="connecting" role="status" aria-live="polite" title="Live log connection status">
+                <span class="stream-status-dot"></span><span id="stream-status-text">Connecting…</span>
+              </span>
               <button id="stream-pause-btn" class="panel-btn panel-btn-neutral shrink-0" aria-pressed="false">
                 <i data-feather="pause" class="w-3.5 h-3.5"></i> <span>Pause</span>
               </button>
@@ -2463,14 +2466,43 @@
               <select id="querylog-retention" class="panel-field sm:w-32 font-mono text-xs" aria-label="Query log retention">
                 <option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option>
               </select>
+              <select id="querylog-max-mb" class="panel-field sm:w-32 font-mono text-xs" aria-label="Query log storage cap">
+                <option value="64">64 MB cap</option><option value="128">128 MB cap</option>
+                <option value="256" selected>256 MB cap</option><option value="512">512 MB cap</option>
+                <option value="1024">1 GB cap</option><option value="2048">2 GB cap</option>
+              </select>
               <label class="inline-flex items-center gap-1.5 text-[11px] text-slate-300"><input type="checkbox" id="querylog-anonymize" class="accent-cyan-500"> Anonymize clients</label>
               <button id="querylog-save" type="button" class="panel-btn panel-btn-sm panel-btn-neutral">Save settings</button>
               <button id="querylog-clear" type="button" class="panel-btn panel-btn-sm panel-btn-neutral text-red-300">Clear history</button>
               <span id="querylog-status" class="text-[11px] text-slate-500"></span>
             </div>
+            <div id="querylog-usage" class="text-[11px] text-slate-500 font-mono">Storage usage unavailable.</div>
             <div class="flex flex-col sm:flex-row sm:items-center gap-2">
               <input id="querylog-domain" type="text" placeholder="domain" class="panel-field flex-1 font-mono text-xs" aria-label="Filter by domain">
               <input id="querylog-client" type="text" placeholder="client / account" class="panel-field sm:w-40 font-mono text-xs" aria-label="Filter by client">
+              <select id="querylog-range" class="panel-field sm:w-32 font-mono text-xs" aria-label="Filter by time range">
+                <option value="">Any time</option>
+                <option value="1h">Last hour</option>
+                <option value="24h">Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+              </select>
+              <select id="querylog-qtype" class="panel-field sm:w-28 font-mono text-xs" aria-label="Filter by query type">
+                <option value="">Any type</option>
+                <option value="A">A</option><option value="AAAA">AAAA</option>
+                <option value="CNAME">CNAME</option><option value="MX">MX</option>
+                <option value="TXT">TXT</option><option value="HTTPS">HTTPS</option>
+                <option value="ANY">ANY</option>
+              </select>
+              <select id="querylog-rcode" class="panel-field sm:w-28 font-mono text-xs" aria-label="Filter by response code">
+                <option value="">Any rcode</option>
+                <option value="NOERROR">NOERROR</option><option value="NXDOMAIN">NXDOMAIN</option>
+                <option value="SERVFAIL">SERVFAIL</option><option value="REFUSED">REFUSED</option>
+              </select>
+              <select id="querylog-cached" class="panel-field sm:w-28 font-mono text-xs" aria-label="Filter by cache status">
+                <option value="">Any cache</option>
+                <option value="true">Cached</option><option value="false">Uncached</option>
+              </select>
               <div class="relative">
                 <button id="querylog-action-btn" type="button" class="panel-field sm:w-36 flex items-center overflow-hidden whitespace-nowrap text-left font-mono text-xs" aria-haspopup="true" aria-expanded="false">Any action</button>
                 <div id="querylog-action-menu" class="hidden absolute end-0 top-full mt-1 z-50 w-56 max-h-80 overflow-y-auto p-1.5 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl space-y-0.5"></div>
@@ -2484,6 +2516,10 @@
               <button id="querylog-export-json" type="button" class="panel-btn panel-btn-neutral">JSON</button>
             </div>
             <div id="querylog-results" class="text-xs text-slate-500">Enable the log, then search. Results appear here.</div>
+            <div class="flex items-center justify-between gap-2">
+              <span id="querylog-count" class="text-[11px] text-slate-500"></span>
+              <button id="querylog-load-older" type="button" class="panel-btn panel-btn-sm panel-btn-neutral hidden">Load older</button>
+            </div>
           </div>
 
         </div>

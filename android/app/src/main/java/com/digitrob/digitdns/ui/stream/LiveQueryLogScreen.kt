@@ -6,7 +6,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
@@ -32,13 +30,10 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,9 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -69,27 +62,26 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.draw.clip
 import com.digitrob.digitdns.ui.components.CountryFlag
+import com.digitrob.digitdns.ui.components.DnsDetailsDialog as SharedDnsDetailsDialog
+import com.digitrob.digitdns.ui.components.formatLatencyMs
+import com.digitrob.digitdns.ui.components.toDnsDetails
 import com.digitrob.digitdns.ui.components.PanelDialog
 import java.util.Locale
 import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.notifications.QueryEvent
+import com.digitrob.digitdns.data.stream.StreamStatus
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelRefreshBox
 import com.digitrob.digitdns.ui.components.PanelRowDefaults
@@ -101,7 +93,6 @@ import com.digitrob.digitdns.ui.components.RouteActionMenu
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.components.showPanelToast
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
-import com.digitrob.digitdns.ui.theme.PanelMono
 import com.digitrob.digitdns.ui.theme.protocolColor
 import com.digitrob.digitdns.ui.theme.protocolLabel
 
@@ -206,6 +197,20 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
 }
 
 @Composable
+private fun StreamStatusChip(status: StreamStatus) {
+    val colors = DigitDnsTheme.colors
+    val (label, tone) = when (status) {
+        StreamStatus.LIVE -> "Live" to colors.success
+        StreamStatus.CONNECTING -> "Connecting" to colors.warning
+        StreamStatus.RETRYING -> "Retrying" to colors.warning
+        StreamStatus.AUTH_FAILED -> "Sign-in needed" to colors.danger
+        StreamStatus.STOPPED -> "Stopped" to MaterialTheme.colorScheme.onSurfaceVariant
+        StreamStatus.IDLE -> "Idle" to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    StatusBadge(label, tone, uppercase = false)
+}
+
+@Composable
 private fun QueryCountHeader(count: Int) {
     // Match the 24 dp height of the Updated/Online cluster so the two baselines
     // line up, and pin the width so a growing count cannot move the text.
@@ -274,6 +279,10 @@ private fun LogToolbar(state: LiveQueryLogUiState, viewModel: LiveQueryLogViewMo
                 Spacer(Modifier.width(4.dp))
                 Text("Clear", maxLines = 1)
             }
+            Spacer(Modifier.width(6.dp))
+            // The connection state was already tracked but never shown: a retrying
+            // or auth-failed stream looked exactly like a quiet network.
+            StreamStatusChip(state.status)
         }
 
         Column(
@@ -479,7 +488,7 @@ private fun QueryRow(
 
         }
         if (infoOpen) {
-            DnsDetailsDialog(event, onDismiss = { infoOpen = false })
+            SharedDnsDetailsDialog(event.toDnsDetails(), onDismiss = { infoOpen = false })
         }
         if (relayOpen) {
             RelayDetailsDialog(event, onDismiss = { relayOpen = false })
@@ -498,192 +507,6 @@ private fun QueryRow(
 }
 
 
-/** The read-only DNS response detail opened by tapping a live-log row's domain. */
-@Composable
-@Suppress("LongMethod", "CyclomaticComplexMethod")
-private fun DnsDetailsDialog(event: QueryEvent, onDismiss: () -> Unit) {
-    // The qtype/rcode the server sends are the wire numbers; the tooltip names them
-    // so an operator does not have to remember that 28 is AAAA or 3 is NXDOMAIN.
-    val qtype = qtypeLabel(event.qtype)
-    val rcode = rcodeLabel(event.rcode)
-    val resolved = event.resolvedIPs.filter { it.isNotBlank() }
-    val blockedSource = if (event.action.equals("BLOCK", ignoreCase = true)) {
-        listOf(event.ruleMatched, event.matchedPattern)
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .joinToString(" · ")
-    } else {
-        ""
-    }
-    val relay = listOf(event.relayAgentName, event.relayCountry)
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .joinToString(" · ")
-
-    val colors = DigitDnsTheme.colors
-    // A compact custom dialog rather than PanelDialog: this is read-only and needs
-    // no button row, and M3's AlertDialog padding is roomier than the panel this
-    // mirrors. A tap outside (or Back) closes it.
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = true),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 560.dp),
-            shape = RoundedCornerShape(12.dp),
-            color = colors.bgCard.compositeOver(colors.bgMain),
-            contentColor = colors.textMain,
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.live_log_info_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.textMain,
-                )
-                Text(
-                    text = event.domain.ifBlank { "—" },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.info,
-                    fontFamily = PanelMono,
-                )
-                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-                // The time is the answer latency, not the response body: label it
-                // Latency. A cache hit or block is often below 1 ms, so the value
-                // keeps decimals rather than rounding to "0 ms".
-                DetailRow(stringResource(R.string.live_log_info_latency), formatLatencyMs(event.latencyMs), colors.textMain)
-                DetailRow(stringResource(R.string.live_log_info_response_code), rcode.ifBlank { "NOERROR" }, colors.textMain)
-                // The whole answer section is ONE Response field, one record per
-                // line, so a CNAME chain reads top to bottom as a single block
-                // instead of repeating the label for every record.
-                val answers = event.answers.filter { it.value.isNotBlank() }
-                val responseBlock = when {
-                    answers.isNotEmpty() -> answers.joinToString("\n") { a ->
-                        "${a.type.ifBlank { "?" }}: ${a.value} (ttl=${a.ttl})"
-                    }
-                    event.action.equals("BLOCK", ignoreCase = true) -> stringResource(R.string.live_log_info_blocked_answer)
-                    resolved.isNotEmpty() -> resolved.joinToString("\n") { ip -> "A: $ip" }
-                    else -> stringResource(R.string.live_log_info_no_answers)
-                }
-                val responseColor = when {
-                    answers.isNotEmpty() -> colors.info
-                    event.action.equals("BLOCK", ignoreCase = true) -> colors.danger
-                    else -> colors.textMuted
-                }
-                DetailRow(stringResource(R.string.live_log_info_response), responseBlock, responseColor)
-                DetailRow(stringResource(R.string.live_log_info_status), event.action, colors.textMain)
-                val clientProto = protocolLabel(event.protocol)
-                if (clientProto.isNotBlank()) {
-                    DetailRow(stringResource(R.string.live_log_info_client), clientProto, protocolColor(event.protocol))
-                }
-                val resolutionProto = protocolLabel(event.upstreamProtocol)
-                if (resolutionProto.isNotBlank()) {
-                    DetailRow(
-                        stringResource(R.string.live_log_info_resolved_via),
-                        resolutionProto,
-                        protocolColor(event.upstreamProtocol),
-                    )
-                }
-                if (event.upstream.isNotBlank()) {
-                    DetailRow(stringResource(R.string.live_log_info_upstream), event.upstream, colors.textMain)
-                }
-                if (event.cached) {
-                    DetailRow(
-                        stringResource(R.string.live_log_info_cache),
-                        stringResource(R.string.live_log_info_cache_hit),
-                        colors.textMain,
-                    )
-                }
-                if (qtype.isNotBlank()) {
-                    DetailRow(stringResource(R.string.live_log_info_qtype), qtype, colors.textMain)
-                }
-                if (blockedSource.isNotBlank()) {
-                    DetailRow(stringResource(R.string.live_log_info_blocked_by), blockedSource, colors.textMain)
-                }
-                val category = blocklistCategory(event.ruleMatched)
-                if (category.isNotBlank()) {
-                    DetailRow(stringResource(R.string.live_log_info_category), category, colors.textMain)
-                }
-                if (relay.isNotBlank()) {
-                    DetailRow(stringResource(R.string.live_log_info_relay), relay, colors.textMain)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DetailRow(label: String, value: String, valueColor: Color) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.width(84.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = DigitDnsTheme.colors.textMuted,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodySmall,
-            color = valueColor,
-            fontFamily = PanelMono,
-        )
-    }
-}
-
-/**
- * Latency with sub-millisecond resolution. A cache hit, a block or a proxied name
- * is usually answered in well under a millisecond, and the shared [formatLatency]
- * rounds those to "0 ms", which reads as a missing measurement. Below 1 ms this
- * keeps three decimals so the figure is visibly real.
- */
-private const val MS_IN_SECOND = 1000.0
-private const val SUB_MILLISECOND = 1.0
-private const val TEN_MILLISECONDS = 10.0
-
-private fun formatLatencyMs(ms: Double): String = when {
-    ms <= 0.0 -> "0 ms"
-    ms < SUB_MILLISECOND -> String.format(Locale.US, "%.3f ms", ms)
-    ms < TEN_MILLISECONDS -> String.format(Locale.US, "%.2f ms", ms)
-    ms < MS_IN_SECOND -> String.format(Locale.US, "%.1f ms", ms)
-    else -> String.format(Locale.US, "%.1f s", ms / MS_IN_SECOND)
-}
-
-private val QTYPE_LABELS = mapOf(
-    1 to "A", 2 to "NS", 5 to "CNAME", 6 to "SOA", 12 to "PTR", 15 to "MX", 16 to "TXT",
-    28 to "AAAA", 33 to "SRV", 43 to "DS", 46 to "RRSIG", 48 to "DNSKEY", 64 to "SVCB",
-    65 to "HTTPS", 255 to "ANY",
-)
-
-private val RCODE_LABELS = mapOf(
-    0 to "NOERROR", 1 to "FORMERR", 2 to "SERVFAIL", 3 to "NXDOMAIN", 4 to "NOTIMP", 5 to "REFUSED",
-)
-
-/** A friendly category for a block, derived from the list name in rule_matched. */
-private fun blocklistCategory(rule: String): String {
-    val r = rule.lowercase(Locale.US)
-    if (r.isBlank()) return ""
-    return when {
-        Regex("malware|phish|threat|crypto|ransom|spam|botnet").containsMatchIn(r) -> "Malware"
-        Regex("track|analytics|telemetry").containsMatchIn(r) -> "Tracker"
-        Regex("\\bad|ads|advert|easylist|adblock|sponsor").containsMatchIn(r) -> "Ads"
-        else -> ""
-    }
-}
-
-private fun qtypeLabel(value: Int): String = QTYPE_LABELS[value] ?: if (value > 0) "TYPE$value" else ""
-
-private fun rcodeLabel(value: Int): String = RCODE_LABELS[value] ?: if (value > 0) "RCODE$value" else ""
 
 /** The read-only relay explanation opened by the small flag in a live-log row. */
 @Composable

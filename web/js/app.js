@@ -52,6 +52,7 @@ let streamFallbackCheck = null;
 let streamFallbackInFlight = false;
 let streamLastEventAt = 0;
 let streamFallbackSig = '';
+let streamFallbackEtag = '';
 let qpsChart = null;
 let historyChart = null;
 let historyRange = '24h';
@@ -5370,6 +5371,17 @@ function startStatsPolling() {
     }
   });
 
+  // Connectivity is part of the log's state now: without these two listeners an
+  // offline laptop kept a green "Live" pill and a frozen table, and coming back
+  // online waited for the 30-second backoff cap.
+  window.addEventListener('online', () => {
+    if (!authToken) return;
+    setStreamStatus('connecting');
+    startLiveStream();
+    if (activeDashTab === 'stream' && streamFallbackTimer) streamFallbackPoll();
+  });
+  window.addEventListener('offline', () => setStreamStatus('offline'));
+
   // Poll immediately. The daemon delays its own startup benchmark until the
   // listeners have settled, so waiting here would only leave the dashboard
   // empty for ten seconds after every load — including ordinary reloads where
@@ -6402,6 +6414,34 @@ function upstreamCheckAge(u) {
 // =======================================================
 // LIVE QUERY STREAM (SSE)
 // =======================================================
+// The toolbar pill is the only visible answer to "why has the log stopped?".
+// Reconnects are silent by design, but silence with no status made a healthy
+// backoff and a dead session look identical. States are deliberately about the
+// transport, not the last error: Live, Connecting, Reconnecting, Polling,
+// Offline.
+function setStreamStatus(state, text) {
+  const pill = document.getElementById('stream-status');
+  if (!pill) return;
+  const labels = {
+    live: 'Live',
+    connecting: 'Connecting…',
+    reconnecting: 'Reconnecting…',
+    polling: 'Polling',
+    offline: 'Offline',
+  };
+  pill.dataset.state = state;
+  const label = text || labels[state] || state;
+  pill.title = state === 'live'
+    ? 'Live log connected; queries arrive as they are resolved.'
+    : state === 'polling'
+      ? 'Live stream unavailable; reading the recent-query endpoint until it reconnects.'
+      : state === 'offline'
+        ? 'This browser is offline. The log reconnects when the network returns.'
+        : `Live log ${state}; the panel retries automatically.`;
+  const textEl = document.getElementById('stream-status-text');
+  if (textEl) textEl.textContent = label;
+}
+
 async function startLiveStream() {
   // Single-flight: boot, visibility and a manual refresh can all ask for the
   // stream at once, and minting two tickets used to leave the loser's
@@ -6409,6 +6449,7 @@ async function startLiveStream() {
   if (sseConnecting) return;
   if (sseSource && sseSource.readyState !== EventSource.CLOSED) return;
   sseConnecting = true;
+  setStreamStatus(navigator.onLine === false ? 'offline' : (sseBackoffMs > 0 ? 'reconnecting' : 'connecting'));
   const generation = ++sseGeneration;
   if (sseBackoffTimer) {
     clearTimeout(sseBackoffTimer);
@@ -6481,6 +6522,7 @@ async function startLiveStream() {
     // backoff so the next drop reconnects promptly.
     sseBackoffMs = 0;
     streamLastEventAt = Date.now();
+    setStreamStatus('live');
     stopStreamFallback();
     scheduleStreamFallbackCheck();
     refreshStreamPlaceholder();
@@ -6551,6 +6593,7 @@ async function startLiveStream() {
     try { source.close(); } catch(e) {}
     sseSource = null;
     scheduleStreamReconnect();
+    setStreamStatus(navigator.onLine === false ? 'offline' : 'reconnecting');
     // Keep the log usable through the reconnect. The polling path reads the
     // server's recent-log ring and stops as soon as the EventSource delivers.
     startStreamFallback();
@@ -6566,6 +6609,11 @@ async function startLiveStream() {
 function scheduleStreamReconnect() {
   if (sseBackoffTimer) return;
   if (!authToken) return; // signed out; nothing to reconnect to
+  if (navigator.onLine === false) {
+    setStreamStatus('offline');
+    return;
+  }
+  setStreamStatus('reconnecting');
   if (sseBackoffMs === 0) {
     sseBackoffMs = SSE_BACKOFF_START_MS;
   } else {
@@ -6589,6 +6637,7 @@ function stopStreamFallback() {
     clearInterval(streamFallbackTimer);
     streamFallbackTimer = null;
     streamFallbackSig = '';
+    streamFallbackEtag = '';
     refreshStreamPlaceholder();
   }
 }
@@ -6614,7 +6663,11 @@ function scheduleStreamFallbackCheck() {
 function startStreamFallback() {
   if (streamFallbackTimer) return;
   streamFallbackSig = '';
+  streamFallbackEtag = '';
   streamFallbackTimer = setInterval(streamFallbackPoll, 2000);
+  if (document.getElementById('stream-status')?.dataset.state !== 'offline') {
+    setStreamStatus('polling');
+  }
   refreshStreamPlaceholder();
   streamFallbackPoll();
 }
@@ -6626,15 +6679,19 @@ async function streamFallbackPoll() {
   if (streamFallbackInFlight || !authToken) return;
   streamFallbackInFlight = true;
   try {
-    const res = await fetch(api('/api/stream/recent'), {
-      headers: { 'Authorization': `Bearer ${authToken}` }
-    });
+    const headers = { 'Authorization': `Bearer ${authToken}` };
+    // Revalidate instead of re-downloading the ring. The handler hashes the
+    // encoded body, so an unchanged ring costs a 304 with no body and no parse.
+    if (streamFallbackEtag) headers['If-None-Match'] = streamFallbackEtag;
+    const res = await fetchWithTimeout(api('/api/stream/recent'), { headers }, 8000);
+    if (res.status === 304) return;
     if (res.status === 401) {
       stopLiveStream();
       showLoginModal();
       return;
     }
     if (!res.ok) return;
+    streamFallbackEtag = res.headers.get('ETag') || '';
     const data = await res.json();
     const list = Array.isArray(data) ? data : (data.queries || []);
     if (!Array.isArray(list) || list.length === 0) return;
@@ -6677,6 +6734,7 @@ function stopLiveStream() {
     try { sseSource.close(); } catch(e) {}
     sseSource = null;
   }
+  setStreamStatus('offline', 'Disconnected');
   finishStreamRefresh();
 }
 
@@ -12182,6 +12240,15 @@ const QUERYLOG_ACTIONS = [
 ];
 let queryLogActions = new Set();
 let queryLogProtos = new Set();
+// The history view is paged, so the items on screen and the cursor for the next
+// older page live together. A fresh Search replaces both; Load older appends.
+let queryLogItems = [];
+let queryLogCursor = '';
+let queryLogHasMore = false;
+let queryLogLoading = false;
+// The last settings response, kept so a save can round-trip fields this form does
+// not edit (opt_out) instead of silently replacing them with defaults.
+let queryLogSettingsCache = null;
 const QUERYLOG_PROTOCOLS = [
   { value: 'UDP', label: 'UDP' },
   { value: 'TCP', label: 'TCP' },
@@ -12300,41 +12367,85 @@ function initQueryLogProtoMenu() {
   renderQueryLogProtoMenu();
 }
 
+// fetchWithTimeout bounds a request that the UI blocks on. Fetch has no timeout of
+// its own: a half-open connection leaves "Searching…" on screen forever and the
+// next click stacks another request behind it.
+async function fetchWithTimeout(url, options = {}, ms = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function queryLogUsageText(usage, settings) {
+  const records = Number(usage?.records || 0);
+  const bytes = Number(usage?.bytes || 0);
+  const cap = Number(settings?.max_mb || 0);
+  const used = formatBytes(bytes);
+  const limit = cap > 0 ? ` of ${cap} MB` : '';
+  return `${records.toLocaleString()} record${records === 1 ? '' : 's'} · ${used}${limit}`;
+}
+
 async function loadQueryLogSettings() {
   try {
-    const res = await fetch(api('/api/query-log/settings'), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    const res = await fetchWithTimeout(api('/api/query-log/settings'), { headers: { 'Authorization': `Bearer ${authToken}` } });
     if (!res.ok) return;
     const data = await res.json();
     const s = data.settings || {};
+    queryLogSettingsCache = s;
     const en = document.getElementById('querylog-enabled');
     if (en) en.checked = !!s.enabled;
     const ret = document.getElementById('querylog-retention');
     if (ret) ret.value = String(s.retention_days || 7);
     const anon = document.getElementById('querylog-anonymize');
     if (anon) anon.checked = s.anonymize !== false;
+    const cap = document.getElementById('querylog-max-mb');
+    if (cap) {
+      const value = String(s.max_mb || 256);
+      // A saved cap outside the preset list would otherwise make the select show
+      // the first option while the server kept the old value.
+      if (![...cap.options].some((o) => o.value === value)) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = `${value} MB cap`;
+        cap.appendChild(option);
+      }
+      cap.value = value;
+    }
+    const usage = document.getElementById('querylog-usage');
+    if (usage) usage.textContent = queryLogUsageText(data.usage, s);
   } catch (e) { /* defaults */ }
 }
 
 async function saveQueryLogSettings() {
   const status = document.getElementById('querylog-status');
   try {
-    const res = await fetch(api('/api/query-log/settings'), {
+    const res = await fetchWithTimeout(api('/api/query-log/settings'), {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         enabled: !!document.getElementById('querylog-enabled')?.checked,
         retention_days: parseInt(document.getElementById('querylog-retention')?.value, 10) || 7,
         anonymize: !!document.getElementById('querylog-anonymize')?.checked,
-        opt_out: [],
-        max_mb: 256,
+        // opt_out is not edited in this card. Send the stored list back rather than
+        // [] — replacing it on every save silently un-excluded every client.
+        opt_out: Array.isArray(queryLogSettingsCache?.opt_out) ? queryLogSettingsCache.opt_out : [],
+        max_mb: parseInt(document.getElementById('querylog-max-mb')?.value, 10) || 256,
       }),
     });
     if (!res.ok) throw new Error(await errorMessage(res, 'Could not save query log settings'));
+    const data = await res.json().catch(() => ({}));
+    if (data.settings) queryLogSettingsCache = data.settings;
+    const usage = document.getElementById('querylog-usage');
+    if (usage) usage.textContent = queryLogUsageText(data.usage, data.settings || queryLogSettingsCache);
     if (status) status.textContent = 'Saved.';
     showToast('Query log settings saved.', 'success');
   } catch (e) {
-    if (status) status.textContent = e.message;
-    showToast(e.message, 'error');
+    if (status) status.textContent = e.name === 'AbortError' ? 'Timed out.' : e.message;
+    showToast(e.name === 'AbortError' ? 'Saving query log settings timed out.' : e.message, 'error');
   }
 }
 
@@ -12346,44 +12457,90 @@ function queryLogParams() {
   };
   add('querylog-domain', 'domain');
   add('querylog-client', 'client');
+  add('querylog-qtype', 'qtype');
+  add('querylog-rcode', 'rcode');
+  add('querylog-cached', 'cached');
+  const range = document.getElementById('querylog-range')?.value || '';
+  const hours = { '1h': 1, '24h': 24, '7d': 24 * 7, '30d': 24 * 30 }[range];
+  if (hours) q.set('from', new Date(Date.now() - hours * 3600 * 1000).toISOString());
   if (queryLogActions.size) q.set('action', [...queryLogActions].join(','));
   if (queryLogProtos.size) q.set('proto', [...queryLogProtos].join(','));
-  q.set('limit', '200');
+  q.set('limit', '100');
   return q;
 }
 
-function renderQueryLog(items) {
+// renderQueryLog replaces the table. appendRows keeps the existing rows when the
+// operator asks for an older page; rebuilding on append would throw away their
+// scroll position and the row they were reading.
+function renderQueryLog(items, appendRows = false) {
   const out = document.getElementById('querylog-results');
+  const countEl = document.getElementById('querylog-count');
+  const olderBtn = document.getElementById('querylog-load-older');
   if (!out) return;
-  if (!items.length) {
+  if (!appendRows) queryLogItems = [];
+  queryLogItems = queryLogItems.concat(items);
+  if (!queryLogItems.length) {
     out.className = 'text-xs text-slate-500';
     out.textContent = 'No matching queries.';
+    if (countEl) countEl.textContent = '';
+    if (olderBtn) olderBtn.classList.add('hidden');
     return;
   }
   out.className = 'text-xs text-slate-300 overflow-x-auto';
   out.innerHTML = `<table class="w-full font-mono text-[10px]">
-    <thead><tr class="text-slate-500 text-left"><th class="py-1 pe-2">TIME</th><th class="py-1 pe-2">CLIENT</th><th class="py-1 pe-2">DOMAIN</th><th class="py-1 pe-2">ACTION</th><th class="py-1 pe-2">RULE</th><th class="py-1 pe-2">PROTO</th><th class="py-1">MS</th></tr></thead>
-    <tbody>${items.map((it) => `<tr class="border-t border-slate-800/60">
+    <thead><tr class="text-slate-500 text-left"><th class="py-1 pe-2">TIME</th><th class="py-1 pe-2">CLIENT</th><th class="py-1 pe-2">DOMAIN</th><th class="py-1 pe-2">ACTION</th><th class="py-1 pe-2">RCODE</th><th class="py-1 pe-2">RULE</th><th class="py-1 pe-2">PROTO</th><th class="py-1 pe-2">MS</th><th class="py-1"><span class="sr-only">Details</span></th></tr></thead>
+    <tbody>${queryLogItems.map((it) => {
+      const rcode = it.rcode === undefined || it.rcode === null ? 'NOERROR' : (rcodeName(it.rcode) || `RCODE${it.rcode}`);
+      const cache = it.cached ? ' <span class="text-emerald-400">RAM</span>' : '';
+      // Resolve the transport once. Interpolating `a || b` directly inside the
+      // class attribute leaves a bare `||` token that the purge inventory reads
+      // as a utility class.
+      const proto = it.upstream_protocol || it.protocol || '';
+      return `<tr class="border-t border-slate-800/60">
       <td class="py-1 pe-2 text-slate-500 whitespace-nowrap">${escapeHTML(it.timestamp ? new Date(it.timestamp).toLocaleString() : '')}</td>
       <td class="py-1 pe-2 truncate max-w-[140px]">${escapeHTML(it.account_name || it.client_ip || '')}</td>
-      <td class="py-1 pe-2 truncate max-w-[220px]">${escapeHTML(it.domain || '')}</td>
+      <td class="py-1 pe-2 truncate max-w-[220px]">${escapeHTML(it.domain || '')}${cache}</td>
       <td class="py-1 pe-2">${escapeHTML(it.action || '')}</td>
+      <td class="py-1 pe-2">${escapeHTML(rcode)}</td>
       <td class="py-1 pe-2 truncate max-w-[160px]">${escapeHTML(it.rule_matched || '')}</td>
-      <td class="py-1 pe-2"><span class="${escapeHTML(upstreamProtoClass(it.protocol))}">${escapeHTML(protocolLabel(it.protocol || ''))}</span></td>
-      <td class="py-1">${Number(it.latency_ms || 0).toFixed(1)}</td>
-    </tr>`).join('')}</tbody></table>`;
+      <td class="py-1 pe-2"><span class="${escapeHTML(protocolPillClass(proto))}">${escapeHTML(protocolLabel(proto))}</span></td>
+      <td class="py-1 pe-2">${escapeHTML(formatLatencyMs(it.latency_ms || 0))}</td>
+      <td class="py-1">${infoButton}</td>
+    </tr>`;
+    }).join('')}</tbody></table>`;
+  // The row objects are stashed so the shared popover reads the exact query that
+  // produced the row, the same contract the live table uses.
+  const rows = out.querySelectorAll('tbody tr');
+  rows.forEach((tr, i) => { tr.__query = queryLogItems[i]; });
+  if (countEl) countEl.textContent = `${queryLogItems.length.toLocaleString()} loaded`;
+  if (olderBtn) olderBtn.classList.toggle('hidden', !queryLogHasMore);
 }
 
-async function searchQueryLog() {
+async function searchQueryLog(appendRows = false) {
   const out = document.getElementById('querylog-results');
-  if (out) { out.className = 'text-xs text-slate-500'; out.textContent = 'Searching…'; }
+  if (queryLogLoading) return;
+  queryLogLoading = true;
+  if (out && !appendRows) { out.className = 'text-xs text-slate-500'; out.textContent = 'Searching…'; }
+  const olderBtn = document.getElementById('querylog-load-older');
+  if (olderBtn) olderBtn.disabled = true;
   try {
-    const res = await fetch(api('/api/query-log?' + queryLogParams().toString()), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    const q = queryLogParams();
+    if (appendRows && queryLogCursor) q.set('before', queryLogCursor);
+    const res = await fetchWithTimeout(api('/api/query-log?' + q.toString()), {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Search failed');
-    renderQueryLog(data.items || []);
+    queryLogCursor = data.next_cursor || '';
+    queryLogHasMore = !!data.has_more;
+    renderQueryLog(data.items || [], appendRows);
   } catch (e) {
-    if (out) { out.className = 'text-xs text-red-400'; out.textContent = e.message; }
+    const message = e.name === 'AbortError' ? 'Search timed out.' : e.message;
+    if (out && !appendRows) { out.className = 'text-xs text-red-400'; out.textContent = message; }
+    else showToast(message, 'error');
+  } finally {
+    queryLogLoading = false;
+    if (olderBtn) olderBtn.disabled = false;
   }
 }
 
@@ -12391,7 +12548,9 @@ async function exportQueryLog(format) {
   try {
     const q = queryLogParams();
     q.set('format', format);
-    const res = await fetch(api('/api/query-log/export?' + q.toString()), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    // An export can be tens of megabytes, so it gets its own bound rather than the
+    // search timeout.
+    const res = await fetchWithTimeout(api('/api/query-log/export?' + q.toString()), { headers: { 'Authorization': `Bearer ${authToken}` } }, 120000);
     if (!res.ok) throw new Error('Export failed');
     const blob = await res.blob();
     const a = document.createElement('a');
@@ -12402,16 +12561,21 @@ async function exportQueryLog(format) {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   } catch (e) {
-    showToast(e.message || 'Export failed', 'error');
+    showToast(e.name === 'AbortError' ? 'Export timed out.' : (e.message || 'Export failed'), 'error');
   }
 }
 
 async function clearQueryLog() {
   if (!confirmAction('Delete all stored query history? This cannot be undone.')) return;
   try {
-    const res = await fetch(api('/api/query-log/clear'), { method: 'POST', headers: { 'Authorization': `Bearer ${authToken}` } });
+    const res = await fetchWithTimeout(api('/api/query-log/clear'), { method: 'POST', headers: { 'Authorization': `Bearer ${authToken}` } });
     if (!res.ok) throw new Error(await errorMessage(res, 'Could not clear history'));
+    queryLogItems = [];
+    queryLogCursor = '';
+    queryLogHasMore = false;
     renderQueryLog([]);
+    const usage = document.getElementById('querylog-usage');
+    if (usage) usage.textContent = queryLogUsageText({ records: 0, bytes: 0 }, queryLogSettingsCache);
     showToast('Query history cleared.', 'success');
   } catch (e) {
     showToast(e.message, 'error');
@@ -12429,9 +12593,35 @@ function initToolsPage() {
   document.getElementById('tools-dns-btn')?.addEventListener('click', toolsDNS);
   document.getElementById('tools-whois-btn')?.addEventListener('click', toolsWhois);
   document.getElementById('querylog-save')?.addEventListener('click', saveQueryLogSettings);
-  document.getElementById('querylog-search')?.addEventListener('click', searchQueryLog);
+  document.getElementById('querylog-search')?.addEventListener('click', () => searchQueryLog(false));
   initQueryLogActionMenu();
   initQueryLogProtoMenu();
+  // Enter in either text filter searches, matching the live-log search box.
+  ['querylog-domain', 'querylog-client'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); searchQueryLog(false); }
+    });
+  });
+  document.getElementById('querylog-load-older')?.addEventListener('click', () => searchQueryLog(true));
+  // History rows open the same DNS-response popover as the live table. The rows
+  // are replaced on every search, so the handlers are delegated on the container.
+  const qlResults = document.getElementById('querylog-results');
+  qlResults?.addEventListener('mouseover', (e) => {
+    const btn = e.target.closest('.info-stream-btn');
+    if (!btn) return;
+    const q = btn.closest('tr')?.__query;
+    if (q) openStreamInfoPopover(btn, q);
+  });
+  qlResults?.addEventListener('mouseout', (e) => {
+    const btn = e.target.closest('.info-stream-btn');
+    if (!btn) return;
+    if (e.relatedTarget && btn.contains(e.relatedTarget)) return;
+    scheduleStreamInfoHide();
+  });
+  qlResults?.addEventListener('click', (e) => {
+    if (!e.target.closest('.info-stream-btn')) return;
+    onStreamInfoBtnClick(e);
+  });
   document.getElementById('querylog-export-csv')?.addEventListener('click', () => exportQueryLog('csv'));
   document.getElementById('querylog-export-json')?.addEventListener('click', () => exportQueryLog('json'));
   document.getElementById('querylog-clear')?.addEventListener('click', clearQueryLog);

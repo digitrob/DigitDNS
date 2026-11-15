@@ -405,15 +405,23 @@ func (b *v3Backend) QueryLog(r *http.Request) (map[string]any, error) {
 	if b.ws.queryLog == nil {
 		return nil, nil
 	}
-	items := b.ws.queryLog.Search(queryLogFilter(r))
-	return map[string]any{"items": items, "count": len(items)}, nil
+	page := b.ws.queryLog.SearchPage(queryLogFilter(r))
+	return map[string]any{
+		"items":       page.Items,
+		"count":       len(page.Items),
+		"next_cursor": page.NextCursor,
+		"has_more":    page.HasMore,
+	}, nil
 }
 
 func (b *v3Backend) QueryLogSettings() map[string]any {
 	if b.ws.queryLog == nil {
 		return nil
 	}
-	return map[string]any{"settings": b.ws.queryLog.Settings()}
+	return map[string]any{
+		"settings": b.ws.queryLog.Settings(),
+		"usage":    b.ws.queryLog.Usage(),
+	}
 }
 
 func (b *v3Backend) SaveQueryLogSettings(r *http.Request, body map[string]any) (map[string]any, error) {
@@ -431,7 +439,10 @@ func (b *v3Backend) SaveQueryLogSettings(r *http.Request, body map[string]any) (
 	if err := b.ws.queryLog.SaveSettings(in); err != nil {
 		return nil, err
 	}
-	return map[string]any{"settings": b.ws.queryLog.Settings()}, nil
+	return map[string]any{
+		"settings": b.ws.queryLog.Settings(),
+		"usage":    b.ws.queryLog.Usage(),
+	}, nil
 }
 
 func (b *v3Backend) ClearQueryLog() error {

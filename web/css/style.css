@@ -5848,6 +5848,71 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
   pointer-events: auto;
 }
 
+/* A phone cannot show a side panel beside a 24px button: the panel would cover the
+ * row it describes and the caret would point off-screen. Below the sm breakpoint it
+ * becomes a bottom sheet, full width, with the caret hidden. The close-on-outside
+ * click and Escape handling stay unchanged, so there is still no Close button. */
+@media (max-width: 639px) {
+  .stream-info-tooltip {
+    inset-inline: 8px !important;
+    width: auto !important;
+    max-width: none;
+    bottom: 12px !important;
+    top: auto !important;
+    border-radius: 16px;
+    padding: 14px;
+  }
+  .stream-info-tooltip::after { display: none; }
+  .stream-info-body { max-height: 55vh; }
+}
+
+/* Live-log connection state. The dot is the at-a-glance part; the text says what
+ * it means for a screen reader and for anyone who cannot rely on colour. */
+.stream-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--c-slate-700));
+  background: rgb(var(--c-slate-900) / 0.6);
+  color: rgb(var(--c-slate-400));
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.stream-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.stream-status-pill[data-state='live'] {
+  color: rgb(var(--c-emerald-400));
+  border-color: rgb(var(--c-emerald-500) / 0.4);
+}
+.stream-status-pill[data-state='reconnecting'],
+.stream-status-pill[data-state='polling'] {
+  color: rgb(var(--c-amber-300));
+  border-color: rgb(var(--c-amber-500) / 0.4);
+}
+.stream-status-pill[data-state='offline'] {
+  color: rgb(var(--c-red-400));
+  border-color: rgb(var(--c-red-500) / 0.4);
+}
+.stream-status-pill[data-state='live'] .stream-status-dot {
+  animation: stream-status-pulse 2s ease-in-out infinite;
+}
+@keyframes stream-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stream-status-pill[data-state='live'] .stream-status-dot { animation: none; }
+}
+
 /* The caret points at the (i) button. It lives on the outer element, which must
  * not clip, so the scrolling body is a child with its own height cap. */
 .stream-info-tooltip::after {

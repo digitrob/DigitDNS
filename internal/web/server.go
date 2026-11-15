@@ -3,7 +3,9 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -2885,9 +2887,24 @@ func (ws *WebServer) handleStreamRecent(w http.ResponseWriter, r *http.Request) 
 		httpx.WriteJSONError(w, http.StatusInternalServerError, "could not encode recent queries")
 		return
 	}
+	// The fallback poll runs every two seconds for as long as the SSE stream is
+	// unavailable, and the ring is usually unchanged between ticks. An ETag lets
+	// the browser skip the body and the JSON parse entirely on a 304.
+	sum := sha256.Sum256(body)
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	w.Header().Set("ETag", etag)
 	// This is a fallback for a buffered/blocked SSE stream; a shared cache must
-	// never serve an older ring than the direct connection would have.
+	// never serve an older ring than the direct connection would have. A
+	// conditional request is still revalidated against the live ring.
 	w.Header().Set("Cache-Control", "no-store")
+	if match := r.Header.Get("If-None-Match"); match != "" {
+		for _, candidate := range strings.Split(match, ",") {
+			if strings.TrimSpace(candidate) == etag || strings.TrimSpace(candidate) == "*" {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
+	}
 	httpx.WriteJSONBytes(w, r, http.StatusOK, body, "application/json")
 }
 

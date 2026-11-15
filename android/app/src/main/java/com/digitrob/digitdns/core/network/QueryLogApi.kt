@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.core.network
 
+import com.digitrob.digitdns.core.notifications.DnsAnswer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import retrofit2.http.Body
@@ -9,13 +10,21 @@ import retrofit2.http.Query
 
 /** Optional persistent query history. */
 interface QueryLogApi {
+    // Ten filter dimensions is the point: each maps to one query parameter the
+    // server filters on, and the alternative is a struct Retrofit cannot flatten.
+    @Suppress("LongParameterList")
     @GET("query-log")
     suspend fun search(
         @Query("domain") domain: String? = null,
         @Query("client") client: String? = null,
         @Query("action") action: String? = null,
         @Query("proto") proto: String? = null,
-        @Query("limit") limit: Int = 200,
+        @Query("qtype") qtype: String? = null,
+        @Query("rcode") rcode: String? = null,
+        @Query("cached") cached: String? = null,
+        @Query("from") from: String? = null,
+        @Query("before") before: String? = null,
+        @Query("limit") limit: Int = 100,
     ): QueryLogResponse
 
     @GET("query-log/settings")
@@ -29,7 +38,13 @@ interface QueryLogApi {
 }
 
 @Serializable
-data class QueryLogResponse(val items: List<QueryLogItemDto> = emptyList(), val count: Int = 0)
+data class QueryLogResponse(
+    val items: List<QueryLogItemDto> = emptyList(),
+    val count: Int = 0,
+    /** Opaque cursor for the next older page; empty on the last page. */
+    @SerialName("next_cursor") val nextCursor: String = "",
+    @SerialName("has_more") val hasMore: Boolean = false,
+)
 
 @Serializable
 data class QueryLogItemDto(
@@ -45,11 +60,26 @@ data class QueryLogItemDto(
     val qtype: Int = 0,
     val rcode: Int = 0,
     @SerialName("matched_pattern") val matchedPattern: String = "",
+    val upstream: String = "",
+    @SerialName("upstream_protocol") val upstreamProtocol: String = "",
+    @SerialName("resolved_ips") val resolvedIps: List<String> = emptyList(),
+    val answers: List<DnsAnswer> = emptyList(),
+    @SerialName("relay_agent_name") val relayAgentName: String = "",
+    @SerialName("relay_country") val relayCountry: String = "",
     @SerialName("relay_egress_name") val relayEgressName: String = "",
 )
 
 @Serializable
-data class QueryLogSettingsEnvelope(val settings: QueryLogSettingsDto = QueryLogSettingsDto())
+data class QueryLogSettingsEnvelope(
+    val settings: QueryLogSettingsDto = QueryLogSettingsDto(),
+    val usage: QueryLogUsageDto = QueryLogUsageDto(),
+)
+
+@Serializable
+data class QueryLogUsageDto(
+    val records: Long = 0,
+    val bytes: Long = 0,
+)
 
 @Serializable
 data class QueryLogSettingsDto(

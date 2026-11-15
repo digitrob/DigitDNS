@@ -5258,7 +5258,7 @@
           "diagnostics"
         ],
         "summary": "Search query history",
-        "description": "Searches the optional persistent query log. Filters: from, to, client, domain, action, proto, limit.",
+        "description": "Searches the optional persistent query log. Filters: from, to, before (page cursor), client, domain, action, proto, qtype, rcode, cached, limit (default 100, max 500). Returns items, count, next_cursor and has_more; pass next_cursor back as before to page older.",
         "operationId": "getQueryLog",
         "responses": {
           "200": {
@@ -5276,7 +5276,7 @@
           "diagnostics"
         ],
         "summary": "Read query log settings",
-        "description": "Returns whether the optional query log is enabled, retention, anonymization and size cap.",
+        "description": "Returns whether the optional query log is enabled, retention, anonymization, the storage cap (max_mb) and the clients excluded through opt_out, plus current storage usage (records and bytes).",
         "operationId": "getQueryLogSettings",
         "responses": {
           "200": {
@@ -5292,7 +5292,7 @@
           "diagnostics"
         ],
         "summary": "Save query log settings",
-        "description": "Enables or disables the persistent query log and updates retention and anonymization.",
+        "description": "Enables or disables the persistent query log and updates retention, anonymization, opt_out and max_mb. The body is the complete settings record.",
         "operationId": "saveQueryLogSettings",
         "requestBody": {
           "required": true,
