@@ -53,6 +53,10 @@ let streamFallbackInFlight = false;
 let streamLastEventAt = 0;
 let streamFallbackSig = '';
 let streamFallbackEtag = '';
+// Set when the polling fallback's read fails. The listening placeholder has a
+// "connected via polling" variant, and without this flag it claims to be
+// connected while every request is being refused.
+let streamFallbackFailed = false;
 let qpsChart = null;
 let historyChart = null;
 let historyRange = '24h';
@@ -225,6 +229,78 @@ function inlineLoadError(containerId, message, retry) {
   row.append(icon, text, btn);
   container.appendChild(row);
   safeFeatherReplace();
+}
+
+// cardLoadError is the same idea for cards that are not lists. A settings card
+// full of switches cannot be wiped to show an error, and its last known values
+// are still worth using — so the notice sits at the top of the card and Retry
+// re-runs the loader that failed. clearCardLoadError removes it once a read
+// succeeds again.
+function cardLoadError(cardId, message, retry) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  let row = card.querySelector(':scope > .card-load-error');
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'card-load-error flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300';
+    row.setAttribute('role', 'status');
+    const icon = document.createElement('i');
+    icon.setAttribute('data-feather', 'alert-triangle');
+    icon.className = 'w-3.5 h-3.5 shrink-0 mt-0.5';
+    const text = document.createElement('span');
+    text.className = 'flex-1 min-w-0';
+    text.dataset.role = 'card-load-error-text';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'panel-btn panel-btn-sm panel-btn-neutral shrink-0';
+    btn.textContent = 'Retry';
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      btn.textContent = 'Retrying…';
+      retry();
+    });
+    row.append(icon, text, btn);
+    card.prepend(row);
+  }
+  row.querySelector('[data-role="card-load-error-text"]').textContent = message;
+  safeFeatherReplace();
+}
+
+function clearCardLoadError(cardId) {
+  const row = document.getElementById(cardId)?.querySelector(':scope > .card-load-error');
+  if (row) row.remove();
+}
+
+// Each Settings card declares how its edits take effect, and every card looks
+// the same either way: some save on change, some wait for the button at the
+// bottom, and two only take effect after a restart. The badge on the title line
+// says which, so "why did my change vanish?" and "when does this start?" stop
+// being guesswork. Keyed by card id, so the markup stays untouched and the copy
+// lives in one place.
+const SETTINGS_SAVE_MODELS = [
+  ['twofa-card', 'auto', 'Instant', 'Enrolling or disabling 2FA takes effect immediately.'],
+  ['subscription-card', 'save', 'Save to apply', 'Press "Save Subscription Settings" at the bottom of the card.'],
+  ['tls-card', 'save', 'Save to apply', 'Press the save button at the bottom of the card.'],
+  ['transports-card', 'auto', 'Auto-saved', 'Every change is written as you make it.'],
+  ['proxy-leak-card', 'auto', 'Instant', 'The switch applies immediately.'],
+  ['proxy-ipv6-card', 'save', 'Save to apply', 'Press "Save IPv6 settings" to write the change.'],
+  ['dnssec-card', 'save', 'Save to apply', 'Save & Apply rebinds the running validator; no restart needed.'],
+  ['stats-settings-card', 'restart', 'Restart required', 'Retention, top-N limits and the opt-out list apply after a restart.'],
+  ['alerts-card', 'save', 'Save to apply', 'Press "Save alerts" to write the change.'],
+];
+
+function applySettingsSaveBadges() {
+  SETTINGS_SAVE_MODELS.forEach(([id, model, label, hint]) => {
+    const card = document.getElementById(id);
+    const title = card && card.querySelector('.panel-card-title, .panel-card-header');
+    if (!title || title.querySelector('.apply-badge')) return;
+    const badge = document.createElement('span');
+    badge.className = 'apply-badge';
+    badge.dataset.model = model;
+    badge.textContent = label;
+    badge.title = hint;
+    title.appendChild(badge);
+  });
 }
 
 // errorMessage pulls the server's explanation out of a failed response. Handlers
@@ -3680,11 +3756,17 @@ async function loadDNSSECSettings() {
     const res = await fetch(api('/api/settings/dnssec'), {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not read DNSSEC settings'));
     dnssecSettings = normalizeDNSSECSettings(await res.json());
+    clearCardLoadError('dnssec-card');
     syncDNSSECControls();
-  } catch (e) { /* keep the markup defaults; the Save button still works */ }
-  finally {
+  } catch (e) {
+    // The fallback below shows the markup's OFF state, which for a server that
+    // has validation ON is the wrong answer stated confidently. Say so.
+    cardLoadError('dnssec-card',
+      e.message || 'Could not read DNSSEC settings — the switches show the default, not the saved policy.',
+      loadDNSSECSettings);
+  } finally {
     dnssecLoading = false;
     // A failed read must not leave the card without controls; fall back to the
     // markup's OFF state rather than an invisible switch.
@@ -3891,15 +3973,22 @@ async function loadProxyLeakSettings() {
     const res = await fetch(api('/api/settings/proxy-leak'), {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not read proxy leak protection'));
     const data = await res.json();
     proxyLeakSettings = {
       loaded: true,
       enabled: data.enabled !== false,
       recommended: data.recommended !== false
     };
+    clearCardLoadError('proxy-leak-card');
     syncProxyLeakControls();
-  } catch (e) { /* keep the recommended default */ }
+  } catch (e) {
+    // Without the read the switch keeps the recommended default, which is a
+    // guess presented as the server's policy.
+    cardLoadError('proxy-leak-card',
+      e.message || 'Could not read this policy — the switch shows the recommended default.',
+      loadProxyLeakSettings);
+  }
   finally {
     proxyLeakLoading = false;
     // Same flicker rule as DNSSEC: show the controls only once they carry the
@@ -6790,6 +6879,7 @@ function stopStreamFallback() {
     streamFallbackTimer = null;
     streamFallbackSig = '';
     streamFallbackEtag = '';
+    streamFallbackFailed = false;
     refreshStreamPlaceholder();
   }
 }
@@ -6822,6 +6912,7 @@ function startStreamFallback() {
   if (streamFallbackTimer) return;
   streamFallbackSig = '';
   streamFallbackEtag = '';
+  streamFallbackFailed = false;
   streamFallbackTimer = setInterval(streamFallbackPoll, 2000);
   // The pill is not touched here: an error path has already called
   // markStreamDegraded, and the buffered-stream check labels itself below.
@@ -6847,7 +6938,15 @@ async function streamFallbackPoll() {
       showLoginModal();
       return;
     }
-    if (!res.ok) return;
+    if (!res.ok) {
+      // The table's placeholder says "connected via polling" while this read is
+      // failing, which is the opposite of what is happening. Flip the flag so
+      // the placeholder can say so, and repaint only when it is on screen.
+      streamFallbackFailed = true;
+      if (!streamBuffer.length) renderQueryStream();
+      return;
+    }
+    streamFallbackFailed = false;
     streamFallbackEtag = res.headers.get('ETag') || '';
     const data = await res.json();
     const list = Array.isArray(data) ? data : (data.queries || []);
@@ -7217,6 +7316,8 @@ function streamListeningRow() {
   let text = 'Listening for live DNS queries...';
   if (isStreamPaused) {
     text = 'Live log paused. Press Resume to continue.';
+  } else if (streamFallbackFailed) {
+    text = 'Could not read the recent queries from the server. Retrying...';
   } else if (streamFallbackTimer) {
     text = 'Live log connected via polling — waiting for queries...';
   } else if (!sseSource) {
@@ -11225,11 +11326,18 @@ function addRelayHub() {
 async function loadRelayMode() {
   try {
     const res = await fetch(api('/api/relay-mode'), { headers: { 'Authorization': `Bearer ${authToken}` } });
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not read relay settings'));
     const data = await res.json();
     relayGlobalEnabled = data.global_enabled !== false;
+    clearCardLoadError('relay-mode-card');
     renderRelayHubs(data.relay_hubs || []);
-  } catch (e) { /* the card keeps its last known state */ } finally {
+  } catch (e) {
+    // An empty hub list and a failed read look the same, and the empty one is
+    // the state that invites an operator to start configuring a duplicate.
+    cardLoadError('relay-mode-card',
+      e.message || 'Could not read relay settings — the list below may be incomplete.',
+      loadRelayMode);
+  } finally {
     revealServerSwitch('relay-global-switch');
   }
 }
@@ -12587,10 +12695,11 @@ function queryLogUsageText(usage, settings) {
 async function loadQueryLogSettings() {
   try {
     const res = await fetchWithTimeout(api('/api/query-log/settings'), { headers: { 'Authorization': `Bearer ${authToken}` } });
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not read query log settings'));
     const data = await res.json();
     const s = data.settings || {};
     queryLogSettingsCache = s;
+    clearCardLoadError('querylog-card');
     const en = document.getElementById('querylog-enabled');
     if (en) en.checked = !!s.enabled;
     const ret = document.getElementById('querylog-retention');
@@ -12612,7 +12721,13 @@ async function loadQueryLogSettings() {
     }
     const usage = document.getElementById('querylog-usage');
     if (usage) usage.textContent = queryLogUsageText(data.usage, s);
-  } catch (e) { /* defaults */ } finally {
+  } catch (e) {
+    // "Off" is the default this card shows when it cannot read, and an operator
+    // reading "Off" next to a running log would go hunting for the wrong bug.
+    cardLoadError('querylog-card',
+      e.message || 'Could not read query log settings — the switches show the default.',
+      loadQueryLogSettings);
+  } finally {
     // Revealed only after the saved value is applied, so it cannot slide from
     // OFF to ON when the card is opened.
     revealServerSwitch('querylog-enabled-switch');
@@ -13091,10 +13206,17 @@ async function loadAlerts() {
   try {
     const res = await fetch(api('/api/alerts'), { headers: { 'Authorization': `Bearer ${authToken}` } });
     if (res.status === 401) return;
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not read alert settings'));
     const data = await res.json();
+    clearCardLoadError('alerts-card');
     renderAlerts(data.alerts || {}, data.history || []);
-  } catch (e) { /* the card keeps its last state */ } finally {
+  } catch (e) {
+    // The card's switches keep whatever they last showed; without this note an
+    // operator could toggle a channel that was never loaded.
+    cardLoadError('alerts-card',
+      e.message || 'Could not read alert settings — the switches below may be stale.',
+      loadAlerts);
+  } finally {
     revealServerSwitch('alerts-enabled-switch');
   }
 }
@@ -13277,6 +13399,24 @@ function initCommandPalette() {
   });
 
   window.openCommandPalette = open;
+
+  // The sidebar trigger and its shortcut hint. The hint says ⌘K on Apple
+  // hardware and Ctrl K everywhere else, because a Mac user reading "Ctrl K"
+  // presses the wrong key once and stops trying.
+  const trigger = document.getElementById('open-palette-btn');
+  const hint = document.getElementById('open-palette-kbd');
+  if (hint) {
+    const apple = /Mac|iPhone|iPad/.test(navigator.platform || '');
+    hint.textContent = apple ? '⌘ K' : 'Ctrl K';
+  }
+  trigger?.addEventListener('click', () => open());
+
+  // The More sheet's entry closes the sheet first, so the palette does not open
+  // behind a modal that is still on screen.
+  document.getElementById('mobile-more-search')?.addEventListener('click', () => {
+    closeMobileMore();
+    open();
+  });
 }
 
 function initEventListeners() {
@@ -13292,6 +13432,7 @@ function initEventListeners() {
   initCommandPalette();
   initOnboarding();
   initDiffModal();
+  applySettingsSaveBadges();
   // Tabs Navigation (Sidebar & Mobile Bottom Bar)
   document.querySelectorAll('.sidebar-nav-item, .nav-tab, .mobile-nav-item, .mobile-more-item, .agent-nav-link').forEach(tab => {
     tab.onclick = (e) => {
@@ -15572,12 +15713,18 @@ function initClientEventListeners() {
   async function loadAccessAllowlist() {
     const field = document.getElementById('access-allow-cidrs');
     if (!field) return;
+    const note = document.getElementById('access-allow-cidrs-error');
     try {
       const res = await fetch(api('/api/config/access'), { headers: { 'Authorization': 'Bearer ' + authToken } });
-      if (!res.ok) return;
+      if (!res.ok) throw new Error('read failed');
       const cfg = await res.json();
       field.value = (cfg.allowed_ips || []).join(', ');
-    } catch (ignore) { /* leave the field empty on a failed read */ }
+      note?.classList.add('hidden');
+    } catch (ignore) {
+      // The field stays empty on a failed read, and the Save button beside it
+      // would write that emptiness back over a list the operator cannot see.
+      note?.classList.remove('hidden');
+    }
   }
   loadAccessAllowlist();
 

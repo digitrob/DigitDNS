@@ -670,6 +670,51 @@ body::before {
   box-shadow: inset 0 0 0 2px var(--accent-cyan);
 }
 
+/* Palette trigger. Deliberately a field, not a nav item: it does not navigate,
+   it opens a search, and it reads as the one input on a page of destinations.
+   The kbd hint is the point — it turns the shortcut into something learnable. */
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  margin-bottom: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: rgb(var(--c-slate-950) / 0.55);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.sidebar-search:hover {
+  color: var(--text-main);
+  border-color: rgb(var(--c-cyan-400) / 0.4);
+}
+
+.sidebar-search:focus-visible {
+  outline: none;
+  color: var(--text-main);
+  box-shadow: inset 0 0 0 2px var(--accent-cyan);
+}
+
+.sidebar-search-kbd {
+  margin-inline-start: auto;
+  padding: 1px 5px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* Section captions for the sidebar. The eleven destinations are one flat column
  * otherwise, and "Tools" next to "Settings" next to "Guide" gives the eye no
  * structure to hold on to. They are labels, not controls: no hover, not focusable,
@@ -1238,6 +1283,30 @@ input:checked + .slider:before {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+/* Palette entry in the More sheet. Full width and above the grid, because it is
+   the one item that is not a destination. */
+.mobile-more-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: rgb(var(--c-slate-950) / 0.6);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-align: start;
+  cursor: pointer;
+}
+.mobile-more-search:active {
+  color: var(--text-main);
+  border-color: rgb(var(--c-cyan-400) / 0.4);
 }
 .mobile-more-item {
   display: flex;
@@ -3226,6 +3295,54 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
     font-size: var(--text-lg);
     line-height: 1.25rem;
   }
+}
+
+/* Save-model badge. Eighteen cards sit on the Settings page and they look
+   identical whether they save on change, wait for the button at the bottom, or
+   only take effect after a restart — so "why did my change vanish?" and "when
+   does this start?" were both guesswork. The badge answers that in one word on
+   the title line. It is deliberately quiet: a status, not a warning. */
+.apply-badge {
+  display: inline-block;
+  margin-inline-start: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  white-space: nowrap;
+  color: rgb(var(--c-slate-400));
+}
+
+/* Saves on change, nothing else to press. */
+.apply-badge[data-model='auto'] {
+  color: rgb(var(--c-emerald-400));
+  border-color: rgb(var(--c-emerald-400) / 0.3);
+  background-color: rgb(var(--c-emerald-400) / 0.08);
+}
+
+/* Needs the Save button at the bottom of the card. */
+.apply-badge[data-model='save'] {
+  color: rgb(var(--c-slate-400));
+  background-color: rgb(var(--c-slate-400) / 0.06);
+}
+
+/* Saves now, but the running engine keeps the old policy until a restart. */
+.apply-badge[data-model='restart'] {
+  color: rgb(var(--c-amber-400));
+  border-color: rgb(var(--c-amber-400) / 0.3);
+  background-color: rgb(var(--c-amber-400) / 0.08);
+}
+
+/* Failed-read banner inside a settings card. Colours come from utilities; this
+   hook exists so cardLoadError can find and replace its own row on a retry. */
+.card-load-error {
+  width: 100%;
 }
 
 /* Buttons: one height, one radius, three intents. */
@@ -5653,6 +5770,8 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
   }
   html.sidebar-collapsed #app-sidebar .sidebar-brand-copy,
   html.sidebar-collapsed #app-sidebar .sidebar-nav-item span,
+  html.sidebar-collapsed #app-sidebar .sidebar-search span,
+  html.sidebar-collapsed #app-sidebar .sidebar-search-kbd,
   html.sidebar-collapsed #app-sidebar #copy-ip-btn .sidebar-ip-copy,
   html.sidebar-collapsed #app-sidebar #open-diagnostics-btn span,
   html.sidebar-collapsed #app-sidebar #restart-engine-btn span,
@@ -5662,6 +5781,7 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
     display: none !important;
   }
   html.sidebar-collapsed #app-sidebar .sidebar-nav-item,
+  html.sidebar-collapsed #app-sidebar .sidebar-search,
   html.sidebar-collapsed #app-sidebar #copy-ip-btn,
   html.sidebar-collapsed #app-sidebar #open-diagnostics-btn,
   html.sidebar-collapsed #app-sidebar #restart-engine-btn {
@@ -5669,7 +5789,8 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
     padding-left: 0;
     padding-right: 0;
   }
-  html.sidebar-collapsed #app-sidebar .sidebar-nav-item { gap: 0; }
+  html.sidebar-collapsed #app-sidebar .sidebar-nav-item,
+  html.sidebar-collapsed #app-sidebar .sidebar-search { gap: 0; }
   html.sidebar-collapsed #app-sidebar .sidebar-utility-row,
   html.sidebar-collapsed #app-sidebar .sidebar-action-row {
     flex-direction: column;

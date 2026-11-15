@@ -883,6 +883,16 @@
            are the cheapest structure that does not cost a click or a pixel of the
            collapsed rail (see .sidebar-group-label in style.css). -->
       <nav id="sidebar-nav" class="space-y-1">
+        <!-- The command palette has existed behind Ctrl/Cmd+K since it was added,
+             but nothing on the page said so, so it was found only by people who
+             already knew. This trigger is the affordance: it opens the same
+             palette, and the kbd hint teaches the shortcut as a side effect. -->
+        <button type="button" id="open-palette-btn" class="sidebar-search"
+          title="Search tabs, settings and actions" aria-label="Search tabs, settings and actions">
+          <i data-feather="search" class="w-4 h-4"></i>
+          <span>Search</span>
+          <kbd id="open-palette-kbd" class="sidebar-search-kbd">Ctrl K</kbd>
+        </button>
         <div class="sidebar-group-label" aria-hidden="true">Overview</div>
         <div class="sidebar-nav-row">
           <button class="sidebar-nav-item active" data-tab="dashboard" data-route="/home">
@@ -2208,6 +2218,12 @@
               <button type="button" id="access-allow-cidrs-save" class="panel-btn panel-btn-soft whitespace-nowrap">Save Allowlist</button>
             </div>
             <p class="text-[10px] text-slate-500 mt-1">These ranges are served as anonymous <span class="font-mono">Public</span> (unmetered) while whitelist mode is on. Bare IPs are widened to /32 or /128.</p>
+            <!-- Saving this field replaces the server's list with whatever it
+                 holds, so an empty field after a failed read would look like
+                 "no allowlist" and then wipe one on the next save. -->
+            <p id="access-allow-cidrs-error" class="hidden text-[11px] text-red-400 mt-1">
+              Could not read the current allowlist. Saving now would replace it with what is in the box — reload the page first.
+            </p>
           </div>
         </div>
 
@@ -2452,7 +2468,7 @@
             <div id="tools-check-result" class="text-xs text-slate-500">Resolve a host and open one TCP port.</div>
           </div>
 
-          <div class="glass-panel panel-card p-5 space-y-3 lg:col-span-2 querylog-card">
+          <div class="glass-panel panel-card p-5 space-y-3 lg:col-span-2 querylog-card" id="querylog-card">
             <div class="flex items-start justify-between gap-3 flex-wrap">
               <div>
                 <h4 class="text-xs font-bold text-white font-heading">Query search</h4>
@@ -2975,7 +2991,7 @@ async function onBuySubscription(ctx, username) {
         <div class="settings-pair-dense settings-wide">
 
         <!-- Subscription surface settings (3x-ui style, third tab group). -->
-        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4 settings-wide">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4 settings-wide" id="subscription-card">
           <div class="flex items-center gap-3">
             <div class="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
               <i data-feather="share-2" class="w-5 h-5"></i>
@@ -3082,7 +3098,7 @@ async function onBuySubscription(ctx, username) {
              re-domained the whole dashboard — the ERR_CERT_COMMON_NAME_INVALID
              field report. The subheadings make each field's blast radius
              readable at a glance instead of inferred from position. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 settings-wide settings-tls-card">
+        <div class="glass-panel panel-card p-5 sm:p-6 settings-wide settings-tls-card" id="tls-card">
           <div class="flex items-center gap-3 mb-3">
             <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
               <i data-feather="lock" class="w-5 h-5"></i>
@@ -4278,6 +4294,12 @@ async function onBuySubscription(ctx, username) {
             <i data-feather="x" class="w-4 h-4"></i>
           </button>
         </div>
+        <!-- The same palette trigger the sidebar carries. A phone has no ⌘K,
+             so without this the search is unreachable on mobile. -->
+        <button type="button" id="mobile-more-search" class="mobile-more-search">
+          <i data-feather="search" class="w-4 h-4"></i>
+          <span>Search tabs and settings</span>
+        </button>
         <div class="mobile-more-grid">
           <button class="mobile-more-item" data-tab="agents" data-route="/agents">
             <i data-feather="globe" class="w-4 h-4"></i>
