@@ -1,61 +1,79 @@
-# DigitDNS v5.8.15 — quiet switches, a calm live log
+# DigitDNS v5.8.16 — a quieter panel: faster filters, readable metadata, honest reads
 
-A UI polish release on top of v5.8.14. No database schema migration is required;
-existing settings, clients, blocklists, certificates, relay agents, egress
-options and stored query history are preserved.
-
-## Fixed
-
-- **Server-backed switches no longer animate when a page opens.** They were
-  rendered in the markup as off and corrected only after the settings fetch
-  returned, so every visit replayed an OFF→ON slide. The six affected switches —
-  Enable ad blocking, Relay mode, query-log Enabled, alerts Enabled,
-  Public/Whitelist mode and Single upstream resolver — now start hidden with
-  their space reserved and are revealed already carrying the saved value. A
-  failed read reveals the markup state instead of leaving an invisible control.
-- **The live-log status pill no longer flickers or shifts the toolbar.** Every
-  dropped EventSource used to paint three labels in a row — `Reconnecting…` from
-  the error, `Polling` from the REST fallback, `Live` from the 1-second
-  reconnect — and because the label changes width, the Pause/Clear buttons moved
-  with it. Degraded states are now delayed: the current label holds through the
-  first backoff, `Reconnecting…` appears after 1.5 s, and `Polling` only after
-  12 s if the fallback is actually carrying the log. Any delivered frame restores
-  `Live` in one step. The pill also has a fixed width for every label.
-- **An idle stream is no longer labelled `Polling`.** Opening the Logs tab, or
-  returning to the browser, used to start the REST fallback whenever no query had
-  arrived for three seconds — even though the EventSource was open and healthy.
-  The fallback now starts only when the socket is not open; the buffered-stream
-  check at connect time still detects a proxy that swallows the stream.
-- **Android: the live-log connection chip moved to the right edge of the filter
-  row.** It used to sit at the end of the scrolling Reload/Sort/Pause/Clear row,
-  which put it off-screen on a phone exactly when it mattered. The action chips
-  scroll; the status stays pinned and visible.
+A dashboard polish release on top of v5.8.15. No database schema migration is
+required; existing settings, clients, blocklists, certificates, relay agents,
+egress options and stored query history are preserved. The Android app is
+unchanged apart from its version number.
 
 ## Changed
 
-- **The AdGuard rules field grows with the window.** The Ad Blocking page's left
-  column ended in dead space under the rule tester while the blocklist card ran
-  to the bottom. The policy card now fills that height and the Custom filtering
-  rules textarea absorbs it (minimum 9 rem, still resizable), so both columns end
-  level at any window height. On a short window the card keeps its content height
-  and the column scrolls instead of compressing the fields.
+- **The list filters no longer rebuild on every keystroke.** The Domains search,
+  the Add-domain box, the Live Log search and the Ad Blocking preset search each
+  wiped and rebuilt their container on every `input` event. A 100-row live log is
+  roughly 700 DOM nodes, so typing lagged once a list grew. All four are now
+  debounced at 120 ms: a burst of six keystrokes produces one repaint, and the
+  final filter still applies. The Users search was already debounced.
+
+- **Every settings card says how its edits take effect.** Eighteen cards sat on
+  one page and looked identical whether they saved on change, waited for the
+  button at the bottom, or only took effect after a restart. Each now carries a
+  badge on its title line — **Instant**, **Auto-saved**, **Save to apply** or
+  **Restart required** — with the exact button named in the tooltip. Traffic
+  History is the one genuine restart card; DNSSEC is "Save to apply", because its
+  applier rebinds the running validator immediately.
+
+- **The command palette is discoverable.** `Ctrl`/`Cmd`+`K` has worked since the
+  palette was added, but nothing on the page said so. The sidebar now carries a
+  search field with a `⌘ K` hint on Apple hardware and `Ctrl K` elsewhere, and the
+  phone's More sheet carries the same entry — a phone has no shortcut at all.
+
+- **Chart ticks are 11 px** instead of 10, with fewer ticks on a narrow screen, so
+  the QPS and traffic-history axes stay legible on a phone.
+
+- **Reduced motion is handled once, globally.** A single `prefers-reduced-motion`
+  rule now covers every transition and smooth scroll instead of each component
+  opting out individually. Spinners are deliberately excluded: they report
+  progress rather than decorate.
+
+## Fixed
+
+- **A failed read no longer looks like an empty or default state.** Several
+  loaders returned silently on a non-OK response, leaving a placeholder or a
+  default that read as the server's real policy. The upstream resolver pool,
+  custom policy groups, DNSSEC, Proxy Leak Protection, relay mode, query-log
+  settings and alerts now show a failed-read row with a **Retry** button. The
+  resolver card's Retry re-runs both requests that feed it, and a transient
+  failure never wipes rows the operator can still use.
+
+- **The resolver allowlist warns instead of showing an empty box.** Saving that
+  field replaces the server's list with whatever it holds, so a failed read used
+  to leave an empty box that would silently wipe a list the operator could not
+  see.
+
+- **The live log no longer claims to be connected while its polling reads are
+  being refused.** The listening placeholder now says the recent queries could
+  not be read, instead of "connected via polling".
+
+- **The smallest metadata is readable.** 31 `text-[9px]` labels — stat captions,
+  the sidebar IP block, the version badge — became 10 px on phones and 11 px on
+  `sm+`, without disturbing the layout scale.
 
 ## Upgrade
 
 In-place upgrades from the dashboard are supported. The release assets include
 the Linux amd64/arm64 hub binary, relay-agent binaries, the offline bundle,
 checksums and their ed25519 signature, and the Android APKs attached from the
-`android-v5.8.15` tag.
+`android-v5.8.16` tag.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.8.15/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.8.16/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.8.15
-docker pull ghcr.io/digitrob/digitdns-agent:5.8.15
-docker pull robmeister/digitdns:5.8.15
-docker pull robmeister/digitdns-agent:5.8.15
+docker pull ghcr.io/digitrob/digitdns:5.8.16
+docker pull ghcr.io/digitrob/digitdns-agent:5.8.16
+docker pull robmeister/digitdns:5.8.16
+docker pull robmeister/digitdns-agent:5.8.16
 ```

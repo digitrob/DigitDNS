@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.8.16] — a quieter panel: faster filters, readable metadata, honest reads
+
+### Changed
+- **List filters debounce instead of rebuilding per keystroke.** The Domains
+  search, the Add-domain box, the Live Log search and the Ad Blocking preset
+  search each wiped and rebuilt their container on every `input` event — a
+  100-row live log is roughly 700 nodes, so typing lagged once a list grew.
+  A shared `debounce(fn, 120)` now collapses a burst into one rebuild; six rapid
+  keystrokes produce one repaint and the final filter still applies.
+- **Every settings card names its save model.** The badges read Instant,
+  Auto-saved, Save to apply or Restart required, and the tooltip names the exact
+  button. Traffic History is the one genuine restart card (the server says so
+  itself); DNSSEC is "Save to apply", because its applier rebinds the running
+  validator and the card's conditional restart note covers the rare divergence.
+- **The command palette is discoverable.** `Ctrl`/`Cmd`+`K` worked but nothing
+  said so. The sidebar now carries a search field with a `⌘ K` / `Ctrl K` hint,
+  and the phone's More sheet carries the same entry.
+- **Chart ticks are 11 px** (was 10) with fewer of them on narrow screens, so the
+  QPS and history axes stay legible on a phone.
+- **One global `prefers-reduced-motion` rule** now covers every transition and
+  smooth scroll instead of each component opting out individually. Spinners are
+  excluded: they report progress rather than decorate.
+
+### Fixed
+- **A failed read no longer looks like an empty or default state.** The upstream
+  resolver pool, custom policy groups, DNSSEC, Proxy Leak Protection, relay mode,
+  query-log settings and alerts now show a failed-read row with a Retry button
+  instead of leaving a placeholder or a default that reads as the server's real
+  policy. The resolver card's Retry re-runs both requests that feed it. A
+  transient failure never wipes rows the operator can still use.
+- **The resolver allowlist warns instead of showing an empty box.** Saving that
+  field replaces the server's list, so a failed read used to leave an empty box
+  that would wipe a list the operator could not see.
+- **The live log no longer claims to be connected while its polling reads are
+  being refused.** The listening placeholder now says the recent queries could
+  not be read.
+- **The smallest metadata is readable.** 31 `text-[9px]` labels became 10 px on
+  phones and 11 px on `sm+`.
+
 ## 🏷️ [v5.8.15] — quiet switches, a calm live log
 
 ### Fixed
