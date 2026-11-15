@@ -169,6 +169,22 @@ function compareStreamQueries(a, b) {
   return (streamSort === 'time-desc' || streamSort === 'latency-desc') ? -cmp : cmp;
 }
 
+// debounce collapses a burst of calls into one, `ms` after the last. The list
+// filters rebuild their container from scratch, so running them on every
+// keystroke made typing lag once a list grew past a few dozen rows; 120 ms is
+// short enough that a search still feels immediate and long enough to skip the
+// intermediate keys.
+function debounce(fn, ms = 120) {
+  let timer = null;
+  return function debounced(...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      fn.apply(this, args);
+    }, ms);
+  };
+}
+
 function safeFeatherReplace() {
   try {
     if (typeof feather !== 'undefined' && feather.replace) {
@@ -177,6 +193,38 @@ function safeFeatherReplace() {
   } catch (e) {
     console.warn('Feather icons render notice:', e);
   }
+}
+
+// inlineLoadError replaces a list's contents with a failed-read row and a Retry
+// button. Several loaders used to `return` on a non-OK response and leave the
+// card showing its empty state, so a server error read as "nothing is
+// configured" — the opposite of what happened. Retry re-runs the same loader;
+// the next successful render replaces this row with the real list.
+function inlineLoadError(containerId, message, retry) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  const row = document.createElement('div');
+  row.className = 'flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300';
+  row.setAttribute('role', 'status');
+  const icon = document.createElement('i');
+  icon.setAttribute('data-feather', 'alert-triangle');
+  icon.className = 'w-3.5 h-3.5 shrink-0 mt-0.5';
+  const text = document.createElement('span');
+  text.className = 'flex-1 min-w-0';
+  text.textContent = message;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'panel-btn panel-btn-sm panel-btn-neutral shrink-0';
+  btn.textContent = 'Retry';
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    btn.textContent = 'Retrying…';
+    retry();
+  });
+  row.append(icon, text, btn);
+  container.appendChild(row);
+  safeFeatherReplace();
 }
 
 // errorMessage pulls the server's explanation out of a failed response. Handlers
@@ -3921,12 +3969,29 @@ async function loadResolutionSettings() {
     const res = await fetch(api('/api/settings/resolution'), {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(await errorMessage(res, 'Could not read resolver settings'));
     resolutionSettings = normalizeResolutionSettings(await res.json());
     syncResolutionControls();
     refreshProxiedListIfVisible();
-  } catch (e) { /* keep the defaults; the dialog still works */ }
-  finally {
+  } catch (e) {
+    // The upstream list is this card's visible half. A failed read used to leave
+    // the markup's "Reading upstream health…" placeholder in place, which reads
+    // as a pool that never finished loading rather than a request that failed.
+    // Only replace the list when it holds no real rows: a transient failure must
+    // not wipe a pool the operator can still see and use.
+    const container = document.getElementById('upstreams-list');
+    if (container && !container.querySelector('[data-addr]')) {
+      lastUpstreamsSig = null;
+      inlineLoadError('upstreams-list',
+        e.message || 'Could not read resolver settings.',
+        () => {
+          // Two requests feed this card: the saved policy and the live pool.
+          // Retry re-runs both, so a failure of either one recovers in place.
+          loadResolutionSettings();
+          pollStatsOnce();
+        });
+    }
+  } finally {
     resolutionLoading = false;
     // The switch is revealed only after the saved default upstream has been
     // applied, so opening the tab cannot replay an OFF→ON slide.
@@ -5007,7 +5072,9 @@ async function loadCustomGroups() {
     customGroupsCache = data.groups || [];
     renderCustomGroups();
   } catch (e) {
-    container.innerHTML = '<div class="text-red-400 text-xs py-1">Failed to load custom groups</div>';
+    inlineLoadError('custom-groups-list',
+      'Could not load custom groups — this is a failed read, not an empty list.',
+      loadCustomGroups);
   }
 }
 
@@ -8134,6 +8201,10 @@ async function initChart() {
     const ctx = canvas.getContext('2d');
 
     const pal = chartPalette(ctx);
+    // Chart.js has no responsive font step, and a 10px tick on a 192px-tall
+    // phone canvas is a smudge. 11px is the floor the rest of the panel uses for
+    // readable metadata; fewer ticks on a narrow screen keeps them from colliding.
+    const chartNarrow = window.innerWidth < 640;
 
     // One point per poll, and the poll is now 1 Hz — so the point count is the chart's
     // window in seconds. 25 points was a fifty-second window while polling every two
@@ -8172,7 +8243,8 @@ async function initChart() {
             grid: { color: pal.grid },
             ticks: {
               color: pal.tick,
-              font: { size: 10, family: 'JetBrains Mono' },
+              maxTicksLimit: chartNarrow ? 4 : 6,
+              font: { size: 11, family: 'JetBrains Mono' },
               // Chart.js defaults to toLocaleString(), which renders decimal
               // commas on most non-English systems while every other number in
               // the panel uses a dot. Format explicitly instead.
@@ -8276,6 +8348,9 @@ async function ensureHistoryChart() {
   if (!canvas) return null;
   if (!(await ensureChartLib())) return null;
   const p = historyPalette();
+  // Same floor as the live chart: 11px ticks, fewer of them on a phone where
+  // three stacked series and eight date labels do not fit side by side.
+  const historyNarrow = window.innerWidth < 640;
   try {
     historyChart = new Chart(canvas.getContext('2d'), {
       type: 'line',
@@ -8330,7 +8405,7 @@ async function ensureHistoryChart() {
               boxWidth: 8,
               boxHeight: 8,
               usePointStyle: true,
-              font: { size: 10, family: 'JetBrains Mono' },
+              font: { size: 11, family: 'JetBrains Mono' },
             },
           },
         },
@@ -8339,9 +8414,9 @@ async function ensureHistoryChart() {
             grid: { display: false },
             ticks: {
               color: p.tick,
-              maxTicksLimit: 8,
+              maxTicksLimit: historyNarrow ? 4 : 8,
               maxRotation: 0,
-              font: { size: 10, family: 'JetBrains Mono' },
+              font: { size: 11, family: 'JetBrains Mono' },
             },
           },
           y: {
@@ -8350,7 +8425,8 @@ async function ensureHistoryChart() {
             grid: { color: p.grid },
             ticks: {
               color: p.tick,
-              font: { size: 10, family: 'JetBrains Mono' },
+              maxTicksLimit: historyNarrow ? 4 : 6,
+              font: { size: 11, family: 'JetBrains Mono' },
               callback: (value) => (Number.isInteger(value) ? String(value) : Number(value).toFixed(1)),
             },
           },
@@ -9375,7 +9451,7 @@ function initFiltering() {
   document.getElementById('filtering-show-custom-btn')?.addEventListener('click', () => {
     document.getElementById('filtering-custom-panel')?.classList.toggle('hidden');
   });
-  document.getElementById('filtering-preset-search')?.addEventListener('input', renderFilteringPresets);
+  document.getElementById('filtering-preset-search')?.addEventListener('input', debounce(renderFilteringPresets, 120));
   document.getElementById('filtering-recommended-base-btn')?.addEventListener('click', () => {
     addFilteringPresets(['hagezi-pro']);
   });
@@ -13908,9 +13984,12 @@ function initEventListeners() {
 
   // Both boxes above the table feed the same filter: the search box is the obvious
   // one, and the Add box narrows the list too so a name that is already listed shows
-  // up (and its autocomplete entry is visible) before Add is pressed.
+  // up (and its autocomplete entry is visible) before Add is pressed. Debounced:
+  // each call wipes and rebuilds the table, so a burst of keys used to rebuild it
+  // once per character.
+  const proxiedFilterDebounced = debounce(proxiedFilterChanged, 120);
   ['proxied-search', 'new-proxied-input'].forEach((id) => {
-    document.getElementById(id)?.addEventListener('input', proxiedFilterChanged);
+    document.getElementById(id)?.addEventListener('input', proxiedFilterDebounced);
   });
 
   // Multi-select for the bulk actions. The row checkboxes are delegated on the table
@@ -14433,7 +14512,10 @@ function initEventListeners() {
     renderProxiedList();
   });
   document.getElementById('stream-filter')?.addEventListener('change', renderQueryStream);
-  document.getElementById('stream-search')?.addEventListener('input', renderQueryStream);
+  // The search box filters the buffer and redraws the table. Debounced for the
+  // same reason as the other list filters: a 100-row table is ~700 nodes, and
+  // rebuilding it on every key made typing in the log feel sluggish.
+  document.getElementById('stream-search')?.addEventListener('input', debounce(renderQueryStream, 120));
   // The sort select reorders the queries already received. pushStreamQuery consults the
   // same streamSort when it inserts an arriving row, so the two stay in agreement.
   document.getElementById('stream-sort')?.addEventListener('change', (e) => {

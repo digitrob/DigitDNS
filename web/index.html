@@ -959,7 +959,7 @@
         <div class="flex items-center gap-2">
           <i data-feather="globe" class="sidebar-ip-globe w-4 h-4 text-cyan-400"></i>
           <div class="sidebar-ip-copy">
-            <div class="text-[9px] font-mono uppercase text-slate-500">Server Public IP</div>
+            <div class="text-[10px] font-mono uppercase text-slate-500">Server Public IP</div>
             <div id="header-public-ip" class="text-xs font-mono font-bold text-slate-200 group-hover:text-cyan-300">127.0.0.1</div>
           </div>
           <!-- Beside the two-line block, not inside the address line: the row's
@@ -1051,7 +1051,7 @@
              (the hash goes to its title), which is what keeps it inside the wordmark's width. -->
         <div class="flex flex-col leading-none">
           <span class="font-extrabold text-sm text-white font-heading">DigitDNS</span>
-          <span class="text-[9px] text-cyan-300/90 font-mono font-bold mt-1 whitespace-nowrap" id="app-version-badge-mobile">—</span>
+          <span class="text-[10px] text-cyan-300/90 font-mono font-bold mt-1 whitespace-nowrap" id="app-version-badge-mobile">—</span>
         </div>
       </div>
 
@@ -1166,13 +1166,13 @@
             <div class="flex items-baseline justify-between gap-1">
               <div class="flex items-baseline gap-1 shrink-0">
                 <span id="stat-qps" class="metric-value text-xl sm:text-2xl font-extrabold font-mono text-white">0.0</span>
-                <span class="text-[9px] sm:text-[10px] text-slate-400">QPS</span>
+                <span class="text-[10px] sm:text-[11px] text-slate-400">QPS</span>
               </div>
               <!-- Total and the rate-limit state sit to the right of the headline, right-
                    aligned, so both are always fully visible rather than truncated away at
                    the narrow six-column widths. The tight gap buys the meta column the
                    width it needs without dropping a line. -->
-              <div class="text-[9px] sm:text-[10px] text-slate-500 font-mono leading-tight text-right min-w-0">
+              <div class="text-[10px] sm:text-[11px] text-slate-500 font-mono leading-tight text-right min-w-0">
                 <div>Total: <span id="stat-total-queries" class="text-slate-300 font-bold">0</span></div>
                 <div>Limit: <span id="stat-ratelimit-qps" class="text-slate-400" title="Per-source query rate limit">—</span></div>
                 <div>Dropped: <span id="stat-ratelimit-dropped" class="text-slate-400" title="Queries dropped for exceeding the per-source rate limit">0</span></div>
@@ -1188,9 +1188,9 @@
             </div>
             <div class="flex items-baseline gap-1">
               <span id="stat-cache-ratio" class="metric-value text-xl sm:text-2xl font-extrabold font-mono text-emerald-400">0.0%</span>
-              <span class="text-[9px] sm:text-[10px] text-slate-400">hits</span>
+              <span class="text-[10px] sm:text-[11px] text-slate-400">hits</span>
             </div>
-            <div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 sm:mt-1 font-mono truncate">Items: <span id="stat-cache-entries" class="text-slate-300 font-bold">0</span></div>
+            <div class="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 sm:mt-1 font-mono truncate">Items: <span id="stat-cache-entries" class="text-slate-300 font-bold">0</span></div>
           </div>
 
           <!-- Card 3: Active SNI Proxy Connections -->
@@ -1202,12 +1202,12 @@
             <div class="flex items-baseline justify-between gap-1">
               <div class="flex items-baseline gap-1 shrink-0">
                 <span id="stat-proxy-active" class="metric-value text-xl sm:text-2xl font-extrabold font-mono text-purple-300">0</span>
-                <span class="text-[9px] sm:text-[10px] text-slate-400">relays</span>
+                <span class="text-[10px] sm:text-[11px] text-slate-400">relays</span>
               </div>
               <!-- Total and the drop counters sit to the right of the headline, right-
                    aligned, so refused and unreadable are always fully visible instead of
                    being truncated away at the narrow six-column widths. -->
-              <div class="text-[9px] sm:text-[10px] text-slate-500 font-mono leading-tight text-right min-w-0">
+              <div class="text-[10px] sm:text-[11px] text-slate-500 font-mono leading-tight text-right min-w-0">
                 <div>Total: <span id="stat-proxy-total" class="text-slate-300 font-bold">0</span></div>
                 <div>Refused: <span id="stat-proxy-refused" class="text-slate-400" title="Actionable refusals only: a blocked target, a self-dial, a spent quota, a resolve failure, or a full relay table. Flood attempts from a source already in the malformed-probe penalty box are excluded.">0</span></div>
                 <div>Unreadable: <span id="stat-proxy-unreadable" class="text-slate-400" title="Connections that arrived without naming a destination — no TLS SNI and no HTTP Host header">0</span></div>
@@ -1228,7 +1228,7 @@
               <!-- Server % is the headline above. The daemon's CPU share and the core
                    count sit on one centered line beneath it so neither is clipped and the
                    card matches the centered RAM card beside it. -->
-              <div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 sm:mt-1 font-mono leading-tight text-center">
+              <div class="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 sm:mt-1 font-mono leading-tight text-center">
                 Processor: <span id="stat-cpu-percent" class="text-slate-300 font-bold">—</span> · <span id="stat-cpu-cores" class="text-slate-300 font-bold">1</span> Cores
               </div>
             </div>
@@ -1246,9 +1246,9 @@
                    for, so it sits underneath the instance figure. -->
               <div class="flex items-baseline gap-1">
                 <span id="stat-memory" class="metric-value text-xl sm:text-2xl font-extrabold font-mono text-blue-300">—</span>
-                <span class="text-[9px] sm:text-[10px] text-slate-400">MB</span>
+                <span class="text-[10px] sm:text-[11px] text-slate-400">MB</span>
               </div>
-              <div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 sm:mt-1 font-mono leading-tight text-center">
+              <div class="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 sm:mt-1 font-mono leading-tight text-center">
                 <div>Server: <span id="stat-mem-sys-used" class="text-slate-300 font-bold">—</span> / <span id="stat-mem-sys-total" class="text-slate-300 font-bold">—</span> MB</div>
                 <div>Server usage: <span id="stat-mem-sys-pct" class="text-slate-300 font-bold">—</span>%</div>
               </div>
@@ -1279,7 +1279,7 @@
                   <i data-feather="arrow-up" class="w-3.5 h-3.5 text-cyan-400 shrink-0 self-center"></i><span id="stat-speed-out">0.0</span><span class="text-[10px] font-bold text-slate-400">KB/s</span>
                 </span>
               </div>
-              <div class="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 font-mono whitespace-nowrap">Total: <span id="stat-traffic-total" class="text-slate-300 font-bold">0 MB</span></div>
+              <div class="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-mono whitespace-nowrap">Total: <span id="stat-traffic-total" class="text-slate-300 font-bold">0 MB</span></div>
             </div>
           </div>
 
@@ -1474,23 +1474,23 @@
             </div>
             <div class="latency-grid grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
               <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
-                <div class="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">p50 median</div>
-                <div class="flex items-baseline gap-1"><span id="stat-lat-p50" class="text-lg sm:text-xl font-extrabold font-mono text-emerald-400">—</span><span class="text-[9px] text-slate-500">ms</span></div>
+                <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">p50 median</div>
+                <div class="flex items-baseline gap-1"><span id="stat-lat-p50" class="text-lg sm:text-xl font-extrabold font-mono text-emerald-400">—</span><span class="text-[10px] text-slate-500">ms</span></div>
               </div>
               <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
-                <div class="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">p95</div>
-                <div class="flex items-baseline gap-1"><span id="stat-lat-p95" class="text-lg sm:text-xl font-extrabold font-mono text-slate-100">—</span><span class="text-[9px] text-slate-500">ms</span></div>
+                <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">p95</div>
+                <div class="flex items-baseline gap-1"><span id="stat-lat-p95" class="text-lg sm:text-xl font-extrabold font-mono text-slate-100">—</span><span class="text-[10px] text-slate-500">ms</span></div>
               </div>
               <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
-                <div class="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">p99 worst 1%</div>
-                <div class="flex items-baseline gap-1"><span id="stat-lat-p99" class="text-lg sm:text-xl font-extrabold font-mono text-slate-100">—</span><span class="text-[9px] text-slate-500">ms</span></div>
+                <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">p99 worst 1%</div>
+                <div class="flex items-baseline gap-1"><span id="stat-lat-p99" class="text-lg sm:text-xl font-extrabold font-mono text-slate-100">—</span><span class="text-[10px] text-slate-500">ms</span></div>
               </div>
               <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
-                <div class="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">Peak</div>
-                <div class="flex items-baseline gap-1"><span id="stat-lat-max" class="text-lg sm:text-xl font-extrabold font-mono text-slate-100">—</span><span class="text-[9px] text-slate-500">ms</span></div>
+                <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Peak</div>
+                <div class="flex items-baseline gap-1"><span id="stat-lat-max" class="text-lg sm:text-xl font-extrabold font-mono text-slate-100">—</span><span class="text-[10px] text-slate-500">ms</span></div>
               </div>
             </div>
-            <div class="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center gap-x-4 gap-y-1 text-[9px] sm:text-[10px] font-mono text-slate-500">
+            <div class="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] sm:text-[11px] font-mono text-slate-500">
               <span>All queries: <span id="stat-lat-all" class="text-slate-300">—</span></span>
               <span id="stat-cache-health" class="text-slate-500">Cache refresh: —</span>
             </div>
@@ -1505,32 +1505,32 @@
             <div data-dash-card="history-total" class="glass-panel panel-card p-3.5 sm:p-4">
               <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="bar-chart-2" class="w-3 h-3 text-cyan-400"></i> Total queries</div>
               <div id="history-total" class="text-xl sm:text-2xl font-extrabold font-mono text-white mt-1">—</div>
-              <div id="history-total-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">—</div>
+              <div id="history-total-sub" class="text-[10px] sm:text-[11px] text-slate-500 font-mono mt-0.5">—</div>
             </div>
             <div data-dash-card="history-blocked" class="glass-panel panel-card p-3.5 sm:p-4">
               <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="slash" class="w-3 h-3 text-red-400"></i> Blocked</div>
               <div id="history-blocked" class="text-xl sm:text-2xl font-extrabold font-mono text-red-300 mt-1">—</div>
-              <div id="history-blocked-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">—</div>
+              <div id="history-blocked-sub" class="text-[10px] sm:text-[11px] text-slate-500 font-mono mt-0.5">—</div>
             </div>
             <div data-dash-card="history-proxied" class="glass-panel panel-card p-3.5 sm:p-4">
               <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="share-2" class="w-3 h-3 text-purple-400"></i> Proxied</div>
               <div id="history-proxied" class="text-xl sm:text-2xl font-extrabold font-mono text-purple-300 mt-1">—</div>
-              <div id="history-proxied-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">—</div>
+              <div id="history-proxied-sub" class="text-[10px] sm:text-[11px] text-slate-500 font-mono mt-0.5">—</div>
             </div>
             <div data-dash-card="history-cache" class="glass-panel panel-card p-3.5 sm:p-4">
               <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="database" class="w-3 h-3 text-emerald-400"></i> Cache hit</div>
               <div id="history-cache" class="text-xl sm:text-2xl font-extrabold font-mono text-emerald-300 mt-1">—</div>
-              <div id="history-cache-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">—</div>
+              <div id="history-cache-sub" class="text-[10px] sm:text-[11px] text-slate-500 font-mono mt-0.5">—</div>
             </div>
             <div data-dash-card="history-clients" class="glass-panel panel-card p-3.5 sm:p-4">
               <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="users" class="w-3 h-3 text-cyan-400"></i> Active clients</div>
               <div id="history-clients" class="text-xl sm:text-2xl font-extrabold font-mono text-cyan-300 mt-1">—</div>
-              <div id="history-clients-sub" class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5" title="Distinct clients from HyperLogLog registers">HLL distinct</div>
+              <div id="history-clients-sub" class="text-[10px] sm:text-[11px] text-slate-500 font-mono mt-0.5" title="Distinct clients from HyperLogLog registers">HLL distinct</div>
             </div>
             <div data-dash-card="history-latency" class="glass-panel panel-card p-3.5 sm:p-4">
               <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="clock" class="w-3 h-3 text-blue-400"></i> Avg latency (ms)</div>
               <div id="history-latency" class="text-xl sm:text-2xl font-extrabold font-mono text-slate-200 mt-1 whitespace-nowrap">—</div>
-              <div class="text-[9px] sm:text-[10px] text-slate-500 font-mono mt-0.5">cache misses</div>
+              <div class="text-[10px] sm:text-[11px] text-slate-500 font-mono mt-0.5">cache misses</div>
             </div>
 
             <div data-dash-card="history-chart" class="glass-panel panel-card p-4 sm:p-5 col-span-2 sm:col-span-3 xl:col-span-6">
@@ -3725,20 +3725,20 @@ async function onBuySubscription(ctx, username) {
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-1.5">
-              <div class="text-[9px] font-bold uppercase tracking-wider text-slate-400">HTTPS / SVCB</div>
+              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">HTTPS / SVCB</div>
               <div class="text-[11px] text-cyan-300 font-mono mt-0.5">withheld</div>
             </div>
             <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-1.5">
-              <div class="text-[9px] font-bold uppercase tracking-wider text-slate-400">h3 / QUIC</div>
+              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">h3 / QUIC</div>
               <div class="text-[11px] text-cyan-300 font-mono mt-0.5">not advertised</div>
             </div>
             <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-1.5">
-              <div class="text-[9px] font-bold uppercase tracking-wider text-slate-400">IPv4 / IPv6 hint</div>
+              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">IPv4 / IPv6 hint</div>
               <div class="text-[11px] text-cyan-300 font-mono mt-0.5">removed</div>
             </div>
           </div>
 
-          <p class="text-[9px] leading-snug text-slate-500">
+          <p class="text-[10px] leading-snug text-slate-500">
             Live for every <span class="font-mono text-slate-400">Proxy</span> domain; direct names keep normal records.
           </p>
           <p id="proxy-leak-off-note" class="hidden rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[10px] leading-snug text-red-300">

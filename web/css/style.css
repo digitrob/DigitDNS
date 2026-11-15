@@ -729,6 +729,21 @@ html.sidebar-collapsed .sidebar-group-label {
   }
 }
 
+/* One global switch for the other 36 transitions. Each component used to opt out
+   of motion individually (the pulse dot, the mobile sheet, the refresh icon), so
+   every new panel inherited a slide or a fade until someone remembered it. The
+   spinner is deliberately left alone: it reports progress, not decoration.
+   Scroll behaviour is covered too, so anchor jumps land instantly. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Cyber Badges */
 .badge {
   padding: 4px 8px;
