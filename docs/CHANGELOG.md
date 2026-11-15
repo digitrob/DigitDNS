@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.8.15] — quiet switches, a calm live log
+
+### Fixed
+- **Server-backed switches no longer slide when a page opens.** They were drawn
+  as off in the markup and corrected after the settings fetch, so each visit
+  replayed an OFF→ON animation. Enable ad blocking, Relay mode, query-log
+  Enabled, alerts Enabled, Public/Whitelist mode and Single upstream resolver now
+  start hidden with their space reserved and are revealed already carrying the
+  saved value. A failed read falls back to the markup state rather than leaving an
+  invisible control.
+- **The live-log status pill stopped flickering and stopped moving the toolbar.**
+  A dropped EventSource painted `Reconnecting…` (error), `Polling` (REST
+  fallback) and `Live` (1 s reconnect) in quick succession, and the changing
+  label width shoved the Pause/Clear buttons. Degraded labels are now delayed —
+  1.5 s for `Reconnecting…`, 12 s for `Polling` when the fallback is carrying the
+  log — and any delivered frame restores `Live` in one repaint. The pill has a
+  fixed 120 px width for every label.
+- **An open-but-idle stream is no longer labelled `Polling`.** Opening the Logs
+  tab or returning to the browser started the REST fallback after three seconds
+  without a query, even though the socket was healthy; the fallback now starts
+  only when the socket is not open.
+- **Android: the connection chip moved to the trailing edge of the filter row.**
+  It was at the end of the scrolling Reload/Sort/Pause/Clear row, off-screen on a
+  phone. The action chips scroll; the status stays pinned and visible.
+
+### Changed
+- **The AdGuard rules field absorbs the left column's leftover height.** The Ad
+  Blocking page's policy card now fills the space under the rule tester and the
+  Custom filtering rules textarea grows with it (minimum 9 rem, resizable), so
+  the two columns end level at any window height. A short window keeps the card
+  at its content height and scrolls the column instead of compressing fields.
+
+### Tests
+- `tests/web/stream-status.test.cjs` pins the anti-flicker contract: delayed
+  reconnect label, no degraded write from `onerror`, no fallback start on an open
+  socket, frame→Live recovery, and the fixed pill width.
+
 ## 🏷️ [v5.8.14] — query history parity and honest live-log state
 
 ### Added

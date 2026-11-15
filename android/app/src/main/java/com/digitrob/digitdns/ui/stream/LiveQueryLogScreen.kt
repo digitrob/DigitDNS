@@ -279,10 +279,6 @@ private fun LogToolbar(state: LiveQueryLogUiState, viewModel: LiveQueryLogViewMo
                 Spacer(Modifier.width(4.dp))
                 Text("Clear", maxLines = 1)
             }
-            Spacer(Modifier.width(6.dp))
-            // The connection state was already tracked but never shown: a retrying
-            // or auth-failed stream looked exactly like a quiet network.
-            StreamStatusChip(state.status)
         }
 
         Column(
@@ -296,7 +292,7 @@ private fun LogToolbar(state: LiveQueryLogUiState, viewModel: LiveQueryLogViewMo
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            ActionFilterChips(state.actionFilter, viewModel::onActionFilterChange)
+            ActionFilterChips(state.actionFilter, state.status, viewModel::onActionFilterChange)
         }
     }
 }
@@ -308,41 +304,55 @@ private fun LogToolbar(state: LiveQueryLogUiState, viewModel: LiveQueryLogViewMo
  * as the action badges in the rows below.
  */
 @Composable
-private fun ActionFilterChips(selected: ActionFilter, onSelect: (ActionFilter) -> Unit) {
+private fun ActionFilterChips(
+    selected: ActionFilter,
+    status: StreamStatus,
+    onSelect: (ActionFilter) -> Unit,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ActionFilter.entries.forEach { filter ->
-            val tone = when (filter) {
-                ActionFilter.All -> MaterialTheme.colorScheme.primary
-                ActionFilter.Proxy -> DigitDnsTheme.colors.purple
-                ActionFilter.Direct -> DigitDnsTheme.colors.success
-                ActionFilter.Block -> MaterialTheme.colorScheme.error
-            }
-            val active = filter == selected
-            val shape = RoundedCornerShape(999.dp)
-            Box(
-                modifier = Modifier
-                    .clip(shape)
-                    .background(if (active) tone.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface)
-                    .border(
-                        width = 1.dp,
-                        color = if (active) tone.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant,
-                        shape = shape,
+        Row(
+            modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ActionFilter.entries.forEach { filter ->
+                val tone = when (filter) {
+                    ActionFilter.All -> MaterialTheme.colorScheme.primary
+                    ActionFilter.Proxy -> DigitDnsTheme.colors.purple
+                    ActionFilter.Direct -> DigitDnsTheme.colors.success
+                    ActionFilter.Block -> MaterialTheme.colorScheme.error
+                }
+                val active = filter == selected
+                val shape = RoundedCornerShape(999.dp)
+                Box(
+                    modifier = Modifier
+                        .clip(shape)
+                        .background(if (active) tone.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface)
+                        .border(
+                            width = 1.dp,
+                            color = if (active) tone.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant,
+                            shape = shape,
+                        )
+                        .clickable { onSelect(filter) }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = filter.name,
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = if (active) tone else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
                     )
-                    .clickable { onSelect(filter) }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-            ) {
-                Text(
-                    text = filter.name,
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = if (active) tone else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
+                }
             }
         }
+        // The connection state belongs at the trailing edge of the filter row.
+        // It used to sit at the end of the scrolling button row above, which put
+        // it off-screen on a phone exactly when an operator needed it.
+        Spacer(Modifier.width(8.dp))
+        StreamStatusChip(status)
     }
 }
 

@@ -4760,6 +4760,14 @@ textarea.panel-field {
 }
 .filtering-left-column > .filtering-settings-card {
   align-self: stretch;
+  /* Grow to fill whatever the rule tester leaves, so the left column's cards end
+   * level with the blocklist roster on the right instead of leaving dead space
+   * under the tester. The AdGuard rules field absorbs that extra height.
+   *
+   * flex-shrink stays 0: on a short window the card must keep its content height
+   * and let the column scroll, rather than compress its fields until they spill
+   * over the tester below. */
+  flex: 1 0 auto;
   max-height: none;
   overflow: visible;
 }
@@ -4769,6 +4777,8 @@ textarea.panel-field {
   gap: 10px;
   padding: 14px;
   min-height: 0;
+  /* Natural height: all leftover column height belongs to the policy card. */
+  flex: 0 0 auto;
 }
 .filtering-lists-card { overflow: hidden; }
 .filtering-card-head {
@@ -4823,6 +4833,20 @@ textarea.panel-field {
   font-size: var(--text-2xs);
 }
 .filtering-allowlist { display: flex; flex-direction: column; }
+
+/* The custom-rules textarea is the one control on this card that gets better with
+ * height, so it takes the space the fields above it do not need. On a tall window
+ * that closes the gap between the two columns; on a short one the min-height keeps
+ * it usable and the column scrolls. */
+.filtering-custom-rules {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.filtering-custom-rules textarea {
+  flex: 1 1 auto;
+  min-height: 9rem;
+  resize: vertical;
+}
 .filtering-settings-actions {
   display: flex;
   align-items: center;
@@ -5871,7 +5895,15 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
 .stream-status-pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  /* Fixed width. The label changes between Live / Connecting… / Reconnecting… /
+   * Polling / Offline; an auto-width pill resized the whole toolbar row on every
+   * transition, which is what made the text appear to jump back and forth.
+   * Sized for the longest label ("Reconnecting…", 115px at this size) and
+   * centred, so only the colour and the words change. */
+  min-width: 120px;
+  flex-shrink: 0;
   padding: 3px 9px;
   border-radius: 999px;
   border: 1px solid rgb(var(--c-slate-700));

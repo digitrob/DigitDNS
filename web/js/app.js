@@ -3926,7 +3926,12 @@ async function loadResolutionSettings() {
     syncResolutionControls();
     refreshProxiedListIfVisible();
   } catch (e) { /* keep the defaults; the dialog still works */ }
-  finally { resolutionLoading = false; }
+  finally {
+    resolutionLoading = false;
+    // The switch is revealed only after the saved default upstream has been
+    // applied, so opening the tab cannot replay an OFF→ON slide.
+    revealServerSwitch('resolution-single-switch-control');
+  }
 }
 
 // The resolver transport chips and the Client Transports switches are one
@@ -5367,7 +5372,11 @@ function startStatsPolling() {
     if (activeDashTab === 'stream') {
       if (!isStreamPaused) renderQueryStream();
       if (streamFallbackTimer) streamFallbackPoll();
-      else if (Date.now() - streamLastEventAt >= 3000) startStreamFallback();
+      // An open socket with no recent query is idle, not broken: starting the
+      // fallback here used to label a perfectly live stream "Polling" on every
+      // tab switch. The buffered-stream check at connect time is the only place
+      // that decides a silent socket needs polling.
+      else if (!streamIsOpen() && Date.now() - streamLastEventAt >= 3000) startStreamFallback();
     }
   });
 
@@ -5376,11 +5385,17 @@ function startStatsPolling() {
   // online waited for the 30-second backoff cap.
   window.addEventListener('online', () => {
     if (!authToken) return;
+    streamDegraded = false;
+    clearStreamStatusTimers();
     setStreamStatus('connecting');
     startLiveStream();
     if (activeDashTab === 'stream' && streamFallbackTimer) streamFallbackPoll();
   });
-  window.addEventListener('offline', () => setStreamStatus('offline'));
+  window.addEventListener('offline', () => {
+    streamDegraded = false;
+    clearStreamStatusTimers();
+    setStreamStatus('offline');
+  });
 
   // Poll immediately. The daemon delays its own startup benchmark until the
   // listeners have settled, so waiting here would only leave the dashboard
@@ -6419,9 +6434,37 @@ function upstreamCheckAge(u) {
 // backoff and a dead session look identical. States are deliberately about the
 // transport, not the last error: Live, Connecting, Reconnecting, Polling,
 // Offline.
+//
+// The pill must not narrate every retry. A dropped EventSource is re-opened on a
+// 1s backoff, so a blip that reconnects immediately used to flash
+// Live → Reconnecting → Polling → Live on each attempt. Degraded states are
+// therefore delayed: the current label holds through the first backoff, and the
+// delayed timers re-check the stream when they fire, so a fast reconnect wins
+// without a repaint. While the stream is down the states only move forward;
+// the next frame or open resets them to Live in one step.
+const STREAM_STATUS_GRACE_MS = 1500;
+const STREAM_STATUS_POLLING_MS = 12000;
+
+let streamStatusState = '';
+let streamStatusTimers = [];
+let streamDegraded = false;
+
+function clearStreamStatusTimers() {
+  for (const timer of streamStatusTimers) clearTimeout(timer);
+  streamStatusTimers = [];
+}
+
+function streamIsOpen() {
+  return !!sseSource && sseSource.readyState === EventSource.OPEN;
+}
+
 function setStreamStatus(state, text) {
   const pill = document.getElementById('stream-status');
   if (!pill) return;
+  // A repeated write is not free: it replaces the text node, and a changed label
+  // resizes the pill. Nothing to do when the state already matches.
+  if (state === streamStatusState && !text) return;
+  streamStatusState = state;
   const labels = {
     live: 'Live',
     connecting: 'Connecting…',
@@ -6442,6 +6485,37 @@ function setStreamStatus(state, text) {
   if (textEl) textEl.textContent = label;
 }
 
+// A frame — a query, the opening history batch, or any other server event —
+// proves the stream is delivering. Whatever the pill said while it was down, it
+// says Live again, in one repaint.
+function markStreamLive() {
+  streamDegraded = false;
+  clearStreamStatusTimers();
+  setStreamStatus('live');
+}
+
+// The stream dropped or stopped delivering. Hold the current label through the
+// first backoff (1s) so a blip stays invisible, then say Reconnecting; a long
+// outage that the REST fallback is carrying reads Polling. Both timers re-check
+// the stream when they fire, so a reconnect that lands first cancels the label
+// change rather than following it.
+function markStreamDegraded() {
+  if (navigator.onLine === false) {
+    streamDegraded = false;
+    clearStreamStatusTimers();
+    setStreamStatus('offline');
+    return;
+  }
+  if (streamDegraded) return;
+  streamDegraded = true;
+  streamStatusTimers.push(setTimeout(() => {
+    if (!streamIsOpen()) setStreamStatus('reconnecting');
+  }, STREAM_STATUS_GRACE_MS));
+  streamStatusTimers.push(setTimeout(() => {
+    if (!streamIsOpen() && streamFallbackTimer) setStreamStatus('polling');
+  }, STREAM_STATUS_POLLING_MS));
+}
+
 async function startLiveStream() {
   // Single-flight: boot, visibility and a manual refresh can all ask for the
   // stream at once, and minting two tickets used to leave the loser's
@@ -6449,7 +6523,12 @@ async function startLiveStream() {
   if (sseConnecting) return;
   if (sseSource && sseSource.readyState !== EventSource.CLOSED) return;
   sseConnecting = true;
-  setStreamStatus(navigator.onLine === false ? 'offline' : (sseBackoffMs > 0 ? 'reconnecting' : 'connecting'));
+  // Only a first connect (or a reconnect after being offline) announces itself.
+  // A retry during a blip leaves the pill alone: markStreamDegraded owns that
+  // transition, and re-announcing "Reconnecting…" here would defeat the grace.
+  if (!streamStatusState || streamStatusState === 'offline') {
+    setStreamStatus(navigator.onLine === false ? 'offline' : 'connecting');
+  }
   const generation = ++sseGeneration;
   if (sseBackoffTimer) {
     clearTimeout(sseBackoffTimer);
@@ -6522,7 +6601,7 @@ async function startLiveStream() {
     // backoff so the next drop reconnects promptly.
     sseBackoffMs = 0;
     streamLastEventAt = Date.now();
-    setStreamStatus('live');
+    markStreamLive();
     stopStreamFallback();
     scheduleStreamFallbackCheck();
     refreshStreamPlaceholder();
@@ -6593,7 +6672,10 @@ async function startLiveStream() {
     try { source.close(); } catch(e) {}
     sseSource = null;
     scheduleStreamReconnect();
-    setStreamStatus(navigator.onLine === false ? 'offline' : 'reconnecting');
+    // No immediate label change: markStreamDegraded holds the current state
+    // through the first backoff, so a blip that reconnects in a second never
+    // repaints the pill.
+    markStreamDegraded();
     // Keep the log usable through the reconnect. The polling path reads the
     // server's recent-log ring and stops as soon as the EventSource delivers.
     startStreamFallback();
@@ -6609,11 +6691,10 @@ async function startLiveStream() {
 function scheduleStreamReconnect() {
   if (sseBackoffTimer) return;
   if (!authToken) return; // signed out; nothing to reconnect to
-  if (navigator.onLine === false) {
-    setStreamStatus('offline');
-    return;
-  }
-  setStreamStatus('reconnecting');
+  // Degraded now (or Offline when the browser is), then stop scheduling: an
+  // offline browser is woken by the 'online' listener, not by a timer.
+  markStreamDegraded();
+  if (navigator.onLine === false) return;
   if (sseBackoffMs === 0) {
     sseBackoffMs = SSE_BACKOFF_START_MS;
   } else {
@@ -6630,6 +6711,10 @@ function scheduleStreamReconnect() {
 function markStreamActivity() {
   streamLastEventAt = Date.now();
   if (streamFallbackTimer) stopStreamFallback();
+  // A frame on an open socket is the proof the pill was waiting for. This is
+  // what unsticks "Polling" after the REST fallback filled the table: the SSE
+  // was live all along, it was simply idle.
+  if (streamIsOpen()) markStreamLive();
 }
 
 function stopStreamFallback() {
@@ -6656,7 +6741,13 @@ function scheduleStreamFallbackCheck() {
   clearStreamFallbackCheck();
   streamFallbackCheck = setTimeout(() => {
     streamFallbackCheck = null;
-    if (Date.now() - streamLastEventAt >= 3000) startStreamFallback();
+    if (Date.now() - streamLastEventAt >= 3000) {
+      startStreamFallback();
+      // The socket is open but has delivered nothing since it opened: a proxy
+      // is buffering the stream and the table is being filled by polling. Say
+      // so once — the next real frame restores Live.
+      if (streamIsOpen() && streamStatusState === 'live') setStreamStatus('polling');
+    }
   }, 3000);
 }
 
@@ -6665,9 +6756,8 @@ function startStreamFallback() {
   streamFallbackSig = '';
   streamFallbackEtag = '';
   streamFallbackTimer = setInterval(streamFallbackPoll, 2000);
-  if (document.getElementById('stream-status')?.dataset.state !== 'offline') {
-    setStreamStatus('polling');
-  }
+  // The pill is not touched here: an error path has already called
+  // markStreamDegraded, and the buffered-stream check labels itself below.
   refreshStreamPlaceholder();
   streamFallbackPoll();
 }
@@ -6734,6 +6824,8 @@ function stopLiveStream() {
     try { sseSource.close(); } catch(e) {}
     sseSource = null;
   }
+  streamDegraded = false;
+  clearStreamStatusTimers();
   setStreamStatus('offline', 'Disconnected');
   finishStreamRefresh();
 }
@@ -8757,7 +8849,29 @@ async function loadFiltering() {
     setFilteringError('');
   } catch (e) {
     setFilteringError(e.message || 'Could not load ad blocking status.');
+    // A failed read must not leave the policy card without a switch; fall back to
+    // the markup's OFF state rather than an invisible control.
+    revealFilteringControls();
   }
+}
+
+// The enable switch starts hidden in the markup: it is unchecked until the saved
+// policy arrives, and revealing it before then made it animate from OFF to ON on
+// every visit to the tab. The wrapper reserves its space, so the card does not
+// jump, and the switch is only shown once it already carries the real state.
+//
+// The same contract covers every server-backed slider: boot-hide suppresses the
+// knob transition while the element is invisible, and the reveal happens after
+// the saved value has been applied.
+function revealServerSwitch(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.visibility = 'visible';
+  el.classList.remove('boot-hide');
+}
+
+function revealFilteringControls() {
+  revealServerSwitch('filtering-enabled-switch');
 }
 
 function renderFiltering(status) {
@@ -8798,6 +8912,9 @@ function renderFiltering(status) {
   }
   renderFilteringPresets();
   if (filteringCounting) scheduleFilteringCountPoll();
+  // Only now is the switch carrying the saved value, so revealing it cannot
+  // replay an OFF→ON slide.
+  revealFilteringControls();
 }
 
 const FILTERING_PRESET_GROUPS = [
@@ -11036,7 +11153,9 @@ async function loadRelayMode() {
     const data = await res.json();
     relayGlobalEnabled = data.global_enabled !== false;
     renderRelayHubs(data.relay_hubs || []);
-  } catch (e) { /* the card keeps its last known state */ }
+  } catch (e) { /* the card keeps its last known state */ } finally {
+    revealServerSwitch('relay-global-switch');
+  }
 }
 
 function relayHubField(card, name) {
@@ -11317,7 +11436,7 @@ function switchTab(target, updateUrl = true, loadData = true) {
         // If the EventSource has been silent for a while (or a proxy is
         // buffering it), the REST fallback fills the table on tab open.
         if (streamFallbackTimer) streamFallbackPoll();
-        else if (Date.now() - streamLastEventAt >= 3000) startStreamFallback();
+        else if (!streamIsOpen() && Date.now() - streamLastEventAt >= 3000) startStreamFallback();
       }
       // The Proxied list fills as the region scrolls, but a panel that was hidden
       // while it rendered has no height to measure against, so the first batch is
@@ -12417,7 +12536,11 @@ async function loadQueryLogSettings() {
     }
     const usage = document.getElementById('querylog-usage');
     if (usage) usage.textContent = queryLogUsageText(data.usage, s);
-  } catch (e) { /* defaults */ }
+  } catch (e) { /* defaults */ } finally {
+    // Revealed only after the saved value is applied, so it cannot slide from
+    // OFF to ON when the card is opened.
+    revealServerSwitch('querylog-enabled-switch');
+  }
 }
 
 async function saveQueryLogSettings() {
@@ -12895,7 +13018,9 @@ async function loadAlerts() {
     if (!res.ok) return;
     const data = await res.json();
     renderAlerts(data.alerts || {}, data.history || []);
-  } catch (e) { /* the card keeps its last state */ }
+  } catch (e) { /* the card keeps its last state */ } finally {
+    revealServerSwitch('alerts-enabled-switch');
+  }
 }
 
 async function saveAlerts(showToastOnSuccess = true) {
@@ -14792,6 +14917,10 @@ async function loadClients() {
       'The subscriber list could not be read. Nothing has been changed — this is a failed read, not an empty list.',
       'text-amber-300');
     showToast('Could not reach the server to load the user list.', 'error');
+  } finally {
+    // Same contract as the other server-backed switches: the access-mode switch
+    // is revealed once it carries the saved gate, not before.
+    revealServerSwitch('access-mode-switch-control');
   }
 }
 

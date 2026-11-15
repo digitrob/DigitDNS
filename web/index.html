@@ -1429,7 +1429,7 @@
               <div class="resolver-single-row">
                 <div class="resolver-mode-switch">
                   <span>Pool</span>
-                  <label class="switch">
+                  <label class="switch boot-hide" id="resolution-single-switch-control" style="visibility:hidden">
                     <input type="checkbox" id="resolution-single-switch"
                       aria-label="Use a single upstream resolver">
                     <span class="slider"></span>
@@ -1596,7 +1596,11 @@
               </div>
               <p class="filtering-card-help">Policy applied to every list. Changes take effect after Save.</p>
 
-              <label class="filtering-switch">
+              <!-- Server-backed: hidden until the saved policy arrives, so the switch
+                   is revealed already in its real position instead of sliding from OFF
+                   to ON every time the tab opens. boot-hide suppresses the transition
+                   while it is hidden; the wrapper keeps its space reserved. -->
+              <label class="filtering-switch boot-hide" id="filtering-enabled-switch" style="visibility:hidden">
                 <span class="switch">
                   <input type="checkbox" id="filtering-enabled-input">
                   <span class="slider"></span>
@@ -1629,7 +1633,7 @@
                   aria-label="Filtering allowlist"></textarea>
               </label>
 
-              <label class="filtering-field filtering-allowlist">Custom filtering rules (AdGuard syntax)
+              <label class="filtering-field filtering-allowlist filtering-custom-rules">Custom filtering rules (AdGuard syntax)
                 <textarea id="filtering-custom-rules-input" rows="6" spellcheck="false"
                   class="panel-field mt-1 w-full font-mono text-xs"
                   placeholder="||ads.example.com^&#10;@@||allowed.example.com^&#10;||tracking.example.com^$important"
@@ -1994,7 +1998,7 @@
               <p class="text-[10px] text-slate-500 mt-1">Requires the SNI proxy to be enabled. A client IP that appears in two hubs is refused rather than guessed.</p>
             </div>
             <div class="flex items-center gap-3 shrink-0">
-              <label class="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-300 cursor-pointer">
+              <label id="relay-global-switch" class="boot-hide inline-flex items-center gap-2 text-[11px] font-semibold text-slate-300 cursor-pointer" style="visibility:hidden">
                 <span>Relay mode</span>
                 <span class="switch">
                   <input type="checkbox" id="relay-global-enabled">
@@ -2185,7 +2189,7 @@
 
             <div class="flex items-center gap-3 self-end sm:self-center">
               <span class="text-xs font-mono text-slate-400 font-semibold" id="access-mode-status-text">Public Mode</span>
-              <label class="switch">
+              <label class="switch boot-hide" id="access-mode-switch-control" style="visibility:hidden">
                 <input type="checkbox" id="access-mode-switch">
                 <span class="slider"></span>
               </label>
@@ -2454,7 +2458,7 @@
                 <h4 class="text-xs font-bold text-white font-heading">Query search</h4>
                 <p class="text-[11px] text-slate-500 mt-0.5">Optional historical query log. Off by default; stored in a separate database.</p>
               </div>
-              <label class="inline-flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+              <label id="querylog-enabled-switch" class="boot-hide inline-flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer" style="visibility:hidden">
                 <span>Enabled</span>
                 <span class="switch">
                   <input type="checkbox" id="querylog-enabled">
@@ -3954,7 +3958,7 @@ async function onBuySubscription(ctx, username) {
               </h3>
               <p class="text-[11px] text-slate-400 mt-0.5">Send relay, egress, account and upstream events to ntfy, Telegram, Discord, Slack, Gotify or your own webhook.</p>
             </div>
-            <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-300 cursor-pointer">
+            <label id="alerts-enabled-switch" class="boot-hide inline-flex items-center gap-2 text-xs font-semibold text-slate-300 cursor-pointer" style="visibility:hidden">
               <span>Enabled</span>
               <span class="switch">
                 <input type="checkbox" id="alerts-enabled">
