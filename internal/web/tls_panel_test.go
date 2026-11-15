@@ -48,12 +48,17 @@ func startTLSPanel(t *testing.T, cfg tlsPanelConfig) (*WebServer, int, int, func
 	ws, _, backendCleanup := setupTestWebServer(t)
 
 	webPort := freePort(t)
-	ws.settings.WebPort = webPort
-
 	redirPort := 0
 	if cfg.redirectPort != 0 {
-		redirPort = freePort(t)
+		// Both ports come from one reservation. Two independent probes can return
+		// the same number — a listening socket does not linger in TIME_WAIT — and
+		// the panel binds first, so the redirect listener then failed with
+		// "address already in use". That flake surfaced under the race detector,
+		// where the package is slower and the ephemeral cursor moves further.
+		ports := freePorts(t, 2)
+		webPort, redirPort = ports[0], ports[1]
 	}
+	ws.settings.WebPort = webPort
 	ws.tlsSettings = &database.TLSSettings{
 		Domain:       cfg.domain,
 		CertPath:     cfg.certPath,
@@ -75,12 +80,31 @@ func startTLSPanel(t *testing.T, cfg tlsPanelConfig) (*WebServer, int, int, func
 // that binds immediately and is the only listener on loopback it is negligible.
 func freePort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("freePort: %v", err)
+	return freePorts(t, 1)[0]
+}
+
+// freePorts reserves n distinct loopback ports in one pass. Every probe listener
+// is held open until all n have been chosen, so the result cannot contain the
+// same port twice — the caller only closes them together, right before binding
+// the real listeners.
+func freePorts(t *testing.T, n int) []int {
+	t.Helper()
+	listeners := make([]net.Listener, 0, n)
+	ports := make([]int, 0, n)
+	defer func() {
+		for _, l := range listeners {
+			_ = l.Close()
+		}
+	}()
+	for i := 0; i < n; i++ {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("freePorts: %v", err)
+		}
+		listeners = append(listeners, l)
+		ports = append(ports, l.Addr().(*net.TCPAddr).Port)
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	return ports
 }
 
 // TestTLSPanelServesAValidHandshake proves the core of the panel HTTPS path: the

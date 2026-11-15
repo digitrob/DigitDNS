@@ -36,7 +36,8 @@ func TestMantisRebindToTakenPortKillsTheRunningPortal(t *testing.T) {
 	defer cleanup()
 	ws.SetSubscriptionSettings(&database.SubscriptionSettings{})
 
-	upPort := freePort(t)
+	ports := freePorts(t, 2)
+	upPort := ports[0]
 	ws.subSettings.Apply(database.SubscriptionSnapshot{
 		Enabled: true, Port: upPort, URIPath: "/sub", Title: "Live",
 		UsePanelCertificate: false, // plaintext listener, no certs needed
@@ -51,7 +52,7 @@ func TestMantisRebindToTakenPortKillsTheRunningPortal(t *testing.T) {
 
 	// A port held by a foreign listener — the situation the collision guard
 	// cannot see, because nothing in this process owns it.
-	takenPort := freePort(t)
+	takenPort := ports[1]
 	foreign, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(takenPort)))
 	if err != nil {
 		t.Fatalf("could not occupy the collision port: %v", err)

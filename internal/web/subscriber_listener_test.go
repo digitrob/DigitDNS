@@ -69,13 +69,8 @@ func TestSubscriberListenerRebindsOnPortChange(t *testing.T) {
 	defer cleanup()
 	ws.SetSubscriptionSettings(&database.SubscriptionSettings{})
 
-	first, second := freePort(t), freePort(t)
-	for i := 0; i < 40 && first == second; i++ {
-		second = freePort(t)
-	}
-	if first == second {
-		t.Skip("could not reserve two distinct ports")
-	}
+	ports := freePorts(t, 2)
+	first, second := ports[0], ports[1]
 
 	ws.subSettings.Apply(database.SubscriptionSnapshot{
 		Enabled: true, Port: first, URIPath: "/sub", Title: "First",
