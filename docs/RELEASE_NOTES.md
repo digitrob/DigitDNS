@@ -1,139 +1,103 @@
-# DigitDNS v5.8.19 — the healthcheck can no longer wedge the container
+# DigitDNS v5.9.0 — settings, split where you look for them
 
-A small reliability release on top of v5.8.18. No database schema migration is
-required; existing settings, clients, blocklists, certificates, relay agents,
-egress options and stored query history are preserved.
+A settings-focused release for the web panel and the Android app. No database
+schema migration is required; existing settings, clients, blocklists,
+certificates, relay agents, egress options and stored query history are
+preserved.
 
-## Why v5.8.18's TCP probe did not fix it
+## A Resolvers tab
 
-v5.8.18 replaced the HTTPS `wget` probe with a TCP connect (`nc -z`) to the
-panel port. That was not enough. On some kernels Docker's healthcheck **exec**
-into this container leaks one cgroup task slot per probe, whatever the command
-is:
+Settings had grown to eighteen cards in one scroll, mixing server access,
+subscriber TLS, per-domain policy, resolver plumbing and history. The five cards
+that configure how the resolver speaks to clients now live on their own page:
 
-- `pids.current` grew by exactly one per scheduled probe while
-  `cgroup.threads` stayed constant — the same rate as the old HTTPS probe.
-- A throwaway container running the identical `nc -z` probe leaked nothing, so
-  the command was never the cause; the healthcheck exec into the running
-  DigitDNS container is.
-- At the systemd default of 1066 tasks the container reached the cap in about
-  nine hours. From then on every `runc exec` — including the probe itself —
-  failed with `procReady not received`. Docker never restarts a container just
-  because it is unhealthy, so a perfectly healthy resolver was reported
-  unhealthy forever.
+- **Client Transports** — plain DNS, DoT, DoH, DoH3, DoQ, DNSCrypt, mTLS
+- **DNSSEC Validation**
+- **Proxy Leak Protection**
+- **Proxy IPv6**
+- **DoH Access Tokens**
 
-## Changed
+Resolvers has its own sidebar entry, phone More-sheet entry, clean URL
+(`/resolvers`), boot route and jump bar. Settings keeps the other thirteen cards:
+server location, 2FA, server update, hidden admin path, administrator
+credentials, subscription portal, SSL/TLS, blocked domains, DNS rewrites, policy
+groups, traffic history, alerts and about.
 
-- **The in-image `HEALTHCHECK` is gone.** There is no exec healthcheck left to
-  leak a task slot. The panel's public `/healthz` endpoint is the supported
-  liveness signal; probe it from outside the container. This is also more
-  honest: Docker's healthcheck never restarted anything, so it only ever
-  displayed a status.
+Nothing about the moved cards changed: same ids, same endpoints, same save
+behaviour. The tab-open refresh follows them, so DNSSEC and proxy-leak status are
+read when Resolvers opens.
 
-- **The sample Compose file no longer sets `DIGITDNS_HEALTH_PORT`.** Nothing in
-  the image reads it now.
+## Settings that explain themselves
 
-This release also carries the v5.8.18 fixes: the quick-action menu now opens on
-a scope that covers the host you clicked (so `*.host` no longer leaves the apex
-looking direct), Add moves a domain instead of leaving a duplicate in Direct,
-and Force on the resolver card waits for an in-flight benchmark instead of
-returning "A benchmark is already in progress".
+- **Every section has a jump chip.** The sticky bar also tracks the section at
+  the top of the viewport, so the highlighted chip matches what you are looking
+  at rather than the last one clicked.
+- **The command palette searches every section.** It used to index eight
+  hand-picked chips; it now derives its Settings and Resolvers entries from the
+  jump bars, so “DNSSEC”, “DoH tokens” and “About” are all reachable from ⌘K.
+- **Every mutating card has a save-model badge.** The four rule cards that write
+  as you edit now say “Auto-saved” instead of staying silent.
+- **“Save to apply” cards show an “Unsaved changes” note** once a field is
+  edited, and clear it when that card’s save succeeds. The note never blocks
+  navigation; a reload with a pending edit asks the browser to confirm.
 
-## Monitoring `/healthz`
+## Settings open in their saved state
 
-A ready-made systemd timer, installed as root. It probes every 30 seconds and
-restarts the container after three consecutive failures.
+- **The Traffic History card no longer flips its checkboxes.** The card is read
+  when Settings opens; its controls now stay hidden behind a short “Loading
+  history settings…” line until the saved policy arrives, so they appear already
+  checked or unchecked instead of moving after the read.
+- **Android does the same on every screen with a server-backed switch.**
+  Traffic History shows a loading/retry card until the policy lands, SSL/TLS
+  waits for the settings snapshot before drawing the renewal switches, and the
+  Query Log and Egress Options toggles wait for their first load.
 
-`/usr/local/bin/digitdns-healthcheck.sh`:
+## Android: a settings hub that fits a phone
 
-```sh
-#!/bin/sh
-set -u
+The Settings tab was a single horizontally scrolling row of 23 chips. It is now
+a grouped list with a search field:
 
-URL="https://127.0.0.1:27586/healthz"
-STATE="/run/digitdns-healthcheck.failures"
+- **Resolvers** — Upstreams, Client Transports, DNSSEC & Proxy Leak, Proxy IPv6,
+  Access (DoH tokens and allowlists)
+- **Server & access** — Servers, Network & Server, SSL/TLS, Subscription,
+  Security, Egress Options
+- **DNS policy** — Ad Blocking, Groups, Policies
+- **Monitoring** — Traffic History, Query Log, Alerts, System Log, Diagnostics
+- **App** — App, REST API, Connect Guide, About
 
-if curl -skf --max-time 5 "$URL" >/dev/null 2>&1; then
-    rm -f "$STATE"
-    exit 0
-fi
+Selecting a row opens the existing screen with a back arrow; the system back
+gesture returns to the list. Search matches section names and English keywords
+(“wireguard” finds Egress Options, “certificate” finds SSL/TLS). The five bottom
+tabs are unchanged.
 
-n=$(cat "$STATE" 2>/dev/null || echo 0)
-case "$n" in
-    ''|*[!0-9]*) n=0 ;;
-esac
-n=$((n + 1))
-echo "$n" > "$STATE"
-logger -t digitdns-healthcheck "health probe failed ($n/3)"
+## Fixed
 
-if [ "$n" -ge 3 ]; then
-    rm -f "$STATE"
-    logger -t digitdns-healthcheck "restarting digitdns after 3 failed probes"
-    /usr/bin/docker restart digitdns >/dev/null 2>&1 || true
-fi
-```
-
-`/etc/systemd/system/digitdns-healthcheck.service`:
-
-```ini
-[Unit]
-Description=DigitDNS panel health probe
-After=docker.service
-Wants=docker.service
-
-[Service]
-Type=oneshot
-Nice=10
-ExecStart=/usr/local/bin/digitdns-healthcheck.sh
-```
-
-`/etc/systemd/system/digitdns-healthcheck.timer`:
-
-```ini
-[Unit]
-Description=Probe the DigitDNS panel every 30 seconds
-
-[Timer]
-OnBootSec=2min
-OnUnitActiveSec=30s
-AccuracySec=5s
-Unit=digitdns-healthcheck.service
-
-[Install]
-WantedBy=timers.target
-```
-
-Enable it:
-
-```bash
-chmod 755 /usr/local/bin/digitdns-healthcheck.sh
-systemctl daemon-reload
-systemctl enable --now digitdns-healthcheck.timer
-```
-
-Adjust the port in the script if `web_port` is not 27586. A plain cron entry or
-an uptime service works too; the endpoint is unauthenticated and contentless.
-
-If you keep your own exec healthcheck anyway, set a high `pids_limit` (for
-example `1048576`) and a long interval, or the leak will eventually wedge the
-container on an affected kernel.
+- The transports notice used to call a tab id that did not exist, hiding every
+  panel and leaving a blank page. It now opens Resolvers and scrolls to Client
+  Transports.
+- Client Transports is no longer filed under “Subscriber portal & TLS”.
+- The phone More button stays lit while Resolvers is open.
+- **Android Domains “Added (newest)” now means newest across every status.**
+  With no chip selected the default view concatenates proxied, paused, blocked
+  and direct rows; reversing that list only reversed the status groups, so the
+  newest proxy sat at the bottom. The list now sorts by the server's stored
+  added time, and new, moved and removed rules keep that stamp correct.
 
 ## Upgrade
 
-In-place upgrades from the dashboard are supported. The release assets include
-the Linux amd64/arm64 hub binary, relay-agent binaries, the offline bundle,
-checksums and their ed25519 signature, and the Android APKs attached from the
-`android-v5.8.19` tag.
+In-place upgrades from the dashboard are supported. Existing bookmarks to
+`/settings` keep working; `/resolvers` is a new clean URL. The Android app is a
+side-loaded companion and keeps its own version line (`android-v5.9.0`).
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.8.19/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.9.0/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.8.19
-docker pull ghcr.io/digitrob/digitdns-agent:5.8.19
-docker pull robmeister/digitdns:5.8.19
-docker pull robmeister/digitdns-agent:5.8.19
+docker pull ghcr.io/digitrob/digitdns:5.9.0
+docker pull ghcr.io/digitrob/digitdns-agent:5.9.0
+docker pull robmeister/digitdns:5.9.0
+docker pull robmeister/digitdns-agent:5.9.0
 ```

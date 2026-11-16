@@ -39,6 +39,16 @@
     <string name="action_done">Done</string>
     <string name="action_dismiss">Dismiss</string>
 
+    <!-- Settings hub groups and search. -->
+    <string name="settings_group_resolvers">Resolvers</string>
+    <string name="settings_group_server">Server &amp; access</string>
+    <string name="settings_group_policy">DNS policy</string>
+    <string name="settings_group_monitoring">Monitoring</string>
+    <string name="settings_group_app">App</string>
+    <string name="settings_search_hint">Search settings…</string>
+    <string name="settings_search_empty">No settings match that search.</string>
+    <string name="settings_back">Back to settings</string>
+
     <!-- Settings hub sections. -->
     <string name="settings_app">App</string>
     <string name="settings_servers">Servers</string>

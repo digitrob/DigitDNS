@@ -35,6 +35,8 @@ data class HistorySettingsUiState(
     val topClients: String = DEFAULT_TOP_CLIENTS.toString(),
     val excludeClients: String = "",
     val isLoading: Boolean = false,
+    /** False until the first settings read lands; the screen shows a skeleton until then. */
+    val loaded: Boolean = false,
     val isSaving: Boolean = false,
     val unsupported: Boolean = false,
     val saved: Boolean = false,
@@ -63,7 +65,7 @@ class HistorySettingsViewModel @Inject constructor(
             _state.update { it.copy(isLoading = true, error = null, saved = false) }
             try {
                 val settings = repository.settings()
-                _state.update { it.apply(settings).copy(isLoading = false, unsupported = false) }
+                _state.update { it.apply(settings).copy(isLoading = false, unsupported = false, loaded = true) }
             } catch (e: ApiException) {
                 _state.update {
                     if (e.httpStatus == HTTP_NOT_FOUND || e.httpStatus == HTTP_UNAVAILABLE) {

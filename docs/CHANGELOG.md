@@ -6,6 +6,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.9.0] — settings split into Resolvers and Settings
+
+### Added
+- **A new `Resolvers` tab** owns the five cards that configure how the resolver
+  speaks to clients and validates answers: **Client Transports**, **DNSSEC
+  Validation**, **Proxy Leak Protection**, **Proxy IPv6** and **DoH Access
+  Tokens**. It has its own sidebar entry, phone More-sheet entry, clean URL
+  (`/resolvers`) and jump bar. Settings drops from 18 cards to 13.
+- **Every settings section has a jump chip**, and the sticky bar lights the chip
+  for the section currently at the top of the viewport. The command palette
+  indexes every chip, so searching “DNSSEC”, “DoH tokens” or “About” now finds
+  the card instead of only the eight hand-picked sections it knew before.
+- **Every mutating card carries a save-model badge.** The four auto-saving rule
+  cards (blocked domains, DNS rewrites, policy groups, DoH tokens) were silent
+  before; they now say “Auto-saved”.
+- **Pending-edit notes on “Save to apply” cards.** Editing a field on the
+  subscription, TLS, Proxy IPv6, DNSSEC, history or alerts card adds an “Unsaved
+  changes” note to its title, cleared when that card’s own save succeeds. The
+  note is advisory and never blocks navigation; `beforeunload` warns on a reload
+  while a note is showing.
+- **The Android settings hub is a grouped list with search.** Twenty-three
+  sections are organised under Resolvers, Server & access, DNS policy,
+  Monitoring and App, with a search field and a back arrow from each section.
+  The five bottom tabs are unchanged.
+
+### Fixed
+- **The transports notice no longer blanks the panel.** Its button called
+  `switchTab('settings')`, a tab id that does not exist, so `switchTab` hid
+  every `.tab-content` and showed nothing. It now opens Resolvers and scrolls to
+  the transports card. A new test checks every literal `switchTab('…')` target
+  against the panels in the document.
+- **Client Transports is no longer filed under “Subscriber portal & TLS”.** It
+  has its own section heading on the Resolvers tab.
+- **The mobile More button stays lit on the new tab.** `MOBILE_MORE_TABS` is now
+  derived from the sheet markup rather than a second hand-maintained list.
+- **Settings no longer visibly change state after they open.** The web Traffic
+  History card keeps its controls hidden behind a “Loading history settings…”
+  line until the saved policy arrives. Android does the same for Traffic
+  History, the SSL/TLS renewal switches, Query Log and the Egress Options global
+  switch, so a switch is painted once in its saved position.
+- **Android Domains “Added (newest)” sorts across every status.** With no chip
+  selected the default view concatenates proxied, paused, blocked and direct
+  rows; reversing that list only reversed the status groups. The list now sorts
+  by the server's `custom_domain_added` timestamps, and new, moved and removed
+  rules keep that stamp correct.
+
+---
+
 ## 🏷️ [v5.8.19] — the healthcheck can no longer wedge the container
 
 ### Removed

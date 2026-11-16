@@ -185,10 +185,14 @@ fun RelayAgentsScreen(viewModel: RelayAgentsViewModel = hiltViewModel()) {
 
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        RelayGlobalSwitch(
-                            enabled = state.relayGlobalEnabled,
-                            onChange = viewModel::setRelayGlobal,
-                        )
+                        // The switch reads a server setting; painting it before
+                        // the first load shows the default and then flips it.
+                        if (!state.isLoading) {
+                            RelayGlobalSwitch(
+                                enabled = state.relayGlobalEnabled,
+                                onChange = viewModel::setRelayGlobal,
+                            )
+                        }
                         state.relayHubs.forEach { hub ->
                             RelayModeCard(
                                 hub = hub,

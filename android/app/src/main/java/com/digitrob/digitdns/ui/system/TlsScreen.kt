@@ -99,13 +99,18 @@ fun TlsScreen(viewModel: TlsViewModel = hiltViewModel()) {
             IssueCard(state, viewModel)
             CertificateSourceCard(state, viewModel)
             state.run?.takeIf { it.running }?.let { RunCard(it) }
-            SubscriptionAutoRenewCard(
-                enabled = state.subscriptionAutoRenew,
-                busy = state.certAutoRenewBusy,
-                ready = state.config?.subscription != null,
-                onToggle = viewModel::setSubscriptionAutoRenew,
-            )
-            AutoRenewCard(state.autoRenew, viewModel::setAutoRenew)
+            // The renewal flags come from the settings snapshot. Rendering the
+            // switches before it lands showed the defaults (both on) and then
+            // flipped them to the saved policy; wait for the snapshot instead.
+            if (state.config != null) {
+                SubscriptionAutoRenewCard(
+                    enabled = state.subscriptionAutoRenew,
+                    busy = state.certAutoRenewBusy,
+                    ready = state.config?.subscription != null,
+                    onToggle = viewModel::setSubscriptionAutoRenew,
+                )
+                AutoRenewCard(state.autoRenew, viewModel::setAutoRenew)
+            }
         }
     }
     }

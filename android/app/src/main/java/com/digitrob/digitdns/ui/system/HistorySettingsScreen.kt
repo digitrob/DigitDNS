@@ -2,6 +2,7 @@ package com.digitrob.digitdns.ui.system
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +18,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -48,10 +50,12 @@ fun HistorySettingsScreen(viewModel: HistorySettingsViewModel = hiltViewModel())
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (state.unsupported) {
-            UnsupportedHistorySettings()
-        } else {
-            HistoryPolicyCard(state, viewModel)
+        when {
+            state.unsupported -> UnsupportedHistorySettings()
+            // Do not paint the switches with the state defaults: the saved
+            // policy arrives asynchronously and used to make them flip on open.
+            !state.loaded -> HistoryLoadingCard(state, viewModel::load)
+            else -> HistoryPolicyCard(state, viewModel)
         }
     }
 }
@@ -69,6 +73,38 @@ private fun UnsupportedHistorySettings() {
                 style = MaterialTheme.typography.bodyMedium,
                 color = DigitDnsTheme.colors.warning,
             )
+        }
+    }
+}
+
+@Composable
+private fun HistoryLoadingCard(state: HistorySettingsUiState, onRetry: () -> Unit) {
+    PanelCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = stringResource(R.string.history_settings_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            if (state.error == null) {
+                Text(
+                    text = stringResource(R.string.history_settings_loading),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    text = state.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = DigitDnsTheme.colors.danger,
+                )
+                TextButton(
+                    onClick = onRetry,
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.height(32.dp),
+                ) {
+                    Text(stringResource(R.string.action_retry))
+                }
+            }
         }
     }
 }

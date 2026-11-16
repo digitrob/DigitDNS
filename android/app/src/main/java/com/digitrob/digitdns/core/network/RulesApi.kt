@@ -37,6 +37,8 @@ data class RulesResponse(
     @SerialName("custom_blocked") val customBlocked: List<String> = emptyList(),
     @SerialName("custom_direct") val customDirect: List<String> = emptyList(),
     @SerialName("custom_records") val customRecords: Map<String, String> = emptyMap(),
+    /** Domain pattern -> RFC3339 time it was added; drives the "Added" sort. */
+    @SerialName("custom_domain_added") val customDomainAdded: Map<String, String> = emptyMap(),
     /** Services are organisational: id -> display name, domain -> id, id -> icon URL. */
     @SerialName("services") val services: Map<String, String> = emptyMap(),
     @SerialName("domain_services") val domainServices: Map<String, String> = emptyMap(),

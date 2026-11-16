@@ -287,6 +287,10 @@ const SETTINGS_SAVE_MODELS = [
   ['dnssec-card', 'save', 'Save to apply', 'Save & Apply rebinds the running validator; no restart needed.'],
   ['stats-settings-card', 'restart', 'Restart required', 'Retention, top-N limits and the opt-out list apply after a restart.'],
   ['alerts-card', 'save', 'Save to apply', 'Press "Save alerts" to write the change.'],
+  ['blocked-card', 'auto', 'Auto-saved', 'Adding or removing a blocked domain writes immediately.'],
+  ['doh-tokens-card', 'auto', 'Auto-saved', 'Adding or removing a token writes immediately.'],
+  ['dns-rewrites-card', 'auto', 'Auto-saved', 'Saving or removing a rewrite writes immediately.'],
+  ['custom-groups-card', 'auto', 'Auto-saved', 'Saving a group writes immediately.'],
 ];
 
 function applySettingsSaveBadges() {
@@ -302,6 +306,52 @@ function applySettingsSaveBadges() {
     title.appendChild(badge);
   });
 }
+
+// Cards whose button is the only thing that writes them. Editing a field on one
+// of these is a pending change, and the note in the title says so. It is
+// advisory: navigation is never blocked, because switchTab is also the boot and
+// popstate path and a confirm there would desynchronise the URL from the view.
+const SETTINGS_DIRTY_CARDS = new Set(
+  SETTINGS_SAVE_MODELS.filter(([, model]) => model === 'save').map(([id]) => id)
+);
+const settingsDirty = new Set();
+
+function setSettingsDirty(id, dirty) {
+  const card = document.getElementById(id);
+  if (!card) return;
+  if (dirty) settingsDirty.add(id); else settingsDirty.delete(id);
+  const title = card.querySelector('.panel-card-title, .panel-card-header');
+  if (!title) return;
+  const existing = card.querySelector('.settings-dirty-note');
+  if (!dirty) {
+    if (existing) existing.remove();
+    return;
+  }
+  if (!existing) {
+    const note = document.createElement('span');
+    note.className = 'settings-dirty-note';
+    note.textContent = 'Unsaved changes';
+    title.appendChild(note);
+  }
+}
+
+// markSettingsClean is called by each card's own save handler on success, so the
+// note disappears only when the server has accepted the values.
+function markSettingsClean(id) {
+  setSettingsDirty(id, false);
+}
+
+function noteSettingsEdit(e) {
+  const card = e.target.closest?.('.panel-card');
+  if (card && card.id && SETTINGS_DIRTY_CARDS.has(card.id)) setSettingsDirty(card.id, true);
+}
+document.addEventListener('input', noteSettingsEdit);
+document.addEventListener('change', noteSettingsEdit);
+window.addEventListener('beforeunload', (e) => {
+  if (!settingsDirty.size) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 // errorMessage pulls the server's explanation out of a failed response. Handlers
 // answer with {"error":"..."} and the text is the actionable part — which policy
@@ -2957,7 +3007,11 @@ document.addEventListener('click', (e) => {
   if (!btn) return;
   const action = btn.dataset.noticeAction;
   if (action === 'transports') {
-    switchTab('settings', false);
+    // Client Transports lives on the Resolvers tab. This used to pass the old
+    // "settings" tab id, which has no panel, so every tab was hidden and the
+    // click blanked the page. The URL is updated too: a reload must come back
+    // to the tab the notice opened.
+    switchTab('resolvers');
     requestAnimationFrame(() => document.getElementById('transports-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
   } else if (action === 'upstreams') {
     switchTab('dashboard', false);
@@ -3849,6 +3903,7 @@ async function saveDNSSECSettings() {
     }
     dnssecSettings = normalizeDNSSECSettings(await res.json());
     syncDNSSECControls();
+    markSettingsClean('dnssec-card');
     if (status) status.textContent = dnssecSettings.restart_required ? 'Saved — restart required.' : 'Applied.';
     showToast(dnssecSettings.restart_required
       ? 'DNSSEC settings saved — restart to apply'
@@ -3924,6 +3979,7 @@ async function saveProxyIPv6Settings() {
     currentConfig.server.public_ipv6 = data.public_ipv6 || '';
     currentConfig.server.proxy_ipv6_enabled = data.proxy_ipv6_enabled === true;
     renderProxyIPv6Controls();
+    markSettingsClean('proxy-ipv6-card');
     if (typeof renderAgents === 'function') renderAgents();
     if (status) status.textContent = 'Saved.';
     showToast(enabled ? 'Proxy IPv6 enabled' : 'Proxy IPv6 disabled', enabled ? 'success' : 'warning');
@@ -8947,8 +9003,23 @@ function setStatsSettingsStatus(message) {
   if (el) el.textContent = message || '';
 }
 
+function setStatsSettingsLoading(message) {
+  const el = document.getElementById('stats-settings-loading');
+  if (!el) return;
+  el.textContent = message || '';
+  el.classList.toggle('hidden', !message);
+}
+
+// The history card is read from /api/stats/settings when Settings opens. Its
+// controls stay hidden until that read lands, so the saved policy is the first
+// thing painted instead of the markup's unchecked defaults flipping on.
+let statsSettingsLoaded = false;
+let statsSettingsLoading = false;
+
 async function loadStatsSettings() {
-  if (!authToken) return;
+  if (!authToken || statsSettingsLoaded || statsSettingsLoading) return;
+  statsSettingsLoading = true;
+  setStatsSettingsLoading('Loading history settings…');
   try {
     const res = await fetch(api('/api/stats/settings'), {
       headers: { 'Authorization': `Bearer ${authToken}` },
@@ -8970,9 +9041,16 @@ async function loadStatsSettings() {
     set('stats-top-clients-input', settings.top_clients);
     const excluded = Array.isArray(settings.exclude_clients) ? settings.exclude_clients.join('\n') : '';
     set('stats-exclude-clients-input', excluded);
+    statsSettingsLoaded = true;
+    revealServerSwitch('stats-settings-body');
+    setStatsSettingsLoading('');
     setStatsSettingsStatus('Restart required after changing these values.');
   } catch (e) {
-    setStatsSettingsStatus(e.message || 'Could not load history settings.');
+    // Keep the controls hidden: saving the markup defaults over a policy that
+    // never loaded is worse than showing the error and letting a reopen retry.
+    setStatsSettingsLoading(e.message || 'Could not load history settings.');
+  } finally {
+    statsSettingsLoading = false;
   }
 }
 
@@ -9022,6 +9100,7 @@ async function saveStatsSettings() {
       }),
     });
     if (!res.ok) throw new Error(await errorMessage(res, 'Could not save history settings'));
+    markSettingsClean('stats-settings-card');
     setStatsSettingsStatus('Saved. Restart the daemon to apply.');
     showToast('History settings saved. Restart required.', 'success');
   } catch (e) {
@@ -11572,6 +11651,7 @@ const tabRoutes = {
   'stream': '/logs',
   'systemlog': '/system-log',
   'api': '/api',
+  'resolvers': '/resolvers',
   'rules': '/settings',
   'connect': '/guide'
 };
@@ -11590,14 +11670,19 @@ const routeTabs = {
   '/stream': 'stream',
   '/system-log': 'systemlog',
   '/api': 'api',
+  '/resolvers': 'resolvers',
   '/settings': 'rules',
   '/guide': 'connect',
   '/connect': 'connect'
 };
 
-// Tabs that live in the phone's More sheet rather than in its bottom bar. Kept
-// beside switchTab because the bar and the sheet are one control split in two.
-const MOBILE_MORE_TABS = ['agents', 'tools', 'systemlog', 'api', 'rules', 'connect'];
+// Tabs that live in the phone's More sheet rather than in its bottom bar. Derived
+// from the sheet itself: a row added to the markup cannot be forgotten here, and
+// the More button stays lit for it. The sheet is parsed before this script runs
+// (app.js is the last element in the body).
+const MOBILE_MORE_TABS = Array.from(document.querySelectorAll('.mobile-more-item'))
+  .map((item) => item.dataset.tab)
+  .filter(Boolean);
 
 function syncMobileMore(target) {
   const moreBtn = document.getElementById('mobile-more-btn');
@@ -11708,11 +11793,13 @@ function switchTab(target, updateUrl = true, loadData = true) {
       } else {
         stopSystemLogPolling();
       }
-      if (target === 'rules') {
-        // Refresh the saved-vs-running comparison every time Settings opens,
+      if (target === 'resolvers') {
+        // Refresh the saved-vs-running comparison every time Resolvers opens,
         // so a restart performed elsewhere in the panel clears the pending note.
         loadDNSSECSettings();
         loadProxyLeakSettings();
+      }
+      if (target === 'rules') {
         loadResolutionSettings();
         loadStatsSettings();
       }
@@ -11745,6 +11832,9 @@ function switchTab(target, updateUrl = true, loadData = true) {
 
   safeFeatherReplace();
   document.documentElement?.classList.remove('boot-pending');
+  // Land on the chip for the section the browser restored to. Guarded because
+  // tests lift switchTab out of this file without the rest of the module.
+  if (typeof scheduleSettingsSpy === 'function') scheduleSettingsSpy();
 }
 
 function handleRouteFromURL(loadData = true) {
@@ -13292,6 +13382,7 @@ async function saveAlerts(showToastOnSuccess = true) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Could not save alerts');
     renderAlerts(data.alerts || payload, data.history || []);
+    markSettingsClean('alerts-card');
     if (status) status.textContent = 'Saved.';
     if (showToastOnSuccess) showToast('Alert settings saved.', 'success');
     return true;
@@ -13364,15 +13455,28 @@ function initCommandPalette() {
     if (!tab || commands.some((c) => c.id === 'tab:' + tab)) return;
     commands.push({ id: 'tab:' + tab, group: 'Tab', label, action: () => switchTab(tab) });
   });
-  document.querySelectorAll('[data-settings-jump]').forEach((btn) => {
-    const target = btn.dataset.settingsJump;
-    const label = (btn.textContent || '').trim() || target;
-    if (!target || commands.some((c) => c.id === 'jump:' + target)) return;
-    commands.push({ id: 'jump:' + target, group: 'Settings', label, action: () => {
-      if (activeDashTab !== 'rules') switchTab('rules');
+  // Every card on Settings and Resolvers is a search result, with the title
+  // read from the card itself. Indexing only the jump chips lost the cards
+  // whose chip is a shortened label: searching "DNSSEC" found nothing because
+  // the Resolvers chip says "Protection". A card added to either page is
+  // searchable the day it lands.
+  document.querySelectorAll('#tab-rules .panel-card[id], #tab-resolvers .panel-card[id]').forEach((card) => {
+    const panel = card.closest('.tab-content');
+    const tab = panel && panel.id ? panel.id.replace(/^tab-/, '') : '';
+    if (!tab || !card.id) return;
+    const title = card.querySelector('.panel-card-title, .panel-card-header');
+    let label = card.id;
+    if (title) {
+      const clone = title.cloneNode(true);
+      clone.querySelectorAll('.apply-badge, .settings-dirty-note').forEach((n) => n.remove());
+      label = (clone.textContent || '').replace(/\s+/g, ' ').trim() || card.id;
+    }
+    const id = 'card:' + tab + ':' + card.id;
+    if (commands.some((c) => c.id === id)) return;
+    commands.push({ id, group: tab === 'resolvers' ? 'Resolvers' : 'Settings', label, action: () => {
+      if (activeDashTab !== tab) switchTab(tab);
       requestAnimationFrame(() => {
-        const el = document.getElementById(target);
-        if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        document.getElementById(card.id)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
       });
     }});
   });
@@ -13408,9 +13512,14 @@ function initCommandPalette() {
   }
 
   function filter(q) {
-    const needle = (q || '').trim().toLowerCase();
-    filtered = needle
-      ? commands.filter((c) => c.label.toLowerCase().includes(needle) || c.group.toLowerCase().includes(needle))
+    // Every word must match, in any order: "doh tokens" finds "DoH Secret
+    // Tokens", which a single-substring match missed.
+    const terms = (q || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    filtered = terms.length
+      ? commands.filter((c) => {
+          const hay = (c.label + ' ' + c.group).toLowerCase();
+          return terms.every((term) => hay.includes(term));
+        })
       : commands.slice();
     activeIndex = 0;
     render();
@@ -13670,6 +13779,7 @@ function initEventListeners() {
         }
         // Refresh everything the domain touches: the config (which carries
         // the records and origins), then the sections rendered from it.
+        markSettingsClean('tls-card');
         await loadConfig();
         if (typeof window.renderSubscriptionSettings === 'function') window.renderSubscriptionSettings();
         if (typeof loadClients === 'function') loadClients();
@@ -13861,6 +13971,7 @@ function initEventListeners() {
           showToast(out.detail || 'Certificate installed and applied.', 'success');
         }
         if (statusEl) statusEl.textContent = 'applied';
+        markSettingsClean('tls-card');
         await loadConfig();
         renderTLSCertDetails(currentConfig);
         if (typeof window.renderSubscriptionSettings === 'function') window.renderSubscriptionSettings();
@@ -13908,6 +14019,7 @@ function initEventListeners() {
           return;
         }
         showToast(enabled ? `${label} auto-renew enabled.` : `${label} auto-renew disabled.`, 'success');
+        markSettingsClean('tls-card');
         await loadConfig();
         if (typeof window.renderSubscriptionSettings === 'function') window.renderSubscriptionSettings();
       } catch (e) {
@@ -17427,12 +17539,13 @@ function initDiffModal() {
 // =======================================================
 // SETTINGS SECTION JUMP BAR
 // =======================================================
-// The Settings tab stacks fifteen cards on one page. The chips above them move the
-// viewport to a card rather than hiding the rest: filtering would take controls out
-// of the document an operator is searching, and would need to know about every card
-// in the tab to keep working whenever one is added. A jump cannot fall out of date.
-function jumpToSettingsSection(target) {
-  const section = document.getElementById('tab-rules');
+// Settings and Resolvers are both card grids with a sticky jump bar. A chip moves
+// the viewport to a card rather than hiding the rest: filtering would take controls
+// out of the document an operator is searching, and would need to know about every
+// card in the tab to keep working whenever one is added. A jump cannot fall out of
+// date. The panel is passed in because the chip bar exists on two tabs now.
+function jumpToSection(target, panel) {
+  const section = panel || document.getElementById('tab-rules');
   const dest = (!target || target === 'top')
     ? section
     : document.getElementById(target);
@@ -17444,15 +17557,59 @@ function jumpToSettingsSection(target) {
   dest.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
 }
 
-document.addEventListener('click', (e) => {
-  const chip = e.target.closest?.('[data-settings-jump]');
-  if (!chip) return;
-  jumpToSettingsSection(chip.getAttribute('data-settings-jump'));
-  document.querySelectorAll('[data-settings-jump]').forEach((c) => {
-    const on = c === chip;
+// updateSettingsSpy lights the chip for the section at the top of the viewport.
+// A scroll comparison beats an IntersectionObserver here because the chips are
+// ordered: the active one is the last heading that has passed the sticky bar, not
+// any element that happens to intersect. Only the visible panel participates.
+function updateSettingsSpy() {
+  const panel = document.getElementById('tab-' + activeDashTab);
+  if (!panel || !panel.classList.contains('settings-layout')) return;
+  const chips = Array.from(panel.querySelectorAll('[data-settings-jump]'));
+  if (!chips.length) return;
+  const offset = 140;
+  let active = chips[0];
+  for (const chip of chips) {
+    const target = chip.getAttribute('data-settings-jump');
+    if (!target || target === 'top') continue;
+    const el = document.getElementById(target);
+    if (el && el.getBoundingClientRect().top <= offset) active = chip;
+  }
+  // At the end of the page the last section is on screen but its top is still
+  // below the bar, so the loop above would keep the previous chip lit.
+  const doc = document.documentElement;
+  if (window.innerHeight + window.scrollY >= doc.scrollHeight - 4) {
+    active = chips[chips.length - 1];
+  }
+  chips.forEach((c) => {
+    const on = c === active;
     c.classList.toggle('is-active', on);
     c.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
+}
+
+var settingsSpyFrame = 0;
+function scheduleSettingsSpy() {
+  if (settingsSpyFrame) return;
+  settingsSpyFrame = requestAnimationFrame(() => {
+    settingsSpyFrame = 0;
+    updateSettingsSpy();
+  });
+}
+window.addEventListener('scroll', scheduleSettingsSpy, { passive: true });
+window.addEventListener('resize', scheduleSettingsSpy);
+
+document.addEventListener('click', (e) => {
+  const chip = e.target.closest?.('[data-settings-jump]');
+  if (!chip) return;
+  const panel = chip.closest('.tab-content');
+  jumpToSection(chip.getAttribute('data-settings-jump'), panel);
+  if (panel) {
+    panel.querySelectorAll('[data-settings-jump]').forEach((c) => {
+      const on = c === chip;
+      c.classList.toggle('is-active', on);
+      c.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
 });
 
 // =======================================================

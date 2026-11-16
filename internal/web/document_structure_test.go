@@ -27,7 +27,7 @@ func TestIndexHTMLSectionsAreDivBalanced(t *testing.T) {
 	doc := readAsset(t, "index.html")
 	sections := []string{
 		"tab-dashboard", "tab-clients",
-		"tab-stream", "tab-api", "tab-rules", "tab-connect",
+		"tab-stream", "tab-api", "tab-resolvers", "tab-rules", "tab-connect",
 	}
 	pos := make([]int, len(sections))
 	for i, id := range sections {

@@ -1555,6 +1555,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 			"/agents":     true,
 			"/tools":      true,
 			"/api":        true,
+			"/resolvers":  true,
 			"/settings":   true,
 			"/guide":      true,
 			"/connect":    true,

@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.IOException
+import java.time.Instant
 import java.util.Locale
 import javax.inject.Inject
 import timber.log.Timber
@@ -320,9 +321,23 @@ data class RulesUiState(
             val searched = byService.filter {
                 search.isBlank() || it.domain.contains(search.trim(), ignoreCase = true)
             }
+            // "Added" is a property of the rule, not of the list it happens to
+            // sit in. Reversing the concatenated proxied/paused/blocked/direct
+            // rows only reversed the status groups, so with no chip selected the
+            // newest proxy was at the bottom. Sort by the server's stamps when
+            // they exist, and keep the old reverse as the legacy fallback.
+            val added = lists.domainAdded
+            fun stamp(domain: String): Long {
+                val base = domain.removePrefix("*.")
+                val raw = added[domain] ?: added[base]
+                return raw?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() } ?: 0L
+            }
+            val anyStamp = searched.any { stamp(it.domain) > 0 }
             return when (sort) {
-                DomainSort.ADDED_DESC -> searched.reversed()
-                DomainSort.ADDED_ASC -> searched
+                DomainSort.ADDED_DESC ->
+                    if (anyStamp) searched.sortedByDescending { stamp(it.domain) } else searched.reversed()
+                DomainSort.ADDED_ASC ->
+                    if (anyStamp) searched.sortedBy { stamp(it.domain) } else searched
                 // A wildcard row keeps its base's alphabetical slot, so a scope
                 // change does not move it under A-Z.
                 DomainSort.AZ -> searched.sortedWith(
@@ -719,7 +734,13 @@ class RulesViewModel @Inject constructor(
         if (domains.isEmpty()) return
         viewModelScope.launch {
             val merged = (_state.value.lists.proxied + domains).distinct()
-            write(_state.value.lists.copy(proxied = merged), "Added ${domains.size} domain(s).")
+            // Stamp the new names locally too: the server assigns the same kind
+            // of timestamp on save, and without it a just-added row sorted to
+            // the bottom under "Added (newest)" until the next reload.
+            write(
+                _state.value.lists.copy(proxied = merged).withAddedStamps(domains),
+                "Added ${domains.size} domain(s).",
+            )
         }
     }
 
@@ -751,6 +772,9 @@ class RulesViewModel @Inject constructor(
                 // The server prunes a label whose domain is gone; doing it here keeps
                 // the screen from showing a label the next save would drop anyway.
                 domainServices = lists.domainServices - domain.normalizedDomain(),
+                // Drop the Added stamp with the rule, so re-adding the name later
+                // puts it at the top instead of in its old position.
+                domainAdded = lists.domainAdded - domain,
             )
             write(next, "Removed $domain.")
         }
@@ -807,7 +831,13 @@ class RulesViewModel @Inject constructor(
                 RouteAction.Direct -> "Routing direct"
                 RouteAction.Remove -> "Removed"
             }
-            write(next, "$verb ${unique.joinToString(" + ")}.")
+            // A move or scope change keeps the rule's original Added position;
+            // a brand-new rule is stamped now. A removal must not re-add stamps
+            // for the names it just deleted.
+            write(
+                next.stampRouteAction(action, unique, addedStampFor(lists, origin)),
+                "$verb ${unique.joinToString(" + ")}.",
+            )
         }
     }
 
@@ -867,6 +897,46 @@ class RulesViewModel @Inject constructor(
         } catch (e: IOException) {
             _state.update { it.copy(isSaving = false, error = e.message ?: "Could not save rules.") }
         }
+    }
+
+    /**
+     * Give any pattern without a stored Added time one, so a newly written rule
+     * lands at the top of "Added (newest)" before the server's next read. A moved
+     * or scope-renamed rule passes its old stamp in [inherited] and keeps its slot.
+     */
+    /** The Added stamp already stored for [origin], if any, so a move keeps its slot. */
+    private fun addedStampFor(lists: RuleLists, origin: String?): String? {
+        if (origin == null) return null
+        val base = origin.removePrefix("*.")
+        return lists.domainAdded[origin] ?: lists.domainAdded[base] ?: lists.domainAdded["*.$base"]
+    }
+
+    /** A removal drops the stamps; every other action stamps a brand-new rule. */
+    private fun RuleLists.stampRouteAction(
+        action: RouteAction,
+        domains: List<String>,
+        inherited: String?,
+    ): RuleLists = if (action == RouteAction.Remove) {
+        copy(domainAdded = domainAdded - domains.toSet())
+    } else {
+        withAddedStamps(domains, inherited)
+    }
+
+    private fun RuleLists.withAddedStamps(
+        domains: Collection<String>,
+        inherited: String? = null,
+    ): RuleLists {
+        if (domains.isEmpty()) return this
+        val now = Instant.now().toString()
+        val stamps = domainAdded.toMutableMap()
+        var changed = false
+        for (domain in domains) {
+            if (stamps[domain].isNullOrBlank()) {
+                stamps[domain] = inherited ?: now
+                changed = true
+            }
+        }
+        return if (changed) copy(domainAdded = stamps) else this
     }
 
     /** Trim whitespace and a stray trailing dot; lowercase so the list stays consistent. */

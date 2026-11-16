@@ -72,6 +72,28 @@ class RulesUiStateTest {
     }
 
     @Test
+    fun `added-desc with no chip sorts every status by its stamp`() {
+        // The default view concatenates proxied, paused, blocked and direct rows.
+        // Reversing that list only reversed the status groups, so the newest
+        // proxy sat at the bottom until a chip was tapped.
+        val stamped = RuleLists(
+            proxied = listOf("old-proxy.com"),
+            blocked = listOf("new-block.com"),
+            direct = listOf("mid-direct.com"),
+            domainAdded = mapOf(
+                "old-proxy.com" to "2026-01-01T00:00:00Z",
+                "mid-direct.com" to "2026-02-01T00:00:00Z",
+                "new-block.com" to "2026-03-01T00:00:00Z",
+            ),
+        )
+        val state = RulesUiState(lists = stamped, sort = DomainSort.ADDED_DESC)
+        assertEquals(
+            listOf("new-block.com", "mid-direct.com", "old-proxy.com"),
+            state.rows.map { it.domain },
+        )
+    }
+
+    @Test
     fun `search filters the rows case-insensitively`() {
         val state = RulesUiState(lists = lists, search = "B.C", sort = DomainSort.AZ)
         assertEquals(listOf("b.com"), state.rows.map { it.domain })

@@ -37,6 +37,8 @@ data class QueryLogUiState(
     val nextCursor: String = "",
     val hasMore: Boolean = false,
     val isLoading: Boolean = false,
+    /** False until the saved query-log policy lands; the settings card waits for it. */
+    val settingsLoaded: Boolean = false,
     val isLoadingMore: Boolean = false,
     val isSaving: Boolean = false,
     val error: String? = null,
@@ -58,7 +60,7 @@ class QueryLogViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val envelope = repository.settings()
-                _state.update { it.copy(settings = envelope.settings, usage = envelope.usage) }
+                _state.update { it.copy(settings = envelope.settings, usage = envelope.usage, settingsLoaded = true) }
             } catch (e: ApiException) {
                 _state.update { it.copy(error = e.userMessage) }
             } catch (e: IOException) {

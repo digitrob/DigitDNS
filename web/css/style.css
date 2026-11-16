@@ -1764,28 +1764,33 @@ input:checked + .slider:before {
   border-top: 1px solid var(--border-color);
 }
 
-/* The Settings tab is a card grid, not one long stack. Cards marked
+/* Settings and Resolvers are card grids, not one long stack. Cards marked
    .settings-wide keep their full-width form/table geometry; the rest share a
    row so simple cards do not each consume a screenful. The :not(.hidden) guard
    is load-bearing: the tab is toggled with .hidden, and an unconditional
    display:grid here would win the specificity fight and show it at boot. */
-#tab-rules.settings-layout:not(.hidden) {
+#tab-rules.settings-layout:not(.hidden),
+#tab-resolvers.settings-layout:not(.hidden) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
-#tab-rules.settings-layout > * {
+#tab-rules.settings-layout > *,
+#tab-resolvers.settings-layout > * {
   margin-top: 0;
 }
-#tab-rules.settings-layout .panel-card {
+#tab-rules.settings-layout .panel-card,
+#tab-resolvers.settings-layout .panel-card {
   padding: 1.1rem 1.25rem;
 }
 @media (min-width: 1100px) {
-  #tab-rules.settings-layout:not(.hidden) {
+  #tab-rules.settings-layout:not(.hidden),
+  #tab-resolvers.settings-layout:not(.hidden) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.25rem;
   }
-  #tab-rules.settings-layout > .settings-wide {
+  #tab-rules.settings-layout > .settings-wide,
+  #tab-resolvers.settings-layout > .settings-wide {
     grid-column: 1 / -1;
   }
 }
@@ -1825,20 +1830,24 @@ html[data-boot-tab="clients"] #tab-clients,
 html[data-boot-tab="stream"] #tab-stream,
 html[data-boot-tab="systemlog"] #tab-systemlog,
 html[data-boot-tab="api"] #tab-api,
+html[data-boot-tab="resolvers"] #tab-resolvers,
 html[data-boot-tab="connect"] #tab-connect {
   display: block;
 }
-html[data-boot-tab="rules"] #tab-rules.settings-layout {
+html[data-boot-tab="rules"] #tab-rules.settings-layout,
+html[data-boot-tab="resolvers"] #tab-resolvers.settings-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
 @media (min-width: 1100px) {
-  html[data-boot-tab="rules"] #tab-rules.settings-layout {
+  html[data-boot-tab="rules"] #tab-rules.settings-layout,
+  html[data-boot-tab="resolvers"] #tab-resolvers.settings-layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.25rem;
   }
-  html[data-boot-tab="rules"] #tab-rules.settings-layout > .settings-wide {
+  html[data-boot-tab="rules"] #tab-rules.settings-layout > .settings-wide,
+  html[data-boot-tab="resolvers"] #tab-resolvers.settings-layout > .settings-wide {
     grid-column: 1 / -1;
   }
 }
@@ -3337,6 +3346,27 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   color: rgb(var(--c-amber-400));
   border-color: rgb(var(--c-amber-400) / 0.3);
   background-color: rgb(var(--c-amber-400) / 0.08);
+}
+
+/* Pending-edit note on a "Save to apply" card. Advisory only: it says the card
+   has unsaved edits and is cleared by the card's own save handler. It never
+   blocks navigation, because the same switchTab runs from popstate and boot. */
+.settings-dirty-note {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: 8px;
+  padding: 1px 6px;
+  border: 1px solid rgb(var(--c-amber-400) / 0.4);
+  border-radius: 999px;
+  background-color: rgb(var(--c-amber-400) / 0.1);
+  color: rgb(var(--c-amber-300));
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 /* Failed-read banner inside a settings card. Colours come from utilities; this
@@ -5665,7 +5695,7 @@ html.dash-layout-pending #tab-dashboard {
    .settings-pair wrapper), so the margin is set on any identified element in the
    tab; scroll-margin only matters when that element is scrolled to, so the reach is
    harmless. */
-#tab-rules [id] {
+.settings-layout [id] {
   scroll-margin-top: 5rem;
 }
 @media (min-width: 768px) {

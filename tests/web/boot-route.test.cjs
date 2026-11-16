@@ -26,8 +26,12 @@ test('the pre-paint route map matches the dashboard router', () => {
   );
 });
 
-test('the stylesheet gives boot routing a tab-specific selector', () => {
-  for (const tab of ['dashboard', 'proxied', 'filters', 'agents', 'clients', 'stream', 'api', 'rules', 'connect']) {
+test('the stylesheet gives every routed tab a boot selector', () => {
+  // Derived from the router rather than listed here: a new tab that forgets its
+  // boot selector paints an empty content column until app.js runs, and a
+  // hand-maintained list let tools/systemlog go unchecked.
+  const runtime = Function(`return (${objectLiteral(source, 'const routeTabs =')})`)();
+  for (const tab of new Set(Object.values(runtime))) {
     assert.ok(
       css.includes(`html[data-boot-tab="${tab}"]`),
       `no boot selector for ${tab}`,

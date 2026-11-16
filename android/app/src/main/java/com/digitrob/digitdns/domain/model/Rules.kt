@@ -16,6 +16,8 @@ data class RuleLists(
     val blocked: List<String> = emptyList(),
     val direct: List<String> = emptyList(),
     val records: Map<String, String> = emptyMap(),
+    /** Domain pattern -> RFC3339 time it was added; drives the "Added" sort. */
+    val domainAdded: Map<String, String> = emptyMap(),
     /** Service id -> display name. A label, never a routing decision. */
     val services: Map<String, String> = emptyMap(),
     /** Domain -> service id. A domain without an entry has no service. */
@@ -68,6 +70,7 @@ data class RuleLists(
             blocked = dto.customBlocked,
             direct = dto.customDirect,
             records = dto.customRecords,
+            domainAdded = dto.customDomainAdded,
             services = dto.services,
             domainServices = dto.domainServices,
             serviceIcons = dto.serviceIcons,

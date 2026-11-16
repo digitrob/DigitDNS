@@ -358,6 +358,9 @@ function initSubscriptionSettings() {
       if (typeof loadClients === 'function') {
         loadClients();
       }
+      // The values are stored even when the listener could not bind, so the
+      // pending-edit note clears before that separate failure is reported.
+      if (typeof window.markSettingsClean === 'function') window.markSettingsClean('subscription-card');
       if (data && data.listener_error) {
         // The record saved but the port could not be bound — most often a port
         // another process already holds. Saying "Saved." here would be the same

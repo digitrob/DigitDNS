@@ -215,6 +215,24 @@ private fun UsageLine(records: Long, bytes: Long, maxMb: Int) {
 }
 
 @Composable
+private fun QueryLogSettingsLoading(state: QueryLogUiState) {
+    PanelCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Query search", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = state.error ?: "Loading query log settings…",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (state.error != null) {
+                    DigitDnsTheme.colors.danger
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
+    }
+}
+
+@Composable
 @Suppress("LongMethod")
 private fun SettingsCard(state: QueryLogUiState, viewModel: QueryLogViewModel) {
     PanelCard(modifier = Modifier.fillMaxWidth()) {
@@ -408,7 +426,13 @@ fun QueryLogScreen(viewModel: QueryLogViewModel = hiltViewModel()) {
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item { SettingsCard(state, viewModel) }
+        item {
+            if (state.settingsLoaded) {
+                SettingsCard(state, viewModel)
+            } else {
+                QueryLogSettingsLoading(state)
+            }
+        }
         item { FiltersCard(state, viewModel) }
         if (state.items.isEmpty()) {
             item {

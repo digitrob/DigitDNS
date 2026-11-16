@@ -64,7 +64,8 @@
           '/home': 'dashboard', '/dashboard': 'dashboard', '/panel': 'dashboard',
           '/login': 'dashboard', '/proxied': 'proxied', '/filters': 'filters',
           '/agents': 'agents', '/tools': 'tools', '/clients': 'clients', '/logs': 'stream',
-          '/stream': 'stream', '/system-log': 'systemlog', '/api': 'api', '/settings': 'rules',
+          '/stream': 'stream', '/system-log': 'systemlog', '/api': 'api',
+          '/resolvers': 'resolvers', '/settings': 'rules',
           '/guide': 'connect', '/connect': 'connect'
         };
         document.documentElement.classList.add('boot-pending');
@@ -953,6 +954,10 @@
         <button class="sidebar-nav-item" data-tab="api" data-route="/api">
           <i data-feather="code" class="w-4 h-4"></i>
           <span>API</span>
+        </button>
+        <button class="sidebar-nav-item" data-tab="resolvers" data-route="/resolvers">
+          <i data-feather="radio" class="w-4 h-4"></i>
+          <span>Resolvers</span>
         </button>
         <button class="sidebar-nav-item" data-tab="rules" data-route="/settings">
           <i data-feather="sliders" class="w-4 h-4"></i>
@@ -2730,22 +2735,512 @@ async function onBuySubscription(ctx, username) {
       <!-- ============================================== -->
       <!-- TAB 4: CUSTOM RULES, SSL & ACCESS CONTROL -->
       <!-- ============================================== -->
+      <!-- ============================================== -->
+      <!-- TAB: RESOLVERS — transports, protection and tokens -->
+      <!-- ============================================== -->
+      <section id="tab-resolvers" class="tab-content space-y-6 hidden settings-layout">
+        <nav class="settings-jump settings-wide" aria-label="Resolver sections">
+          <button type="button" class="panel-chip is-active" data-settings-jump="top" aria-pressed="true">All</button>
+          <button type="button" class="panel-chip" data-settings-jump="transports-card" aria-pressed="false">Transports</button>
+          <button type="button" class="panel-chip" data-settings-jump="proxy-leak-card" aria-pressed="false">Protection</button>
+          <button type="button" class="panel-chip" data-settings-jump="doh-tokens-card" aria-pressed="false">Tokens</button>
+        </nav>
+
+        <h3 class="settings-section-heading settings-wide">Client transports</h3>
+        <!-- Every client-facing way into the resolver. The order is the order
+             an operator should think in: plain DNS first, then DoT/DoH, then the
+             QUIC alternatives and DNSCrypt. mTLS is a policy gate, not a
+             transport, so it spans the full width at the end. Switches and
+             completed fields apply as they are edited. -->
+        <div class="glass-panel panel-card p-5 sm:p-6 settings-wide space-y-4" id="transports-card">
+          <div class="space-y-2">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <div class="flex items-center gap-3 flex-1 min-w-0">
+                <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
+                  <i data-feather="zap" class="w-5 h-5"></i>
+                </div>
+                <h3 class="panel-card-title">Client Transports</h3>
+              </div>
+              <div class="flex items-center gap-2 flex-wrap justify-end">
+                <span id="transports-state-badge" class="badge badge-unknown hidden">Off</span>
+                <span id="transports-off-badge" class="badge badge-cached hidden">Off</span>
+              </div>
+            </div>
+            <!-- Full card width on purpose: the status badges change width as
+                 transports switch on/off, and keeping this line out of their
+                 flex row stops it rewrapping and jumping sideways. -->
+            <p class="text-[11px] text-slate-400">Every client-facing transport in DigitDNS. DoT, DoH, DoH3 and DoQ reuse the SSL/TLS Manager certificate; DNSCrypt and mTLS use their own keys. Changes apply as you edit.</p>
+          </div>
+
+          <div class="transport-grid">
+            <section class="transport-card">
+              <div class="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h4 class="text-xs font-bold text-white font-heading">Plain DNS</h4>
+                  <p class="text-[10px] text-slate-500 mt-0.5">Traditional UDP + TCP resolver for every client that does not encrypt.</p>
+                </div>
+                <div class="flex items-center gap-3 shrink-0">
+                  <span id="plain-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
+                  <label class="transport-toggle switch-cyan">
+                    <input type="checkbox" id="plain-enabled-input" class="transport-toggle-input">
+                    <span class="transport-toggle-label">Enabled</span>
+                    <span class="transport-toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label for="plain-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">UDP + TCP port</label>
+                <input type="number" id="plain-port-input" min="1" max="65535" step="1" value="53" aria-label="Plain DNS port" class="panel-field w-full font-mono text-xs focus:border-cyan-400">
+              </div>
+              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="plain-endpoint" aria-label="Copy plain DNS address">
+                <span id="plain-endpoint" class="font-mono text-cyan-300 break-all">—</span>
+                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
+              </button>
+              <p class="transport-hint">Open UDP and TCP on this port. Disabling it leaves the encrypted transports running.</p>
+            </section>
+
+            <section class="transport-card">
+              <div class="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h4 class="text-xs font-bold text-white font-heading">DoT (DNS-over-TLS)</h4>
+                  <p class="text-[10px] text-slate-500 mt-0.5">The transport Android Private DNS uses. Serves the DoH/DoT certificate.</p>
+                </div>
+                <div class="flex items-center gap-3 shrink-0">
+                  <span id="dot-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
+                  <label class="transport-toggle switch-sky">
+                    <input type="checkbox" id="dot-enabled-input" class="transport-toggle-input">
+                    <span class="transport-toggle-label">Enabled</span>
+                    <span class="transport-toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label for="dot-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">TCP port</label>
+                <input type="number" id="dot-port-input" min="1" max="65535" step="1" value="853" aria-label="DoT port" class="panel-field w-full font-mono text-xs focus:border-cyan-400">
+              </div>
+              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="dot-endpoint" aria-label="Copy DoT URL">
+                <span id="dot-endpoint" class="font-mono text-cyan-300 break-all">—</span>
+                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
+              </button>
+              <div>
+                <label for="dot-auth-select" class="block text-[10px] font-semibold text-slate-400 mb-1">Authentication</label>
+                <select id="dot-auth-select" class="panel-field w-full text-xs focus:border-cyan-400">
+                  <option value="ip">IP allowlist</option>
+                  <option value="sni-token">SNI token</option>
+                </select>
+              </div>
+              <div id="dot-token-fields" class="space-y-2">
+                <div>
+                  <label for="dot-token-domain-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Token domain</label>
+                  <input type="text" id="dot-token-domain-input" placeholder="dot.example.com" class="panel-field w-full font-mono text-xs focus:border-cyan-400">
+                </div>
+                <div class="flex gap-2">
+                  <input type="text" id="new-dot-token-input" aria-label="New DoT token label" placeholder="token label (e.g. phone)" class="panel-field flex-1 min-w-0 font-mono text-xs focus:border-cyan-400">
+                  <button type="button" id="add-dot-token-btn" class="panel-btn panel-btn-primary panel-btn-sm">Add</button>
+                </div>
+                <div id="dot-tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">No DoT tokens yet</div></div>
+              </div>
+              <div class="transport-status-row">
+                <span>Certificate</span>
+                <span class="font-mono text-slate-300">SSL/TLS Manager</span>
+              </div>
+              <p class="transport-hint">Open TCP on this port. SNI-token mode replaces <code>&lt;token&gt;</code> with each client's label and rejects every other ServerName before a query is read.</p>
+            </section>
+
+            <section class="transport-card">
+              <div class="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h4 class="text-xs font-bold text-white font-heading">DoH (DNS-over-HTTPS)</h4>
+                  <p class="text-[10px] text-slate-500 mt-0.5">RFC 8484 over HTTP/2 and HTTP/1.1, with optional bearer tokens.</p>
+                </div>
+                <div class="flex items-center gap-3 shrink-0">
+                  <span id="doh-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
+                  <label class="transport-toggle switch-cyan">
+                    <input type="checkbox" id="doh-enabled-input" class="transport-toggle-input">
+                    <span class="transport-toggle-label">Enabled</span>
+                    <span class="transport-toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label for="doh-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">HTTPS port</label>
+                <input type="number" id="doh-port-input" min="1" max="65535" step="1" value="8443" aria-label="DoH port" class="panel-field w-full font-mono text-xs focus:border-cyan-400">
+              </div>
+              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doh-endpoint" aria-label="Copy DoH URL">
+                <span id="doh-endpoint" class="font-mono text-cyan-300 break-all">—</span>
+                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
+              </button>
+              <div class="transport-status-row">
+                <span>Certificate</span>
+                <span class="font-mono text-slate-300">SSL/TLS Manager</span>
+              </div>
+              <p class="transport-hint">The subscriber portal shares this listener; changing the port moves the portal with it. Tokens are managed in the DoH Secret Tokens card below.</p>
+            </section>
+
+            <section class="transport-card">
+              <div class="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h4 class="text-xs font-bold text-white font-heading">DoQ (DNS-over-QUIC)</h4>
+                  <p class="text-[10px] text-slate-500 mt-0.5">RFC 9250 for clients and routers that support QUIC.</p>
+                </div>
+                <div class="flex items-center gap-3 shrink-0">
+                  <span id="doq-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
+                  <label class="transport-toggle switch-emerald">
+                    <input type="checkbox" id="doq-enabled-input" class="transport-toggle-input">
+                    <span class="transport-toggle-label">Enabled</span>
+                    <span class="transport-toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label for="doq-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">UDP port</label>
+                  <input type="number" id="doq-port-input" min="1" max="65535" step="1" value="853" aria-label="DoQ UDP port" class="panel-field w-full font-mono text-xs focus:border-emerald-400">
+                </div>
+                <div>
+                  <label for="doq-auth-select" class="block text-[10px] font-semibold text-slate-400 mb-1">Authentication</label>
+                  <select id="doq-auth-select" class="panel-field w-full text-xs focus:border-emerald-400">
+                    <option value="ip">IP allowlist</option>
+                    <option value="sni-token">SNI token</option>
+                  </select>
+                </div>
+              </div>
+              <div id="doq-token-fields" class="space-y-2">
+                <div>
+                  <label for="doq-token-domain-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Token domain</label>
+                  <input type="text" id="doq-token-domain-input" placeholder="doq.example.com" class="panel-field w-full font-mono text-xs focus:border-emerald-400">
+                </div>
+                <div class="flex gap-2">
+                  <input type="text" id="new-doq-token-input" aria-label="New DoQ token label" placeholder="token label (e.g. home)" class="panel-field flex-1 min-w-0 font-mono text-xs focus:border-emerald-400">
+                  <button type="button" id="add-doq-token-btn" class="panel-btn panel-btn-primary panel-btn-sm">Add</button>
+                </div>
+                <div id="doq-tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">No DoQ tokens yet</div></div>
+              </div>
+              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doq-endpoint" aria-label="Copy DoQ URL">
+                <span id="doq-endpoint" class="font-mono text-emerald-300 break-all">—</span>
+                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
+              </button>
+              <p id="doq-cert-warning" class="hidden text-[10px] text-amber-300 leading-relaxed">SNI-token mode requires a certificate covering <span class="font-mono">*.&lt;token domain&gt;</span> or every token hostname. The built-in ACME client cannot issue wildcard certificates.</p>
+              <p class="transport-hint">Open UDP 853. In SNI-token mode each client uses its own label in place of <code>&lt;token&gt;</code>.</p>
+            </section>
+
+            <section class="transport-card">
+              <div class="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h4 class="text-xs font-bold text-white font-heading">DoH3 (HTTP/3)</h4>
+                  <p class="text-[10px] text-slate-500 mt-0.5">The same DoH endpoint, negotiated over QUIC automatically.</p>
+                </div>
+                <div class="flex items-center gap-3 shrink-0">
+                  <span id="doh3-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
+                  <label class="transport-toggle switch-cyan">
+                    <input type="checkbox" id="doh3-enabled-input" class="transport-toggle-input">
+                    <span class="transport-toggle-label">Enabled</span>
+                    <span class="transport-toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label for="doh3-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">UDP port (shared with DoH)</label>
+                <input type="text" id="doh3-port-input" readonly aria-label="DoH3 UDP port shared with DoH" class="panel-field w-full font-mono text-xs opacity-60 cursor-not-allowed">
+              </div>
+              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doh3-endpoint" aria-label="Copy DoH3 URL">
+                <span id="doh3-endpoint" class="font-mono text-cyan-300 break-all">—</span>
+                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
+              </button>
+              <p class="transport-hint">DoH3 shares the DoH port over UDP; change it on the DoH card. TCP DoH advertises this endpoint with <code>Alt-Svc</code>.</p>
+            </section>
+
+            <section class="transport-card">
+              <div class="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h4 class="text-xs font-bold text-white font-heading">DNSCrypt</h4>
+                  <p class="text-[10px] text-slate-500 mt-0.5">A stamp-based resolver endpoint with its own provider keys.</p>
+                </div>
+                <div class="flex items-center gap-3 shrink-0">
+                  <span id="dnscrypt-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
+                  <label class="transport-toggle switch-fuchsia">
+                    <input type="checkbox" id="dnscrypt-enabled-input" class="transport-toggle-input">
+                    <span class="transport-toggle-label">Enabled</span>
+                    <span class="transport-toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label for="dnscrypt-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">UDP + TCP port</label>
+                  <input type="number" id="dnscrypt-port-input" min="1" max="65535" step="1" value="5443" aria-label="DNSCrypt port" class="panel-field w-full font-mono text-xs focus:border-fuchsia-400">
+                </div>
+                <div>
+                  <label for="dnscrypt-provider-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Provider name</label>
+                  <input type="text" id="dnscrypt-provider-input" placeholder="digitdns.local" class="panel-field w-full font-mono text-xs focus:border-fuchsia-400">
+                </div>
+              </div>
+              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="dnscrypt-stamp" aria-label="Copy DNSCrypt stamp">
+                <span id="dnscrypt-stamp" class="font-mono text-fuchsia-300 truncate min-w-0" title="—">—</span>
+                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
+              </button>
+              <div class="transport-status-row">
+                <span>DNSCrypt cert expires</span>
+                <span id="dnscrypt-cert-expiry" class="font-mono text-slate-300">—</span>
+              </div>
+              <p class="transport-hint">Open 5443 UDP+TCP: TCP 443 is the SNI proxy. The provider certificate is generated automatically, not by Let’s Encrypt.</p>
+            </section>
+
+            <section class="transport-card transport-span">
+              <div class="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h4 class="text-xs font-bold text-white font-heading">mTLS (client certificates)</h4>
+                  <p class="text-[10px] text-slate-500 mt-0.5">Require a certificate signed by your CA on DoT, DoH, DoH3 and DoQ.</p>
+                </div>
+                <div class="flex items-center gap-3 shrink-0">
+                  <span id="mtls-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
+                  <label class="transport-toggle switch-amber">
+                    <input type="checkbox" id="mtls-enabled-input" class="transport-toggle-input">
+                    <span class="transport-toggle-label">Enabled</span>
+                    <span class="transport-toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+                <div>
+                  <label for="mtls-ca-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Client CA bundle (PEM)</label>
+                  <textarea id="mtls-ca-input" rows="3" spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----" class="panel-field w-full font-mono text-[10px] focus:border-amber-400"></textarea>
+                  <p id="mtls-warning" class="hidden text-[10px] text-amber-300 mt-1">A CA bundle is required when mTLS is on.</p>
+                </div>
+                <div class="transport-note">
+                  <p>The CA verifies client certificates only; it is not a server certificate.</p>
+                  <p>DoT refuses the TLS handshake without a verified client certificate. DoH and DoQ request one but enforce it only on the DNS query path, so the subscriber portal on the DoH port stays reachable.</p>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div id="doq-ip-note" class="transport-note">
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <span class="font-semibold text-slate-200">IP authentication</span>
+              <span id="doq-ip-counts" class="font-mono text-slate-300"></span>
+            </div>
+            <p>Shared by DoQ, DoT and DNSCrypt: a source is accepted when it appears in <span class="font-semibold text-slate-200">Clients → Allowed IPs</span> or <span class="font-semibold text-slate-200">Settings → Access → Server-wide Resolver Allowlist</span>.</p>
+            <p id="doq-ip-warning" class="hidden text-amber-300"></p>
+          </div>
+
+          <div class="transport-footer">
+            <p id="transports-last-error" class="hidden text-[11px] text-red-300 leading-relaxed"></p>
+            <span id="transports-save-status" class="text-[11px] text-slate-400 ms-auto">All changes saved</span>
+          </div>
+        </div>
+
+        <!-- The two DNS policy cards share a row on wide panels and stack on
+             mobile. The built-in root anchors are always visible inside a fixed
+             height block, so the DNSSEC card never grows when it is opened. -->
+        <h3 class="settings-section-heading settings-wide">Resolver protection</h3>
+        <div class="settings-pair settings-wide">
+        <div class="flex flex-col gap-3 min-w-0">
+        <!-- Proxy leak protection. Proxied names must never advertise QUIC or
+             origin address hints through HTTPS/SVCB: those records would let a
+             browser skip the SNI relay. The guard is automatic and has no
+             policy switch. -->
+        <div class="glass-panel panel-card p-4 sm:p-5 space-y-3 flex-none" id="proxy-leak-card">
+          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div class="flex items-start gap-3">
+              <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
+                <i data-feather="shield-off" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="panel-card-title">Proxy Leak Protection</h3>
+                <p class="text-[11px] text-slate-400">
+                  Proxied names never advertise QUIC or the origin's real addresses.
+                  HTTPS and SVCB answers are withheld so clients use the proxied A/AAAA records over TCP.
+                </p>
+              </div>
+            </div>
+            <div id="proxy-leak-controls" class="boot-hide flex items-center gap-3 shrink-0 self-end sm:self-start" style="visibility:hidden">
+              <span id="proxy-leak-badge" class="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">ACTIVE</span>
+              <label class="switch" title="Toggle proxy leak protection">
+                <input type="checkbox" id="proxy-leak-enabled-input" checked aria-label="Enable proxy leak protection">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-1.5">
+              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">HTTPS / SVCB</div>
+              <div class="text-[11px] text-cyan-300 font-mono mt-0.5">withheld</div>
+            </div>
+            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-1.5">
+              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">h3 / QUIC</div>
+              <div class="text-[11px] text-cyan-300 font-mono mt-0.5">not advertised</div>
+            </div>
+            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-1.5">
+              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">IPv4 / IPv6 hint</div>
+              <div class="text-[11px] text-cyan-300 font-mono mt-0.5">removed</div>
+            </div>
+          </div>
+
+          <p class="text-[10px] leading-snug text-slate-500">
+            Live for every <span class="font-mono text-slate-400">Proxy</span> domain; direct names keep normal records.
+          </p>
+          <p id="proxy-leak-off-note" class="hidden rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[10px] leading-snug text-red-300">
+            Protection is off. Proxied names may advertise QUIC and real IPv4/IPv6 hints, allowing clients to bypass the relay.
+          </p>
+          <p class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[10px] leading-snug text-amber-300">
+            Recommended: keep this enabled. Turning it off lets proxied names advertise QUIC and origin IPv4/IPv6 hints,
+            which can bypass the relay. Only change this if you know what you are doing.
+          </p>
+        </div>
+
+        <!-- Proxy IPv6. The server's public IPv6 is published for proxied
+             domains only while the switch is on and the address is valid. With
+             the switch off, proxied AAAA is withheld and the HTTPS/SVCB guard is
+             forced even when Proxy Leak Protection was explicitly disabled. -->
+        <div class="glass-panel panel-card p-4 sm:p-5 flex flex-col gap-3 flex-1 min-h-0" id="proxy-ipv6-card">
+          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div class="flex items-start gap-3">
+              <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
+                <i data-feather="globe" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="panel-card-title">Proxy IPv6</h3>
+                <p class="text-[11px] text-slate-400">
+                  Publish this server's IPv6 for proxied domains. Off keeps clients on the IPv4 relay and blocks every IPv6 hint.
+                </p>
+              </div>
+            </div>
+            <div id="proxy-ipv6-controls" class="boot-hide flex items-center gap-3 shrink-0 self-end sm:self-start" style="visibility:hidden">
+              <span id="proxy-ipv6-badge" class="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800/70 text-slate-400 border border-slate-700">OFF</span>
+              <label class="switch" title="Enable IPv6 for proxied domains">
+                <input type="checkbox" id="proxy-ipv6-enabled" aria-label="Enable IPv6 for proxied domains">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="space-y-2 border-t border-slate-800 pt-4">
+            <label for="proxy-ipv6-input" class="block text-[11px] font-semibold text-slate-400">
+              Public IPv6 <span class="text-slate-500">(globally routable)</span>
+            </label>
+            <input id="proxy-ipv6-input" type="text" spellcheck="false" autocomplete="off"
+              placeholder="2001:db8::1" class="panel-field w-full font-mono text-[11px]">
+            <p class="text-[10px] text-slate-500">
+              The SNI proxy must be reachable on this address. AAAA is withheld when it is empty.
+            </p>
+            <p id="proxy-ipv6-off-note" class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+              IPv6 is off: proxied AAAA is withheld and HTTPS/SVCB hints stay blocked even if proxy leak protection is disabled. Agents switch to IPv4-only on their next heartbeat.
+            </p>
+            <p id="proxy-ipv6-on-note" class="hidden rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-[11px] text-cyan-300">
+              IPv6 is on: proxied AAAA uses this address and agents re-enable IPv6 on their next heartbeat. HTTPS/SVCB remains governed by Proxy Leak Protection.
+            </p>
+          </div>
+
+          <div class="mt-auto flex items-center gap-3 flex-wrap">
+            <button id="save-proxy-ipv6-btn" type="button"
+              class="panel-btn panel-btn-primary">
+              Save IPv6 settings
+            </button>
+            <span id="proxy-ipv6-status" class="text-[11px] text-slate-400"></span>
+          </div>
+        </div>
+        </div>
+
+        <!-- DNSSEC validation. The save applies the policy to the running
+             validator before it responds, so the badge changes without a
+             restart. An empty anchor list means the built-in IANA root KSKs. -->
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4" id="dnssec-card">
+          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div class="flex items-start gap-3">
+              <div class="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                <i data-feather="shield" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="panel-card-title">DNSSEC Validation</h3>
+                <p class="text-[11px] text-slate-400">
+                  Validate the DS/DNSKEY chain, answer signatures and NSEC/NSEC3 denial proofs inside this hub.
+                  Validated answers carry <span class="font-mono text-slate-300">AD</span>; bogus answers return SERVFAIL.
+                </p>
+              </div>
+            </div>
+            <div id="dnssec-controls" class="boot-hide flex items-center gap-3 shrink-0 self-end sm:self-start" style="visibility:hidden">
+              <span id="dnssec-status-badge" class="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800/70 text-slate-400 border border-slate-700">OFF</span>
+              <label class="switch" title="Enable DNSSEC validation">
+                <input type="checkbox" id="dnssec-enabled-input" aria-label="Enable DNSSEC validation">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="space-y-2 border-t border-slate-800 pt-4">
+            <label for="dnssec-anchors-input" class="block text-[11px] font-semibold text-slate-400">
+              Trust anchors <span class="text-slate-500">(DS or DNSKEY, one per line)</span>
+            </label>
+            <textarea id="dnssec-anchors-input" rows="4" spellcheck="false" autocomplete="off"
+              aria-label="DNSSEC trust anchors"
+              placeholder="Leave empty to use the built-in IANA root KSKs (20326, 38696)."
+              class="panel-field w-full font-mono text-[11px]"></textarea>
+            <p class="text-[10px] text-slate-500">
+              Empty uses the built-in IANA root anchors. Custom anchors must name the root
+              (<code class="text-cyan-400">.</code>) and are validated before saving.
+            </p>
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mt-1">Built-in IANA root anchors</p>
+            <pre id="dnssec-default-anchors" class="mt-1 h-28 overflow-y-auto p-3 rounded-lg bg-slate-950/70 border border-slate-800 font-mono text-[10px] text-slate-400 whitespace-pre-wrap break-all"></pre>
+          </div>
+
+          <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+            <button id="save-dnssec-btn" type="button"
+              class="panel-btn panel-btn-primary">
+              Save &amp; Apply DNSSEC Settings
+            </button>
+            <span id="dnssec-save-status" class="text-[11px] text-slate-400"></span>
+          </div>
+
+          <p id="dnssec-restart-note" class="hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+            Saved settings differ from the running engine. Restart DigitDNS to apply the new DNSSEC policy.
+          </p>
+          <p class="text-[10px] text-slate-500">Changes are applied to the running validator immediately.</p>
+        </div>
+        </div>
+
+        <!-- Aggregate history policy. The store is opened once at boot, so these
+             values are deliberately restart-scoped rather than pretending to take
+             effect live. -->
+
+        <h3 class="settings-section-heading settings-wide">Access tokens</h3>
+          <!-- Access Control: DoH Tokens -->
+          <div class="glass-panel panel-card p-5 sm:p-6 space-y-4 settings-wide" id="doh-tokens-card">
+            <div>
+              <h3 class="panel-card-header">
+                <i data-feather="key" class="w-4 h-4 text-purple-400"></i> DoH Secret Tokens
+              </h3>
+              <p class="text-[11px] text-slate-400 mt-0.5">If enabled, clients must pass <code>?token=XYZ</code> to use DoH</p>
+            </div>
+
+            <div class="flex gap-2">
+              <input type="text" id="new-token-input" aria-label="New DoH access token" placeholder="Enter secure token (e.g. mysecretkey)"
+                class="panel-field flex-1 min-w-0 font-mono focus:border-purple-400">
+              <button id="add-token-btn" class="panel-btn panel-btn-primary">Add Token</button>
+            </div>
+
+            <div id="tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">Loading tokens…</div></div>
+          </div>
+      </section>
+
       <section id="tab-rules" class="tab-content space-y-6 hidden settings-layout">
 
-        <!-- Section jump bar. Fifteen cards on one page is a long scroll with no
-             map, and the Android app already answers this with a chip row, so the
-             panel does the same: each chip moves the page to the card it names
+        <!-- Section jump bar. Each chip moves the page to the card it names
              rather than hiding anything, which keeps every control reachable and
-             leaves the boot-paint and tab-switch logic untouched. -->
+             leaves the boot-paint and tab-switch logic untouched. Every section
+             has a chip; the palette derives its Settings entries from this list,
+             so a card missing here is also missing from search. -->
         <nav class="settings-jump settings-wide" aria-label="Settings sections">
           <button type="button" class="panel-chip is-active" data-settings-jump="top" aria-pressed="true">All</button>
+          <button type="button" class="panel-chip" data-settings-jump="server-location-card" aria-pressed="false">Server</button>
           <button type="button" class="panel-chip" data-settings-jump="twofa-card" aria-pressed="false">Security</button>
-          <button type="button" class="panel-chip" data-settings-jump="transports-card" aria-pressed="false">Transports</button>
-          <button type="button" class="panel-chip" data-settings-jump="dnssec-card" aria-pressed="false">DNSSEC</button>
-          <button type="button" class="panel-chip" data-settings-jump="proxy-ipv6-card" aria-pressed="false">IPv6</button>
+          <button type="button" class="panel-chip" data-settings-jump="server-update-card" aria-pressed="false">Updates</button>
+          <button type="button" class="panel-chip" data-settings-jump="subscription-card" aria-pressed="false">Portal &amp; TLS</button>
+          <button type="button" class="panel-chip" data-settings-jump="blocked-card" aria-pressed="false">Policy</button>
           <button type="button" class="panel-chip" data-settings-jump="stats-settings-card" aria-pressed="false">History</button>
           <button type="button" class="panel-chip" data-settings-jump="alerts-card" aria-pressed="false">Alerts</button>
-          <button type="button" class="panel-chip" data-settings-jump="server-update-card" aria-pressed="false">Updates</button>
+          <button type="button" class="panel-chip" data-settings-jump="about-card" aria-pressed="false">About</button>
         </nav>
 
         <!-- Server Location and Two-Factor Authentication form the left column;
@@ -2940,7 +3435,7 @@ async function onBuySubscription(ctx, username) {
         <!-- Hidden admin namespace. The path is a locator, not a credential,
              but the operator must be able to see and (deliberately) rotate it —
              regeneration kills every session and every bookmark at once. -->
-        <div class="glass-panel panel-card p-5 sm:p-6">
+        <div class="glass-panel panel-card p-5 sm:p-6" id="admin-path-card">
           <div class="flex flex-col sm:flex-row sm:items-center gap-4 sm:justify-between">
             <div class="flex items-center gap-3">
               <div class="p-2 rounded-xl bg-fuchsia-500/20 text-fuchsia-400">
@@ -2966,7 +3461,7 @@ async function onBuySubscription(ctx, username) {
         </div>
 
         <!-- Administrator Credentials -->
-        <div class="glass-panel panel-card p-5 sm:p-6">
+        <div class="glass-panel panel-card p-5 sm:p-6" id="admin-credentials-card">
           <div class="flex flex-col sm:flex-row sm:items-center gap-4 sm:justify-between">
             <div class="flex items-center gap-3">
               <div class="p-2 rounded-xl bg-amber-500/20 text-amber-400">
@@ -3284,294 +3779,12 @@ async function onBuySubscription(ctx, username) {
         </div>
         </div>
 
-        <!-- Every client-facing way into the resolver. The order is the order
-             an operator should think in: plain DNS first, then DoT/DoH, then the
-             QUIC alternatives and DNSCrypt. mTLS is a policy gate, not a
-             transport, so it spans the full width at the end. Switches and
-             completed fields apply as they are edited. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 settings-wide space-y-4" id="transports-card">
-          <div class="space-y-2">
-            <div class="flex items-start justify-between gap-3 flex-wrap">
-              <div class="flex items-center gap-3 flex-1 min-w-0">
-                <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
-                  <i data-feather="zap" class="w-5 h-5"></i>
-                </div>
-                <h3 class="panel-card-title">Client Transports</h3>
-              </div>
-              <div class="flex items-center gap-2 flex-wrap justify-end">
-                <span id="transports-state-badge" class="badge badge-unknown hidden">Off</span>
-                <span id="transports-off-badge" class="badge badge-cached hidden">Off</span>
-              </div>
-            </div>
-            <!-- Full card width on purpose: the status badges change width as
-                 transports switch on/off, and keeping this line out of their
-                 flex row stops it rewrapping and jumping sideways. -->
-            <p class="text-[11px] text-slate-400">Every client-facing transport in DigitDNS. DoT, DoH, DoH3 and DoQ reuse the SSL/TLS Manager certificate; DNSCrypt and mTLS use their own keys. Changes apply as you edit.</p>
-          </div>
-
-          <div class="transport-grid">
-            <section class="transport-card">
-              <div class="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <h4 class="text-xs font-bold text-white font-heading">Plain DNS</h4>
-                  <p class="text-[10px] text-slate-500 mt-0.5">Traditional UDP + TCP resolver for every client that does not encrypt.</p>
-                </div>
-                <div class="flex items-center gap-3 shrink-0">
-                  <span id="plain-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
-                  <label class="transport-toggle switch-cyan">
-                    <input type="checkbox" id="plain-enabled-input" class="transport-toggle-input">
-                    <span class="transport-toggle-label">Enabled</span>
-                    <span class="transport-toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
-              <div>
-                <label for="plain-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">UDP + TCP port</label>
-                <input type="number" id="plain-port-input" min="1" max="65535" step="1" value="53" aria-label="Plain DNS port" class="panel-field w-full font-mono text-xs focus:border-cyan-400">
-              </div>
-              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="plain-endpoint" aria-label="Copy plain DNS address">
-                <span id="plain-endpoint" class="font-mono text-cyan-300 break-all">—</span>
-                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
-              </button>
-              <p class="transport-hint">Open UDP and TCP on this port. Disabling it leaves the encrypted transports running.</p>
-            </section>
-
-            <section class="transport-card">
-              <div class="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <h4 class="text-xs font-bold text-white font-heading">DoT (DNS-over-TLS)</h4>
-                  <p class="text-[10px] text-slate-500 mt-0.5">The transport Android Private DNS uses. Serves the DoH/DoT certificate.</p>
-                </div>
-                <div class="flex items-center gap-3 shrink-0">
-                  <span id="dot-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
-                  <label class="transport-toggle switch-sky">
-                    <input type="checkbox" id="dot-enabled-input" class="transport-toggle-input">
-                    <span class="transport-toggle-label">Enabled</span>
-                    <span class="transport-toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
-              <div>
-                <label for="dot-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">TCP port</label>
-                <input type="number" id="dot-port-input" min="1" max="65535" step="1" value="853" aria-label="DoT port" class="panel-field w-full font-mono text-xs focus:border-cyan-400">
-              </div>
-              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="dot-endpoint" aria-label="Copy DoT URL">
-                <span id="dot-endpoint" class="font-mono text-cyan-300 break-all">—</span>
-                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
-              </button>
-              <div>
-                <label for="dot-auth-select" class="block text-[10px] font-semibold text-slate-400 mb-1">Authentication</label>
-                <select id="dot-auth-select" class="panel-field w-full text-xs focus:border-cyan-400">
-                  <option value="ip">IP allowlist</option>
-                  <option value="sni-token">SNI token</option>
-                </select>
-              </div>
-              <div id="dot-token-fields" class="space-y-2">
-                <div>
-                  <label for="dot-token-domain-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Token domain</label>
-                  <input type="text" id="dot-token-domain-input" placeholder="dot.example.com" class="panel-field w-full font-mono text-xs focus:border-cyan-400">
-                </div>
-                <div class="flex gap-2">
-                  <input type="text" id="new-dot-token-input" aria-label="New DoT token label" placeholder="token label (e.g. phone)" class="panel-field flex-1 min-w-0 font-mono text-xs focus:border-cyan-400">
-                  <button type="button" id="add-dot-token-btn" class="panel-btn panel-btn-primary panel-btn-sm">Add</button>
-                </div>
-                <div id="dot-tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">No DoT tokens yet</div></div>
-              </div>
-              <div class="transport-status-row">
-                <span>Certificate</span>
-                <span class="font-mono text-slate-300">SSL/TLS Manager</span>
-              </div>
-              <p class="transport-hint">Open TCP on this port. SNI-token mode replaces <code>&lt;token&gt;</code> with each client's label and rejects every other ServerName before a query is read.</p>
-            </section>
-
-            <section class="transport-card">
-              <div class="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <h4 class="text-xs font-bold text-white font-heading">DoH (DNS-over-HTTPS)</h4>
-                  <p class="text-[10px] text-slate-500 mt-0.5">RFC 8484 over HTTP/2 and HTTP/1.1, with optional bearer tokens.</p>
-                </div>
-                <div class="flex items-center gap-3 shrink-0">
-                  <span id="doh-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
-                  <label class="transport-toggle switch-cyan">
-                    <input type="checkbox" id="doh-enabled-input" class="transport-toggle-input">
-                    <span class="transport-toggle-label">Enabled</span>
-                    <span class="transport-toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
-              <div>
-                <label for="doh-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">HTTPS port</label>
-                <input type="number" id="doh-port-input" min="1" max="65535" step="1" value="8443" aria-label="DoH port" class="panel-field w-full font-mono text-xs focus:border-cyan-400">
-              </div>
-              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doh-endpoint" aria-label="Copy DoH URL">
-                <span id="doh-endpoint" class="font-mono text-cyan-300 break-all">—</span>
-                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
-              </button>
-              <div class="transport-status-row">
-                <span>Certificate</span>
-                <span class="font-mono text-slate-300">SSL/TLS Manager</span>
-              </div>
-              <p class="transport-hint">The subscriber portal shares this listener; changing the port moves the portal with it. Tokens are managed in the DoH Secret Tokens card below.</p>
-            </section>
-
-            <section class="transport-card">
-              <div class="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <h4 class="text-xs font-bold text-white font-heading">DoQ (DNS-over-QUIC)</h4>
-                  <p class="text-[10px] text-slate-500 mt-0.5">RFC 9250 for clients and routers that support QUIC.</p>
-                </div>
-                <div class="flex items-center gap-3 shrink-0">
-                  <span id="doq-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
-                  <label class="transport-toggle switch-emerald">
-                    <input type="checkbox" id="doq-enabled-input" class="transport-toggle-input">
-                    <span class="transport-toggle-label">Enabled</span>
-                    <span class="transport-toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label for="doq-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">UDP port</label>
-                  <input type="number" id="doq-port-input" min="1" max="65535" step="1" value="853" aria-label="DoQ UDP port" class="panel-field w-full font-mono text-xs focus:border-emerald-400">
-                </div>
-                <div>
-                  <label for="doq-auth-select" class="block text-[10px] font-semibold text-slate-400 mb-1">Authentication</label>
-                  <select id="doq-auth-select" class="panel-field w-full text-xs focus:border-emerald-400">
-                    <option value="ip">IP allowlist</option>
-                    <option value="sni-token">SNI token</option>
-                  </select>
-                </div>
-              </div>
-              <div id="doq-token-fields" class="space-y-2">
-                <div>
-                  <label for="doq-token-domain-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Token domain</label>
-                  <input type="text" id="doq-token-domain-input" placeholder="doq.example.com" class="panel-field w-full font-mono text-xs focus:border-emerald-400">
-                </div>
-                <div class="flex gap-2">
-                  <input type="text" id="new-doq-token-input" aria-label="New DoQ token label" placeholder="token label (e.g. home)" class="panel-field flex-1 min-w-0 font-mono text-xs focus:border-emerald-400">
-                  <button type="button" id="add-doq-token-btn" class="panel-btn panel-btn-primary panel-btn-sm">Add</button>
-                </div>
-                <div id="doq-tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">No DoQ tokens yet</div></div>
-              </div>
-              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doq-endpoint" aria-label="Copy DoQ URL">
-                <span id="doq-endpoint" class="font-mono text-emerald-300 break-all">—</span>
-                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
-              </button>
-              <p id="doq-cert-warning" class="hidden text-[10px] text-amber-300 leading-relaxed">SNI-token mode requires a certificate covering <span class="font-mono">*.&lt;token domain&gt;</span> or every token hostname. The built-in ACME client cannot issue wildcard certificates.</p>
-              <p class="transport-hint">Open UDP 853. In SNI-token mode each client uses its own label in place of <code>&lt;token&gt;</code>.</p>
-            </section>
-
-            <section class="transport-card">
-              <div class="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <h4 class="text-xs font-bold text-white font-heading">DoH3 (HTTP/3)</h4>
-                  <p class="text-[10px] text-slate-500 mt-0.5">The same DoH endpoint, negotiated over QUIC automatically.</p>
-                </div>
-                <div class="flex items-center gap-3 shrink-0">
-                  <span id="doh3-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
-                  <label class="transport-toggle switch-cyan">
-                    <input type="checkbox" id="doh3-enabled-input" class="transport-toggle-input">
-                    <span class="transport-toggle-label">Enabled</span>
-                    <span class="transport-toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
-              <div>
-                <label for="doh3-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">UDP port (shared with DoH)</label>
-                <input type="text" id="doh3-port-input" readonly aria-label="DoH3 UDP port shared with DoH" class="panel-field w-full font-mono text-xs opacity-60 cursor-not-allowed">
-              </div>
-              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="doh3-endpoint" aria-label="Copy DoH3 URL">
-                <span id="doh3-endpoint" class="font-mono text-cyan-300 break-all">—</span>
-                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
-              </button>
-              <p class="transport-hint">DoH3 shares the DoH port over UDP; change it on the DoH card. TCP DoH advertises this endpoint with <code>Alt-Svc</code>.</p>
-            </section>
-
-            <section class="transport-card">
-              <div class="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <h4 class="text-xs font-bold text-white font-heading">DNSCrypt</h4>
-                  <p class="text-[10px] text-slate-500 mt-0.5">A stamp-based resolver endpoint with its own provider keys.</p>
-                </div>
-                <div class="flex items-center gap-3 shrink-0">
-                  <span id="dnscrypt-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
-                  <label class="transport-toggle switch-fuchsia">
-                    <input type="checkbox" id="dnscrypt-enabled-input" class="transport-toggle-input">
-                    <span class="transport-toggle-label">Enabled</span>
-                    <span class="transport-toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label for="dnscrypt-port-input" class="block text-[10px] font-semibold text-slate-400 mb-1">UDP + TCP port</label>
-                  <input type="number" id="dnscrypt-port-input" min="1" max="65535" step="1" value="5443" aria-label="DNSCrypt port" class="panel-field w-full font-mono text-xs focus:border-fuchsia-400">
-                </div>
-                <div>
-                  <label for="dnscrypt-provider-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Provider name</label>
-                  <input type="text" id="dnscrypt-provider-input" placeholder="digitdns.local" class="panel-field w-full font-mono text-xs focus:border-fuchsia-400">
-                </div>
-              </div>
-              <button type="button" class="code-box w-full cursor-pointer" data-copy-target="dnscrypt-stamp" aria-label="Copy DNSCrypt stamp">
-                <span id="dnscrypt-stamp" class="font-mono text-fuchsia-300 truncate min-w-0" title="—">—</span>
-                <i data-feather="copy" class="w-3.5 h-3.5 text-slate-400 shrink-0 ms-2"></i>
-              </button>
-              <div class="transport-status-row">
-                <span>DNSCrypt cert expires</span>
-                <span id="dnscrypt-cert-expiry" class="font-mono text-slate-300">—</span>
-              </div>
-              <p class="transport-hint">Open 5443 UDP+TCP: TCP 443 is the SNI proxy. The provider certificate is generated automatically, not by Let’s Encrypt.</p>
-            </section>
-
-            <section class="transport-card transport-span">
-              <div class="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <h4 class="text-xs font-bold text-white font-heading">mTLS (client certificates)</h4>
-                  <p class="text-[10px] text-slate-500 mt-0.5">Require a certificate signed by your CA on DoT, DoH, DoH3 and DoQ.</p>
-                </div>
-                <div class="flex items-center gap-3 shrink-0">
-                  <span id="mtls-status" class="transport-state font-mono text-[10px] text-slate-300">Off</span>
-                  <label class="transport-toggle switch-amber">
-                    <input type="checkbox" id="mtls-enabled-input" class="transport-toggle-input">
-                    <span class="transport-toggle-label">Enabled</span>
-                    <span class="transport-toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
-              <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
-                <div>
-                  <label for="mtls-ca-input" class="block text-[10px] font-semibold text-slate-400 mb-1">Client CA bundle (PEM)</label>
-                  <textarea id="mtls-ca-input" rows="3" spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----" class="panel-field w-full font-mono text-[10px] focus:border-amber-400"></textarea>
-                  <p id="mtls-warning" class="hidden text-[10px] text-amber-300 mt-1">A CA bundle is required when mTLS is on.</p>
-                </div>
-                <div class="transport-note">
-                  <p>The CA verifies client certificates only; it is not a server certificate.</p>
-                  <p>DoT refuses the TLS handshake without a verified client certificate. DoH and DoQ request one but enforce it only on the DNS query path, so the subscriber portal on the DoH port stays reachable.</p>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <div id="doq-ip-note" class="transport-note">
-            <div class="flex items-center justify-between gap-2 flex-wrap">
-              <span class="font-semibold text-slate-200">IP authentication</span>
-              <span id="doq-ip-counts" class="font-mono text-slate-300"></span>
-            </div>
-            <p>Shared by DoQ, DoT and DNSCrypt: a source is accepted when it appears in <span class="font-semibold text-slate-200">Clients → Allowed IPs</span> or <span class="font-semibold text-slate-200">Settings → Access → Server-wide Resolver Allowlist</span>.</p>
-            <p id="doq-ip-warning" class="hidden text-amber-300"></p>
-          </div>
-
-          <div class="transport-footer">
-            <p id="transports-last-error" class="hidden text-[11px] text-red-300 leading-relaxed"></p>
-            <span id="transports-save-status" class="text-[11px] text-slate-400 ms-auto">All changes saved</span>
-          </div>
-        </div>
 
         <h3 class="settings-section-heading settings-wide">DNS policy &amp; rules</h3>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 settings-wide">
           
           <!-- Custom Blocklist (Sinkhole / Adblock) -->
-          <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
+          <div class="glass-panel panel-card p-5 sm:p-6 space-y-4" id="blocked-card">
             <div>
               <h3 class="panel-card-header">
                 <i data-feather="slash" class="w-4 h-4 text-red-400"></i> Custom Blocklist (Sinkhole)
@@ -3593,26 +3806,9 @@ async function onBuySubscription(ctx, username) {
             <div id="custom-blocked-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">Loading rules…</div></div>
           </div>
 
-          <!-- Access Control: DoH Tokens -->
-          <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
-            <div>
-              <h3 class="panel-card-header">
-                <i data-feather="key" class="w-4 h-4 text-purple-400"></i> DoH Secret Tokens
-              </h3>
-              <p class="text-[11px] text-slate-400 mt-0.5">If enabled, clients must pass <code>?token=XYZ</code> to use DoH</p>
-            </div>
-
-            <div class="flex gap-2">
-              <input type="text" id="new-token-input" aria-label="New DoH access token" placeholder="Enter secure token (e.g. mysecretkey)"
-                class="panel-field flex-1 min-w-0 font-mono focus:border-purple-400">
-              <button id="add-token-btn" class="panel-btn panel-btn-primary">Add Token</button>
-            </div>
-
-            <div id="tokens-list" class="max-h-48 overflow-y-auto space-y-1.5 pe-1"><div class="text-slate-500 text-xs py-1">Loading tokens…</div></div>
-          </div>
 
           <!-- DNS Rewrites: hostname -> fixed IPv4/IPv6 address -->
-          <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
+          <div class="glass-panel panel-card p-5 sm:p-6 space-y-4" id="dns-rewrites-card">
             <div>
               <h3 class="panel-card-header">
                 <i data-feather="map-pin" class="w-4 h-4 text-emerald-400"></i> DNS Rewrites
@@ -3640,10 +3836,10 @@ async function onBuySubscription(ctx, username) {
 
           <!-- Named custom policy groups: operator-defined bundles of
                domains with one action, toggled as a unit and selectable later.
-               Sits inside the same 2-column grid as the panels above, so it
-               fills the row beside DNS Rewrites instead of spanning
-               the full width on a row of its own. -->
-          <div class="glass-panel panel-card p-5 sm:p-6 space-y-4">
+               With the DoH token card on the Resolvers tab this is the last
+               card in the policy grid, so it spans both columns rather than
+               leaving an empty half-row. -->
+          <div class="glass-panel panel-card p-5 sm:p-6 space-y-4 lg:col-span-2" id="custom-groups-card">
             <div class="flex items-center justify-between gap-2">
               <div>
                 <h3 class="panel-card-header">
@@ -3706,179 +3902,7 @@ async function onBuySubscription(ctx, username) {
 
         </div>
 
-        <!-- The two DNS policy cards share a row on wide panels and stack on
-             mobile. The built-in root anchors are always visible inside a fixed
-             height block, so the DNSSEC card never grows when it is opened. -->
-        <h3 class="settings-section-heading settings-wide">Resolver protection</h3>
-        <div class="settings-pair settings-wide">
-        <div class="flex flex-col gap-3 min-w-0">
-        <!-- Proxy leak protection. Proxied names must never advertise QUIC or
-             origin address hints through HTTPS/SVCB: those records would let a
-             browser skip the SNI relay. The guard is automatic and has no
-             policy switch. -->
-        <div class="glass-panel panel-card p-4 sm:p-5 space-y-3 flex-none" id="proxy-leak-card">
-          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-            <div class="flex items-start gap-3">
-              <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
-                <i data-feather="shield-off" class="w-5 h-5"></i>
-              </div>
-              <div>
-                <h3 class="panel-card-title">Proxy Leak Protection</h3>
-                <p class="text-[11px] text-slate-400">
-                  Proxied names never advertise QUIC or the origin's real addresses.
-                  HTTPS and SVCB answers are withheld so clients use the proxied A/AAAA records over TCP.
-                </p>
-              </div>
-            </div>
-            <div id="proxy-leak-controls" class="boot-hide flex items-center gap-3 shrink-0 self-end sm:self-start" style="visibility:hidden">
-              <span id="proxy-leak-badge" class="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">ACTIVE</span>
-              <label class="switch" title="Toggle proxy leak protection">
-                <input type="checkbox" id="proxy-leak-enabled-input" checked aria-label="Enable proxy leak protection">
-                <span class="slider"></span>
-              </label>
-            </div>
-          </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-1.5">
-              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">HTTPS / SVCB</div>
-              <div class="text-[11px] text-cyan-300 font-mono mt-0.5">withheld</div>
-            </div>
-            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-1.5">
-              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">h3 / QUIC</div>
-              <div class="text-[11px] text-cyan-300 font-mono mt-0.5">not advertised</div>
-            </div>
-            <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-2.5 py-1.5">
-              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">IPv4 / IPv6 hint</div>
-              <div class="text-[11px] text-cyan-300 font-mono mt-0.5">removed</div>
-            </div>
-          </div>
-
-          <p class="text-[10px] leading-snug text-slate-500">
-            Live for every <span class="font-mono text-slate-400">Proxy</span> domain; direct names keep normal records.
-          </p>
-          <p id="proxy-leak-off-note" class="hidden rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[10px] leading-snug text-red-300">
-            Protection is off. Proxied names may advertise QUIC and real IPv4/IPv6 hints, allowing clients to bypass the relay.
-          </p>
-          <p class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[10px] leading-snug text-amber-300">
-            Recommended: keep this enabled. Turning it off lets proxied names advertise QUIC and origin IPv4/IPv6 hints,
-            which can bypass the relay. Only change this if you know what you are doing.
-          </p>
-        </div>
-
-        <!-- Proxy IPv6. The server's public IPv6 is published for proxied
-             domains only while the switch is on and the address is valid. With
-             the switch off, proxied AAAA is withheld and the HTTPS/SVCB guard is
-             forced even when Proxy Leak Protection was explicitly disabled. -->
-        <div class="glass-panel panel-card p-4 sm:p-5 flex flex-col gap-3 flex-1 min-h-0" id="proxy-ipv6-card">
-          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-            <div class="flex items-start gap-3">
-              <div class="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
-                <i data-feather="globe" class="w-5 h-5"></i>
-              </div>
-              <div>
-                <h3 class="panel-card-title">Proxy IPv6</h3>
-                <p class="text-[11px] text-slate-400">
-                  Publish this server's IPv6 for proxied domains. Off keeps clients on the IPv4 relay and blocks every IPv6 hint.
-                </p>
-              </div>
-            </div>
-            <div id="proxy-ipv6-controls" class="boot-hide flex items-center gap-3 shrink-0 self-end sm:self-start" style="visibility:hidden">
-              <span id="proxy-ipv6-badge" class="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800/70 text-slate-400 border border-slate-700">OFF</span>
-              <label class="switch" title="Enable IPv6 for proxied domains">
-                <input type="checkbox" id="proxy-ipv6-enabled" aria-label="Enable IPv6 for proxied domains">
-                <span class="slider"></span>
-              </label>
-            </div>
-          </div>
-
-          <div class="space-y-2 border-t border-slate-800 pt-4">
-            <label for="proxy-ipv6-input" class="block text-[11px] font-semibold text-slate-400">
-              Public IPv6 <span class="text-slate-500">(globally routable)</span>
-            </label>
-            <input id="proxy-ipv6-input" type="text" spellcheck="false" autocomplete="off"
-              placeholder="2001:db8::1" class="panel-field w-full font-mono text-[11px]">
-            <p class="text-[10px] text-slate-500">
-              The SNI proxy must be reachable on this address. AAAA is withheld when it is empty.
-            </p>
-            <p id="proxy-ipv6-off-note" class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
-              IPv6 is off: proxied AAAA is withheld and HTTPS/SVCB hints stay blocked even if proxy leak protection is disabled. Agents switch to IPv4-only on their next heartbeat.
-            </p>
-            <p id="proxy-ipv6-on-note" class="hidden rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-[11px] text-cyan-300">
-              IPv6 is on: proxied AAAA uses this address and agents re-enable IPv6 on their next heartbeat. HTTPS/SVCB remains governed by Proxy Leak Protection.
-            </p>
-          </div>
-
-          <div class="mt-auto flex items-center gap-3 flex-wrap">
-            <button id="save-proxy-ipv6-btn" type="button"
-              class="panel-btn panel-btn-primary">
-              Save IPv6 settings
-            </button>
-            <span id="proxy-ipv6-status" class="text-[11px] text-slate-400"></span>
-          </div>
-        </div>
-        </div>
-
-        <!-- DNSSEC validation. The save applies the policy to the running
-             validator before it responds, so the badge changes without a
-             restart. An empty anchor list means the built-in IANA root KSKs. -->
-        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4" id="dnssec-card">
-          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-            <div class="flex items-start gap-3">
-              <div class="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
-                <i data-feather="shield" class="w-5 h-5"></i>
-              </div>
-              <div>
-                <h3 class="panel-card-title">DNSSEC Validation</h3>
-                <p class="text-[11px] text-slate-400">
-                  Validate the DS/DNSKEY chain, answer signatures and NSEC/NSEC3 denial proofs inside this hub.
-                  Validated answers carry <span class="font-mono text-slate-300">AD</span>; bogus answers return SERVFAIL.
-                </p>
-              </div>
-            </div>
-            <div id="dnssec-controls" class="boot-hide flex items-center gap-3 shrink-0 self-end sm:self-start" style="visibility:hidden">
-              <span id="dnssec-status-badge" class="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800/70 text-slate-400 border border-slate-700">OFF</span>
-              <label class="switch" title="Enable DNSSEC validation">
-                <input type="checkbox" id="dnssec-enabled-input" aria-label="Enable DNSSEC validation">
-                <span class="slider"></span>
-              </label>
-            </div>
-          </div>
-
-          <div class="space-y-2 border-t border-slate-800 pt-4">
-            <label for="dnssec-anchors-input" class="block text-[11px] font-semibold text-slate-400">
-              Trust anchors <span class="text-slate-500">(DS or DNSKEY, one per line)</span>
-            </label>
-            <textarea id="dnssec-anchors-input" rows="4" spellcheck="false" autocomplete="off"
-              aria-label="DNSSEC trust anchors"
-              placeholder="Leave empty to use the built-in IANA root KSKs (20326, 38696)."
-              class="panel-field w-full font-mono text-[11px]"></textarea>
-            <p class="text-[10px] text-slate-500">
-              Empty uses the built-in IANA root anchors. Custom anchors must name the root
-              (<code class="text-cyan-400">.</code>) and are validated before saving.
-            </p>
-            <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mt-1">Built-in IANA root anchors</p>
-            <pre id="dnssec-default-anchors" class="mt-1 h-28 overflow-y-auto p-3 rounded-lg bg-slate-950/70 border border-slate-800 font-mono text-[10px] text-slate-400 whitespace-pre-wrap break-all"></pre>
-          </div>
-
-          <div class="flex flex-col sm:flex-row sm:items-center gap-3">
-            <button id="save-dnssec-btn" type="button"
-              class="panel-btn panel-btn-primary">
-              Save &amp; Apply DNSSEC Settings
-            </button>
-            <span id="dnssec-save-status" class="text-[11px] text-slate-400"></span>
-          </div>
-
-          <p id="dnssec-restart-note" class="hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
-            Saved settings differ from the running engine. Restart DigitDNS to apply the new DNSSEC policy.
-          </p>
-          <p class="text-[10px] text-slate-500">Changes are applied to the running validator immediately.</p>
-        </div>
-        </div>
-
-        <!-- Aggregate history policy. The store is opened once at boot, so these
-             values are deliberately restart-scoped rather than pretending to take
-             effect live. -->
         <h3 class="settings-section-heading settings-wide">History &amp; alerts</h3>
         <div class="glass-panel panel-card p-5 sm:p-6 space-y-4 settings-wide" id="stats-settings-card">
           <div class="flex items-center gap-3">
@@ -3891,6 +3915,12 @@ async function onBuySubscription(ctx, username) {
             </div>
           </div>
 
+          <!-- The card is hydrated on tab open, so the controls start hidden:
+               showing the markup defaults first made the history switch appear to
+               flip from its unchecked default to the saved policy. -->
+          <p id="stats-settings-loading" class="text-[11px] text-slate-400">Loading history settings…</p>
+
+          <div id="stats-settings-body" class="space-y-4 boot-hide" style="visibility:hidden">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label class="flex items-center gap-2 text-xs text-slate-300">
               <input type="checkbox" id="stats-enabled-input" class="accent-cyan-500 w-4 h-4">
@@ -3939,6 +3969,7 @@ async function onBuySubscription(ctx, username) {
               Save history settings
             </button>
             <span id="stats-settings-status" class="text-[11px] text-slate-400"></span>
+          </div>
           </div>
         </div>
 
@@ -4040,7 +4071,7 @@ async function onBuySubscription(ctx, username) {
              attribution. Kept in the panel so the notice travels with the app
              instead of living only in the repository. -->
         <h3 class="settings-section-heading settings-wide">About</h3>
-        <div class="glass-panel panel-card p-5 sm:p-6 space-y-2 settings-wide">
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-2 settings-wide" id="about-card">
           <h3 class="panel-card-header">
             <i data-feather="info" class="w-4 h-4 text-cyan-400"></i> About &amp; Legal
           </h3>
@@ -4316,6 +4347,10 @@ async function onBuySubscription(ctx, username) {
           <button class="mobile-more-item" data-tab="api" data-route="/api">
             <i data-feather="code" class="w-4 h-4"></i>
             <span>API</span>
+          </button>
+          <button class="mobile-more-item" data-tab="resolvers" data-route="/resolvers">
+            <i data-feather="radio" class="w-4 h-4"></i>
+            <span>Resolvers</span>
           </button>
           <button class="mobile-more-item" data-tab="rules" data-route="/settings">
             <i data-feather="sliders" class="w-4 h-4"></i>
