@@ -78,9 +78,19 @@ fun RouteActionMenu(
     anchorY: Float = 0f,
 ) {
     // Keep the last scope picked for this name, then fall back to the one its
-    // rules imply. Reopening after choosing *.host must not snap back to exact.
+    // rules imply. Reopening after choosing *.host must not snap back to exact —
+    // but a remembered *.host on the host itself excludes the row the operator
+    // clicked, so it must not be reused there.
     var scope by remember(domain, patterns) {
-        mutableStateOf(RouteScopeMemory.get(domain) ?: MatchScope.initialScope(domain, patterns))
+        val remembered = RouteScopeMemory.get(domain)
+        val rememberedTargets = remembered?.targets(domain).orEmpty()
+        mutableStateOf(
+            if (remembered != null && rememberedTargets.isNotEmpty() && MatchScope.covers(domain, rememberedTargets)) {
+                remembered
+            } else {
+                MatchScope.initialScope(domain, patterns)
+            },
+        )
     }
     // What a scope click wrote in this menu session. The next click removes it, so
     // *.parent -> exact restores the origin even though the origin left the lists.
@@ -139,11 +149,16 @@ fun RouteActionMenu(
         // *.host action on a host looks like it covers that host, while it writes
         // *.host and covers its subdomains only.
         val targets = scope.targets(domain)
+        // A wildcard-only scope leaves the clicked host itself on its old rule.
+        // Say so in the menu, not only after the write, so the action cannot look
+        // like it was ignored.
+        val missesHost = targets.isNotEmpty() && !domain.startsWith("*.") && !MatchScope.covers(domain, targets)
         Text(
             text = if (targets.isEmpty()) {
                 "No pattern for this scope"
             } else {
-                "applies to ${targets.joinToString(" + ")}"
+                "applies to ${targets.joinToString(" + ")}" +
+                    if (missesHost) " — $domain itself unchanged" else ""
             },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

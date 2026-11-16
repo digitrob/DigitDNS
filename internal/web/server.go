@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -423,6 +424,10 @@ const (
 	// retried. Without it the next due check would be immediate (lastRun did not
 	// advance) and the scheduler would spin against a manual benchmark.
 	adaptiveBusyRetry = 5 * time.Second
+	// adaptiveBenchmarkWait bounds how long a Force click waits for an in-flight
+	// benchmark. A full pool probe is one warm-up plus three samples per resolver,
+	// all in parallel, so 30s is generous even with a slow DoH URL in the pool.
+	adaptiveBenchmarkWait = 30 * time.Second
 	// adaptiveIdleCheck is the slow tick used when the strategy is not Adaptive.
 	// It keeps a strategy switch noticed even if the settings save that made it
 	// never reached nudgeAdaptive.
@@ -545,10 +550,18 @@ func (ws *WebServer) runAdaptiveNow(force bool) (upstream.AdaptiveDecision, erro
 	ws.dnsMu.Unlock()
 
 	// Share the daemon's benchmark gate: a manual run, a scheduled run and the
-	// forced check must never probe the same pool at the same time.
+	// forced check must never probe the same pool at the same time. A Force click
+	// during a manual or scheduled benchmark used to return 409 and do nothing;
+	// wait for the measurements that run is already taking instead. Only the
+	// forced path waits — the scheduler keeps its short retry so it cannot tie up
+	// a goroutine behind an operator's benchmark.
 	if ws.benchmark != nil {
 		if !ws.benchmark.Run() {
-			return upstream.AdaptiveDecision{}, errAdaptiveBusy
+			if !force || !ws.benchmark.Wait(adaptiveBenchmarkWait) {
+				return upstream.AdaptiveDecision{}, errAdaptiveBusy
+			}
+			// The run we waited for measured the pool; select from its results
+			// rather than probing every resolver a second time.
 		}
 	} else {
 		ws.upstreams.BenchmarkAll()
@@ -1706,6 +1719,23 @@ func (ws *WebServer) portalThemeStyleOrigin() string {
 	return u.Scheme + "://" + u.Host
 }
 
+// quietLoopbackTLSWriter drops the TLS handshake error the container's TCP
+// healthcheck leaves behind on an HTTPS panel. nc -z connects and closes without
+// a ClientHello, so the HTTP server logs "TLS handshake error from 127.0.0.1:…:
+// EOF" once per probe. That line is expected noise from our own liveness check,
+// not an operator-visible failure; remote handshake errors are still written
+// unchanged. The probe moved to TCP because the old HTTPS probe leaked a task
+// slot in the container's cgroup on some kernels (see the Dockerfile).
+type quietLoopbackTLSWriter struct{ next io.Writer }
+
+func (w quietLoopbackTLSWriter) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte("TLS handshake error from 127.0.0.1:")) ||
+		bytes.Contains(p, []byte("TLS handshake error from [::1]:")) {
+		return len(p), nil
+	}
+	return w.next.Write(p)
+}
+
 func (ws *WebServer) Start() error {
 	// Panel exposure policy (v2.1.0 remediation, installer contract): the
 	// dashboard is an ADMIN surface and must not be reachable as a bare
@@ -1749,10 +1779,14 @@ func (ws *WebServer) Start() error {
 	// returns on it immediately.
 	serverCtx, stopServerCtx := context.WithCancel(context.Background())
 	ws.stopServerCtx = stopServerCtx
+	stdLog := log.Default()
 	ws.httpServer = &http.Server{
 		Addr:              addr,
 		Handler:           ws.withRequestReadDeadline(ws.BuildHandler()),
 		ReadHeaderTimeout: 10 * time.Second,
+		// Keep remote handshake errors, drop the loopback EOF that the TCP
+		// healthcheck produces on every probe (see quietLoopbackTLSWriter).
+		ErrorLog: log.New(quietLoopbackTLSWriter{next: stdLog.Writer()}, stdLog.Prefix(), stdLog.Flags()),
 		// WriteTimeout must stay 0: the SSE event stream (/api/stream/queries)
 		// holds connections open indefinitely and would be killed by a
 		// short write deadline every few seconds.

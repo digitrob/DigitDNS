@@ -71,21 +71,23 @@ EXPOSE 53/udp 53/tcp 80/tcp 443/tcp 853/tcp 853/udp 8080/tcp 8443/tcp 8443/udp 5
 
 VOLUME ["/app/data", "/app/certs"]
 
-# Reports the daemon as unhealthy while the dashboard mux is not answering. The
-# port is a variable because web_port is an operator setting: a health check that
-# hardcodes 8080 reports a container as sick for the sole reason that its owner
-# moved the dashboard. When panel_https is enabled the dashboard listener serves
-# TLS only, so the probe has to ask over HTTPS: a plain-HTTP probe is answered
-# with a TLS handshake error and the container is reported unhealthy while the
-# panel is perfectly fine. The certificate is the operator's own, so verification
-# is skipped — this is a loopback liveness probe, not a trust check. The HTTP
-# fallback keeps installs without panel_https healthy.
-# /api/v2/version needs no key and is GET/HEAD only, and the request arrives from
-# 127.0.0.1, which passes the api_bind peer-address gate.
+# Reports the daemon as unhealthy while the panel listener is not accepting
+# connections. The port is a variable because web_port is an operator setting: a
+# check that hardcodes 8080 reports a container as sick for the sole reason that
+# its owner moved the dashboard.
+#
+# This is a TCP connect, not an HTTP request, on purpose. A full check needs TLS
+# whenever panel_https is on, and the TLS client used by the old probe (BusyBox
+# wget) leaks one task slot in the container's cgroup on some kernels. Observed
+# on Ubuntu 26.04 / 7.0.0-43: pids.current grew by exactly one per HTTPS probe
+# while cgroup.threads stayed constant. At the default 30s interval the systemd
+# DefaultTasksMax of 1066 was reached in about nine hours; from then on every
+# exec, including the healthcheck itself, failed with "procReady not received"
+# and a perfectly healthy resolver was reported unhealthy forever. nc -z is a
+# single-threaded TCP connect: no TLS, no leak, and it works for both HTTP and
+# HTTPS panels. /healthz remains the endpoint for external HTTP monitoring.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget --no-check-certificate -q -O /dev/null "https://127.0.0.1:${DIGITDNS_HEALTH_PORT:-8080}/api/v2/version" \
-     || wget -q -O /dev/null "http://127.0.0.1:${DIGITDNS_HEALTH_PORT:-8080}/api/v2/version" \
-     || exit 1
+    CMD nc -z -w 2 127.0.0.1 "${DIGITDNS_HEALTH_PORT:-8080}" || exit 1
 
 # -daemon is not optional here, for the same reason scripts/digitdns.service passes
 # it: a container must never be left guessing whether it is a server. `docker run -d`

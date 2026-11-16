@@ -2,7 +2,9 @@ package com.digitrob.digitdns.ui.rules
 
 import com.digitrob.digitdns.domain.model.RuleLists
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** The quick-action match scopes, including wildcard rebasing and preselection. */
@@ -35,13 +37,30 @@ class MatchScopeTest {
     }
 
     @Test
-    fun `opens on the scope the lists already hold`() {
+    fun `opens on a scope that covers the clicked host`() {
         assertEquals(MatchScope.Exact, MatchScope.initialScope("a.b.c", setOf("a.b.c")))
-        assertEquals(MatchScope.Host, MatchScope.initialScope("a.b.c", setOf("*.a.b.c")))
         assertEquals(MatchScope.Parent, MatchScope.initialScope("a.b.c", setOf("*.b.c")))
         assertEquals(MatchScope.Exact, MatchScope.initialScope("a.b.c", emptySet()))
         // The plain rule already covers subdomains, so it wins over a redundant wildcard.
         assertEquals(MatchScope.Exact, MatchScope.initialScope("a.b.c", setOf("a.b.c", "*.a.b.c")))
+        // A wildcard-only rule leaves the host itself direct. Opening on *.host
+        // would write the same wildcard again, so open on the plain rule, which
+        // the matcher treats as host + subdomains.
+        assertEquals(MatchScope.Exact, MatchScope.initialScope("reflection.ai", setOf("*.reflection.ai")))
+    }
+
+    @Test
+    fun `a scope says whether it still covers the clicked row`() {
+        assertTrue(MatchScope.covers("reflection.ai", listOf("reflection.ai")))
+        // A plain rule covers every subdomain.
+        assertTrue(MatchScope.covers("www.reflection.ai", listOf("reflection.ai")))
+        // A wildcard rule covers strict subdomains only.
+        assertTrue(MatchScope.covers("www.reflection.ai", listOf("*.reflection.ai")))
+        assertFalse(MatchScope.covers("reflection.ai", listOf("*.reflection.ai")))
+        // A wildcard row stands for its own subtree.
+        assertTrue(MatchScope.covers("*.reflection.ai", listOf("*.reflection.ai")))
+        assertTrue(MatchScope.covers("*.reflection.ai", listOf("*.ai")))
+        assertFalse(MatchScope.covers("reflection.ai", emptyList()))
     }
 
     @Test

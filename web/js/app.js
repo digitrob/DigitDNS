@@ -7591,7 +7591,12 @@ function applyStreamScope(domain, scope) {
   saveRules();
   renderConfig(currentConfig);
   renderQueryStream();
-  showToast(`Scope: ${targets.join(' + ')}`, 'success');
+  // A scope click writes immediately. If the chosen scope narrows away the row
+  // the operator clicked, say so in the toast as well as the menu preview.
+  const scopeNote = targets.every((t) => t.startsWith('*.')) && !domain.startsWith('*.')
+    ? ` (subdomains only — ${escapeHTML(domain)} itself unchanged)`
+    : '';
+  showToast(`Scope: ${targets.join(' + ')}${scopeNote}`, 'success');
   return true;
 }
 
@@ -7612,9 +7617,11 @@ function currentStreamScope(domain, patterns) {
   const labels = base.split('.').filter(Boolean);
   if (!wildcard) {
     // A plain rule already covers the host and every subdomain, so it is the
-    // broadest thing that can be stored for this row.
+    // broadest thing that can be stored for this row. A wildcard-only rule
+    // excludes the host itself: opening on "*.host" here would leave the row
+    // the operator clicked unchanged and make the action look like it reverted.
     if (patterns.has(base)) return 'exact';
-    if (labels.length >= 2 && patterns.has('*.' + base)) return 'host';
+    if (labels.length >= 2 && patterns.has('*.' + base)) return 'exact';
   } else if (patterns.has(raw)) {
     // The wildcard row's own rule is the host wildcard.
     return 'host';
@@ -7623,11 +7630,31 @@ function currentStreamScope(domain, patterns) {
   return 'exact';
 }
 
-// One-line explanation for each scope. "exact" writes the bare name and drops any
-// host wildcard the row also owned, so it is the only scope that narrows; the bare
-// label cannot say that on its own.
+// scopeCoversDomain answers the question the quick action actually asks: after
+// this scope is written, does the row the operator clicked still match? A plain
+// target covers itself and every subdomain (matcher.go indexes a plain rule in
+// both the exact and wildcard maps); a wildcard target covers strict subdomains
+// only. A wildcard row is itself a pattern, so any scope that writes a rule for
+// its base still covers the subdomains the row stood for.
+function scopeCoversDomain(domain, targets) {
+  const raw = String(domain || '').trim().toLowerCase().replace(/^\.+/, '');
+  if (!raw || !targets.length) return false;
+  if (raw.startsWith('*.')) return true;
+  return targets.some((t) => {
+    if (t === raw) return true;
+    if (!t.startsWith('*.')) return raw.endsWith('.' + t);
+    const base = t.slice(2);
+    return raw.endsWith('.' + base) && raw.length > base.length + 1;
+  });
+}
+
+// One-line explanation for each scope. A plain rule is indexed as both an exact
+// host and a wildcard by the matcher, so "exact" covers the host and every
+// subdomain; only "*.host" is strict-subdomain. The old wording said "this host
+// only", which sent operators to "*.host" when they wanted the clicked host
+// covered too.
 const STREAM_SCOPE_HINTS = {
-  exact: 'this host only',
+  exact: 'host + subdomains',
   host: 'subdomains only',
   parent: 'parent subtree',
 };
@@ -7664,7 +7691,12 @@ function updateStreamActionPreview() {
     return;
   }
   const hint = STREAM_SCOPE_HINTS[streamActionScope] || '';
-  el.textContent = `applies to ${targets.join(' + ')} (${hint})`;
+  // Say it in the menu, not only in the toast after the write: a wildcard-only
+  // scope leaves the clicked host itself on its old rule, which reads as a no-op.
+  const missesHost = !streamActionDomain.startsWith('*.') &&
+    !scopeCoversDomain(streamActionDomain, targets);
+  el.textContent = `applies to ${targets.join(' + ')} (${hint})` +
+    (missesHost ? ` — ${escapeHTML(streamActionDomain)} itself stays unchanged` : '');
   el.title = targets.join(' + ');
 }
 
@@ -7680,8 +7712,12 @@ function openStreamActionMenu(trigger) {
   streamActionApplied = [];
   const patterns = streamManagedPatterns();
   // Keep the last scope picked for this name; fall back to the one its rules imply.
+  // A remembered scope that leaves the clicked host out is worse than no memory:
+  // the operator reopens the menu, presses Proxy, and the row they clicked stays
+  // exactly as it was. Only reuse it when it still covers the row.
   const remembered = streamActionScopeMemory.get(streamActionDomain);
-  streamActionScope = remembered && streamScopeTargets(streamActionDomain, remembered).length
+  const rememberedTargets = remembered ? streamScopeTargets(streamActionDomain, remembered) : [];
+  streamActionScope = rememberedTargets.length && scopeCoversDomain(streamActionDomain, rememberedTargets)
     ? remembered
     : currentStreamScope(streamActionDomain, patterns);
   const domainEl = document.getElementById('stream-action-domain');
@@ -8016,7 +8052,9 @@ function applyStreamAction(action) {
   // Only a wildcard-only target leaves the clicked host out, so say that once here
   // as well as in the menu preview: otherwise the original row keeps resolving and
   // the action reads as a no-op. host+* includes the host, so it needs no warning.
-  const scopeNote = targets.every((t) => t.startsWith('*.')) ? ' (subdomains only)' : '';
+  const scopeNote = targets.every((t) => t.startsWith('*.'))
+    ? ` (subdomains only — ${escapeHTML(streamActionDomain)} itself unchanged)`
+    : '';
   const target = targets.join(' + ');
   saveRules();
   renderConfig(currentConfig);
@@ -14358,10 +14396,14 @@ function initEventListeners() {
       return;
     }
     for (const d of accepted) {
-      // Re-adding a domain that sits in the disabled list turns it back on, rather
-      // than leaving the same name in both lists.
-      currentConfig.rules.custom_proxied_disabled =
-        currentConfig.rules.custom_proxied_disabled.filter((x) => x !== d);
+      // Add is a move, not a second copy. Direct is checked before Proxy in the
+      // matcher, so a name left in Direct would keep winning and the Add would
+      // look ignored. Remove the name and its own host wildcard from every other
+      // list, the same way the live-log quick action does.
+      const patterns = d.startsWith('*.') ? [d, d.slice(2)] : [d, '*.' + d];
+      for (const key of ['custom_proxied_disabled', 'custom_blocked', 'custom_direct']) {
+        currentConfig.rules[key] = (currentConfig.rules[key] || []).filter((x) => !patterns.includes(x));
+      }
       if (!active.includes(d)) active.push(d);
     }
     currentConfig.rules.custom_proxied = active;

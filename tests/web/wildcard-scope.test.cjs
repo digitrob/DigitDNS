@@ -20,6 +20,8 @@ function load(rules = null) {
     target: (domain, scope) => vm.runInContext('streamActionTarget', context)(domain, scope),
     targets: (domain, scope) => [...vm.runInContext('streamScopeTargets', context)(domain, scope)],
     scopeFor: (domain, patterns) => vm.runInContext('currentStreamScope', context)(domain, patterns),
+    covers: (domain, targets) => vm.runInContext('scopeCoversDomain', context)(domain, targets),
+    hints: () => vm.runInContext('STREAM_SCOPE_HINTS', context),
     patterns: () => vm.runInContext('streamManagedPatterns', context)(),
   };
 }
@@ -50,14 +52,37 @@ test('a wildcard row rebases instead of disabling its scopes', () => {
   assert.equal(target('*.com', 'host'), '');
 });
 
-test('opens on the scope the lists already hold', () => {
+test('opens on a scope that covers the clicked host', () => {
   const { scopeFor } = load();
   assert.equal(scopeFor('a.b.c', new Set(['a.b.c'])), 'exact');
-  assert.equal(scopeFor('a.b.c', new Set(['*.a.b.c'])), 'host');
   assert.equal(scopeFor('a.b.c', new Set(['*.b.c'])), 'parent');
   assert.equal(scopeFor('a.b.c', new Set()), 'exact');
   // A plain rule already covers its subdomains, so it wins over a redundant wildcard.
   assert.equal(scopeFor('a.b.c', new Set(['a.b.c', '*.a.b.c'])), 'exact');
+  // A wildcard-only rule leaves the host itself direct. Opening on *.host would
+  // write the same wildcard again and the clicked row would not change, so open
+  // on the plain rule, which the matcher treats as host + subdomains.
+  assert.equal(scopeFor('reflection.ai', new Set(['*.reflection.ai'])), 'exact');
+});
+
+test('a scope says whether it still covers the clicked row', () => {
+  const { covers } = load();
+  assert.equal(covers('reflection.ai', ['reflection.ai']), true);
+  // A plain rule covers every subdomain.
+  assert.equal(covers('www.reflection.ai', ['reflection.ai']), true);
+  // A wildcard rule covers strict subdomains only.
+  assert.equal(covers('www.reflection.ai', ['*.reflection.ai']), true);
+  assert.equal(covers('reflection.ai', ['*.reflection.ai']), false);
+  // A wildcard row stands for its own subtree, so any non-empty scope covers it.
+  assert.equal(covers('*.reflection.ai', ['*.reflection.ai']), true);
+  assert.equal(covers('reflection.ai', []), false);
+});
+
+test('the exact scope names the coverage the matcher actually gives it', () => {
+  const { hints } = load();
+  // A plain rule is indexed as both exact and wildcard in matcher.go, so "exact"
+  // covers subdomains too. The old "this host only" wording was false.
+  assert.equal(hints().exact, 'host + subdomains');
 });
 
 test('a wildcard row preselects its own host wildcard', () => {

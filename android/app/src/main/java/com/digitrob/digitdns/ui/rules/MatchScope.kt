@@ -58,7 +58,10 @@ enum class MatchScope(val label: String, val hint: String) {
          * The scope whose patterns are already in [patterns] for [domain], so the menu
          * opens on what is configured instead of resetting to [Exact] every time.
          * The plain rule wins (it covers subdomains too), then the host wildcard, then
-         * the parent wildcard.
+         * the parent wildcard — but only a scope that still covers [domain]. A
+         * wildcard-only rule excludes the host itself, so opening on [Host] there
+         * would leave the row the operator clicked unchanged and make the action look
+         * like it reverted; fall back to [Exact], which covers the host and its subs.
          */
         fun initialScope(domain: String, patterns: Set<String>): MatchScope {
             if (patterns.isEmpty()) return Exact
@@ -68,9 +71,37 @@ enum class MatchScope(val label: String, val hint: String) {
                 PLAIN_SCOPE_PREFERENCE
             }
             return preference.firstOrNull { scope ->
-                scope.targets(domain).let { targets -> targets.isNotEmpty() && targets.all(patterns::contains) }
+                val targets = scope.targets(domain)
+                targets.isNotEmpty() && targets.all(patterns::contains) && covers(domain, targets)
             } ?: Exact
         }
+
+        /**
+         * True when writing [pattern] leaves [domain] matched by the same rule.
+         *
+         * A plain rule covers the name and every subdomain (matcher.go indexes it in
+         * both the exact and wildcard maps); a `*.` rule covers strict subdomains
+         * only. A wildcard row is a pattern rather than a query name, so any rule for
+         * its base — or a broader parent wildcard — still covers the subdomains the
+         * row stood for.
+         */
+        fun covers(domain: String, pattern: String): Boolean {
+            val d = domain.trim().trimStart('.').lowercase(Locale.US)
+            val p = pattern.trim().trimStart('.').lowercase(Locale.US)
+            if (d.isEmpty() || p.isEmpty()) return false
+            return when {
+                d == p -> true
+                d.startsWith("*.") -> {
+                    val base = d.removePrefix("*.")
+                    p == base || (p.startsWith("*.") && base.endsWith("." + p.removePrefix("*.")))
+                }
+                p.startsWith("*.") -> d.endsWith("." + p.removePrefix("*."))
+                // A plain rule covers the name and every subdomain.
+                else -> d.endsWith(".$p")
+            }
+        }
+
+        fun covers(domain: String, targets: List<String>): Boolean = targets.any { covers(domain, it) }
 
         /** Plain row: the plain rule already covers its subdomains, so it comes first. */
         private val PLAIN_SCOPE_PREFERENCE = listOf(Exact, Host, Parent)
