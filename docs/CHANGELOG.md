@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.8.17] — the quick actions save again
+
+### Fixed
+- **Changing a domain's routing from the domain list works again.** Every
+  **Proxy**, **Block** and **Direct** choice from a row's status badge — and from
+  the same menu on a Live Log row — threw a `ReferenceError` and then did nothing.
+  The action handler read `STREAM_ACTION_LOG_BADGE`, which v5.8.12 deleted while
+  adding the stream info button and left the single reference behind. The throw
+  landed *after* the rule lists had been edited in memory and *before* the save
+  request: the badge kept its old value, the server never heard about the change,
+  and the edit disappeared on the next config load. It affected every domain and
+  every list — the service label had nothing to do with it.
+- **The badge lookup can no longer abort a save.** It is read before the rule
+  lists are touched, and the live-log buffer rewrite is best-effort, so a failure
+  in either cannot leave memory edited with nothing written.
+
+### Changed
+- **The `exact` match scope says what it does.** Its hint read "host + subdomains"
+  while the scope writes the bare name and drops any host wildcard the row also
+  owned; it now reads "this host only".
+
+### Build
+- **A stray closing brace in `style.css`** is gone. esbuild warned about it on
+  every asset build; the rules after it were already parsed at the top level, so
+  nothing on the page changes.
+
+---
+
 ## 🏷️ [v5.8.16] — a quieter panel: faster filters, readable metadata, honest reads
 
 ### Changed
