@@ -71,23 +71,22 @@ EXPOSE 53/udp 53/tcp 80/tcp 443/tcp 853/tcp 853/udp 8080/tcp 8443/tcp 8443/udp 5
 
 VOLUME ["/app/data", "/app/certs"]
 
-# Reports the daemon as unhealthy while the panel listener is not accepting
-# connections. The port is a variable because web_port is an operator setting: a
-# check that hardcodes 8080 reports a container as sick for the sole reason that
-# its owner moved the dashboard.
+# No in-image HEALTHCHECK. On some kernels Docker's healthcheck exec leaks one
+# cgroup pids slot per probe into this container, regardless of the command:
+# v5.8.18's TCP probe leaked exactly as the HTTPS wget probe before it, and a
+# throwaway container running the same probe leaked nothing. At the default
+# 1066-task limit the container reached the cap in about nine hours; from then
+# on every runc exec, including the probe, failed with "procReady not received"
+# and a perfectly healthy resolver was reported unhealthy forever. Docker never
+# restarts a container just because it is unhealthy, so the status was only
+# misleading.
 #
-# This is a TCP connect, not an HTTP request, on purpose. A full check needs TLS
-# whenever panel_https is on, and the TLS client used by the old probe (BusyBox
-# wget) leaks one task slot in the container's cgroup on some kernels. Observed
-# on Ubuntu 26.04 / 7.0.0-43: pids.current grew by exactly one per HTTPS probe
-# while cgroup.threads stayed constant. At the default 30s interval the systemd
-# DefaultTasksMax of 1066 was reached in about nine hours; from then on every
-# exec, including the healthcheck itself, failed with "procReady not received"
-# and a perfectly healthy resolver was reported unhealthy forever. nc -z is a
-# single-threaded TCP connect: no TLS, no leak, and it works for both HTTP and
-# HTTPS panels. /healthz remains the endpoint for external HTTP monitoring.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD nc -z -w 2 127.0.0.1 "${DIGITDNS_HEALTH_PORT:-8080}" || exit 1
+# The panel's public /healthz endpoint is the supported liveness signal. Probe
+# it from outside the container — a systemd timer, an uptime service or an
+# orchestrator — and restart the container if it keeps failing. The release
+# notes carry a ready-made timer. If you must keep an exec healthcheck, set a
+# high pids_limit (for example 1048576) and a long interval; otherwise the leak
+# will eventually wedge the container on an affected kernel.
 
 # -daemon is not optional here, for the same reason scripts/digitdns.service passes
 # it: a container must never be left guessing whether it is a server. `docker run -d`

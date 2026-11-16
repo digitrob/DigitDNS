@@ -31,8 +31,8 @@ services:
     environment:
       # Rendered expiry timestamps and quota-cycle boundaries follow this.
       - TZ=UTC
-      # Only the health check reads this; set it if web_port is not 8080.
-      - DIGITDNS_HEALTH_PORT=8080
+      # No Docker HEALTHCHECK is shipped: see the Dockerfile. Probe the panel's
+      # public /healthz endpoint from the host or an uptime service instead.
 
     # The systemd unit raises the file-descriptor limit to 65535 and this path
     # has to match it. The daemon's stream listeners are capped at 512 (TCP),

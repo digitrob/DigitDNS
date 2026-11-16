@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.8.19] — the healthcheck can no longer wedge the container
+
+### Removed
+- **The in-image Docker `HEALTHCHECK` is gone.** v5.8.18 replaced the HTTPS
+  probe with a TCP connect to the panel port, but that did not stop the leak:
+  on some kernels Docker's healthcheck *exec* into this container leaks one
+  cgroup task slot per probe, whatever the command is. The evidence is direct:
+  `pids.current` grew by exactly one per scheduled probe while
+  `cgroup.threads` stayed constant, the same rate as the old HTTPS probe; a
+  throwaway container running the identical `nc -z` probe leaked nothing. At the
+  systemd default of 1066 tasks the container reached the cap in about nine
+  hours, and from then on every `runc exec` — including the probe itself —
+  failed with `procReady not received`. Docker never restarts a container just
+  because it is unhealthy, so the only effect was a healthy resolver reported
+  as unhealthy forever.
+
+  The panel's public `/healthz` endpoint is the supported liveness signal. Probe
+  it from the host, an uptime service or an orchestrator, and restart the
+  container if it keeps failing. The release notes carry a ready-made systemd
+  timer. If you must keep an exec healthcheck, set a high `pids_limit` (for
+  example `1048576`) and a long interval; otherwise the leak will eventually
+  wedge the container on an affected kernel.
+
+### Changed
+- **The sample Compose file no longer sets `DIGITDNS_HEALTH_PORT`.** Nothing in
+  the image reads it now that the healthcheck is gone. It also carries a note
+  pointing at `/healthz` for external monitoring.
+
+---
+
 ## 🏷️ [v5.8.18] — the row you clicked changes
 
 ### Fixed
@@ -50,6 +80,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   serves HTTP or HTTPS. `/healthz` remains the endpoint for external HTTP
   monitoring. The loopback TLS handshake line the TCP probe would otherwise leave
   on an HTTPS panel is filtered; remote handshake errors are still logged.
+
+  > **Corrected in v5.8.19.** The TCP probe still leaked one slot per probe: the
+  > leak is in Docker's healthcheck exec into this container, not in the command.
+  > v5.8.19 removes the in-image healthcheck and moves the probe outside.
 
 ---
 

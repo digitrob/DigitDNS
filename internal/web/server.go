@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -1719,23 +1718,6 @@ func (ws *WebServer) portalThemeStyleOrigin() string {
 	return u.Scheme + "://" + u.Host
 }
 
-// quietLoopbackTLSWriter drops the TLS handshake error the container's TCP
-// healthcheck leaves behind on an HTTPS panel. nc -z connects and closes without
-// a ClientHello, so the HTTP server logs "TLS handshake error from 127.0.0.1:…:
-// EOF" once per probe. That line is expected noise from our own liveness check,
-// not an operator-visible failure; remote handshake errors are still written
-// unchanged. The probe moved to TCP because the old HTTPS probe leaked a task
-// slot in the container's cgroup on some kernels (see the Dockerfile).
-type quietLoopbackTLSWriter struct{ next io.Writer }
-
-func (w quietLoopbackTLSWriter) Write(p []byte) (int, error) {
-	if bytes.Contains(p, []byte("TLS handshake error from 127.0.0.1:")) ||
-		bytes.Contains(p, []byte("TLS handshake error from [::1]:")) {
-		return len(p), nil
-	}
-	return w.next.Write(p)
-}
-
 func (ws *WebServer) Start() error {
 	// Panel exposure policy (v2.1.0 remediation, installer contract): the
 	// dashboard is an ADMIN surface and must not be reachable as a bare
@@ -1779,14 +1761,10 @@ func (ws *WebServer) Start() error {
 	// returns on it immediately.
 	serverCtx, stopServerCtx := context.WithCancel(context.Background())
 	ws.stopServerCtx = stopServerCtx
-	stdLog := log.Default()
 	ws.httpServer = &http.Server{
 		Addr:              addr,
 		Handler:           ws.withRequestReadDeadline(ws.BuildHandler()),
 		ReadHeaderTimeout: 10 * time.Second,
-		// Keep remote handshake errors, drop the loopback EOF that the TCP
-		// healthcheck produces on every probe (see quietLoopbackTLSWriter).
-		ErrorLog: log.New(quietLoopbackTLSWriter{next: stdLog.Writer()}, stdLog.Prefix(), stdLog.Flags()),
 		// WriteTimeout must stay 0: the SSE event stream (/api/stream/queries)
 		// holds connections open indefinitely and would be killed by a
 		// short write deadline every few seconds.
