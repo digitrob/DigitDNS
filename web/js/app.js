@@ -7125,6 +7125,18 @@ const STREAM_ACTION_BADGES = {
   DIRECT: '<span class="badge badge-direct">DIRECT</span>',
 };
 
+// The action name a quick action stamps onto the log rows it already has buffered,
+// so the row the operator just acted on shows the new state without waiting for the
+// next matching query. These are the keys of STREAM_ACTION_BADGES above, not the
+// label text, because the badge renderer looks the key up.
+//
+// This constant was deleted in v5.8.12 while the info button was added, and the one
+// reference below kept throwing a ReferenceError after the rule lists had already
+// been mutated but before anything was saved — so every Proxy/Block/Direct choice
+// silently did nothing for four releases. tests/web/js-globals.test.cjs now fails on
+// a reference to an undeclared constant.
+const STREAM_ACTION_LOG_BADGE = { proxy: 'PROXY', block: 'BLOCK', direct: 'DIRECT' };
+
 // The per-row info trigger. A literal inline SVG rather than a Feather <i>: the
 // live table is rebuilt on every render and only some paths call
 // safeFeatherReplace(), so a data-feather placeholder would usually stay an empty
@@ -7611,10 +7623,11 @@ function currentStreamScope(domain, patterns) {
   return 'exact';
 }
 
-// One-line explanation for each scope; the exact rule covers subdomains too, which
-// the bare label cannot say on its own.
+// One-line explanation for each scope. "exact" writes the bare name and drops any
+// host wildcard the row also owned, so it is the only scope that narrows; the bare
+// label cannot say that on its own.
 const STREAM_SCOPE_HINTS = {
-  exact: 'host + subdomains',
+  exact: 'this host only',
   host: 'subdomains only',
   parent: 'parent subtree',
 };
@@ -7965,11 +7978,16 @@ function applyStreamAction(action) {
   const stamp = streamRowStamp(streamActionDomain) || streamRowStamp(streamActionApplied[0] || '');
   const remove = [...new Set([...rowPatterns, ...streamActionApplied, ...targets])];
   const targetKey = { proxy: 'custom_proxied', block: 'custom_blocked', direct: 'custom_direct' }[action] || '';
+  if (!targetKey) return;
+  // Read the log badge before anything is written. It used to be read after the
+  // rule lists had already been mutated in place: a throw from that line left
+  // currentConfig edited, nothing saved, and no row repainted, so the click looked
+  // ignored and the change vanished on the next config load.
+  const logBadge = STREAM_ACTION_LOG_BADGE[action] || '';
   for (const key of Object.keys(lists)) {
     if (key === targetKey) continue;
     lists[key] = lists[key].filter((x) => !remove.includes(x));
   }
-  if (!targetKey) return;
   lists[targetKey] = replacePatterns(lists[targetKey], remove, targets);
 
   rules.custom_proxied = lists.custom_proxied;
@@ -7984,11 +8002,14 @@ function applyStreamAction(action) {
 
   // Rewrite the buffered rows for this exact host so the badge the operator just
   // acted on (and any sibling row for the same host) shows the new action at once.
-  const logBadge = STREAM_ACTION_LOG_BADGE[action];
+  // Best-effort: the rules are saved either way, and a row that misses this keeps
+  // the action it arrived with until the next query or the next render.
   if (logBadge) {
-    streamBuffer.forEach((q) => {
-      if ((q.domain || '') === streamActionDomain) q.action = logBadge;
-    });
+    try {
+      streamBuffer.forEach((q) => {
+        if ((q.domain || '') === streamActionDomain) q.action = logBadge;
+      });
+    } catch (e) { /* the next render repaints from the buffer anyway */ }
   }
 
   const label = { proxy: 'Proxied', block: 'Blocked', direct: 'Set direct' }[action] || 'Updated';

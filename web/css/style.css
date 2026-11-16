@@ -3685,7 +3685,6 @@ textarea.panel-field {
   background-color: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.2);
 }
-}
 
 /* Layout hook only: the resolution grid sizes the select, the surface comes
    from .panel-field-sm. min-width:0 is what lets the text column shrink
