@@ -3289,6 +3289,41 @@ function proxiedOrderedRows() {
   }
 }
 
+// addedStampAliases is every stored pattern that can carry a row's Added time:
+// the exact pattern, its base, and its host wildcard. A scope change writes one
+// of the other two, so a later move must find the stamp it left behind.
+function addedStampAliases(domain) {
+  const raw = String(domain || '').trim().toLowerCase();
+  if (!raw) return [];
+  const base = raw.startsWith('*.') ? raw.slice(2) : raw;
+  return [...new Set([raw, base, '*.' + base])];
+}
+
+// addedStampFor returns the Added timestamp already stored for a row, if any.
+function addedStampFor(rules, domain) {
+  const added = rules?.custom_domain_added || {};
+  for (const pattern of addedStampAliases(domain)) {
+    if (added[pattern]) return added[pattern];
+  }
+  return '';
+}
+
+// stampDomainsAsAdded gives every domain without a stored Added time one, so a
+// newly written rule lands at the top of "Added (newest)" before the server's
+// next read. A moved or scope-renamed rule passes its old stamp in inherited and
+// keeps its slot. Milliseconds matter: two adds in the same second must still
+// order, and Go's RFC3339 parser accepts the fractional seconds.
+function stampDomainsAsAdded(rules, domains, inherited = '', now = new Date().toISOString()) {
+  if (!rules) return;
+  const list = Array.isArray(domains) ? domains : [domains];
+  if (!list.length) return;
+  const added = rules.custom_domain_added || (rules.custom_domain_added = {});
+  for (const domain of list) {
+    if (!domain || added[domain]) continue;
+    added[domain] = inherited || addedStampFor(rules, domain) || now;
+  }
+}
+
 // domainRemovalPatterns is every stored pattern one visible row stands for.
 //
 // The table hides *.base when base is in the same list, because the plain rule
@@ -5204,6 +5239,8 @@ async function proxiedBulkRemove() {
   rules.custom_proxied_disabled = (rules.custom_proxied_disabled || []).filter((d) => !proxiedSelected.has(d));
   rules.custom_blocked = (rules.custom_blocked || []).filter((d) => !proxiedSelected.has(d));
   rules.custom_direct = (rules.custom_direct || []).filter((d) => !proxiedSelected.has(d));
+  const added = rules.custom_domain_added || (rules.custom_domain_added = {});
+  for (const domain of proxiedSelected) delete added[domain];
   proxiedSelected = new Set();
   renderConfig(currentConfig);
   saveRules();
@@ -7689,10 +7726,9 @@ function applyStreamScope(domain, scope) {
     rules[key] = (rules[key] || []).filter((x) => !remove.includes(x));
   }
   rules[current.key] = replacePatterns(rules[current.key] || [], remove, targets);
-  const added = rules.custom_domain_added || {};
+  const added = rules.custom_domain_added || (rules.custom_domain_added = {});
   for (const pattern of rowPatterns) delete added[pattern];
-  if (stamp) for (const target of targets) added[target] = stamp;
-  rules.custom_domain_added = added;
+  stampDomainsAsAdded(rules, targets, stamp);
   streamActionApplied = targets;
   saveRules();
   renderConfig(currentConfig);
@@ -8137,10 +8173,9 @@ function applyStreamAction(action) {
   rules.custom_blocked = lists.custom_blocked;
   rules.custom_direct = lists.custom_direct;
   streamActionApplied = [];
-  const added = rules.custom_domain_added || {};
+  const added = rules.custom_domain_added || (rules.custom_domain_added = {});
   for (const pattern of rowPatterns) delete added[pattern];
-  if (stamp) for (const target of targets) added[target] = stamp;
-  rules.custom_domain_added = added;
+  stampDomainsAsAdded(rules, targets, stamp);
 
   // Rewrite the buffered rows for this exact host so the badge the operator just
   // acted on (and any sibling row for the same host) shows the new action at once.
@@ -14526,6 +14561,7 @@ function initEventListeners() {
 
     // Imported domains always land enabled; the operator can switch them off after.
     currentConfig.rules[key] = active.concat(accepted);
+    stampDomainsAsAdded(currentConfig.rules, accepted);
     saveRules();
     renderConfig(currentConfig);
 
@@ -14569,6 +14605,7 @@ function initEventListeners() {
       if (!active.includes(d)) active.push(d);
     }
     currentConfig.rules.custom_proxied = active;
+    stampDomainsAsAdded(currentConfig.rules, accepted);
     input.value = '';
     saveRules();
     renderConfig(currentConfig);
@@ -14591,6 +14628,7 @@ function initEventListeners() {
       return;
     }
     currentConfig.rules.custom_blocked = existing.concat(accepted);
+    stampDomainsAsAdded(currentConfig.rules, accepted);
     input.value = '';
     saveRules();
     renderConfig(currentConfig);
@@ -14807,6 +14845,9 @@ function initEventListeners() {
       const val = btn.dataset.val;
       if (currentConfig) {
         currentConfig.rules.custom_blocked = currentConfig.rules.custom_blocked.filter(x => x !== val);
+        const added = currentConfig.rules.custom_domain_added || {};
+        delete added[val];
+        currentConfig.rules.custom_domain_added = added;
         saveRules();
         renderConfig(currentConfig);
       }

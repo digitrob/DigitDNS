@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.9.2] — a new domain lands at the top of the list
+
+### Fixed
+- **A domain added in the web panel appears immediately under “Added
+  (newest)”.** The table sorted on `custom_domain_added`, but the Add handlers
+  wrote only the rule and left the timestamp to the server. The server stamped
+  it on save and answered `{"success": true}`, so the open page kept rendering
+  the new row with no stamp — and therefore at the bottom — until a reload
+  fetched the config. The client now stamps the rule when it writes it.
+- **Every web add path is covered:** Add proxied, Add blocked, bulk import, and
+  the live-log Proxy / Block / Direct quick actions. A move or scope rename
+  inherits the old stamp, so it keeps its place instead of jumping to the top.
+- **Removal drops the stamp**, so re-adding the same name later gets a fresh
+  position rather than the old one.
+- **Timestamps keep millisecond precision.** Two domains added in the same
+  second still order correctly, and the server accepts the RFC3339 fractional
+  seconds.
+
+Android already stamped new routes locally; this release brings the web panel
+to the same behaviour and carries the matching app version.
+
+---
+
 ## 🏷️ [v5.9.1] — Force picks the resolver the card calls fastest
 
 ### Fixed
