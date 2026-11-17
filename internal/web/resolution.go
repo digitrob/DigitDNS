@@ -36,6 +36,11 @@ type resolutionView struct {
 	AdaptiveLastNote   string                        `json:"adaptive_last_note"`
 	Profiles           map[string]resolution.Profile `json:"profiles"`
 	Upstreams          []string                      `json:"upstreams"`
+	// UpstreamStats is attached only to the Force response. The card needs the
+	// post-benchmark numbers in the same round trip: the panel's /api/stats
+	// answer is cached for a second, so a follow-up fetch could hand back the
+	// pre-benchmark latencies and make the new choice look slower than the old.
+	UpstreamStats []upstream.UpstreamStat `json:"upstream_stats,omitempty"`
 }
 
 // handleResolutionSettings reads or writes the global encrypted-only filter and
@@ -45,7 +50,7 @@ type resolutionView struct {
 func (ws *WebServer) handleResolutionSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		ws.writeResolution(w)
+		ws.writeResolution(w, false)
 	case http.MethodPost:
 		ws.saveResolution(w, r)
 	default:
@@ -53,7 +58,7 @@ func (ws *WebServer) handleResolutionSettings(w http.ResponseWriter, r *http.Req
 	}
 }
 
-func (ws *WebServer) writeResolution(w http.ResponseWriter) {
+func (ws *WebServer) writeResolution(w http.ResponseWriter, withStats bool) {
 	ws.dnsMu.Lock()
 	cfg := ws.mutableDNSLocked()
 	transports := resolution.NormalizeProtocols(cfg.Transports)
@@ -82,6 +87,10 @@ func (ws *WebServer) writeResolution(w http.ResponseWriter) {
 	}
 
 	encrypted := encryptedUpstreams(upstreams)
+	var stats []upstream.UpstreamStat
+	if withStats && ws.upstreams != nil {
+		stats = ws.upstreams.GetUpstreamStats()
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resolutionView{
 		Transport:          transport,
@@ -98,6 +107,7 @@ func (ws *WebServer) writeResolution(w http.ResponseWriter) {
 		AdaptiveLastNote:   cfg.AdaptiveLastNote,
 		Profiles:           profiles,
 		Upstreams:          upstreams,
+		UpstreamStats:      stats,
 	})
 }
 
@@ -124,7 +134,7 @@ func (ws *WebServer) handleResolutionAdaptiveRun(w http.ResponseWriter, r *http.
 		}
 		return
 	}
-	ws.writeResolution(w)
+	ws.writeResolution(w, true)
 }
 
 func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
@@ -332,7 +342,7 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 		ws.cache.Flush()
 	}
 	ws.nudgeAdaptive()
-	ws.writeResolution(w)
+	ws.writeResolution(w, false)
 }
 
 // normalizeProfileKey accepts "example.com", "*.example.com" and trailing dots,

@@ -2613,16 +2613,13 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   font-weight: 700;
   letter-spacing: 0.06em;
   line-height: 1.5;
-}
-.upstream-fastest-age {
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xxs);
-  font-weight: 600;
-  line-height: 1.5;
   white-space: nowrap;
 }
-.upstream-row.is-adaptive-current .upstream-fastest-wrap { display: inline-flex; }
+/* The FASTEST marker sits on the lowest-latency row the Adaptive strategy would
+   accept; IN USE marks the resolver it actually chose. Both rows show the badge
+   so a run that deliberately kept the current resolver explains itself. */
+.upstream-row.is-adaptive-current .upstream-fastest-wrap,
+.upstream-row.is-fastest .upstream-fastest-wrap { display: inline-flex; }
 
 /* Resolver card chips. The same compact shape as the history range buttons,
    with protocol chips carrying their own colour when enabled. */
@@ -2683,10 +2680,21 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   padding-right: 0.2rem;
 }
 
+/* Six transport chips never fit one line in the card column; wrap so DNSCrypt
+   is reachable without a horizontal scroll nobody expects. */
+#resolution-transport-chips {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
 /* Four strategy chips fit the inline label column with a slightly tighter
-   gutter; the gap still reads wider than the old packed layout. */
+   gutter; the gap still reads wider than the old packed layout. The card column
+   is narrower than the four names on a laptop, so the row wraps instead of
+   scrolling one of them out of sight. */
 #resolution-strategy-chips {
   gap: 0.2rem;
+  flex-wrap: wrap;
+  overflow: visible;
 }
 
 #resolution-strategy-chips .resolver-chip {
@@ -2700,6 +2708,9 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   justify-content: center;
   min-width: 32px;
   min-height: 32px;
+  /* The row scrolls; a chip must not shrink under its own label, or the four
+     strategy names overlap each other in a narrow card column. */
+  flex-shrink: 0;
   padding: 0.1rem 0.3rem;
   border-radius: 0.45rem;
   border: 1px solid rgb(var(--c-slate-700));
@@ -3042,6 +3053,19 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* The server's explanation for the last decision ("kept X; Y is within
+   measurement noise"). Empty means nothing to say, and an empty line must not
+   reserve height the card was not already using. */
+.resolution-adaptive-reason {
+  margin-top: -2px;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.resolution-adaptive-reason:empty { display: none; }
 
 .resolution-adaptive-disabled {
   opacity: var(--disabled-opacity);

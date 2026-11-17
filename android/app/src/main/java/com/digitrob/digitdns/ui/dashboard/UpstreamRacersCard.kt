@@ -553,17 +553,22 @@ private fun AdaptiveIntervalChips(
                 }.orEmpty()
                 !adaptive -> ""
                 base.adaptiveLastRun.isBlank() -> stringResource(R.string.adaptive_last_run_empty)
-                else -> stringResource(
-                    R.string.adaptive_last_run,
-                    formatAdaptiveRun(base.adaptiveLastRun),
-                    base.adaptiveCurrent.ifBlank { "—" },
-                )
+                else -> {
+                    val head = stringResource(
+                        R.string.adaptive_last_run,
+                        formatAdaptiveRun(base.adaptiveLastRun),
+                        base.adaptiveCurrent.ifBlank { "—" },
+                    )
+                    // The server's reason for the last decision, so a run that
+                    // kept the current resolver is not read as a failure.
+                    if (base.adaptiveLastNote.isBlank()) head else head + "\n" + base.adaptiveLastNote
+                }
             }
             Text(
                 text = footerText,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.72f),
-                maxLines = 2,
+                maxLines = 3,
                 minLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )

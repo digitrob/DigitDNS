@@ -4350,17 +4350,24 @@ function syncAdaptiveControls() {
   }
 
   const note = document.getElementById('resolution-adaptive-note');
+  const reason = document.getElementById('resolution-adaptive-reason');
+  const setReason = (text) => {
+    if (reason) reason.textContent = text;
+  };
   if (!note) return;
   if (single || !adaptive) {
     // A single upstream bypasses the strategy/interval/transport controls;
     // keep the reserved line blank rather than adding more text.
     note.textContent = '';
     note.title = '';
+    setReason('');
     return;
   }
 
   const current = resolutionSettings.adaptive_current || '';
   const lastRun = resolutionSettings.adaptive_last_run || '';
+  const lastNote = resolutionSettings.adaptive_last_note || '';
+  setReason(lastNote);
   if (!lastRun) {
     note.textContent = 'No benchmark yet.';
     note.title = '';
@@ -4369,7 +4376,7 @@ function syncAdaptiveControls() {
   const when = new Date(lastRun);
   const stamp = Number.isNaN(when.getTime()) ? lastRun : when.toLocaleString();
   note.textContent = `Last run ${stamp} · using ${current || 'no healthy resolver selected'}`;
-  note.title = '';
+  note.title = lastNote;
 }
 
 function syncTransportChips() {
@@ -4528,13 +4535,15 @@ async function runAdaptiveNow() {
       showToast(await errorMessage(res, 'Could not run the adaptive check'), 'error');
       return;
     }
-    resolutionSettings = normalizeResolutionSettings(await res.json());
+    const payload = await res.json();
+    resolutionSettings = normalizeResolutionSettings(payload);
     adaptiveFlash = true;
     syncResolutionControls();
-    // Repaint the resolver rows now: the highlight and FASTEST badge depend on
-    // adaptive_current, and waiting for the next stats poll made Force look like
-    // it had not switched.
-    if (Array.isArray(lastUpstreamsPayload)) renderUpstreams(lastUpstreamsPayload);
+    // Repaint the resolver rows from the numbers the server just measured. The
+    // Force response carries them because /api/stats is cached for a second and
+    // a follow-up fetch could hand back the pre-benchmark latencies — which made
+    // the new choice look slower than the one it replaced.
+    if (Array.isArray(payload.upstream_stats)) renderUpstreams(payload.upstream_stats);
     refreshProxiedListIfVisible();
     showToast('Adaptive check complete', 'success');
     if (adaptiveFlashTimer) clearTimeout(adaptiveFlashTimer);
@@ -6381,6 +6390,20 @@ function initUpstreamAddressScroll() {
   }, true);
 }
 
+// upstreamAdaptiveEligible mirrors the server's Adaptive health gate closely
+// enough that the FASTEST marker cannot land on a row the selector would skip:
+// transport allowed, measured, breaker closed, and no recent error rate over
+// the same 10% / 20-sample threshold.
+function upstreamAdaptiveEligible(u, transport) {
+  if (!u || upstreamDimmed(u.address, transport)) return false;
+  if (u.circuit_open || u.circuit_state === 'half-open') return false;
+  if (!u.measured) return false;
+  if (!(Number(u.latency) > 0)) return false;
+  const samples = Number(u.recent_samples) || 0;
+  const rate = Number(u.recent_error_rate) || 0;
+  return !(samples >= 20 && rate >= 0.1);
+}
+
 function renderUpstreams(upstreams) {
   const container = document.getElementById('upstreams-list');
   if (!container) return;
@@ -6445,6 +6468,7 @@ function renderUpstreams(upstreams) {
     u.policy_errors || 0, u.circuit_open ? 1 : 0, u.last_error || '',
     u.measured ? 1 : 0, u.samples || 0, u.recent_samples || 0,
     Math.round((u.recent_error_rate || 0) * 100), u.consecutive_failures || 0,
+    u.latency_is_probe ? 1 : 0, u.probe_samples || 0,
   ].join(':')).join('|') + '|' + policySig;
   if (sig === lastUpstreamsSig) return;
   lastUpstreamsSig = sig;
@@ -6456,6 +6480,25 @@ function renderUpstreams(upstreams) {
     ? upstreams.filter(u => !transportExcludes(u.address, renderTransport))
         .concat(upstreams.filter(u => transportExcludes(u.address, renderTransport)))
     : upstreams;
+
+  // FASTEST marks the row with the lowest latency the Adaptive strategy would
+  // accept; IN USE marks the resolver it actually chose. They are usually the
+  // same row. When a run deliberately keeps the current resolver because the
+  // alternative is inside the measurement noise, showing both is the honest
+  // answer instead of pretending the chosen row is the fastest.
+  const adaptiveMode = normalizeStrategyValue(resolutionSettings.default_strategy) === 'adaptive';
+  let fastestAddress = '';
+  if (adaptiveMode) {
+    let bestMs = Infinity;
+    for (const u of ordered) {
+      if (!upstreamAdaptiveEligible(u, renderTransport)) continue;
+      const ms = Number(u.latency) / 1e6;
+      if (ms > 0 && ms < bestMs) {
+        bestMs = ms;
+        fastestAddress = u.address;
+      }
+    }
+  }
 
   const desiredAddresses = new Set(ordered.map(u => u.address));
   for (const [addr, row] of upstreamRowMap) {
@@ -6506,7 +6549,9 @@ function renderUpstreams(upstreams) {
 
     let latTitle = measured
       ? (latencyIsProbe
-          ? 'Median of the latest warm benchmark probes — waiting for three live exchanges'
+          ? (Number(u.probe_samples) > 1
+              ? `Median of the last ${Number(u.probe_samples)} benchmark probes — the number Adaptive ranks by`
+              : 'Median of the latest warm benchmark probe — waiting for three live exchanges')
           : `Median of the last ${Number(u.samples).toLocaleString()} live exchanges`)
       : 'Not measured yet — no answer has been timed from this upstream';
     if (measured && Number(u.latency_p95_ms) > 0) {
@@ -6540,8 +6585,11 @@ function renderUpstreams(upstreams) {
     // A resolver the active transport excludes, or one a valid pin bypasses, is
     // dimmed but stays removable: the list is also the place removals happen.
     const dimmed = upstreamDimmed(u.address, resolutionSettings.transport || 'any');
-    const adaptiveCurrent = normalizeStrategyValue(resolutionSettings.default_strategy) === 'adaptive'
-      && resolutionSettings.adaptive_current === u.address;
+    const adaptiveCurrent = adaptiveMode && resolutionSettings.adaptive_current === u.address;
+    const isFastest = !!fastestAddress && fastestAddress === u.address;
+    const markerText = isFastest && adaptiveCurrent ? 'FASTEST · IN USE'
+      : adaptiveCurrent ? 'IN USE'
+      : isFastest ? 'FASTEST' : '';
     const fastestAge = upstreamCheckAge(u);
     const fastestAgeTitle = fastestAge === '—'
       ? 'No adaptive latency check yet'
@@ -6552,7 +6600,8 @@ function renderUpstreams(upstreams) {
       row.dataset.addr = u.address;
       row.className = 'upstream-row flex items-center justify-between py-1.5 px-3 rounded-lg bg-slate-950/70 border border-slate-800 text-xs'
         + (dimmed ? ' is-dimmed' : '')
-        + (adaptiveCurrent ? ' is-adaptive-current' : '');
+        + (adaptiveCurrent ? ' is-adaptive-current' : '')
+        + (isFastest ? ' is-fastest' : '');
       // The left half is `min-w-0 truncate`: a flex item's default min-width:auto
       // resolves to its content width, so a long DoH URL (https://dns.google/dns-query)
       // would refuse to shrink and crush the latency badge on the right into a
@@ -6570,8 +6619,7 @@ function renderUpstreams(upstreams) {
                  hover fallback. The dot and the latency/delete controls never move. -->
             <span class="upstream-addr block min-w-0 font-mono text-slate-200" tabindex="0" title="${escapeHTML(u.address)}">${escapeHTML(u.address)}</span>
             <span class="upstream-fastest-wrap">
-              <span class="upstream-fastest-badge">FASTEST</span>
-              <span class="upstream-fastest-age" title="${escapeHTML(fastestAgeTitle)}">${escapeHTML(fastestAge)}</span>
+              <span class="upstream-fastest-badge" title="${escapeHTML(markerText ? markerText + ' · ' + fastestAgeTitle : '')}">${markerText}</span>
             </span>
           </div>
         </div>
@@ -6592,6 +6640,13 @@ function renderUpstreams(upstreams) {
     } else {
       row.classList.toggle('is-dimmed', dimmed);
       row.classList.toggle('is-adaptive-current', adaptiveCurrent);
+      row.classList.toggle('is-fastest', isFastest);
+      const marker = row.querySelector('.upstream-fastest-badge');
+      if (marker) {
+        if (marker.textContent !== markerText) marker.textContent = markerText;
+        const markerTitle = markerText ? markerText + ' · ' + fastestAgeTitle : '';
+        if (marker.title !== markerTitle) marker.title = markerTitle;
+      }
       const dot = row.querySelector('.upstream-dot');
       const dotCls = 'upstream-dot shrink-0 ' + dotClass;
       if (dot) {
@@ -6603,11 +6658,6 @@ function renderUpstreams(upstreams) {
         if (badge.className !== badgeCls) badge.className = badgeCls;
         if (badge.textContent !== latText) badge.textContent = latText;
         if (badge.title !== latTitle) badge.title = latTitle;
-      }
-      const age = row.querySelector('.upstream-fastest-age');
-      if (age) {
-        if (age.textContent !== fastestAge) age.textContent = fastestAge;
-        if (age.title !== fastestAgeTitle) age.title = fastestAgeTitle;
       }
     }
     desiredRows.push(row);

@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"digitdns/internal/core/resolution"
+
 	"github.com/miekg/dns"
 )
 
@@ -73,6 +75,10 @@ func TestBenchmarkUpstreamUsesMedianOfWarmSamples(t *testing.T) {
 func TestGetUpstreamStatsPrefersProbeUntilEnoughLiveSamples(t *testing.T) {
 	const addr = "192.0.2.1:53"
 	p := newTestPool(t, []string{addr}, time.Second, false, "")
+	// This is the card's rule for every strategy that ranks on live traffic.
+	// Adaptive ranks on the probe window instead, so the card shows the probe
+	// number there; TestAdaptiveCardAndSelectionUseTheSameLatency covers it.
+	p.SetPolicy(Policy{DefaultStrategy: resolution.StrategyHedged})
 	p.recordStat(addr, 20*time.Millisecond, statSuccess, "", true)
 	p.recordStat(addr, 1718*time.Millisecond, statSuccess, "", false)
 

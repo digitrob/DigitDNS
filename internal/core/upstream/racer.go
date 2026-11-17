@@ -348,6 +348,12 @@ const (
 	// deliberately short: "did this resolver work recently" is the question the dot
 	// answers, not "has it ever failed since the process started".
 	recentWindow = 64
+	// probeWindow is how many successful benchmark medians the Adaptive choice
+	// keeps per resolver. A single three-sample probe at 7 ms has a winner that
+	// changes run to run, so a Force click used to flip between two resolvers
+	// whose difference was inside the noise. The median of this window is stable
+	// across clicks and still follows a resolver that genuinely got slower.
+	probeWindow = 5
 )
 
 type upstreamStatInternal struct {
@@ -375,6 +381,12 @@ type upstreamStatInternal struct {
 	lastProbeLatency time.Duration
 	lastProbeOK      bool
 	lastProbeAt      time.Time
+	// probeRing holds the last probeWindow successful benchmark medians. The
+	// Adaptive selection and the resolver card both rank on its median, so the
+	// row the card calls fastest is the row Force selects.
+	probeRing  [probeWindow]time.Duration
+	probeNext  int
+	probeCount int
 
 	// recent is a ring of live outcomes: 1 is a transport failure, 0 is a usable
 	// answer or a policy response (both prove reachability). The health dot reads
@@ -463,6 +475,37 @@ func (st *upstreamStatInternal) latencyPercentiles() (p50, p95, avg time.Duratio
 		return idx - 1
 	}
 	return vals[rank(50)], vals[rank(95)], sum / time.Duration(n)
+}
+
+// observeProbe appends a successful benchmark median to the probe window.
+func (st *upstreamStatInternal) observeProbe(rtt time.Duration) {
+	if rtt <= 0 {
+		return
+	}
+	st.probeRing[st.probeNext] = rtt
+	st.probeNext = (st.probeNext + 1) % probeWindow
+	if st.probeCount < probeWindow {
+		st.probeCount++
+	}
+}
+
+// probeMedian returns the median of the recent benchmark medians, or 0 when the
+// resolver has never answered a probe.
+func (st *upstreamStatInternal) probeMedian() time.Duration {
+	n := st.probeCount
+	if n == 0 {
+		return 0
+	}
+	var vals [probeWindow]time.Duration
+	start := (st.probeNext - n + probeWindow) % probeWindow
+	for i := 0; i < n; i++ {
+		vals[i] = st.probeRing[(start+i)%probeWindow]
+	}
+	slices.Sort(vals[:n])
+	if n%2 == 1 {
+		return vals[n/2]
+	}
+	return (vals[n/2-1] + vals[n/2]) / 2
 }
 
 // Circuit breaker policy. Five consecutive transport failures is enough to stop
@@ -749,6 +792,15 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 			stat.lastProbeLatency = rtt
 			stat.lastProbeOK = true
 			stat.lastProbeAt = now
+			stat.observeProbe(rtt)
+			// A probe that answered proves the resolver is reachable again. The
+			// breaker used to stay open until live traffic happened to succeed, so
+			// a resolver that only the benchmark was reaching stayed excluded from
+			// the Adaptive choice for the whole cooldown.
+			if stat.openUntil.Swap(0) != 0 {
+				p.openCircuits.Add(-1)
+				log.Printf("[Upstream] Circuit closed for %s after a successful benchmark probe", addr)
+			}
 			break
 		}
 		stat.hits++
@@ -1325,6 +1377,13 @@ func (p *UpstreamPool) exchangeBestKnown(req *dns.Msg, upstreams []string, timeo
 // flap between two resolvers whose measured latency differs by noise.
 const adaptiveHysteresis = 0.12
 
+// adaptiveForcedNoise is the smaller margin the operator's Force button uses.
+// Force means "pick the fastest now", not "flip a coin": a win smaller than this
+// is inside what two three-sample probes of the same resolver produce, so the
+// choice stays put and the note says why. A real gap still switches on the
+// first click.
+const adaptiveForcedNoise = 0.03
+
 // AdaptiveDecision is the outcome of one Adaptive selection run.
 type AdaptiveDecision struct {
 	// Current is the resolver to use until the next run.
@@ -1452,26 +1511,34 @@ func (p *UpstreamPool) selectAdaptiveFastest(current string, minImprovement floa
 		decision.Note = "selected the fastest healthy resolver"
 	case bestAddr == current:
 		decision.Note = "current resolver is still the fastest"
-	case force || float64(bestLatency) < float64(currentLat)*(1-minImprovement):
+	case force && (currentLat <= 0 || float64(bestLatency) < float64(currentLat)*(1-adaptiveForcedNoise)):
 		decision.Current = bestAddr
 		decision.CurrentLatency = bestLatency
 		decision.Changed = true
-		if force {
-			decision.Note = "forced to the fastest healthy resolver"
-		} else {
-			decision.Note = "switched to a meaningfully faster resolver"
-		}
+		decision.Note = "forced to the fastest healthy resolver"
+	case force:
+		decision.Note = fmt.Sprintf(
+			"kept %s; %s is within measurement noise (%.1f vs %.1f ms)",
+			current, bestAddr, float64(currentLat)/1e6, float64(bestLatency)/1e6)
+	case float64(bestLatency) < float64(currentLat)*(1-minImprovement):
+		decision.Current = bestAddr
+		decision.CurrentLatency = bestLatency
+		decision.Changed = true
+		decision.Note = "switched to a meaningfully faster resolver"
 	default:
 		decision.Note = "kept the current resolver; the fastest is not meaningfully faster"
 	}
 	return decision
 }
 
-// adaptiveLatency prefers the warm benchmark median when the latest probe
-// succeeded. The Adaptive scheduler has just run that probe, so it is the fresh
-// number the decision is supposed to use; a long-lived live p50 can lag a real
-// change and would make the benchmark decorative.
+// adaptiveLatency is the number the Adaptive strategy ranks by: the median of
+// the recent benchmark medians. The window is what keeps two clicks in a row
+// from picking different resolvers whose true difference is inside the probe's
+// own noise. When no probe has succeeded yet it falls back to the live p50.
 func adaptiveLatency(s UpstreamStat) time.Duration {
+	if s.LastProbeOK && s.ProbeMedianMs > 0 {
+		return time.Duration(s.ProbeMedianMs * float64(time.Millisecond))
+	}
 	if s.LastProbeOK && s.LastProbeMs > 0 {
 		return time.Duration(s.LastProbeMs * float64(time.Millisecond))
 	}
@@ -2079,8 +2146,13 @@ type UpstreamStat struct {
 	ProbeErrors uint64  `json:"probe_errors"`
 	ProbePolicy uint64  `json:"probe_policy"`
 	LastProbeMs float64 `json:"last_probe_ms"`
-	LastProbeOK bool    `json:"last_probe_ok"`
-	LastProbeAt string  `json:"last_probe_at,omitempty"`
+	// ProbeMedianMs is the median of the recent benchmark medians: the number
+	// the Adaptive choice ranks by, and the number the card shows while the
+	// strategy is Adaptive. ProbeSamples is how many probes are in that window.
+	ProbeMedianMs float64 `json:"probe_median_ms,omitempty"`
+	ProbeSamples  int     `json:"probe_samples,omitempty"`
+	LastProbeOK   bool    `json:"last_probe_ok"`
+	LastProbeAt   string  `json:"last_probe_at,omitempty"`
 }
 
 // minLiveLatencySamples is the number of successful live exchanges needed
@@ -2113,15 +2185,21 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 		lastProbeLatency    time.Duration
 		lastProbeOK         bool
 		lastProbeAt         time.Time
+		probeMedian         time.Duration
+		probeCount          int
 	}
 
 	p.mu.RLock()
 	addrs := make([]string, len(p.upstreams))
 	copy(addrs, p.upstreams)
+	// Adaptive ranks on the benchmark, so the card has to show that same number
+	// or the row it calls fastest is not the row Force selects.
+	adaptive := resolution.NormalizeStrategy(p.policy.DefaultStrategy) == resolution.StrategyAdaptive
 	stats := make(map[string]snapshot, len(p.stats))
 	for addr, st := range p.stats {
 		st.mu.Lock()
 		p50, p95, avg := st.latencyPercentiles()
+		probeMedian, probeCount := st.probeMedian(), st.probeCount
 		stats[addr] = snapshot{
 			latency:             p50,
 			latencyP95:          p95,
@@ -2144,6 +2222,8 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 			lastProbeLatency:    st.lastProbeLatency,
 			lastProbeOK:         st.lastProbeOK,
 			lastProbeAt:         st.lastProbeAt,
+			probeMedian:         probeMedian,
+			probeCount:          probeCount,
 		}
 		st.mu.Unlock()
 	}
@@ -2176,6 +2256,16 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 			}
 			s.Samples = raw.samples
 			switch {
+			case adaptive && raw.lastProbeOK && raw.probeMedian > 0:
+				// Adaptive decides on the probe window, so the card shows the
+				// probe window. The live p50 stays in the tooltip's sample count
+				// and is what other strategies rank by.
+				s.Measured = true
+				s.LatencyIsProbe = true
+				s.LatencyNs = int64(raw.probeMedian)
+				s.LatencyP50Ms = float64(raw.probeMedian) / 1e6
+				s.LatencyP95Ms = s.LatencyP50Ms
+				s.LatencyAvgMs = s.LatencyP50Ms
 			case raw.samples >= minLiveLatencySamples:
 				s.Measured = true
 				s.LatencyNs = int64(raw.latency)
@@ -2217,6 +2307,10 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 			if raw.lastProbeLatency > 0 {
 				s.LastProbeMs = float64(raw.lastProbeLatency) / 1e6
 			}
+			if raw.probeMedian > 0 {
+				s.ProbeMedianMs = float64(raw.probeMedian) / 1e6
+			}
+			s.ProbeSamples = raw.probeCount
 			if !raw.lastProbeAt.IsZero() {
 				s.LastProbeAt = raw.lastProbeAt.UTC().Format(time.RFC3339)
 			}

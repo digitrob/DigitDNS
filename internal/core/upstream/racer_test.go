@@ -1403,6 +1403,19 @@ func setMeasuredLatency(t *testing.T, p *UpstreamPool, addr string, d time.Durat
 	p.recordStat(addr, d, statSuccess, "", false)
 }
 
+// setProbeLatency records one successful benchmark median, the way
+// BenchmarkUpstream does, and feeds the Adaptive probe window.
+func setProbeLatency(t *testing.T, p *UpstreamPool, addr string, d time.Duration) {
+	t.Helper()
+	p.mu.RLock()
+	_, ok := p.stats[addr]
+	p.mu.RUnlock()
+	if !ok {
+		t.Fatalf("no stat entry for %s", addr)
+	}
+	p.recordStat(addr, d, statSuccess, "", true)
+}
+
 func TestBestKnownStartsWithFastestMeasured(t *testing.T) {
 	slow := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.21", delay: 40 * time.Millisecond}), nil)
 	fast := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.22"}), nil)
@@ -1549,6 +1562,110 @@ func TestAdaptiveSelectionReplacesAStaleChoice(t *testing.T) {
 	d := p.SelectAdaptiveFastest("192.0.2.99:53", 0)
 	if d.Current != first.addr || !d.Changed {
 		t.Fatalf("adaptive kept a resolver that is no longer in the pool: %+v", d)
+	}
+}
+
+// A single three-sample probe at 7 ms picks a different winner each run. The
+// Adaptive choice uses the median of the recent probe window, so repeated Force
+// clicks land on the same resolver instead of bouncing between two that are
+// inside the noise.
+func TestAdaptiveForcedSelectionUsesProbeWindow(t *testing.T) {
+	steady := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.82"}), nil)
+	noisy := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.83"}), nil)
+
+	p := newTestPool(t, []string{steady.addr, noisy.addr}, 2*time.Second, false, "")
+	for range 4 {
+		setProbeLatency(t, p, steady.addr, 8*time.Millisecond)
+		setProbeLatency(t, p, noisy.addr, 7*time.Millisecond)
+	}
+	// The latest probe is the worst one noisy has produced, so ranking on the
+	// last probe alone would keep steady.
+	setProbeLatency(t, p, noisy.addr, 9*time.Millisecond)
+
+	d := p.SelectAdaptiveFastestForced(steady.addr)
+	if d.Current != noisy.addr || d.Fastest != noisy.addr {
+		t.Fatalf("forced selection ignored the probe window: %+v", d)
+	}
+
+	// Another click adds one more slow sample; the window median is unchanged,
+	// so the choice does not flip back.
+	setProbeLatency(t, p, noisy.addr, 9*time.Millisecond)
+	setProbeLatency(t, p, steady.addr, 8*time.Millisecond)
+	if d := p.SelectAdaptiveFastestForced(noisy.addr); d.Changed {
+		t.Fatalf("forced selection flipped on one noisy probe: %+v", d)
+	}
+}
+
+// The card and the Adaptive choice must rank by the same number. Before this,
+// the card showed the live p50 while the selector used the latest probe, so the
+// row the panel called fastest was often not the row Force picked.
+func TestAdaptiveCardAndSelectionUseTheSameLatency(t *testing.T) {
+	liveSlow := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.84"}), nil)
+	liveFast := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.85"}), nil)
+
+	p := newTestPool(t, []string{liveSlow.addr, liveFast.addr}, 2*time.Second, false, "")
+	for range 3 {
+		setMeasuredLatency(t, p, liveSlow.addr, 40*time.Millisecond)
+		setMeasuredLatency(t, p, liveFast.addr, 10*time.Millisecond)
+	}
+	// The benchmark disagrees with live traffic: the live-slow resolver probes
+	// faster. Adaptive must follow the probe, on the card and in the decision.
+	for range 3 {
+		setProbeLatency(t, p, liveSlow.addr, 8*time.Millisecond)
+		setProbeLatency(t, p, liveFast.addr, 9*time.Millisecond)
+	}
+	p.SetPolicy(Policy{DefaultStrategy: resolution.StrategyAdaptive, AdaptiveCurrent: liveFast.addr})
+
+	stats := p.GetUpstreamStats()
+	if stats[0].Address != liveSlow.addr {
+		t.Fatalf("card order = %s first, want the probe winner %s", stats[0].Address, liveSlow.addr)
+	}
+	if !stats[0].LatencyIsProbe || stats[0].LatencyP50Ms != 8 {
+		t.Fatalf("card latency = %.2f ms (probe=%t), want the 8 ms probe median",
+			stats[0].LatencyP50Ms, stats[0].LatencyIsProbe)
+	}
+	d := p.SelectAdaptiveFastestForced(liveFast.addr)
+	if d.Current != liveSlow.addr || d.Fastest != liveSlow.addr {
+		t.Fatalf("selection disagrees with the card: %+v", d)
+	}
+
+	// Other strategies still rank by live traffic.
+	p.SetPolicy(Policy{DefaultStrategy: resolution.StrategyHedged})
+	stats = p.GetUpstreamStats()
+	if stats[0].Address != liveFast.addr {
+		t.Fatalf("hedged card order = %s first, want the live p50 winner %s", stats[0].Address, liveFast.addr)
+	}
+}
+
+// Force means "pick the fastest now", but a margin smaller than the probe's own
+// noise is not a result. It keeps the current resolver and says so instead of
+// flipping the highlight on every click.
+func TestAdaptiveForcedKeepsAResolverInsideMeasurementNoise(t *testing.T) {
+	current := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.86"}), nil)
+	rival := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.87"}), nil)
+
+	p := newTestPool(t, []string{current.addr, rival.addr}, 2*time.Second, false, "")
+	for range 3 {
+		setProbeLatency(t, p, current.addr, 8*time.Millisecond)
+		setProbeLatency(t, p, rival.addr, 8*time.Millisecond-100*time.Microsecond)
+	}
+	p.SetPolicy(Policy{DefaultStrategy: resolution.StrategyAdaptive, AdaptiveCurrent: current.addr})
+
+	d := p.SelectAdaptiveFastestForced(current.addr)
+	if d.Changed || d.Current != current.addr {
+		t.Fatalf("forced selection flipped on a 0.1 ms margin: %+v", d)
+	}
+	if !strings.Contains(d.Note, "noise") {
+		t.Fatalf("forced selection did not explain the kept choice: %q", d.Note)
+	}
+
+	// A real gap still switches on the first click.
+	for range 3 {
+		setProbeLatency(t, p, rival.addr, 6*time.Millisecond)
+	}
+	d = p.SelectAdaptiveFastestForced(current.addr)
+	if !d.Changed || d.Current != rival.addr {
+		t.Fatalf("forced selection ignored a real gap: %+v", d)
 	}
 }
 
