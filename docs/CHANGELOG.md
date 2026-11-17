@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.9.1] — Force picks the resolver the card calls fastest
+
+### Fixed
+- **The Adaptive Force button now selects the row the panel labels fastest.**
+  The card, its sort order and the selection used two different numbers: the
+  card showed the live p50 once a resolver had three live exchanges, while the
+  selector ranked on the latest three-sample probe. On a pool whose top
+  resolvers are close, Force could therefore pick a row whose displayed latency
+  was worse, and every click re-probed and re-ranked, so it took several
+  attempts to land on the expected resolver.
+- **Repeated Force clicks no longer flip between near-identical resolvers.**
+  Each resolver keeps its last five successful probe medians and Adaptive ranks
+  on their median, so a 0.2–0.4 ms gap inside the probe's own noise cannot move
+  the choice. A real gap still switches on the first click.
+- **A run that keeps the current resolver now says so.** Force applies a 3%
+  noise floor and reports `kept <current>; <fastest> is within measurement
+  noise (x vs y ms)`. The decision note is rendered under “Last run …” on web
+  and Android instead of being sent and discarded.
+- **A successful benchmark probe closes an open circuit.** Previously only live
+  traffic could close it, so a resolver that only the benchmark was reaching
+  stayed excluded from the Adaptive choice for the whole cooldown.
+- **The Force response carries the post-benchmark resolver numbers.** The panel
+  repainted from its previous `/api/stats` payload, which is cached for a
+  second, so the newly selected row kept its pre-benchmark latency.
+- **Resolver rows say `FASTEST`, `IN USE`, or both.** The marker used to call
+  whichever resolver Adaptive had chosen the fastest, even when it had kept a
+  slower one on purpose.
+- **Strategy and transport chips no longer overlap** in the narrow resolver
+  card; the rows wrap instead of shrinking under their own labels.
+
+### Changed
+- While the strategy is Adaptive, the resolver card's latency, list order and
+  tooltip describe the warm-probe median the selector uses. Other strategies
+  keep the live p50.
+
+---
+
 ## 🏷️ [v5.9.0] — settings split into Resolvers and Settings
 
 ### Added
