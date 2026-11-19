@@ -99,12 +99,19 @@ type WebServer struct {
 	// test harnesses — still gets a working (empty) list. diagMu serialises the
 	// load-then-cache step and every read-modify-persist the add/remove handlers
 	// do, so two browser tabs editing at once cannot lose an entry.
-	diagSettings   *database.DiagnosticSettings
-	diagMu         sync.Mutex
-	sessions       *service.SessionManager
-	staticFS       fs.FS
-	httpServer     *http.Server
-	redirectServer *http.Server
+	diagSettings *database.DiagnosticSettings
+	diagMu       sync.Mutex
+	sessions     *service.SessionManager
+	staticFS     fs.FS
+	// migrateAnalyses holds the normalized, secret-free bundle a dashboard
+	// preview is looking at. It is memory-only and short-lived: a restart drops
+	// every pending analysis, and an apply consumes the token so a double click
+	// cannot import the same source twice.
+	migrateMu       sync.Mutex
+	migrateAnalyses map[string]*migrateAnalysis
+	migrateUndos    map[string]*migrateUndo
+	httpServer      *http.Server
+	redirectServer  *http.Server
 	// subServer is the dedicated subscriber listener, bound when the
 	// Subscription Portal record names a port different from the panel's. It
 	// serves the public portal routes only — see subscriberSurface.
@@ -311,26 +318,28 @@ func NewWebServer(
 	apiInst := api.NewAPI(db, clients, stats, cache, matcher, upstreams, settings, tlsSettings, sessions)
 
 	ws := &WebServer{
-		db:           db,
-		clients:      clients,
-		stats:        stats,
-		cache:        cache,
-		matcher:      matcher,
-		upstreams:    upstreams,
-		dohHandler:   dohHandler,
-		settings:     settings,
-		tlsSettings:  tlsSettings,
-		certSettings: database.DefaultCertificateSettings(),
-		dnsCfg:       dnsCfg,
-		sessions:     sessions,
-		staticFS:     staticFS,
-		api:          apiInst,
-		sseTickets:   newSSETicketStore(),
-		kdfGate:      make(chan struct{}, kdfConcurrency()),
-		totpReplay:   newTOTPReplayGuard(),
-		statsCache:   httpx.NewResponseCache(time.Second, 2),
-		agentNotify:  newAgentConfigNotifier(),
-		adaptiveWake: make(chan struct{}, 1),
+		db:              db,
+		clients:         clients,
+		stats:           stats,
+		cache:           cache,
+		matcher:         matcher,
+		upstreams:       upstreams,
+		dohHandler:      dohHandler,
+		settings:        settings,
+		tlsSettings:     tlsSettings,
+		certSettings:    database.DefaultCertificateSettings(),
+		dnsCfg:          dnsCfg,
+		sessions:        sessions,
+		staticFS:        staticFS,
+		api:             apiInst,
+		sseTickets:      newSSETicketStore(),
+		migrateAnalyses: make(map[string]*migrateAnalysis),
+		migrateUndos:    make(map[string]*migrateUndo),
+		kdfGate:         make(chan struct{}, kdfConcurrency()),
+		totpReplay:      newTOTPReplayGuard(),
+		statsCache:      httpx.NewResponseCache(time.Second, 2),
+		agentNotify:     newAgentConfigNotifier(),
+		adaptiveWake:    make(chan struct{}, 1),
 	}
 	// Resume the persisted control-plane counter. The ETag also carries the
 	// build hash, so an upgrade invalidates it while a plain restart does not —
@@ -1411,6 +1420,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/auth/unlock", ws.requireAuthWithMasterKey(ws.handleAuthUnlock))
 	mux.HandleFunc("/api/auth/me", ws.requireAuth(ws.handleAuthMe))
 	mux.HandleFunc("/api/config", ws.requireAuth(ws.handleConfig))
+	mux.HandleFunc("/api/config/export", ws.requireAuth(ws.handleConfigExport))
 	mux.HandleFunc("/api/config/rules", ws.requireAuth(ws.handleConfigRules))
 	mux.HandleFunc("/api/config/access", ws.requireAuth(ws.handleConfigAccess))
 	mux.HandleFunc("/api/config/server", ws.requireAuth(ws.handleConfigServer))
@@ -1468,6 +1478,10 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 	mux.HandleFunc("/api/filtering/lists", ws.requireAuth(ws.handleFilterLists))
 	mux.HandleFunc("/api/filter/test", ws.requireAuth(ws.handleFilterTest))
 	mux.HandleFunc("/api/filtering/lists/", ws.requireAuth(ws.handleFilterListItem))
+	mux.HandleFunc("/api/migrate/analyze", ws.requireAuth(ws.handleMigrateAnalyze))
+	mux.HandleFunc("/api/migrate/apply", ws.requireAuth(ws.handleMigrateApply))
+	mux.HandleFunc("/api/migrate/undo", ws.requireAuth(ws.handleMigrateUndo))
+	mux.HandleFunc("/api/migrate/report", ws.requireAuth(ws.handleMigrateReport))
 	mux.HandleFunc("/api/clients", ws.requireAuth(ws.agentMutation(ws.handleClients)))
 	mux.HandleFunc("/api/clients/add", ws.requireAuth(ws.agentMutation(ws.handleClientsAdd)))
 	mux.HandleFunc("/api/clients/delete", ws.requireAuth(ws.agentMutation(ws.handleClientsDelete)))
@@ -2138,6 +2152,24 @@ func dedupeDomains(in []string) []string {
 	return out
 }
 
+func domainSet(in []string) map[string]bool {
+	set := make(map[string]bool, len(in))
+	for _, d := range in {
+		set[d] = true
+	}
+	return set
+}
+
+func removeDomain(in []string, pattern string) []string {
+	out := in[:0]
+	for _, d := range in {
+		if d != pattern {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
 // loadRulesConfig builds the effective rules state: the four custom lists, then
 // any persisted values from the policies bucket.
 func (ws *WebServer) loadRulesConfig() map[string]any {
@@ -2151,6 +2183,11 @@ func (ws *WebServer) loadRulesConfig() map[string]any {
 	rules["custom_direct"] = []string{}
 	rules["custom_records"] = map[string]string{}
 	rules["custom_domain_added"] = map[string]string{}
+	// manual_overrides marks the domains the operator acted on from the live log.
+	// It is deliberately separate from the routing lists: the marker makes the
+	// decision outrank blocklists, custom records and broader rules, while the
+	// list membership still says which action it is.
+	rules["manual_overrides"] = []string{}
 	// Services are organisational: services maps id -> name, domain_services maps
 	// a domain to that id, service_icons maps an id to an optional icon URL. None
 	// of them changes how anything is routed; they exist so a group of domains can
@@ -2173,7 +2210,7 @@ func (ws *WebServer) loadRulesConfig() map[string]any {
 	}
 	for _, p := range policies {
 		switch p.Key {
-		case "custom_proxied", "custom_proxied_disabled", "custom_blocked", "custom_direct":
+		case "custom_proxied", "custom_proxied_disabled", "custom_blocked", "custom_direct", "manual_overrides":
 			if p.CustomDomains != nil {
 				rules[p.Key] = dedupeDomains(p.CustomDomains)
 			}
@@ -2459,6 +2496,7 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var customProxied, customProxiedDisabled, customBlocked, customDirect []string
+	var manualOverrides []string
 	customRecords := map[string]string{}
 	services := map[string]string{}
 	domainServices := map[string]string{}
@@ -2473,6 +2511,7 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	customProxiedDisabled = toStringSlice(persisted["custom_proxied_disabled"])
 	customBlocked = toStringSlice(persisted["custom_blocked"])
 	customDirect = toStringSlice(persisted["custom_direct"])
+	manualOverrides = toStringSlice(persisted["manual_overrides"])
 	if m, ok := persisted["custom_records"].(map[string]string); ok {
 		customRecords = m
 	}
@@ -2509,6 +2548,8 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 			customBlocked = toStringSlice(val)
 		case "custom_direct":
 			customDirect = toStringSlice(val)
+		case "manual_overrides":
+			manualOverrides = toStringSlice(val)
 		case "custom_domain_added":
 			// The dashboard owns these stamps and sends the full map. Accepting it
 			// lets a scope rename (a.b.c -> *.a.b.c) keep its "Added" position
@@ -2617,8 +2658,32 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	customBlocked = dedupeDomains(customBlocked)
 	customDirect = dedupeDomains(customDirect)
 
-	// Recompute the added-at map: every domain still present keeps its timestamp
-	// (or gets one now if it is new); domains no longer in any list are dropped.
+	// A manual marker means "the operator chose this from the live log". Keep it
+	// only while the pattern is still in a routing list, and make sure it names
+	// exactly one action: the matcher derives the action from list membership, so
+	// a stale marker or a duplicate across lists would be ambiguous. Proxy wins
+	// first, then block, then direct, matching the order the live-log menu uses.
+	manualOverrides = dedupeDomains(manualOverrides)
+	inProxied := domainSet(customProxied)
+	inBlocked := domainSet(customBlocked)
+	inDirect := domainSet(customDirect)
+	keptManual := manualOverrides[:0]
+	for _, pattern := range manualOverrides {
+		switch {
+		case inProxied[pattern]:
+			customBlocked = removeDomain(customBlocked, pattern)
+			customDirect = removeDomain(customDirect, pattern)
+		case inBlocked[pattern]:
+			customDirect = removeDomain(customDirect, pattern)
+		case inDirect[pattern]:
+		default:
+			continue
+		}
+		keptManual = append(keptManual, pattern)
+	}
+	manualOverrides = keptManual
+	// Removing a duplicate can leave the other list empty of that pattern; rebuild
+	// the membership sets before the added-at pass below.
 	allDomains := map[string]bool{}
 	for _, d := range customProxied {
 		allDomains[d] = true
@@ -2632,6 +2697,9 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	for _, d := range customDirect {
 		allDomains[d] = true
 	}
+
+	// Recompute the added-at map: every domain still present keeps its timestamp
+	// (or gets one now if it is new); domains no longer in any list are dropped.
 	now := time.Now().UTC().Format(time.RFC3339)
 	for d := range allDomains {
 		if _, ok := customAdded[d]; !ok {
@@ -2656,6 +2724,7 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 		{Key: "custom_proxied_disabled", Name: "Disabled Proxied Domains", Category: "custom", Enabled: true, CustomDomains: customProxiedDisabled},
 		{Key: "custom_blocked", Name: "Custom Blocked Domains", Category: "custom", Enabled: true, CustomDomains: customBlocked},
 		{Key: "custom_direct", Name: "Custom Direct Domains", Category: "custom", Enabled: true, CustomDomains: customDirect},
+		{Key: "manual_overrides", Name: "Manual Live-Log Overrides", Category: "custom", Enabled: true, CustomDomains: manualOverrides},
 	}
 	recordEntries := make([]string, 0, len(customRecords))
 	for d, ip := range customRecords {
@@ -2720,16 +2789,15 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 		database.Policy{Key: "service_agents", Name: "Service Relay Agents", Category: "custom", Enabled: true, CustomDomains: serviceAgentEntries},
 	)
 	customSaves = append(customSaves, database.Policy{Key: "custom_domain_added", Name: "Custom Domain Added Times", Category: "custom", Enabled: true, CustomDomains: addedEntries})
-	for _, p := range customSaves {
-		if err := ws.db.SavePolicy(p); err != nil {
-			httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not save the policy settings")
-			return
-		}
+	if err := ws.db.SavePolicies(customSaves); err != nil {
+		httpx.WriteJSONError(w, http.StatusInternalServerError, "Could not save the policy settings")
+		return
 	}
 
-	// Apply custom lists to the live matcher and flush stale cache entries
+	// Apply custom lists and live-log markers to the live matcher together, so a
+	// save publishes one snapshot with the new action and its override marker.
 	if ws.matcher != nil {
-		ws.matcher.SetCustomRules(customProxied, customBlocked, customDirect, customRecords)
+		ws.matcher.SetCustomRulesAndManualOverrides(customProxied, customBlocked, customDirect, customRecords, manualOverrides)
 	}
 	// A rule can only belong to a proxied domain: dropping that domain (or
 	// removing it from the list) takes its resolution rule with it.
@@ -2753,7 +2821,26 @@ func (ws *WebServer) handleConfigRules(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.refreshRelayAssignments(domainAgents, serviceAgents, domainServices)
 
-	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+	// Echo the normalised state so the live-log client can repaint from what was
+	// actually persisted instead of from its optimistic local copy. That removes
+	// the "clicked, saw success, then the row reverted on reload" failure mode.
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success": true,
+		"rules": map[string]any{
+			"custom_proxied":          customProxied,
+			"custom_proxied_disabled": customProxiedDisabled,
+			"custom_blocked":          customBlocked,
+			"custom_direct":           customDirect,
+			"custom_records":          customRecords,
+			"custom_domain_added":     customAdded,
+			"manual_overrides":        manualOverrides,
+			"services":                services,
+			"domain_services":         domainServices,
+			"service_icons":           serviceIcons,
+			"domain_agents":           domainAgents,
+			"service_agents":          serviceAgents,
+		},
+	})
 }
 
 func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {

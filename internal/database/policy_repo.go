@@ -32,6 +32,35 @@ func (db *DB) SavePolicy(p Policy) error {
 	})
 }
 
+// SavePolicies stores several rule entries in one bbolt write transaction. The
+// dashboard writes its custom lists, records, stamps and service maps together;
+// doing that as eleven separate Update calls meant eleven fsyncs on the save
+// path, stalling the panel and every concurrent DNS-side writer behind them.
+func (db *DB) SavePolicies(policies []Policy) error {
+	if len(policies) == 0 {
+		return nil
+	}
+	encoded := make([][]byte, len(policies))
+	keys := make([][]byte, len(policies))
+	for i, p := range policies {
+		data, err := json.Marshal(p)
+		if err != nil {
+			return err
+		}
+		encoded[i] = data
+		keys[i] = []byte(p.Key)
+	}
+	return db.bolt.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketPolicies)
+		for i := range policies {
+			if err := b.Put(keys[i], encoded[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // GetPolicy retrieves a policy by key
 func (db *DB) GetPolicy(key string) (*Policy, error) {
 	var p Policy

@@ -1,0 +1,2 @@
+blocked.example
+manual-block.example

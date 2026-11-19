@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
@@ -59,6 +60,7 @@ import com.digitrob.digitdns.ui.connect.ConnectScreen
 import com.digitrob.digitdns.ui.rules.AccessScreen
 import com.digitrob.digitdns.ui.rules.AdBlockingScreen
 import com.digitrob.digitdns.ui.rules.GroupsScreen
+import com.digitrob.digitdns.ui.rules.MigrateScreen
 import com.digitrob.digitdns.ui.rules.PoliciesScreen
 import com.digitrob.digitdns.ui.rules.UpstreamsScreen
 
@@ -106,6 +108,7 @@ internal enum class SettingsSection(
     RelayAgents(R.string.settings_relay_agents, Icons.Filled.Speed, SettingsGroup.Server, "egress relay agents socks wireguard"),
 
     AdBlocking(R.string.settings_ad_blocking, Icons.Filled.Block, SettingsGroup.Policy, "ad blocking filters blocklist"),
+    Import(R.string.settings_import, Icons.Filled.FileDownload, SettingsGroup.Policy, "import migrate pihole adguard"),
     Groups(R.string.settings_groups, Icons.Filled.Layers, SettingsGroup.Policy, "groups policy bundles"),
     Policies(R.string.settings_policies, Icons.Filled.Policy, SettingsGroup.Policy, "policies rules"),
 
@@ -273,6 +276,7 @@ private fun SettingsSectionContent(
         SettingsSection.Ipv6 -> Ipv6SettingsScreen()
         SettingsSection.History -> HistorySettingsScreen()
         SettingsSection.AdBlocking -> AdBlockingScreen()
+        SettingsSection.Import -> MigrateScreen()
         SettingsSection.Servers -> ServersScreen(
             onLoggedOut = onLoggedOut,
             onAddServer = onAddServer,

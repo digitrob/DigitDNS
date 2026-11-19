@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"digitdns/internal/blocklist"
 	"digitdns/internal/core/matcher"
 )
 
@@ -118,6 +119,86 @@ func TestConfigRulesPartialSaveKeepsCustomLists(t *testing.T) {
 	}
 	if ip, ok := ws.matcher.GetCustomRecord("pin.example.com"); !ok || ip != "203.0.113.9" {
 		t.Errorf("GetCustomRecord(pin.example.com) = %q,%v, want 203.0.113.9,true", ip, ok)
+	}
+}
+
+func TestConfigRulesPersistsManualLiveLogOverride(t *testing.T) {
+	ws, h, tok, cleanup := authedServer(t)
+	defer cleanup()
+
+	index, _ := blocklist.Build([]blocklist.Source{{
+		Name:    "Test list",
+		Enabled: true,
+		Text:    "||ads.example^\n",
+	}}, nil)
+	ws.matcher.SetBlockIndex(index)
+
+	payload := `{
+		"custom_proxied": ["ads.example"],
+		"custom_blocked": [],
+		"custom_direct": [],
+		"custom_records": {"ads.example": "203.0.113.9"},
+		"manual_overrides": ["ads.example"]
+	}`
+	w := postJSON(t, h, "/api/config/rules", payload, tok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("save = %d — %s", w.Code, w.Body.String())
+	}
+	body := decodeBody(t, w)
+	rules, _ := body["rules"].(map[string]any)
+	if rules == nil {
+		t.Fatal("save response carries no rules object for the client to repaint from")
+	}
+	if got := domainsAt(t, rules, "manual_overrides"); !slices.Equal(got, []string{"ads.example"}) {
+		t.Fatalf("echoed manual_overrides = %v", got)
+	}
+	if action, rule := ws.matcher.Match("ads.example"); action != matcher.ActionProxy || rule != matcher.RuleManualProxy {
+		t.Fatalf("matcher = (%v, %q), want the live-log proxy", action, rule)
+	}
+	if action, _, _ := ws.matcher.MatchDetail("ads.example"); action != matcher.ActionProxy {
+		t.Fatalf("MatchDetail = %v, want proxy", action)
+	}
+
+	// The marker survives a read-back and is visible to the Domains page.
+	loaded := rulesFromConfig(t, h, tok)
+	if got := domainsAt(t, loaded, "manual_overrides"); !slices.Equal(got, []string{"ads.example"}) {
+		t.Fatalf("persisted manual_overrides = %v", got)
+	}
+
+	// Removing the marker returns the domain to ordinary custom-list precedence.
+	if w := postJSON(t, h, "/api/config/rules", `{
+		"custom_proxied": ["ads.example"],
+		"manual_overrides": []
+	}`, tok); w.Code != http.StatusOK {
+		t.Fatalf("marker removal = %d — %s", w.Code, w.Body.String())
+	}
+	if _, rule, _, ok := ws.matcher.ManualMatch("ads.example"); ok {
+		t.Fatalf("manual marker survived removal: %q", rule)
+	}
+
+	// A marker for a paused domain is not an override and is pruned.
+	if w := postJSON(t, h, "/api/config/rules", `{
+		"custom_proxied_disabled": ["paused.example"],
+		"manual_overrides": ["paused.example"]
+	}`, tok); w.Code != http.StatusOK {
+		t.Fatalf("paused marker save = %d — %s", w.Code, w.Body.String())
+	}
+	loaded = rulesFromConfig(t, h, tok)
+	if got := domainsAt(t, loaded, "manual_overrides"); len(got) != 0 {
+		t.Fatalf("paused marker was persisted: %v", got)
+	}
+
+	// A marker that appears in two routing lists is reduced to one action, so the
+	// matcher cannot be ambiguous. Proxy is the first choice, matching the menu.
+	if w := postJSON(t, h, "/api/config/rules", `{
+		"custom_proxied": ["both.example"],
+		"custom_blocked": ["both.example"],
+		"manual_overrides": ["both.example"]
+	}`, tok); w.Code != http.StatusOK {
+		t.Fatalf("duplicate marker save = %d — %s", w.Code, w.Body.String())
+	}
+	if action, rule := ws.matcher.Match("both.example"); action != matcher.ActionProxy || rule != matcher.RuleManualProxy {
+		t.Fatalf("duplicate marker = (%v, %q), want proxy", action, rule)
 	}
 }
 

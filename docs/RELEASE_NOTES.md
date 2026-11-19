@@ -1,45 +1,75 @@
-# DigitDNS v5.9.2 — a new domain lands at the top of the list
+# DigitDNS v5.9.3 — live-log decisions win, and the panel stays responsive
 
-A Domains-list fix for the web panel, with the matching Android build. No
-database schema migration is required; existing settings, clients, blocklists,
-certificates, relay agents, egress options and stored query history are
-preserved.
+This release makes a manual live-log decision authoritative, adds the additive
+configuration importer to the web panel and Android app, and removes several
+sources of intermittent DNS and UI stalls found in the resolver, database and
+dashboard hot paths.
 
-## What was wrong
+No database schema migration is required. Existing settings, clients,
+blocklists, certificates, relay agents, egress options and stored query history
+are preserved.
 
-The Domains table was already sorted by “Added (newest)” by default. The add
-handlers wrote the rule but left its Added timestamp to the server: the server
-stamped it on save and answered `{"success": true}`, so the open page kept
-rendering the new row with no stamp and sorted it to the bottom. Only a reload
-fetched the timestamp and moved the row to the top.
+## Live-log decisions are now authoritative
 
-## What changed
+- **Direct / Proxy / Blocked chosen from the live log overrides every other
+  rule.** The resolver checks the live-log tier before custom A/CNAME records,
+  custom groups and lists, blocklists, forced-direct rules and ordinary proxy
+  rules.
+- **A wildcard decision is an exception for its whole subtree.** A manual
+  `*.example.com` decision applies even when a lower tier has an exact rule for
+  `tracker.example.com`; the most specific manual rule wins when two live-log
+  decisions overlap.
+- **The save is awaited and the page repaints from the server's normalised
+  state.** A failed save reloads the real configuration instead of leaving an
+  optimistic row that disappears later. A scope click followed by an action no
+  longer issues two writes for one decision.
+- **Scope previews and toasts now name exactly what is written** and warn only
+  when the clicked host itself is left out.
 
-- **The web panel stamps a new rule when it writes it**, so **Add proxied**,
-  **Add blocked**, bulk import and the live-log Proxy / Block / Direct quick
-  actions all appear at the top immediately.
-- **Moves and scope changes keep their place.** A rename inherits the stamp left
-  on the rule’s other pattern instead of looking newly added.
-- **Removal drops the stamp**, so re-adding a name later gets a fresh position.
-- **Millisecond timestamps** keep two adds in the same second in the right
-  order; the server already accepts RFC3339 fractional seconds.
+## Configuration importer
 
-Android already stamped new routes locally; this release brings the web panel
-to the same behaviour and carries the matching app version (`android-v5.9.2`).
+- **Analyse first, then apply.** The importer shows what will be added and
+  writes nothing until the operator confirms.
+- **Additive only.** Existing records, clients, rules, lists, rewrites and
+  filtering settings are never overwritten, and secrets are never imported.
+- **Large lists become uploaded FilterLists.** Regex rules beyond the resolver
+  caps are reported and downloadable instead of being silently dropped.
+- **Pi-hole v6 is parsed locally in the browser** with SQLite-WASM. Raw
+  archives and query history stay on the operator's device.
+- **Redacted configuration export and one-click undo** are included. Android
+  has the matching importer flow.
+
+## Performance and reliability
+
+- Filter refreshes cache each list's compiled index and merge it, instead of
+  analysing a body and then reparsing every enabled list. A batch of due lists
+  rebuilds once, and a `304 Not Modified` refresh reuses the cached parse.
+- Query logging no longer performs bbolt writes on the DNS path: the
+  anonymisation salt is loaded once at startup.
+- Rule saves use a single bbolt transaction instead of eleven, and client-index
+  reloads build off-lock before swapping in the new index.
+- The Domains table fills its viewport in one render, icon replacement is scoped
+  to the container just painted, and stale animation-frame batches cannot
+  duplicate live-log rows after a tab switch.
+- Relay target lookups are cached for a short window and bounded separately from
+  the relay handshake, so a slow system resolver cannot consume the whole
+  handshake budget.
 
 ## Upgrade
 
 In-place upgrades from the dashboard are supported.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.9.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.9.3/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.9.2
-docker pull ghcr.io/digitrob/digitdns-agent:5.9.2
-docker pull robmeister/digitdns:5.9.2
-docker pull robmeister/digitdns-agent:5.9.2
+docker pull ghcr.io/digitrob/digitdns:5.9.3
+docker pull ghcr.io/digitrob/digitdns-agent:5.9.3
+docker pull robmeister/digitdns:5.9.3
+docker pull robmeister/digitdns-agent:5.9.3
 ```
+
+The Android companion carries the matching `android-v5.9.3` version line.

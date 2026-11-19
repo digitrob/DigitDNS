@@ -519,6 +519,95 @@ func TestBlocklistPrecedenceAndExceptions(t *testing.T) {
 	}
 }
 
+func TestManualLiveLogOverrideBeatsEveryLowerTier(t *testing.T) {
+	m := NewMatcher()
+	index, _ := blocklist.Build([]blocklist.Source{{
+		Name:    "Test list",
+		Enabled: true,
+		Text:    "||ads.example^\n||tracker.example.com^\n",
+	}}, nil)
+	m.SetBlockIndex(index)
+
+	// A live-log PROXY must beat the blocklist and a custom A record.
+	m.SetCustomRulesAndManualOverrides(
+		[]string{"ads.example"},
+		nil,
+		nil,
+		map[string]string{"ads.example": "10.0.0.9"},
+		[]string{"ads.example"},
+	)
+	if action, rule, pattern := m.MatchDetail("ads.example"); action != ActionProxy || rule != RuleManualProxy || pattern != "ads.example" {
+		t.Fatalf("manual proxy = (%v, %q, %q), want manual proxy", action, rule, pattern)
+	}
+
+	// A live-log BLOCK must beat a custom direct entry.
+	m.SetCustomRulesAndManualOverrides(
+		nil,
+		[]string{"direct.example"},
+		[]string{"direct.example"},
+		nil,
+		[]string{"direct.example"},
+	)
+	if action, rule, _ := m.MatchDetail("direct.example"); action != ActionBlock || rule != RuleManualBlock {
+		t.Fatalf("manual block = (%v, %q), want manual block", action, rule)
+	}
+
+	// A manual wildcard is an exception for the whole subtree, even against an
+	// exact blocklist rule on a child.
+	m.SetCustomRulesAndManualOverrides(
+		[]string{"*.example.com"},
+		nil,
+		nil,
+		nil,
+		[]string{"*.example.com"},
+	)
+	if action, rule, pattern := m.MatchDetail("tracker.example.com"); action != ActionProxy || rule != RuleManualProxy || pattern != "*.example.com" {
+		t.Fatalf("manual wildcard = (%v, %q, %q), want manual proxy wildcard", action, rule, pattern)
+	}
+
+	// The most specific manual rule wins regardless of action.
+	m.SetCustomRulesAndManualOverrides(
+		[]string{"a.example.com", "*.example.com"},
+		[]string{"*.example.com"},
+		nil,
+		nil,
+		[]string{"a.example.com", "*.example.com"},
+	)
+	if action, rule, pattern := m.MatchDetail("a.example.com"); action != ActionProxy || rule != RuleManualProxy || pattern != "a.example.com" {
+		t.Fatalf("exact manual rule = (%v, %q, %q), want the exact manual proxy", action, rule, pattern)
+	}
+	if action, rule, _ := m.MatchDetail("b.example.com"); action != ActionBlock || rule != RuleManualBlock {
+		t.Fatalf("broader manual wildcard = (%v, %q), want manual block", action, rule)
+	}
+
+	// A marker whose domain was moved to the paused list is not an override.
+	m.SetCustomRulesAndManualOverrides(
+		nil,
+		nil,
+		nil,
+		nil,
+		[]string{"paused.example"},
+	)
+	if action, rule, _, ok := m.ManualMatch("paused.example"); ok || action != ActionDirect || rule != "" {
+		t.Fatalf("paused marker matched: (%v, %q, %v)", action, rule, ok)
+	}
+}
+
+func TestExplainShowsManualOverrideSource(t *testing.T) {
+	m := NewMatcher()
+	m.SetCustomRulesAndManualOverrides(
+		[]string{"*.manual.example"},
+		nil,
+		nil,
+		nil,
+		[]string{"*.manual.example"},
+	)
+	explain := m.Explain("a.manual.example")
+	if explain.Action != "PROXY" || explain.Source != "manual" || explain.Pattern != "*.manual.example" {
+		t.Fatalf("manual explanation = %+v", explain)
+	}
+}
+
 func TestExplainShowsBlocklistAndAllowException(t *testing.T) {
 	m := NewMatcher()
 	index, _ := blocklist.Build([]blocklist.Source{{

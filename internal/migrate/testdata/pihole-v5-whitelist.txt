@@ -1,0 +1,2 @@
+allowed.example
+safe.example

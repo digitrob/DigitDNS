@@ -1,0 +1,17 @@
+{
+  "name": "sql.js",
+  "version": "1.16.0",
+  "source": "https://registry.npmjs.org/sql.js/-/sql.js-1.16.0.tgz",
+  "license": "MIT",
+  "purpose": "Parse Pi-hole v6 gravity.db in the browser so raw Teleporter archives and query history never leave the operator's device.",
+  "files": {
+    "sql-wasm.js": {
+      "sha256": "9b96118841c6edfdf53c6f388c1419d1f473cf469df6a6fc2864b386d60bdb5e",
+      "bytes": 47621
+    },
+    "sql-wasm.wasm": {
+      "sha256": "43bbcdd44287e5a2db3b6b5af34b1a3485a7a441285d247976c1ebe3c61f8dbf",
+      "bytes": 688197
+    }
+  }
+}

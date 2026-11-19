@@ -55,7 +55,11 @@ func inlineScriptHashes(doc []byte) []string {
 
 // cspWithScriptHashes builds the policy with the given inline-script hashes.
 func cspWithScriptHashes(hashes []string) string {
-	script := "script-src 'self'"
+	// 'wasm-unsafe-eval' is narrower than 'unsafe-eval': it permits WebAssembly
+	// compilation and nothing else. The migration importer uses it to run the
+	// vendored SQLite build against a Pi-hole v6 gravity.db in the browser, so the
+	// archive never has to be uploaded for parsing. It does not permit eval().
+	script := "script-src 'self' 'wasm-unsafe-eval'"
 	for _, h := range hashes {
 		script += " " + h
 	}

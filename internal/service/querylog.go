@@ -89,6 +89,11 @@ type QueryLogService struct {
 	// and the constructor keep it current; the admin Settings() still reads the
 	// store so it reports exactly what is persisted.
 	cache atomic.Pointer[QueryLogSettings]
+
+	// saltValue is the anonymisation key, loaded once when the store opens. It
+	// used to be read (and, on a miss, generated) inside a bbolt Update on every
+	// query, so enabling anonymised history put up to two fsyncs on the DNS path.
+	saltValue atomic.Pointer[[]byte]
 }
 
 var queryLogBuckets = [][]byte{[]byte("queries"), []byte("meta")}
@@ -156,6 +161,7 @@ func (s *QueryLogService) ensureOpen() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.store != nil {
+		s.loadSaltLocked()
 		return nil
 	}
 	db, err := bolt.Open(s.path, 0o600, &bolt.Options{Timeout: 3 * time.Second})
@@ -174,6 +180,7 @@ func (s *QueryLogService) ensureOpen() error {
 		return err
 	}
 	s.store = db
+	s.loadSaltLocked()
 	if !s.started {
 		s.started = true
 		s.done = make(chan struct{})
@@ -181,6 +188,41 @@ func (s *QueryLogService) ensureOpen() error {
 		go s.cleaner()
 	}
 	return nil
+}
+
+// loadSaltLocked loads the persisted anonymisation salt once. It is only called
+// while s.mu is held (open/setup), never from the query path. The slow path in
+// salt() exists for tests and for a service whose store was opened elsewhere.
+func (s *QueryLogService) loadSaltLocked() {
+	if s.store == nil || s.saltValue.Load() != nil {
+		return
+	}
+	var out []byte
+	_ = s.store.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("meta"))
+		if b == nil {
+			return nil
+		}
+		if v := b.Get([]byte("salt")); len(v) == 32 {
+			out = append([]byte(nil), v...)
+		}
+		return nil
+	})
+	if len(out) == 0 {
+		buf := make([]byte, 32)
+		_, _ = rand.Read(buf)
+		if err := s.store.Update(func(tx *bolt.Tx) error {
+			b := tx.Bucket([]byte("meta"))
+			if b == nil {
+				return nil
+			}
+			return b.Put([]byte("salt"), buf)
+		}); err != nil {
+			return
+		}
+		out = buf
+	}
+	s.saltValue.Store(&out)
 }
 
 // Push is the DNS hot-path entry. It never waits and never returns an error.
@@ -209,44 +251,48 @@ func (s *QueryLogService) privacy(item database.QueryLogItem, settings QueryLogS
 		}
 	}
 	if settings.Anonymize {
-		item.ClientIP = s.anon(item.ClientIP)
-		item.AccountName = s.anon(item.AccountName)
+		// Resolve the salt once for both fields. The previous code called anon()
+		// twice and each call opened a write transaction, so one query could pay
+		// two fsyncs before it was even queued.
+		salt := s.salt()
+		item.ClientIP = anonValue(salt, item.ClientIP)
+		item.AccountName = anonValue(salt, item.AccountName)
 	}
 	return item
 }
 
 func (s *QueryLogService) anon(value string) string {
+	return anonValue(s.salt(), value)
+}
+
+func anonValue(salt []byte, value string) string {
 	if strings.TrimSpace(value) == "" {
 		return ""
 	}
-	salt := s.salt()
 	mac := hmac.New(sha256.New, salt)
 	_, _ = mac.Write([]byte(value))
 	return "anon-" + hex.EncodeToString(mac.Sum(nil))[:16]
 }
 
 func (s *QueryLogService) salt() []byte {
+	if p := s.saltValue.Load(); p != nil {
+		return *p
+	}
+	// Slow path: only reached if the store was opened without ensureOpen (tests)
+	// or the first load failed. It is not the DNS hot path in a normal install.
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if p := s.saltValue.Load(); p != nil {
+		return *p
+	}
 	if s.store == nil {
 		return []byte("digitdns-query-log")
 	}
-	var out []byte
-	_ = s.store.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte("meta"))
-		if v := b.Get([]byte("salt")); len(v) == 32 {
-			out = append([]byte(nil), v...)
-			return nil
-		}
-		buf := make([]byte, 32)
-		_, _ = rand.Read(buf)
-		out = buf
-		return b.Put([]byte("salt"), buf)
-	})
-	if len(out) == 0 {
-		return []byte("digitdns-query-log")
+	s.loadSaltLocked()
+	if p := s.saltValue.Load(); p != nil {
+		return *p
 	}
-	return out
+	return []byte("digitdns-query-log")
 }
 
 func (s *QueryLogService) writer() {

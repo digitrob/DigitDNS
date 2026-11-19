@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.9.3] — live-log decisions win, and the panel stays responsive
+
+### Added
+- **Config importer (web and Android).** Analyse a DigitDNS or Pi-hole
+  configuration first, review what will be added, then apply it. Imports are
+  additive and never overwrite existing records; secrets are never imported.
+  Large domain lists become uploaded FilterLists, and regex rules beyond the
+  resolver caps are reported and downloadable instead of being silently dropped.
+- **Pi-hole v6 imports are parsed locally in the browser** with SQLite-WASM.
+  Raw archives and query history never leave the operator's device.
+- **Redacted configuration export** for sharing a setup without credentials.
+- **One-click undo** for the most recent import.
+
+### Fixed
+- **A Direct / Proxy / Blocked decision made from the live log now overrides
+  every other rule.** It is checked before custom A/CNAME records, custom
+  groups and lists, blocklists, forced-direct rules and ordinary proxy rules.
+  A wildcard decision is a true exception for its whole subtree, even when a
+  lower tier has an exact rule for a child host.
+- **The live-log save is awaited and repainted from the server's normalised
+  state.** A failed save no longer leaves an optimistic row that reverts on
+  reload, and a scope click followed by an action no longer writes twice.
+- **Filter refreshes no longer analyse a list and then reparse every list.**
+  Each list's compiled index is cached and merged; a batch of due lists rebuilds
+  once. A `304 Not Modified` refresh reuses the cached parse instead of parsing
+  the stored body.
+- **Query logging no longer writes to bbolt on the DNS path.** The anonymisation
+  salt is loaded once, so enabling anonymised history no longer adds up to two
+  write transactions and fsyncs per query.
+- **Rules saves use one bbolt transaction** instead of eleven sequential ones,
+  and client-index reloads build their replacement off-lock before swapping it
+  in, so traffic flushes and expiry sweeps no longer stall every DNS lookup.
+- **The Domains table and live log repaint only what changed.** Viewport filling
+  renders once instead of rebuilding all loaded rows per batch, icon replacement
+  is scoped to the container just rendered, and a stale animation-frame batch can
+  no longer duplicate rows after a tab switch.
+- **Relay target DNS lookups are cached and bounded separately from the relay
+  handshake**, so a slow system resolver cannot consume the whole five-second
+  budget before the target is dialled.
+
+---
+
 ## 🏷️ [v5.9.2] — a new domain lands at the top of the list
 
 ### Fixed

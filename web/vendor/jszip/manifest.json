@@ -1,0 +1,13 @@
+{
+  "name": "jszip",
+  "version": "3.10.1",
+  "source": "https://registry.npmjs.org/jszip/-/jszip-3.10.1.tgz",
+  "license": "MIT or GPL-3.0",
+  "purpose": "Read a Pi-hole v6 Teleporter archive in the browser so the gravity database is parsed locally.",
+  "files": {
+    "jszip.min.js": {
+      "sha256": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e",
+      "bytes": 97630
+    }
+  }
+}

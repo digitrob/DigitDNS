@@ -23,6 +23,10 @@ function load(rules = null) {
     covers: (domain, targets) => vm.runInContext('scopeCoversDomain', context)(domain, targets),
     hints: () => vm.runInContext('STREAM_SCOPE_HINTS', context),
     patterns: () => vm.runInContext('streamManagedPatterns', context)(),
+    manual: (rules, add, remove) => {
+      vm.runInContext('setStreamManualOverrides', context)(rules, add, remove);
+      return Array.from(rules.manual_overrides);
+    },
   };
 }
 
@@ -92,6 +96,21 @@ test('a wildcard row preselects its own host wildcard', () => {
   assert.equal(scopeFor('*.a.b.c', new Set(['*.a.b.c', '*.b.c'])), 'host');
   // With no rule of its own, the parent wildcard is the match.
   assert.equal(scopeFor('*.a.b.c', new Set(['*.b.c'])), 'parent');
+});
+
+test('a live-log decision records an override marker', () => {
+  const { manual } = load({ rules: { manual_overrides: [] } });
+  const rules = { manual_overrides: [] };
+  assert.deepEqual(manual(rules, ['ads.example'], []), ['ads.example']);
+  // A wildcard is stored as one marker, not expanded per host.
+  assert.deepEqual(manual(rules, ['*.example.com'], ['ads.example']), ['*.example.com']);
+  // Removing the marker returns the domain to ordinary precedence.
+  assert.deepEqual(manual(rules, [], ['*.example.com']), []);
+});
+
+test('a live-log decision carries its override marker in the save payload', () => {
+  assert.match(source, /manual_overrides:\s*currentConfig\.rules\.manual_overrides/);
+  assert.match(source, /setStreamManualOverrides\(rules, targets, remove\)/);
 });
 
 test('collects patterns from all four routing lists', () => {

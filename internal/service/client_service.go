@@ -252,19 +252,26 @@ func (s *ClientService) reloadCache() {
 		return
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.idMap = make(map[string]*database.Client, len(clients))
-	s.ipMap = make(map[string]*database.Client, len(clients))
-	s.tokenMap = make(map[string]*database.Client, len(clients))
-	s.uuidMap = make(map[string]*database.Client, len(clients))
-	s.cidrClients = s.cidrClients[:0]
+	// Build the complete replacement off-lock. The old code held the write lock
+	// while decrypting and indexing every account, blocking IsIPAllowed on every
+	// concurrent DNS query. The swap below is the only critical section.
+	idMap := make(map[string]*database.Client, len(clients))
+	ipMap := make(map[string]*database.Client, len(clients))
+	tokenMap := make(map[string]*database.Client, len(clients))
+	uuidMap := make(map[string]*database.Client, len(clients))
+	cidrClients := make([]cidrClientEntry, 0)
 	now := time.Now()
-
 	for i := range clients {
-		s.indexLocked(&clients[i], now)
+		indexClient(idMap, ipMap, tokenMap, uuidMap, &cidrClients, &clients[i], now)
 	}
+
+	s.mu.Lock()
+	s.idMap = idMap
+	s.ipMap = ipMap
+	s.tokenMap = tokenMap
+	s.uuidMap = uuidMap
+	s.cidrClients = cidrClients
+	s.mu.Unlock()
 }
 
 // indexLocked files one account into every lookup table. Callers hold s.mu.
@@ -274,15 +281,22 @@ func (s *ClientService) reloadCache() {
 // the subscription has run out. Only ipMap is restricted to accounts the resolver
 // should currently answer for.
 func (s *ClientService) indexLocked(c *database.Client, now time.Time) {
+	indexClient(s.idMap, s.ipMap, s.tokenMap, s.uuidMap, &s.cidrClients, c, now)
+}
+
+// indexClient files one account into caller-supplied maps. reloadCache builds a
+// complete replacement set with this and swaps it under the lock; indexLocked
+// uses the same code for the single-account fast path.
+func indexClient(idMap, ipMap, tokenMap, uuidMap map[string]*database.Client, cidrClients *[]cidrClientEntry, c *database.Client, now time.Time) {
 	if c == nil || c.ID == "" {
 		return
 	}
-	s.idMap[c.ID] = c
+	idMap[c.ID] = c
 	if c.Token != "" {
-		s.tokenMap[c.Token] = c
+		tokenMap[c.Token] = c
 	}
 	if c.UUID != "" {
-		s.uuidMap[c.UUID] = c
+		uuidMap[c.UUID] = c
 	}
 	if !c.Enabled {
 		return
@@ -296,11 +310,11 @@ func (s *ClientService) indexLocked(c *database.Client, now time.Time) {
 		}
 		if isCIDRString(ip) {
 			if _, network, err := net.ParseCIDR(ip); err == nil {
-				s.cidrClients = append(s.cidrClients, cidrClientEntry{network: network, client: c})
+				*cidrClients = append(*cidrClients, cidrClientEntry{network: network, client: c})
 			}
 			continue
 		}
-		s.ipMap[ip] = c
+		ipMap[ip] = c
 	}
 }
 

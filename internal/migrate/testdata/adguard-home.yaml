@@ -1,0 +1,96 @@
+# Synthetic AdGuard Home configuration for importer fixtures.
+# Every hostname is under .example/.invalid and every credential is a placeholder.
+
+http:
+  address: 0.0.0.0:3000
+  session_ttl: 720h
+  force_https: false
+
+users:
+  - name: admin
+    password: "$2a$10$synthetic-placeholder-not-a-real-hash"
+
+tls:
+  enabled: true
+  server_name: panel.example.invalid
+  force_https: false
+  private_key: |
+    -----BEGIN PRIVATE KEY-----
+    synthetic-placeholder-not-a-real-key
+    -----END PRIVATE KEY-----
+  certificate_chain: |
+    -----BEGIN CERTIFICATE-----
+    synthetic-placeholder-not-a-real-certificate
+    -----END CERTIFICATE-----
+
+filters:
+  - enabled: true
+    url: https://lists.example.invalid/ads.txt
+    name: Synthetic Ads
+    id: 1
+  - enabled: false
+    url: https://lists.example.invalid/trackers.txt
+    name: Synthetic Trackers
+    id: 2
+
+whitelist_filters:
+  - enabled: true
+    url: https://lists.example.invalid/allow.txt
+    name: Synthetic Allowlist
+    id: 3
+
+user_rules:
+  - "||ads.example^"
+  - "@@||allowed.example^"
+  - "||rewrite.example^$dnsrewrite=192.0.2.44"
+  - "/^ad[0-9]+\\.example$/"
+  - "example##.cosmetic-rule"
+
+dns:
+  upstream_dns:
+    - https://dns.example.invalid/dns-query
+    - 192.0.2.53
+  bootstrap_dns:
+    - 192.0.2.1
+  rewrites:
+    - domain: pin.example
+      answer: 192.0.2.10
+    - domain: alias.example
+      answer: target.example
+  allowed_clients:
+    - 192.0.2.0/24
+
+clients:
+  persistent:
+    - name: laptop
+      ids:
+        - 192.0.2.10
+      use_global_settings: true
+      filtering_enabled: true
+    - name: phone
+      ids:
+        - 192.0.2.11
+      use_global_settings: false
+      filtering_enabled: false
+      upstreams:
+        - 192.0.2.53
+
+dhcp:
+  enabled: true
+  interface_name: eth0
+  gateway_ip: 192.0.2.1
+  start_ip: 192.0.2.100
+  end_ip: 192.0.2.200
+  lease_duration: 86400
+  leases:
+    - mac: "00:11:22:33:44:55"
+      ip: 192.0.2.20
+      hostname: synthetic-client
+
+querylog:
+  enabled: true
+  file: /opt/AdGuardHome/data/querylog.json
+
+statistics:
+  enabled: true
+  interval: 24h

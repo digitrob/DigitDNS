@@ -199,6 +199,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideMigrateApi(retrofit: Retrofit): MigrateApi = retrofit.create(MigrateApi::class.java)
+
+    @Provides
+    @Singleton
     fun provideSubscriptionApi(retrofit: Retrofit): SubscriptionApi =
         retrofit.create(SubscriptionApi::class.java)
 

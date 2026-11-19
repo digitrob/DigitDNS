@@ -201,13 +201,29 @@ type targetGuard struct {
 	selfAddrs map[netip.Addr]struct{}
 	refreshed time.Time
 
+	// cache holds recently vetted addresses for a hostname. A relay connection
+	// used to spend a system-DNS lookup before every dial; on a host whose
+	// resolv.conf points at a slow or unreachable resolver that lookup consumed
+	// the whole handshake budget. Cached addresses are still re-vetted against the
+	// current self/blocked sets on every use, so rebinding and interface changes
+	// are not hidden by the cache.
+	cache map[string]targetCacheEntry
+
 	lookupIP   func(ctx context.Context, host string) ([]netip.Addr, error)
 	localAddrs func() map[netip.Addr]struct{}
 	now        func() time.Time
 }
 
+type targetCacheEntry struct {
+	addrs   []netip.Addr
+	expires time.Time
+}
+
+const targetCacheTTL = 30 * time.Second
+
 func newTargetGuard() *targetGuard {
 	return &targetGuard{
+		cache: make(map[string]targetCacheEntry),
 		lookupIP: func(ctx context.Context, host string) ([]netip.Addr, error) {
 			return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
 		},
@@ -275,6 +291,21 @@ func (g *targetGuard) resolve(ctx context.Context, host string) (string, []netip
 		return name, []netip.Addr{addr}, nil
 	}
 
+	if cached, ok := g.cached(name); ok {
+		allowed := make([]netip.Addr, 0, len(cached))
+		for _, addr := range cached {
+			// Re-vet every use: the cache saves the DNS round trip, not the
+			// security decision. A new interface address or block rule still wins.
+			if err := g.vet(name, addr); err != nil {
+				return "", nil, err
+			}
+			allowed = append(allowed, addr)
+		}
+		if len(allowed) > 0 {
+			return name, allowed, nil
+		}
+	}
+
 	resolved, err := g.lookupIP(ctx, name)
 	if err != nil {
 		return "", nil, fmt.Errorf("proxy: resolving %s: %w", name, err)
@@ -293,7 +324,43 @@ func (g *targetGuard) resolve(ctx context.Context, host string) (string, []netip
 	if len(allowed) == 0 {
 		return "", nil, fmt.Errorf("%w: %s has no usable addresses", ErrTargetBlocked, name)
 	}
+	g.remember(name, allowed)
 	return name, allowed, nil
+}
+
+func (g *targetGuard) cached(name string) ([]netip.Addr, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	entry, ok := g.cache[name]
+	if !ok || g.now().After(entry.expires) {
+		if ok {
+			delete(g.cache, name)
+		}
+		return nil, false
+	}
+	return append([]netip.Addr(nil), entry.addrs...), true
+}
+
+func (g *targetGuard) remember(name string, addrs []netip.Addr) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.cache == nil {
+		g.cache = make(map[string]targetCacheEntry)
+	}
+	g.cache[name] = targetCacheEntry{
+		addrs:   append([]netip.Addr(nil), addrs...),
+		expires: g.now().Add(targetCacheTTL),
+	}
+	// Keep the cache bounded: a relay scanner can otherwise fill it with one-shot
+	// names. Expired entries are cheap to drop while we are already holding the lock.
+	if len(g.cache) > 4096 {
+		now := g.now()
+		for host, entry := range g.cache {
+			if now.After(entry.expires) {
+				delete(g.cache, host)
+			}
+		}
+	}
 }
 
 // vet applies the block list and the self-address check to one address.

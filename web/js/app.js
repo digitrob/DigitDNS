@@ -189,11 +189,30 @@ function debounce(fn, ms = 120) {
   };
 }
 
-function safeFeatherReplace() {
+function safeFeatherReplace(root) {
   try {
-    if (typeof feather !== 'undefined' && feather.replace) {
-      feather.replace();
+    if (typeof feather === 'undefined') return;
+    // A scoped call replaces only the placeholders just rendered. A global icon
+    // redraw walks every icon in the document and builds a DOMParser for each
+    // one, so repainting a 2,500-row table reparsed every icon on the page.
+    // Callers that rebuild a known container pass it here.
+    if (!root || typeof root.querySelectorAll !== 'function' || !feather.icons) {
+      if (feather.replace) feather.replace();
+      return;
     }
+    root.querySelectorAll('[data-feather]').forEach((el) => {
+      const name = el.getAttribute('data-feather');
+      const icon = feather.icons[name];
+      if (!icon) return;
+      const attrs = {};
+      for (const attr of el.attributes) {
+        if (attr.name !== 'data-feather') attrs[attr.name] = attr.value;
+      }
+      const holder = document.createElement('span');
+      holder.innerHTML = icon.toSvg(attrs);
+      const svg = holder.firstElementChild;
+      if (svg) el.replaceWith(svg);
+    });
   } catch (e) {
     console.warn('Feather icons render notice:', e);
   }
@@ -984,7 +1003,7 @@ function hideChangePwdModal() {
 // button whenever the modal is forced, and modalCloseControl below returns null for a hidden
 // control — so Escape is a no-op in exactly the mode where cancelling is not offered, and the
 // two can never drift apart.
-const MODAL_IDS = ['login-modal', 'change-pwd-modal', 'diagnostics-modal', 'edit-client-modal', 'add-client-modal', 'client-created-modal', 'bulk-import-modal', 'diff-modal'];
+const MODAL_IDS = ['login-modal', 'change-pwd-modal', 'diagnostics-modal', 'edit-client-modal', 'add-client-modal', 'client-created-modal', 'bulk-import-modal', 'migrate-modal', 'diff-modal'];
 
 // Every one of these modals is shown and hidden by toggling .hidden, so reading the class is
 // both the truth and cheap enough for a keydown handler.
@@ -2155,7 +2174,7 @@ function renderConfig(cfg) {
 
   // Normalize config structures to prevent runtime crashes on missing fields
   if (!cfg.rules || typeof cfg.rules !== 'object') cfg.rules = {};
-  ['custom_proxied', 'custom_proxied_disabled', 'custom_blocked', 'custom_direct'].forEach(k => {
+  ['custom_proxied', 'custom_proxied_disabled', 'custom_blocked', 'custom_direct', 'manual_overrides'].forEach(k => {
     if (!Array.isArray(cfg.rules[k])) cfg.rules[k] = [];
   });
   if (!cfg.rules.custom_records || typeof cfg.rules.custom_records !== 'object' || Array.isArray(cfg.rules.custom_records)) {
@@ -2409,10 +2428,11 @@ function isIPAddress(value) {
   return /^(([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,7}:|([0-9a-f]{1,4}:){1,6}:[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,5}(:[0-9a-f]{1,4}){1,2}|([0-9a-f]{1,4}:){1,4}(:[0-9a-f]{1,4}){1,3}|([0-9a-f]{1,4}:){1,3}(:[0-9a-f]{1,4}){1,4}|([0-9a-f]{1,4}:){1,2}(:[0-9a-f]{1,4}){1,5}|[0-9a-f]{1,4}:((:[0-9a-f]{1,4}){1,6})|:((:[0-9a-f]{1,4}){1,7}|:))$/i.test(s);
 }
 
-// parseRecordList turns a free-form blob into the domain -> IP mappings the Custom
-// Static Records panel stores. Each line carries one domain and one address, split by
+// parseRecordList turns a free-form blob into the domain -> answer mappings the DNS
+// Rewrites panel stores. Each line carries one domain and one target, split by
 // whitespace, a comma, a semicolon or an "=". A "#" starts a comment. The domain is
-// lowercased and de-dotted; the address must be an IPv4 or IPv6 literal. Records
+// lowercased and de-dotted; the target must be an IPv4/IPv6 literal or a plain
+// hostname (served as a CNAME). Records
 // already present are collected as `updated` (the address changes) or `unchanged` (the
 // same address), so re-uploading a corrected table replaces stale addresses instead of
 // piling duplicates on top. Nothing here touches the DOM.
@@ -2431,7 +2451,9 @@ function parseRecordList(text, existing) {
     let d = parts[0].trim().toLowerCase();
     if (d.endsWith('.')) d = d.slice(0, -1);
     const ip = parts[1].trim();
-    if (!RECORD_DOMAIN_RE.test(d) || !isIPAddress(ip) || seen.has(d)) { invalid.push(line); continue; }
+    // A non-address target is a CNAME hostname; the resolver serves it as one.
+    const targetOK = isIPAddress(ip) || RECORD_DOMAIN_RE.test(ip.toLowerCase());
+    if (!RECORD_DOMAIN_RE.test(d) || !targetOK || seen.has(d)) { invalid.push(line); continue; }
     seen.add(d);
     if (Object.prototype.hasOwnProperty.call(have, d)) {
       if (have[d] === ip) unchanged.push(d);
@@ -2466,7 +2488,7 @@ function renderList(containerId, items, removeClass) {
     `;
     container.appendChild(row);
   });
-  safeFeatherReplace();
+  safeFeatherReplace(container);
 }
 
 // ---- Client-facing QUIC transports -----------------------------------------
@@ -2969,7 +2991,10 @@ function renderGlobalNotices() {
   const t = currentConfig?.transports;
   if (t) {
     const down = [];
-    if (!t.doh3_listening) down.push('DoH3');
+    // Only an enabled transport can be "enabled but not listening". DoH3 is
+    // opt-in, and its listener flag is false whenever it is off; checking only
+    // the listener made every install show a permanent DoH3 error banner.
+    if (t.doh3_enabled && !t.doh3_listening) down.push('DoH3');
     if (t.doq_enabled && !t.doq_listening) down.push('DoQ');
     if (down.length) {
       const reason = String(t.last_error || '').trim();
@@ -4512,6 +4537,21 @@ function refreshProxiedListIfVisible() {
   if (activeDashTab === 'proxied') renderProxiedList();
 }
 
+// refreshRuleViewsAfterQuickAction repaints only what a live-log decision can
+// change. The old code called renderConfig(), which also rebuilt the version
+// badge, TLS/transport cards, API snippets, the 500-option datalist and every
+// dashboard widget — a full page render for a one-row edit.
+function refreshRuleViewsAfterQuickAction() {
+  if (!currentConfig || !currentConfig.rules) return;
+  renderProxiedSuggestions();
+  if (activeDashTab === 'proxied') {
+    renderProxiedList();
+    proxiedFillViewport();
+    renderList('custom-blocked-list', currentConfig.rules.custom_blocked || [], 'remove-blocked');
+  }
+  renderCustomRecords(currentConfig.rules.custom_records || {});
+}
+
 // saveResolutionSettings posts the current state with the given overrides and
 // mirrors the server's answer back into the controls.
 async function saveResolutionSettings(overrides, message) {
@@ -5016,7 +5056,7 @@ function renderProxiedList() {
     }
     renderDomainRow(entry.domain, entry.status, entry.nested);
   });
-  safeFeatherReplace();
+  safeFeatherReplace(container);
   updateProxiedBulkBar();
 }
 
@@ -5149,11 +5189,18 @@ function proxiedFillViewport() {
   // visible" and pull every batch in one go.
   const rootRect = root.getBoundingClientRect();
   if (rootRect.height === 0) return;
-  let guard = 0;
-  while (proxiedHasMore && guard < 50 && sentinel.getBoundingClientRect().top <= rootRect.bottom) {
-    proxiedVisible += PROXIED_BATCH;
+  // Estimate how many rows the remaining viewport holds and reveal them in one
+  // render. The old loop called renderProxiedList() (which rebuilds every row
+  // already loaded and re-parses every icon) once per 10-row batch, so filling a
+  // tall viewport from 2,500 rows rebuilt the table dozens of times.
+  const firstRow = root.querySelector('tr, .proxied-row');
+  const rowHeight = Math.max(24, firstRow ? firstRow.getBoundingClientRect().height : 44);
+  for (let pass = 0; pass < 2 && proxiedHasMore; pass++) {
+    const room = rootRect.bottom - sentinel.getBoundingClientRect().top;
+    if (room <= 0) break;
+    const rows = Math.max(PROXIED_BATCH, Math.ceil(room / rowHeight));
+    proxiedVisible += rows;
     renderProxiedList();
-    guard++;
   }
 }
 
@@ -5474,7 +5521,7 @@ function renderCustomRecords(records) {
     `;
     container.appendChild(row);
   }
-  safeFeatherReplace();
+  safeFeatherReplace(container);
 }
 
 // =======================================================
@@ -5490,6 +5537,7 @@ async function saveRules(silent = false) {
     custom_direct: currentConfig.rules.custom_direct,
     custom_records: currentConfig.rules.custom_records,
     custom_domain_added: currentConfig.rules.custom_domain_added || {},
+    manual_overrides: currentConfig.rules.manual_overrides || [],
     services: currentConfig.rules.services || {},
     domain_services: currentConfig.rules.domain_services || {},
     service_icons: currentConfig.rules.service_icons || {},
@@ -5501,8 +5549,13 @@ async function saveRules(silent = false) {
   // confirmation. Compare only the fields this request will write, so the
   // server-owned stamps do not appear as phantom changes.
   if (!silent) {
+    // Snapshot the values, not the array/object references. The payload is built
+    // from those same references, so the old comparison was always equal and the
+    // confirmation dialog never appeared.
     const before = {};
-    for (const key of Object.keys(payload)) before[key] = currentConfig.rules[key];
+    for (const key of Object.keys(payload)) {
+      before[key] = JSON.parse(JSON.stringify(currentConfig.rules[key] ?? null));
+    }
     if (!(await showDiffConfirm('Save routing rules?', before, payload, 'Save rules'))) return false;
   }
 
@@ -5517,7 +5570,11 @@ async function saveRules(silent = false) {
     });
 
     if (res.ok) {
-      currentConfig.rules = payload;
+      // The server answers with the normalised rules. Using that copy keeps the
+      // open page in step with what was actually persisted (pruned markers,
+      // de-duplicated lists, server-side stamps) instead of an optimistic guess.
+      const data = await res.json().catch(() => null);
+      currentConfig.rules = (data && data.rules) ? data.rules : payload;
       if (!silent) showToast('Routing rules saved & active!', 'success');
       return true;
     }
@@ -7622,6 +7679,39 @@ function streamManagedPatterns() {
 // choice instead of snapping back to exact; it is session state, not a saved rule.
 const streamActionScopeMemory = new Map();
 
+function normalizeStreamPattern(d) {
+  return String(d || '').trim().toLowerCase().replace(/\.$/, '');
+}
+
+// streamManualOverrides is the persisted marker set. A marker says the operator
+// chose this pattern from the live log; the routing list still carries the action.
+// Keeping the two separate is what lets the matcher rank the decision above every
+// other rule without duplicating the domain in the UI.
+function streamManualOverrides(rules) {
+  const out = new Set();
+  for (const d of (rules && rules.manual_overrides) || []) {
+    const pattern = normalizeStreamPattern(d);
+    if (pattern) out.add(pattern);
+  }
+  return out;
+}
+
+function setStreamManualOverrides(rules, add, remove) {
+  const patterns = streamManualOverrides(rules);
+  for (const d of remove || []) patterns.delete(normalizeStreamPattern(d));
+  for (const d of add || []) {
+    const pattern = normalizeStreamPattern(d);
+    if (pattern) patterns.add(pattern);
+  }
+  rules.manual_overrides = [...patterns];
+}
+
+function streamDomainIsManual(rules, domain) {
+  const patterns = streamManualOverrides(rules);
+  return [...streamRowPatterns(domain), normalizeStreamPattern(domain)]
+    .some((p) => p && patterns.has(p));
+}
+
 // streamScopeTargets lists every pattern a scope writes.
 //
 // - exact  : the name itself (a wildcard row stays its wildcard)
@@ -7709,7 +7799,7 @@ function streamActionListKey(domain) {
 // stayed "exact" and the change looked unsaved. Now the row's own patterns are
 // replaced in the same list and the subtitle updates immediately. A name with no rule
 // is left alone: there the scope stays a modifier for Proxy/Block/Direct.
-function applyStreamScope(domain, scope) {
+async function applyStreamScope(domain, scope) {
   const rules = currentConfig && currentConfig.rules;
   // After *.parent the origin domain is gone from every list; the pattern the last
   // click wrote is where the rule now lives, so use it to find the status.
@@ -7721,6 +7811,10 @@ function applyStreamScope(domain, scope) {
   const rowPatterns = streamRowPatterns(domain);
   const stamp = streamRowStamp(domain) || streamRowStamp(streamActionApplied[0] || '');
   const remove = [...new Set([...rowPatterns, ...streamActionApplied, ...targets])];
+  // A scope change on a live-log rule stays a live-log rule. A scope change on an
+  // ordinary Rules-tab row does not silently promote it into the override tier.
+  const wasManual = streamDomainIsManual(rules, domain) ||
+    (streamActionApplied.length > 0 && streamDomainIsManual(rules, streamActionApplied[0]));
   for (const [key] of STREAM_ACTION_LISTS) {
     if (key === current.key) continue;
     rules[key] = (rules[key] || []).filter((x) => !remove.includes(x));
@@ -7729,13 +7823,18 @@ function applyStreamScope(domain, scope) {
   const added = rules.custom_domain_added || (rules.custom_domain_added = {});
   for (const pattern of rowPatterns) delete added[pattern];
   stampDomainsAsAdded(rules, targets, stamp);
+  setStreamManualOverrides(rules, wasManual ? targets : [], remove);
   streamActionApplied = targets;
-  saveRules();
-  renderConfig(currentConfig);
+  if (!(await saveRules(true))) {
+    streamActionApplied = [];
+    await loadConfig();
+    return false;
+  }
+  refreshRuleViewsAfterQuickAction();
   renderQueryStream();
   // A scope click writes immediately. If the chosen scope narrows away the row
   // the operator clicked, say so in the toast as well as the menu preview.
-  const scopeNote = targets.every((t) => t.startsWith('*.')) && !domain.startsWith('*.')
+  const scopeNote = !scopeCoversDomain(domain, targets)
     ? ` (subdomains only — ${escapeHTML(domain)} itself unchanged)`
     : '';
   showToast(`Scope: ${targets.join(' + ')}${scopeNote}`, 'success');
@@ -8134,7 +8233,7 @@ function onStreamInfoBtnClick(e) {
   if (q) openStreamInfoPopover(trigger, q);
 }
 
-function applyStreamAction(action) {
+async function applyStreamAction(action) {
   if (!currentConfig || !currentConfig.rules || !streamActionDomain) return;
   const targets = streamScopeTargets(streamActionDomain, streamActionScope);
   if (!targets.length) {
@@ -8157,6 +8256,21 @@ function applyStreamAction(action) {
   const remove = [...new Set([...rowPatterns, ...streamActionApplied, ...targets])];
   const targetKey = { proxy: 'custom_proxied', block: 'custom_blocked', direct: 'custom_direct' }[action] || '';
   if (!targetKey) return;
+
+  // A scope click already saved the same targets. Pressing the matching action
+  // next is a no-op, not a second write: the menu used to issue two saves for one
+  // decision, and a failure between them could leave the row half-applied.
+  const current = streamActionListKey(streamActionDomain);
+  const list = lists[targetKey] || [];
+  const alreadyThere = current && current.key === targetKey &&
+    targets.every((t) => list.includes(t)) &&
+    !rowPatterns.some((p) => list.includes(p) && !targets.includes(p)) &&
+    !streamActionApplied.some((p) => !targets.includes(p));
+  if (alreadyThere) {
+    closeStreamActionMenu();
+    return;
+  }
+
   // Read the log badge before anything is written. It used to be read after the
   // rule lists had already been mutated in place: a throw from that line left
   // currentConfig edited, nothing saved, and no row repainted, so the click looked
@@ -8176,6 +8290,10 @@ function applyStreamAction(action) {
   const added = rules.custom_domain_added || (rules.custom_domain_added = {});
   for (const pattern of rowPatterns) delete added[pattern];
   stampDomainsAsAdded(rules, targets, stamp);
+  // This is the decision that creates the override. A wildcard target becomes an
+  // exception for its whole subtree; an exact target covers the host and, because
+  // a plain rule is indexed as exact + suffix, its subdomains too.
+  setStreamManualOverrides(rules, targets, remove);
 
   // Rewrite the buffered rows for this exact host so the badge the operator just
   // acted on (and any sibling row for the same host) shows the new action at once.
@@ -8190,21 +8308,24 @@ function applyStreamAction(action) {
   }
 
   const label = { proxy: 'Proxied', block: 'Blocked', direct: 'Set direct' }[action] || 'Updated';
-  // Only a wildcard-only target leaves the clicked host out, so say that once here
-  // as well as in the menu preview: otherwise the original row keeps resolving and
-  // the action reads as a no-op. host+* includes the host, so it needs no warning.
-  const scopeNote = targets.every((t) => t.startsWith('*.'))
+  // Only a wildcard-only target leaves the clicked host out. Ask the same helper
+  // the menu preview uses, instead of assuming every "*." target is wildcard-only:
+  // that naive test is what produced the wrong "subdomains only" toast.
+  const scopeNote = !scopeCoversDomain(streamActionDomain, targets)
     ? ` (subdomains only — ${escapeHTML(streamActionDomain)} itself unchanged)`
     : '';
   const target = targets.join(' + ');
-  saveRules();
-  renderConfig(currentConfig);
+  if (!(await saveRules(true))) {
+    await loadConfig();
+    return;
+  }
+  refreshRuleViewsAfterQuickAction();
   renderQueryStream();
   showToast(`${label} ${target}${scopeNote}`, 'success');
   closeStreamActionMenu();
 }
 
-function onStreamActionMenuClick(e) {
+async function onStreamActionMenuClick(e) {
   const scopeBtn = e.target.closest('.stream-action-scope');
   if (scopeBtn) {
     streamActionScope = scopeBtn.dataset.scope || 'exact';
@@ -8217,11 +8338,11 @@ function onStreamActionMenuClick(e) {
     updateStreamActionPreview();
     // Rows that already have a rule change scope on the spot; nothing is written for
     // a name with no rule until an action button is pressed.
-    applyStreamScope(streamActionDomain, streamActionScope);
+    await applyStreamScope(streamActionDomain, streamActionScope);
     return;
   }
   const actionBtn = e.target.closest('.stream-action-item');
-  if (actionBtn) applyStreamAction(actionBtn.dataset.action || '');
+  if (actionBtn) await applyStreamAction(actionBtn.dataset.action || '');
 }
 
 
@@ -8318,7 +8439,13 @@ function pushStreamQuery(q) {
     streamPendingRender = false;
     const batch = streamPendingQueries;
     streamPendingQueries = [];
-    if (document.visibilityState === 'hidden' || activeDashTab !== 'stream' || isStreamPaused) return;
+    if (document.visibilityState === 'hidden' || activeDashTab !== 'stream' || isStreamPaused) {
+      // The frame was queued while the Logs tab was visible, then the operator
+      // switched away or hid the page. A full render on return rebuilds from the
+      // buffer; inserting this captured batch afterwards would duplicate rows.
+      streamPendingDropped = [];
+      return;
+    }
     const tbody = document.getElementById('stream-tbody');
     if (!tbody) return;
     // The placeholder (listening / no-match row) is replaced wholesale by a
@@ -14229,6 +14356,20 @@ function initEventListeners() {
     if (bulkImportModal) bulkImportModal.classList.add('hidden');
   }
 
+  // ruleConflictFor names another routing list that already owns this domain or
+  // its host wildcard. It is advisory: the matcher has its own precedence, and a
+  // blocked entry is allowed to coexist with a proxied one, but an operator
+  // adding a name that is already routed elsewhere should be told before the
+  // save rather than discovering it from the query log.
+  function ruleConflictFor(domain, rules, targetKey) {
+    const aliases = domain.startsWith('*.') ? [domain, domain.slice(2)] : [domain, '*.' + domain];
+    for (const key of ['custom_proxied', 'custom_proxied_disabled', 'custom_blocked', 'custom_direct']) {
+      if (key === targetKey) continue;
+      if ((rules[key] || []).some((entry) => aliases.includes(entry))) return key;
+    }
+    return '';
+  }
+
   function openBulkImport(target) {
     bulkImportTarget = target;
     const proxied = target === 'proxied';
@@ -14237,7 +14378,7 @@ function initEventListeners() {
     if (titleEl) titleEl.textContent = records ? 'Bulk Import DNS Rewrites' : proxied ? 'Bulk Import Proxied Domains' : 'Bulk Import Blocked Domains';
     const subtitleEl = document.getElementById('bulk-import-subtitle');
     if (subtitleEl) subtitleEl.textContent = records
-      ? 'Each line maps one hostname to one IPv4 or IPv6 address.'
+      ? 'Each line maps one hostname to an IPv4/IPv6 address or a CNAME target.'
       : proxied
         ? 'Each name listed will resolve to this server through the SNI proxy.'
         : 'Each name listed will be sinkholed to 0.0.0.0.';
@@ -14248,13 +14389,13 @@ function initEventListeners() {
     const helpEl = document.getElementById('bulk-import-help');
     if (helpEl) {
       helpEl.innerHTML = records
-        ? 'One record per line as <code>hostname address</code> — separated by spaces, commas, semicolons or <code>=</code>. Lines starting with <code>#</code> are ignored. IPv4 and IPv6 are both accepted.'
+        ? 'One record per line as <code>hostname target</code> — separated by spaces, commas, semicolons or <code>=</code>. Lines starting with <code>#</code> are ignored. A target may be an IPv4/IPv6 address or a hostname (served as a CNAME).'
         : 'One name per line, or separated by commas, semicolons or spaces. Lines starting with <code>#</code> are ignored. A leading <code>*.</code> covers every subdomain.';
     }
     const ta = document.getElementById('bulk-import-textarea');
     if (ta) {
       ta.value = '';
-      ta.placeholder = records ? 'host.example 203.0.113.9\ncdn.example.net, 2001:db8::1' : 'example.com\n*.sub.example.com\nanother.example.net, third.example.org';
+      ta.placeholder = records ? 'host.example 203.0.113.9\ncdn.example.net, 2001:db8::1\nalias.example, target.example' : 'example.com\n*.sub.example.com\nanother.example.net, third.example.org';
     }
     const fileEl = document.getElementById('bulk-import-file');
     if (fileEl) fileEl.value = '';
@@ -14517,8 +14658,9 @@ function initEventListeners() {
       const { accepted, updated, unchanged, invalid } = parseRecordList(ta ? ta.value : '', currentConfig.rules.custom_records);
       for (const r of accepted) currentConfig.rules.custom_records[r.domain] = r.ip;
       for (const r of updated) currentConfig.rules.custom_records[r.domain] = r.ip;
+      const invalidPreview = invalid.slice(0, 3).join(', ');
       if (accepted.length === 0 && updated.length === 0) {
-        setBulkImportStatus(invalid.length ? `Nothing to import — ${invalid.length} invalid line(s).` : 'Nothing to import.', invalid.length ? 'error' : '');
+        setBulkImportStatus(invalid.length ? `Nothing to import — ${invalid.length} invalid line(s): ${invalidPreview}.` : 'Nothing to import.', invalid.length ? 'error' : '');
         return;
       }
       saveRules();
@@ -14531,7 +14673,7 @@ function initEventListeners() {
       if (invalid.length) {
         // Keep the modal open so the operator can see the offending lines, but the
         // good ones are already saved.
-        setBulkImportStatus(summary, 'error');
+        setBulkImportStatus(`${summary} Invalid: ${invalidPreview}.`, 'error');
         return;
       }
       closeBulkImport();
@@ -14548,14 +14690,19 @@ function initEventListeners() {
       ? active.concat(Array.isArray(currentConfig.rules.custom_proxied_disabled) ? currentConfig.rules.custom_proxied_disabled : [])
       : active;
     const { accepted, duplicates, invalid } = parseDomainList(ta ? ta.value : '', known);
+    const conflicts = bulkImportTarget === 'blocked'
+      ? accepted.filter((d) => ruleConflictFor(d, currentConfig.rules, 'custom_blocked'))
+      : [];
 
     const parts = [`${accepted.length} added`];
     if (duplicates.length) parts.push(`${duplicates.length} already listed`);
     if (invalid.length) parts.push(`${invalid.length} invalid`);
+    if (conflicts.length) parts.push(`${conflicts.length} already routed`);
     const summary = parts.join(', ');
+    const invalidPreview = invalid.slice(0, 3).join(', ');
 
     if (accepted.length === 0) {
-      setBulkImportStatus(`Nothing to import — ${summary}.`, 'error');
+      setBulkImportStatus(`Nothing to import — ${summary}${invalidPreview ? `: ${invalidPreview}` : ''}.`, 'error');
       return;
     }
 
@@ -14565,13 +14712,433 @@ function initEventListeners() {
     saveRules();
     renderConfig(currentConfig);
 
-    if (invalid.length || duplicates.length) {
-      setBulkImportStatus(`Imported (${summary}). Skipped entries are ignored, not added.`, 'ok');
+    if (invalid.length || duplicates.length || conflicts.length) {
+      setBulkImportStatus(`Imported (${summary}).${invalidPreview ? ` Invalid: ${invalidPreview}.` : ''} Skipped entries are ignored, not added.`, conflicts.length ? 'error' : 'ok');
       return;
     }
     closeBulkImport();
     showToast(`Imported ${accepted.length} domain(s)`, 'success');
   });
+
+  // Migration importer: Pi-hole / AdGuard Home -> two-step analyze/apply.
+  //
+  // The server parses AdGuard YAML and Pi-hole v5 Teleporter archives because
+  // those are plain text or ZIP entries. A Pi-hole v6 Teleporter carries a
+  // SQLite gravity.db; the browser reads that with the vendored SQLite-WASM
+  // build and sends only the normalized, secret-free Bundle. Nothing from the
+  // source is applied until Apply is pressed.
+  let migrateToken = '';
+  let migrateUndoToken = '';
+  const migrateModal = document.getElementById('migrate-modal');
+
+  function setMigrateStatus(message, kind) {
+    const el = document.getElementById('migrate-status');
+    if (!el) return;
+    el.textContent = message || '';
+    el.className = 'text-[11px] ' + (kind === 'error' ? 'text-red-400' : kind === 'ok' ? 'text-emerald-400' : 'text-slate-400');
+  }
+
+  function showMigrateStep(step) {
+    document.getElementById('migrate-step-1')?.classList.toggle('hidden', step !== 1);
+    document.getElementById('migrate-preview')?.classList.toggle('hidden', step !== 2);
+    document.getElementById('migrate-result')?.classList.toggle('hidden', step !== 3);
+  }
+
+  function resetMigrate() {
+    migrateToken = '';
+    migrateUndoToken = '';
+    document.getElementById('migrate-undo-btn')?.classList.add('hidden');
+    const file = document.getElementById('migrate-file');
+    if (file) file.value = '';
+    const preview = document.getElementById('migrate-preview');
+    if (preview) preview.classList.add('hidden');
+    document.getElementById('migrate-step-1')?.classList.remove('hidden');
+    document.getElementById('migrate-summary').innerHTML = '';
+    document.getElementById('migrate-samples').innerHTML = '';
+    document.getElementById('migrate-warnings').innerHTML = '';
+    document.getElementById('migrate-result-summary').innerHTML = '';
+    document.getElementById('migrate-result-skipped').innerHTML = '';
+    document.getElementById('migrate-result')?.classList.add('hidden');
+    document.getElementById('migrate-report-btn')?.classList.add('hidden');
+    document.getElementById('migrate-upstreams-row')?.classList.add('hidden');
+    const optIn = document.getElementById('migrate-upstreams-optin');
+    if (optIn) optIn.checked = false;
+    setMigrateStatus('');
+  }
+
+  function openMigrate() {
+    resetMigrate();
+    if (migrateModal) migrateModal.classList.remove('hidden');
+    document.getElementById('migrate-file')?.focus();
+  }
+
+  function closeMigrate() {
+    if (migrateModal) migrateModal.classList.add('hidden');
+    resetMigrate();
+  }
+
+  function loadScriptOnce(src) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error(`Could not load ${src}`));
+      document.head.appendChild(script);
+    });
+  }
+
+  async function ensureJSZip() {
+    if (!window.JSZip) await loadScriptOnce(api('/vendor/jszip/jszip.min.js'));
+    if (!window.JSZip) throw new Error('The ZIP reader did not load.');
+    return window.JSZip;
+  }
+
+  async function ensureSqlJs() {
+    if (!window.initSqlJs) await loadScriptOnce(api('/vendor/sql.js/sql-wasm.js'));
+    if (!window.initSqlJs) throw new Error('The SQLite reader did not load.');
+    return window.initSqlJs;
+  }
+
+  async function migrateLooksLikeV6(file) {
+    const JSZip = await ensureJSZip();
+    const zip = await JSZip.loadAsync(file);
+    return Object.values(zip.files).some((entry) => {
+      const name = String(entry.name || '').toLowerCase();
+      return !entry.dir && (name.endsWith('gravity.db') || name.endsWith('pihole.toml'));
+    });
+  }
+
+  function migrateRows(db, sql, warnings) {
+    try {
+      const stmt = db.prepare(sql);
+      const rows = [];
+      while (stmt.step()) rows.push(stmt.getAsObject());
+      stmt.free();
+      return rows;
+    } catch (err) {
+      warnings.push({ code: 'v6-table-unreadable', reason: `${sql}: ${err.message || err}` });
+      return [];
+    }
+  }
+
+  function buildV6Bundle(db, fileName) {
+    const warnings = [];
+    const bundle = {
+      schema_version: 1,
+      source: { kind: 'pihole-v6', version: 'v6', file_name: fileName },
+      filter_lists: [],
+      blocked: [],
+      allowlist: [],
+      clients: [],
+      filtering: { custom_rules: '' },
+      warnings,
+      skipped: [],
+    };
+    const rules = [];
+
+    for (const row of migrateRows(db, 'SELECT address, enabled, comment FROM adlist', warnings)) {
+      const url = String(row.address || '').trim();
+      if (!url) continue;
+      bundle.filter_lists.push({
+        name: String(row.comment || url),
+        url,
+        enabled: Number(row.enabled) !== 0,
+      });
+    }
+
+    for (const row of migrateRows(db, 'SELECT type, domain, enabled FROM domainlist', warnings)) {
+      const domain = String(row.domain || '').trim();
+      if (!domain) continue;
+      const type = Number(row.type);
+      if (type === 0) bundle.allowlist.push(domain);
+      else if (type === 1) bundle.blocked.push(domain);
+      else if (type === 2 || type === 3) {
+        const pattern = domain.startsWith('/') && domain.endsWith('/') ? domain : '/' + domain + '/';
+        rules.push(type === 2 ? '@@' + pattern : pattern);
+      }
+      else warnings.push({ code: 'v6-domainlist-type', item: domain, reason: `unknown domainlist type ${row.type}` });
+    }
+
+    for (const row of migrateRows(db, 'SELECT ip, name, comment FROM client', warnings)) {
+      const ids = String(row.ip || '').split(/[,\s]+/).map((value) => value.trim()).filter(Boolean);
+      if (!ids.length) continue;
+      bundle.clients.push({
+        name: String(row.name || ids[0]),
+        ids,
+        enabled: true,
+        note: String(row.comment || ''),
+      });
+    }
+
+    if (rules.length) bundle.filtering.custom_rules = rules.join('\n');
+    return bundle;
+  }
+
+  async function analyzeMigrateV6(file) {
+    const JSZip = await ensureJSZip();
+    const initSqlJs = await ensureSqlJs();
+    const zip = await JSZip.loadAsync(file);
+    const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+    const dbEntry = entries.find((entry) => String(entry.name).toLowerCase().endsWith('gravity.db'));
+    if (!dbEntry) throw new Error('No gravity.db was found in this Teleporter archive.');
+    const tomlEntry = entries.find((entry) => String(entry.name).toLowerCase().endsWith('pihole.toml'));
+    const dbBytes = await dbEntry.async('uint8array');
+    const tomlText = tomlEntry ? await tomlEntry.async('string') : '';
+    const SQL = await initSqlJs({ locateFile: (name) => api(`/vendor/sql.js/${name}`) });
+    const db = new SQL.Database(dbBytes);
+    let bundle;
+    try {
+      bundle = buildV6Bundle(db, file.name);
+    } finally {
+      db.close();
+    }
+    const res = await fetch(api('/api/migrate/analyze'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ bundle, pihole_toml: tomlText }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not analyze the Pi-hole v6 archive.');
+    return data;
+  }
+
+  async function analyzeMigrateUpload(file) {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(api('/api/migrate/analyze'), {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not analyze that file.');
+    return data;
+  }
+
+  function migrateSummaryCard(label, value) {
+    return `<div class="rounded-xl border border-slate-700/70 bg-slate-900/40 p-2.5">
+      <div class="text-[10px] uppercase tracking-wide text-slate-500">${label}</div>
+      <div class="text-lg font-bold text-white font-mono">${Number(value) || 0}</div>
+    </div>`;
+  }
+
+  function appendMigrateList(container, title, items) {
+    if (!Array.isArray(items) || !items.length) return;
+    const box = document.createElement('div');
+    box.className = 'rounded-xl border border-slate-700/70 bg-slate-900/40 p-3';
+    const heading = document.createElement('div');
+    heading.className = 'text-[10px] uppercase tracking-wide text-slate-500 mb-1.5';
+    heading.textContent = title;
+    box.appendChild(heading);
+    const list = document.createElement('ul');
+    list.className = 'space-y-1 text-[11px] text-slate-300 font-mono';
+    for (const item of items.slice(0, 20)) {
+      const row = document.createElement('li');
+      row.className = 'truncate';
+      row.textContent = String(item);
+      list.appendChild(row);
+    }
+    box.appendChild(list);
+    container.appendChild(box);
+  }
+
+  function renderMigratePreview(data) {
+    migrateToken = data.token || '';
+    showMigrateStep(2);
+    const stats = data.stats || {};
+    const customRuleCount = String(data.filtering?.custom_rules || '').split('\n').filter((line) => line.trim()).length;
+    const summary = document.getElementById('migrate-summary');
+    if (summary) {
+      summary.innerHTML = [
+        ['Records', stats.records],
+        ['Clients', stats.clients],
+        ['Proxied', stats.proxied],
+        ['Blocked', stats.blocked],
+        ['Direct', stats.direct],
+        ['Allowlist', stats.allowlist],
+        ['Lists', stats.filter_lists],
+        ['Rules', stats.filter_rules],
+        ['Custom rules', customRuleCount],
+        ['Rewrites', stats.rewrites],
+        ['Upstreams', stats.upstreams],
+        ['Warnings', stats.warnings],
+        ['Skipped', stats.skipped],
+      ].filter(([, value]) => Number(value) > 0).map(([label, value]) => migrateSummaryCard(label, value)).join('');
+    }
+
+    const samples = document.getElementById('migrate-samples');
+    if (samples) {
+      samples.innerHTML = '';
+      const sample = data.sample || {};
+      appendMigrateList(samples, 'Proxied domains', sample.proxied);
+      appendMigrateList(samples, 'Blocked domains', sample.blocked);
+      appendMigrateList(samples, 'Direct domains', sample.direct);
+      appendMigrateList(samples, 'Allowlist', sample.allowlist);
+      appendMigrateList(samples, 'DNS records', sample.records);
+      appendMigrateList(samples, 'Clients', sample.clients);
+      appendMigrateList(samples, 'Filter lists', sample.filter_lists);
+      appendMigrateList(samples, 'Custom rules', sample.custom_rules);
+      appendMigrateList(samples, 'Rewrites', sample.rewrites);
+      appendMigrateList(samples, 'Upstreams', sample.upstreams);
+    }
+
+    const warnings = document.getElementById('migrate-warnings');
+    if (warnings) {
+      warnings.innerHTML = '';
+      appendMigrateList(warnings, 'Warnings', (data.warnings || []).map((w) => `${w.code}${w.item ? ': ' + w.item : ''}${w.reason ? ' — ' + w.reason : ''}`));
+      appendMigrateList(warnings, 'Skipped items', (data.skipped || []).map((w) => `${w.code}${w.item ? ': ' + w.item : ''}${w.reason ? ' — ' + w.reason : ''}`));
+    }
+
+    const upstreamsRow = document.getElementById('migrate-upstreams-row');
+    if (upstreamsRow) upstreamsRow.classList.toggle('hidden', !(Number(stats.upstreams) > 0));
+    document.getElementById('migrate-report-btn')?.classList.toggle('hidden', !data.report_available);
+    setMigrateStatus('');
+  }
+
+  async function analyzeMigrate() {
+    const file = document.getElementById('migrate-file')?.files?.[0];
+    if (!file) {
+      setMigrateStatus('Choose a Teleporter ZIP, AdGuard YAML or pihole.toml first.', 'error');
+      return;
+    }
+    if (file.size > 64 * 1024 * 1024) {
+      setMigrateStatus('That file is larger than 64 MB.', 'error');
+      return;
+    }
+    setMigrateStatus('Analyzing…');
+    try {
+      const lower = file.name.toLowerCase();
+      const looksV6 = lower.endsWith('.zip') && await migrateLooksLikeV6(file);
+      const data = looksV6 ? await analyzeMigrateV6(file) : await analyzeMigrateUpload(file);
+      renderMigratePreview(data);
+    } catch (err) {
+      setMigrateStatus(err.message || 'Could not analyze that file.', 'error');
+    }
+  }
+
+  async function applyMigrate() {
+    if (!migrateToken) return;
+    const btn = document.getElementById('migrate-apply-btn');
+    if (btn) btn.disabled = true;
+    setMigrateStatus('Applying…');
+    try {
+      const res = await fetch(api('/api/migrate/apply'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({
+          token: migrateToken,
+          upstreams: !!document.getElementById('migrate-upstreams-optin')?.checked,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not apply the import.');
+      const added = data.added || {};
+      const skipped = Array.isArray(data.skipped) ? data.skipped : [];
+      migrateToken = '';
+      migrateUndoToken = data.undo_token || '';
+      document.getElementById('migrate-undo-btn')?.classList.toggle('hidden', !migrateUndoToken);
+      showMigrateStep(3);
+      const summary = document.getElementById('migrate-result-summary');
+      if (summary) {
+        summary.textContent = `Import applied: ${added.proxied || 0} proxied, ${added.blocked || 0} blocked, ${added.clients || 0} clients, ${added.records || 0} records, ${added.rewrites || 0} rewrites, ${added.filter_lists || 0} lists${skipped.length ? `, ${skipped.length} skipped` : ''}.`;
+      }
+      const skippedBox = document.getElementById('migrate-result-skipped');
+      if (skippedBox) {
+        skippedBox.innerHTML = '';
+        appendMigrateList(skippedBox, 'Skipped items', skipped.map((item) => `${item.code}${item.item ? ': ' + item.item : ''}${item.reason ? ' — ' + item.reason : ''}`));
+      }
+      await loadConfig();
+      showToast(
+        `Import applied: ${added.proxied || 0} proxied, ${added.blocked || 0} blocked, ${added.clients || 0} clients, ${added.records || 0} records, ${added.rewrites || 0} rewrites, ${added.filter_lists || 0} lists${skipped.length ? `, ${skipped.length} skipped` : ''}`,
+        skipped.length ? 'warning' : 'success'
+      );
+    } catch (err) {
+      setMigrateStatus(err.message || 'Could not apply the import.', 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function downloadMigrateReport() {
+    if (!migrateToken) return;
+    try {
+      const res = await fetch(api(`/api/migrate/report?token=${encodeURIComponent(migrateToken)}`), {
+        headers: { 'Authorization': `Bearer ${authToken}` },
+      });
+      if (!res.ok) throw new Error('Could not download the report.');
+      const text = await res.text();
+      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'digitdns-import-skipped-regex.txt';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setMigrateStatus(err.message || 'Could not download the report.', 'error');
+    }
+  }
+
+  async function undoMigrate() {
+    if (!migrateUndoToken) return;
+    const btn = document.getElementById('migrate-undo-btn');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch(api('/api/migrate/undo'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ token: migrateUndoToken }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not undo the import.');
+      migrateUndoToken = '';
+      closeMigrate();
+      await loadConfig();
+      switchTab('proxied');
+      showToast('Import undone', 'success');
+    } catch (err) {
+      showToast(err.message || 'Could not undo the import.', 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function exportConfig() {
+    try {
+      const res = await fetch(api('/api/config/export'), {
+        headers: { 'Authorization': `Bearer ${authToken}` },
+      });
+      if (!res.ok) throw new Error('Could not export the configuration.');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `digitdns-config-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast('Configuration exported', 'success');
+    } catch (err) {
+      showToast(err.message || 'Could not export the configuration.', 'error');
+    }
+  }
+
+  document.getElementById('migrate-open-btn')?.addEventListener('click', openMigrate);
+  document.getElementById('export-config-btn')?.addEventListener('click', exportConfig);
+  document.getElementById('migrate-cancel-btn')?.addEventListener('click', closeMigrate);
+  document.getElementById('migrate-cancel-btn-bottom')?.addEventListener('click', closeMigrate);
+  document.getElementById('migrate-analyze-btn')?.addEventListener('click', analyzeMigrate);
+  document.getElementById('migrate-apply-btn')?.addEventListener('click', applyMigrate);
+  document.getElementById('migrate-back-btn')?.addEventListener('click', () => {
+    migrateToken = '';
+    showMigrateStep(1);
+    setMigrateStatus('');
+  });
+  document.getElementById('migrate-report-btn')?.addEventListener('click', downloadMigrateReport);
+  document.getElementById('migrate-done-btn')?.addEventListener('click', () => {
+    closeMigrate();
+    switchTab('proxied');
+  });
+  document.getElementById('migrate-undo-btn')?.addEventListener('click', undoMigrate);
 
   // Add Custom Proxied
   document.getElementById('add-proxied-btn')?.addEventListener('click', () => {
@@ -14627,12 +15194,18 @@ function initEventListeners() {
       else if (invalid.length) showToast(`${invalid.length} invalid domain(s)`, 'error');
       return;
     }
+    const conflicts = accepted.filter((d) => ruleConflictFor(d, currentConfig.rules, 'custom_blocked'));
     currentConfig.rules.custom_blocked = existing.concat(accepted);
     stampDomainsAsAdded(currentConfig.rules, accepted);
     input.value = '';
     saveRules();
     renderConfig(currentConfig);
-    if (invalid.length) showToast(`Added ${accepted.length}; ${invalid.length} invalid`, 'error');
+    if (invalid.length || conflicts.length) {
+      const notes = [];
+      if (invalid.length) notes.push(`${invalid.length} invalid`);
+      if (conflicts.length) notes.push(`${conflicts.length} already routed in another list`);
+      showToast(`Added ${accepted.length}; ${notes.join(', ')}`, 'warning');
+    }
   });
 
   // Add DoH Token

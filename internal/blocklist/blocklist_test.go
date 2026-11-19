@@ -5,6 +5,32 @@ import (
 	"testing"
 )
 
+func TestParseSourceAndMergeMatchBuild(t *testing.T) {
+	one, statsOne := ParseSource(Source{Name: "one", Enabled: true, Text: "||ads.example^\n"})
+	two, statsTwo := ParseSource(Source{Name: "two", Enabled: true, Text: "||tracker.example^\n"})
+	if statsOne.Blocked != 1 || statsTwo.Blocked != 1 {
+		t.Fatalf("parsed stats = %d/%d, want 1/1", statsOne.Blocked, statsTwo.Blocked)
+	}
+	merged := Merge([]*Index{one, two}, []string{"allowed.example"})
+	for _, name := range []string{"ads.example", "tracker.example"} {
+		if blocked, _, _ := merged.Match(name); !blocked {
+			t.Errorf("merged index does not block %s", name)
+		}
+	}
+	if blocked, _, _ := merged.Match("allowed.example"); blocked {
+		t.Error("merged allowlist did not suppress a block")
+	}
+	// Merging is equivalent to one Build over the same sources.
+	built, _ := Build([]Source{
+		{Name: "one", Enabled: true, Text: "||ads.example^\n"},
+		{Name: "two", Enabled: true, Text: "||tracker.example^\n"},
+	}, []string{"allowed.example"})
+	if built.RuleCount() != merged.RuleCount() || built.DomainCount() != merged.DomainCount() {
+		t.Fatalf("merge = %d rules/%d domains, build = %d/%d",
+			merged.RuleCount(), merged.DomainCount(), built.RuleCount(), built.DomainCount())
+	}
+}
+
 func TestBuildParsesHostsDomainsAndAdblockRules(t *testing.T) {
 	idx, stats := Build([]Source{{
 		Name:    "test list",
@@ -256,11 +282,11 @@ func TestRegexRulesAreLimitedToOptedInSourcesAndUseAllowPrecedence(t *testing.T)
 }
 
 func TestCustomRegexRuleLimits(t *testing.T) {
-	lines := make([]string, maxCustomRegexRules+1)
-	for i := range maxCustomRegexRules + 1 {
+	lines := make([]string, MaxCustomRegexRules+1)
+	for i := range MaxCustomRegexRules + 1 {
 		lines[i] = "/^regex\\.example$/"
 	}
-	long := "/" + strings.Repeat("a", maxCustomRegexPatternSize+1) + "/"
+	long := "/" + strings.Repeat("a", MaxCustomRegexPatternSize+1) + "/"
 	lines = append(lines, long)
 
 	idx, stats := Build([]Source{{
@@ -269,11 +295,11 @@ func TestCustomRegexRuleLimits(t *testing.T) {
 		AllowRegex: true,
 		Text:       strings.Join(lines, "\n"),
 	}}, nil)
-	if stats.Blocked != maxCustomRegexRules || stats.Skipped != 2 {
+	if stats.Blocked != MaxCustomRegexRules || stats.Skipped != 2 {
 		t.Fatalf("regex stats = blocked:%d skipped:%d, want blocked:%d skipped:2",
-			stats.Blocked, stats.Skipped, maxCustomRegexRules)
+			stats.Blocked, stats.Skipped, MaxCustomRegexRules)
 	}
-	if got := idx.RuleCount(); got != maxCustomRegexRules {
-		t.Fatalf("RuleCount = %d, want %d", got, maxCustomRegexRules)
+	if got := idx.RuleCount(); got != MaxCustomRegexRules {
+		t.Fatalf("RuleCount = %d, want %d", got, MaxCustomRegexRules)
 	}
 }

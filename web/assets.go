@@ -66,6 +66,14 @@ import "embed"
 //go:embed js/chart.umd.min.js.br
 //go:embed css/style.min.css.br
 //go:embed css/tailwind.purged.css.br
+//go:embed vendor/sql.js/manifest.json
+//go:embed vendor/sql.js/sql-wasm.js
+//go:embed vendor/sql.js/sql-wasm.js.br
+//go:embed vendor/sql.js/sql-wasm.wasm
+//go:embed vendor/sql.js/sql-wasm.wasm.br
+//go:embed vendor/jszip/manifest.json
+//go:embed vendor/jszip/jszip.min.js
+//go:embed vendor/jszip/jszip.min.js.br
 //go:embed img
 //go:embed flags
 //go:embed fonts/vazirmatn-var.woff2

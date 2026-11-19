@@ -859,6 +859,72 @@
   </div>
 
   <!-- ================================================================= -->
+  <!-- MIGRATION IMPORTER (Pi-hole / AdGuard Home) -->
+  <!-- ================================================================= -->
+  <div id="migrate-modal" role="dialog" aria-modal="true" aria-labelledby="migrate-title"
+    data-modal-close="migrate-cancel-btn"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md px-4 hidden">
+    <div class="glass-panel p-6 sm:p-7 w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-3.5 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-cyan-500/20 flex items-center justify-center text-cyan-400 border border-cyan-500/30">
+            <i data-feather="download-cloud" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h2 id="migrate-title" class="text-sm sm:text-base font-bold text-white font-heading">Import from Pi-hole / AdGuard Home</h2>
+            <p class="text-[11px] text-slate-400">Analyze first, then apply. Rules, clients and lists are added; nothing is deleted.</p>
+          </div>
+        </div>
+        <button id="migrate-cancel-btn" aria-label="Close importer" class="text-slate-400 hover:text-white p-1">
+          <i data-feather="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div id="migrate-step-1" class="space-y-4">
+        <div class="rounded-xl border border-slate-700/70 bg-slate-900/40 p-3 text-[11px] text-slate-300 space-y-1">
+          <p><strong class="text-slate-200">Accepted:</strong> Pi-hole v5/v6 Teleporter ZIP, AdGuard Home YAML, or a Pi-hole <code>pihole.toml</code>.</p>
+          <p><strong class="text-slate-200">Never imported:</strong> passwords, API keys, TLS private keys, sessions, DHCP state and query history.</p>
+        </div>
+        <div>
+          <label for="migrate-file" class="block text-[11px] font-semibold text-slate-400 mb-1">Source export</label>
+          <input type="file" id="migrate-file"
+            accept=".zip,.yaml,.yml,.toml,application/zip,application/x-yaml,text/yaml,text/plain"
+            class="w-full text-xs text-slate-300 file:me-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-slate-800 file:text-slate-200 file:text-xs file:font-semibold hover:file:bg-slate-700">
+        </div>
+        <p id="migrate-status" class="text-[11px] text-slate-400"></p>
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+          <button type="button" id="migrate-cancel-btn-bottom" class="panel-btn panel-btn-neutral">Cancel</button>
+          <button type="button" id="migrate-analyze-btn" class="panel-btn panel-btn-primary">Analyze</button>
+        </div>
+      </div>
+
+      <div id="migrate-preview" class="hidden space-y-4">
+        <div id="migrate-summary" class="grid grid-cols-2 sm:grid-cols-4 gap-2"></div>
+        <div id="migrate-samples" class="space-y-2"></div>
+        <div id="migrate-warnings" class="space-y-2"></div>
+        <label id="migrate-upstreams-row" class="hidden flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-100">
+          <input type="checkbox" id="migrate-upstreams-optin" class="mt-0.5 accent-amber-500">
+          <span><strong>Import upstream resolvers.</strong> Off by default; turning this on adds the source's resolver addresses to this server's pool.</span>
+        </label>
+        <div class="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-800">
+          <button type="button" id="migrate-report-btn" class="panel-btn panel-btn-ghost hidden">Download skipped regex</button>
+          <button type="button" id="migrate-back-btn" class="panel-btn panel-btn-neutral">Back</button>
+          <button type="button" id="migrate-apply-btn" class="panel-btn panel-btn-primary">Apply import</button>
+        </div>
+      </div>
+
+      <div id="migrate-result" class="hidden space-y-3">
+        <div id="migrate-result-summary" class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-[11px] text-emerald-100"></div>
+        <div id="migrate-result-skipped" class="space-y-2"></div>
+        <div class="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-800">
+          <button type="button" id="migrate-undo-btn" class="panel-btn panel-btn-ghost hidden">Undo import</button>
+          <button type="button" id="migrate-done-btn" class="panel-btn panel-btn-primary">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
   <!-- VERTICAL LEFT SIDEBAR (Desktop - Sticky on Left) -->
   <!-- ================================================================= -->
   <aside id="app-sidebar" class="w-full md:w-64 bg-slate-950/90 backdrop-blur-2xl border-b md:border-b-0 md:border-e border-slate-800/80 hidden md:flex flex-col justify-between p-4 flex-shrink-0 md:h-screen md:sticky md:top-0">
@@ -1842,6 +1908,16 @@
             <button type="button" id="bulk-proxied-btn"
               class="panel-btn panel-btn-ghost shrink-0">
               <i data-feather="upload-cloud" class="w-3.5 h-3.5"></i> Bulk import
+            </button>
+            <button type="button" id="migrate-open-btn"
+              class="panel-btn panel-btn-ghost shrink-0"
+              title="Import rules, clients and lists from Pi-hole or AdGuard Home">
+              <i data-feather="download-cloud" class="w-3.5 h-3.5"></i> Import config
+            </button>
+            <button type="button" id="export-config-btn"
+              class="panel-btn panel-btn-ghost shrink-0"
+              title="Download a redacted JSON snapshot of this server's settings">
+              <i data-feather="download" class="w-3.5 h-3.5"></i> Export
             </button>
           </div>
 
@@ -3809,20 +3885,20 @@ async function onBuySubscription(ctx, username) {
           </div>
 
 
-          <!-- DNS Rewrites: hostname -> fixed IPv4/IPv6 address -->
+          <!-- DNS Rewrites: hostname -> fixed IPv4/IPv6 address or CNAME target -->
           <div class="glass-panel panel-card p-5 sm:p-6 space-y-4" id="dns-rewrites-card">
             <div>
               <h3 class="panel-card-header">
                 <i data-feather="map-pin" class="w-4 h-4 text-emerald-400"></i> DNS Rewrites
               </h3>
-              <p class="text-[11px] text-slate-400 mt-0.5">Map any hostname directly to a fixed IPv4 or IPv6 address</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Map any hostname directly to a fixed IPv4/IPv6 address or a CNAME target</p>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input type="text" id="custom-record-domain" aria-label="DNS rewrite hostname" placeholder="hostname.com"
                 class="panel-field font-mono focus:border-emerald-400">
               <div class="flex gap-2">
-                <input type="text" id="custom-record-ip" aria-label="DNS rewrite IP address" placeholder="1.2.3.4"
+                <input type="text" id="custom-record-ip" aria-label="DNS rewrite target address or hostname" placeholder="1.2.3.4 or target.example"
                   class="panel-field flex-1 min-w-0 font-mono focus:border-emerald-400">
                 <button id="add-custom-record-btn" class="panel-btn panel-btn-primary">Save</button>
               </div>

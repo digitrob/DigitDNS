@@ -7,7 +7,7 @@ import org.junit.Test
 class SettingsHubTest {
     @Test
     fun emptyQueryReturnsEverySection() {
-        assertEquals(23, filterSettingsSections("").size)
+        assertEquals(24, filterSettingsSections("").size)
         assertEquals(SettingsSection.entries, filterSettingsSections("   "))
     }
 

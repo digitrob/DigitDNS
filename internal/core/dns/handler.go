@@ -800,8 +800,16 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 
 	engineOff := h.engineDisabled.Load()
 
-	// 3. Custom record overrides outrank every other rule. Both address
+	// A live-log decision is the operator's most specific instruction. Resolve it
+	// once, before custom records, so an A/CNAME override cannot shadow it and so
+	// step 4 does not repeat the lookup.
+	manualAction, manualRule, manualPattern, manualHit := matcher.ActionDirect, "", "", false
 	if !engineOff {
+		manualAction, manualRule, manualPattern, manualHit = h.matcher.ManualMatchLower(domain)
+	}
+
+	// 3. Custom record overrides outrank every other rule. Both address
+	if !engineOff && !manualHit {
 		if customVal, ok := h.matcher.GetCustomRecord(domain); ok {
 			customVal = strings.TrimSpace(customVal)
 			ip := net.ParseIP(customVal)
@@ -880,7 +888,11 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	// inert in this build.
 	action, ruleName, matchedPattern := matcher.ActionDirect, "Engine off", ""
 	if !engineOff {
-		action, ruleName, matchedPattern = h.matcher.MatchDetailLower(domain)
+		if manualHit {
+			action, ruleName, matchedPattern = manualAction, manualRule, manualPattern
+		} else {
+			action, ruleName, matchedPattern = h.matcher.MatchDetailLower(domain)
+		}
 	}
 
 	switch action {

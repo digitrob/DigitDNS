@@ -46,6 +46,58 @@ func TestDNSHandler_ProcessQuery(t *testing.T) {
 	}
 }
 
+// TestDNSHandler_ServesImportedCustomRewrites pins the shapes the importer now
+// writes into custom_records: an IPv4 address, an IPv6 address and a CNAME
+// hostname. The handler picks the record type from the value, so a migrated
+// Pi-hole/AdGuard rewrite is served without a separate store.
+func TestDNSHandler_ServesImportedCustomRewrites(t *testing.T) {
+	c := cache.NewCache(1000, 60, 3600)
+	defer c.Close()
+	m := matcher.NewMatcher()
+	m.SetCustomRules(nil, nil, nil, map[string]string{
+		"static-v4.example":    "192.0.2.55",
+		"static-v6.example":    "2001:db8::55",
+		"static-cname.example": "alias.target.example",
+	})
+	u := upstream.NewUpstreamPool([]string{"1.1.1.1:53"}, time.Second, true, "")
+	handler := NewHandler(&dummyAccess{}, c, m, u, nil, "198.51.100.1")
+
+	for _, tc := range []struct {
+		name  string
+		qtype uint16
+		want  string
+	}{
+		{"static-v4.example.", dns.TypeA, "192.0.2.55"},
+		{"static-v6.example.", dns.TypeAAAA, "2001:db8::55"},
+		{"static-cname.example.", dns.TypeA, "alias.target.example."},
+		{"static-cname.example.", dns.TypeCNAME, "alias.target.example."},
+	} {
+		req := new(dns.Msg)
+		req.SetQuestion(tc.name, tc.qtype)
+		resp := handler.ProcessQuery(req, "127.0.0.1")
+		if resp == nil || resp.Rcode != dns.RcodeSuccess {
+			t.Fatalf("%s type=%d response = %#v, want NOERROR", tc.name, tc.qtype, resp)
+		}
+		if len(resp.Answer) != 1 {
+			t.Fatalf("%s type=%d answer count = %d, want 1", tc.name, tc.qtype, len(resp.Answer))
+		}
+		var got string
+		switch rr := resp.Answer[0].(type) {
+		case *dns.A:
+			got = rr.A.String()
+		case *dns.AAAA:
+			got = rr.AAAA.String()
+		case *dns.CNAME:
+			got = rr.Target
+		default:
+			t.Fatalf("%s type=%d answer type = %T", tc.name, tc.qtype, resp.Answer[0])
+		}
+		if got != tc.want {
+			t.Errorf("%s type=%d answer = %q, want %q", tc.name, tc.qtype, got, tc.want)
+		}
+	}
+}
+
 func TestDNSHandler_ServesAdGuardDNSRewrite(t *testing.T) {
 	c := cache.NewCache(1000, 60, 3600)
 	defer c.Close()

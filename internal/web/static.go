@@ -37,7 +37,7 @@ import (
 var compressibleExts = map[string]bool{
 	".html": true, ".css": true, ".js": true, ".mjs": true,
 	".json": true, ".svg": true, ".txt": true, ".map": true,
-	".xml": true, ".webmanifest": true,
+	".xml": true, ".webmanifest": true, ".wasm": true,
 }
 
 // staticGzipCache reuses the compressed form of an asset across staticServer
@@ -246,6 +246,7 @@ var staticTypes = map[string]string{
 	".txt":         "text/plain; charset=utf-8",
 	".xml":         "application/xml; charset=utf-8",
 	".webmanifest": "application/manifest+json",
+	".wasm":        "application/wasm",
 }
 
 func contentTypeFor(name string) string {

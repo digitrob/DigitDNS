@@ -1,0 +1,46 @@
+# Synthetic Pi-hole v6 pihole.toml. Values are placeholders from the
+# documentation ranges; no real password hash, API key or TLS key is present.
+
+[dns]
+upstreams = ["192.0.2.53#53", "https://dns.example.invalid/dns-query"]
+blocking_mode = "NULL"
+blocking_ttl = 10
+blocking_active = true
+queryLogging = true
+
+[database]
+DBimport = true
+maxDBdays = 91
+
+[webserver]
+domain = "pihole.example.invalid"
+port = "80o,443os"
+
+[webserver.api]
+pwhash = "$BALLOON-SHA256$synthetic-placeholder"
+api_key = "synthetic-api-key-placeholder"
+max_sessions = 16
+
+[webserver.tls]
+cert = "/etc/pihole/tls.pem"
+cert_key = "/etc/pihole/tls.key"
+
+[webserver.session]
+timeout = 1800
+restore = true
+
+[dhcp]
+active = true
+start = "192.0.2.100"
+end = "192.0.2.200"
+router = "192.0.2.1"
+lease_time = "24h"
+domain = "lan.example.invalid"
+
+[filtering]
+enabled = true
+blocking_mode = "NULL"
+blocking_ttl = 10
+
+[misc]
+privacylevel = 0

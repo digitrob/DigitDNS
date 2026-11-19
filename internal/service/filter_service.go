@@ -26,6 +26,9 @@ const (
 	filterUpdateCheck    = 15 * time.Minute
 	filterListNameMax    = 80
 	filterUploadMaxBytes = 16 << 20
+	// customRulesCacheKey names the parsed operator rules in the per-list cache.
+	// It cannot collide with a generated list ID (16 hex characters).
+	customRulesCacheKey = "\x00custom-rules"
 )
 
 // FilteringStatus is the dashboard/API view of the filter subsystem.
@@ -86,11 +89,23 @@ type FilterService struct {
 	presetCounts map[string]database.PresetCount
 	countRunning atomic.Bool
 
+	// parsed caches each list's compiled index. A refresh used to call Analyze
+	// for the stats and then Build reparsed every enabled list, so one changed
+	// list cost N parses. The cache turns a rebuild into a map merge.
+	parsedMu sync.Mutex
+	parsed   map[string]parsedList
+
 	stop      chan struct{}
 	done      chan struct{}
 	closeOnce sync.Once
 	started   atomic.Bool
 	jobs      sync.WaitGroup
+}
+
+type parsedList struct {
+	index *blocklist.Index
+	stats blocklist.Stats
+	text  string
 }
 
 func NewFilterService(db *database.DB, m *matcher.Matcher) *FilterService {
@@ -100,6 +115,7 @@ func NewFilterService(db *database.DB, m *matcher.Matcher) *FilterService {
 		updating:     make(map[string]bool),
 		deleted:      make(map[string]bool),
 		presetCounts: make(map[string]database.PresetCount),
+		parsed:       make(map[string]parsedList),
 		stop:         make(chan struct{}),
 		done:         make(chan struct{}),
 		client: &http.Client{
@@ -457,6 +473,7 @@ func (s *FilterService) DeleteList(id string) error {
 		s.saveMu.Unlock()
 		return err
 	}
+	s.forgetParsed(id)
 	s.async(s.rebuild)
 	return nil
 }
@@ -510,10 +527,16 @@ func (s *FilterService) RefreshAll() {
 			log.Printf("[Filters] refresh all: %v", err)
 			return
 		}
+		changed := false
 		for _, list := range lists {
 			if list.Enabled {
-				s.refreshOne(list.ID, "")
+				if s.refreshOneInternal(list.ID, "", false) {
+					changed = true
+				}
 			}
+		}
+		if changed {
+			s.rebuild()
 		}
 	})
 }
@@ -534,23 +557,36 @@ func (s *FilterService) refreshDue() {
 	}
 	interval := time.Duration(s.Settings().UpdateIntervalHours) * time.Hour
 	now := time.Now()
+	changed := false
 	for _, list := range lists {
 		if !list.Enabled || list.URL == "" {
 			continue
 		}
 		if list.LastUpdated.IsZero() || now.Sub(list.LastUpdated) >= interval {
-			s.refreshOne(list.ID, "")
+			if s.refreshOneInternal(list.ID, "", false) {
+				changed = true
+			}
 		}
+	}
+	if changed {
+		s.rebuild()
 	}
 }
 
 func (s *FilterService) refreshOne(id, inlineContent string) {
+	s.refreshOneInternal(id, inlineContent, true)
+}
+
+// refreshOneInternal refreshes one list and reports whether its stored content
+// changed. Callers that refresh several lists in one pass pass rebuildNow=false
+// and rebuild once afterwards, instead of paying a full merge per list.
+func (s *FilterService) refreshOneInternal(id, inlineContent string, rebuildNow bool) bool {
 	s.updateMu.Lock()
 	defer s.updateMu.Unlock()
 
 	list, err := s.db.GetFilterList(id)
 	if err != nil || list == nil {
-		return
+		return false
 	}
 	s.stateMu.Lock()
 	s.updating[id] = true
@@ -566,6 +602,7 @@ func (s *FilterService) refreshOne(id, inlineContent string) {
 		text, _ = s.db.GetFilterSource(id)
 	}
 	etag, lastModified := list.ETag, list.LastModified
+	changed := false
 
 	if list.URL != "" {
 		body, newETag, newLastModified, notModified, err := s.fetch(list.URL, etag, lastModified)
@@ -573,40 +610,48 @@ func (s *FilterService) refreshOne(id, inlineContent string) {
 			list.LastError = err.Error()
 			_ = s.saveRefreshedList(*list)
 			log.Printf("[Filters] %s: %v", list.Name, err)
-			return
+			return false
 		}
 		if notModified {
-			// A conditional refresh still needs to backfill counts introduced by
-			// newer code; the stored source is available and parsing it does not
-			// touch the live matcher.
+			// A conditional refresh must not parse the whole body just to report
+			// counts. Reuse the cached parse when it describes the stored text;
+			// only a cache miss falls back to one parse.
 			if strings.TrimSpace(text) != "" {
-				stats := blocklist.Analyze(text)
-				list.RuleCount = stats.Blocked
-				list.DomainCount = stats.Domains
-				list.AllowedCount = stats.Allowed
-				list.Skipped = stats.Skipped
+				parsed, ok := s.parsedFor(id, text)
+				if !ok {
+					parsed = s.parseList(list.Name, text, false)
+					s.rememberParsed(id, parsed)
+				}
+				list.RuleCount = parsed.stats.Blocked
+				list.DomainCount = parsed.stats.Domains
+				list.AllowedCount = parsed.stats.Allowed
+				list.Skipped = parsed.stats.Skipped
 				list.Bytes = len(text)
 			}
 			list.LastUpdated = time.Now()
 			list.LastError = ""
 			_ = s.saveRefreshedList(*list)
-			return
+			return false
 		}
 		text = body
 		list.ETag = newETag
 		list.LastModified = newLastModified
+		changed = true
 	}
 	if strings.TrimSpace(text) == "" {
 		list.LastError = "list is empty"
 		_ = s.saveRefreshedList(*list)
-		return
+		return false
 	}
 
-	stats := blocklist.Analyze(text)
-	list.RuleCount = stats.Blocked
-	list.DomainCount = stats.Domains
-	list.AllowedCount = stats.Allowed
-	list.Skipped = stats.Skipped
+	// Parse once. The same compiled index is what rebuild merges, so the body is
+	// not read and parsed a second time a few milliseconds later.
+	parsed := s.parseList(list.Name, text, false)
+	s.rememberParsed(id, parsed)
+	list.RuleCount = parsed.stats.Blocked
+	list.DomainCount = parsed.stats.Domains
+	list.AllowedCount = parsed.stats.Allowed
+	list.Skipped = parsed.stats.Skipped
 	list.Bytes = len(text)
 	list.LastUpdated = time.Now()
 	list.LastError = ""
@@ -614,9 +659,44 @@ func (s *FilterService) refreshOne(id, inlineContent string) {
 		list.LastError = err.Error()
 		_ = s.saveRefreshedList(*list)
 		log.Printf("[Filters] save %s: %v", list.Name, err)
-		return
+		return false
 	}
-	s.rebuild()
+	if rebuildNow {
+		s.rebuild()
+	}
+	return changed || inlineContent != ""
+}
+
+func (s *FilterService) parsedFor(id, text string) (parsedList, bool) {
+	s.parsedMu.Lock()
+	defer s.parsedMu.Unlock()
+	entry, ok := s.parsed[id]
+	if !ok || entry.text != text {
+		return parsedList{}, false
+	}
+	return entry, true
+}
+
+func (s *FilterService) rememberParsed(id string, entry parsedList) {
+	s.parsedMu.Lock()
+	s.parsed[id] = entry
+	s.parsedMu.Unlock()
+}
+
+func (s *FilterService) forgetParsed(id string) {
+	s.parsedMu.Lock()
+	delete(s.parsed, id)
+	s.parsedMu.Unlock()
+}
+
+func (s *FilterService) parseList(name, text string, allowRegex bool) parsedList {
+	index, stats := blocklist.ParseSource(blocklist.Source{
+		Name:       name,
+		Text:       text,
+		Enabled:    true,
+		AllowRegex: allowRegex,
+	})
+	return parsedList{index: index, stats: stats, text: text}
 }
 
 func (s *FilterService) rebuild() {
@@ -641,7 +721,7 @@ func (s *FilterService) rebuild() {
 		log.Printf("[Filters] rebuild lists: %v", err)
 		return
 	}
-	sources := make([]blocklist.Source, 0, len(lists)+1)
+	indices := make([]*blocklist.Index, 0, len(lists)+1)
 	for _, list := range lists {
 		if !list.Enabled {
 			continue
@@ -650,12 +730,22 @@ func (s *FilterService) rebuild() {
 		if err != nil || strings.TrimSpace(text) == "" {
 			continue
 		}
-		sources = append(sources, blocklist.Source{Name: list.Name, Text: text, Enabled: true})
+		parsed, ok := s.parsedFor(list.ID, text)
+		if !ok {
+			parsed = s.parseList(list.Name, text, false)
+			s.rememberParsed(list.ID, parsed)
+		}
+		indices = append(indices, parsed.index)
 	}
 	if trimmed := strings.TrimSpace(settings.CustomRules); trimmed != "" {
-		sources = append(sources, blocklist.Source{Name: "Custom rules", Text: trimmed, Enabled: true, AllowRegex: true})
+		parsed, ok := s.parsedFor(customRulesCacheKey, trimmed)
+		if !ok {
+			parsed = s.parseList("Custom rules", trimmed, true)
+			s.rememberParsed(customRulesCacheKey, parsed)
+		}
+		indices = append(indices, parsed.index)
 	}
-	index, _ := blocklist.Build(sources, settings.Allowlist)
+	index := blocklist.Merge(indices, settings.Allowlist)
 	count := index.RuleCount()
 	domains := index.DomainCount()
 	if count == 0 {
@@ -670,7 +760,7 @@ func (s *FilterService) rebuild() {
 	s.rules.Store(int64(count))
 	s.domains.Store(int64(domains))
 	log.Printf("[Filters] compiled %d lookup rules (%d exact + %d suffix + %d regex) / %d unique domains from %d list(s)",
-		count, index.ExactCount(), index.SuffixCount(), index.RegexCount(), domains, len(sources))
+		count, index.ExactCount(), index.SuffixCount(), index.RegexCount(), domains, len(indices))
 }
 
 func (s *FilterService) fetch(rawURL, etag, lastModified string) (body, newETag, newLastModified string, notModified bool, err error) {

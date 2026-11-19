@@ -57,7 +57,11 @@ npx --yes html-minifier-terser \
 
 {
   printf '<!-- digitdns-minified:sha256=%s -->\n' "$HTML_HASH"
-  cat "$TMP_HTML"
+  # html-minifier-terser leaves a trailing space after </html>. Trim it so the
+  # tracked artifact passes `git diff --check`; the space is outside the
+  # document and never part of the served body.
+  perl -0pe 's/[ \t]+\z//' "$TMP_HTML"
+  printf '\n'
 } > web/index.min.html
 
 # Brotli sidecars for the assets whose bytes are served unchanged. The Go
@@ -79,10 +83,13 @@ for asset in \
   web/css/tailwind.purged.css \
   web/js/i18n.js \
   web/js/feather.min.js \
-  web/js/chart.umd.min.js
+  web/js/chart.umd.min.js \
+  web/vendor/sql.js/sql-wasm.js \
+  web/vendor/sql.js/sql-wasm.wasm \
+  web/vendor/jszip/jszip.min.js
 do
   brotli -q 11 -f -o "$asset.br" "$asset"
 done
-printf 'wrote brotli sidecars for 6 assets\n'
+printf 'wrote brotli sidecars for 9 assets\n'
 
 printf 'wrote web/js/app.min.js (%s), web/css/style.min.css (%s) and web/index.min.html (%s)\n' "$JS_HASH" "$CSS_HASH" "$HTML_HASH"

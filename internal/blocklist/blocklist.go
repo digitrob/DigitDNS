@@ -60,9 +60,12 @@ type compiledRegex struct {
 	source string
 }
 
+// MaxCustomRegexRules and MaxCustomRegexPatternSize bound the operator-supplied
+// regex plane. They are exported so the migration importer can reject the same
+// rules the resolver would silently skip, instead of reporting a different cap.
 const (
-	maxCustomRegexRules       = 64
-	maxCustomRegexPatternSize = 512
+	MaxCustomRegexRules       = 64
+	MaxCustomRegexPatternSize = 512
 )
 
 func newIndex() *Index {
@@ -93,6 +96,78 @@ func Build(sources []Source, allowlist []string) (*Index, Stats) {
 	}
 	stats.Domains = idx.DomainCount()
 	return idx, stats
+}
+
+// ParseSource compiles one source and returns its index together with the stats
+// the panel stores. The filter service keeps the index, so a later refresh of a
+// different list can merge it without parsing this body again.
+func ParseSource(src Source) (*Index, Stats) {
+	idx := newIndex()
+	var stats Stats
+	if !src.Enabled || strings.TrimSpace(src.Text) == "" {
+		return idx, stats
+	}
+	stats.Sources = 1
+	parseInto(idx, src.Name, src.Text, src.AllowRegex, &stats)
+	stats.Domains = idx.DomainCount()
+	return idx, stats
+}
+
+// Merge combines already-parsed sources into one immutable index and applies the
+// operator's allowlist. It replaces the "Analyze then Build everything again"
+// pattern that made one list refresh reparse every other list.
+func Merge(indices []*Index, allowlist []string) *Index {
+	idx := newIndex()
+	for _, source := range indices {
+		if source == nil {
+			continue
+		}
+		idx.merge(source)
+	}
+	var stats Stats
+	for _, domain := range allowlist {
+		addRule(idx, domain, true, "Allowlist", &stats, "")
+	}
+	return idx
+}
+
+// merge copies another index into i. The source indexes are immutable after
+// publication, so reading them here needs no lock. Regex rules are copied up to
+// the same cap Build enforces, keeping the merged index bounded.
+func (i *Index) merge(other *Index) {
+	if i == nil || other == nil {
+		return
+	}
+	for k, v := range other.blockExact {
+		i.blockExact[k] = v
+	}
+	for k, v := range other.blockWildcard {
+		i.blockWildcard[k] = v
+	}
+	for k, v := range other.allowExact {
+		i.allowExact[k] = v
+	}
+	for k, v := range other.allowWildcard {
+		i.allowWildcard[k] = v
+	}
+	for k, v := range other.rewriteExact {
+		i.rewriteExact[k] = v
+	}
+	for k, v := range other.rewriteSuffix {
+		i.rewriteSuffix[k] = v
+	}
+	for _, rule := range other.blockRegex {
+		if len(i.blockRegex)+len(i.allowRegex) >= MaxCustomRegexRules {
+			break
+		}
+		i.blockRegex = append(i.blockRegex, rule)
+	}
+	for _, rule := range other.allowRegex {
+		if len(i.blockRegex)+len(i.allowRegex) >= MaxCustomRegexRules {
+			break
+		}
+		i.allowRegex = append(i.allowRegex, rule)
+	}
 }
 
 // Analyze parses a list only to report its rule counts, used when an upload or
@@ -350,8 +425,8 @@ func parseInto(idx *Index, source, text string, allowRegex bool, stats *Stats) {
 				continue
 			}
 			pattern := line[1 : len(line)-1]
-			if len(pattern) > maxCustomRegexPatternSize ||
-				len(idx.blockRegex)+len(idx.allowRegex) >= maxCustomRegexRules {
+			if len(pattern) > MaxCustomRegexPatternSize ||
+				len(idx.blockRegex)+len(idx.allowRegex) >= MaxCustomRegexRules {
 				stats.Skipped++
 				continue
 			}

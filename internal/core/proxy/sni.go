@@ -37,6 +37,11 @@ const (
 	// parseable ClientHello or Host header.
 	handshakeTimeout = 5 * time.Second
 
+	// targetResolveTimeout bounds the guard's DNS lookup, not the relay's TCP/TLS
+	// handshake. Sharing the handshake budget meant a slow system resolver could
+	// consume all five seconds before the target was even dialled.
+	targetResolveTimeout = 2 * time.Second
+
 	// defaultIdleTimeout applies when settings.Timeout is unset, so a relay is
 	// never left without a deadline.
 	defaultIdleTimeout = 120 * time.Second
@@ -653,7 +658,7 @@ func (s *Server) handleConnection(ctx context.Context, clientConn net.Conn, isTL
 	// the name. The old code string-matched the hostname and handed the name to
 	// the dialer, so any name that resolved to a private address — DNS rebinding,
 	// or simply "internal.corp.example" — turned the relay into an SSRF pivot.
-	dialCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+	dialCtx, cancel := context.WithTimeout(ctx, targetResolveTimeout)
 	_, addrs, err := s.guard.resolve(dialCtx, hostname)
 	cancel()
 	if err != nil {

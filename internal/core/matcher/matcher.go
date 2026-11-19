@@ -37,6 +37,17 @@ const (
 	RuleCustomProxy  = "Custom Proxy"
 )
 
+// Rule names for decisions made from the live log. They are the operator's most
+// specific statement of intent: a name they just clicked Direct/Proxy/Block on
+// must not be overridden by a blocklist, a forced-direct rule, a custom record or
+// a broader custom-list entry. The marker is persisted separately from the list
+// membership, so the action follows the list the domain currently lives in.
+const (
+	RuleManualDirect = "Manual Direct (Live Log)"
+	RuleManualBlock  = "Manual Block (Live Log)"
+	RuleManualProxy  = "Manual Proxy (Live Log)"
+)
+
 // Rule names for the forced-direct plane described in realtime.go: names the SNI
 // proxy has no path for, which are answered directly no matter what. Neither is a
 // category, neither can be switched off, and both apply to every client. They
@@ -153,6 +164,9 @@ type matcherSnapshot struct {
 	realtime      *ruleSet
 	blocked       *ruleSet
 	proxied       *ruleSet
+	manualDirect  *ruleSet
+	manualBlocked *ruleSet
+	manualProxied *ruleSet
 	customRecords map[string]string // domain -> IP override
 	blockIndex    *blocklist.Index
 }
@@ -167,6 +181,9 @@ type Matcher struct {
 	realtime      *ruleSet
 	blocked       *ruleSet
 	proxied       *ruleSet
+	manualDirect  *ruleSet
+	manualBlocked *ruleSet
+	manualProxied *ruleSet
 	customRecords map[string]string // domain -> IP override
 
 	// The operator's custom rule state, held so it survives a group change:
@@ -177,6 +194,11 @@ type Matcher struct {
 	customBlocked []string
 	customDirect  []string
 	customGroups  []CustomGroup
+
+	// manualPatterns are the domains the operator acted on from the live log.
+	// They are indexed into a separate, highest-priority tier above every other
+	// rule. A wildcard pattern here is an exception for its whole subtree.
+	manualPatterns []string
 
 	// blockIndex is the compiled adblock-list snapshot. It is immutable and
 	// swapped whole by the filter service, so the read path never waits on a
@@ -202,6 +224,9 @@ func NewMatcher() *Matcher {
 		realtime:      newRuleSet(),
 		blocked:       newRuleSet(),
 		proxied:       newRuleSet(),
+		manualDirect:  newRuleSet(),
+		manualBlocked: newRuleSet(),
+		manualProxied: newRuleSet(),
 		customRecords: make(map[string]string),
 	}
 	m.rebuildLocked()
@@ -215,6 +240,9 @@ func (m *Matcher) rebuildLocked() {
 	m.realtime = newRuleSet()
 	m.blocked = newRuleSet()
 	m.proxied = newRuleSet()
+	m.manualDirect = newRuleSet()
+	m.manualBlocked = newRuleSet()
+	m.manualProxied = newRuleSet()
 
 	for _, g := range forcedDirectGroups {
 		for _, d := range g.domains {
@@ -224,6 +252,7 @@ func (m *Matcher) rebuildLocked() {
 
 	m.applyCustomGroupsLocked()
 	m.applyCustomListsLocked()
+	m.applyManualOverridesLocked()
 	m.publishLocked()
 }
 
@@ -236,6 +265,9 @@ func (m *Matcher) publishLocked() {
 		realtime:      m.realtime,
 		blocked:       m.blocked,
 		proxied:       m.proxied,
+		manualDirect:  m.manualDirect,
+		manualBlocked: m.manualBlocked,
+		manualProxied: m.manualProxied,
 		customRecords: m.customRecords,
 		blockIndex:    m.blockIndex,
 	})
@@ -282,6 +314,42 @@ func (m *Matcher) applyCustomListsLocked() {
 		m.proxied.index(d, RuleCustomProxy)
 		m.realtime.unindex(d)
 	}
+}
+
+// applyManualOverridesLocked indexes the live-log decisions into their own tier.
+// The marker says the operator chose the domain manually; the action comes from
+// the list that currently holds it, so a later status edit cannot leave a stale
+// action behind. Caller holds mu and has already rebuilt the base indexes.
+func (m *Matcher) applyManualOverridesLocked() {
+	for _, raw := range m.manualPatterns {
+		d := normalizeDomain(raw)
+		if d == "" {
+			continue
+		}
+		// A marker is only meaningful while the domain is still in one of the
+		// routing lists. Paused domains are deliberately not overrides: they are
+		// a display state, not a routing decision.
+		switch {
+		case containsPattern(m.customBlocked, d):
+			m.manualBlocked.index(d, RuleManualBlock)
+		case containsPattern(m.customDirect, d):
+			m.manualDirect.index(d, RuleManualDirect)
+		case containsPattern(m.customProxied, d):
+			m.manualProxied.index(d, RuleManualProxy)
+		}
+	}
+}
+
+// containsPattern reports whether list holds pattern after the same normalisation
+// index applies. It compares the full pattern, including a leading "*.": an
+// override of "*.example.com" is not an override of "example.com".
+func containsPattern(list []string, pattern string) bool {
+	for _, entry := range list {
+		if normalizeDomain(entry) == pattern {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeDomain lowercases a name and strips the trailing root label. DNS names
@@ -348,6 +416,78 @@ func (m *Matcher) MatchDetailLower(d string) (Action, string, string) {
 	return m.matchDetailLower(d)
 }
 
+// ManualMatch reports the live-log decision for a domain, if any. The resolver
+// consults it before custom records so a manual decision cannot be shadowed by an
+// A/CNAME override; matchDetailLower and Explain consult it first as well.
+func (m *Matcher) ManualMatch(domain string) (Action, string, string, bool) {
+	return m.manualMatchLower(normalizeDomain(domain))
+}
+
+// ManualMatchLower is ManualMatch for a name the resolver already normalised.
+func (m *Matcher) ManualMatchLower(d string) (Action, string, string, bool) {
+	return m.manualMatchLower(d)
+}
+
+func (m *Matcher) manualMatchLower(d string) (Action, string, string, bool) {
+	if d == "" {
+		return ActionDirect, "", "", false
+	}
+	snap := m.snapshot.Load()
+	if snap == nil {
+		return ActionDirect, "", "", false
+	}
+	return snap.lookupManual(d)
+}
+
+// lookupManual finds the most specific live-log rule. Exact hosts are checked
+// before wildcard parents, and both walks go from the queried name outward, so an
+// exact manual rule beats a broader manual wildcard regardless of which action
+// each chose. A manual wildcard is an exception for every host in its subtree.
+func (s *matcherSnapshot) lookupManual(d string) (Action, string, string, bool) {
+	type set struct {
+		action Action
+		rs     *ruleSet
+	}
+	sets := [...]set{
+		{ActionDirect, s.manualDirect},
+		{ActionBlock, s.manualBlocked},
+		{ActionProxy, s.manualProxied},
+	}
+
+	// Exact matches, from the queried name up through its parents.
+	for candidate := d; candidate != ""; {
+		for _, entry := range sets {
+			if name, ok := entry.rs.exact[candidate]; ok {
+				return entry.action, name, candidate, true
+			}
+		}
+		dot := strings.IndexByte(candidate, '.')
+		if dot < 0 {
+			break
+		}
+		candidate = candidate[dot+1:]
+	}
+
+	// Wildcard matches, most specific parent first.
+	for i := 0; i < len(d); {
+		dot := strings.IndexByte(d[i:], '.')
+		if dot < 0 {
+			break
+		}
+		i += dot + 1
+		if i >= len(d) {
+			break
+		}
+		parent := d[i:]
+		for _, entry := range sets {
+			if name, ok := entry.rs.wildcard[parent]; ok {
+				return entry.action, name, "*." + parent, true
+			}
+		}
+	}
+	return ActionDirect, "", "", false
+}
+
 func (m *Matcher) matchDetailLower(d string) (Action, string, string) {
 	if d == "" {
 		return ActionDirect, "Direct", ""
@@ -356,6 +496,13 @@ func (m *Matcher) matchDetailLower(d string) (Action, string, string) {
 	snap := m.snapshot.Load()
 	if snap == nil {
 		return ActionDirect, "Direct", ""
+	}
+
+	// The live-log decision is the operator's most specific statement of intent.
+	// It outranks custom records, blocklists, forced-direct rules and every
+	// custom list, including a broader wildcard in a lower tier.
+	if action, rule, pattern, ok := snap.lookupManual(d); ok {
+		return action, rule, pattern
 	}
 
 	// Precedence: the operator's whitelist, then blocks, then the forced-direct
@@ -411,6 +558,9 @@ func (m *Matcher) Explain(domain string) Explanation {
 	snap := m.snapshot.Load()
 	if snap == nil {
 		return Explanation{Action: "DIRECT", Rule: "Direct", Source: "default"}
+	}
+	if action, rule, pattern, ok := snap.lookupManual(d); ok {
+		return Explanation{Action: action.String(), Rule: rule, Pattern: pattern, Source: "manual"}
 	}
 	if record, ok := snap.customRecords[d]; ok {
 		return Explanation{
@@ -501,10 +651,33 @@ func (m *Matcher) RuleCounts() (direct, blocked, proxied int) {
 func (m *Matcher) SetCustomRules(customProxied, customBlocked, customDirect []string, customRecords map[string]string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.setCustomRulesLocked(customProxied, customBlocked, customDirect, customRecords, m.manualPatterns)
+	m.rebuildLocked()
+}
 
+// SetCustomRulesAndManualOverrides replaces both the routing lists and the set of
+// live-log markers in one rebuild. The panel uses this on save so a rule edit and
+// its override marker become visible in the same published snapshot.
+func (m *Matcher) SetCustomRulesAndManualOverrides(customProxied, customBlocked, customDirect []string, customRecords map[string]string, manual []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.setCustomRulesLocked(customProxied, customBlocked, customDirect, customRecords, manual)
+	m.rebuildLocked()
+}
+
+// SetManualOverrides replaces the live-log marker set without touching the lists.
+func (m *Matcher) SetManualOverrides(manual []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.manualPatterns = SplitDomainEntries(manual)
+	m.rebuildLocked()
+}
+
+func (m *Matcher) setCustomRulesLocked(customProxied, customBlocked, customDirect []string, customRecords map[string]string, manual []string) {
 	m.customProxied = SplitDomainEntries(customProxied)
 	m.customBlocked = SplitDomainEntries(customBlocked)
 	m.customDirect = SplitDomainEntries(customDirect)
+	m.manualPatterns = SplitDomainEntries(manual)
 
 	m.customRecords = make(map[string]string, len(customRecords))
 	for d, ip := range customRecords {
@@ -516,7 +689,6 @@ func (m *Matcher) SetCustomRules(customProxied, customBlocked, customDirect []st
 			m.customRecords[d] = ip
 		}
 	}
-	m.rebuildLocked()
 }
 
 // SetBlockIndex publishes a compiled blocklist snapshot. The index is immutable;
