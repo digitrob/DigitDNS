@@ -42,10 +42,17 @@ type StatsService struct {
 	speedOutKBps        float64
 	lastBytesSent       uint64
 	lastBytesRecv       uint64
-	recentLogs          []database.QueryLogItem
-	recentLogHead       atomic.Int64
-	recentLogCount      atomic.Int64
-	logMu               sync.RWMutex
+	// recentLogs is a lock-free ring of immutable snapshots. A slot is published
+	// with atomic.Pointer.Store only after the writer has claimed its sequence
+	// number, so readers can never see a partly written item and two writers can
+	// never race on the same struct field. The sequence travels with the item so
+	// a clear can exclude old entries without zeroing slots under a writer.
+	recentLogs [recentLogsCap]atomic.Pointer[recentLogEntry]
+	// recentLogSeq is the number of items ever accepted. Add() claims the slot;
+	// recentLogClear records the seq at the last Clear so old slots are skipped
+	// without zeroing them under a concurrent writer.
+	recentLogSeq   atomic.Uint64
+	recentLogClear atomic.Uint64
 	// sseSubscribers counts open live-log streams. It is read on the query path
 	// to skip JSON encoding and fan-out when no dashboard is watching; the map
 	// itself is only consulted when the count says there is someone to send to.
@@ -116,6 +123,11 @@ const recentLogsCap = 100
 // no longer holds.
 const recentLogsClearFrame = "event: cleared\ndata: {}\n\n"
 
+type recentLogEntry struct {
+	seq  uint64
+	item database.QueryLogItem
+}
+
 // Live-log batching: a busy resolver can produce more query frames than a browser
 // or a socket write can comfortably absorb one at a time. Collecting a short
 // window's worth and flushing them in one write cuts syscall and flush overhead
@@ -133,7 +145,6 @@ func NewStatsService(
 	s := &StatsService{
 		db:            db,
 		startedAt:     time.Now(),
-		recentLogs:    make([]database.QueryLogItem, recentLogsCap),
 		sseClients:    make(map[chan string]struct{}),
 		getProxyStats: proxyStats,
 		getCacheStats: cacheStats,
@@ -241,26 +252,15 @@ func (s *StatsService) PushQueryLog(item database.QueryLogItem) {
 		s.latencyResolve.observe(item.LatencyMs)
 	}
 
-	// Lock-free ring buffer: each writer claims a slot via CAS so the per-query
-	// path no longer takes logMu. The slot write happens before the CAS, so a
-	// reader that observes the new count sees a populated slot.
-	for {
-		head := s.recentLogHead.Load()
-		count := s.recentLogCount.Load()
-		if count < recentLogsCap {
-			idx := (head + count) % recentLogsCap
-			s.recentLogs[idx] = item
-			if s.recentLogCount.CompareAndSwap(count, count+1) {
-				break
-			}
-		} else {
-			idx := head
-			s.recentLogs[idx] = item
-			if s.recentLogHead.CompareAndSwap(head, (head+1)%recentLogsCap) {
-				break
-			}
-		}
-	}
+	// Lock-free ring buffer. Add() atomically claims the next sequence number;
+	// the winning slot is then published with one pointer store. The old code
+	// wrote the slot *before* a CAS on the count, so a losing writer could still
+	// overwrite a slot another writer had already published — and readers saw
+	// torn structs because QueryLogItem contains slices and strings. Publishing
+	// the whole item as one pointer makes the ring safe under -race without
+	// putting a mutex back on every query.
+	seq := s.recentLogSeq.Add(1) - 1
+	s.recentLogs[seq%recentLogsCap].Store(&recentLogEntry{seq: seq, item: item})
 
 	// Nobody is watching the live log: the histogram and aggregate above still
 	// need the item, but encoding it and walking the SSE map would be pure waste.
@@ -296,11 +296,11 @@ func (s *StatsService) PushQueryLog(item database.QueryLogItem) {
 // the ring still held the entries, so the next SSE reconnect replayed them and the
 // table refilled with the "cleared" queries.
 func (s *StatsService) ClearRecentLogs() {
-	for i := range s.recentLogs {
-		s.recentLogs[i] = database.QueryLogItem{}
-	}
-	s.recentLogHead.Store(0)
-	s.recentLogCount.Store(0)
+	// Advance the clear floor instead of zeroing slots: a writer may have
+	// already claimed a slot and be about to publish it. Readers derive the
+	// visible window from this floor together with the monotonic sequence, so
+	// nothing written before the clear can leak back into a reconnecting log.
+	s.recentLogClear.Store(s.recentLogSeq.Load())
 
 	s.sseMu.RLock()
 	for ch := range s.sseClients {
@@ -313,12 +313,21 @@ func (s *StatsService) ClearRecentLogs() {
 }
 
 func (s *StatsService) GetRecentLogs() []database.QueryLogItem {
-	count := s.recentLogCount.Load()
-	head := s.recentLogHead.Load()
-	res := make([]database.QueryLogItem, count)
-	for i := int64(0); i < count; i++ {
-		idx := (head + i) % recentLogsCap
-		res[i] = s.recentLogs[idx]
+	ceiling := s.recentLogSeq.Load()
+	floor := s.recentLogClear.Load()
+	// Keep only the last cap items, and never anything from before a Clear.
+	var start uint64
+	if ceiling > recentLogsCap {
+		start = ceiling - recentLogsCap
+	}
+	if start < floor {
+		start = floor
+	}
+	res := make([]database.QueryLogItem, 0, ceiling-start)
+	for i := start; i < ceiling; i++ {
+		if entry := s.recentLogs[i%recentLogsCap].Load(); entry != nil && entry.seq == i {
+			res = append(res, entry.item)
+		}
 	}
 	return res
 }

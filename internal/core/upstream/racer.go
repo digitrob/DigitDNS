@@ -1318,6 +1318,39 @@ func (p *UpstreamPool) exchangeWith(req *dns.Msg, upstreams []string, strategy, 
 // per-query trade-off, not another setting to tune on every install.
 const hedgeStartDelay = 50 * time.Millisecond
 
+// orderLatencies returns only the number the resolver card would show for each
+// upstream. The old rebuild called GetUpstreamStats(), which also copied every
+// health counter, formatted timestamps, built a dashboard-sized slice and sorted
+// it — all on whichever cache miss crossed the once-a-second rebuild tick. The
+// ranking needs just this one value, so it no longer pays for the whole snapshot.
+// The switch mirrors the latency switch in GetUpstreamStats; keep both together.
+func (p *UpstreamPool) orderLatencies() map[string]time.Duration {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	adaptive := resolution.NormalizeStrategy(p.policy.DefaultStrategy) == resolution.StrategyAdaptive
+	out := make(map[string]time.Duration, len(p.stats))
+	for addr, st := range p.stats {
+		st.mu.Lock()
+		p50, _, _ := st.latencyPercentiles()
+		probeMedian := st.probeMedian()
+		var latency time.Duration
+		switch {
+		case adaptive && st.lastProbeOK && probeMedian > 0:
+			latency = probeMedian
+		case st.samples >= minLiveLatencySamples:
+			latency = p50
+		case st.lastProbeOK && st.lastProbeLatency > 0:
+			latency = st.lastProbeLatency
+		case st.samples > 0:
+			latency = p50
+		}
+		out[addr] = latency
+		st.mu.Unlock()
+	}
+	return out
+}
+
 // orderedByLatency returns a copy of upstreams with the fastest measured
 // resolver first. Untimed resolvers keep their configured order after the known
 // ones. The live stats are the same numbers the resolver card shows.
@@ -1341,11 +1374,7 @@ func (p *UpstreamPool) orderedByLatency(upstreams []string) []string {
 		return cached.order
 	}
 
-	stats := p.GetUpstreamStats()
-	latency := make(map[string]time.Duration, len(stats))
-	for _, s := range stats {
-		latency[s.Address] = time.Duration(s.LatencyNs)
-	}
+	latency := p.orderLatencies()
 	out := slices.Clone(upstreams)
 	slices.SortStableFunc(out, func(a, b string) int {
 		la, lb := latency[a], latency[b]

@@ -695,7 +695,7 @@ func main() {
 		}
 	}, egressRegistry)
 	dnsHandler := dns.NewHandler(clientService, c, m, u, statsService, serverSettings.PublicIP)
-	dnsHandler.SetQueryLogSink(queryLogService.Push)
+	dnsHandler.SetQueryLogSink(queryLogService.Push, queryLogService.Enabled)
 	dnsHandler.SetEngineEnabled(!dnsSettings.EngineDisabled)
 	sniServer.SetEngineEnabled(dnsHandler.EngineEnabled)
 	// DNSSEC validation is opt-in and startup-only. With it off, the upstream's

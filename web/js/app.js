@@ -9346,6 +9346,22 @@ let filteringAdding = new Set();
 let filteringCounting = false;
 let filteringCountTimer = null;
 let filteringSettings = null;
+// Last server value written into each editable filter field. Background polls
+// re-render this tab every few seconds; without this, a poll replaced the text
+// an operator was still typing into the allowlist or custom-rules box.
+const filteringTextFieldValues = new Map();
+
+function setFilteringTextField(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const next = value == null ? '' : String(value);
+  const last = filteringTextFieldValues.get(id);
+  // Focused fields always win. So does a field whose value has been edited away
+  // from what we last wrote — that means an unsaved change, not a stale render.
+  if (document.activeElement === el || (last !== undefined && el.value !== last)) return;
+  el.value = next;
+  filteringTextFieldValues.set(id, next);
+}
 
 function setFilteringStatus(message) {
   const el = document.getElementById('filtering-settings-status');
@@ -9416,8 +9432,8 @@ function renderFiltering(status) {
   set('filtering-mode-select', settings.block_mode || 'null_ip');
   set('filtering-ttl-input', settings.block_ttl || 10);
   set('filtering-interval-input', settings.update_interval_hours || 24);
-  set('filtering-allowlist-input', Array.isArray(settings.allowlist) ? settings.allowlist.join('\n') : '');
-  set('filtering-custom-rules-input', typeof settings.custom_rules === 'string' ? settings.custom_rules : '');
+  setFilteringTextField('filtering-allowlist-input', Array.isArray(settings.allowlist) ? settings.allowlist.join('\n') : '');
+  setFilteringTextField('filtering-custom-rules-input', typeof settings.custom_rules === 'string' ? settings.custom_rules : '');
 
   const lists = Array.isArray(status.lists) ? status.lists : [];
   filteringInstalledLists = lists;
@@ -9706,6 +9722,10 @@ async function saveFilteringSettings() {
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(await errorMessage(res, 'Could not save ad blocking settings'));
+    // The edit is saved now: re-base the dirty tracking on what we sent, so a
+    // later poll can reflect changes made from another dashboard session.
+    filteringTextFieldValues.set('filtering-allowlist-input', payload.allowlist.join('\n'));
+    filteringTextFieldValues.set('filtering-custom-rules-input', payload.custom_rules);
     renderFiltering(await res.json());
     setFilteringStatus('Saved.');
     showToast('Ad blocking settings saved.', 'success');

@@ -89,9 +89,14 @@ type Handler struct {
 	telemetry TelemetrySink
 	// queryLog is the optional persistent query history. It is nil unless the
 	// operator enabled it; Push never blocks.
-	queryLog   func(database.QueryLogItem)
-	publicIP   string
-	publicIPv6 string
+	queryLog func(database.QueryLogItem)
+	// queryLogWantsAnswers reports whether the persistent sink will keep an item.
+	// The sink is installed at startup even when history logging is switched off,
+	// so checking the function pointer alone used to make every cache hit render
+	// and stringify its whole answer section for a Push that immediately returned.
+	queryLogWantsAnswers func() bool
+	publicIP             string
+	publicIPv6           string
 	// Parsed forms of the two addresses above. They are built when the operator
 	// sets the address and reused for every self-name and proxied answer, so the
 	// query path never re-parses the same literal.
@@ -332,9 +337,13 @@ func (h *Handler) SetProxyIPv6Enabled(enabled bool) {
 
 // SetRelayLookup installs the geo-agent resolver. Call during startup only; the
 // lookup itself is safe for concurrent use.
-// SetQueryLogSink installs the optional persistent query history.
-func (h *Handler) SetQueryLogSink(fn func(database.QueryLogItem)) {
+// SetQueryLogSink installs the optional persistent query history. wantsAnswers
+// lets the sink say when it will actually keep an item: when it returns false
+// and no live-log stream is open, the resolver skips rendering the answer
+// section, which is the largest per-query allocation on a cache hit.
+func (h *Handler) SetQueryLogSink(fn func(database.QueryLogItem), wantsAnswers func() bool) {
 	h.queryLog = fn
+	h.queryLogWantsAnswers = wantsAnswers
 }
 
 func (h *Handler) SetRelayLookup(fn RelayLookup) {
@@ -431,16 +440,20 @@ func (h *Handler) serve(w dns.ResponseWriter, r *dns.Msg, proto string) {
 			}()
 		}
 	}()
-	clientIP, _, _ := net.SplitHostPort(w.RemoteAddr().String())
+	remoteAddr := w.RemoteAddr()
+	// One formatting of the peer for both the policy lookup and the log item;
+	// the IP itself comes straight out of the address struct where possible.
+	peerText := remoteAddr.String()
+	clientIP := peerIP(remoteAddr)
 	if clientIP == "" {
-		clientIP = w.RemoteAddr().String()
+		clientIP = peerText
 	}
 	if proto == "" {
-		proto = w.RemoteAddr().Network()
+		proto = remoteAddr.Network()
 	}
 	proto = normalizeProto(proto)
 
-	resp := h.ProcessQuery(r, clientIP, proto, w.RemoteAddr().String())
+	resp := h.ProcessQuery(r, clientIP, proto, peerText)
 	if resp == nil {
 		return
 	}
@@ -649,6 +662,28 @@ func firstQuestionType(r *dns.Msg) uint16 {
 	return r.Question[0].Qtype
 }
 
+// peerIP extracts the client address from a transport address without first
+// formatting it to a string and parsing that string back apart. ServeDNS used
+// to call RemoteAddr().String() twice and SplitHostPort once on every query;
+// for the common UDP/TCP cases the IP is already sitting in the address struct.
+func peerIP(addr net.Addr) string {
+	switch a := addr.(type) {
+	case *net.UDPAddr:
+		if a != nil {
+			return a.IP.String()
+		}
+	case *net.TCPAddr:
+		if a != nil {
+			return a.IP.String()
+		}
+	}
+	host, _, err := net.SplitHostPort(addr.String())
+	if err == nil {
+		return host
+	}
+	return addr.String()
+}
+
 func normalizeProto(p string) string {
 	p = strings.TrimSpace(p)
 	switch {
@@ -827,7 +862,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 					}
 				}
 				// The other family deliberately gets an empty NOERROR.
-				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractAnswers(m))
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, h.loggingAnswers(m))
 				return m
 			}
 			// An IP rewrite queried for a non-matching type (CNAME, TXT, MX, ...)
@@ -835,7 +870,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			if ip != nil {
 				m := new(dns.Msg)
 				m.SetReply(r)
-				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractAnswers(m))
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, h.loggingAnswers(m))
 				return m
 			}
 			// Special response codes (AdGuard $dnsrewrite=NXDOMAIN/REFUSED/SERVFAIL).
@@ -844,17 +879,17 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			case "NXDOMAIN":
 				m := new(dns.Msg)
 				m.SetRcode(r, dns.RcodeNameError)
-				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractAnswers(m))
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, h.loggingAnswers(m))
 				return m
 			case "REFUSED":
 				m := new(dns.Msg)
 				m.SetRcode(r, dns.RcodeRefused)
-				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractAnswers(m))
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, h.loggingAnswers(m))
 				return m
 			case "SERVFAIL":
 				m := new(dns.Msg)
 				m.SetRcode(r, dns.RcodeServerFailure)
-				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractAnswers(m))
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, h.loggingAnswers(m))
 				return m
 			}
 			// TXT rewrite: $dnsrewrite=TXT "text".
@@ -866,7 +901,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 					if rr := makeTXTRecord(q.Name, 60, text); rr != nil {
 						m.Answer = append(m.Answer, rr)
 					}
-					h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractAnswers(m))
+					h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, h.loggingAnswers(m))
 					return m
 				}
 			}
@@ -877,7 +912,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				if rr := makeCNAMERecord(q.Name, 60, customVal); rr != nil {
 					m.Answer = append(m.Answer, rr)
 				}
-				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, extractAnswers(m))
+				h.logQuery(start, clientIP, accountName, proto, domain, "Custom Record", "CUSTOM", false, "", "", q.Qtype, m.Rcode, h.loggingAnswers(m))
 				return m
 			}
 		}
@@ -953,7 +988,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		if target.Kind == "egress" && target.FailClosed && !target.Healthy {
 			m := new(dns.Msg)
 			m.SetReply(r)
-			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure, extractAnswers(r))
+			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure, h.loggingAnswers(r))
 			m.SetRcode(r, dns.RcodeServerFailure)
 			return m
 		}
@@ -964,7 +999,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				m.SetReply(r)
 				// An agent with no IPv4 must not fall through to the cache or an
 				// upstream answer: that would expose the real host address.
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure, extractAnswers(r))
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure, h.loggingAnswers(r))
 				m.SetRcode(r, dns.RcodeServerFailure)
 				return m
 			}
@@ -983,14 +1018,14 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				// means a future regression can never masquerade as a successful
 				// proxy answer again (v2.1.0 B-13 remediation).
 				log.Printf("[DNS] Could not build proxied A record for %s from %s", q.Name, targetIPv4)
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure, extractAnswers(r))
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_FAILED", false, "", matchedPattern, target, q.Qtype, dns.RcodeServerFailure, h.loggingAnswers(r))
 				m.SetRcode(r, dns.RcodeServerFailure)
 				return m
 			}
 			m.Answer = append(m.Answer, rr)
 			// The proxied address is the answer the client actually received, so it
 			// is the row's resolved IP even though it names the relay, not the origin.
-			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, target, q.Qtype, m.Rcode, extractAnswers(m))
+			h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, target, q.Qtype, m.Rcode, h.loggingAnswers(m))
 			return m
 		}
 		if q.Qtype == dns.TypeAAAA {
@@ -1007,14 +1042,14 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				}
 				if rr := makeAAAARecord(q.Name, ttl, targetIPv6); rr != nil {
 					m.Answer = append(m.Answer, rr)
-					h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, target, q.Qtype, m.Rcode, extractAnswers(m))
+					h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY", false, "", matchedPattern, target, q.Qtype, m.Rcode, h.loggingAnswers(m))
 					return m
 				}
 			}
 			if target.Kind == "agent" || target.Kind == "egress" || target.FallbackReason != "" {
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, target, q.Qtype, m.Rcode, extractAnswers(r))
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, target, q.Qtype, m.Rcode, h.loggingAnswers(r))
 			} else {
-				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, q.Qtype, m.Rcode, extractAnswers(r))
+				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_IPV6_SINK", false, "", matchedPattern, q.Qtype, m.Rcode, h.loggingAnswers(r))
 			}
 			return m
 		}
@@ -1033,7 +1068,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			m.SetReply(r)
 			m.AuthenticatedData = false
 			if target.Kind == "agent" || target.Kind == "egress" || target.FallbackReason != "" {
-				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_HTTPS_SINK", false, "", matchedPattern, target, q.Qtype, m.Rcode, extractAnswers(r))
+				h.logQueryRelay(start, clientIP, accountName, proto, domain, ruleName, "PROXY_HTTPS_SINK", false, "", matchedPattern, target, q.Qtype, m.Rcode, h.loggingAnswers(r))
 			} else {
 				h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "PROXY_HTTPS_SINK", false, "", matchedPattern, q.Qtype, m.Rcode, nil)
 			}
@@ -1063,7 +1098,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 				// upstream that has stopped answering, not at a healthy cache.
 				rule, act = "Cached (stale, refreshing)", "STALE"
 			}
-			h.logQuery(start, clientIP, accountName, proto, domain, rule, act, true, "cache", "", q.Qtype, cachedResp.Rcode, extractAnswers(cachedResp))
+			h.logQuery(start, clientIP, accountName, proto, domain, rule, act, true, "cache", "", q.Qtype, cachedResp.Rcode, h.loggingAnswers(cachedResp))
 			return cachedResp
 		}
 	}
@@ -1139,7 +1174,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		return m
 	}
 
-	h.logQuery(start, clientIP, accountName, proto, domain, ruleName, action.String(), false, upstream, matchedPattern, q.Qtype, resp.Rcode, extractAnswers(resp))
+	h.logQuery(start, clientIP, accountName, proto, domain, ruleName, action.String(), false, upstream, matchedPattern, q.Qtype, resp.Rcode, h.loggingAnswers(resp))
 	return resp
 }
 
@@ -1183,6 +1218,24 @@ func extractAnswers(resp *dns.Msg) []database.DNSAnswer {
 		return nil
 	}
 	return answers
+}
+
+// loggingAnswers renders an answer section only when something will read it.
+// The live log needs it while a stream is open; the persistent store needs it
+// while history logging is enabled. With neither, the item still carries its
+// counters (latency, action, rule, rcode) but skips the per-RR stringification
+// that used to dominate the cost of a cache hit.
+func (h *Handler) loggingAnswers(msg *dns.Msg) []database.DNSAnswer {
+	if msg == nil || (h.telemetry == nil && h.queryLog == nil) {
+		return nil
+	}
+	if h.telemetry != nil && h.telemetry.SSESubscribers() > 0 {
+		return extractAnswers(msg)
+	}
+	if h.queryLogWantsAnswers != nil && h.queryLogWantsAnswers() {
+		return extractAnswers(msg)
+	}
+	return nil
 }
 
 // answersToIPs is the address subset of an answer section, kept so the

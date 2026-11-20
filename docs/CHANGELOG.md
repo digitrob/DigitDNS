@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.9.4] — a lighter DNS hot path and a steadier live log
+
+### Changed
+- **Cache hits allocate once instead of twice.** A dead `msgPool.Get()` call was
+  immediately overwritten by `entry.msg.Copy()`, leaving the pool empty and
+  charging every hit for two messages. Answer sections are also rendered only
+  when a live-log stream or persistent history will read them, and a client
+  address is parsed once instead of being formatted and split twice.
+- **The once-a-second resolver order rebuild reads only latency.** It no longer
+  calls the full dashboard-statistics path, which copied health counters,
+  formatted timestamps, built a slice and sorted it on whichever cache miss
+  crossed the rebuild. Upstream selection defaults are unchanged.
+- **The live-log ring publishes immutable entries.** A writer claims a sequence
+  number first and then publishes one pointer, so a losing writer cannot
+  overwrite a published row and readers cannot see torn strings or slices.
+  Clearing advances a floor instead of zeroing slots under a writer, so a
+  reconnecting stream cannot replay pre-clear queries.
+- **The Ad Blocking textareas survive background polls.** A focused or
+  otherwise unsaved allowlist / custom-rules edit is no longer replaced by a
+  periodic status render; saving re-bases the dirty tracking.
+
+The Android companion moves to `android-v5.9.4`, with debug APKs attached to
+this release alongside the signed release APKs.
+
+---
+
 ## 🏷️ [v5.9.3] — live-log decisions win, and the panel stays responsive
 
 ### Added

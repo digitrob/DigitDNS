@@ -1,75 +1,82 @@
-# DigitDNS v5.9.3 — live-log decisions win, and the panel stays responsive
+# DigitDNS v5.9.4 — a lighter DNS hot path and a steadier live log
 
-This release makes a manual live-log decision authoritative, adds the additive
-configuration importer to the web panel and Android app, and removes several
-sources of intermittent DNS and UI stalls found in the resolver, database and
-dashboard hot paths.
+This patch keeps the v5.9.3 feature set and focuses on responsiveness: cache hits
+allocate less, the live-log ring is safe under concurrent writers, and the
+once-a-second resolver ranking rebuild no longer takes a dashboard-sized detour
+on a query path. The Ad Blocking editor also stops background polls from
+overwriting text while an operator is typing.
 
 No database schema migration is required. Existing settings, clients,
 blocklists, certificates, relay agents, egress options and stored query history
 are preserved.
 
-## Live-log decisions are now authoritative
+## Faster cache hits
 
-- **Direct / Proxy / Blocked chosen from the live log overrides every other
-  rule.** The resolver checks the live-log tier before custom A/CNAME records,
-  custom groups and lists, blocklists, forced-direct rules and ordinary proxy
-  rules.
-- **A wildcard decision is an exception for its whole subtree.** A manual
-  `*.example.com` decision applies even when a lower tier has an exact rule for
-  `tracker.example.com`; the most specific manual rule wins when two live-log
-  decisions overlap.
-- **The save is awaited and the page repaints from the server's normalised
-  state.** A failed save reloads the real configuration instead of leaving an
-  optimistic row that disappears later. A scope click followed by an action no
-  longer issues two writes for one decision.
-- **Scope previews and toasts now name exactly what is written** and warn only
-  when the clicked host itself is left out.
+- **The dead message-pool call is gone.** Every cache hit called `msgPool.Get()`
+  and immediately overwrote the result with `entry.msg.Copy()`, so the pool stayed
+  empty and the hit paid for two message allocations. A hit now allocates only
+  the reply copy.
+- **Answer sections are rendered only when something will read them.** While no
+  live-log stream is open and persistent query history is disabled, the query
+  still records its latency, action, rule and result code, but no longer
+  stringifies every answer record for a log item that would be discarded.
+- **The client address is parsed once.** Common UDP and TCP peers are read
+  straight from their address structs instead of being formatted to text,
+  split, and formatted again on every query.
 
-## Configuration importer
+On the local benchmark these changes took a cache lookup from about 880 ns and
+7 allocations to about 330 ns and 6 allocations.
 
-- **Analyse first, then apply.** The importer shows what will be added and
-  writes nothing until the operator confirms.
-- **Additive only.** Existing records, clients, rules, lists, rewrites and
-  filtering settings are never overwritten, and secrets are never imported.
-- **Large lists become uploaded FilterLists.** Regex rules beyond the resolver
-  caps are reported and downloadable instead of being silently dropped.
-- **Pi-hole v6 is parsed locally in the browser** with SQLite-WASM. Raw
-  archives and query history stay on the operator's device.
-- **Redacted configuration export and one-click undo** are included. Android
-  has the matching importer flow.
+## A live log that cannot tear under load
 
-## Performance and reliability
+- **`PushQueryLog` now claims a sequence number, then publishes one immutable
+  entry pointer.** The previous ring wrote a slot before its compare-and-swap,
+  so a losing writer could overwrite an already published row and readers could
+  observe partly updated strings and slices.
+- **Clear advances a floor instead of zeroing slots under a writer.** A
+  reconnecting live-log stream can no longer replay queries from before a
+  clear, and the ring remains clean under the race detector.
 
-- Filter refreshes cache each list's compiled index and merge it, instead of
-  analysing a body and then reparsing every enabled list. A batch of due lists
-  rebuilds once, and a `304 Not Modified` refresh reuses the cached parse.
-- Query logging no longer performs bbolt writes on the DNS path: the
-  anonymisation salt is loaded once at startup.
-- Rule saves use a single bbolt transaction instead of eleven, and client-index
-  reloads build off-lock before swapping in the new index.
-- The Domains table fills its viewport in one render, icon replacement is scoped
-  to the container just painted, and stale animation-frame batches cannot
-  duplicate live-log rows after a tab switch.
-- Relay target lookups are cached for a short window and bounded separately from
-  the relay handshake, so a slow system resolver cannot consume the whole
-  handshake budget.
+## Resolver ranking without the dashboard detour
+
+- **The once-a-second latency-order rebuild reads only the latency value it
+  needs.** It no longer calls the full `GetUpstreamStats()` path, which copied
+  every health counter, formatted timestamps, built a dashboard-sized slice and
+  sorted it on whichever cache miss crossed the rebuild tick.
+- **Upstream selection defaults are unchanged.** Racing still maps to Hedged;
+  the adaptive and force paths keep the same rules and the same resolver-card
+  numbers.
+
+On the local benchmark the cold rebuild fell from about 1148 ns / 1840 B / 8
+allocations to about 450 ns / 432 B / 5 allocations. Dashboard statistics and
+per-query stats recording are unchanged.
+
+## Dashboard editing
+
+- **Background polls no longer overwrite the Ad Blocking allowlist or custom
+  rules while they are being edited.** Focused and unsaved fields win; a
+  successful save rebases the tracking on what was written, so later polls can
+  still reflect changes from another panel session.
+
+## Android
+
+The companion carries the matching `android-v5.9.4` version line. The workflow's
+debug APKs are attached to this release alongside the standard signed APKs for
+arm64-v8a, armeabi-v7a, x86_64 and universal devices.
 
 ## Upgrade
 
 In-place upgrades from the dashboard are supported.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.9.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.9.4/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.9.3
-docker pull ghcr.io/digitrob/digitdns-agent:5.9.3
-docker pull robmeister/digitdns:5.9.3
-docker pull robmeister/digitdns-agent:5.9.3
+docker pull ghcr.io/digitrob/digitdns:5.9.4
+docker pull ghcr.io/digitrob/digitdns-agent:5.9.4
+docker pull robmeister/digitdns:5.9.4
+docker pull robmeister/digitdns-agent:5.9.4
 ```
-
-The Android companion carries the matching `android-v5.9.3` version line.

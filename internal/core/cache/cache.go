@@ -112,13 +112,6 @@ type Cache struct {
 	// channel, so callers may pair it with defer without tracking ownership.
 	stop      chan struct{}
 	closeOnce sync.Once
-
-	// msgPool caches *dns.Msg to avoid allocation on every cache hit. Get/Release
-	// must be called in pairs: each Get returns a *dns.Msg freshly populated from
-	// the cache entry, and Release returns it to the pool. The pool is selective:
-	// it only holds messages that fit within the max message size, so callers should
-	// not assume the returned msg is valid for arbitrary DNS messages.
-	msgPool *sync.Pool
 }
 
 func NewCache(maxSize int, minTTL, maxTTL uint32) *Cache {
@@ -140,11 +133,6 @@ func NewCache(maxSize int, minTTL, maxTTL uint32) *Cache {
 		inflight:   make(map[string]struct{}),
 		refreshSem: make(chan struct{}, maxRefreshWorkers),
 		stop:       make(chan struct{}),
-		msgPool: &sync.Pool{
-			New: func() any {
-				return new(dns.Msg)
-			},
-		},
 	}
 
 	for i := range c.shards {
@@ -241,10 +229,11 @@ func (c *Cache) get(q dns.Question, opts QueryOptions, normalize bool) *dns.Msg 
 
 	elapsed := uint32(now.Sub(entry.cachedAt).Seconds())
 	// Clone while still holding the read lock so the stored message is never
-	// read outside the shard's synchronization.
-	// Use the message pool to avoid allocating a new *dns.Msg on every cache hit.
-	resp := c.msgPool.Get().(*dns.Msg)
-	resp = entry.msg.Copy()
+	// read outside the shard's synchronization. A previous version called
+	// msgPool.Get() here and immediately discarded the result by overwriting it
+	// with Copy(); Release() was never called, so the pool stayed empty and every
+	// hit paid for two *dns.Msg allocations. Copy() is the only allocation now.
+	resp := entry.msg.Copy()
 	normalized := entry.normalized
 	shard.mu.RUnlock()
 
@@ -627,13 +616,6 @@ func (c *Cache) Count() int {
 		c.shards[i].mu.RUnlock()
 	}
 	return total
-}
-
-// Release returns a *dns.Msg to the cache's message pool so it can be reused.
-// The msg must have been obtained from Get() — calling Release on a msg not
-// from the pool is a no-op and will not panic, it just silently drops the msg.
-func (c *Cache) Release(msg *dns.Msg) {
-	c.msgPool.Put(msg)
 }
 
 // cleanupLoop reclaims entries nothing will ask for again. It drops an entry only
