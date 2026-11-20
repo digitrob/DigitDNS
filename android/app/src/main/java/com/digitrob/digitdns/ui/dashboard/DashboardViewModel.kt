@@ -14,6 +14,7 @@ import com.digitrob.digitdns.core.network.StatsTop
 import com.digitrob.digitdns.core.network.UpstreamPresetProvider
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.core.network.normalizedResolutionStrategy
+import com.digitrob.digitdns.core.widget.WidgetPublisher
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.ConnectionStore
 import com.digitrob.digitdns.data.DashboardCard
@@ -127,6 +128,7 @@ class DashboardViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val liveStream: LiveQueryStream,
     private val appPreferences: AppPreferences,
+    private val widgetPublisher: WidgetPublisher,
     connectionStore: ConnectionStore,
 ) : ViewModel() {
 
@@ -488,6 +490,9 @@ class DashboardViewModel @Inject constructor(
                     error = null,
                 )
             }
+            // Same numbers the tiles just painted, mirrored for a status widget
+            // without a second request. No-op when no widget is installed.
+            widgetPublisher.publishStats(stats.totalQueries, stats.qps)
             syncResolutionWithPool(upstreams)
         } catch (e: ApiException) {
             _state.update { it.copy(isLoading = false, isRefreshing = false, error = e.userMessage) }

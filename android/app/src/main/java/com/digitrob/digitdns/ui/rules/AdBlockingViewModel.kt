@@ -10,6 +10,7 @@ import com.digitrob.digitdns.core.network.FilterPresetDto
 import com.digitrob.digitdns.core.network.FilteringSettingsDto
 import com.digitrob.digitdns.core.network.FilteringSettingsRequest
 import com.digitrob.digitdns.core.network.FilteringStatusDto
+import com.digitrob.digitdns.core.widget.WidgetPublisher
 import com.digitrob.digitdns.data.FilteringRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -99,6 +100,7 @@ private val GROUP_ORDER = listOf(
 @Suppress("TooManyFunctions")
 class AdBlockingViewModel @Inject constructor(
     private val repository: FilteringRepository,
+    private val widgetPublisher: WidgetPublisher,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AdBlockingUiState())
@@ -156,6 +158,7 @@ class AdBlockingViewModel @Inject constructor(
                 isLoading = false,
             )
         }
+        if (includeSettings) widgetPublisher.publishFiltering(settings.enabled)
         schedulePoll()
     }
 

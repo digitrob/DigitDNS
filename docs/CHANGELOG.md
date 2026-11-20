@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.9.5] — working widgets and a lighter dashboard
+
+### Added
+- **Android home-screen widgets are now installable.** The status and filtering
+  toggle providers are registered with the system, refresh from the daemon when
+  Android asks, and are mirrored from the app's existing polls and screens.
+  The toggle performs a real filtering change while preserving the rest of the
+  saved settings; unavailable state is shown honestly instead of a stale claim.
+
+### Changed
+- **The dashboard's one-second paint does less work.** Stat tiles reuse cached
+  DOM references and one locale-aware number formatter, and unchanged text,
+  classes and tooltips are no longer rewritten every tick.
+- **Aggregate totals spread writes across shards and vetted relay targets are
+  dialled in parallel**, with the first successful dial winning. Racing/Hedged
+  upstream defaults are unchanged.
+
+The Android companion moves to `android-v5.9.5`, with debug APKs attached to
+this release alongside the signed release APKs.
+
+---
+
 ## 🏷️ [v5.9.4] — a lighter DNS hot path and a steadier live log
 
 ### Changed

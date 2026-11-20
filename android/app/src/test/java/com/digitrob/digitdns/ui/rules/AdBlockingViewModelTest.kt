@@ -5,6 +5,7 @@ import com.digitrob.digitdns.core.network.FilterPresetDto
 import com.digitrob.digitdns.core.network.FilteringSettingsDto
 import com.digitrob.digitdns.core.network.FilteringStatusDto
 import com.digitrob.digitdns.core.network.PresetAddResultDto
+import com.digitrob.digitdns.core.widget.WidgetPublisher
 import com.digitrob.digitdns.data.FilteringRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -29,6 +30,7 @@ class AdBlockingViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: FilteringRepository
+    private val widgetPublisher = mockk<WidgetPublisher>(relaxed = true)
 
     private val pro = FilterPresetDto(
         id = "hagezi-pro",
@@ -78,7 +80,7 @@ class AdBlockingViewModelTest {
             settings = FilteringSettingsDto(enabled = true, blockMode = "nxdomain", blockTtl = 30),
         )
 
-        val viewModel = AdBlockingViewModel(repository)
+        val viewModel = AdBlockingViewModel(repository, widgetPublisher)
         advanceUntilIdle()
 
         val state = viewModel.state.value
@@ -101,7 +103,7 @@ class AdBlockingViewModelTest {
         coEvery { repository.status() } returnsMany listOf(status(), status(lists = listOf(added)))
         coEvery { repository.addPreset("hagezi-light") } returns PresetAddResultDto()
 
-        val viewModel = AdBlockingViewModel(repository)
+        val viewModel = AdBlockingViewModel(repository, widgetPublisher)
         advanceUntilIdle()
         viewModel.addPreset("hagezi-light")
         advanceUntilIdle()
@@ -128,7 +130,7 @@ class AdBlockingViewModelTest {
             status(lists = listOf(disabledList)),
         )
 
-        val viewModel = AdBlockingViewModel(repository)
+        val viewModel = AdBlockingViewModel(repository, widgetPublisher)
         advanceUntilIdle()
         viewModel.toggleList(enabledList, false)
         advanceUntilIdle()
@@ -141,7 +143,7 @@ class AdBlockingViewModelTest {
     fun `invalid TTL is rejected before the network call`() = runTest(dispatcher) {
         coEvery { repository.status() } returns status()
 
-        val viewModel = AdBlockingViewModel(repository)
+        val viewModel = AdBlockingViewModel(repository, widgetPublisher)
         advanceUntilIdle()
         viewModel.setBlockTtl("0")
         viewModel.saveSettings()

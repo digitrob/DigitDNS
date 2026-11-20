@@ -782,23 +782,91 @@ func (s *Server) dialTarget(ctx context.Context, hostname string, addrs []netip.
 	return s.dialVetted(ctx, addrs, port)
 }
 
+// relayDialFunc is the injectable dial primitive used by the vetted-dial tests.
+// Production passes net.Dialer.DialContext.
+type relayDialFunc func(ctx context.Context, network, address string) (net.Conn, error)
+
 // dialVetted connects to the first reachable vetted address. Passing an address
 // rather than a hostname closes the window in which a second lookup — the one
 // the dialer would perform — could return an address the guard never saw.
 func (s *Server) dialVetted(ctx context.Context, addrs []netip.Addr, port int) (net.Conn, error) {
 	dialer := &net.Dialer{Timeout: handshakeTimeout, KeepAlive: 30 * time.Second}
-	var lastErr error
-	for _, addr := range addrs {
-		conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(addr.String(), strconv.Itoa(port)))
-		if err == nil {
-			return conn, nil
+	return dialVettedWith(ctx, addrs, port, dialer.DialContext)
+}
+
+// dialVettedWith starts every vetted dial together and returns the first one
+// that connects. The old sequential loop paid the full handshake timeout for a
+// dead first address before trying a healthy second one; with dual-stack names
+// that made connection setup feel slow even when one family was fine. Every
+// candidate has already passed the target guard, so parallel dials do not widen
+// the SSRF surface. Losers are cancelled and any late connection is closed.
+func dialVettedWith(ctx context.Context, addrs []netip.Addr, port int, dial relayDialFunc) (net.Conn, error) {
+	if len(addrs) == 0 {
+		return nil, errors.New("proxy: no target addresses to dial")
+	}
+	if len(addrs) == 1 {
+		return dial(ctx, "tcp", dialAddress(addrs[0], port))
+	}
+
+	dialCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type result struct {
+		idx  int
+		conn net.Conn
+		err  error
+	}
+	results := make(chan result, len(addrs))
+	for i, addr := range addrs {
+		i, addr := i, addr
+		go func() {
+			var conn net.Conn
+			var err error
+			defer func() {
+				// The channel is buffered for every dialer, so this can never
+				// block and every dial must report exactly once. An earlier
+				// version also selected on dialCtx.Done() here; a loser that
+				// completed at the same instant as the winner could then drop
+				// its result and leave the caller waiting forever.
+				results <- result{idx: i, conn: conn, err: err}
+			}()
+			defer safego.Recover("proxy.dialVetted")
+			conn, err = dial(dialCtx, "tcp", dialAddress(addr, port))
+		}()
+	}
+
+	errs := make([]error, len(addrs))
+	var winner net.Conn
+	for remaining := len(addrs); remaining > 0; remaining-- {
+		res := <-results
+		if res.conn != nil {
+			if winner == nil {
+				winner = res.conn
+				cancel()
+			} else {
+				// Another dial finished after the winner was chosen. The race is
+				// over, so its socket must not be left open.
+				_ = res.conn.Close()
+			}
+			continue
 		}
-		lastErr = err
+		errs[res.idx] = res.err
 	}
-	if lastErr == nil {
-		lastErr = errors.New("proxy: no target addresses to dial")
+	if winner != nil {
+		return winner, nil
 	}
-	return nil, lastErr
+	// Keep the first candidate's error deterministic: parallel completion order
+	// must not change which failure an operator sees in the log.
+	for _, err := range errs {
+		if err != nil {
+			return nil, err
+		}
+	}
+	return nil, errors.New("proxy: no target addresses to dial")
+}
+
+func dialAddress(addr netip.Addr, port int) string {
+	return net.JoinHostPort(addr.String(), strconv.Itoa(port))
 }
 
 // relay shuttles bytes in both directions until either side finishes or falls

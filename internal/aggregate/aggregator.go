@@ -115,6 +115,7 @@ type Aggregator struct {
 	closed     atomic.Bool
 	currentKey atomic.Value              // string
 	current    atomic.Pointer[[]*Bucket] // sharded current buckets; each has its own mu
+	totalShard atomic.Uint64             // round-robin shard for query totals
 	pending    []bucketPair
 	lastDay    string
 
@@ -188,7 +189,11 @@ func (a *Aggregator) Path() string { return a.store.Path() }
 // RecordDetail because the live log samples rate-limit refusals and skips
 // malformed early returns; the total card must still be honest.
 func (a *Aggregator) RecordTotal(at time.Time) {
-	a.withBucket(at, shardKeyFromInt(0), func(b *Bucket, chunk *Chunk) {
+	// RecordDetail is spread across shards by client/domain; totals used to pin
+	// every query to shard 0, so a busy resolver still serialized on one mutex
+	// before it ever reached a detail record. Round-robin the counters instead.
+	// flush() and rollover merge every shard, so no count is lost.
+	a.withBucket(at, a.totalShard.Add(1), func(b *Bucket, chunk *Chunk) {
 		b.recordTotal()
 		chunk.Queries++
 	})
@@ -218,10 +223,9 @@ func (a *Aggregator) RecordDetail(item database.QueryLogItem) {
 	})
 }
 
-// shard picks a shard index from 0 to shardCount-1 for the given key.
-// RecordTotal uses shardKey=0 (always shard 0). RecordDetail uses a hash of
-// (clientIP+domain) to distribute across shards.
-func shardKeyFromInt(key int) uint64   { return uint64(key) }
+// shardKeyFromHash maps a 64-bit key to a shard index. RecordDetail hashes
+// client IP + domain; RecordTotal uses a round-robin counter. Both paths end in
+// withBucket, which applies the modulo.
 func shardKeyFromHash(h uint64) uint64 { return h }
 
 // withBucket selects a shard by shardKey and locks only that shard's mutex.

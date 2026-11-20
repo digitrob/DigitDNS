@@ -1,66 +1,56 @@
-# DigitDNS v5.9.4 — a lighter DNS hot path and a steadier live log
+# DigitDNS v5.9.5 — working widgets and a lighter dashboard
 
-This patch keeps the v5.9.3 feature set and focuses on responsiveness: cache hits
-allocate less, the live-log ring is safe under concurrent writers, and the
-once-a-second resolver ranking rebuild no longer takes a dashboard-sized detour
-on a query path. The Ad Blocking editor also stops background polls from
-overwriting text while an operator is typing.
+This patch makes the Android home-screen widgets real: they can be added from
+the widget picker, they refresh from the daemon, and the filtering toggle writes
+an actual filtering change. It also trims the dashboard's once-a-second paint
+and removes two small server-side bottlenecks.
 
 No database schema migration is required. Existing settings, clients,
 blocklists, certificates, relay agents, egress options and stored query history
-are preserved.
+are preserved. Upstream selection defaults are unchanged: Racing still maps to
+Hedged.
 
-## Faster cache hits
+## Android widgets you can actually use
 
-- **The dead message-pool call is gone.** Every cache hit called `msgPool.Get()`
-  and immediately overwrote the result with `entry.msg.Copy()`, so the pool stayed
-  empty and the hit paid for two message allocations. A hit now allocates only
-  the reply copy.
-- **Answer sections are rendered only when something will read them.** While no
-  live-log stream is open and persistent query history is disabled, the query
-  still records its latency, action, rule and result code, but no longer
-  stringifies every answer record for a log item that would be discarded.
-- **The client address is parsed once.** Common UDP and TCP peers are read
-  straight from their address structs instead of being formatted to text,
-  split, and formatted again on every query.
+- **Both providers are registered with the system.** The status and filtering
+  toggle widgets finally appear in the Android widget picker instead of being
+  inert code in the app.
+- **The status widget follows the daemon.** It reads authenticated status when
+  Android asks for an update, and the app mirrors its existing dashboard polls
+  and settings screens into the widget so the numbers stay current.
+- **The toggle really toggles filtering.** It reads canonical filtering state
+  first, flips only `enabled`, and preserves the saved block mode, TTL,
+  allowlist and custom rules. A quick settings tile and the Ad Blocking screen
+  share the same state path.
+- **Unavailable is honest.** When the app is signed out or the daemon cannot be
+  reached, the widget shows an unavailable state instead of a stale on/off
+  claim. Clickable areas also carry accessibility labels.
 
-On the local benchmark these changes took a cache lookup from about 880 ns and
-7 allocations to about 330 ns and 6 allocations.
+## A calmer dashboard tick
 
-## A live log that cannot tear under load
+- **Stat tiles reuse their DOM nodes.** The one-second renderer caches element
+  references and revalidates them with `isConnected`, so a reordered dashboard
+  cannot leave a writer painting a detached node.
+- **Counters share one number formatter.** A single locale-aware
+  `Intl.NumberFormat` replaces a fresh formatter on every `toLocaleString()`
+  call. Unchanged text, classes and tooltips are no longer rewritten each tick.
+- The minified dashboard asset and its Brotli sidecar were regenerated from the
+  updated source.
 
-- **`PushQueryLog` now claims a sequence number, then publishes one immutable
-  entry pointer.** The previous ring wrote a slot before its compare-and-swap,
-  so a losing writer could overwrite an already published row and readers could
-  observe partly updated strings and slices.
-- **Clear advances a floor instead of zeroing slots under a writer.** A
-  reconnecting live-log stream can no longer replay queries from before a
-  clear, and the ring remains clean under the race detector.
+## Smaller server-side bottlenecks
 
-## Resolver ranking without the dashboard detour
-
-- **The once-a-second latency-order rebuild reads only the latency value it
-  needs.** It no longer calls the full `GetUpstreamStats()` path, which copied
-  every health counter, formatted timestamps, built a dashboard-sized slice and
-  sorted it on whichever cache miss crossed the rebuild tick.
-- **Upstream selection defaults are unchanged.** Racing still maps to Hedged;
-  the adaptive and force paths keep the same rules and the same resolver-card
-  numbers.
-
-On the local benchmark the cold rebuild fell from about 1148 ns / 1840 B / 8
-allocations to about 450 ns / 432 B / 5 allocations. Dashboard statistics and
-per-query stats recording are unchanged.
-
-## Dashboard editing
-
-- **Background polls no longer overwrite the Ad Blocking allowlist or custom
-  rules while they are being edited.** Focused and unsaved fields win; a
-  successful save rebases the tracking on what was written, so later polls can
-  still reflect changes from another panel session.
+- **Aggregate query totals no longer pin every write to one shard.** They are
+  spread round-robin across the existing shards; flush and rollover still merge
+  every shard, so no count is lost. The local benchmark fell from about 290 ns
+  to 138 ns per total record, with the detail path unchanged.
+- **Vetted relay targets are dialled in parallel.** Every candidate has already
+  passed the target guard, so this does not widen the SSRF surface. The first
+  successful connection wins, losers are cancelled and closed, and the reported
+  error stays deterministic when all attempts fail.
 
 ## Android
 
-The companion carries the matching `android-v5.9.4` version line. The workflow's
+The companion carries the matching `android-v5.9.5` version line. The workflow's
 debug APKs are attached to this release alongside the standard signed APKs for
 arm64-v8a, armeabi-v7a, x86_64 and universal devices.
 
@@ -69,14 +59,14 @@ arm64-v8a, armeabi-v7a, x86_64 and universal devices.
 In-place upgrades from the dashboard are supported.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.9.4/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.9.5/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.9.4
-docker pull ghcr.io/digitrob/digitdns-agent:5.9.4
-docker pull robmeister/digitdns:5.9.4
-docker pull robmeister/digitdns-agent:5.9.4
+docker pull ghcr.io/digitrob/digitdns:5.9.5
+docker pull ghcr.io/digitrob/digitdns-agent:5.9.5
+docker pull robmeister/digitdns:5.9.5
+docker pull robmeister/digitdns-agent:5.9.5
 ```

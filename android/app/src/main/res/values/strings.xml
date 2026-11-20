@@ -880,5 +880,7 @@
     <string name="widget_toggle_description">Toggle DigitDNS ad blocking</string>
     <string name="widget_toggle_on">Filtering on</string>
     <string name="widget_toggle_off">Filtering off</string>
+    <string name="widget_toggle_unavailable">Unavailable — sign in</string>
+    <string name="widget_toggle_tap">Tap to toggle ad blocking</string>
     <string name="widget_toggle_open">Open app</string>
 </resources>

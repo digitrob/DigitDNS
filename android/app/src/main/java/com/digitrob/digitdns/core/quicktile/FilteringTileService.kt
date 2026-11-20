@@ -3,7 +3,8 @@ package com.digitrob.digitdns.core.quicktile
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.digitrob.digitdns.R
-import com.digitrob.digitdns.core.network.FilteringSettingsRequest
+import com.digitrob.digitdns.core.widget.WidgetPublisher
+import com.digitrob.digitdns.core.widget.WidgetValues
 import com.digitrob.digitdns.data.AuthRepository
 import com.digitrob.digitdns.data.FilteringRepository
 import dagger.hilt.android.AndroidEntryPoint
@@ -32,6 +33,7 @@ class FilteringTileService : TileService() {
 
     @Inject lateinit var authRepository: AuthRepository
     @Inject lateinit var filteringRepository: FilteringRepository
+    @Inject lateinit var widgetPublisher: WidgetPublisher
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -64,16 +66,7 @@ class FilteringTileService : TileService() {
             val settings = status.settings
             val next = !settings.enabled
             val saved = runCatching {
-                filteringRepository.saveSettings(
-                    FilteringSettingsRequest(
-                        enabled = next,
-                        blockMode = settings.blockMode,
-                        blockTtl = settings.blockTtl,
-                        updateIntervalHours = settings.updateIntervalHours,
-                        allowlist = settings.allowlist ?: emptyList(),
-                        customRules = settings.customRules,
-                    ),
-                )
+                filteringRepository.saveSettings(WidgetValues.filteringToggleRequest(settings, next))
             }.getOrNull()
             if (saved == null) {
                 render(available = false, enabled = settings.enabled)
@@ -89,6 +82,7 @@ class FilteringTileService : TileService() {
     }
 
     private suspend fun render(available: Boolean, enabled: Boolean) {
+        widgetPublisher.publishFiltering(if (available) enabled else null)
         withContext(Dispatchers.Main) {
             val tile = qsTile ?: return@withContext
             tile.state = when {

@@ -39,6 +39,33 @@
             </intent-filter>
         </activity>
 
+        <!-- Home-screen widgets. The receivers must be declared for Android to offer
+             them in the widget picker; each provider owns one appwidget-provider XML
+             and renders through RemoteViews. -->
+        <receiver
+            android:name=".core.widget.DigitDnsStatusWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_status_description">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/digitdns_status_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".core.widget.DigitDnsToggleWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_toggle_description">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/digitdns_toggle_widget_info" />
+        </receiver>
+
         <!-- Holds the authenticated SSE stream open and raises a local notification
              on events (quota, expiry, security). This is the (a) transport chosen for
              v1: no FCM, no Google dependency, no server change — the same

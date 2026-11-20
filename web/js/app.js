@@ -5625,6 +5625,29 @@ const STATS_POLL_IDLE_MS = 5000;
 // should light the badge again within a few seconds, not after a minute of silence.
 const STATS_POLL_MAX_BACKOFF_MS = 8000;
 
+// The stats renderers touch about twenty elements every second. getElementById is
+// cheap in isolation, but not free on the 1-core VPS this dashboard is built for;
+// cache the nodes once and re-check isConnected so a dashboard layout reorder or a
+// partial DOM replacement can never leave a writer painting a detached element.
+const statElementCache = new Map();
+function statEl(id) {
+  let el = statElementCache.get(id);
+  if (!el || !el.isConnected) {
+    el = document.getElementById(id);
+    statElementCache.set(id, el || null);
+  }
+  return el;
+}
+
+// Number#toLocaleString builds a formatter on every call. The 1 Hz poll formats
+// a dozen counters each tick, so share one formatter for the page's locale; the
+// compare-guarded writers still avoid touching the DOM when a value has not moved.
+const wholeNumberFormatter = new Intl.NumberFormat();
+function fmtWhole(value) {
+  if (typeof value !== 'number' || !isFinite(value)) return value === 0 ? '0' : '—';
+  return wholeNumberFormatter.format(value);
+}
+
 let statsPollTimer = null;
 // Tracked separately from the timer handle because a poll in flight has no timer: the
 // handle is cleared on entry and only reassigned after the fetch settles. Without this
@@ -5752,7 +5775,7 @@ async function updateStats() {
     }
 
     const setTxt = (id, txt) => {
-      const el = document.getElementById(id);
+      const el = statEl(id);
       // textContent, not innerText: reading innerText forces a layout, and this
       // runs on every one-second poll even when the value never changes. The
       // comparison still avoids invalidating the glass backdrop, but now it is
@@ -5767,7 +5790,7 @@ async function updateStats() {
     // keeps whatever it showed two seconds ago, forever, while the page looks alive.
     // num() makes one missing field cost one dash instead of the whole update.
     const num = (v, digits) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(digits) : v === 0 ? '0' : '—';
-    const count = (v) => (typeof v === 'number' && isFinite(v)) ? v.toLocaleString() : v === 0 ? '0' : '—';
+    const count = fmtWhole;
 
     // The tiles write through compare-guarded setters, so the cheap reads above
     // are safe on any tab. The list and the chart are the expensive ones: skip
@@ -5845,9 +5868,9 @@ let statsHealthState = '';
 // trustworthy: without it a daemon that died two minutes ago is indistinguishable
 // from a healthy one, because every tile simply keeps its last value.
 function markStatsHealth(ok, reason) {
-  const badge = document.getElementById('live-engine-badge');
-  const dot = document.getElementById('live-engine-dot');
-  const label = document.getElementById('live-engine-label');
+  const badge = statEl('live-engine-badge');
+  const dot = statEl('live-engine-dot');
+  const label = statEl('live-engine-label');
 
   if (ok) {
     statsFailures = 0;
@@ -5892,30 +5915,33 @@ function formatBytes(bytes) {
 // shown together: "42 dropped" means nothing without the limit it was measured
 // against, and a limit with no drops is the reassuring case worth displaying.
 function renderRateLimit(qps, dropped) {
-  const qpsEl = document.getElementById('stat-ratelimit-qps');
-  const dropEl = document.getElementById('stat-ratelimit-dropped');
+  const qpsEl = statEl('stat-ratelimit-qps');
+  const dropEl = statEl('stat-ratelimit-dropped');
   if (!qpsEl && !dropEl) return;
 
   const n = dropped || 0;
 
   if (qpsEl) {
-    if (!qps || qps <= 0) {
-      qpsEl.textContent = 'off';
-      qpsEl.className = 'text-slate-500';
-      qpsEl.title = 'Per-source rate limiting is disabled (access.rate_limit_qps = 0)';
-    } else {
-      qpsEl.textContent = `${qps}/s`;
-      qpsEl.className = 'text-slate-400';
-      qpsEl.title = `Limiting at ${qps} qps per source`;
-    }
+    const off = !qps || qps <= 0;
+    const qpsText = off ? 'off' : `${qps}/s`;
+    const qpsCls = off ? 'text-slate-500' : 'text-slate-400';
+    const qpsTitle = off
+      ? 'Per-source rate limiting is disabled (access.rate_limit_qps = 0)'
+      : `Limiting at ${qps} qps per source`;
+    if (qpsEl.textContent !== qpsText) qpsEl.textContent = qpsText;
+    if (qpsEl.className !== qpsCls) qpsEl.className = qpsCls;
+    if (qpsEl.title !== qpsTitle) qpsEl.title = qpsTitle;
   }
 
   if (dropEl) {
-    dropEl.textContent = n.toLocaleString();
-    dropEl.className = n > 0 ? 'text-amber-400 font-bold' : 'text-slate-400';
-    dropEl.title = n > 0
-      ? `${n.toLocaleString()} queries dropped or refused for exceeding ${qps} qps per source since start`
+    const droppedText = fmtWhole(n);
+    if (dropEl.textContent !== droppedText) dropEl.textContent = droppedText;
+    const droppedCls = n > 0 ? 'text-amber-400 font-bold' : 'text-slate-400';
+    if (dropEl.className !== droppedCls) dropEl.className = droppedCls;
+    const droppedTitle = n > 0
+      ? `${droppedText} queries dropped or refused for exceeding ${qps} qps per source since start`
       : 'Nothing dropped for exceeding the per-source rate limit so far';
+    if (dropEl.title !== droppedTitle) dropEl.title = droppedTitle;
   }
 }
 
@@ -5925,7 +5951,7 @@ function renderRateLimit(qps, dropped) {
 // moves when an upstream degrades — and `all` is every answer the resolver served.
 function renderLatency(miss, all) {
   const setTxt = (id, txt) => {
-    const el = document.getElementById(id);
+    const el = statEl(id);
     if (el && el.textContent !== txt) el.textContent = txt;
   };
   // Sub-10 ms readings need two decimals to be worth showing at all; past that
@@ -5940,12 +5966,12 @@ function renderLatency(miss, all) {
   setTxt('stat-lat-p99', haveMiss ? fmt(miss.p99_ms) : '—');
   setTxt('stat-lat-max', haveMiss ? fmt(miss.max_ms) : '—');
 
-  const badge = document.getElementById('stat-lat-count');
+  const badge = statEl('stat-lat-count');
   if (badge) {
     let badgeText = 'no data yet';
     let badgeTitle = 'The resolver has not answered a query yet';
     if (haveMiss) {
-      badgeText = `${miss.count.toLocaleString()} resolved`;
+      badgeText = `${fmtWhole(miss.count)} resolved`;
       badgeTitle = 'Queries answered by an upstream rather than from cache, since the daemon started';
     } else if (all && all.count > 0) {
       // A real and reassuring state, not an error: nothing has needed an upstream.
@@ -5959,19 +5985,21 @@ function renderLatency(miss, all) {
   // p50 carries the colour because it is the everyday experience. The thresholds
   // are the resolver's own service time, not a game's ping: past ~60 ms the
   // upstream path is the bottleneck, not this daemon.
-  const p50El = document.getElementById('stat-lat-p50');
+  const p50El = statEl('stat-lat-p50');
   if (p50El) {
     let tone = 'text-emerald-400';
     if (haveMiss && miss.p50_ms >= 60) tone = 'text-red-400';
     else if (haveMiss && miss.p50_ms >= 25) tone = 'text-amber-400';
-    p50El.className = `text-lg sm:text-xl font-extrabold font-mono ${tone}`;
+    const toneCls = `text-lg sm:text-xl font-extrabold font-mono ${tone}`;
+    if (p50El.className !== toneCls) p50El.className = toneCls;
   }
 
-  const allEl = document.getElementById('stat-lat-all');
+  const allEl = statEl('stat-lat-all');
   if (allEl) {
-    allEl.textContent = (all && all.count > 0)
-      ? `p50 ${fmt(all.p50_ms)} · p95 ${fmt(all.p95_ms)} · p99 ${fmt(all.p99_ms)} ms over ${all.count.toLocaleString()}`
+    const allText = (all && all.count > 0)
+      ? `p50 ${fmt(all.p50_ms)} · p95 ${fmt(all.p95_ms)} · p99 ${fmt(all.p99_ms)} ms over ${fmtWhole(all.count)}`
       : '—';
+    if (allEl.textContent !== allText) allEl.textContent = allText;
   }
 }
 
@@ -5983,7 +6011,7 @@ function renderLatency(miss, all) {
 // the denominator: "18 failed" is alarming on its own and unremarkable against
 // 40,000 attempts, and the badge has no room for both numbers.
 function renderCacheHealth(data) {
-  const el = document.getElementById('stat-cache-health');
+  const el = statEl('stat-cache-health');
   if (!el) return;
 
   const served = data.stale_served || 0;
@@ -5994,7 +6022,7 @@ function renderCacheHealth(data) {
   const healthy = !served && !started && !failed && !dropped;
   const text = healthy
     ? 'Cache refresh: healthy'
-    : `Cache refresh: ${served.toLocaleString()} stale · ${failed.toLocaleString()} failed · ${dropped.toLocaleString()} skipped`;
+    : `Cache refresh: ${fmtWhole(served)} stale · ${fmtWhole(failed)} failed · ${fmtWhole(dropped)} skipped`;
   // A 1 Hz poll rewrites text, class and tooltip even when none of them moved,
   // which invalidates style for the whole dashboard on every tick. The values
   // only change when a refresh actually happened, so compare before writing.
@@ -6009,10 +6037,10 @@ function renderCacheHealth(data) {
   let title = healthy
     ? 'No background refresh has run yet, no stale answer has been served'
     : failed > 0
-      ? `${failed.toLocaleString()} of ${started.toLocaleString()} background refreshes failed (${(started > 0 ? (failed / started) * 100 : 0).toFixed(1)}%) while ${served.toLocaleString()} stale answer(s) were served. Clients are getting instant replies from a cache nothing is refilling — check the upstream resolvers before the grace window closes.`
+      ? `${fmtWhole(failed)} of ${fmtWhole(started)} background refreshes failed (${(started > 0 ? (failed / started) * 100 : 0).toFixed(1)}%) while ${fmtWhole(served)} stale answer(s) were served. Clients are getting instant replies from a cache nothing is refilling — check the upstream resolvers before the grace window closes.`
       : dropped > 0
-        ? `${started.toLocaleString()} background refresh(es) succeeded, ${dropped.toLocaleString()} were skipped because the refresh worker pool was saturated. Skipped renewals are not errors; they simply expire normally.`
-        : `${started.toLocaleString()} background refresh(es) run, none failed. ${served.toLocaleString()} expired entry/entries were served instantly while being renewed.`;
+        ? `${fmtWhole(started)} background refresh(es) succeeded, ${fmtWhole(dropped)} were skipped because the refresh worker pool was saturated. Skipped renewals are not errors; they simply expire normally.`
+        : `${fmtWhole(started)} background refresh(es) run, none failed. ${fmtWhole(served)} expired entry/entries were served instantly while being renewed.`;
   if (el.title !== title) {
     el.title = title;
   }
@@ -6036,8 +6064,8 @@ function renderCacheHealth(data) {
 // So unreadable is shown even at zero-refused, and it is the one that gets the
 // warning colour.
 function renderProxyDrops(data) {
-  const refusedEl = document.getElementById('stat-proxy-refused');
-  const unreadableEl = document.getElementById('stat-proxy-unreadable');
+  const refusedEl = statEl('stat-proxy-refused');
+  const unreadableEl = statEl('stat-proxy-unreadable');
   if (!refusedEl && !unreadableEl) return;
 
   const refused = data.relays_refused || 0;
@@ -6056,10 +6084,10 @@ function renderProxyDrops(data) {
   // reports only actionable refusals. The tooltip keeps the full breakdown.
   const actionableRefused = Math.max(refused - flood, 0);
 
-  const breakdown = `Actionable refusals ${actionableRefused.toLocaleString()} (blocked ${blocked.toLocaleString()}, self ${selfDial.toLocaleString()}, quota ${quota.toLocaleString()}, table full ${tableFull.toLocaleString()}, resolve failed ${resolveFailed.toLocaleString()}) · flood attempts ${flood.toLocaleString()} (excluded) · malformed probes ${malformed.toLocaleString()} (excluded)`;
+  const breakdown = `Actionable refusals ${fmtWhole(actionableRefused)} (blocked ${fmtWhole(blocked)}, self ${fmtWhole(selfDial)}, quota ${fmtWhole(quota)}, table full ${fmtWhole(tableFull)}, resolve failed ${fmtWhole(resolveFailed)}) · flood attempts ${fmtWhole(flood)} (excluded) · malformed probes ${fmtWhole(malformed)} (excluded)`;
 
   if (refusedEl) {
-    const refusedText = actionableRefused.toLocaleString();
+    const refusedText = fmtWhole(actionableRefused);
     const refusedCls = actionableRefused > 0 ? 'text-slate-300 font-bold' : 'text-slate-400';
     if (refusedEl.textContent !== refusedText) refusedEl.textContent = refusedText;
     if (refusedEl.className !== refusedCls) refusedEl.className = refusedCls;
@@ -6067,12 +6095,12 @@ function renderProxyDrops(data) {
   }
 
   if (unreadableEl) {
-    const unreadableText = unreadable.toLocaleString();
+    const unreadableText = fmtWhole(unreadable);
     const unreadableCls = unreadable > 0 ? 'text-amber-400 font-bold' : 'text-slate-400';
     if (unreadableEl.textContent !== unreadableText) unreadableEl.textContent = unreadableText;
     if (unreadableEl.className !== unreadableCls) unreadableEl.className = unreadableCls;
     const unreadableTitle = unreadable > 0
-      ? `${unreadable.toLocaleString()} connection(s) arrived without naming a destination — no TLS SNI and no HTTP Host header. A few are port scans. A rising count means a proxied name is sending clients here for traffic this relay cannot carry; check the server log for the sampled "unreadable destination" lines, which name the port and the first bytes.`
+      ? `${fmtWhole(unreadable)} connection(s) arrived without naming a destination — no TLS SNI and no HTTP Host header. A few are port scans. A rising count means a proxied name is sending clients here for traffic this relay cannot carry; check the server log for the sampled "unreadable destination" lines, which name the port and the first bytes.`
       : 'Every connection that reached the proxy named a destination and was relayed';
     if (unreadableEl.title !== unreadableTitle) unreadableEl.title = unreadableTitle;
   }
