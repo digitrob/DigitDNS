@@ -26,7 +26,8 @@ and how to report a problem.
 
 | Version | Status | Security fixes |
 | :--- | :--- | :--- |
-| `v5.9.5` | Current stable | ✅ Yes |
+| `v5.9.6` | Current stable | ✅ Yes |
+| `v5.9.5` | Superseded | ❌ Upgrade first |
 | `v5.9.4` | Superseded | ❌ Upgrade first |
 | `v5.9.3` | Superseded | ❌ Upgrade first |
 | `v5.9.1` | Superseded | ❌ Upgrade first |

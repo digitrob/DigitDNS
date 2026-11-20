@@ -5648,6 +5648,33 @@ function fmtWhole(value) {
   return wholeNumberFormatter.format(value);
 }
 
+// A compact=2 poll carries only the fields that can move in a second. Merge
+// them over the last full document, and merge each upstream row by address so
+// the fields the heartbeat deliberately omits (p50/average/probe numbers) keep
+// their last full value until the next full snapshot. The merge is shallow for
+// everything else because the heartbeat sends all of those fields, zero values
+// included.
+function mergeCompactStats(full, live) {
+  if (!full) return live;
+  const merged = { ...full, ...live };
+  if (Array.isArray(live.upstreams) && Array.isArray(full.upstreams)) {
+    const previous = new Map(full.upstreams.map((u) => [u.address, u]));
+    merged.upstreams = live.upstreams.map((u) => ({
+      ...(previous.get(u.address) || {}),
+      ...u,
+    }));
+  }
+  return merged;
+}
+
+// A full snapshot is required after any break in the poll chain: login, tab
+// return, network return, or a rejected session. Without it the compact fields
+// would be painted over a stale slow-field baseline.
+function invalidateStatsSnapshot() {
+  statsFull = null;
+  statsPollCount = 0;
+}
+
 let statsPollTimer = null;
 // Tracked separately from the timer handle because a poll in flight has no timer: the
 // handle is cleared on entry and only reassigned after the fetch settles. Without this
@@ -5684,14 +5711,16 @@ async function pollStatsOnce() {
 }
 
 function startStatsPolling() {
-  statsFull = null;
-  statsPollCount = 0;
+  invalidateStatsSnapshot();
   // Called once, from the post-login boot path. The listener is registered here rather
   // than at module scope so that a page which never logs in never installs it.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       clearTimeout(statsPollTimer);
       statsPollTimer = null;
+      // The next visible poll starts from a full document, not a heartbeat
+      // merged over numbers from before the tab was backgrounded.
+      invalidateStatsSnapshot();
       stopAgentPolling();
       // The live stream stays open: an operator watching the log in one tab
       // while browsing in another must keep seeing the queries that happen in
@@ -5723,6 +5752,7 @@ function startStatsPolling() {
   // online waited for the 30-second backoff cap.
   window.addEventListener('online', () => {
     if (!authToken) return;
+    invalidateStatsSnapshot();
     streamDegraded = false;
     clearStreamStatusTimers();
     setStreamStatus('connecting');
@@ -5747,14 +5777,19 @@ function startStatsPolling() {
 async function updateStats() {
   if (!authToken) return;
   try {
-    const needFull = !statsFull || (statsPollCount++ % 5 === 0);
-    const res = await fetch(api('/api/stats') + (needFull ? '' : '?compact=1'), {
+    // Increment on every poll, including the first: short-circuiting on
+    // !statsFull used to leave the counter at zero and make the second poll full
+    // as well, so the panel paid for two full documents after every login.
+    const fullDue = statsPollCount++ % 5 === 0;
+    const needFull = !statsFull || fullDue;
+    const res = await fetch(api('/api/stats') + (needFull ? '' : '?compact=2'), {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     if (res.status === 401) {
       // The deploy restarts the daemon and sessions are in memory: the page
       // must say so instead of showing stale tiles with a dead live log.
       markStatsHealth(false, 'Session expired');
+      invalidateStatsSnapshot();
       stopLiveStream();
       stopAgentPolling();
       showLoginModal();
@@ -5771,7 +5806,7 @@ async function updateStats() {
     } else {
       // Live fields override the last full document; slow fields (CPU, RAM,
       // system memory, goroutines, agent counters) stay from the last full poll.
-      data = { ...statsFull, ...data };
+      data = mergeCompactStats(statsFull, data);
     }
 
     const setTxt = (id, txt) => {
@@ -5783,11 +5818,10 @@ async function updateStats() {
       if (el && el.textContent !== txt) el.textContent = txt;
     };
 
-    // Every tile below used to read `data.field.toFixed(1)` straight. The endpoint
-    // does send all of these today — handleStats builds a map literal with no
-    // omitempty — but the failure mode if one ever goes missing is invisible: the
-    // TypeError lands in the catch below, and every tile *after* the failing line
-    // keeps whatever it showed two seconds ago, forever, while the page looks alive.
+    // Every tile below used to read `data.field.toFixed(1)` straight. The full
+    // snapshot sends all of these, but a compact=2 heartbeat deliberately leaves
+    // slow fields out; if one goes missing the old code's TypeError landed in the
+    // catch below and every tile *after* it kept its previous value forever.
     // num() makes one missing field cost one dash instead of the whole update.
     const num = (v, digits) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(digits) : v === 0 ? '0' : '—';
     const count = fmtWhole;

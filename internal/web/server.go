@@ -2850,10 +2850,13 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteMethodNotAllowed(w, "GET, HEAD")
 		return
 	}
-	compact := r.URL.Query().Get("compact") == "1"
+	compactMode := r.URL.Query().Get("compact")
 	cacheKey := "web/stats"
-	if compact {
+	switch compactMode {
+	case "1":
 		cacheKey = "web/stats:compact"
+	case "2":
+		cacheKey = "web/stats:compact2"
 	}
 	if entry, ok := ws.statsCache.Get(cacheKey); ok {
 		httpx.WriteCached(w, r, entry)
@@ -2867,6 +2870,11 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 	var upstreamStats any = []struct{}{}
 	if ws.upstreams != nil {
 		upstreamStats = ws.upstreams.GetUpstreamStats()
+	}
+	if compactMode == "2" {
+		if full, ok := upstreamStats.([]upstream.UpstreamStat); ok {
+			upstreamStats = compactUpstreamStats(full)
+		}
 	}
 
 	resp := map[string]any{
@@ -2944,10 +2952,12 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 
 		"upstreams": upstreamStats,
 	}
-	// A compact poll carries the fields that move every second. CPU, RAM,
-	// goroutines, uptime and agent counters change slowly; the dashboard fetches
-	// the full document every fifth poll and merges these live fields over it.
-	if compact {
+	// compact=1 is the legacy delete-list form used by older clients. compact=2
+	// is the dashboard's whitelist heartbeat: it omits both the slow fields and
+	// the diagnostic aliases the panel never paints. The full document every
+	// fifth poll remains unchanged.
+	switch compactMode {
+	case "1":
 		for _, key := range []string{
 			"ram_usage_mb", "cpu_usage", "alloc_memory_mb", "sys_memory_mb",
 			"cpu_usage_percent", "num_cpu", "num_goroutines", "uptime_sec",
@@ -2958,6 +2968,8 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 		} {
 			delete(resp, key)
 		}
+	case "2":
+		resp = compactStatsV2(resp)
 	}
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(resp); err != nil {

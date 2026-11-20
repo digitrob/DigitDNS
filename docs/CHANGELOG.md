@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.9.6] — lighter stats polling and locked-in behavior
+
+### Added
+- **Golden locks on working behavior.** Normalized importer output hashes for
+  AdGuard and Pi-hole fixtures, plus wire-contract and browser-side tests for
+  the stats payload, poll cadence and saved filter payload. Accidental drift in
+  behavior that already works is now caught before release.
+
+### Changed
+- **Dashboard stats heartbeats are smaller.** A new `compact=2` mode sends only
+  the fields the one-second repaint consumes, under its own cache key; `compact=1`
+  and the full snapshot are unchanged for older clients. Full snapshots still
+  arrive on boot, every fifth poll, after a failed or reconnected request, and
+  when the tab becomes visible again. Upstream rows merge by address, so fields
+  skipped by a heartbeat keep their last full value. A live check measured about
+  33% less data per heartbeat. No schema, importer, filter or upstream-policy
+  defaults changed.
+
+The Android companion moves to `android-v5.9.6`, with debug APKs attached to
+this release alongside the signed release APKs.
+
+---
+
 ## 🏷️ [v5.9.5] — working widgets and a lighter dashboard
 
 ### Added
