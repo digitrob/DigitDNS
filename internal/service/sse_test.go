@@ -129,6 +129,19 @@ func awaitSubscribers(t *testing.T, s *StatsService, n int) {
 	}
 }
 
+// firstSSEClient returns the single registered subscriber's record. Tests use it
+// to simulate a slow browser by filling its bounded queue directly.
+func firstSSEClient(t *testing.T, s *StatsService) *sseClient {
+	t.Helper()
+	s.sseMu.RLock()
+	defer s.sseMu.RUnlock()
+	for client := range s.sseClients {
+		return client
+	}
+	t.Fatal("no SSE subscriber is registered")
+	return nil
+}
+
 func TestSSEStreamOpensWithAHistorySnapshotAndStaysSameOrigin(t *testing.T) {
 	s := NewStatsService(nil, nil, nil)
 	defer s.Close()
@@ -209,6 +222,74 @@ func TestSSEStreamDeliversAQueryAsItHappens(t *testing.T) {
 	}
 	if item.Timestamp.IsZero() {
 		t.Error("the item reached the client with no timestamp")
+	}
+}
+
+// gatedStreamRecorder stops the handler at its first Write, which is the history
+// snapshot. That gives a test a deterministic window in which the subscriber's
+// frame queue is full but the writer has not started draining it yet.
+type gatedStreamRecorder struct {
+	*streamRecorder
+	writing chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func newGatedStreamRecorder() *gatedStreamRecorder {
+	return &gatedStreamRecorder{
+		streamRecorder: newStreamRecorder(),
+		writing:        make(chan struct{}),
+		release:        make(chan struct{}),
+	}
+}
+
+func (g *gatedStreamRecorder) Write(p []byte) (int, error) {
+	g.once.Do(func() { close(g.writing) })
+	<-g.release
+	return g.streamRecorder.Write(p)
+}
+
+func TestSSEReportsDroppedFramesToTheSubscriber(t *testing.T) {
+	s := NewStatsService(nil, nil, nil)
+	defer s.Close()
+
+	rec := newGatedStreamRecorder()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.ServeSSE(rec, httptest.NewRequest(http.MethodGet, "/api/stream/queries", nil).WithContext(ctx))
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Error("ServeSSE did not return after the client disconnected")
+		}
+	})
+
+	awaitSubscribers(t, s, 1)
+	<-rec.writing // the handler is blocked writing the history snapshot
+
+	client := firstSSEClient(t, s)
+	for range cap(client.frames) {
+		client.frames <- "event: query\ndata: {}\n\n"
+	}
+	// The queue is full and the writer cannot drain it yet, so this push must be
+	// counted as dropped rather than silently discarded.
+	s.PushQueryLog(database.QueryLogItem{Domain: "overflow.example"})
+
+	close(rec.release)
+	deadline := time.Now().Add(3 * time.Second)
+	for !strings.Contains(rec.text(), "event: dropped") {
+		if time.Now().After(deadline) {
+			t.Fatalf("the stream never reported the dropped frame; body: %q", rec.text())
+		}
+		rec.awaitFlush(t)
+	}
+	if !strings.Contains(rec.text(), "event: dropped\ndata: {\"count\":1}\n\n") {
+		t.Fatalf("drop count was not reported accurately: %q", rec.text())
 	}
 }
 

@@ -1199,6 +1199,12 @@
               <button type="button" data-history-range="90d" aria-pressed="false"
                 class="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 transition">90d</button>
             </div>
+            <!-- Ranked cards default to ten rows: a broad history range can hold
+                 hundreds of names per dimension, and painting them all on every
+                 refresh is wasted DOM. The API caps the list at 100. -->
+            <button id="history-top-limit-btn" type="button" data-limit="10"
+              class="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 transition"
+              title="Ranked cards currently show 10 entries; the API caps this list at 100.">Show 50</button>
             <!-- Exports are actions, not time selectors: they sit after the range
                  group at the far right and use the emerald action tint instead of
                  the cyan selected-range tint. -->
@@ -2407,6 +2413,16 @@
               <span id="stream-status" class="stream-status-pill" data-state="connecting" role="status" aria-live="polite" title="Live log connection status">
                 <span class="stream-status-dot"></span><span id="stream-status-text">Connecting…</span>
               </span>
+              <button id="stream-density-btn" type="button"
+                class="panel-btn panel-btn-neutral shrink-0"
+                title="Fit more live-log rows on screen" aria-label="Toggle dense live-log rows" aria-pressed="false">
+                <i data-feather="menu" class="w-3.5 h-3.5"></i> <span>Dense</span>
+              </button>
+              <button id="stream-follow-btn" type="button"
+                class="panel-btn panel-btn-primary shrink-0 hidden"
+                title="Jump to the newest queries" aria-label="Jump to the newest queries">
+                <i data-feather="arrow-up" class="w-3.5 h-3.5"></i> <span id="stream-follow-text">New · Latest</span>
+              </button>
               <button id="stream-pause-btn" class="panel-btn panel-btn-neutral shrink-0" aria-pressed="false">
                 <i data-feather="pause" class="w-3.5 h-3.5"></i> <span>Pause</span>
               </button>

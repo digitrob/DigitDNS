@@ -125,6 +125,8 @@ func dispatchPreDBCommand(args []string, cfgPath string, out, errOut io.Writer) 
 		fmt.Fprintln(out, "Subcommands:")
 		fmt.Fprintln(out, "  status      live service report (no database needed; works beside the daemon)")
 		fmt.Fprintln(out, "  flush       ask the running daemon to flush its DNS cache")
+		fmt.Fprintln(out, "  db-stats    report database size, free space and buckets (stop the daemon first)")
+		fmt.Fprintln(out, "  compact-db  rewrite the database to reclaim free space (stop the daemon first)")
 		fmt.Fprintln(out, "  uninstall   interactive uninstaller")
 		return true, nil
 	case "version", "-version", "-v", "--version":

@@ -256,6 +256,19 @@ func TestPreDBCommandsRunWhileDatabaseIsLockedAndKeyIsAbsent(t *testing.T) {
 	}
 }
 
+func TestMaintenanceCommandsAreDocumentedInHelp(t *testing.T) {
+	var out, errOut bytes.Buffer
+	handled, err := dispatchPreDBCommand([]string{"help"}, "missing-config.json", &out, &errOut)
+	if err != nil || !handled {
+		t.Fatalf("help dispatch = (%v, %v), want (true, nil)", handled, err)
+	}
+	for _, want := range []string{"db-stats", "compact-db"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("help output does not document %q: %s", want, out.String())
+		}
+	}
+}
+
 func TestStatusGuidanceUsesLiveClientWithoutStoppingDaemon(t *testing.T) {
 	var out bytes.Buffer
 	if err := runStatusCommand(filepath.Join(t.TempDir(), "missing-config.json"), &out); err != nil {

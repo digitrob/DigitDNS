@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.9.7] — focused live log and reclaimable storage
+
+### Added
+- **Live-log controls.** A *Latest* chip counts queries that arrived while an
+  operator scrolled away from the top and returns to the newest rows in one
+  click. A dense-row toggle fits more queries on screen without hiding columns,
+  and clicking a domain or client cell applies the same search filter as typing
+  it. Latency values now use four colour tiers so slow answers stand out.
+- **Storage maintenance commands.** `digitdns db-stats` reports a store's
+  high-water size, reclaimable free space and bucket key counts;
+  `digitdns compact-db` rewrites the store through the existing verified path to
+  give that space back. Both need the daemon stopped for bbolt's exclusive lock,
+  and the help text says so. A regression test proves compaction preserves every
+  bucket and key while shrinking the file.
+
+### Changed
+- **A hidden tab no longer keeps a live-log stream open.** The browser suspends
+  the SSE connection and its polling fallback while hidden, then reopens through
+  a fresh ticket on return; the server's recent-query snapshot fills the gap.
+- **Overflow is reported instead of silently dropped.** Each subscriber has its
+  own bounded queue and drop counter. When the queue fills, the server sends one
+  `dropped` event with the total, and the status tooltip explains a gap in the
+  log without changing the Live label for a brief drop.
+- **Ranked history cards start with ten rows.** The toolbar cycles 10 → 50 → 100
+  instead of always painting a hundred names on every refresh. The API cap of
+  100 is unchanged.
+- **Signing in or out no longer leaves a false “Leave page?” warning.** An auth
+  transition clears pending settings-edit state before the reload or login view.
+
+No database schema migration is required, and no importer, filter or upstream
+policy defaults changed. The Android companion moves to `android-v5.9.7`, with
+debug APKs attached to this release alongside the signed release APKs.
+
+---
+
 ## 🏷️ [v5.9.6] — lighter stats polling and locked-in behavior
 
 ### Added

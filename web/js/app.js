@@ -60,6 +60,11 @@ let streamFallbackFailed = false;
 let qpsChart = null;
 let historyChart = null;
 let historyRange = '24h';
+// The API caps ranked lists at 100. Default to ten rows per card so a dashboard
+// refresh does not build hundreds of DOM nodes; the toolbar cycles 10 → 50 → 100.
+const HISTORY_TOP_LIMITS = [10, 50, 100];
+const HISTORY_TOP_LIMIT_LABELS = ['Show 50', 'Show all', 'Show 10'];
+let historyTopLimitIndex = 0;
 let historyTimer = null;
 let historyInFlight = false;
 let historySeq = 0;
@@ -103,6 +108,18 @@ const SSE_BACKOFF_MAX_MS = 30000;
 // replay on connect, so a larger client buffer could only hold rows no refresh would show.
 const STREAM_BUFFER_MAX = 100;
 let streamBuffer = [];
+
+// A live table that inserts at the top is useful only while the viewport is at
+// the top. Once an operator scrolls down to read a row, arriving queries stop
+// touching the DOM and a small chip counts them instead; clicking it returns to
+// the newest rows. The buffer keeps filling either way, so nothing is lost.
+let streamFollowLatest = true;
+let streamPendingNew = 0;
+let streamDropped = 0;
+// Dense rows are a view preference, not a saved setting: the daemon has no
+// business knowing how an operator likes their table. localStorage keeps it
+// across reloads without adding another settings card and its dirty note.
+let streamDense = false;
 
 // streamEpoch invalidates work queued before a Clear. A frame coalesced from arrivals
 // that have since been cleared must not repaint them, and bumping this counter is how
@@ -358,6 +375,14 @@ function setSettingsDirty(id, dirty) {
 // note disappears only when the server has accepted the values.
 function markSettingsClean(id) {
   setSettingsDirty(id, false);
+}
+
+// An auth transition invalidates every pending edit: the save handlers would
+// 401 against the new session anyway, and the reload below re-reads the saved
+// values. Clearing here is what stops a stale dirty note from turning a
+// successful sign-in into a browser "Leave site?" prompt.
+function clearSettingsDirty() {
+  for (const id of SETTINGS_DIRTY_CARDS) setSettingsDirty(id, false);
 }
 
 function noteSettingsEdit(e) {
@@ -746,6 +771,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // screen until a manual refresh. A reload revalidates index.html and the
         // asset bundle, so the operator lands on the UI that matches the server.
         // The weak-password nag is re-evaluated by loadConfig() after the reload.
+        clearSettingsDirty();
         window.location.reload();
       } catch (err) {
         if (errDiv) {
@@ -892,6 +918,7 @@ async function signOut() {
     // to do either way is drop the local session.
   } finally {
     stopLiveStream();
+    clearSettingsDirty();
     localStorage.removeItem('digitdns_token');
     authToken = '';
     showLoginModal();
@@ -5722,9 +5749,11 @@ function startStatsPolling() {
       // merged over numbers from before the tab was backgrounded.
       invalidateStatsSnapshot();
       stopAgentPolling();
-      // The live stream stays open: an operator watching the log in one tab
-      // while browsing in another must keep seeing the queries that happen in
-      // between. pushStreamQuery already skips DOM work while hidden.
+      // A hidden tab cannot show the log, but it still costs a daemon goroutine,
+      // its own EventSource and a polling timer. Suspend the stream here and
+      // reopen it on return through the normal one-time ticket path; the server's
+      // 100-query snapshot fills in anything that happened while away.
+      suspendLiveStreamForVisibility();
       return;
     }
     // If the stream dropped while the tab was hidden, its backoff timer may
@@ -6876,6 +6905,22 @@ function streamIsOpen() {
   return !!sseSource && sseSource.readyState === EventSource.OPEN;
 }
 
+function streamStatusTooltip(state) {
+  const base = state === 'live'
+    ? 'Live log connected; queries arrive as they are resolved.'
+    : state === 'polling'
+      ? 'Live stream unavailable; reading the recent-query endpoint until it reconnects.'
+      : state === 'offline'
+        ? 'This browser is offline. The log reconnects when the network returns.'
+        : `Live log ${state}; the panel retries automatically.`;
+  // A slow subscriber loses frames when its channel fills. The count lives in
+  // the tooltip rather than the label so a healthy stream stays quiet, but the
+  // explanation is there when someone wonders why the log has a gap.
+  return streamDropped > 0
+    ? `${base} ${streamDropped} frame${streamDropped === 1 ? '' : 's'} dropped on this connection.`
+    : base;
+}
+
 function setStreamStatus(state, text) {
   const pill = document.getElementById('stream-status');
   if (!pill) return;
@@ -6892,15 +6937,33 @@ function setStreamStatus(state, text) {
   };
   pill.dataset.state = state;
   const label = text || labels[state] || state;
-  pill.title = state === 'live'
-    ? 'Live log connected; queries arrive as they are resolved.'
-    : state === 'polling'
-      ? 'Live stream unavailable; reading the recent-query endpoint until it reconnects.'
-      : state === 'offline'
-        ? 'This browser is offline. The log reconnects when the network returns.'
-        : `Live log ${state}; the panel retries automatically.`;
+  pill.title = streamStatusTooltip(state);
   const textEl = document.getElementById('stream-status-text');
   if (textEl) textEl.textContent = label;
+}
+
+function updateStreamFollowChip() {
+  const btn = document.getElementById('stream-follow-btn');
+  if (!btn) return;
+  const show = !streamFollowLatest && streamPendingNew > 0 &&
+    !isStreamPaused && activeDashTab === 'stream' && document.visibilityState !== 'hidden';
+  btn.classList.toggle('hidden', !show);
+  if (!show) return;
+  const text = document.getElementById('stream-follow-text');
+  if (text) {
+    text.textContent = streamPendingNew === 1
+      ? '1 new · Latest'
+      : `${streamPendingNew} new · Latest`;
+  }
+}
+
+function jumpToLatestStream() {
+  streamFollowLatest = true;
+  streamPendingNew = 0;
+  updateStreamFollowChip();
+  renderQueryStream();
+  const viewport = document.querySelector('#tab-stream .stream-viewport');
+  if (viewport) viewport.scrollTop = 0;
 }
 
 // A frame — a query, the opening history batch, or any other server event —
@@ -7018,6 +7081,7 @@ async function startLiveStream() {
     // A live connection is the only proof the ticket was accepted: reset the
     // backoff so the next drop reconnects promptly.
     sseBackoffMs = 0;
+    streamDropped = 0;
     streamLastEventAt = Date.now();
     markStreamLive();
     stopStreamFallback();
@@ -7055,6 +7119,18 @@ async function startLiveStream() {
     } catch (e) {
       console.error('Error parsing query history:', e);
     }
+  });
+
+  // The server reports subscribers whose bounded channel overflowed. This does
+  // not change the label — a brief drop is not an outage — but the count in the
+  // tooltip makes a gap in the log explainable instead of mysterious.
+  source.addEventListener('dropped', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      streamDropped = Math.max(0, Number(data.count) || 0);
+      const pill = document.getElementById('stream-status');
+      if (pill) pill.title = streamStatusTooltip(streamStatusState);
+    } catch (e) { /* a malformed status frame must not disturb the log */ }
   });
 
   // Another dashboard (or this one, after a reconnect) cleared the log. Drop the
@@ -7234,6 +7310,34 @@ function refreshStreamPlaceholder() {
   if (streamBuffer.length === 0) renderQueryStream();
 }
 
+// A background tab gets no benefit from an open SSE socket: nothing is painted,
+// and pushStreamQuery only fills a buffer that the next connect will replace
+// with the server's snapshot anyway. Closing it here frees the daemon slot and
+// the browser connection. The visible branch of visibilitychange calls
+// startLiveStream(), which mints a fresh ticket rather than reusing a spent one.
+function suspendLiveStreamForVisibility() {
+  if (!sseSource && !sseConnecting && !sseBackoffTimer && !streamFallbackTimer) return;
+  // Invalidate a ticket mint that may still be in flight, exactly as a sign-out
+  // does, so the old attempt cannot open a stream after the tab is hidden.
+  sseGeneration++;
+  sseConnecting = false;
+  clearStreamFallbackCheck();
+  stopStreamFallback();
+  if (sseBackoffTimer) {
+    clearTimeout(sseBackoffTimer);
+    sseBackoffTimer = null;
+  }
+  sseBackoffMs = 0;
+  if (sseSource) {
+    try { sseSource.close(); } catch(e) {}
+    sseSource = null;
+  }
+  streamDegraded = false;
+  clearStreamStatusTimers();
+  setStreamStatus('offline', 'Backgrounded');
+  updateStreamFollowChip();
+}
+
 // stopLiveStream tears the stream down and cancels any pending reconnect, so a
 // sign-out does not race a backoff timer into re-opening an authenticated route.
 function stopLiveStream() {
@@ -7258,6 +7362,26 @@ function stopLiveStream() {
   finishStreamRefresh();
 }
 
+function setStreamDense(dense) {
+  streamDense = !!dense;
+  const table = document.querySelector('#tab-stream .stream-table');
+  if (table) table.classList.toggle('stream-dense', streamDense);
+  const btn = document.getElementById('stream-density-btn');
+  if (btn) {
+    btn.setAttribute('aria-pressed', streamDense ? 'true' : 'false');
+    btn.innerHTML = streamDense
+      ? '<i data-feather="list" class="w-3.5 h-3.5"></i> <span>Comfort</span>'
+      : '<i data-feather="menu" class="w-3.5 h-3.5"></i> <span>Dense</span>';
+    btn.title = streamDense
+      ? 'Restore comfortable live-log rows'
+      : 'Fit more live-log rows on screen';
+    safeFeatherReplace();
+  }
+  try {
+    localStorage.setItem('digitdns_stream_dense', streamDense ? '1' : '0');
+  } catch (e) { /* private mode: the toggle still works for this page */ }
+}
+
 // setStreamPaused is the single owner of the paused flag and the pause button's
 // label/aria state. The refresh button needs to resume the log before reconnecting,
 // and duplicating that DOM update in two handlers is how the two drift apart.
@@ -7272,8 +7396,17 @@ function setStreamPaused(paused) {
     btn.setAttribute('aria-pressed', paused ? 'true' : 'false');
     safeFeatherReplace();
   }
-  if (!paused) renderQueryStream();
-  else refreshStreamPlaceholder();
+  if (!paused) {
+    // Resuming paints the current window, so the backlog count is no longer
+    // pending. Returning to follow mode also matches the button's meaning.
+    streamFollowLatest = true;
+    streamPendingNew = 0;
+    updateStreamFollowChip();
+    renderQueryStream();
+  } else {
+    updateStreamFollowChip();
+    refreshStreamPlaceholder();
+  }
 }
 
 function setStreamRefreshBusy(busy) {
@@ -7327,6 +7460,21 @@ function streamFilterState() {
     action: filterEl ? filterEl.value : 'ALL',
     search: searchEl ? searchEl.value.toLowerCase().trim() : '',
   };
+}
+
+// Clicking a domain or client cell writes that exact value into the search box:
+// it uses the same predicate as typing, so there is no second filter to keep in
+// sync. A second click on the same value clears it, which makes the gesture
+// reversible without hunting for the text field.
+function applyStreamFilterFromCell(cell) {
+  const value = cell?.dataset?.streamFilter || '';
+  const searchEl = document.getElementById('stream-search');
+  if (!value || !searchEl) return;
+  searchEl.value = searchEl.value === value ? '' : value;
+  streamFollowLatest = true;
+  streamPendingNew = 0;
+  updateStreamFollowChip();
+  renderQueryStream();
 }
 
 // The live log and the aggregate counters treat the IPv6 sink and the HTTPS/SVCB
@@ -7455,6 +7603,18 @@ function protocolPillClass(protocol) {
   return PROTO_PILL_CLASSES[String(protocol || '').toUpperCase()] || 'proto-other';
 }
 
+// Four tiers are enough to make a slow answer visible without turning every
+// row into a different colour. Thresholds are in milliseconds as seen by the
+// client: local/cache hits sit in the first tier, a healthy LAN answer in the
+// second, a slow upstream in the third, and anything near a timeout in the last.
+function latencyTierClass(ms) {
+  const value = Number(ms) || 0;
+  if (value >= 250) return 'latency-critical';
+  if (value >= 100) return 'latency-slow';
+  if (value >= 30) return 'latency-mid';
+  return 'latency-fast';
+}
+
 // Wire values are upper-case; the UI uses the conventional mixed-case names.
 function protocolLabel(protocol) {
   switch (String(protocol || '').toUpperCase()) {
@@ -7545,6 +7705,12 @@ function queryRowHTML(q) {
     ? `<div class="text-[10px] text-slate-500 truncate" title="${escapeHTML(upstream)}">via ${escapeHTML(upstream)}</div>`
     : '';
   const matchedPattern = String(q.matched_pattern || '').trim();
+  const clientFilterAttr = clientIP
+    ? ` data-stream-filter="${escapeHTML(clientIP)}" title="Filter by ${escapeHTML(clientIP)}"`
+    : '';
+  const domainFilterAttr = domain
+    ? ` data-stream-filter="${escapeHTML(domain)}" title="Filter by ${escapeHTML(domain)}"`
+    : '';
   // On a phone the RULE column is hidden, so the block source has to live under
   // the domain. It is also the answer to "why was this blocked?" on every width:
   // Custom Block, or the exact adblock list that matched, plus the pattern.
@@ -7554,16 +7720,16 @@ function queryRowHTML(q) {
 
   return `
     <td class="stream-col-time py-2.5 px-2 sm:px-3 text-slate-400 whitespace-nowrap">${timeStr}</td>
-    <td class="stream-col-client py-2.5 px-2 sm:px-3">${clientDisplay}</td>
+    <td class="stream-col-client stream-filter-cell py-2.5 px-2 sm:px-3"${clientFilterAttr}>${clientDisplay}</td>
     <td class="stream-col-proto py-2.5 px-2 sm:px-3 hidden sm:table-cell" title="${escapeHTML(protoTitle)}"><span class="proto-pill ${escapeHTML(protoPill)}">${escapeHTML(protoStr)}</span></td>
-    <td class="stream-col-domain py-2.5 px-2 sm:px-3">
+    <td class="stream-col-domain stream-filter-cell py-2.5 px-2 sm:px-3"${domainFilterAttr}>
       <div class="text-cyan-300 font-semibold truncate" title="${escapeHTML(domain)}">${escapeHTML(domain)}</div>
       ${blockDetail}
     </td>
     <td class="stream-col-rule py-2.5 px-2 sm:px-3 text-slate-400 hidden sm:table-cell">${escapeHTML(ruleStr)}</td>
     <td class="stream-col-relay py-2.5 px-2 sm:px-3">${relayCell}</td>
     <td class="stream-col-action py-2.5 px-2 sm:px-3"><div class="flex items-center gap-1.5">${infoButton}${actBadge}${cacheBadge}</div></td>
-    <td class="stream-col-latency py-2.5 px-2 sm:px-3 text-end text-emerald-400 font-mono">${latStr}</td>
+    <td class="stream-col-latency py-2.5 px-2 sm:px-3 text-end ${escapeHTML(latencyTierClass(latVal))} font-mono" title="Resolution latency: ${escapeHTML(latStr)}">${escapeHTML(latStr)}</td>
   `;
 }
 
@@ -8480,6 +8646,14 @@ function pushStreamQuery(q) {
   if (document.visibilityState === 'hidden' || activeDashTab !== 'stream') return;
   if (isStreamPaused) return;
 
+  // Scrolled away from the newest rows: buffer the query, but leave the DOM and
+  // the spoken summary alone. The chip counts what the operator has not seen.
+  if (!streamFollowLatest) {
+    streamPendingNew++;
+    updateStreamFollowChip();
+    return;
+  }
+
   // Only arrivals the operator can actually see are spoken, for the same reason the
   // DOM insert sits past these gates: announcing rows a hidden or paused view never
   // painted would describe a table that is not on screen.
@@ -8505,6 +8679,12 @@ function pushStreamQuery(q) {
       // The frame was queued while the Logs tab was visible, then the operator
       // switched away or hid the page. A full render on return rebuilds from the
       // buffer; inserting this captured batch afterwards would duplicate rows.
+      streamPendingDropped = [];
+      return;
+    }
+    if (!streamFollowLatest) {
+      // The operator scrolled away after this batch was queued. The buffer
+      // already holds it; a full render on jump-to-latest will show it.
       streamPendingDropped = [];
       return;
     }
@@ -8534,6 +8714,10 @@ function pushStreamQuery(q) {
 // which is the order the buffer keeps.
 function seedStreamQueries(list) {
   streamBuffer = list.slice(0, STREAM_BUFFER_MAX);
+  // A reconnect replaces the whole visible window. The chip's count belongs to
+  // the window it replaced, so it must not survive into the new snapshot.
+  streamPendingNew = 0;
+  updateStreamFollowChip();
   renderQueryStream();
 }
 
@@ -8550,6 +8734,9 @@ function resetStreamView() {
   streamPendingDropped = [];
   streamPendingRender = false;
   streamFallbackSig = '';
+  streamFollowLatest = true;
+  streamPendingNew = 0;
+  updateStreamFollowChip();
   // A Clear also drops anything the spoken summary was still holding: announcing
   // "12 new queries" after the operator emptied the table would describe rows that
   // no longer exist.
@@ -9110,6 +9297,21 @@ function setHistoryTopUpstreamGrouping(byProvider) {
   renderHistoryTop('history-top-upstreams', top, 'No upstream history in this range.', 'upstream');
 }
 
+function updateHistoryTopLimitButton() {
+  const btn = document.getElementById('history-top-limit-btn');
+  if (!btn) return;
+  const limit = HISTORY_TOP_LIMITS[historyTopLimitIndex];
+  btn.textContent = HISTORY_TOP_LIMIT_LABELS[historyTopLimitIndex];
+  btn.dataset.limit = String(limit);
+  btn.title = `Ranked cards currently show ${limit} entries; the API caps this list at 100.`;
+}
+
+function cycleHistoryTopLimit() {
+  historyTopLimitIndex = (historyTopLimitIndex + 1) % HISTORY_TOP_LIMITS.length;
+  updateHistoryTopLimitButton();
+  loadHistory(true);
+}
+
 function relayCountryLabel(value) {
   const code = String(value || '').toUpperCase();
   if (code === 'LOCAL') return 'Local';
@@ -9190,7 +9392,7 @@ async function loadHistory(force = false) {
     // and the summary all come from the same aggregate store, so splitting them
     // only added round trips — seven extra on every refresh, on every client.
     const data = await historyFetch(
-      `/api/v3/stats/history?${query}&interval=${encodeURIComponent(interval)}&limit=10`);
+      `/api/v3/stats/history?${query}&interval=${encodeURIComponent(interval)}&limit=${HISTORY_TOP_LIMITS[historyTopLimitIndex]}`);
     if (seq !== historySeq) return;
     renderHistorySummary(data.summary);
     await renderHistoryChart(data.series);
@@ -9257,6 +9459,8 @@ function initHistory() {
   document.getElementById('history-top-upstreams-toggle')?.addEventListener('click', () => {
     setHistoryTopUpstreamGrouping(!historyTopUpstreamByProvider);
   });
+  updateHistoryTopLimitButton();
+  document.getElementById('history-top-limit-btn')?.addEventListener('click', cycleHistoryTopLimit);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       if (historyTimer) {
@@ -15574,6 +15778,23 @@ function initEventListeners() {
     renderProxiedList();
   });
   document.getElementById('stream-filter')?.addEventListener('change', renderQueryStream);
+  document.getElementById('stream-follow-btn')?.addEventListener('click', jumpToLatestStream);
+  let savedDense = false;
+  try { savedDense = localStorage.getItem('digitdns_stream_dense') === '1'; } catch (e) {}
+  setStreamDense(savedDense);
+  document.getElementById('stream-density-btn')?.addEventListener('click', () => setStreamDense(!streamDense));
+  const streamViewport = document.querySelector('#tab-stream .stream-viewport');
+  streamViewport?.addEventListener('scroll', () => {
+    const atTop = streamViewport.scrollTop <= 8;
+    if (atTop && !streamFollowLatest) {
+      streamFollowLatest = true;
+      streamPendingNew = 0;
+      updateStreamFollowChip();
+    } else if (!atTop && streamFollowLatest) {
+      streamFollowLatest = false;
+      updateStreamFollowChip();
+    }
+  }, { passive: true });
   // The search box filters the buffer and redraws the table. Debounced for the
   // same reason as the other list filters: a 100-row table is ~700 nodes, and
   // rebuilding it on every key made typing in the log feel sluggish.
@@ -15601,6 +15822,13 @@ function initEventListeners() {
     if (badge) {
       e.stopPropagation();
       openStreamActionMenu(badge);
+      return;
+    }
+    // Domain and client cells are shortcuts into the search filter above. Checked
+    // after the badge so the quick-action menu always wins where they overlap.
+    const filterCell = e.target.closest('.stream-filter-cell');
+    if (filterCell) {
+      applyStreamFilterFromCell(filterCell);
       return;
     }
     if (!e.target.closest('.clear-stream-filter-btn')) return;

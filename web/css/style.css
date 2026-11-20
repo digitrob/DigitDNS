@@ -1934,6 +1934,10 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
+  /* Rows are inserted at the top. Scroll anchoring would move scrollTop to
+   * keep an old row in place, which the follow chip would read as a deliberate
+   * scroll away from the newest queries. */
+  overflow-anchor: none;
 }
 
 /* ── Live query log: fixed column widths ────────────────────────────────────────
@@ -1990,6 +1994,40 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
  * sizing. */
 .stream-col-action .badge { white-space: nowrap; }
 .stream-col-latency { width: 6.5rem; }
+
+/* Latency tiers. Semantic classes rather than utility colours so the four
+ * thresholds live in one place and the generated Tailwind stylesheet does not
+ * have to be purged again when they change. The tokens keep both themes legible. */
+.stream-col-latency.latency-fast { color: rgb(var(--c-emerald-400)); }
+.stream-col-latency.latency-mid { color: rgb(var(--c-cyan-400)); }
+.stream-col-latency.latency-slow { color: rgb(var(--c-amber-400)); }
+.stream-col-latency.latency-critical {
+  color: rgb(var(--c-red-400));
+  font-weight: 700;
+}
+
+/* Domain and client cells are click-to-filter shortcuts. The hover tint tells
+ * the operator the cell is interactive without adding another button to a row
+ * that already carries the info and quick-action controls. */
+.stream-table td.stream-filter-cell { cursor: pointer; }
+.stream-table td.stream-filter-cell:hover {
+  background-color: rgb(var(--c-cyan-400) / 0.08);
+}
+
+/* Dense is an opt-in view of the same table: tighter vertical padding and type,
+ * never fewer columns. Overriding the utility padding here keeps the markup's
+ * responsive column classes authoritative. */
+.stream-table.stream-dense th,
+.stream-table.stream-dense td {
+  padding-top: 0.35rem !important;
+  padding-bottom: 0.35rem !important;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+}
+.stream-table.stream-dense td .agent-flag-sm {
+  width: 0.75rem;
+  height: 0.75rem;
+}
 
 /* Zebra rows for the live log, so a dense block of queries can be tracked across
  * the eight columns without losing the line. Same theme token and weight as the

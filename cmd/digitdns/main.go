@@ -111,6 +111,16 @@ func main() {
 		log.Fatalf("[Main] Failed to initialize cryptographic engine: %v", err)
 	}
 
+	// Storage maintenance needs the cipher for post-compaction validation but
+	// must run before the normal exclusive open below, otherwise compact-db
+	// would fail on the lock held by this same process.
+	if handled, exitCode := runStorageCommand(flag.Args(), dPath, cipher, os.Stdout, os.Stderr); handled {
+		if exitCode != 0 {
+			os.Exit(exitCode)
+		}
+		return
+	}
+
 	// 3. Open the encrypted database. Existing stores are validated under the
 	// same exclusive bbolt handle before any bucket or record migration can run;
 	// fresh initialization uses a separate creation path.

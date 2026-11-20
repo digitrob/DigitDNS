@@ -61,8 +61,11 @@ type StatsService struct {
 	// simply leaves it nil. It is set once during startup, before listeners
 	// accept, but an atomic pointer keeps the read in PushQueryLog safe against
 	// a late close.
-	aggregator    atomic.Pointer[aggregate.Aggregator]
-	sseClients    map[chan string]struct{}
+	aggregator atomic.Pointer[aggregate.Aggregator]
+	// sseClients stores one record per stream. The channel is bounded and the
+	// counter is atomic because PushQueryLog and ClearRecentLogs can both overflow
+	// a slow subscriber while holding only the map's read lock.
+	sseClients    map[*sseClient]struct{}
 	sseMu         sync.RWMutex
 	getProxyStats func() (int64, uint64, uint64, uint64)
 	getCacheStats func() (int, uint64, uint64)
@@ -123,6 +126,15 @@ const recentLogsCap = 100
 // no longer holds.
 const recentLogsClearFrame = "event: cleared\ndata: {}\n\n"
 
+// sseClient is the per-subscriber state behind a live-log stream. `dropped` is
+// the number of frames that could not be queued because this subscriber's
+// channel was full; it is reported back to the browser so a gap in the log has
+// an explanation instead of looking like a resolver that never saw a query.
+type sseClient struct {
+	frames  chan string
+	dropped atomic.Uint64
+}
+
 type recentLogEntry struct {
 	seq  uint64
 	item database.QueryLogItem
@@ -145,7 +157,7 @@ func NewStatsService(
 	s := &StatsService{
 		db:            db,
 		startedAt:     time.Now(),
-		sseClients:    make(map[chan string]struct{}),
+		sseClients:    make(map[*sseClient]struct{}),
 		getProxyStats: proxyStats,
 		getCacheStats: cacheStats,
 		numCPU:        runtime.NumCPU(),
@@ -282,10 +294,11 @@ func (s *StatsService) PushQueryLog(item database.QueryLogItem) {
 		return
 	}
 	s.sseMu.RLock()
-	for ch := range s.sseClients {
+	for client := range s.sseClients {
 		select {
-		case ch <- frame:
+		case client.frames <- frame:
 		default:
+			client.dropped.Add(1)
 		}
 	}
 	s.sseMu.RUnlock()
@@ -303,10 +316,11 @@ func (s *StatsService) ClearRecentLogs() {
 	s.recentLogClear.Store(s.recentLogSeq.Load())
 
 	s.sseMu.RLock()
-	for ch := range s.sseClients {
+	for client := range s.sseClients {
 		select {
-		case ch <- recentLogsClearFrame:
+		case client.frames <- recentLogsClearFrame:
 		default:
+			client.dropped.Add(1)
 		}
 	}
 	s.sseMu.RUnlock()
@@ -788,7 +802,7 @@ func (s *StatsService) ServeSSE(w http.ResponseWriter, r *http.Request) {
 	// plain 503 rather than a half-open event stream. The channel carries
 	// pre-rendered SSE frames (see PushQueryLog): one marshal per query, not
 	// one per subscriber.
-	ch := make(chan string, 32)
+	client := &sseClient{frames: make(chan string, 32)}
 	s.sseMu.Lock()
 	if len(s.sseClients) >= maxSSEClients {
 		s.sseMu.Unlock()
@@ -796,16 +810,16 @@ func (s *StatsService) ServeSSE(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "too many live-log subscribers", http.StatusServiceUnavailable)
 		return
 	}
-	s.sseClients[ch] = struct{}{}
+	s.sseClients[client] = struct{}{}
 	s.sseSubscribers.Add(1)
 	s.sseMu.Unlock()
 
 	defer func() {
 		s.sseMu.Lock()
-		delete(s.sseClients, ch)
+		delete(s.sseClients, client)
 		s.sseSubscribers.Add(-1)
 		s.sseMu.Unlock()
-		close(ch)
+		close(client.frames)
 	}()
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -841,6 +855,23 @@ func (s *StatsService) ServeSSE(w http.ResponseWriter, r *http.Request) {
 		return true
 	}
 
+	// Report overflow only when the count changes, once a frame (or keep-alive)
+	// has been written. Repeating the same count on every tick would turn a
+	// diagnostic into noise, and reporting before the first real write might be
+	// swallowed by a proxy still setting up the stream.
+	var lastReportedDrops uint64
+	reportDrops := func() bool {
+		dropped := client.dropped.Load()
+		if dropped == lastReportedDrops {
+			return true
+		}
+		if !writeFrame(fmt.Sprintf("event: dropped\ndata: {\"count\":%d}\n\n", dropped)) {
+			return false
+		}
+		lastReportedDrops = dropped
+		return true
+	}
+
 	// Send initial snapshot as a named 'history' event (frontend listener)
 	snapshot := s.GetRecentLogs()
 	if data, err := json.Marshal(snapshot); err == nil {
@@ -859,10 +890,10 @@ func (s *StatsService) ServeSSE(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-keepAlive.C:
-			if !writeFrame(": keep-alive\n\n") {
+			if !writeFrame(": keep-alive\n\n") || !reportDrops() {
 				return
 			}
-		case frame := <-ch:
+		case frame := <-client.frames:
 			// Collect a short burst into one write. The first frame starts the
 			// window; every following frame that arrives before it closes joins
 			// the same write. A per-frame Fprint+Flush was the cheap shape at one
@@ -874,7 +905,7 @@ func (s *StatsService) ServeSSE(w http.ResponseWriter, r *http.Request) {
 		collect:
 			for frames < sseBatchMaxFrames {
 				select {
-				case next := <-ch:
+				case next := <-client.frames:
 					batch.WriteString(next)
 					frames++
 				case <-timer.C:
@@ -887,7 +918,7 @@ func (s *StatsService) ServeSSE(w http.ResponseWriter, r *http.Request) {
 				default:
 				}
 			}
-			if !writeFrame(batch.String()) {
+			if !writeFrame(batch.String()) || !reportDrops() {
 				return
 			}
 		}
