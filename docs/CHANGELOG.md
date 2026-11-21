@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.9.8] — dashboard polish
+
+### Fixed
+- **Live Traffic stays on one line.** Inbound and outbound readings now use a
+  dedicated compact type scale, tighter icon gaps and a `KB/s → MB/s` switch at
+  1024 KB/s. Values from 100 KB/s upwards print as whole numbers, so three-digit
+  figures no longer push the outbound reading to a second line. Hovering the row
+  shows the exact unrounded values.
+- **The DigitDNS brand returns to the Dashboard.** The sidebar and mobile header
+  brand marks now navigate home by click, Enter or Space. The “Update available”
+  button injected into the desktop brand row still opens its own modal.
+
+No database schema migration and no importer, filter or upstream-policy defaults
+changed. The Android companion moves to `android-v5.9.8`, with version code 578.
+
+---
+
 ## 🏷️ [v5.9.7] — focused live log and reclaimable storage
 
 ### Added

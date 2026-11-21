@@ -5885,8 +5885,15 @@ async function updateStats() {
     setTxt('stat-mem-sys-used', sysMemOK ? num(data.system_mem_used_mb, 0) : '—');
     setTxt('stat-mem-sys-total', sysMemOK ? num(data.system_mem_total_mb, 0) : '—');
     setTxt('stat-mem-sys-pct', sysMemOK ? num(data.system_mem_percent, 0) : '—');
-    setTxt('stat-speed-in', num(data.speed_in_kbps, 1));
-    setTxt('stat-speed-out', num(data.speed_out_kbps, 1));
+    const speedIn = formatTrafficSpeed(data.speed_in_kbps);
+    const speedOut = formatTrafficSpeed(data.speed_out_kbps);
+    setTxt('stat-speed-in', speedIn.value);
+    setTxt('stat-speed-in-unit', speedIn.unit);
+    setTxt('stat-speed-out', speedOut.value);
+    setTxt('stat-speed-out-unit', speedOut.unit);
+    const trafficTitle = `In ${speedIn.title} · Out ${speedOut.title}`;
+    const trafficRow = statEl('stat-traffic-row');
+    if (trafficRow && trafficRow.title !== trafficTitle) trafficRow.title = trafficTitle;
     setTxt('stat-traffic-total', formatBytes(data.total_bytes_transferred));
     renderRateLimit(data.rate_limit_qps, data.rate_limited);
     renderLatency(data.latency_uncached, data.latency);
@@ -5971,6 +5978,27 @@ function formatBytes(bytes) {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
   if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+// Live Traffic shows two rates side by side, so the printed figure has to stay
+// narrow. Whole KB/s from 100 upwards and MB/s above 1 GiB/s save two characters
+// each; the title keeps the exact printed value for anyone who hovers the card.
+function formatTrafficSpeed(kbps) {
+  const n = typeof kbps === 'number' ? kbps : Number(kbps);
+  if (!Number.isFinite(n) || n < 0) return { value: '—', unit: 'KB/s', title: 'unknown' };
+  if (n >= 1024) {
+    const mbps = n / 1024;
+    return {
+      value: mbps >= 10 ? mbps.toFixed(0) : mbps.toFixed(1),
+      unit: 'MB/s',
+      title: `${mbps.toFixed(2)} MB/s (${fmtWhole(Math.round(n))} KB/s)`,
+    };
+  }
+  return {
+    value: n >= 100 ? n.toFixed(0) : n.toFixed(1),
+    unit: 'KB/s',
+    title: `${n.toFixed(2)} KB/s`,
+  };
 }
 
 // The per-source rate limiter drops a UDP flood without answering it, so the only
@@ -12212,6 +12240,25 @@ function closeMobileMore() {
   if (btn) btn.setAttribute('aria-expanded', 'false');
 }
 
+// Both brand marks are home links. The desktop row is still a div because the
+// update button is injected into it, so ignore that button's own click before
+// routing; otherwise "Update available" would also jump to the dashboard.
+function goToDashboardFromBrand(event) {
+  if (event.target?.closest?.('#update-available-btn')) return;
+  event.preventDefault();
+  closeMobileMore();
+  switchTab('dashboard');
+}
+
+function initBrandHomeLinks() {
+  document.querySelectorAll('[data-home-link]').forEach(el => {
+    el.addEventListener('click', goToDashboardFromBrand);
+    el.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') goToDashboardFromBrand(event);
+    });
+  });
+}
+
 function switchTab(target, updateUrl = true, loadData = true) {
   activeDashTab = target;
   document.documentElement?.setAttribute('data-boot-tab', target);
@@ -14107,6 +14154,8 @@ function initEventListeners() {
       if (target) switchTab(target);
     };
   });
+
+  initBrandHomeLinks();
 
   // Copy Server IP Sidebar Button
   const copyBtn = document.getElementById('copy-ip-btn');

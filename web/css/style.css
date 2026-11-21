@@ -4406,7 +4406,7 @@ textarea.panel-field {
   font-size: clamp(1.65rem, 9cqi, 2.5rem) !important;
 }
 #tab-dashboard.dash-custom-layout [data-dash-grid="metrics"] .metric-value-traffic {
-  font-size: clamp(1.65rem, 9cqi, 2.5rem) !important;
+  font-size: clamp(1.05rem, 6cqi, 1.55rem) !important;
 }
 /* Four latency tiles in a 12-column card: let them fall into 2x2 when the card
  * is half width instead of squeezing four columns into unreadable cells. */
@@ -5853,6 +5853,21 @@ html.dash-layout-pending #tab-dashboard {
 .sidebar-collapse-btn svg { transition: transform 0.18s ease; }
 html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
 
+/* The brand marks are home links. They stay plain divs because the update button
+   is injected into the desktop brand row, but they still advertise and show the
+   same affordance as a real link. */
+[data-home-link] {
+  cursor: pointer;
+  border-radius: 0.5rem;
+}
+[data-home-link]:focus-visible {
+  outline: 2px solid rgba(34, 211, 238, 0.75);
+  outline-offset: 2px;
+}
+[data-home-link]:hover .font-heading {
+  color: rgb(var(--c-cyan-300));
+}
+
 @media (min-width: 768px) {
   html.sidebar-collapsed #app-sidebar {
     width: 5rem !important;
@@ -6022,11 +6037,25 @@ html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
   /* A 1 Hz counter in a proportional face jitters by a pixel per repaint. */
   font-variant-numeric: tabular-nums;
 }
+/* Live Traffic carries two readings, so it cannot use the single-number scale.
+   At six-across widths a 3-digit KB/s value used to push the outbound group to a
+   second line. This tighter clamp, the smaller icon gap and the JS KB/s -> MB/s
+   switch keep the pair on one line without shrinking the other headline cards. */
 .metric-value-traffic {
-  font-size: 1.65rem;
-  font-size: clamp(1.65rem, 9cqi, 2.5rem);
+  flex-wrap: nowrap;
+  font-size: 1.25rem;
+  font-size: clamp(1.05rem, 6cqi, 1.55rem);
   line-height: 1.02;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+.metric-value-traffic > span {
+  gap: 0.15rem;
+}
+.metric-value-traffic svg {
+  width: 0.75rem;
+  height: 0.75rem;
 }
 
 /* Respect the OS high-contrast preference without changing the selected theme.

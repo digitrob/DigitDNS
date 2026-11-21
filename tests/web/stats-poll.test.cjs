@@ -42,6 +42,7 @@ function harness(full, live) {
     pushChartData() {},
     markStatsHealth() {},
     formatBytes: () => '',
+    formatTrafficSpeed: (value) => ({ value: String(value), unit: 'KB/s', title: String(value) }),
     fmtWhole: (value) => String(value),
   });
   vm.runInContext('let statsFull = null; let statsPollCount = 0;', context);

@@ -1,54 +1,38 @@
-# DigitDNS v5.9.7 — focused live log and reclaimable storage
+# DigitDNS v5.9.8 — dashboard polish
 
-This patch makes the live log cheaper to keep open and easier to read, adds a
-safe way to reclaim bbolt high-water space, and removes a false "leave page?"
-warning after signing in or out. No database schema migration is required.
+This patch keeps the Live Traffic figures on one line when rates reach three
+digits or more, and turns the DigitDNS brand mark into a shortcut back to the
+dashboard on desktop and mobile. No database schema migration is required.
 Existing settings, clients, blocklists, certificates, relay agents, egress
 options and stored query history are preserved. Upstream selection defaults are
 unchanged: Racing still maps to Hedged.
 
-## A live log that explains itself
+## Live Traffic keeps its headline intact
 
-- **Follow control.** Scrolling away from the newest rows stops DOM inserts;
-  a *Latest* chip counts the arrivals buffered while you read, and one click
-  returns to the live head. Clearing, reconnecting and resuming all reset the
-  count so it never describes rows you cannot see.
-- **Dense rows and click-to-filter.** A local, per-browser density toggle fits
-  more rows without hiding columns. Clicking a domain or client cell writes that
-  exact value into the search box; clicking it again clears the filter.
-- **Latency tiers.** Four colour bands make slow answers visible without
-  turning every row into a different colour.
-- **No idle background streams.** A hidden tab suspends the SSE connection and
-  its polling fallback, then reopens through a fresh ticket. The server's
-  recent-query snapshot covers the time away.
-- **Dropped frames are reported.** Each subscriber has a bounded queue and a
-  drop counter. Overflow emits one `dropped` event with the total, shown in the
-  status tooltip so a gap has an explanation. A brief drop does not change the
-  Live label.
+- **One-line in/out readings.** The card now uses a dedicated compact type
+  scale instead of sharing the large single-number scale with the other tiles.
+- **Compact values.** KB/s prints with one decimal below 100 and as a whole
+  number from 100 upwards. At 1024 KB/s the card switches to MB/s, so neither
+  direction needs a second line.
+- **Exact values on hover.** The card title carries the unrounded inbound and
+  outbound readings.
 
-Ranked history cards now show ten entries by default, with a 10 → 50 → 100
-toolbar control. The API cap of 100 is unchanged.
+## Brand mark goes home
 
-## Storage maintenance
+- **Desktop and mobile.** Clicking the sidebar or mobile header brand now opens
+  the dashboard; both marks advertise the action with a title, ARIA label and
+  keyboard focus ring.
+- **Update button preserved.** The injected “Update available” button still
+  opens its modal instead of also navigating away.
 
-Two new pre-daemon commands make bbolt high-water growth visible and fixable:
-
-```bash
-sudo systemctl stop digitdns
-sudo digitdns db-stats       # size, free bytes/pages and bucket key counts
-sudo digitdns compact-db     # rewrite in place, then report before/after
-sudo systemctl start digitdns
-```
-
-Both commands need the daemon stopped because bbolt takes an exclusive file
-lock. Compaction runs through the same verified rewrite path used by the
-encryption migration, and re-inspects the file afterwards. Take a backup before
-running it on production data. `digitdns help` documents the maintenance window.
+Source-contract tests pin the traffic row, unit spans, compact CSS scale, brand
+links and home handler so a later edit cannot silently restore the wrap or drop
+the shortcut.
 
 ## Android
 
-The companion carries the matching `android-v5.9.7` version line (version code
-577). The workflow's debug APKs are attached to this release alongside the
+The companion carries the matching `android-v5.9.8` version line (version code
+578). The workflow's debug APKs are attached to this release alongside the
 standard signed APKs for arm64-v8a, armeabi-v7a, x86_64 and universal devices.
 
 ## Upgrade
@@ -56,14 +40,14 @@ standard signed APKs for arm64-v8a, armeabi-v7a, x86_64 and universal devices.
 In-place upgrades from the dashboard are supported.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.9.7/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.9.8/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.9.7
-docker pull ghcr.io/digitrob/digitdns-agent:5.9.7
-docker pull robmeister/digitdns:5.9.7
-docker pull robmeister/digitdns-agent:5.9.7
+docker pull ghcr.io/digitrob/digitdns:5.9.8
+docker pull ghcr.io/digitrob/digitdns-agent:5.9.8
+docker pull robmeister/digitdns:5.9.8
+docker pull robmeister/digitdns-agent:5.9.8
 ```

@@ -931,7 +931,7 @@
     
     <!-- Sidebar Top: Brand & Live Pulse -->
     <div id="sidebar-top" class="space-y-6">
-      <div class="flex items-center gap-3 px-2 py-1">
+      <div id="sidebar-home-btn" data-home-link role="link" tabindex="0" title="Go to dashboard" aria-label="DigitDNS — go to dashboard" class="flex items-center gap-3 px-2 py-1">
         <img src="/img/digitdns-app-icon.png" alt="" width="48" height="48"
              class="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/10 flex-shrink-0">
         <div class="sidebar-brand-copy">
@@ -1108,7 +1108,7 @@
     
     <!-- MOBILE TOP HEADER (< 768px) -->
     <header class="md:hidden border-b border-slate-800/80 bg-slate-950/85 backdrop-blur-xl sticky top-0 z-30 px-4 h-14 flex items-center justify-between flex-shrink-0">
-      <div class="flex items-center gap-2.5">
+      <div id="mobile-home-btn" data-home-link role="link" tabindex="0" title="Go to dashboard" aria-label="DigitDNS — go to dashboard" class="flex items-center gap-2.5">
         <img src="/img/digitdns-app-icon.png" alt="" width="36" height="36"
              class="w-9 h-9 rounded-lg flex-shrink-0">
         <!-- Stacked, not side by side, and the arithmetic is the reason. These two spans used
@@ -1354,16 +1354,17 @@
                  Total line sits beneath them; the card's spare height stays below the
                  block instead of pushing it to the bottom. -->
             <div class="flex flex-col items-center">
-              <!-- Each reading is its own no-wrap group, so at six-across widths the
-                   pair wraps onto two lines instead of the outbound value running into
-                   the card padding. leading-tight is what keeps the two lines inside
-                   the fixed grid card height. -->
-              <div class="metric-value-traffic flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0 font-mono text-lg sm:text-xl font-extrabold leading-tight text-slate-200">
+              <!-- Keep both readings on one line. The row used to wrap once a value
+                   grew past two digits; the smaller dedicated type scale, tighter
+                   icon gaps and KB/s -> MB/s switch keep the pair inside the card
+                   without truncating the numbers. The title carries the unrounded
+                   readings for operators who need them. -->
+              <div id="stat-traffic-row" title="In 0.00 KB/s · Out 0.00 KB/s" class="metric-value-traffic flex items-baseline justify-center gap-x-1 font-mono text-lg sm:text-xl font-extrabold leading-tight text-slate-200">
                 <span class="flex items-baseline gap-1 whitespace-nowrap">
-                  <i data-feather="arrow-down" class="w-3.5 h-3.5 text-emerald-400 shrink-0 self-center"></i><span id="stat-speed-in">0.0</span><span class="text-[10px] font-bold text-slate-400">KB/s</span>
+                  <i data-feather="arrow-down" class="w-3.5 h-3.5 text-emerald-400 shrink-0 self-center"></i><span id="stat-speed-in">0.0</span><span id="stat-speed-in-unit" class="text-[10px] font-bold text-slate-400">KB/s</span>
                 </span>
-                <span class="flex items-baseline gap-1 whitespace-nowrap ms-1">
-                  <i data-feather="arrow-up" class="w-3.5 h-3.5 text-cyan-400 shrink-0 self-center"></i><span id="stat-speed-out">0.0</span><span class="text-[10px] font-bold text-slate-400">KB/s</span>
+                <span class="flex items-baseline gap-1 whitespace-nowrap">
+                  <i data-feather="arrow-up" class="w-3.5 h-3.5 text-cyan-400 shrink-0 self-center"></i><span id="stat-speed-out">0.0</span><span id="stat-speed-out-unit" class="text-[10px] font-bold text-slate-400">KB/s</span>
                 </span>
               </div>
               <div class="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-mono whitespace-nowrap">Total: <span id="stat-traffic-total" class="text-slate-300 font-bold">0 MB</span></div>
