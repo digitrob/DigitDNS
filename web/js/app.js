@@ -109,6 +109,38 @@ const SSE_BACKOFF_MAX_MS = 30000;
 const STREAM_BUFFER_MAX = 100;
 let streamBuffer = [];
 
+// A quick action changes the rule for future lookups, not the answer a past query
+// already received. Rows keep their original action; this session-only map records
+// that a decision has since been saved so the old badge can be greyed in place.
+// It is keyed by query id, so polling and re-renders keep the mark while a reload
+// starts with an honest, unmarked history.
+const streamChangedQueries = new Map();
+
+function streamQueryKey(q) {
+  if (!q) return '';
+  if (q.id !== undefined && q.id !== null && q.id !== '') return 'id:' + q.id;
+  return ['domain', q.domain || '', q.timestamp || '', q.client_ip || ''].join('|');
+}
+
+function streamQueryChange(q) {
+  const key = streamQueryKey(q);
+  return key ? streamChangedQueries.get(key) : null;
+}
+
+function markStreamQueryChanged(q, to) {
+  const key = streamQueryKey(q);
+  if (!key || !to) return;
+  const previous = streamChangedQueries.get(key);
+  streamChangedQueries.set(key, {
+    from: previous ? previous.from : (q.action || 'DIRECT'),
+    to,
+    at: Date.now(),
+  });
+  if (streamChangedQueries.size > STREAM_BUFFER_MAX) {
+    streamChangedQueries.delete(streamChangedQueries.keys().next().value);
+  }
+}
+
 // A live table that inserts at the top is useful only while the viewport is at
 // the top. Once an operator scrolls down to read a row, arriving queries stop
 // touching the DOM and a small chip counts them instead; clicking it returns to
@@ -7539,6 +7571,31 @@ function queryMatchesStream(q, f) {
   return domain.includes(f.search) || clientIP.includes(f.search) || accountName.includes(f.search);
 }
 
+// Inline Feather paths for the live-log status pictograms. The table is rebuilt
+// through innerHTML on paths that do not always call safeFeatherReplace(), so a
+// data-feather placeholder here would often stay an empty <i>. Each icon is
+// decorative: the badge keeps its text label, and the SVG is aria-hidden.
+const STREAM_ICON_PATHS = {
+  shield: '<path d="m12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>',
+  slash: '<circle cx="12" cy="12" r="10"></circle><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"></line>',
+  cornerUpRight: '<polyline points="15 14 20 9 15 4"></polyline><path d="M4 20v-7a4 4 0 0 1 4-4h12"></path>',
+  zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>',
+  clock: '<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>',
+  edit3: '<path d="m12 20h9"></path><path d="m16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>',
+  alert: '<path d="m10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>',
+};
+
+function streamIconSvg(name, cls) {
+  const body = STREAM_ICON_PATHS[name];
+  if (!body) return '';
+  const klass = escapeHTML(cls || 'stream-action-badge-icon');
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="${klass}" aria-hidden="true">${body}</svg>`;
+}
+
+function streamActionBadge(cls, label, icon) {
+  return `<span class="badge ${escapeHTML(cls)}">${streamIconSvg(icon)}${escapeHTML(label)}</span>`;
+}
+
 // Every action string the resolver can log, mapped to the badge that stands for it. This is
 // a table and not a chain of ifs because the previous chain defaulted to a green DIRECT
 // badge: a query that was rate limited, was refused for a blown traffic quota, or had its
@@ -7549,18 +7606,18 @@ function queryMatchesStream(q, f) {
 // being dressed up as DIRECT.
 // Keep in sync with the logQuery call sites in internal/core/dns/handler.go.
 const STREAM_ACTION_BADGES = {
-  PROXY: '<span class="badge badge-proxy">PROXY</span>',
-  PROXY_IPV6_SINK: '<span class="badge badge-proxy">PROXY · IPv6 SINK</span>',
-  PROXY_HTTPS_SINK: '<span class="badge badge-proxy">PROXY · HTTPS SINK</span>',
-  PROXY_FAILED: '<span class="badge badge-block">PROXY FAILED</span>',
-  SERVFAIL: '<span class="badge badge-block">SERVFAIL</span>',
-  BLOCK: '<span class="badge badge-block">Blocked</span>',
-  RATELIMIT: '<span class="badge badge-block">RATE LIMITED</span>',
-  QUOTA: '<span class="badge badge-block">QUOTA</span>',
-  CUSTOM: '<span class="badge badge-rewrite">Rewrite</span>',
-  CACHED: '<span class="badge badge-direct">DIRECT</span>',
-  STALE: '<span class="badge badge-cached">STALE</span>',
-  DIRECT: '<span class="badge badge-direct">DIRECT</span>',
+  PROXY: streamActionBadge('badge-proxy', 'PROXY', 'shield'),
+  PROXY_IPV6_SINK: streamActionBadge('badge-proxy', 'PROXY · IPv6 SINK', 'shield'),
+  PROXY_HTTPS_SINK: streamActionBadge('badge-proxy', 'PROXY · HTTPS SINK', 'shield'),
+  PROXY_FAILED: streamActionBadge('badge-block', 'PROXY FAILED', 'alert'),
+  SERVFAIL: streamActionBadge('badge-block', 'SERVFAIL', 'alert'),
+  BLOCK: streamActionBadge('badge-block', 'Blocked', 'slash'),
+  RATELIMIT: streamActionBadge('badge-block', 'RATE LIMITED', 'alert'),
+  QUOTA: streamActionBadge('badge-block', 'QUOTA', 'alert'),
+  CUSTOM: streamActionBadge('badge-rewrite', 'Rewrite', 'edit3'),
+  CACHED: streamActionBadge('badge-direct', 'DIRECT', 'zap'),
+  STALE: streamActionBadge('badge-cached', 'STALE', 'clock'),
+  DIRECT: streamActionBadge('badge-direct', 'DIRECT', 'cornerUpRight'),
 };
 
 // The action name a quick action stamps onto the log rows it already has buffered,
@@ -7695,8 +7752,18 @@ function queryRowHTML(q) {
   // The badge is the trigger for the quick-action menu: it carries the row's
   // domain, and clicking it opens the one shared popover. It is a <button> so it
   // is focusable and Enter/Space reach it; the badge styling stays on the inner
-  // span, so the wrapper carries no decoration of its own.
-  const actBadge = `<button type="button" class="stream-action-btn" data-domain="${escapeHTML(domain)}" aria-haspopup="menu" aria-expanded="false" title="Quick actions for ${escapeHTML(domain)}">${actBadgeInner}</button>`;
+  // span, so the wrapper carries no decoration of its own. A saved decision marks
+  // the row without rewriting its badge: the grey chip is what this query saw,
+  // and the next lookup arrives as a fresh, fully coloured status.
+  const change = streamQueryChange(q);
+  const changedClass = change ? ' stream-action-changed' : '';
+  // Concatenation keeps the stored domain out of a template literal: the whole
+  // title is escaped once below, and the escaping contract's raw-interpolation
+  // scan stays meaningful for every other domain template in this file.
+  const badgeTitle = change
+    ? 'Quick actions for ' + domain + '; rule changed to ' + change.to + ' (this row shows the result at query time)'
+    : 'Quick actions for ' + domain;
+  const actBadge = `<button type="button" class="stream-action-btn${changedClass}" data-domain="${escapeHTML(domain)}" aria-haspopup="menu" aria-expanded="false" title="${escapeHTML(badgeTitle)}"${change ? ` data-stream-changed="${escapeHTML(change.to)}"` : ''}>${actBadgeInner}</button>`;
 
   let cacheBadge = q.cached ? '<span class="badge badge-cached ms-1">RAM</span>' : '';
   const timeStr = q.timestamp ? new Date(q.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
@@ -7742,8 +7809,15 @@ function queryRowHTML(q) {
   // On a phone the RULE column is hidden, so the block source has to live under
   // the domain. It is also the answer to "why was this blocked?" on every width:
   // Custom Block, or the exact adblock list that matched, plus the pattern.
+  // The category reuses the info popover's rule-name classifier — no extra wire
+  // field — and stays a compact chip so the source still fits on one line.
+  const blockCategory = action === 'BLOCK' ? blocklistCategory(ruleStr) : '';
+  const blockCategoryClass = { Malware: 'block-cat-malware', Ads: 'block-cat-ads', Tracker: 'block-cat-tracker' }[blockCategory] || 'block-cat-other';
+  const blockCategoryChip = blockCategory
+    ? `<span class="block-cat ${escapeHTML(blockCategoryClass)}">${escapeHTML(blockCategory)}</span>`
+    : '';
   const blockDetail = action === 'BLOCK'
-    ? `<div class="text-[10px] text-red-300 truncate" title="${escapeHTML(ruleStr + (matchedPattern ? ' · ' + matchedPattern : ''))}">Blocked by ${escapeHTML(ruleStr)}${matchedPattern ? ` · ${escapeHTML(matchedPattern)}` : ''}</div>`
+    ? `<div class="text-[10px] text-red-300 truncate" title="${escapeHTML(ruleStr + (matchedPattern ? ' · ' + matchedPattern : ''))}">${streamIconSvg('slash', 'stream-action-badge-icon block-detail-icon')}${blockCategoryChip}Blocked by ${escapeHTML(ruleStr)}${matchedPattern ? ` · ${escapeHTML(matchedPattern)}` : ''}</div>`
     : upstreamLine;
 
   return `
@@ -7911,6 +7985,9 @@ function insertStreamQuery(q) {
 // action is the same write as editing the Proxied or Rules tab by hand.
 let streamActionDomain = '';
 let streamActionScope = 'exact';
+// Which Explain surface opened the menu, if any. Live-log rows leave it blank;
+// an Explain button asks applyStreamAction to re-run that lookup after saving.
+let streamActionExplainSource = '';
 // Patterns written by a scope click in the current menu session. They let the next
 // click undo the previous conversion even when the origin domain no longer appears
 // in any list (the *.parent case).
@@ -8206,6 +8283,7 @@ function openStreamActionMenu(trigger) {
   const menu = document.getElementById('stream-action-menu');
   if (!menu) return;
   streamActionDomain = trigger.dataset.domain || '';
+  streamActionExplainSource = trigger.dataset.explainSource || '';
   streamActionApplied = [];
   const patterns = streamManagedPatterns();
   // Keep the last scope picked for this name; fall back to the one its rules imply.
@@ -8229,7 +8307,7 @@ function openStreamActionMenu(trigger) {
     b.setAttribute('aria-checked', active ? 'true' : 'false');
   });
   updateStreamActionPreview();
-  document.querySelectorAll('.stream-action-btn[aria-expanded="true"], .proxied-route-btn[aria-expanded="true"]')
+  document.querySelectorAll('.stream-action-btn[aria-expanded="true"], .proxied-route-btn[aria-expanded="true"], [data-explain-quick-action][aria-expanded="true"]')
     .forEach((b) => b.setAttribute('aria-expanded', 'false'));
   trigger.setAttribute('aria-expanded', 'true');
   menu.classList.remove('hidden');
@@ -8253,7 +8331,7 @@ function positionStreamActionMenu(trigger, menu) {
 function closeStreamActionMenu() {
   const menu = document.getElementById('stream-action-menu');
   if (menu) menu.classList.add('hidden');
-  document.querySelectorAll('.stream-action-btn[aria-expanded="true"], .proxied-route-btn[aria-expanded="true"]')
+  document.querySelectorAll('.stream-action-btn[aria-expanded="true"], .proxied-route-btn[aria-expanded="true"], [data-explain-quick-action][aria-expanded="true"]')
     .forEach((b) => b.setAttribute('aria-expanded', 'false'));
 }
 
@@ -8489,7 +8567,7 @@ function onStreamInfoBtnClick(e) {
   if (q) openStreamInfoPopover(trigger, q);
 }
 
-async function applyStreamAction(action) {
+async function applyStreamAction(action, onSaved) {
   if (!currentConfig || !currentConfig.rules || !streamActionDomain) return;
   const targets = streamScopeTargets(streamActionDomain, streamActionScope);
   if (!targets.length) {
@@ -8551,17 +8629,9 @@ async function applyStreamAction(action) {
   // a plain rule is indexed as exact + suffix, its subdomains too.
   setStreamManualOverrides(rules, targets, remove);
 
-  // Rewrite the buffered rows for this exact host so the badge the operator just
-  // acted on (and any sibling row for the same host) shows the new action at once.
-  // Best-effort: the rules are saved either way, and a row that misses this keeps
-  // the action it arrived with until the next query or the next render.
-  if (logBadge) {
-    try {
-      streamBuffer.forEach((q) => {
-        if ((q.domain || '') === streamActionDomain) q.action = logBadge;
-      });
-    } catch (e) { /* the next render repaints from the buffer anyway */ }
-  }
+  // Do not rewrite q.action here. The badge is the record of what that query did;
+  // the saved rule only governs lookups from now on. Rows are marked below after
+  // the write succeeds, so a failed save leaves both the data and the UI honest.
 
   const label = { proxy: 'Proxied', block: 'Blocked', direct: 'Set direct' }[action] || 'Updated';
   // Only a wildcard-only target leaves the clicked host out. Ask the same helper
@@ -8575,10 +8645,23 @@ async function applyStreamAction(action) {
     await loadConfig();
     return;
   }
+  // Only a decision made from a live-log row supersedes that row's recorded
+  // action. An Explain result is not a query, so it has no badge to grey out.
+  if (!streamActionExplainSource && logBadge) {
+    streamBuffer.forEach((q) => {
+      if ((q.domain || '') !== streamActionDomain) return;
+      if ((q.action || '') === logBadge) return;
+      markStreamQueryChanged(q, logBadge);
+    });
+  }
   refreshRuleViewsAfterQuickAction();
   renderQueryStream();
   showToast(`${label} ${target}${scopeNote}`, 'success');
-  closeStreamActionMenu();
+  try {
+    if (typeof onSaved === 'function') await onSaved();
+  } finally {
+    closeStreamActionMenu();
+  }
 }
 
 async function onStreamActionMenuClick(e) {
@@ -8598,7 +8681,13 @@ async function onStreamActionMenuClick(e) {
     return;
   }
   const actionBtn = e.target.closest('.stream-action-item');
-  if (actionBtn) await applyStreamAction(actionBtn.dataset.action || '');
+  if (!actionBtn) return;
+  // Only an Explain-opened menu needs its lookup refreshed. The live log has its
+  // own buffered-row repaint above, so it keeps the single-write behaviour.
+  const refresh = streamActionExplainSource === 'tools' ? toolsExplain
+    : streamActionExplainSource === 'diagnostics' ? runExplain
+      : null;
+  await applyStreamAction(actionBtn.dataset.action || '', refresh);
 }
 
 
@@ -8757,6 +8846,9 @@ function seedStreamQueries(list) {
 function resetStreamView() {
   streamEpoch++;
   streamBuffer = [];
+  // A Clear drops the rows the marks belonged to; keeping them would only let a
+  // future id collision inherit a stale "changed" badge.
+  streamChangedQueries.clear();
   streamRendered = [];
   streamPendingQueries = [];
   streamPendingDropped = [];
@@ -10362,8 +10454,42 @@ function iconRepoURL(id) {
   return ICON_COLORFUL_PREFIXES.has(prefix) ? base : `${base}?color=${ICON_CHOICE_COLOR}`;
 }
 
+// A domain is still stored as an explicit favicon (serviceIconURL), but its
+// registrable name is also the best search term the icon library has: typing
+// "ads.netflix.co.uk" should offer Netflix just like typing "Netflix". An image
+// URL is already a final choice and must not trigger another lookup.
+function serviceIconQuery(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  if (/\.(?:svg|ico|png|webp)(?:[?#]|$)/i.test(value)) return '';
+  const withoutScheme = value.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+  const host = withoutScheme.split(/[/?#]/)[0].split('@').pop().split(':')[0]
+    .replace(/\.$/, '').toLowerCase();
+  if (!/^[a-z0-9.-]+$/.test(host) || !host.includes('.')) {
+    return value.toLowerCase().replace(/\s+/g, ' ').slice(0, 64);
+  }
+  if (/^\d+(?:\.\d+){3}$/.test(host)) return '';
+  let labels = host.split('.').filter(Boolean);
+  if (labels[0] === 'www') labels = labels.slice(1);
+  if (labels.length < 2) return labels[0] || '';
+  // "co.uk" and friends are suffix pairs, not the service name. Skipping them
+  // keeps "netflix.co.uk" from searching for "co".
+  const suffixLabels = new Set(['co', 'com', 'org', 'net', 'gov', 'ac', 'edu']);
+  let i = labels.length - 2;
+  while (i > 0 && suffixLabels.has(labels[i])) i--;
+  return (labels[i] || '').replace(/[^a-z0-9-]/g, '').slice(0, 64);
+}
+
 function hideIconResults() {
-  document.getElementById('service-icon-results')?.classList.add('hidden');
+  // Bumping the sequence here matters: a slow response to an earlier edit must
+  // never repaint suggestions under a field that has since changed or closed.
+  iconSearchSeq++;
+  clearTimeout(iconSearchTimer);
+  iconSearchTimer = null;
+  const box = document.getElementById('service-icon-results');
+  if (!box) return;
+  box.innerHTML = '';
+  box.classList.add('hidden');
 }
 
 function renderIconResults(ids) {
@@ -10386,9 +10512,8 @@ function renderIconResults(ids) {
 }
 
 async function searchServiceIcons(raw) {
-  const q = String(raw || '').trim();
-  // A URL or a domain is an explicit choice; only unknown words are searched.
-  if (q.length < 2 || serviceIconURL(q)) { hideIconResults(); return; }
+  const q = serviceIconQuery(raw);
+  if (q.length < 2) { hideIconResults(); return; }
   const seq = ++iconSearchSeq;
   try {
     const res = await fetch(api(`/api/icons/search?q=${encodeURIComponent(q)}`), {
@@ -10577,9 +10702,10 @@ async function deleteService(id) {
 function initServices() {
   document.getElementById('add-service-btn')?.addEventListener('click', () => openServiceForm(''));
   document.getElementById('service-icon')?.addEventListener('input', (e) => {
-    clearTimeout(iconSearchTimer);
-    hideIconResults();
     const value = e.target.value;
+    // hideIconResults both clears the debounce and invalidates any response
+    // already in flight, so the 350 ms timer can only belong to this value.
+    hideIconResults();
     iconSearchTimer = setTimeout(() => searchServiceIcons(value), 350);
   });
   document.getElementById('service-icon-results')?.addEventListener('click', (e) => {
@@ -12998,8 +13124,8 @@ function explainRow(label, value, cls) {
   </div>`;
 }
 
-function renderExplain(data) {
-  const el = document.getElementById('explain-result');
+function renderExplain(data, targetId = 'explain-result', source = 'diagnostics') {
+  const el = document.getElementById(targetId);
   if (!el) return;
   const action = String(data.action || 'DIRECT').toUpperCase();
   const tone = action === 'BLOCK' ? 'text-red-400 bg-red-500/10 border-red-500/30'
@@ -13025,11 +13151,19 @@ function renderExplain(data) {
     explainRow('Egress', targetText, 'text-slate-200'),
     explainRow('Client', data.account ? `${data.account}${data.client_ip ? ' · ' + data.client_ip : ''}` : data.client_ip),
   ].join('');
+  const explainedDomain = String(data.domain || '').trim();
+  // A second entry point into the live log's rule menu: same scope picker, same
+  // preview, same saveRules path. Keeping the button in the result header makes
+  // the read-only explanation and the write action visually distinct.
+  const quickAction = explainedDomain
+    ? `<button type="button" class="panel-btn panel-btn-neutral panel-btn-sm ms-auto shrink-0" data-explain-quick-action data-domain="${escapeHTML(explainedDomain)}" data-explain-source="${escapeHTML(source)}" aria-haspopup="menu" aria-expanded="false" title="Add or change a rule for ${escapeHTML(explainedDomain)}">Add rule…</button>`
+    : '';
   el.className = 'text-xs text-slate-300';
   el.innerHTML = `<div class="flex items-center gap-2 mb-2">
       <span class="px-2 py-0.5 rounded border text-[10px] font-bold font-mono ${tone}">${escapeHTML(action)}</span>
-      <span class="font-mono text-slate-400 truncate">${escapeHTML(data.domain || '')}</span>
+      <span class="font-mono text-slate-400 truncate">${escapeHTML(explainedDomain)}</span>
       ${data.engine === false ? '<span class="text-[10px] text-amber-300">engine off</span>' : ''}
+      ${quickAction}
     </div>${rows}`;
 }
 
@@ -13097,19 +13231,10 @@ async function toolsExplain() {
     const res = await fetch(api('/api/explain?' + q.toString()), { headers: { 'Authorization': `Bearer ${authToken}` } });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Could not explain that domain');
-    const tone = data.action === 'BLOCK' ? 'text-red-400' : data.action === 'PROXY' ? 'text-cyan-300' : 'text-emerald-400';
-    const target = data.target ? `${data.target.kind === 'agent' ? 'Relay agent ' : data.target.kind === 'egress' ? 'Egress ' : ''}${data.target.name || data.target.agent_id || data.target.egress_id || 'This Server'}${data.target.country ? ' · ' + data.target.country : ''}` : '';
-    if (out) {
-      out.className = 'text-xs text-slate-300';
-      out.innerHTML = `<div class="flex items-center gap-2 mb-2"><span class="${tone} font-mono font-bold">${escapeHTML(data.action || 'DIRECT')}</span><span class="font-mono text-slate-400 truncate">${escapeHTML(data.domain || domain)}</span></div>`
-        + toolsRow('Rule', data.rule)
-        + toolsRow('Pattern', data.pattern)
-        + toolsRow('Blocklist', data.blocklist_source ? `${data.blocklist_source}${data.blocklist_pattern ? ' · ' + data.blocklist_pattern : ''}` : '')
-        + toolsRow('Allowlist', data.allow_source ? `${data.allow_source}${data.allow_pattern ? ' · ' + data.allow_pattern : ''}` : '')
-        + toolsRow('Custom record', data.custom_record)
-        + toolsRow('Egress', target)
-        + toolsRow('Client', data.account ? `${data.account}${data.client_ip ? ' · ' + data.client_ip : ''}` : data.client_ip);
-    }
+    // Both Explain surfaces use one renderer. The Tools card used to keep a
+    // shorter copy, so a fix to the Diagnostics result (now the rule button)
+    // silently missed the other half of the UI.
+    renderExplain(data, 'tools-explain-result', 'tools');
   } catch (e) {
     if (out) { out.className = 'text-xs text-red-400'; out.textContent = e.message; }
   }
@@ -15892,8 +16017,17 @@ function initEventListeners() {
   // the three ways out — an outside click, Escape, or scrolling the log — all
   // call the same close.
   document.getElementById('stream-action-menu')?.addEventListener('click', onStreamActionMenuClick);
+  // Explain results are re-rendered on every lookup, so the rule button is wired
+  // through a delegated listener rather than bound one node at a time.
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-explain-quick-action]');
+    if (!btn) return;
+    if (!currentConfig) await loadConfig();
+    openStreamActionMenu(btn);
+  });
   document.addEventListener('click', (e) => {
-    if (e.target.closest('.stream-action-btn') || e.target.closest('.proxied-route-btn') || e.target.closest('#stream-action-menu')) return;
+    if (e.target.closest('.stream-action-btn') || e.target.closest('.proxied-route-btn')
+      || e.target.closest('[data-explain-quick-action]') || e.target.closest('#stream-action-menu')) return;
     closeStreamActionMenu();
   });
   document.addEventListener('keydown', (e) => {

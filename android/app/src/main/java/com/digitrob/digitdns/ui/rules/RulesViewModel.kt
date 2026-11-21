@@ -9,13 +9,16 @@ import com.digitrob.digitdns.core.network.ResolutionProfileDto
 import com.digitrob.digitdns.core.network.ResolutionSaveRequest
 import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.data.EgressesRepository
+import com.digitrob.digitdns.data.IconsRepository
 import com.digitrob.digitdns.data.RulesRepository
 import com.digitrob.digitdns.data.SettingsRepository
 import com.digitrob.digitdns.data.UpstreamsRepository
 import com.digitrob.digitdns.domain.model.RelayAgent
 import com.digitrob.digitdns.domain.model.RuleLists
+import com.digitrob.digitdns.domain.model.iconRepoUrl
 import com.digitrob.digitdns.domain.model.normalizedDomain
 import com.digitrob.digitdns.domain.model.replaceDomainPatterns
+import com.digitrob.digitdns.domain.model.serviceIconQuery
 import com.digitrob.digitdns.domain.model.serviceIconUrl
 import com.digitrob.digitdns.domain.model.serviceIdFromName
 import com.digitrob.digitdns.ui.components.RouteAction
@@ -30,6 +33,9 @@ import java.time.Instant
 import java.util.Locale
 import javax.inject.Inject
 import timber.log.Timber
+
+/** Matches the panel's icon suggestion strip, so both clients offer the same choices. */
+private const val ICON_SUGGESTION_LIMIT = 12
 
 /** How the domains list is ordered. Mirrors the panel's own sort select. */
 enum class DomainSort(@StringRes val labelRes: Int) {
@@ -392,6 +398,7 @@ class RulesViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val upstreamsRepository: UpstreamsRepository,
     private val egressesRepository: EgressesRepository,
+    private val iconsRepository: IconsRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(RulesUiState())
@@ -571,6 +578,21 @@ class RulesViewModel @Inject constructor(
             }
             write(lists.copy(domainServices = links), message)
         }
+    }
+
+    /**
+     * Icon choices for the service form. A domain is reduced to its registrable
+     * name first, and an already-chosen image URL produces no query at all. The
+     * returned strings are ready to store in `service_icons`, so both clients
+     * render the same URL for a picked suggestion.
+     */
+    suspend fun searchIcons(raw: String): List<String> {
+        val query = serviceIconQuery(raw)
+        if (query.length < 2) return emptyList()
+        return iconsRepository.search(query)
+            .map(::iconRepoUrl)
+            .filter { it.isNotEmpty() }
+            .take(ICON_SUGGESTION_LIMIT)
     }
 
     /**

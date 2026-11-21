@@ -199,6 +199,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideIconsApi(retrofit: Retrofit): IconsApi = retrofit.create(IconsApi::class.java)
+
+    @Provides
+    @Singleton
     fun provideMigrateApi(retrofit: Retrofit): MigrateApi = retrofit.create(MigrateApi::class.java)
 
     @Provides

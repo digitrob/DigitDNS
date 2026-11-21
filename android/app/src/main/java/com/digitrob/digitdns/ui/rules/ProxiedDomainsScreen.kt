@@ -203,6 +203,7 @@ fun ProxiedDomainsScreen(viewModel: RulesViewModel = hiltViewModel()) {
         domain = servicePickerDomain,
         visible = servicePickerDomain != null || managingServices,
         state = state,
+        onSearchIcons = viewModel::searchIcons,
         onAssign = { target, id ->
             viewModel.assignService(target, id)
             servicePickerDomain = null
@@ -380,10 +381,12 @@ private fun DomainsHeader(onReload: () -> Unit) {
 
 /** Opens the service picker for a row, if one is open. */
 @Composable
+@Suppress("LongParameterList")
 private fun ServicePickerHost(
     domain: String?,
     visible: Boolean,
     state: RulesUiState,
+    onSearchIcons: suspend (String) -> List<String>,
     onAssign: (String, String) -> Unit,
     onSaveService: (String?, String, String, String) -> Unit,
     onDeleteService: (String) -> Unit,
@@ -393,6 +396,7 @@ private fun ServicePickerHost(
     ServicePickerDialog(
         domain = domain,
         state = state,
+        onSearchIcons = onSearchIcons,
         onAssign = { id -> domain?.let { onAssign(it, id) } },
         onSaveService = onSaveService,
         onDeleteService = onDeleteService,

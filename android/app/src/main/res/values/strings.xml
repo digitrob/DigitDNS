@@ -335,6 +335,7 @@
     <string name="services_name">Service name</string>
     <string name="services_icon">Icon URL or domain (optional)</string>
     <string name="services_icon_hint">A domain fetches its favicon; a URL uses that image.</string>
+    <string name="services_icon_suggestions">Icon suggestions</string>
     <string name="services_add">Add</string>
     <string name="services_save">Save</string>
     <string name="services_rename">Rename %1$s</string>

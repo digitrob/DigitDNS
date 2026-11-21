@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -276,6 +277,7 @@ fun StatusBadge(
     modifier: Modifier = Modifier,
     maxLines: Int = 1,
     uppercase: Boolean = true,
+    textDecoration: TextDecoration? = null,
 ) {
     // Match the web's .badge chip: 20px radius, 4x8 padding, 10px bold
     // uppercase text with the same 0.5px tracking.
@@ -295,6 +297,7 @@ fun StatusBadge(
                 fontSize = 10.sp,
                 lineHeight = 12.sp,
                 letterSpacing = 0.5.sp,
+                textDecoration = textDecoration,
             ),
             color = color,
             maxLines = maxLines,

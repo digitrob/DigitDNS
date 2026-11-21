@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,7 @@ type fakeV3Backend struct {
 	savedDnssec     map[string]any
 	proxyLeak       map[string]any
 	savedProxyLeak  map[string]any
+	iconQuery       string
 }
 
 func (f *fakeV3Backend) Login(r *http.Request, username, password, code string) (string, bool, error) {
@@ -314,6 +316,31 @@ func TestV3_RequiresCredential(t *testing.T) {
 	w = v3Request(mux, http.MethodGet, "/api/v3/clients", "digitdns_live_testkey123", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("v3 clients with key = %d, want 200: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestV3IconSearchWorksWithMasterKey(t *testing.T) {
+	apiInst, _, _, cleanup := setupTestAPI(t)
+	defer cleanup()
+	backend := &fakeV3Backend{}
+	apiInst.SetV3Backend(backend)
+	mux := http.NewServeMux()
+	apiInst.RegisterRoutes(mux)
+
+	w := v3Request(mux, http.MethodGet, "/api/v3/icons/search?q=netflix", testKey, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("v3 icon search = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if got := strings.TrimSpace(w.Body.String()); got != `{"icons":["logos:netflix"]}` {
+		t.Fatalf("v3 icon search body = %s", got)
+	}
+	if backend.iconQuery != "netflix" {
+		t.Fatalf("delegated query = %q, want netflix", backend.iconQuery)
+	}
+
+	w = v3Request(mux, http.MethodPost, "/api/v3/icons/search?q=netflix", testKey, nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("v3 icon search POST = %d, want 405", w.Code)
 	}
 }
 
@@ -1053,6 +1080,11 @@ func (f *fakeV3Backend) UpdateMode(r *http.Request) (map[string]any, error) {
 
 func (f *fakeV3Backend) FilterTest(r *http.Request) (map[string]any, error) {
 	return map[string]any{"domain": "example.com", "action": "DIRECT"}, nil
+}
+
+func (f *fakeV3Backend) IconSearch(r *http.Request) (map[string]any, error) {
+	f.iconQuery = r.URL.Query().Get("q")
+	return map[string]any{"icons": []string{"logos:netflix"}}, nil
 }
 
 func (f *fakeV3Backend) FilteringPresets(r *http.Request) (map[string]any, error) {

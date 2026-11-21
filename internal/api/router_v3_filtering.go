@@ -164,3 +164,24 @@ func (a *API) handleV3FilterTest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
+
+// handleV3IconSearch exposes the dashboard's Iconify proxy on the credentialed
+// v3 surface. The panel's own route is session-only; the companion can use either
+// a session or the master API key, so it needs this route rather than that one.
+func (a *API) handleV3IconSearch(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET or HEAD only")
+		return
+	}
+	resp, err := a.v3Backend.IconSearch(r)
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}

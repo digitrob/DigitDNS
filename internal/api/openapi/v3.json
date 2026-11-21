@@ -3910,6 +3910,64 @@
         }
       }
     },
+    "/api/v3/icons/search": {
+      "get": {
+        "tags": [
+          "filtering"
+        ],
+        "summary": "Search the icon library",
+        "description": "Proxies the dashboard's Iconify search so the companion can offer the same service-icon choices with either credential mode. Read-only.",
+        "operationId": "getIconSearch",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Service name or registrable domain to look up, 2-64 characters.",
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching Iconify ids.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "icons"
+                  ],
+                  "properties": {
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "502": {
+            "description": "The icon repository could not be reached."
+          }
+        }
+      }
+    },
     "/api/v3/settings/geoip": {
       "get": {
         "tags": [

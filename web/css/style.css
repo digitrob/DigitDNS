@@ -1983,7 +1983,10 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
  * column is the auto one, so the two widths trade against each other: +1.5rem
  * here narrows the domain by the same 24px and stops the status chip wrapping. */
 .stream-col-action {
-  width: 9.5rem;
+  /* +0.5rem over the text-only badge: the leading pictogram is 11px plus a
+     4px badge gap, and the longest chip ("PROXY · IPv6 SINK") must stay on one
+     line. The domain column is the auto one, so it absorbs the difference. */
+  width: 10rem;
   /* Top-align the cell so the info button sits at the same vertical offset in
    * every row. Centred, a blocked row's extra "Blocked by" line made the row
    * taller and pushed that row's icon below the others. */
@@ -1993,6 +1996,50 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
  * column is tight. Scoped to the live log so the other tables keep their own
  * sizing. */
 .stream-col-action .badge { white-space: nowrap; }
+/* Status pictograms inherit the badge's own text colour, so one icon shape can
+   serve the cyan proxy chip and the red block chip without a second palette. */
+.stream-action-badge-icon {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+}
+.block-detail-icon {
+  margin-inline-end: 0.25rem;
+  vertical-align: -1px;
+  color: rgb(var(--c-red-300));
+}
+/* Block category chips are read before the rule name: the colour answers
+   "what kind of block?" while the text still answers "which rule?". They stay
+   tiny and never replace the full, escaped source in the title tooltip. */
+.block-cat {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-end: 0.25rem;
+  padding: 0 0.25rem;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.block-cat-malware {
+  color: rgb(var(--c-red-300));
+  background: rgb(var(--c-red-400) / 0.12);
+}
+.block-cat-ads {
+  color: rgb(var(--c-amber-300));
+  background: rgb(var(--c-amber-400) / 0.12);
+}
+.block-cat-tracker {
+  color: rgb(var(--c-purple-300));
+  background: rgb(var(--c-purple-400) / 0.12);
+}
+.block-cat-other {
+  color: rgb(var(--c-slate-400));
+  background: rgb(var(--c-slate-400) / 0.1);
+}
 .stream-col-latency { width: 6.5rem; }
 
 /* Latency tiers. Semantic classes rather than utility colours so the four
@@ -2066,6 +2113,22 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 }
 .stream-action-btn:hover .badge {
   filter: brightness(1.12);
+}
+/* A saved quick action changes future lookups, not the query already on screen.
+ * Greying the old chip in place keeps that row truthful while making it obvious a
+ * decision has since been made; the button itself stays live for another change. */
+.stream-action-btn.stream-action-changed .badge {
+  filter: grayscale(1);
+  opacity: 0.55;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.stream-action-btn.stream-action-changed .stream-action-badge-icon {
+  opacity: 0.65;
+}
+.stream-action-btn.stream-action-changed:hover .badge {
+  filter: grayscale(1) brightness(1.1);
+  opacity: 0.78;
 }
 
 .stream-action-menu {

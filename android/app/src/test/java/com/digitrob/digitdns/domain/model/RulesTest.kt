@@ -117,6 +117,38 @@ class RulesTest {
     }
 
     @Test
+    fun serviceNamesDomainsAndUrlsBecomeIconSearchTerms() {
+        assertEquals("netflix", serviceIconQuery("Netflix"))
+        assertEquals("bbc iplayer", serviceIconQuery("BBC iPlayer"))
+        assertEquals("netflix", serviceIconQuery("netflix.com"))
+        assertEquals("netflix", serviceIconQuery("https://www.netflix.com/browse"))
+        assertEquals("netflix", serviceIconQuery("ads.netflix.co.uk"))
+        assertEquals("example", serviceIconQuery("example.gov.au"))
+    }
+
+    @Test
+    fun chosenImagesAddressesAndEmptyInputDoNotTriggerIconSearch() {
+        assertEquals("", serviceIconQuery("https://api.iconify.design/logos/netflix.svg"))
+        assertEquals("", serviceIconQuery("https://icons.duckduckgo.com/ip3/netflix.com.ico"))
+        assertEquals("", serviceIconQuery("https://example.com/logo.PNG?size=64"))
+        assertEquals("", serviceIconQuery("127.0.0.1"))
+        assertEquals("", serviceIconQuery(""))
+    }
+
+    @Test
+    fun iconIdsBecomeRepositoryUrlsWithTheRightTint() {
+        assertEquals(
+            "https://api.iconify.design/logos/netflix.svg",
+            iconRepoUrl("logos:netflix"),
+        )
+        assertEquals(
+            "https://api.iconify.design/mdi/television.svg?color=%2394a3b8",
+            iconRepoUrl("mdi:television"),
+        )
+        assertEquals("", iconRepoUrl("not-an-icon-id"))
+    }
+
+    @Test
     fun aStoredFaviconIsShownAsAPngAndroidCanDecode() {
         assertEquals(
             "https://www.google.com/s2/favicons?domain=bbc.co.uk&sz=64",

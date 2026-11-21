@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -37,6 +38,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,6 +69,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.draw.clip
 import com.digitrob.digitdns.ui.components.CountryFlag
@@ -182,6 +188,7 @@ fun LiveQueryLogScreen(viewModel: LiveQueryLogViewModel = hiltViewModel()) {
                         items(visible, key = { it.id }, contentType = { 0 }) { event ->
                             QueryRow(
                                 event = event,
+                                change = state.changeFor(event),
                                 onAction = { action, targets ->
                                     viewModel.applyQuickAction(event.domain, action, targets)
                                 },
@@ -375,6 +382,7 @@ private fun EmptyState(state: LiveQueryLogUiState) {
 @Suppress("LongMethod")
 private fun QueryRow(
     event: QueryEvent,
+    change: QueryActionChange?,
     onAction: (RouteAction, List<String>) -> Unit,
     onCopyDomain: (String) -> Unit,
     patterns: Set<String>,
@@ -490,6 +498,8 @@ private fun QueryRow(
                 }
                 ActionBadge(
                     action = event.action,
+                    change = change,
+                    domain = event.domain,
                     onClick = { menuOpen = true },
                     enabled = event.domain.isNotBlank(),
                 )
@@ -563,8 +573,16 @@ private fun RelayDetailsDialog(event: QueryEvent, onDismiss: () -> Unit) {
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ActionBadge(action: String, onClick: () -> Unit, enabled: Boolean) {
+@Suppress("LongParameterList")
+private fun ActionBadge(
+    action: String,
+    change: QueryActionChange?,
+    domain: String,
+    onClick: () -> Unit,
+    enabled: Boolean,
+) {
     val colors = DigitDnsTheme.colors
     val style = queryActionStyle(action)
     val color: Color = when (style.tone) {
@@ -576,7 +594,30 @@ private fun ActionBadge(action: String, onClick: () -> Unit, enabled: Boolean) {
         QueryActionTone.Purple -> colors.purple
         QueryActionTone.Muted -> colors.textMuted
     }
-    Box(modifier = if (enabled) Modifier.clickable(onClick = onClick) else Modifier) {
-        StatusBadge(text = style.label, color = color, uppercase = false)
+    val badgeColor = if (change == null) color else colors.textMuted.copy(alpha = 0.55f)
+    val decoration = if (change == null) null else TextDecoration.LineThrough
+    val tooltip = change?.let {
+        "Quick actions for $domain; rule changed to ${it.to} " +
+            "(this row shows the result at query time)"
+    }
+    val badge: @Composable () -> Unit = {
+        StatusBadge(
+            text = style.label,
+            color = badgeColor,
+            textDecoration = decoration,
+            uppercase = false,
+        )
+    }
+    val clickModifier = if (enabled) Modifier.clickable(onClick = onClick) else Modifier
+    if (tooltip == null) {
+        Box(modifier = clickModifier) { badge() }
+    } else {
+        TooltipBox(
+            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+            tooltip = { PlainTooltip { Text(tooltip) } },
+            state = rememberTooltipState(),
+        ) {
+            Box(modifier = clickModifier.semantics { contentDescription = tooltip }) { badge() }
+        }
     }
 }

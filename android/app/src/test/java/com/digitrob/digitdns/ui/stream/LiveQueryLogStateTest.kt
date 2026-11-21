@@ -117,6 +117,49 @@ class LiveQueryLogStateTest {
     }
 
     @Test
+    fun changeMarkersFollowTheQueryIdNotAMutableActionField() {
+        val original = event(42, "ads.example", "DIRECT")
+        val marked = markQueryActionChanges(emptyMap(), listOf(original), "ads.example", "PROXY", 7)
+        val refreshed = original.copy(ruleMatched = "Default Direct")
+
+        val change = refreshed.actionChange(marked)
+        assertEquals("DIRECT", change?.from)
+        assertEquals("PROXY", change?.to)
+        assertEquals(7L, change?.at)
+        assertEquals("DIRECT", refreshed.action)
+    }
+
+    @Test
+    fun changeMarkersFallBackToDomainTimeAndClient() {
+        val original = QueryEvent(domain = "one.example", timestamp = "t1", clientIp = "10.0.0.1", action = "BLOCK")
+        val marked = markQueryActionChanges(emptyMap(), listOf(original), "one.example", "DIRECT", 9)
+
+        assertEquals("DIRECT", original.copy(timestamp = "t1").actionChange(marked)?.to)
+        assertEquals(null, original.copy(timestamp = "t2").actionChange(marked))
+    }
+
+    @Test
+    fun changeMarkersKeepTheFirstActionAndSkipRowsAlreadyShowingTheNewOne() {
+        val direct = event(1, "ads.example", "DIRECT")
+        val already = event(2, "ads.example", "PROXY")
+        val first = markQueryActionChanges(emptyMap(), listOf(direct, already), "ads.example", "PROXY", 10)
+        val second = markQueryActionChanges(first, listOf(direct), "ads.example", "BLOCK", 20)
+
+        assertEquals("DIRECT", direct.actionChange(second)?.from)
+        assertEquals("BLOCK", direct.actionChange(second)?.to)
+        assertNull(already.actionChange(second))
+    }
+
+    @Test
+    fun changeMarkersAreCappedAtTheBufferDepth() {
+        val events = (1..STREAM_CHANGE_MARKER_LIMIT + 5).map { event(it.toLong(), "ads.example", "DIRECT") }
+        val marked = markQueryActionChanges(emptyMap(), events, "ads.example", "PROXY", 1)
+
+        assertEquals(STREAM_CHANGE_MARKER_LIMIT, marked.size)
+        assertNull(events.first().actionChange(marked))
+    }
+
+    @Test
     fun blockAndDirectFiltersIncludeTheirVariants() {
         val events = listOf(
             event(1, "a", "BLOCK"),

@@ -157,6 +157,10 @@ type V3Backend interface {
 	UpdateStatus() map[string]any
 	UpdateMode(r *http.Request) (map[string]any, error)
 
+	// IconSearch proxies the icon repository's search so the companion app can
+	// offer the same choices as the dashboard with either credential mode.
+	IconSearch(r *http.Request) (map[string]any, error)
+
 	// Benchmark kick-off.
 	Benchmark() (map[string]any, error)
 
@@ -266,6 +270,7 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/filtering/refresh", a.SecurityMiddlewareV3(a.handleV3FilteringRefresh))
 	mux.HandleFunc("/api/v3/filtering/presets", a.SecurityMiddlewareV3(a.handleV3FilteringPresets))
 	mux.HandleFunc("/api/v3/filter/test", a.SecurityMiddlewareV3(a.handleV3FilterTest))
+	mux.HandleFunc("/api/v3/icons/search", a.SecurityMiddlewareV3(a.handleV3IconSearch))
 	mux.HandleFunc("/api/v3/filtering/lists", a.SecurityMiddlewareV3(a.handleV3FilteringLists))
 	mux.HandleFunc("/api/v3/filtering/lists/", a.SecurityMiddlewareV3(a.handleV3FilteringListItem))
 

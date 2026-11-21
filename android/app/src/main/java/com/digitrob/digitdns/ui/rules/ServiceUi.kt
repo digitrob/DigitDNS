@@ -2,6 +2,7 @@ package com.digitrob.digitdns.ui.rules
 
 import com.digitrob.digitdns.R
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,15 +48,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.digitrob.digitdns.ui.components.DigitDnsDropdownMenu
+import coil.ImageLoader
 import coil.compose.SubcomposeAsyncImage
+import coil.decode.SvgDecoder
+import kotlinx.coroutines.delay
 import timber.log.Timber
 import com.digitrob.digitdns.domain.model.serviceDisplayIcon
+import com.digitrob.digitdns.domain.model.serviceIconQuery
 import com.digitrob.digitdns.ui.components.PanelDialog
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
@@ -176,6 +183,7 @@ internal fun ServiceFilterDropdown(
 internal fun ServicePickerDialog(
     domain: String?,
     state: RulesUiState,
+    onSearchIcons: suspend (String) -> List<String>,
     onAssign: (String) -> Unit,
     onSaveService: (String?, String, String, String) -> Unit,
     onDeleteService: (String) -> Unit,
@@ -239,6 +247,7 @@ internal fun ServicePickerDialog(
         ServiceFormDialog(
             form = editing,
             relayState = state,
+            onSearchIcons = onSearchIcons,
             onDismiss = { form = null },
             onSave = { name, icon, relayId ->
                 onSaveService(editing.id, name, icon, relayId)
@@ -286,9 +295,12 @@ internal fun ServiceIcon(
         GlobeIcon(modifier)
         return
     }
+    val context = LocalContext.current
+    val loader = remember(context) { ServiceImageLoader.get(context) }
     SubcomposeAsyncImage(
         model = display,
         contentDescription = null,
+        imageLoader = loader,
         contentScale = ContentScale.Fit,
         modifier = modifier.clip(RoundedCornerShape(4.dp)),
         loading = { GlobeIcon(Modifier.matchParentSize()) },
@@ -297,6 +309,23 @@ internal fun ServiceIcon(
         // should still leave a trace for diagnosis.
         onError = { Timber.w(it.result.throwable, "service icon failed: %s", display) },
     )
+}
+
+/**
+ * Iconify serves SVG. Coil's default loader cannot decode it, and one loader per
+ * row would give every service its own caches and thread pool.
+ */
+private object ServiceImageLoader {
+    @Volatile
+    private var instance: ImageLoader? = null
+
+    fun get(context: android.content.Context): ImageLoader =
+        instance ?: synchronized(this) {
+            instance ?: ImageLoader.Builder(context.applicationContext)
+                .components { add(SvgDecoder.Factory()) }
+                .build()
+                .also { instance = it }
+        }
 }
 
 @Composable
@@ -572,15 +601,28 @@ private data class ServiceFormState(
 )
 
 @Composable
+@Suppress("LongParameterList")
 private fun ServiceFormDialog(
     form: ServiceFormState,
     relayState: RulesUiState,
+    onSearchIcons: suspend (String) -> List<String>,
     onDismiss: () -> Unit,
     onSave: (String, String, String) -> Unit,
 ) {
     var name by remember(form) { mutableStateOf(form.name) }
     var icon by remember(form) { mutableStateOf(form.icon) }
     var relayId by remember(form) { mutableStateOf(form.relayId) }
+    var iconSuggestions by remember(form) { mutableStateOf(emptyList<String>()) }
+    val iconQuery = serviceIconQuery(icon)
+    // Restarting this effect on every edit cancels the debounce and any earlier
+    // request, so a slow reply cannot repaint suggestions under a changed field.
+    LaunchedEffect(icon) {
+        iconSuggestions = emptyList()
+        if (iconQuery.length < 2) return@LaunchedEffect
+        delay(350)
+        val choices = onSearchIcons(icon)
+        if (iconQuery == serviceIconQuery(icon)) iconSuggestions = choices
+    }
     PanelDialog(
         onDismissRequest = onDismiss,
         solid = true,
@@ -617,6 +659,10 @@ private fun ServiceFormDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                IconSuggestionStrip(iconSuggestions) { url ->
+                    icon = url
+                    iconSuggestions = emptyList()
+                }
                 ServiceDefaultRelayField(
                     state = relayState,
                     selected = relayId,
@@ -634,4 +680,31 @@ private fun ServiceFormDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
+}
+
+@Composable
+private fun IconSuggestionStrip(suggestions: List<String>, onSelect: (String) -> Unit) {
+    if (suggestions.isEmpty()) return
+    Text(
+        text = stringResource(R.string.services_icon_suggestions),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    // A horizontal strip keeps the dialog's single vertical scroll: nesting two
+    // verticalScrolls would trap the gesture on a phone.
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        suggestions.forEach { url ->
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { onSelect(url) },
+            ) {
+                ServiceIcon(url = url, modifier = Modifier.size(40.dp))
+            }
+        }
+    }
 }

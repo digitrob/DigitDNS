@@ -46,9 +46,18 @@ data class LiveQueryLogUiState(
     val message: String? = null,
     /** Every configured routing pattern; the quick-action menu preselects from this. */
     val patterns: Set<String> = emptySet(),
+    /**
+     * Rules saved from this log during the current session, keyed by query id.
+     * A marker is separate from [QueryEvent.action]: the historical answer is
+     * never rewritten.
+     */
+    val changedQueries: Map<String, QueryActionChange> = emptyMap(),
 ) {
     /** The source list respecting pause: frozen while paused, live otherwise. */
     val source: List<QueryEvent> get() = pausedBuffer ?: buffer
+
+    /** The marker shown beside this row's historical action badge, if any. */
+    fun changeFor(event: QueryEvent): QueryActionChange? = event.actionChange(changedQueries)
 
     /** The rows after search + action filter + sort, ready to render. */
     val visible: List<QueryEvent>
@@ -157,10 +166,16 @@ class LiveQueryLogViewModel @Inject constructor(
         if (paused) it.copy(paused = true, pausedBuffer = it.buffer) else it.copy(paused = false, pausedBuffer = null)
     }
 
-    /** Empty the shared buffer (and the frozen snapshot, if paused). */
+    /** Empty the shared buffer (and the frozen snapshot and markers, if paused). */
     fun clear() {
         liveStream.clearBuffer()
-        _state.update { it.copy(buffer = emptyList(), pausedBuffer = if (it.paused) emptyList() else null) }
+        _state.update {
+            it.copy(
+                buffer = emptyList(),
+                pausedBuffer = if (it.paused) emptyList() else null,
+                changedQueries = emptyMap(),
+            )
+        }
     }
 
     fun consumeMessage() = _state.update { it.copy(message = null) }
@@ -211,15 +226,47 @@ class LiveQueryLogViewModel @Inject constructor(
                     (e as? ApiException)?.userMessage ?: "Could not update $joined"
                 },
             )
-            _state.update {
+            _state.update { current ->
                 val patterns = if (action == RouteAction.Remove) {
-                    it.patterns - unique.toSet()
+                    current.patterns - unique.toSet()
                 } else {
-                    it.patterns + unique
+                    current.patterns + unique
                 }
-                it.copy(message = message, patterns = patterns)
+                val changed = if (result.getOrNull()?.first == true) {
+                    markAfterSuccessfulSave(current, domain, action)
+                } else {
+                    current.changedQueries
+                }
+                current.copy(message = message, patterns = patterns, changedQueries = changed)
             }
         }
+    }
+
+    /**
+     * Mark the historical rows after the save is known to have succeeded. Both the
+     * live and paused snapshots are considered: an operator who paused to inspect a
+     * row must still see the marker after resuming.
+     */
+    private fun markAfterSuccessfulSave(
+        state: LiveQueryLogUiState,
+        domain: String,
+        action: RouteAction,
+    ): Map<String, QueryActionChange> {
+        val badge = when (action) {
+            RouteAction.Proxy -> "PROXY"
+            RouteAction.Block -> "BLOCK"
+            RouteAction.Direct -> "DIRECT"
+            RouteAction.Remove -> return state.changedQueries
+        }
+        val events = (state.pausedBuffer.orEmpty() + state.buffer).distinctBy(::queryActionChangeKey)
+        return markQueryActionChanges(
+            changes = state.changedQueries,
+            events = events,
+            domain = domain,
+            toAction = badge,
+            at = System.currentTimeMillis(),
+            limit = STREAM_CHANGE_MARKER_LIMIT,
+        )
     }
 
     /** One read-modify-write for the target list, plus the message for the snackbar. */

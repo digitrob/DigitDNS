@@ -908,6 +908,12 @@ func (b *v3Backend) FilterTest(r *http.Request) (map[string]any, error) {
 	return b.delegateRequest(r, b.ws.handleFilterTest)
 }
 
+// IconSearch runs the panel's own Iconify proxy. Delegating keeps the query
+// validation, ranking and cache identical for the dashboard and the app.
+func (b *v3Backend) IconSearch(r *http.Request) (map[string]any, error) {
+	return b.delegateRequest(r, b.ws.handleIconSearch)
+}
+
 func (b *v3Backend) AddFilteringList(r *http.Request) (map[string]any, error) {
 	return b.delegateRequest(r, b.ws.handleFilterLists)
 }

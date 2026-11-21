@@ -167,6 +167,55 @@ fun serviceIconUrl(raw: String): String {
     }
 }
 
+private val IMAGE_EXTENSION = Regex("\\.(?:svg|ico|png|webp)(?:[?#]|$)", RegexOption.IGNORE_CASE)
+private val URL_SCHEME = Regex("^[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE)
+private val HOST_CHARS = Regex("^[a-z0-9.-]+$")
+private val IPV4_HOST = Regex("^\\d+(?:\\.\\d+){3}$")
+private val WHITESPACE = Regex("\\s+")
+private val NON_SLUG = Regex("[^a-z0-9-]")
+private val ICON_ID = Regex("^[a-z0-9-]+:[a-z0-9-]+$")
+private val ICON_SUFFIX_LABELS = setOf("co", "com", "org", "net", "gov", "ac", "edu")
+private val COLORFUL_ICON_SETS = setOf("logos", "flat-color-icons", "twemoji", "skill-icons", "devicon")
+private const val ICON_QUERY_MAX_LENGTH = 64
+
+/**
+ * Reduce a typed service name, domain or URL to the term the icon library can
+ * search. A chosen image URL is already final, and an IP address has no name to
+ * look up, so both suppress suggestions. Mirrors the panel's helper exactly.
+ */
+@Suppress("ReturnCount")
+fun serviceIconQuery(raw: String): String {
+    val value = raw.trim()
+    if (value.isEmpty() || IMAGE_EXTENSION.containsMatchIn(value)) return ""
+    val withoutScheme = value.replace(URL_SCHEME, "")
+    val host = withoutScheme.split('/', '?', '#').firstOrNull().orEmpty()
+        .split('@').lastOrNull().orEmpty()
+        .split(':').firstOrNull().orEmpty()
+        .trimEnd('.')
+        .lowercase(java.util.Locale.ROOT)
+    if (!HOST_CHARS.matches(host) || !host.contains('.')) {
+        return value.lowercase(java.util.Locale.ROOT).replace(WHITESPACE, " ").take(ICON_QUERY_MAX_LENGTH)
+    }
+    if (IPV4_HOST.matches(host)) return ""
+
+    var labels = host.split('.').filter { it.isNotEmpty() }
+    if (labels.firstOrNull() == "www") labels = labels.drop(1)
+    if (labels.size < 2) return labels.firstOrNull().orEmpty()
+
+    // "co.uk" and friends are suffix pairs, not the service name.
+    var i = labels.size - 2
+    while (i > 0 && labels[i] in ICON_SUFFIX_LABELS) i--
+    return labels.getOrNull(i).orEmpty().replace(NON_SLUG, "").take(ICON_QUERY_MAX_LENGTH)
+}
+
+/** The stored Iconify URL for one search id; monochrome sets get a neutral tint. */
+fun iconRepoUrl(id: String): String {
+    if (!ICON_ID.matches(id)) return ""
+    val (prefix, name) = id.split(':', limit = 2)
+    val base = "https://api.iconify.design/$prefix/$name.svg"
+    return if (prefix in COLORFUL_ICON_SETS) base else "$base?color=%2394a3b8"
+}
+
 /**
  * Replace [remove] with [add] in one rule list, keeping the slot of the first removed
  * entry. A scope change (a.b.c -> *.a.b.c) must not move the row to the end of the

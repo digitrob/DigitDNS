@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.10.0] — honest history and cross-client icons
+
+### Added
+- **Service-icon suggestions on both clients.** The Domains editor searches the icon library for a service name, a bare domain or a URL, offers up to twelve choices, and stores the selected Iconify URL as an explicit favicon. Slow replies from an earlier edit are cancelled, and an already-chosen image URL does not trigger another search. Android renders the same stored SVG URLs as the dashboard.
+- **A credential-safe icon search API.** `GET /api/v3/icons/search?q=…` delegates to the dashboard's own Iconify proxy, so a companion signed in with either a session or the master API key sees the same ranked, cached results.
+- **Android live-log change markers.** After a successful Proxy, Block or Direct quick action, the affected historical rows keep their original action badge but gain a muted, struck-through treatment and an explanation. The marker is session-only, follows the query id through resumed streams, and is cleared with the log.
+
+### Fixed
+- **Quick actions no longer look like they rewrote the past.** The new marker records the old and new decisions separately; polling refreshes, filters, sorting and pause/resume all preserve it without changing the stored answer.
+- **Domains starting with `www` and multi-label country suffixes now find the right icon.** `ads.netflix.co.uk` searches for `netflix`, while IP addresses and image URLs suppress suggestions instead of returning noise.
+
+No database schema migration and no importer, filter or upstream-policy defaults changed. The Android companion moves to `android-v5.10.0`, with version code 579.
+
+---
+
 ## 🏷️ [v5.9.8] — dashboard polish
 
 ### Fixed

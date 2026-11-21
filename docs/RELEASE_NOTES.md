@@ -1,53 +1,60 @@
-# DigitDNS v5.9.8 — dashboard polish
+# DigitDNS v5.10.0 — honest history and cross-client icons
 
-This patch keeps the Live Traffic figures on one line when rates reach three
-digits or more, and turns the DigitDNS brand mark into a shortcut back to the
-dashboard on desktop and mobile. No database schema migration is required.
-Existing settings, clients, blocklists, certificates, relay agents, egress
-options and stored query history are preserved. Upstream selection defaults are
-unchanged: Racing still maps to Hedged.
+This minor release makes the Live Log clearer after quick actions and brings
+service-icon suggestions to the Android companion. No database schema migration
+is required. Existing settings, clients, blocklists, certificates, relay agents,
+egress options, stored query history and stored service icons are preserved.
+Upstream selection defaults are unchanged: Racing still maps to Hedged.
 
-## Live Traffic keeps its headline intact
+## A quick action no longer rewrites the past
 
-- **One-line in/out readings.** The card now uses a dedicated compact type
-  scale instead of sharing the large single-number scale with the other tiles.
-- **Compact values.** KB/s prints with one decimal below 100 and as a whole
-  number from 100 upwards. At 1024 KB/s the card switches to MB/s, so neither
-  direction needs a second line.
-- **Exact values on hover.** The card title carries the unrounded inbound and
-  outbound readings.
+- **Historical badges stay historical.** Saving Proxy, Block or Direct from a
+  live-log row leaves the query's original action untouched. The row gains a
+  muted, struck-through badge with a tooltip naming the new rule and explaining
+  that the row shows the answer at query time.
+- **Session-only state.** Markers are keyed by query id (with a domain/time/client
+  fallback), survive polling refreshes and pause/resume, and are dropped when the
+  log is cleared or the client restarts. A failed save never marks a row.
+- **Explain stays read-only.** Diagnostics and Tools Explain still resolve a
+  domain without creating a query or marking live-log history.
 
-## Brand mark goes home
+## Service icons come from a library
 
-- **Desktop and mobile.** Clicking the sidebar or mobile header brand now opens
-  the dashboard; both marks advertise the action with a title, ARIA label and
-  keyboard focus ring.
-- **Update button preserved.** The injected “Update available” button still
-  opens its modal instead of also navigating away.
-
-Source-contract tests pin the traffic row, unit spans, compact CSS scale, brand
-links and home handler so a later edit cannot silently restore the wrap or drop
-the shortcut.
+- **Type a name, domain or URL.** The Domains editor reduces it to a search term,
+  so `Netflix`, `netflix.com`, `https://www.netflix.com/browse` and
+  `ads.netflix.co.uk` all offer the Netflix logo. Image URLs and IP addresses do
+  not trigger a search.
+- **Both clients agree.** The dashboard and Android use the same Iconify ids and
+  store the same explicit SVG URL in `service_icons`. Monochrome sets receive a
+  neutral tint; colourful logo and emoji sets keep their own palette.
+- **Stale results cannot repaint the field.** A 350 ms debounce and a sequence
+  guard discard replies from earlier edits or a closed dialog, and choices render
+  inside the existing dialog scroll instead of adding a nested one.
+- **Works with both credential modes.** The new `GET /api/v3/icons/search`
+  endpoint delegates to the dashboard's cached Iconify proxy and accepts either
+  a dashboard session or the master API key.
 
 ## Android
 
-The companion carries the matching `android-v5.9.8` version line (version code
-578). The workflow's debug APKs are attached to this release alongside the
-standard signed APKs for arm64-v8a, armeabi-v7a, x86_64 and universal devices.
+The companion carries the matching `android-v5.10.0` version line (version code
+579). It adds the live-log change marker and the service-icon suggestions while
+keeping the existing layouts, navigation and all stored rule data. The
+workflow's debug APKs are attached to this release alongside the standard signed
+APKs for arm64-v8a, armeabi-v7a, x86_64 and universal devices.
 
 ## Upgrade
 
 In-place upgrades from the dashboard are supported.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.9.8/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.10.0/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.9.8
-docker pull ghcr.io/digitrob/digitdns-agent:5.9.8
-docker pull robmeister/digitdns:5.9.8
-docker pull robmeister/digitdns-agent:5.9.8
+docker pull ghcr.io/digitrob/digitdns:5.10.0
+docker pull ghcr.io/digitrob/digitdns-agent:5.10.0
+docker pull robmeister/digitdns:5.10.0
+docker pull robmeister/digitdns-agent:5.10.0
 ```
