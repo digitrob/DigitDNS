@@ -7,7 +7,7 @@ import org.junit.Test
 class SettingsHubTest {
     @Test
     fun emptyQueryReturnsEverySection() {
-        assertEquals(24, filterSettingsSections("").size)
+        assertEquals(25, filterSettingsSections("").size)
         assertEquals(SettingsSection.entries, filterSettingsSections("   "))
     }
 
@@ -17,6 +17,17 @@ class SettingsHubTest {
         assertTrue(filterSettingsSections("tokens").any { it.name == "Access" })
         assertTrue(filterSettingsSections("certificate").any { it.name == "Tls" })
         assertTrue(filterSettingsSections("wireguard").any { it.name == "RelayAgents" })
+        assertTrue(filterSettingsSections("upstream list import").any { it.name == "AdGuardUpstreamImport" })
+    }
+
+    @Test
+    fun adGuardImportSitsBesideImportConfigUnderPolicy() {
+        val section = SettingsSection.AdGuardUpstreamImport
+        assertEquals(SettingsGroup.Policy, section.group)
+        assertEquals(
+            SettingsSection.Import.ordinal + 1,
+            section.ordinal,
+        )
     }
 
     @Test

@@ -5495,7 +5495,7 @@
           "sync"
         ],
         "summary": "Preview AdGuard coverage",
-        "description": "Parses pasted or fetched AdGuard upstream rules and returns covered, adguardOnly, digitdnsOnly and conflict buckets plus warnings.",
+        "description": "Parses pasted AdGuard upstream rules and returns covered, adguardOnly, digitdnsOnly and conflict buckets. Structured notices group external upstream targets, high-traffic domains and conflicts; raw parser warnings remain for compatibility.",
         "responses": {
           "200": {
             "description": "OK"

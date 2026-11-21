@@ -118,3 +118,54 @@ test('mirror mode refuses to run without its separate checkbox', async () => {
   assert.equal(h.calls.some(c => c.path.endsWith('/apply')), false);
   assert.ok(h.toasts.some(t => /Confirm mirror mode/.test(t.message)));
 });
+
+test('preview drops the source URL and shows grouped notices instead of raw warnings', async () => {
+  const grouped = {
+    ...preview,
+    notices: [
+      { kind: 'upstream', title: 'External upstream targets', message: 'These targets are not this DigitDNS server: 77.88.8.8.' },
+      { kind: 'broad', title: 'High-traffic domains', message: '3 high-traffic domains are included.' },
+    ],
+    warnings: [
+      'upstream 77.88.8.8 is not this DigitDNS server; its domains can be imported',
+      'broad domain www.google.com routes a large share of ordinary traffic',
+    ],
+  };
+  const h = harness(grouped);
+  await vm.runInContext('previewAdGuardSync({ resetSelection: true })', h.context);
+  const call = h.calls.find(c => c.path.endsWith('/preview'));
+  assert.equal(Object.hasOwn(call.body, 'url'), false, 'no URL is sent by the dashboard');
+  const notices = h.get('adguard-sync-notices').innerHTML;
+  assert.match(notices, /External upstream targets/);
+  assert.match(notices, /High-traffic domains/);
+  assert.doesNotMatch(notices, /broad domain www\.google\.com/);
+  assert.doesNotMatch(notices, /is not this DigitDNS server; its domains/);
+});
+
+test('bulk controls select and clear every importable row', async () => {
+  const h = harness(preview);
+  await vm.runInContext('previewAdGuardSync({ resetSelection: true })', h.context);
+  await vm.runInContext('adGuardSyncBulkImports(false)', h.context);
+  assert.deepEqual(h.get('adguard-sync-results').innerHTML.match(/data-adguard-import="[^"]+"[^>]* checked>/g) || [], [], 'clears imports');
+  await vm.runInContext('adGuardSyncBulkImports(true)', h.context);
+  assert.equal((h.get('adguard-sync-results').innerHTML.match(/data-adguard-import="[^"]+"[^>]* checked>/g) || []).length, 2);
+});
+
+test('a fresh preview clears managed export selections but a re-preview keeps them', async () => {
+  const h = harness(preview);
+  await vm.runInContext('previewAdGuardSync({ resetSelection: true })', h.context);
+  await vm.runInContext('adGuardSyncBulkManaged(true)', h.context);
+  assert.match(h.get('adguard-sync-results').innerHTML, /data-adguard-managed="manual\.example"[^>]* checked>/);
+  await vm.runInContext('previewAdGuardSync({ resetSelection: true })', h.context);
+  assert.doesNotMatch(h.get('adguard-sync-results').innerHTML, /data-adguard-managed="manual\.example"[^>]* checked>/);
+});
+
+test('the card uses its own title, palette and no URL controls', () => {
+  const html = readFileSync(resolve(__dirname, '../../web/index.html'), 'utf8');
+  assert.match(html, /AdGuard Upstream List Import/);
+  assert.doesNotMatch(html, /adguard-sync-source-url|Refresh URL/);
+  assert.match(html, /id="adguard-sync-status" class="ag-pill ag-pill-neutral"/);
+  const css = readFileSync(resolve(__dirname, '../../web/css/style.css'), 'utf8');
+  assert.match(css, /\.ag-pill-add/);
+  assert.match(css, /\.ag-pill-broad/);
+});

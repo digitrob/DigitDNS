@@ -107,6 +107,17 @@ func TestParseSampleConfig(t *testing.T) {
 	}
 }
 
+func TestNormalizeTokenMarksBroadDomains(t *testing.T) {
+	broad, ok := NormalizeToken("www.google.com")
+	if !ok || !broad.Broad {
+		t.Fatalf("www.google.com = %#v, want broad", broad)
+	}
+	ordinary, ok := NormalizeToken("bbc.co.uk")
+	if !ok || ordinary.Broad {
+		t.Fatalf("bbc.co.uk = %#v, want ordinary", ordinary)
+	}
+}
+
 func TestSelfDetectionIgnoresSchemeAndPort(t *testing.T) {
 	self := selfHostSet([]string{"NORWICH-VPS.DUCKDNS.ORG."})
 	for _, target := range []string{

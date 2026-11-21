@@ -55,10 +55,10 @@ func TestAdGuardSyncPreviewBuckets(t *testing.T) {
 	}
 	buckets := adGuardSyncRowBuckets(preview["rows"])
 	for domain, want := range map[string]string{
-		"bbc.co.uk":       "adguardOnly",
-		"*.bbci.co.uk":    "adguardOnly",
-		"chatgpt.com":     "covered",
-		"kommersant.ru":   "adguardOnly",
+		"bbc.co.uk":     "adguardOnly",
+		"*.bbci.co.uk":  "adguardOnly",
+		"chatgpt.com":   "covered",
+		"kommersant.ru": "adguardOnly",
 	} {
 		if got := buckets[domain]; got != want {
 			t.Errorf("bucket[%s] = %q, want %q", domain, got, want)
@@ -320,4 +320,45 @@ func (ws *WebServer) sourcesForTest(t *testing.T) []adguardSource {
 		t.Fatal(err)
 	}
 	return sources
+}
+
+func TestAdGuardSyncPreviewGroupsWarningsIntoNotices(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+	const config = `[/www.google.com/kommersant.ru/]77.88.8.8
+[/bbc.co.uk/]37.230.192.51
+`
+	preview, err := ws.adGuardSyncPreview(map[string]any{"text": config})
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+
+	notices, ok := preview["notices"].([]adguardNotice)
+	if !ok || len(notices) != 2 {
+		t.Fatalf("notices = %#v, want upstream + broad", preview["notices"])
+	}
+	upstream := notices[0]
+	if upstream.Kind != "upstream" ||
+		!strings.Contains(upstream.Message, "77.88.8.8") ||
+		!strings.Contains(upstream.Message, "37.230.192.51") ||
+		!strings.Contains(upstream.Message, "not this DigitDNS server") {
+		t.Errorf("upstream notice = %#v", upstream)
+	}
+	broad := notices[1]
+	if broad.Kind != "broad" || !strings.Contains(broad.Message, "www.google.com") {
+		t.Errorf("broad notice = %#v", broad)
+	}
+	if got := preview["broad_count"].(int); got != 1 {
+		t.Errorf("broad_count = %d, want 1", got)
+	}
+	foreign := preview["foreign_targets"].([]string)
+	if !slices.Equal(foreign, []string{"37.230.192.51", "77.88.8.8"}) {
+		t.Errorf("foreign_targets = %v", foreign)
+	}
+	rows := preview["rows"].([]adguardSyncRow)
+	for _, row := range rows {
+		if row.Domain == "www.google.com" && !row.Broad {
+			t.Error("broad row was not flagged")
+		}
+	}
 }

@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.10.2] — AdGuard Upstream List Import polish
+
+### Added
+- **A dedicated AdGuard Upstream List Import page on Android.** The companion's Settings tab now has its own searchable page for pasting an upstream list, loading or saving a source, previewing coverage, selecting imports and exports in bulk, applying a bounded preview and copying the generated AdGuard block. It uses the same flow and bucket language as the dashboard without adding a bottom tab.
+- **Structured preview notices.** External upstream targets, high-traffic domains and conflicts are returned as grouped, operator-friendly notices. The old one-line-per-domain warning strings remain in the API for compatibility but are no longer rendered as a wall of text.
+- **Bulk selection and review controls.** The dashboard can select or clear every importable domain, select or clear all export proposals, filter the preview and show only selected rows. Apply stays disabled until an import, export or removal is staged.
+
+### Changed
+- **The import card now matches the Domains page.** It carries a step-by-step explainer, a scrollable comparison table with a fixed header, the existing panel controls, and dedicated pills for `Already in DigitDNS`, `Add to DigitDNS`, `Conflict`, `Send back to AdGuard`, `Broad` and `External upstream`. Those tones are separate from live-log, history, transport and service colours.
+- **No source URL in the UI.** Saved sources keep working from their pasted text; the dashboard and Android page no longer show or send a source URL and no longer offer URL refresh. The server endpoints stay compatible for existing clients.
+- **Android palette parity.** The new settings page uses its own semantic colours so its review states cannot be confused with existing action or status pills.
+
+### Fixed
+- **Formatting gate.** `gofmt` now passes across the repository, including the AdGuard sync files added in v5.10.1.
+
+No database schema migration is required. Existing rules, saved sources, provenance, certificates, relay agents, history and service icons are preserved. The Android companion moves to `android-v5.10.2`, with version code 581.
+
+---
+
 ## 🏷️ [v5.10.1] — AdGuard coverage sync and unified palettes
 
 ### Added

@@ -741,6 +741,7 @@
     <string name="settings_history">Traffic History</string>
     <string name="settings_ad_blocking">Ad Blocking</string>
     <string name="settings_import">Import Config</string>
+    <string name="settings_adguard_upstream_import">AdGuard Upstream List Import</string>
     <string name="history_settings_title">Traffic History</string>
     <string name="history_settings_help">Aggregate counters only — no raw query log is written to disk. Applied after a daemon restart.</string>
     <string name="history_settings_enabled">Keep aggregate history</string>

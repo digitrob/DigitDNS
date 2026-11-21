@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Wifi
@@ -59,6 +60,7 @@ import com.digitrob.digitdns.R
 import com.digitrob.digitdns.ui.connect.ConnectScreen
 import com.digitrob.digitdns.ui.rules.AccessScreen
 import com.digitrob.digitdns.ui.rules.AdBlockingScreen
+import com.digitrob.digitdns.ui.rules.AdGuardUpstreamImportScreen
 import com.digitrob.digitdns.ui.rules.GroupsScreen
 import com.digitrob.digitdns.ui.rules.MigrateScreen
 import com.digitrob.digitdns.ui.rules.PoliciesScreen
@@ -109,6 +111,12 @@ internal enum class SettingsSection(
 
     AdBlocking(R.string.settings_ad_blocking, Icons.Filled.Block, SettingsGroup.Policy, "ad blocking filters blocklist"),
     Import(R.string.settings_import, Icons.Filled.FileDownload, SettingsGroup.Policy, "import migrate pihole adguard"),
+    AdGuardUpstreamImport(
+        R.string.settings_adguard_upstream_import,
+        Icons.Filled.Sync,
+        SettingsGroup.Policy,
+        "adguard upstream list import sync domains coverage",
+    ),
     Groups(R.string.settings_groups, Icons.Filled.Layers, SettingsGroup.Policy, "groups policy bundles"),
     Policies(R.string.settings_policies, Icons.Filled.Policy, SettingsGroup.Policy, "policies rules"),
 
@@ -277,6 +285,7 @@ private fun SettingsSectionContent(
         SettingsSection.History -> HistorySettingsScreen()
         SettingsSection.AdBlocking -> AdBlockingScreen()
         SettingsSection.Import -> MigrateScreen()
+        SettingsSection.AdGuardUpstreamImport -> AdGuardUpstreamImportScreen()
         SettingsSection.Servers -> ServersScreen(
             onLoggedOut = onLoggedOut,
             onAddServer = onAddServer,

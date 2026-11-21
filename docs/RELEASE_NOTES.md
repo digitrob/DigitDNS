@@ -1,45 +1,50 @@
-# DigitDNS v5.10.1 — AdGuard coverage sync and unified palettes
+# DigitDNS v5.10.2 — AdGuard Upstream List Import polish
 
-This patch adds a safe AdGuard ↔ DigitDNS coverage comparison to the dashboard and makes action/status pills and DNS transport colours agree across the dashboard and Android. It needs no database schema migration: sync state lives in the existing `Policy` store. Existing rules, clients, certificates, relay agents, egress options, stored history and service icons are preserved. Upstream selection defaults are unchanged: Racing still maps to Hedged.
+This patch refines the AdGuard coverage sync introduced in v5.10.1 on both clients. It needs no database schema migration: saved sources, checksums, provenance and rules stay in the existing `Policy` store. Existing rules, clients, certificates, relay agents, egress options, stored history and service icons are preserved. Upstream selection defaults are unchanged: Racing still maps to Hedged.
 
-## AdGuard coverage sync
+## Dashboard: AdGuard Upstream List Import
 
-The Domains tab now carries a full-width **AdGuard Sync** card. Paste an AdGuard upstream config, optionally name it and give a URL, then preview before anything is written.
+The full-width card on the Domains tab is now called **AdGuard Upstream List Import** and follows the Domains page's visual language.
 
-- **Every active bracketed upstream group counts.** The parser reads each active group whatever its target, converts exact and `*.wildcard` tokens, and ignores comments, disabled rules and default lines. Regex, malformed and unsupported tokens are reported as warnings rather than silently imported.
-- **Four preview buckets.** Domains DigitDNS already covers stay untouched. AdGuard-only domains are proposed for `custom_proxied` and checked by default. DigitDNS-only domains are proposed back to AdGuard as an unchecked managed block. Conflicts and broad domains are called out before apply.
-- **Back to AdGuard, without rewriting the source.** Select which DigitDNS-only domains to export and copy or download a managed block delimited by `BEGIN DIGITDNS SYNC — managed` / `END DIGITDNS SYNC — managed`. Handwritten AdGuard sections are never rewritten in this release; URL write-back and two-way auto-sync are out of scope.
-- **Apply is bounded by the preview.** The request carries the exact preview text and its checksum, so a changed source cannot be applied from a stale view. Import and managed selections are revalidated server-side against the preview.
-- **Removals stay conservative.** The default is `keep everything`. `synced_only` removes only domains this source previously synced and no longer names. `mirror` makes the source authoritative for custom proxied domains, requires a separate checkbox and a second confirmation, and preserves domains owned by other sources.
+- **A clear three-step explainer.** Paste the `[domain1/domain2/]upstream` list, review the comparison, then apply deliberately. The page states that DigitDNS is the primary rule store and that handwritten AdGuard sections are never rewritten automatically.
+- **A Domains-style comparison table.** The header stays in place while only the domain rows scroll. Existing panel fonts, buttons, checkboxes, dividers and empty states are reused.
+- **Bulk selection.** Select all domains that need to be added to DigitDNS, clear imports, select all domains to send back to AdGuard, clear exports, filter by domain/group/upstream, and show only selected rows. Apply stays disabled until an import, export or removal is staged.
+- **A palette of its own.** `Already in DigitDNS`, `Add to DigitDNS`, `Conflict`, `Send back to AdGuard`, `Broad` and `External upstream` have dedicated tones. They are deliberately different from live-log actions, history states, DNS transports and service badges, and a legend makes the meaning explicit.
+- **No source URL.** Saved sources continue to work from their pasted text. The URL field and URL-refresh button are gone from the dashboard; server endpoints remain compatible for existing clients.
 
-Saved sources persist their last checksum, provenance and last-good text. URL userinfo is redacted before storage, and a failed URL refresh keeps the last good source instead of replacing it with an error page.
+## Friendly notices instead of raw warning spam
 
-The backing endpoints are documented in the v3 OpenAPI spec: source list/save/delete/refresh/export, `/api/v3/sync/adguard/preview` and `/api/v3/sync/adguard/apply`.
+The preview API still returns the original `warnings` array for compatibility, but the dashboard and Android app now render grouped `notices`:
 
-## One visual language
+- One compact notice names any upstream targets that are not this DigitDNS server and explains that their domains can be imported while AdGuard keeps routing them there until its upstream settings change.
+- One compact notice reports the number of high-traffic domains with a few examples, and broad rows carry their own pill.
+- Conflicts get one short explanation rather than a per-domain warning wall.
 
-- **Text-only pills.** Live-log, history and Domains action badges now use the same text-only `.badge` shape. Pictograms were removed from the pills; relay flags, service icons, alert-channel type icons, copy buttons, block-category chips, `RAM`, the live-connection dot and the changed-row marker are unchanged.
-- **Canonical action tones.** Proxy outcomes are cyan. `BLOCK`, `PROXY_FAILED`, `RATELIMIT`, `QUOTA` and `SERVFAIL` are red. `DIRECT` and `CACHED` are green, `STALE` amber, `CUSTOM` purple, and unknown actions muted.
-- **Canonical transports.** UDP is cyan, TCP blue, DoT green, DoH purple, DoQ amber, DoH3 orange and DNSCrypt fuchsia on both clients. Cross-platform tests keep the palettes from drifting.
-- **Labels stay honest.** A cached answer still reads `DIRECT` in the live log and `CACHED` in history.
+The additive preview fields are `notices`, `broad_count`, `foreign_targets` and a per-row `broad` flag. The risk acknowledgement and exact-preview checksum rules are unchanged.
 
-## Android
+## Android: dedicated settings page
 
-The companion carries the matching `android-v5.10.1` version line (version code 580). Action and protocol colour decisions are centralised in shared palettes, `SERVFAIL` follows the failure tone, and the existing live-log marker, service icons, navigation and stored rule data are unchanged. The workflow's debug APKs are attached to this release alongside the signed APKs for arm64-v8a, armeabi-v7a, x86_64 and universal devices.
+The companion gains a separate **AdGuard Upstream List Import** page under Settings → DNS policy. It is not a new bottom tab. It mirrors the dashboard flow: saved-source selector, display name, enabled switch, managed upstream, pasted list, preview, bulk selection, bounded apply, and copy/share of the generated managed block. It uses Material 3 panel components and its own semantic palette so its review states cannot be confused with existing action or status pills.
+
+The companion carries the matching `android-v5.10.2` version line, version code 581.
+
+## Fixed
+
+The repository is `gofmt` clean again, including the AdGuard sync files added in v5.10.1.
 
 ## Upgrade
 
 In-place upgrades from the dashboard are supported.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.10.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.10.2/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.10.1
-docker pull ghcr.io/digitrob/digitdns-agent:5.10.1
-docker pull robmeister/digitdns:5.10.1
-docker pull robmeister/digitdns-agent:5.10.1
+docker pull ghcr.io/digitrob/digitdns:5.10.2
+docker pull ghcr.io/digitrob/digitdns-agent:5.10.2
+docker pull robmeister/digitdns:5.10.2
+docker pull robmeister/digitdns-agent:5.10.2
 ```

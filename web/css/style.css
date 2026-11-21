@@ -1377,6 +1377,324 @@ input:checked + .slider:before {
   flex: 0 0 auto;
 }
 
+/* AdGuard Upstream List Import uses its own palette. These tones deliberately do
+ * not reuse .badge-* or the action colours: a bucket here is a review state, not
+ * a query result, transport or service status. */
+.ag-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ag-steps li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.28);
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.ag-steps li > span {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 700;
+}
+.ag-steps strong {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+.ag-steps code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: #c4b5fd;
+}
+
+.ag-pill {
+  --ag-ink: #cbd5e1;
+  --ag-bg: rgba(148, 163, 184, 0.14);
+  --ag-line: rgba(148, 163, 184, 0.35);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--ag-line);
+  border-radius: 999px;
+  background: var(--ag-bg);
+  color: var(--ag-ink);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ag-pill-neutral {
+  --ag-ink: #cbd5e1;
+  --ag-bg: rgba(148, 163, 184, 0.14);
+  --ag-line: rgba(148, 163, 184, 0.35);
+}
+.ag-pill-covered {
+  --ag-ink: #a7f3d0;
+  --ag-bg: rgba(16, 185, 129, 0.12);
+  --ag-line: rgba(52, 211, 153, 0.34);
+}
+.ag-pill-add {
+  --ag-ink: #c4b5fd;
+  --ag-bg: rgba(139, 92, 246, 0.15);
+  --ag-line: rgba(167, 139, 250, 0.4);
+}
+.ag-pill-conflict {
+  --ag-ink: #fdba74;
+  --ag-bg: rgba(249, 115, 22, 0.14);
+  --ag-line: rgba(251, 146, 60, 0.4);
+}
+.ag-pill-send {
+  --ag-ink: #93c5fd;
+  --ag-bg: rgba(59, 130, 246, 0.14);
+  --ag-line: rgba(96, 165, 250, 0.4);
+}
+.ag-pill-broad {
+  --ag-ink: #f0abfc;
+  --ag-bg: rgba(217, 70, 239, 0.13);
+  --ag-line: rgba(240, 171, 252, 0.36);
+}
+.ag-pill-external {
+  --ag-ink: #d4d4d8;
+  --ag-bg: rgba(113, 113, 122, 0.18);
+  --ag-line: rgba(161, 161, 170, 0.38);
+}
+.ag-pill-busy {
+  --ag-ink: #e2e8f0;
+  --ag-bg: rgba(148, 163, 184, 0.2);
+  --ag-line: rgba(203, 213, 225, 0.45);
+}
+[data-theme="light"] .ag-pill-covered {
+  --ag-ink: #047857;
+  --ag-line: rgba(5, 150, 105, 0.35);
+}
+[data-theme="light"] .ag-pill-add {
+  --ag-ink: #6d28d9;
+  --ag-line: rgba(109, 40, 217, 0.35);
+}
+[data-theme="light"] .ag-pill-conflict {
+  --ag-ink: #c2410c;
+  --ag-line: rgba(194, 65, 12, 0.35);
+}
+[data-theme="light"] .ag-pill-send {
+  --ag-ink: #1d4ed8;
+  --ag-line: rgba(29, 78, 216, 0.35);
+}
+[data-theme="light"] .ag-pill-broad {
+  --ag-ink: #a21caf;
+  --ag-line: rgba(162, 28, 175, 0.35);
+}
+[data-theme="light"] .ag-pill-external {
+  --ag-ink: #52525b;
+  --ag-line: rgba(82, 82, 91, 0.35);
+}
+
+.ag-notices {
+  display: grid;
+  gap: 8px;
+}
+.ag-notices:empty {
+  display: none;
+}
+.ag-notice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 9px 11px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.32);
+  font-size: 11px;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+.ag-notice strong {
+  display: block;
+  color: #e2e8f0;
+  font-size: 11px;
+}
+.ag-notice-upstream {
+  border-left-color: #a1a1aa;
+}
+.ag-notice-broad {
+  border-left-color: #f0abfc;
+}
+.ag-notice-conflict {
+  border-left-color: #fdba74;
+}
+
+.ag-toolbar,
+.ag-bulk,
+.ag-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ag-toolbar {
+  justify-content: space-between;
+  padding-top: 4px;
+}
+.ag-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ag-counts,
+.ag-staged {
+  color: #94a3b8;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.ag-filter {
+  width: 190px;
+  font-size: 11px;
+}
+.ag-bulk {
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.24);
+}
+.ag-staged {
+  margin-left: auto;
+}
+.ag-legend {
+  gap: 6px;
+  padding: 2px 0;
+}
+.ag-results {
+  min-height: 72px;
+}
+
+/* The header stays put while only the rows scroll, matching the Domains list. */
+.ag-table-frame {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.24);
+  overflow: hidden;
+}
+.ag-table-scroll {
+  max-height: 22rem;
+  overflow: auto;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+.ag-table {
+  width: 100%;
+  min-width: 720px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.ag-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.96);
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+}
+[data-theme="light"] .ag-table thead th {
+  background: rgba(248, 250, 252, 0.96);
+  color: #64748b;
+}
+.ag-table th:nth-child(1) {
+  width: 38px;
+  text-align: center;
+}
+.ag-table th:nth-child(2) {
+  width: 24%;
+}
+.ag-table th:nth-child(3) {
+  width: 30%;
+}
+.ag-table th:nth-child(4) {
+  width: 17%;
+}
+.ag-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  color: #cbd5e1;
+  font-size: 11px;
+  vertical-align: middle;
+}
+.ag-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.ag-table tbody tr:hover td {
+  background: rgba(148, 163, 184, 0.06);
+}
+.ag-table td:nth-child(1) {
+  text-align: center;
+}
+.ag-domain {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: #e2e8f0;
+  overflow-wrap: anywhere;
+}
+.ag-meta,
+.ag-note {
+  color: #94a3b8;
+  font-size: 11px;
+}
+.ag-note {
+  color: #64748b;
+}
+.ag-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: #64748b;
+  font-size: 11px;
+}
+.ag-managed {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 4px 12px;
+  margin-top: 10px;
+}
+.ag-managed label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 11px;
+}
+@media (max-width: 900px) {
+  .ag-steps {
+    grid-template-columns: 1fr;
+  }
+  .ag-toolbar {
+    align-items: flex-start;
+  }
+  .ag-filter {
+    width: 100%;
+  }
+}
+
 /* The row checkbox and the proxied table's columns. Plain CSS for the same reason as
  * the stream table: the purged utility sheet cannot be regenerated here. The two
  * checkbox class names are the same control: proxied-check carries the size, and

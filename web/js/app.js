@@ -10276,9 +10276,9 @@ async function testFilterRule() {
 }
 
 // -----------------------------------------------------------------------------
-// AdGuard coverage sync
+// AdGuard Upstream List Import
 //
-// DigitDNS is the primary rule store. This panel reads an AdGuard upstream
+// DigitDNS is the primary rule store. This panel reads a pasted AdGuard upstream
 // config, separates domains DigitDNS already covers from ones to import, and
 // proposes a managed AdGuard block for DigitDNS-only domains back the other way.
 // The backend owns parsing and the checksum; this layer only renders DTOs and
@@ -10291,28 +10291,41 @@ let adGuardSyncPreview = null;
 let adGuardSyncSelectedImport = new Set();
 let adGuardSyncSelectedManaged = new Set();
 let adGuardSyncImportTouched = false;
+let adGuardSyncFilter = '';
+let adGuardSyncSelectedOnly = false;
 let adGuardSyncBusy = false;
 
 function adGuardSyncValue(id) {
   return (document.getElementById(id)?.value || '').trim();
 }
 
+function adGuardSyncTextValue(id) {
+  return document.getElementById(id)?.value || '';
+}
+
 function adGuardSyncChecked(id) {
   return !!document.getElementById(id)?.checked;
 }
 
-function setAdGuardSyncStatus(message, cls = '') {
+function setAdGuardSyncStatus(message, tone = 'neutral') {
   const el = document.getElementById('adguard-sync-status');
   if (!el) return;
+  const tones = {
+    neutral: 'ag-pill-neutral',
+    busy: 'ag-pill-busy',
+    ready: 'ag-pill-add',
+    good: 'ag-pill-covered',
+    bad: 'ag-pill-conflict',
+  };
   el.textContent = message;
-  el.className = 'badge' + (cls ? ' ' + cls : '');
+  el.className = 'ag-pill ' + (tones[tone] || tones.neutral);
 }
 
 async function adGuardSyncFetch(path, options = {}) {
   const headers = Object.assign({ Authorization: `Bearer ${authToken}` }, options.headers || {});
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(api(path), Object.assign({}, options, { headers }));
-  if (!res.ok) throw new Error(await errorMessage(res, 'The AdGuard sync request failed.'));
+  if (!res.ok) throw new Error(await errorMessage(res, 'The AdGuard request failed.'));
   return res.json();
 }
 
@@ -10320,8 +10333,7 @@ function adGuardSyncInputPayload() {
   return {
     source_id: adGuardSyncValue('adguard-sync-source-select'),
     name: adGuardSyncValue('adguard-sync-source-name'),
-    url: adGuardSyncValue('adguard-sync-source-url'),
-    text: document.getElementById('adguard-sync-source-text')?.value || '',
+    text: adGuardSyncTextValue('adguard-sync-source-text'),
     enabled: adGuardSyncChecked('adguard-sync-enabled'),
     managed_upstream: adGuardSyncValue('adguard-sync-managed-upstream'),
   };
@@ -10330,47 +10342,52 @@ function adGuardSyncInputPayload() {
 function applyAdGuardSourceToForm(src) {
   if (!src) return;
   const name = document.getElementById('adguard-sync-source-name');
-  const url = document.getElementById('adguard-sync-source-url');
   const text = document.getElementById('adguard-sync-source-text');
   const upstream = document.getElementById('adguard-sync-managed-upstream');
   const enabled = document.getElementById('adguard-sync-enabled');
   if (name) name.value = src.name || '';
-  if (url) url.value = src.url || '';
   if (text) text.value = src.text || '';
   if (upstream) upstream.value = src.managed_upstream || '';
   if (enabled) enabled.checked = src.enabled !== false;
-  setAdGuardSyncStatus('Source loaded', 'badge-direct');
+  setAdGuardSyncStatus('Source loaded', 'good');
 }
 
 function clearAdGuardSyncForm() {
-  for (const id of ['adguard-sync-source-name', 'adguard-sync-source-url',
-    'adguard-sync-source-text', 'adguard-sync-managed-upstream']) {
+  for (const id of ['adguard-sync-source-name', 'adguard-sync-source-text', 'adguard-sync-managed-upstream']) {
     const el = document.getElementById(id);
     if (el) el.value = '';
   }
+  const select = document.getElementById('adguard-sync-source-select');
+  if (select) select.value = '';
   const enabled = document.getElementById('adguard-sync-enabled');
   if (enabled) enabled.checked = true;
+  const filter = document.getElementById('adguard-sync-filter');
+  if (filter) filter.value = '';
+  const selectedOnly = document.getElementById('adguard-sync-selected-only');
+  if (selectedOnly) selectedOnly.checked = false;
+  adGuardSyncFilter = '';
+  adGuardSyncSelectedOnly = false;
   adGuardSyncPreview = null;
   adGuardSyncSelectedImport = new Set();
   adGuardSyncSelectedManaged = new Set();
   adGuardSyncImportTouched = false;
-  const summary = document.getElementById('adguard-sync-summary');
-  if (summary) summary.innerHTML = '';
-  const warnings = document.getElementById('adguard-sync-warnings');
-  if (warnings) warnings.innerHTML = '';
+  for (const id of ['adguard-sync-summary', 'adguard-sync-notices']) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  }
   const results = document.getElementById('adguard-sync-results');
   if (results) results.innerHTML = '<p class="text-xs text-slate-500">Preview a source to compare its upstream groups with the Domains list.</p>';
   const out = document.getElementById('adguard-sync-export');
   if (out) out.textContent = 'No DigitDNS-only domains selected.';
+  adGuardSyncUpdateSelectionUI();
   setAdGuardSyncStatus('Not previewed');
 }
 
-// Apply changes rules through the same config endpoint the rest of the panel
-// uses. Refresh the cached rules afterwards or the Domains table keeps showing
-// the pre-sync list until the operator reloads the whole page.
+// Applying changes rules through the same config endpoint the rest of the panel
+// uses keeps matcher and relay assignments in step with a manual Domains save.
 async function reloadAdGuardDomains() {
   try {
-    const res = await fetch(api('/api/config'), { headers: { 'Authorization': `Bearer ${authToken}` } });
+    const res = await fetch(api('/api/config'), { headers: { Authorization: `Bearer ${authToken}` } });
     if (!res.ok) throw new Error(await errorMessage(res, 'Could not refresh the Domains list.'));
     const cfg = await res.json();
     if (currentConfig) currentConfig.rules = cfg.rules || currentConfig.rules;
@@ -10396,7 +10413,7 @@ async function loadAdGuardSources(selectedId = null) {
     for (const src of adGuardSyncSources) {
       const option = document.createElement('option');
       option.value = src.id;
-      option.textContent = src.name || src.url || src.id;
+      option.textContent = src.name || src.id;
       select.appendChild(option);
     }
     const found = adGuardSyncSources.find(src => src.id === wanted);
@@ -10404,8 +10421,8 @@ async function loadAdGuardSources(selectedId = null) {
     if (found) applyAdGuardSourceToForm(found);
     return found || null;
   } catch (err) {
-    setAdGuardSyncStatus('Sources unavailable', 'badge-block');
-    showToast(err.message || 'Could not load AdGuard sync sources.', 'error');
+    setAdGuardSyncStatus('Sources unavailable', 'bad');
+    showToast(err.message || 'Could not load AdGuard sources.', 'error');
     return null;
   }
 }
@@ -10423,8 +10440,8 @@ function loadSelectedAdGuardSource() {
 
 async function saveAdGuardSyncSource() {
   const payload = adGuardSyncInputPayload();
-  if (!payload.text && !payload.url) {
-    showToast('Paste an AdGuard config or provide a source URL first.', 'error');
+  if (!payload.text) {
+    showToast('Paste an AdGuard upstream config first.', 'error');
     return;
   }
   try {
@@ -10433,32 +10450,11 @@ async function saveAdGuardSyncSource() {
       body: JSON.stringify(payload),
     });
     await loadAdGuardSources(src.id);
-    setAdGuardSyncStatus('Source saved', 'badge-direct');
+    setAdGuardSyncStatus('Source saved', 'good');
     showToast('AdGuard source saved.', 'success');
   } catch (err) {
-    setAdGuardSyncStatus('Save failed', 'badge-block');
+    setAdGuardSyncStatus('Save failed', 'bad');
     showToast(err.message || 'Could not save the AdGuard source.', 'error');
-  }
-}
-
-async function refreshAdGuardSyncSource() {
-  const id = adGuardSyncValue('adguard-sync-source-select');
-  if (!id) {
-    showToast('Select a saved source before refreshing.', 'error');
-    return;
-  }
-  try {
-    const result = await adGuardSyncFetch('/api/v3/sync/adguard/sources/' + encodeURIComponent(id) + '/refresh', {
-      method: 'POST',
-    });
-    if (result.warning) showToast(result.warning, 'info');
-    if (result.source) {
-      applyAdGuardSourceToForm(result.source);
-      await previewAdGuardSync({ resetSelection: true });
-    }
-  } catch (err) {
-    setAdGuardSyncStatus('Refresh failed', 'badge-block');
-    showToast(err.message || 'Could not refresh the AdGuard source.', 'error');
   }
 }
 
@@ -10470,7 +10466,7 @@ async function deleteAdGuardSyncSource() {
   }
   const confirmed = await confirmAction({
     title: 'Delete AdGuard source?',
-    message: 'The source record and its sync provenance will be forgotten. Domains already imported into DigitDNS are kept.',
+    message: 'The saved list and its sync provenance will be forgotten. Domains already imported into DigitDNS are kept.',
     confirmText: 'DELETE SOURCE',
     destructive: true,
   });
@@ -10490,7 +10486,7 @@ async function previewAdGuardSync(options = {}) {
   adGuardSyncBusy = true;
   const btn = document.getElementById('adguard-sync-preview-btn');
   if (btn) btn.disabled = true;
-  setAdGuardSyncStatus('Previewing…');
+  setAdGuardSyncStatus('Previewing…', 'busy');
   try {
     const payload = adGuardSyncInputPayload();
     payload.managed_selection = Array.from(adGuardSyncSelectedManaged);
@@ -10508,13 +10504,17 @@ async function previewAdGuardSync(options = {}) {
       adGuardSyncSelectedImport = new Set(Array.from(adGuardSyncSelectedImport).filter(d => importable.has(d)));
     }
     const exportable = new Set((preview.managed || []).map(row => row.domain));
-    adGuardSyncSelectedManaged = new Set(Array.from(adGuardSyncSelectedManaged).filter(d => exportable.has(d)));
+    // Export proposals start unchecked after a fresh preview or apply; a normal
+    // re-preview (used when regenerating the block) keeps explicit choices.
+    adGuardSyncSelectedManaged = options.resetSelection
+      ? new Set()
+      : new Set(Array.from(adGuardSyncSelectedManaged).filter(d => exportable.has(d)));
     adGuardSyncPreview = preview;
     renderAdGuardSyncPreview(preview);
-    setAdGuardSyncStatus('Preview ready', 'badge-proxy');
+    setAdGuardSyncStatus('Preview ready', 'ready');
     return preview;
   } catch (err) {
-    setAdGuardSyncStatus('Preview failed', 'badge-block');
+    setAdGuardSyncStatus('Preview failed', 'bad');
     showToast(err.message || 'Could not preview the AdGuard config.', 'error');
     return null;
   } finally {
@@ -10523,79 +10523,154 @@ async function previewAdGuardSync(options = {}) {
   }
 }
 
+function adGuardSyncPill(cls, label) {
+  return `<span class="ag-pill ${escapeHTML(cls)}">${escapeHTML(label)}</span>`;
+}
+
+function renderAdGuardSyncNotices(preview) {
+  const notices = document.getElementById('adguard-sync-notices');
+  if (!notices) return;
+  notices.innerHTML = (preview.notices || []).map((notice) => {
+    const cls = ['upstream', 'broad', 'conflict'].includes(notice.kind) ? notice.kind : 'upstream';
+    return `<div class="ag-notice ag-notice-${escapeHTML(cls)}"><div><strong>${escapeHTML(notice.title || 'Review this list')}</strong>${escapeHTML(notice.message || '')}</div></div>`;
+  }).join('');
+}
+
+function adGuardSyncVisibleRows() {
+  const rows = adGuardSyncPreview?.rows || [];
+  const needle = adGuardSyncFilter.trim().toLowerCase();
+  return rows.filter((row) => {
+    if (needle && !row.domain.toLowerCase().includes(needle) &&
+      !(row.group || '').toLowerCase().includes(needle) &&
+      !(row.target || '').toLowerCase().includes(needle)) return false;
+    if (adGuardSyncSelectedOnly && !adGuardSyncSelectedImport.has(row.domain) &&
+      !adGuardSyncSelectedManaged.has(row.domain)) return false;
+    return true;
+  });
+}
+
+function adGuardSyncRowState(row) {
+  if (row.bucket === 'covered') return ['ag-pill-covered', 'Already in DigitDNS'];
+  if (row.bucket === 'adguardOnly') return ['ag-pill-add', 'Add to DigitDNS'];
+  if (row.bucket === 'conflict') return ['ag-pill-conflict', 'Conflict'];
+  if (row.bucket === 'digitdnsOnly') return ['ag-pill-send', 'Send back to AdGuard'];
+  return ['ag-pill-neutral', 'Unchanged'];
+}
+
 function renderAdGuardSyncPreview(preview) {
   const counts = preview.counts || {};
   const summary = document.getElementById('adguard-sync-summary');
   if (summary) {
     summary.innerHTML = [
-      ['badge-proxy', Number(counts.adguardOnly || 0) + ' to DigitDNS'],
-      ['badge-rewrite', Number(counts.digitdnsOnly || 0) + ' to AdGuard'],
-      ['badge-direct', Number(counts.covered || 0) + ' already covered'],
-      ['badge-block', Number(counts.conflict || 0) + ' conflict'],
-    ].map(([cls, label]) => `<span class="badge ${escapeHTML(cls)}">${escapeHTML(label)}</span>`).join('');
+      ['ag-pill-add', Number(counts.adguardOnly || 0) + ' to DigitDNS'],
+      ['ag-pill-send', Number(counts.digitdnsOnly || 0) + ' to AdGuard'],
+      ['ag-pill-covered', Number(counts.covered || 0) + ' already covered'],
+      ['ag-pill-conflict', Number(counts.conflict || 0) + ' conflict'],
+    ].map(([cls, label]) => adGuardSyncPill(cls, label)).join('');
   }
 
-  const warnings = document.getElementById('adguard-sync-warnings');
-  if (warnings) {
-    warnings.innerHTML = (preview.warnings || [])
-      .map(warning => `<div class="text-[11px] text-amber-300">${escapeHTML(warning)}</div>`).join('');
-  }
+  renderAdGuardSyncNotices(preview);
 
   const results = document.getElementById('adguard-sync-results');
-  if (!results) return;
-  const rows = preview.rows || [];
-  const bucketLabels = {
-    covered: ['Covered', 'badge-direct'],
-    adguardOnly: ['Import to DigitDNS', 'badge-proxy'],
-    conflict: ['Conflict', 'badge-block'],
-  };
+  if (!results) {
+    adGuardSyncUpdateSelectionUI();
+    return;
+  }
+  const rows = adGuardSyncPreview?.rows || [];
+  const visible = adGuardSyncVisibleRows();
+  const visibleImportable = visible.filter(row => row.bucket === 'adguardOnly');
+  const allVisibleSelected = visibleImportable.length > 0 &&
+    visibleImportable.every(row => adGuardSyncSelectedImport.has(row.domain));
   let html = '';
   if (rows.length === 0) {
-    html += '<p class="text-xs text-slate-500">No active AdGuard upstream groups were found.</p>';
+    html += '<p class="ag-empty">No active AdGuard upstream groups were found in this list.</p>';
   } else {
-    html += '<div class="text-xs font-semibold text-slate-300">AdGuard upstream domains</div>';
-    html += '<div class="proxied-scroll max-h-64 border border-slate-800/70 rounded-lg">';
-    html += '<table class="w-full text-start text-xs"><thead><tr class="text-[10px] uppercase tracking-widest text-slate-500">';
-    html += '<th class="w-8"></th><th class="py-2 px-3 text-start">Domain</th><th class="py-2 px-3 text-start">Group / target</th><th class="py-2 px-3 text-center">Status</th><th class="py-2 px-3 text-start">Note</th>';
-    html += '</tr></thead><tbody class="divide-y divide-slate-800/50">';
-    for (const row of rows) {
-      const meta = bucketLabels[row.bucket] || ['Unknown', ''];
+    html += '<div class="ag-table-frame"><div class="ag-table-scroll">';
+    html += '<table class="ag-table"><thead><tr>';
+    html += `<th><input type="checkbox" class="proxied-check" data-adguard-select-all-import aria-label="Select all visible domains to add"${allVisibleSelected ? ' checked' : ''}></th>`;
+    html += '<th>Domain</th><th>Group / upstream</th><th>Status</th><th>Note</th>';
+    html += '</tr></thead><tbody>';
+    if (visible.length === 0) {
+      html += '<tr><td colspan="5" class="ag-empty">No domains match this filter.</td></tr>';
+    }
+    for (const row of visible) {
+      const [stateCls, stateLabel] = adGuardSyncRowState(row);
       const target = row.target_is_self ? 'this DigitDNS server' : (row.target || 'unknown upstream');
-      const note = row.covered_by
-        ? 'Covered by ' + row.covered_by
-        : (row.warning || (row.bucket === 'adguardOnly' ? 'Proposed for custom_proxied' : ''));
+      let note = '';
+      if (row.covered_by) note = 'Covered by ' + row.covered_by;
+      else if (row.bucket === 'conflict') note = 'Different DigitDNS action: ' + row.covered_by;
+      else if (row.bucket === 'adguardOnly') note = 'Adds to custom_proxied';
+      else if (row.bucket === 'covered') note = 'Already in the Domains list';
       const checked = row.bucket === 'adguardOnly' && adGuardSyncSelectedImport.has(row.domain);
       html += '<tr>';
-      html += '<td class="py-2 px-2 text-center">' + (row.bucket === 'adguardOnly'
+      html += '<td>' + (row.bucket === 'adguardOnly'
         ? `<input type="checkbox" class="proxied-check" data-adguard-import="${escapeHTML(row.domain)}"${checked ? ' checked' : ''}>`
         : '') + '</td>';
-      html += `<td class="py-2 px-3 font-mono text-slate-200">${escapeHTML(row.domain)}</td>`;
-      html += `<td class="py-2 px-3 text-slate-400">${escapeHTML(row.group || 'Ungrouped')} · ${escapeHTML(target)}</td>`;
-      html += `<td class="py-2 px-3 text-center"><span class="badge ${escapeHTML(meta[1])}">${escapeHTML(meta[0])}</span></td>`;
-      html += `<td class="py-2 px-3 text-[11px] text-slate-500">${escapeHTML(note)}</td>`;
+      html += `<td class="ag-domain">${escapeHTML(row.domain)}</td>`;
+      html += `<td class="ag-meta">${escapeHTML(row.group || 'Ungrouped')} · ${escapeHTML(target)}</td>`;
+      html += `<td>${adGuardSyncPill(stateCls, stateLabel)}`;
+      if (row.broad) html += ' ' + adGuardSyncPill('ag-pill-broad', 'Broad');
+      if (!row.target_is_self && row.target) html += ' ' + adGuardSyncPill('ag-pill-external', 'External upstream');
+      html += '</td>';
+      html += `<td class="ag-note">${escapeHTML(note)}</td>`;
       html += '</tr>';
     }
-    html += '</tbody></table></div>';
+    html += '</tbody></table></div></div>';
   }
 
   const managed = preview.managed || [];
-  html += '<div class="space-y-1">';
-  html += '<div class="text-xs font-semibold text-slate-300">DigitDNS-only domains — propose to AdGuard (off by default)</div>';
+  html += '<div class="ag-managed">';
   if (managed.length === 0) {
-    html += '<p class="text-[11px] text-slate-500">Every proxied domain is already named by this source.</p>';
+    html += '<span class="ag-note">Every proxied domain is already named by this source.</span>';
   } else {
-    html += '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1">';
     for (const row of managed) {
       const checked = adGuardSyncSelectedManaged.has(row.domain);
-      html += `<label class="flex items-center gap-2 text-[11px] text-slate-300"><input type="checkbox" class="proxied-check" data-adguard-managed="${escapeHTML(row.domain)}"${checked ? ' checked' : ''}><span class="font-mono">${escapeHTML(row.domain)}</span></label>`;
+      html += `<label><input type="checkbox" class="proxied-check" data-adguard-managed="${escapeHTML(row.domain)}"${checked ? ' checked' : ''}><span class="ag-domain">${escapeHTML(row.domain)}</span></label>`;
     }
-    html += '</div>';
   }
   html += '</div>';
   results.innerHTML = html;
 
   const out = document.getElementById('adguard-sync-export');
   if (out) out.textContent = preview.generated_block || 'No DigitDNS-only domains selected.';
+  adGuardSyncUpdateSelectionUI();
+}
+
+function adGuardSyncUpdateSelectionUI() {
+  const imports = adGuardSyncSelectedImport.size;
+  const managed = adGuardSyncSelectedManaged.size;
+  const counts = document.getElementById('adguard-sync-selected-counts');
+  if (counts) counts.textContent = `${imports} selected to add · ${managed} selected to send back`;
+  const removalMode = adGuardSyncValue('adguard-sync-removal-mode') || 'keep';
+  const staged = document.getElementById('adguard-sync-staged');
+  if (staged) {
+    const parts = [];
+    if (imports) parts.push(`+${imports} to DigitDNS`);
+    if (managed) parts.push(`${managed} to AdGuard`);
+    if (removalMode !== 'keep') parts.push('removals enabled');
+    staged.textContent = parts.length ? parts.join(' · ') : 'No changes staged.';
+  }
+  const apply = document.getElementById('adguard-sync-apply-btn');
+  if (apply) apply.disabled = !adGuardSyncPreview || !(imports || managed || removalMode !== 'keep');
+}
+
+function adGuardSyncBulkImports(select) {
+  for (const row of adGuardSyncVisibleRows()) {
+    if (row.bucket !== 'adguardOnly') continue;
+    if (select) adGuardSyncSelectedImport.add(row.domain);
+    else adGuardSyncSelectedImport.delete(row.domain);
+  }
+  adGuardSyncImportTouched = true;
+  if (adGuardSyncPreview) renderAdGuardSyncPreview(adGuardSyncPreview);
+  else adGuardSyncUpdateSelectionUI();
+}
+
+function adGuardSyncBulkManaged(select) {
+  for (const row of (adGuardSyncPreview?.managed || [])) {
+    if (select) adGuardSyncSelectedManaged.add(row.domain);
+    else adGuardSyncSelectedManaged.delete(row.domain);
+  }
+  return previewAdGuardSync();
 }
 
 async function applyAdGuardSync() {
@@ -10622,7 +10697,7 @@ async function applyAdGuardSync() {
   }
   const risks = [];
   if (Number(preview.counts?.conflict || 0) > 0) risks.push('conflicting rules');
-  if ((preview.warnings || []).some(warning => String(warning).includes('broad domain'))) risks.push('broad domains');
+  if (Number(preview.broad_count || 0) > 0 || (preview.rows || []).some(row => row.broad)) risks.push('broad domains');
   if (risks.length > 0 && !acknowledgeRisk) {
     showToast('Acknowledge ' + risks.join(' and ') + ' before applying.', 'error');
     return;
@@ -10640,7 +10715,7 @@ async function applyAdGuardSync() {
 
   const btn = document.getElementById('adguard-sync-apply-btn');
   if (btn) btn.disabled = true;
-  setAdGuardSyncStatus('Applying…');
+  setAdGuardSyncStatus('Applying…', 'busy');
   try {
     const result = await adGuardSyncFetch('/api/v3/sync/adguard/apply', {
       method: 'POST',
@@ -10648,16 +10723,16 @@ async function applyAdGuardSync() {
     });
     const out = document.getElementById('adguard-sync-export');
     if (out) out.textContent = result.generated_block || 'No DigitDNS-only domains selected.';
-    setAdGuardSyncStatus('Applied', 'badge-direct');
-    showToast('AdGuard sync applied to DigitDNS.', 'success');
+    setAdGuardSyncStatus('Applied', 'good');
+    showToast('AdGuard upstream list applied to DigitDNS.', 'success');
     await reloadAdGuardDomains();
     await loadAdGuardSources(result.source?.id || payload.source_id);
     await previewAdGuardSync({ resetSelection: true });
   } catch (err) {
-    setAdGuardSyncStatus('Apply failed', 'badge-block');
+    setAdGuardSyncStatus('Apply failed', 'bad');
     showToast(err.message || 'Could not apply the AdGuard sync preview.', 'error');
   } finally {
-    if (btn) btn.disabled = false;
+    adGuardSyncUpdateSelectionUI();
   }
 }
 
@@ -10695,12 +10770,25 @@ function initAdGuardSync() {
   adGuardSyncInitialized = true;
 
   document.getElementById('adguard-sync-load-btn')?.addEventListener('click', loadSelectedAdGuardSource);
+  document.getElementById('adguard-sync-new-btn')?.addEventListener('click', clearAdGuardSyncForm);
   document.getElementById('adguard-sync-save-btn')?.addEventListener('click', saveAdGuardSyncSource);
-  document.getElementById('adguard-sync-refresh-btn')?.addEventListener('click', refreshAdGuardSyncSource);
   document.getElementById('adguard-sync-delete-btn')?.addEventListener('click', deleteAdGuardSyncSource);
   document.getElementById('adguard-sync-preview-btn')?.addEventListener('click', () => previewAdGuardSync({ resetSelection: true }));
   document.getElementById('adguard-sync-apply-btn')?.addEventListener('click', applyAdGuardSync);
   document.getElementById('adguard-sync-source-select')?.addEventListener('change', loadSelectedAdGuardSource);
+  document.getElementById('adguard-sync-select-import-all')?.addEventListener('click', () => adGuardSyncBulkImports(true));
+  document.getElementById('adguard-sync-clear-import')?.addEventListener('click', () => adGuardSyncBulkImports(false));
+  document.getElementById('adguard-sync-select-managed-all')?.addEventListener('click', () => adGuardSyncBulkManaged(true));
+  document.getElementById('adguard-sync-clear-managed')?.addEventListener('click', () => adGuardSyncBulkManaged(false));
+  document.getElementById('adguard-sync-removal-mode')?.addEventListener('change', adGuardSyncUpdateSelectionUI);
+  document.getElementById('adguard-sync-filter')?.addEventListener('input', (event) => {
+    adGuardSyncFilter = event.target.value || '';
+    if (adGuardSyncPreview) renderAdGuardSyncPreview(adGuardSyncPreview);
+  });
+  document.getElementById('adguard-sync-selected-only')?.addEventListener('change', (event) => {
+    adGuardSyncSelectedOnly = !!event.target.checked;
+    if (adGuardSyncPreview) renderAdGuardSyncPreview(adGuardSyncPreview);
+  });
   document.getElementById('adguard-sync-copy-btn')?.addEventListener('click', (event) => {
     const block = (document.getElementById('adguard-sync-export')?.textContent || '').trim();
     if (!block || block.startsWith('No DigitDNS-only')) {
@@ -10714,10 +10802,14 @@ function initAdGuardSync() {
   document.getElementById('adguard-sync-results')?.addEventListener('change', (event) => {
     const target = event.target;
     if (!target || !target.dataset || target.tagName !== 'INPUT') return;
+    if (target.dataset.adguardSelectAllImport !== undefined) {
+      adGuardSyncBulkImports(target.checked);
+    }
     if (target.dataset.adguardImport) {
       adGuardSyncImportTouched = true;
       if (target.checked) adGuardSyncSelectedImport.add(target.dataset.adguardImport);
       else adGuardSyncSelectedImport.delete(target.dataset.adguardImport);
+      adGuardSyncUpdateSelectionUI();
     }
     if (target.dataset.adguardManaged) {
       if (target.checked) adGuardSyncSelectedManaged.add(target.dataset.adguardManaged);

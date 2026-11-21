@@ -207,6 +207,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideAdGuardSyncApi(retrofit: Retrofit): AdGuardSyncApi = retrofit.create(AdGuardSyncApi::class.java)
+
+    @Provides
+    @Singleton
     fun provideSubscriptionApi(retrofit: Retrofit): SubscriptionApi =
         retrofit.create(SubscriptionApi::class.java)
 

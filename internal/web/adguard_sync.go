@@ -82,14 +82,26 @@ type adguardApplyRequest struct {
 }
 
 type adguardSyncRow struct {
-	Domain       string             `json:"domain"`
+	Domain       string              `json:"domain"`
 	Kind         adguard.PatternKind `json:"kind"`
-	Bucket       string             `json:"bucket"`
-	Group        string             `json:"group,omitempty"`
-	Target       string             `json:"target,omitempty"`
-	TargetIsSelf bool               `json:"target_is_self"`
-	CoveredBy    string             `json:"covered_by,omitempty"`
-	Warning      string             `json:"warning,omitempty"`
+	Bucket       string              `json:"bucket"`
+	Group        string              `json:"group,omitempty"`
+	Target       string              `json:"target,omitempty"`
+	TargetIsSelf bool                `json:"target_is_self"`
+	CoveredBy    string              `json:"covered_by,omitempty"`
+	Warning      string              `json:"warning,omitempty"`
+	Broad        bool                `json:"broad"`
+}
+
+// adguardNotice is the operator-facing replacement for raw parser warnings.
+// Warnings remain in the API for compatibility and risk checks, but the UI
+// renders these short, grouped messages instead of a wall of domain lines.
+type adguardNotice struct {
+	Kind    string   `json:"kind"`
+	Title   string   `json:"title"`
+	Message string   `json:"message"`
+	Targets []string `json:"targets,omitempty"`
+	Domains []string `json:"domains,omitempty"`
 }
 
 func decodeAdGuardBody(body map[string]any, out any) error {
@@ -316,7 +328,9 @@ func (ws *WebServer) adGuardSyncDeleteSource(id string) (map[string]any, error) 
 
 var errAdGuardSyncNotFound = errors.New("AdGuard sync source not found")
 
-func adGuardSyncNotFound(what string) error { return fmt.Errorf("%w: %s", errAdGuardSyncNotFound, what) }
+func adGuardSyncNotFound(what string) error {
+	return fmt.Errorf("%w: %s", errAdGuardSyncNotFound, what)
+}
 
 func fetchAdGuardSource(ctx context.Context, rawURL string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
@@ -455,11 +469,71 @@ func rowForPattern(pattern adguard.Pattern, bucket string) adguardSyncRow {
 		Group:        pattern.Group,
 		Target:       pattern.Target,
 		TargetIsSelf: pattern.TargetIsSelf,
+		Broad:        pattern.Broad,
 	}
 	if !pattern.TargetIsSelf && pattern.Target != "" {
 		row.Warning = "Target is not this DigitDNS server; importing the domain will not change AdGuard routing."
 	}
 	return row
+}
+
+func appendUnique(list []string, value string) []string {
+	if value == "" || stringSliceContains(list, value) {
+		return list
+	}
+	return append(list, value)
+}
+
+// adGuardPreviewNotices groups the two noisy parser warnings into one message
+// each. The old one-line-per-domain strings stay in `warnings` for API clients
+// that still read them, but the dashboard and app show these instead.
+func adGuardPreviewNotices(groups []adguard.Group, patterns []adguard.Pattern, conflicts int) ([]adguardNotice, []string, int) {
+	foreign := make([]string, 0)
+	for _, group := range groups {
+		if group.TargetIsSelf {
+			continue
+		}
+		foreign = appendUnique(foreign, adguard.TargetHost(group.Target))
+	}
+	sort.Strings(foreign)
+
+	broad := make([]string, 0)
+	for _, pattern := range patterns {
+		if pattern.Broad {
+			broad = appendUnique(broad, pattern.String())
+		}
+	}
+	sort.Strings(broad)
+
+	notices := make([]adguardNotice, 0, 3)
+	if len(foreign) > 0 {
+		notices = append(notices, adguardNotice{
+			Kind:    "upstream",
+			Title:   "External upstream targets",
+			Message: "These upstream targets are not this DigitDNS server: " + strings.Join(foreign, ", ") + ". Importing copies their domains into DigitDNS; AdGuard will keep routing them there until you change its upstream settings.",
+			Targets: foreign,
+		})
+	}
+	if len(broad) > 0 {
+		examples := broad
+		if len(examples) > 4 {
+			examples = examples[:4]
+		}
+		notices = append(notices, adguardNotice{
+			Kind:    "broad",
+			Title:   "High-traffic domains",
+			Message: fmt.Sprintf("%d high-traffic domains are included (for example: %s). They can route a large share of ordinary traffic, so review them before applying.", len(broad), strings.Join(examples, ", ")),
+			Domains: examples,
+		})
+	}
+	if conflicts > 0 {
+		notices = append(notices, adguardNotice{
+			Kind:    "conflict",
+			Title:   "Conflicting DigitDNS rules",
+			Message: fmt.Sprintf("%d domains already have a different DigitDNS action. They are shown as conflicts and are not imported by default.", conflicts),
+		})
+	}
+	return notices, foreign, len(broad)
 }
 
 func (ws *WebServer) adGuardPreview(req adguardPreviewRequest) (map[string]any, error) {
@@ -558,6 +632,7 @@ func (ws *WebServer) adGuardPreview(req adguardPreviewRequest) (map[string]any, 
 	if name == "" {
 		name = "AdGuard Home"
 	}
+	notices, foreignTargets, broadCount := adGuardPreviewNotices(parsed.Groups, parsed.Patterns, counts["conflict"])
 	return map[string]any{
 		"source_id":       req.SourceID,
 		"name":            name,
@@ -571,6 +646,9 @@ func (ws *WebServer) adGuardPreview(req adguardPreviewRequest) (map[string]any, 
 		"managed":         managed,
 		"counts":          counts,
 		"warnings":        warnings,
+		"notices":         notices,
+		"broad_count":     broadCount,
+		"foreign_targets": foreignTargets,
 		"generated_block": adguard.GenerateManagedBlock(managedPatterns, upstream),
 		"candidates":      len(candidates),
 	}, nil
@@ -644,16 +722,10 @@ func (ws *WebServer) adGuardSyncApply(r *http.Request, body map[string]any) (map
 	if err != nil {
 		return nil, err
 	}
-	warnings, _ := preview["warnings"].([]string)
 	counts, _ := preview["counts"].(map[string]int)
 	conflicts := counts["conflict"]
-	hasBroad := false
-	for _, warning := range warnings {
-		if strings.Contains(warning, "broad domain") {
-			hasBroad = true
-		}
-	}
-	if (conflicts > 0 || hasBroad) && !req.AcknowledgeRisk {
+	broadCount, _ := preview["broad_count"].(int)
+	if (conflicts > 0 || broadCount > 0) && !req.AcknowledgeRisk {
 		return nil, errors.New("preview has conflicts or broad domains; acknowledge the risks before applying")
 	}
 
@@ -832,11 +904,11 @@ func (ws *WebServer) adGuardSyncApply(r *http.Request, body map[string]any) (map
 	}
 
 	return map[string]any{
-		"success":       true,
-		"source":        src,
-		"counts":        countsOfRows(rows),
-		"imported":      len(req.Import),
-		"removed":       len(remove),
+		"success":         true,
+		"source":          src,
+		"counts":          countsOfRows(rows),
+		"imported":        len(req.Import),
+		"removed":         len(remove),
 		"generated_block": adguard.GenerateManagedBlock(patternsFromStrings(req.Managed), upstream),
 	}, nil
 }

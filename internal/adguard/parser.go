@@ -31,7 +31,7 @@ const (
 type PatternKind string
 
 const (
-	KindExact   PatternKind = "exact"
+	KindExact    PatternKind = "exact"
 	KindWildcard PatternKind = "wildcard"
 )
 
@@ -43,6 +43,9 @@ type Pattern struct {
 	Group        string      `json:"group"`
 	Target       string      `json:"target"`
 	TargetIsSelf bool        `json:"targetIsSelf"`
+	// Broad flags a domain that routes a large share of ordinary traffic. It is
+	// metadata only: the operator still decides whether to import it.
+	Broad bool `json:"broad"`
 }
 
 // String returns the form DigitDNS stores in its rule lists.
@@ -75,11 +78,11 @@ var (
 )
 
 var broadDomains = map[string]bool{
-	"www.google.com":       true,
-	"play.googleapis.com":  true,
+	"www.google.com":         true,
+	"play.googleapis.com":    true,
 	"android.googleapis.com": true,
-	"clients4.google.com":  true,
-	"clients6.google.com":  true,
+	"clients4.google.com":    true,
+	"clients6.google.com":    true,
 }
 
 // Parse reads active AdGuard upstream rules. Every bracketed group is included,
@@ -159,7 +162,7 @@ func Parse(text string, selfHosts []string) ParseResult {
 			seen[key] = struct{}{}
 			result.Patterns = append(result.Patterns, pattern)
 			group.Patterns = append(group.Patterns, pattern)
-			if isBroad(pattern.Value) {
+			if IsBroad(pattern.Value) {
 				if _, warned := broadSeen[key]; !warned {
 					broadSeen[key] = struct{}{}
 					result.Warnings = append(result.Warnings,
@@ -200,7 +203,7 @@ func NormalizeToken(raw string) (Pattern, bool) {
 	if !domainRE.MatchString(token) || strings.Contains(token, "*") {
 		return Pattern{}, false
 	}
-	return Pattern{Value: token, Kind: kind}, true
+	return Pattern{Value: token, Kind: kind, Broad: IsBroad(token)}, true
 }
 
 // Covers reports whether `pattern` already covers `candidate` under DigitDNS's
@@ -317,7 +320,9 @@ func commentLabel(line, previous string) string {
 	return text
 }
 
-func isBroad(value string) bool {
+// IsBroad reports whether a normalized domain is known to carry a large share of
+// ordinary traffic. Callers use it as a review flag, never as an automatic veto.
+func IsBroad(value string) bool {
 	if broadDomains[value] {
 		return true
 	}
