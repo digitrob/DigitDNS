@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.10.1] — AdGuard coverage sync and unified palettes
+
+### Added
+- **AdGuard ↔ DigitDNS coverage sync.** The Domains tab now compares a pasted AdGuard upstream config, or an optional fetched URL, with the DigitDNS rule list. Every active bracketed upstream group is parsed regardless of its upstream target; comments, disabled rules and default lines are ignored. Preview separates domains DigitDNS already covers, AdGuard-only imports, DigitDNS-only export proposals and conflicts. Missing AdGuard domains are proposed for `custom_proxied` and checked by default; DigitDNS-only domains are offered as an unchecked managed AdGuard block with copy and download.
+- **Safe, explicit apply.** Applying is bound to the exact preview text and checksum. Removals default to keeping everything; `synced_only` is provenance-aware, and `mirror` requires a separate confirmation. Conflicts and broad-domain warnings need an explicit acknowledgement. Saved sources keep their checksum, provenance and last-good text; URL userinfo is redacted and a failed refresh retains the last good source.
+- **Documented v3 sync API.** Source list/save/delete/refresh/export plus `/api/v3/sync/adguard/preview` and `/apply` are covered by router, backend and OpenAPI drift tests.
+
+### Changed
+- **Status pills are text-only everywhere.** Live-log, history and Domains action badges share the Domains list's `.badge` shape. Action pictograms were removed while relay flags, service icons, alert-channel type icons, copy buttons, block-category chips, `RAM`, the live dot and the changed-row marker remain.
+- **Action and transport colours agree across clients.** Proxy outcomes are cyan; `BLOCK`, `PROXY_FAILED`, `RATELIMIT`, `QUOTA` and `SERVFAIL` are red; `DIRECT` and `CACHED` are green; `STALE` is amber; `CUSTOM` is purple. UDP, TCP, DoT, DoH, DoQ, DoH3 and DNSCrypt each have one canonical tone in both the dashboard and Android, guarded by cross-platform tests. `CACHED` still reads `DIRECT` in the live log and `CACHED` in history.
+
+No database schema migration is required; sync state uses existing `Policy` keys. The Android companion moves to `android-v5.10.1`, with version code 580.
+
+---
+
 ## 🏷️ [v5.10.0] — honest history and cross-client icons
 
 ### Added

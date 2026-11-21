@@ -138,42 +138,54 @@ func TestExplainCanOpenRuleMenu(t *testing.T) {
 	}
 }
 
-// Action pictograms must be derived from the action key, not the badge colour:
-// PROXY FAILED uses the red block chip but needs an alert icon, not a slash.
-func TestLiveLogActionPictograms(t *testing.T) {
+// Status pills are text + semantic colour only, matching the Domains list.
+// The live log's old per-action glyphs made one row's status look more urgent
+// than another's even though the coloured chip already said everything.
+func TestLiveLogActionPillsAreTextOnly(t *testing.T) {
 	app := jsLineCommentRe.ReplaceAllString(readAsset(t, "js/app.js"), "")
-	icons := strings.Index(app, "const STREAM_ICON_PATHS = {")
-	badgeStart := strings.Index(app, "const STREAM_ACTION_BADGES = {")
-	if icons < 0 || badgeStart < 0 || icons > badgeStart {
-		t.Fatal("icon paths must be declared before action badges — the badge map calls the helper at load time")
+	for _, unwanted := range []string{
+		"const STREAM_ICON_PATHS = {",
+		"function streamIconSvg(",
+		"stream-action-badge-icon",
+		"block-detail-icon",
+	} {
+		if strings.Contains(app, unwanted) {
+			t.Fatalf("app.js still contains %q", unwanted)
+		}
 	}
-	start := badgeStart
+	start := strings.Index(app, "const STREAM_ACTION_BADGES = {")
+	if start < 0 {
+		t.Fatal("action badge map is missing")
+	}
 	end := strings.Index(app[start:], "\n};")
 	if end < 0 {
 		t.Fatal("action badge map has no closing brace — the scan is broken")
 	}
 	badges := app[start : start+end]
 	for _, want := range []string{
-		"streamActionBadge('badge-proxy', 'PROXY', 'shield')",
-		"streamActionBadge('badge-block', 'Blocked', 'slash')",
-		"streamActionBadge('badge-block', 'PROXY FAILED', 'alert')",
-		"streamActionBadge('badge-direct', 'DIRECT', 'cornerUpRight')",
-		"streamActionBadge('badge-cached', 'STALE', 'clock')",
-		"streamActionBadge('badge-rewrite', 'Rewrite', 'edit3')",
+		"PROXY: streamActionBadge('badge-proxy', 'PROXY')",
+		"BLOCK: streamActionBadge('badge-block', 'Blocked')",
+		"PROXY_FAILED: streamActionBadge('badge-block', 'PROXY FAILED')",
+		"DIRECT: streamActionBadge('badge-direct', 'DIRECT')",
+		"STALE: streamActionBadge('badge-cached', 'STALE')",
+		"CUSTOM: streamActionBadge('badge-rewrite', 'Rewrite')",
 	} {
 		if !strings.Contains(badges, want) {
 			t.Fatalf("action badge map lost %q", want)
 		}
 	}
-	if !strings.Contains(app, `class="${klass}" aria-hidden="true"`) {
-		t.Fatal("status pictograms are not marked decorative")
+	if !strings.Contains(app, "function streamActionBadge(cls, label) {") {
+		t.Fatal("plain badge builder is missing")
 	}
 
 	css := readAsset(t, "css/style.css")
-	for _, want := range []string{".stream-action-badge-icon", "width: 11px", "height: 11px", "width: 10rem"} {
-		if !strings.Contains(css, want) {
-			t.Fatalf("style.css lost %q", want)
+	for _, unwanted := range []string{".stream-action-badge-icon", ".block-detail-icon"} {
+		if strings.Contains(css, unwanted) {
+			t.Fatalf("style.css still contains %q", unwanted)
 		}
+	}
+	if !strings.Contains(css, "width: 10rem") {
+		t.Fatal("style.css lost the live-log action column width")
 	}
 }
 
@@ -185,7 +197,6 @@ func TestLiveLogBlockCategoryChip(t *testing.T) {
 		"const blockCategory = action === 'BLOCK' ? blocklistCategory(ruleStr) : '';",
 		"{ Malware: 'block-cat-malware', Ads: 'block-cat-ads', Tracker: 'block-cat-tracker' }",
 		"${blockCategoryChip}Blocked by",
-		"streamIconSvg('slash', 'stream-action-badge-icon block-detail-icon')",
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("js/app.js lost %q", want)

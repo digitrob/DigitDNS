@@ -231,6 +231,69 @@ func (b *v3Backend) SaveRules(r *http.Request, body map[string]any) (map[string]
 	return b.delegateBody(r, body, b.ws.handleConfigRules)
 }
 
+func adGuardSyncV3Error(err error) error {
+	if errors.Is(err, errAdGuardSyncNotFound) {
+		return api.V3Error(api.ErrV3NotFound, err.Error())
+	}
+	return err
+}
+
+func (b *v3Backend) AdGuardSyncSources() (any, error) {
+	sources, err := b.ws.adGuardSyncSources()
+	if err != nil {
+		return nil, adGuardSyncV3Error(err)
+	}
+	return sources, nil
+}
+
+func (b *v3Backend) SaveAdGuardSyncSource(r *http.Request, body map[string]any) (any, error) {
+	src, err := b.ws.adGuardSyncSaveSource(body)
+	if err != nil {
+		return nil, adGuardSyncV3Error(err)
+	}
+	return src, nil
+}
+
+func (b *v3Backend) DeleteAdGuardSyncSource(id string) (any, error) {
+	resp, err := b.ws.adGuardSyncDeleteSource(id)
+	if err != nil {
+		return nil, adGuardSyncV3Error(err)
+	}
+	return resp, nil
+}
+
+func (b *v3Backend) RefreshAdGuardSyncSource(r *http.Request, id string) (any, error) {
+	resp, err := b.ws.adGuardSyncRefreshSource(r, id)
+	if err != nil {
+		return nil, adGuardSyncV3Error(err)
+	}
+	return resp, nil
+}
+
+func (b *v3Backend) ExportAdGuardSyncSource(id string) (any, error) {
+	resp, err := b.ws.adGuardSyncExport(id)
+	if err != nil {
+		return nil, adGuardSyncV3Error(err)
+	}
+	return resp, nil
+}
+
+func (b *v3Backend) PreviewAdGuardSync(r *http.Request, body map[string]any) (any, error) {
+	resp, err := b.ws.adGuardSyncPreview(body)
+	if err != nil {
+		return nil, adGuardSyncV3Error(err)
+	}
+	return resp, nil
+}
+
+func (b *v3Backend) ApplyAdGuardSync(r *http.Request, body map[string]any) (any, error) {
+	resp, err := b.ws.adGuardSyncApply(r, body)
+	if err != nil {
+		return nil, adGuardSyncV3Error(err)
+	}
+	return resp, nil
+}
+
 func (b *v3Backend) Settings() (map[string]any, error) {
 	rec := httptest.NewRecorder()
 	b.ws.handleSettings(rec, httptest.NewRequest(http.MethodGet, "/api/settings", nil))

@@ -7,25 +7,33 @@ const vm = require('node:vm');
 // The live log's PROTO column colour is a fixed lookup; anything else stays muted.
 const source = readFileSync(resolve(__dirname, '../../web/js/app.js'), 'utf8');
 const code = source.slice(
-  source.indexOf('const PROTO_COLORS'),
+  source.indexOf('const PROTOCOL_ROLES'),
   source.indexOf('// queryRowHTML renders one query'),
 );
 const context = vm.createContext({});
 vm.runInContext(code, context);
 const protocolClass = vm.runInContext('protocolClass', context);
+const protocolPillClass = vm.runInContext('protocolPillClass', context);
 
-test('each shown protocol has its own colour', () => {
-  assert.equal(protocolClass('UDP'), 'text-cyan-400');
-  assert.equal(protocolClass('TCP'), 'text-blue-400');
-  assert.equal(protocolClass('DoT'), 'text-emerald-400');
-  assert.equal(protocolClass('DoH'), 'text-purple-400');
-  assert.equal(protocolClass('DoQ'), 'text-amber-400');
-  assert.equal(protocolClass('DoH3'), 'text-orange-400');
-  assert.equal(protocolClass('DNSCrypt'), 'text-fuchsia-400');
+test('each shown protocol has one role for both chip and text', () => {
+  const expected = {
+    UDP: ['text-cyan-400', 'proto-udp'],
+    TCP: ['text-blue-400', 'proto-tcp'],
+    DoT: ['text-emerald-400', 'proto-dot'],
+    DoH: ['text-purple-400', 'proto-doh'],
+    DoQ: ['text-amber-400', 'proto-doq'],
+    DoH3: ['text-orange-400', 'proto-doh3'],
+    DNSCrypt: ['text-fuchsia-400', 'proto-dnscrypt'],
+  };
+  for (const [protocol, [text, pill]] of Object.entries(expected)) {
+    assert.equal(protocolClass(protocol), text, protocol);
+    assert.equal(protocolPillClass(protocol), pill, protocol);
+  }
 });
 
-test('unknown and blank protocols stay muted', () => {
-  assert.equal(protocolClass(''), 'text-slate-500');
-  assert.equal(protocolClass('SOMETHING'), 'text-slate-500');
-  assert.equal(protocolClass(undefined), 'text-slate-500');
+test('unknown and blank protocols stay muted in both shapes', () => {
+  for (const value of ['', 'SOMETHING', undefined]) {
+    assert.equal(protocolClass(value), 'text-slate-500');
+    assert.equal(protocolPillClass(value), 'proto-other');
+  }
 });

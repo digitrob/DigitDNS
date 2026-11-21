@@ -55,7 +55,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -99,6 +98,7 @@ import com.digitrob.digitdns.ui.components.RouteActionMenu
 import com.digitrob.digitdns.ui.components.StatusBadge
 import com.digitrob.digitdns.ui.components.showPanelToast
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
+import com.digitrob.digitdns.ui.theme.actionBadgeColor
 import com.digitrob.digitdns.ui.theme.protocolColor
 import com.digitrob.digitdns.ui.theme.protocolLabel
 
@@ -585,15 +585,7 @@ private fun ActionBadge(
 ) {
     val colors = DigitDnsTheme.colors
     val style = queryActionStyle(action)
-    val color: Color = when (style.tone) {
-        QueryActionTone.Info -> colors.info
-        QueryActionTone.Proxy -> colors.proxy
-        QueryActionTone.Danger -> colors.danger
-        QueryActionTone.Success -> colors.success
-        QueryActionTone.Warning -> colors.warning
-        QueryActionTone.Purple -> colors.purple
-        QueryActionTone.Muted -> colors.textMuted
-    }
+    val color = actionBadgeColor(style)
     val badgeColor = if (change == null) color else colors.textMuted.copy(alpha = 0.55f)
     val decoration = if (change == null) null else TextDecoration.LineThrough
     val tooltip = change?.let {

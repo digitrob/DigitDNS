@@ -110,7 +110,10 @@ type WebServer struct {
 	migrateMu       sync.Mutex
 	migrateAnalyses map[string]*migrateAnalysis
 	migrateUndos    map[string]*migrateUndo
-	httpServer      *http.Server
+	// adguardSyncMu serialises the source/provenance read-modify-write. Two
+	// tabs previewing is fine; two tabs applying at once is not.
+	adguardSyncMu sync.Mutex
+	httpServer    *http.Server
 	redirectServer  *http.Server
 	// subServer is the dedicated subscriber listener, bound when the
 	// Subscription Portal record names a port different from the panel's. It

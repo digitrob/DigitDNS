@@ -42,7 +42,6 @@ function rowHarness(change) {
     latencyTierClass: () => 'latency-fast',
     protocolLabel: () => 'UDP',
     protocolPillClass: () => 'proto-udp',
-    streamIconSvg: () => '',
     streamQueryChange: () => change,
   });
   vm.runInContext(source.slice(from, to + 2), context);

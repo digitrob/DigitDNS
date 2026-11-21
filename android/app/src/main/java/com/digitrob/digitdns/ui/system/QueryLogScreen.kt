@@ -46,6 +46,7 @@ import com.digitrob.digitdns.ui.components.formatLatencyMs
 import com.digitrob.digitdns.ui.components.rcodeLabel
 import com.digitrob.digitdns.ui.theme.DigitDnsTheme
 import com.digitrob.digitdns.ui.theme.PanelMono
+import com.digitrob.digitdns.ui.theme.actionBadgeColor
 import com.digitrob.digitdns.ui.theme.protocolColor
 import com.digitrob.digitdns.ui.theme.protocolLabel
 
@@ -170,17 +171,6 @@ private fun MultiChoiceFilter(
             }
         }
     }
-}
-
-@Composable
-private fun actionTone(action: String) = when (action) {
-    "DIRECT" -> DigitDnsTheme.colors.success
-    "PROXY" -> DigitDnsTheme.colors.info
-    "BLOCK", "PROXY_FAILED" -> DigitDnsTheme.colors.danger
-    "CUSTOM", "QUOTA" -> DigitDnsTheme.colors.warning
-    "PROXY_IPV6_SINK" -> DigitDnsTheme.colors.purple
-    "PROXY_HTTPS_SINK" -> DigitDnsTheme.colors.blue
-    else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 private fun QueryLogItemDto.toDnsDetails(): DnsDetails = DnsDetails(
@@ -368,7 +358,11 @@ private fun HistoryRow(item: QueryLogItemDto, onOpen: () -> Unit) {
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                StatusBadge(item.action.ifBlank { "DIRECT" }, actionTone(item.action), uppercase = false)
+                StatusBadge(
+                    text = item.action.ifBlank { "DIRECT" },
+                    color = actionBadgeColor(item.action.ifBlank { "DIRECT" }),
+                    uppercase = false,
+                )
                 Text(
                     item.domain.ifBlank { "—" },
                     style = MaterialTheme.typography.bodyMedium,

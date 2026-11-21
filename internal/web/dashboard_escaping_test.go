@@ -56,7 +56,6 @@ var safeAttrInterp = map[string]string{
 	"wildcardClass": "a CSS class name computed from whether a wildcard applies, in renderProxiedList",
 	"protoClass":    "a CSS class name from the fixed protocol table, in queryRowHTML",
 	"changedClass":  "either empty or the fixed ' stream-action-changed' class, in queryRowHTML",
-	"klass":         "an already-escaped CSS class name built in streamIconSvg from fixed icon names",
 	"width":         "a percentage computed from a numeric count in renderHistoryTop, never stored text",
 	"!c.enabled":    "a boolean",
 	"i":             "a loop index in the hour/minute pickers",

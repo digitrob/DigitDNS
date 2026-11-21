@@ -29,6 +29,8 @@ type fakeV3Backend struct {
 	proxyLeak       map[string]any
 	savedProxyLeak  map[string]any
 	iconQuery       string
+	adGuardSyncOps  []string
+	adGuardSyncBody map[string]any
 }
 
 func (f *fakeV3Backend) Login(r *http.Request, username, password, code string) (string, bool, error) {
@@ -121,6 +123,35 @@ func (f *fakeV3Backend) Rules() map[string]any { return map[string]any{"custom_p
 func (f *fakeV3Backend) SaveRules(r *http.Request, b map[string]any) (map[string]any, error) {
 	return map[string]any{"success": true}, nil
 }
+
+func (f *fakeV3Backend) adGuardSync(op string, body map[string]any) (any, error) {
+	f.adGuardSyncOps = append(f.adGuardSyncOps, op)
+	f.adGuardSyncBody = body
+	return map[string]any{"success": true, "op": op}, nil
+}
+
+func (f *fakeV3Backend) AdGuardSyncSources() (any, error) {
+	return f.adGuardSync("list", nil)
+}
+func (f *fakeV3Backend) SaveAdGuardSyncSource(r *http.Request, body map[string]any) (any, error) {
+	return f.adGuardSync("save", body)
+}
+func (f *fakeV3Backend) DeleteAdGuardSyncSource(id string) (any, error) {
+	return f.adGuardSync("delete:"+id, nil)
+}
+func (f *fakeV3Backend) RefreshAdGuardSyncSource(r *http.Request, id string) (any, error) {
+	return f.adGuardSync("refresh:"+id, nil)
+}
+func (f *fakeV3Backend) ExportAdGuardSyncSource(id string) (any, error) {
+	return f.adGuardSync("export:"+id, nil)
+}
+func (f *fakeV3Backend) PreviewAdGuardSync(r *http.Request, body map[string]any) (any, error) {
+	return f.adGuardSync("preview", body)
+}
+func (f *fakeV3Backend) ApplyAdGuardSync(r *http.Request, body map[string]any) (any, error) {
+	return f.adGuardSync("apply", body)
+}
+
 func (f *fakeV3Backend) Settings() (map[string]any, error) {
 	return map[string]any{"api_key": "k"}, nil
 }
@@ -469,6 +500,8 @@ func TestV3_BackendDependentRoutesUnavailableWithoutBackend(t *testing.T) {
 		{http.MethodGet, "/api/v3/tls/acme/status", nil},
 		{http.MethodGet, "/api/v3/diagnostics/targets", nil},
 		{http.MethodGet, "/api/v3/custom-groups", nil},
+		{http.MethodGet, "/api/v3/sync/adguard/sources", nil},
+		{http.MethodPost, "/api/v3/sync/adguard/preview", map[string]any{"text": "[/x.example/]1.1.1.1"}},
 		{http.MethodGet, "/api/v3/update/status", nil},
 	}
 	for _, rt := range routes {
@@ -551,6 +584,34 @@ func TestV3_DelegatedRoutesUseBackend(t *testing.T) {
 	}
 	if w := v3Request(mux, http.MethodGet, "/api/v3/update/check", key, nil); w.Code != http.StatusOK {
 		t.Fatalf("update check = %d, want 200", w.Code)
+	}
+
+	syncCases := []struct {
+		method, path string
+		body         any
+		wantOp       string
+	}{
+		{http.MethodGet, "/api/v3/sync/adguard/sources", nil, "list"},
+		{http.MethodPost, "/api/v3/sync/adguard/sources", map[string]any{"name": "AdGuard"}, "save"},
+		{http.MethodDelete, "/api/v3/sync/adguard/sources/src1", nil, "delete:src1"},
+		{http.MethodPost, "/api/v3/sync/adguard/sources/src1/refresh", nil, "refresh:src1"},
+		{http.MethodGet, "/api/v3/sync/adguard/sources/src1/export", nil, "export:src1"},
+		{http.MethodPost, "/api/v3/sync/adguard/preview", map[string]any{"text": "[/x.example/]1.1.1.1"}, "preview"},
+		{http.MethodPost, "/api/v3/sync/adguard/apply", map[string]any{"text": "[/x.example/]1.1.1.1"}, "apply"},
+	}
+	for _, tc := range syncCases {
+		w := v3Request(mux, tc.method, tc.path, key, tc.body)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s %s = %d, want 200: %s", tc.method, tc.path, w.Code, w.Body.String())
+		}
+		var body map[string]any
+		_ = json.Unmarshal(w.Body.Bytes(), &body)
+		if body["op"] != tc.wantOp {
+			t.Errorf("%s %s delegated op = %v, want %q", tc.method, tc.path, body["op"], tc.wantOp)
+		}
+	}
+	if len(fake.adGuardSyncOps) != len(syncCases) {
+		t.Errorf("sync backend calls = %d, want %d", len(fake.adGuardSyncOps), len(syncCases))
 	}
 
 	// SSE ticket: POST mints, then the stream route accepts ?ticket= (but streams

@@ -5389,6 +5389,139 @@
           }
         }
       }
+    },
+    "/api/v3/sync/adguard/sources": {
+      "get": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "List AdGuard sync sources",
+        "description": "Returns saved AdGuard upstream sources with their redacted URLs and last applied state.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "Save an AdGuard sync source",
+        "description": "Creates or updates a pasted or URL-backed AdGuard upstream source. Credentials embedded in a URL userinfo are removed before storage.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v3/sync/adguard/sources/{id}": {
+      "delete": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "Delete an AdGuard sync source",
+        "description": "Forgets a source and its provenance while deliberately keeping already imported domains in the DigitDNS rule store.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Source not found"
+          }
+        }
+      }
+    },
+    "/api/v3/sync/adguard/sources/{id}/refresh": {
+      "post": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "Refresh an AdGuard sync source",
+        "description": "Refetches a URL-backed source. A failed fetch keeps the last good text and reports a warning instead of clearing it.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v3/sync/adguard/sources/{id}/export": {
+      "get": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "Export the managed AdGuard block",
+        "description": "Returns the generated DigitDNS-only AdGuard upstream block for a saved source, including its BEGIN/END markers.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v3/sync/adguard/preview": {
+      "post": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "Preview AdGuard coverage",
+        "description": "Parses pasted or fetched AdGuard upstream rules and returns covered, adguardOnly, digitdnsOnly and conflict buckets plus warnings.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v3/sync/adguard/apply": {
+      "post": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "Apply an AdGuard sync preview",
+        "description": "Imports the selected uncovered domains into DigitDNS proxy rules. The preview checksum must match the source text, and destructive removals require explicit confirmation.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
     }
   }
 }

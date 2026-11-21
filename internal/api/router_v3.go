@@ -80,6 +80,17 @@ type V3Backend interface {
 	SaveAccess(r *http.Request, body map[string]any) (map[string]any, error)
 	Rules() map[string]any
 	SaveRules(r *http.Request, body map[string]any) (map[string]any, error)
+	// AdGuard coverage sync. The web layer owns parsing and rule application;
+	// the router only authenticates, decodes and delegates. Every method returns
+	// data-only DTOs so a source URL's credentials and pasted config never enter
+	// an error message.
+	AdGuardSyncSources() (any, error)
+	SaveAdGuardSyncSource(r *http.Request, body map[string]any) (any, error)
+	DeleteAdGuardSyncSource(id string) (any, error)
+	RefreshAdGuardSyncSource(r *http.Request, id string) (any, error)
+	ExportAdGuardSyncSource(id string) (any, error)
+	PreviewAdGuardSync(r *http.Request, body map[string]any) (any, error)
+	ApplyAdGuardSync(r *http.Request, body map[string]any) (any, error)
 	Settings() (map[string]any, error)
 	SaveSettings(r *http.Request, body map[string]any) (map[string]any, error)
 	TransportSettings() (map[string]any, error)
@@ -257,6 +268,13 @@ func (a *API) RegisterRoutesV3(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v3/rules", a.SecurityMiddlewareV3(a.handleV3Rules))
 	mux.HandleFunc("/api/v3/access", a.SecurityMiddlewareV3(a.handleV3Access))
 	mux.HandleFunc("/api/v3/access/mode", a.SecurityMiddlewareV3(a.handleV3AccessMode))
+
+	// AdGuard ↔ DigitDNS coverage sync. The first version is dashboard-facing;
+	// the companion app can consume the same DTOs when it grows a sync screen.
+	mux.HandleFunc("/api/v3/sync/adguard/sources", a.SecurityMiddlewareV3(a.handleV3AdGuardSources))
+	mux.HandleFunc("/api/v3/sync/adguard/sources/", a.SecurityMiddlewareV3(a.handleV3AdGuardSourceItem))
+	mux.HandleFunc("/api/v3/sync/adguard/preview", a.SecurityMiddlewareV3(a.handleV3AdGuardPreview))
+	mux.HandleFunc("/api/v3/sync/adguard/apply", a.SecurityMiddlewareV3(a.handleV3AdGuardApply))
 
 	// Upstreams.
 	mux.HandleFunc("/api/v3/upstreams", a.SecurityMiddlewareV3(a.handleV3Upstreams))

@@ -1084,6 +1084,127 @@ func (a *API) handleV3Rules(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// AdGuard sync (delegated)
+// -----------------------------------------------------------------------------
+
+func (a *API) handleV3AdGuardSources(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		resp, err := a.v3Backend.AdGuardSyncSources()
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "internal", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	case http.MethodPost:
+		body, ok := v3Body(r)
+		if !ok {
+			writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+			return
+		}
+		resp, err := a.v3Backend.SaveAdGuardSyncSource(r, body)
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD or POST")
+	}
+}
+
+func (a *API) handleV3AdGuardSourceItem(w http.ResponseWriter, r *http.Request) {
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v3/sync/adguard/sources/"), "/")
+	if rest == "" {
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "source id is required")
+		return
+	}
+	parts := strings.Split(rest, "/")
+	id := parts[0]
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+	switch {
+	case action == "refresh" && r.Method == http.MethodPost:
+		resp, err := a.v3Backend.RefreshAdGuardSyncSource(r, id)
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	case action == "export" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+		resp, err := a.v3Backend.ExportAdGuardSyncSource(id)
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	case action == "" && r.Method == http.MethodDelete:
+		resp, err := a.v3Backend.DeleteAdGuardSyncSource(id)
+		if err != nil {
+			writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	default:
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "GET, HEAD, POST or DELETE")
+	}
+}
+
+func (a *API) handleV3AdGuardPreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	body, ok := v3Body(r)
+	if !ok {
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+		return
+	}
+	resp, err := a.v3Backend.PreviewAdGuardSync(r, body)
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (a *API) handleV3AdGuardApply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProblemAt(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+		return
+	}
+	if a.v3Backend == nil {
+		v3BackendUnavailable(w, r)
+		return
+	}
+	body, ok := v3Body(r)
+	if !ok {
+		writeProblemAt(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+		return
+	}
+	resp, err := a.v3Backend.ApplyAdGuardSync(r, body)
+	if err != nil {
+		writeProblemAt(w, r, backendProblemStatus(err), "invalid_request", err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (a *API) handleV3Access(w http.ResponseWriter, r *http.Request) {
 	if a.v3Backend == nil {
 		v3BackendUnavailable(w, r)

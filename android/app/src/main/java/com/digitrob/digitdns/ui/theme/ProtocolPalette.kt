@@ -25,10 +25,8 @@ import java.util.Locale
  * beside it. [ExtendedColors.info] is the accent cyan and is used for Proxy
  * everywhere else, so it could not also stand for TCP.
  */
-@Composable
-fun protocolColor(protocol: String): Color {
-    val colors = DigitDnsTheme.colors
-    return when (protocol.uppercase(Locale.ROOT)) {
+fun protocolToneColor(protocol: String, colors: ExtendedColors): Color =
+    when (protocol.uppercase(Locale.ROOT)) {
         "UDP" -> colors.info
         "TCP" -> colors.blue
         "DOT" -> colors.success
@@ -38,7 +36,9 @@ fun protocolColor(protocol: String): Color {
         "DNSCRYPT" -> colors.fuchsia
         else -> colors.textMuted
     }
-}
+
+@Composable
+fun protocolColor(protocol: String): Color = protocolToneColor(protocol, DigitDnsTheme.colors)
 
 /**
  * The palette colour for a transport key as the resolver chips spell it
@@ -46,8 +46,7 @@ fun protocolColor(protocol: String): Color {
  * onto the protocol palette here keeps the chip row, the live log and the history
  * cards on one set of colours instead of a second local table beside them.
  */
-@Composable
-fun transportColor(transport: String): Color {
+fun transportToneColor(transport: String, colors: ExtendedColors): Color {
     val protocol = when (transport.lowercase(Locale.ROOT)) {
         "plain" -> "UDP"
         "dot" -> "DoT"
@@ -57,8 +56,11 @@ fun transportColor(transport: String): Color {
         "dnscrypt" -> "DNSCrypt"
         else -> transport
     }
-    return protocolColor(protocol)
+    return protocolToneColor(protocol, colors)
 }
+
+@Composable
+fun transportColor(transport: String): Color = transportToneColor(transport, DigitDnsTheme.colors)
 
 /** The human display form of a protocol wire value. */
 fun protocolLabel(protocol: String): String = when (protocol.uppercase(Locale.ROOT)) {
