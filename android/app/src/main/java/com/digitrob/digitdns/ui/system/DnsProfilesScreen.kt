@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.ui.system
 
+import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -66,104 +67,115 @@ fun DnsProfilesScreen(viewModel: ClientTransportsViewModel = hiltViewModel()) {
         onRefresh = viewModel::load,
         modifier = Modifier.fillMaxSize(),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            state.error?.let {
-                Text(it, color = DigitDnsTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
-            }
+        DnsProfilesContent(
+            error = state.error,
+            transport = transport,
+            endpoint = endpoint,
+            message = message,
+            onTransportChange = { transport = it; message = "" },
+            onGenerate = {
+                if (host.isBlank()) {
+                    message = "Configure a domain and certificate first"
+                    return@DnsProfilesContent
+                }
+                message = shareMobileconfig(context, transport, host, endpoint)
+            },
+        )
+    }
+}
 
-            PanelCard(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "Generate a macOS configuration profile for a client device.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+@Composable
+private fun DnsProfilesContent(
+    error: String?,
+    transport: String,
+    endpoint: String,
+    message: String,
+    onTransportChange: (String) -> Unit,
+    onGenerate: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        error?.let {
+            Text(it, color = DigitDnsTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
+        }
+        PanelCard(modifier = Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "Generate a macOS configuration profile for a client device.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = transport == "doh",
+                        onClick = { onTransportChange("doh") },
+                        label = { Text("DoH (DNS over HTTPS)") },
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = transport == "doh",
-                            onClick = { transport = "doh"; message = "" },
-                            label = { Text("DoH (DNS over HTTPS)") },
-                        )
-                        FilterChip(
-                            selected = transport == "dot",
-                            onClick = { transport = "dot"; message = "" },
-                            label = { Text("DoT (DNS over TLS)") },
-                        )
-                    }
+                    FilterChip(
+                        selected = transport == "dot",
+                        onClick = { onTransportChange("dot") },
+                        label = { Text("DoT (DNS over TLS)") },
+                    )
                 }
             }
-
-            PanelCard(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Server endpoint",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = endpoint,
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
-                    )
-                }
+        }
+        PanelCard(modifier = Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Server endpoint",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = endpoint,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = PanelMono),
+                )
             }
-
-            PanelCard(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            if (host.isBlank()) {
-                                message = "Configure a domain and certificate first"
-                                return@Button
-                            }
-                            val fileName = "digitdns-profile-$transport.mobileconfig"
-                            val xml = buildMobileconfig(transport, host, port, endpoint)
-                            val file = File(context.cacheDir, fileName)
-                            file.writeText(xml)
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                file,
-                            )
-                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "application/x-plist"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                putExtra(Intent.EXTRA_SUBJECT, fileName)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            runCatching {
-                                context.startActivity(Intent.createChooser(sendIntent, "Share $fileName"))
-                                message = "Saved $fileName"
-                            }.onFailure { e ->
-                                message = e.message ?: "Could not share the profile"
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Generate .mobileconfig")
-                    }
-                    if (message.isNotBlank()) {
-                        Text(message, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Text(
-                        text = "Save the shared file, open it on macOS, and approve it in " +
-                            "System Settings → VPN & Device Management. Remove it there when it is no longer needed.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+        }
+        PanelCard(modifier = Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onGenerate, modifier = Modifier.fillMaxWidth()) {
+                    Text("Generate .mobileconfig")
                 }
+                if (message.isNotBlank()) {
+                    Text(message, style = MaterialTheme.typography.bodySmall)
+                }
+                Text(
+                    text = "Save the shared file, open it on macOS, and approve it in " +
+                        "System Settings → VPN & Device Management. Remove it there when it is no longer needed.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
 }
 
+private fun shareMobileconfig(context: Context, transport: String, host: String, endpoint: String): String {
+    val fileName = "digitdns-profile-$transport.mobileconfig"
+    return runCatching {
+        val xml = buildMobileconfig(transport, host, endpoint)
+        val file = File(context.cacheDir, fileName)
+        file.writeText(xml)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/x-plist"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, fileName)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(sendIntent, "Share $fileName"))
+        "Saved $fileName"
+    }.getOrElse { e -> e.message ?: "Could not share the profile" }
+}
+
 /** Apple com.apple.dns.managed payload; DNSProtocol selects HTTPS (DoH) or TLS (DoT). */
-private fun buildMobileconfig(transport: String, host: String, port: String, endpoint: String): String {
+private fun buildMobileconfig(transport: String, host: String, endpoint: String): String {
     val protocol = if (transport == "doh") "HTTPS" else "TLS"
     val label = if (transport == "doh") "DoH" else "DoT"
     val idPrefix = "com.digitdns.profile.$transport"

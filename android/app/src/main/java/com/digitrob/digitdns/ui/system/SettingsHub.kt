@@ -106,7 +106,12 @@ internal enum class SettingsSection(
     Network(R.string.settings_network, Icons.Filled.Settings, SettingsGroup.Server, "network server port"),
     Tls(R.string.settings_tls, Icons.Filled.Lock, SettingsGroup.Server, "tls ssl certificate acme"),
     Subscription(R.string.settings_subscription, Icons.Filled.Share, SettingsGroup.Server, "subscription portal"),
-    DnsProfiles(R.string.settings_dns_profiles, Icons.Filled.FileDownload, SettingsGroup.Server, "dns profiles mobileconfig macos doh dot download"),
+    DnsProfiles(
+        R.string.settings_dns_profiles,
+        Icons.Filled.FileDownload,
+        SettingsGroup.Server,
+        "dns profiles mobileconfig macos doh dot download",
+    ),
     Security(R.string.settings_security, Icons.Filled.VerifiedUser, SettingsGroup.Server, "security 2fa password admin path credentials"),
     RelayAgents(R.string.settings_relay_agents, Icons.Filled.Speed, SettingsGroup.Server, "egress relay agents socks wireguard"),
 
