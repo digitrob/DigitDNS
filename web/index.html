@@ -2935,6 +2935,7 @@ async function onBuySubscription(ctx, username) {
         <nav class="settings-jump settings-wide" aria-label="Resolver sections">
           <button type="button" class="panel-chip is-active" data-settings-jump="top" aria-pressed="true">All</button>
           <button type="button" class="panel-chip" data-settings-jump="transports-card" aria-pressed="false">Transports</button>
+          <button type="button" class="panel-chip" data-settings-jump="dns-profiles-card" aria-pressed="false">DNS Profiles</button>
           <button type="button" class="panel-chip" data-settings-jump="proxy-leak-card" aria-pressed="false">Protection</button>
           <button type="button" class="panel-chip" data-settings-jump="doh-tokens-card" aria-pressed="false">Tokens</button>
         </nav>
@@ -3221,6 +3222,46 @@ async function onBuySubscription(ctx, username) {
             <p id="transports-last-error" class="hidden text-[11px] text-red-300 leading-relaxed"></p>
             <span id="transports-save-status" class="text-[11px] text-slate-400 ms-auto">All changes saved</span>
           </div>
+        </div>
+
+        <!-- DNS Transport Profiles: generate a macOS .mobileconfig for DoH or
+             DoT from the live transport settings. Sits with Client Transports so
+             an operator configures the endpoint here and exports the profile here. -->
+        <div class="glass-panel panel-card p-5 sm:p-6 space-y-4 settings-wide" id="dns-profiles-card">
+          <div>
+            <h3 class="panel-card-header">
+              <i data-feather="download" class="w-4 h-4 text-purple-400"></i> DNS Transport Profiles
+            </h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">Generate a macOS configuration profile for a client device.</p>
+          </div>
+
+          <div class="flex flex-col sm:flex-row gap-3">
+            <label class="flex items-center gap-2 text-xs text-slate-300 flex-1 min-w-0">
+              <input type="radio" name="profile-transport" value="doh" checked>
+              <span>DoH (DNS over HTTPS)</span>
+            </label>
+            <label class="flex items-center gap-2 text-xs text-slate-300 flex-1 min-w-0">
+              <input type="radio" name="profile-transport" value="dot">
+              <span>DoT (DNS over TLS)</span>
+            </label>
+          </div>
+
+          <div class="space-y-1">
+            <span class="text-xs text-slate-400">Server endpoint</span>
+            <code id="profile-server-url-web" class="block text-[11px] text-slate-300 font-mono break-all">—</code>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" id="gen-profile-web" class="panel-btn panel-btn-primary">
+              <i data-feather="download" class="w-3.5 h-3.5"></i> Generate .mobileconfig
+            </button>
+            <span id="profile-status-web" class="text-[11px] text-slate-400"></span>
+          </div>
+
+          <p class="text-[11px] text-slate-500 leading-relaxed">
+            Save the file, open it on macOS, and approve it in System Settings → VPN &amp; Device Management.
+            Remove it there as well when it is no longer needed.
+          </p>
         </div>
 
         <!-- The two DNS policy cards share a row on wide panels and stack on

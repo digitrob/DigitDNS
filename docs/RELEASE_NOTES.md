@@ -1,63 +1,50 @@
-# DigitDNS v5.11.0 — AdGuard import actions and upstream picker
+# DigitDNS v5.11.1 — macOS DNS transport profiles
 
-This release finishes the AdGuard Upstream List Import workflow on the dashboard and the Android companion. It needs no database schema migration: saved sources, checksums, provenance and rules stay in the existing `Policy` store. Existing rules, clients, certificates, relay agents, egress options, stored history and service icons are preserved.
+This release adds a first-class way to hand a macOS client a working encrypted-DNS configuration. Both the dashboard and the Android companion can now generate a `.mobileconfig` profile from the server's own transport settings, so the exported endpoint can never drift from what the resolver actually listens on. No database schema migration is required: existing rules, saved sources, certificates, relay agents, egress options, stored history and service icons are preserved.
 
-## Dashboard: real DigitDNS actions
+## Dashboard: DNS Transport Profiles
 
-The importer still lives below the Domains panel and keeps its own review palette, but the review table now writes the action it shows.
+Under **Settings → Resolvers**, the new **DNS Transport Profiles** card sits directly after Client Transports, with its own `DNS Profiles` jump chip.
 
-- **Route status menu.** The old `Adds to custom_proxied` column is replaced by a Domains-style pill/menu with `PROXY`, `DIRECT` and `Blocked`. Applying writes the selected domain to `custom_proxied`, `custom_direct` or `custom_blocked` and removes it from the other two route lists.
-- **Per-row adblock target.** Selected domains can also be appended to DigitDNS's existing filtering custom rules. This does not create a separate filter list or a new adblock source, and handwritten custom rules are preserved.
-- **Hidden by default.** Domains already present in DigitDNS are hidden behind a countable notice with a `Show them` action. Search, status/coverage filters, selected-only and reset still work over the full loaded preview.
-- **Saved sources.** Saved imports are first-class cards with an AdGuard favicon, domain count, date and checksum. Saving auto-names the snapshot `AdGuard Home — YYYY-MM-DD HH:mm` and deduplicates identical content by checksum. No source URL is shown or stored.
-- **Favicon upstream picker.** `Managed upstream for exported rules` is now a dropdown with `This server` as the default, current upstreams, provider presets with favicons, search, and inline `Add custom upstream…`.
-- **Clearer staging.** `Preview list` and `Save List` sit directly under the imported list box. The sticky footer shows route changes, adblock additions, removals and the managed upstream, plus a short `What will not change` note. `Apply to DigitDNS` stays disabled until the computed change set is non-empty and the checksum is current.
-- **No generated block section.** The `Generated AdGuard block` panel is gone from both clients. The server may still return its legacy field for API compatibility, but the UI no longer presents it as an action.
+- Choose **DoH (DNS over HTTPS)** or **DoT (DNS over TLS)**.
+- The server endpoint is derived live from the configured certificate domain (falling back to the public IP) and the configured DoH/DoT ports — 8443 for DoH with `/dns-query`, 853 for DoT. Port 443 is omitted from the DoH authority.
+- **Generate .mobileconfig** downloads a named profile and reports the saved filename; the last chosen transport is remembered locally.
+- The endpoint refreshes automatically whenever the configuration is reloaded or edited.
 
-## Friendly notices and removals
+## Android: DNS Profiles in the settings hub
 
-Raw warning strings are no longer rendered. The clients consume grouped notices for already-covered domains, broad domains, conflicts, removals and unchanged data.
+**DNS Profiles** is now a searchable entry under **Settings → Server & access**, next to Transports and Access — it is not a detached screen.
 
-The old acknowledgement wording is gone. Removals are described in plain language:
+- It reads the same `ClientTransportsViewModel` state as the transports page, so host and ports match the server.
+- DoH/DoT selection, a live endpoint readout, and a **Generate .mobileconfig** action that writes the file to the app cache and shares it through a `FileProvider` chooser (mail, Files, AirDrop, and so on).
+- A short note in the panel explains installation and removal on macOS.
 
-- `Off — nothing is removed.`
-- `This review only — only domains shown here can be removed.`
-- `Mirror source — domains this source stops naming can be removed.`
+The companion carries the matching `android-v5.11.1` version line, version code 583.
 
-Broad and conflict awareness is preserved through inline review actions inside the relevant notice, not legalistic checkboxes. Checksum-aware apply remains in force: changing the preview, row actions, adblock targets, removal mode or managed upstream invalidates the staged apply until the list is previewed again.
+## Profile contents
 
-## Android: full parity
+Both clients emit an unsigned `com.apple.dns.managed` payload with `DNSSettings`:
 
-The dedicated **AdGuard Upstream List Import** page under Settings → DNS policy now mirrors the dashboard flow end to end. It keeps its own semantic palette and is still not a bottom tab.
+- `DNSProtocol` is `HTTPS` for DoH and `TLS` for DoT.
+- DoH sets `ServerURL` to `https://host:8443/dns-query` plus `ServerNames` for certificate validation.
+- DoT sets `ServerAddresses` and `ServerNames` to the configured host, on port 853.
+- Each payload has its own fresh UUID, `PayloadVersion` 1, and `PayloadRemovalDisallowed` false so the user can remove it normally in System Settings → VPN & Device Management.
 
-- Domains-style status menus for Proxy, Direct and Block.
-- Per-row adblock targets and bulk add-selected-to-adblock.
-- Hidden already-present domains with a countable show action.
-- Search, filters, selected-only, reset, staged summary and disabled Apply.
-- Saved-source cards with `AdGuard Home` auto-naming and checksum dedupe.
-- The same favicon upstream picker with provider presets and inline add-new.
-- Grouped notices and the same plain-language removals copy.
-- No generated block screen or save step.
-
-The companion carries the matching `android-v5.11.0` version line, version code 582.
-
-## API compatibility
-
-The v3 sync endpoints keep their paths and existing fields. Apply accepts additive optional fields for per-domain route actions, adblock domains and managed upstream selection; old clients continue to default to proxy-only imports with no adblock changes and `this-server`. Preview adds structured per-row metadata and notices while retaining the legacy `warnings` array.
+Because the profile is unsigned, macOS presents it as an unmanaged profile to approve manually; that is intentional for this self-hosted use case.
 
 ## Upgrade
 
 In-place upgrades from the dashboard are supported.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.1/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.11.0
-docker pull ghcr.io/digitrob/digitdns-agent:5.11.0
-docker pull robmeister/digitdns:5.11.0
-docker pull robmeister/digitdns-agent:5.11.0
+docker pull ghcr.io/digitrob/digitdns:5.11.1
+docker pull ghcr.io/digitrob/digitdns-agent:5.11.1
+docker pull robmeister/digitdns:5.11.1
+docker pull robmeister/digitdns-agent:5.11.1
 ```

@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.11.1] — macOS DNS transport profiles
+
+### Added
+- **macOS `.mobileconfig` generation on the dashboard.** A new **DNS Transport Profiles** card sits with Client Transports under Settings → Resolvers, with its own jump chip. Pick DoH or DoT, review the endpoint built from the server's live transport settings, and download a ready-to-install profile.
+- **The same exporter on Android.** **DNS Profiles** now appears under Settings → Server &amp; access in the existing settings hub. It reuses the configured DoT/DoH host and ports from Client Transports, writes the profile to the app cache and shares it through a `FileProvider` so it arrives as a real attachment.
+- **Correct encrypted-DNS payloads.** Both clients generate an `com.apple.dns.managed` payload with `DNSSettings`/`DNSProtocol` (`HTTPS` for DoH, `TLS` for DoT), a fresh UUID per payload, and escaped XML values. DoH uses `ServerURL` with `/dns-query`; DoT uses `ServerAddresses`. Defaults are port 8443 for DoH and 853 for DoT, with port 443 omitted from the DoH authority.
+
+No database schema migration is required. Existing rules, saved sources, certificates, relay agents, history and service icons are preserved. The Android companion moves to `android-v5.11.1`, with version code 583.
+
+---
+
 ## 🏷️ [v5.11.0] — AdGuard import actions and upstream picker
 
 ### Added

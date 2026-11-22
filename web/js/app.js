@@ -2251,6 +2251,7 @@ function renderConfig(cfg) {
   if (typeof window.renderSubscriptionSettings === 'function') window.renderSubscriptionSettings();
   if (typeof window.renderAdminPath === 'function') window.renderAdminPath();
   if (typeof window.renderTwoFactor === 'function') window.renderTwoFactor();
+  if (typeof window.renderDnsProfiles === 'function') window.renderDnsProfiles();
 
   // Version badge (single source of truth: version.json embedded in the binary).
   //
@@ -19573,3 +19574,194 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeMobileMore();
 });
+
+// =======================================================
+// DNS TRANSPORT PROFILES (Resolvers settings card)
+// =======================================================
+// Lives with Client Transports so the endpoint configured above is the one the
+// exported macOS profile uses. Reads live config through window.__hdns — no
+// jQuery in this panel, plain DOM only.
+(() => {
+  const radios = () => Array.from(document.querySelectorAll('input[name="profile-transport"]'));
+  const endpointEl = () => document.getElementById('profile-server-url-web');
+  const statusEl = () => document.getElementById('profile-status-web');
+  const genBtn = () => document.getElementById('gen-profile-web');
+
+  function selectedTransport() {
+    const checked = document.querySelector('input[name="profile-transport"]:checked');
+    return checked ? checked.value : 'doh';
+  }
+
+  // Mirrors transportCertHost()/transportGuideHost() in the transports UI:
+  // encrypted DNS validates its certificate against the domain, with the IP as
+  // the last-resort fallback.
+  function profileHost(cfg) {
+    const tls = (cfg && cfg.tls) || {};
+    return tls.dot_domain || tls.domain || (cfg && cfg.server && cfg.server.public_ip) || '';
+  }
+
+  function profileEndpoint(transport) {
+    const cfg = (window.__hdns && window.__hdns.getConfig && window.__hdns.getConfig()) || {};
+    const host = profileHost(cfg);
+    const t = (cfg && cfg.transports) || {};
+    if (!host) return '';
+    if (transport === 'doh') {
+      const port = Number(t.doh_port) || 8443;
+      const authority = port === 443 ? host : `${host}:${port}`;
+      return `https://${authority}/dns-query`;
+    }
+    const port = Number(t.dot_port) || 853;
+    return `tls://${host}:${port}`;
+  }
+
+  function renderEndpoint() {
+    const el = endpointEl();
+    if (!el) return;
+    const endpoint = profileEndpoint(selectedTransport());
+    el.textContent = endpoint || 'Configure a domain and certificate first';
+  }
+
+  function escapeXml(value) {
+    return String(value).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;',
+    }[c]));
+  }
+
+  function uuid() {
+    try { return crypto.randomUUID(); } catch (e) { /* older browser */ }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+  }
+
+  // Apple's com.apple.dns.managed payload with DNSSettings is the encrypted-DNS
+  // form understood by macOS 12+; DNSProtocol selects HTTPS (DoH) or TLS (DoT).
+  function buildMobileconfig(transport, endpoint) {
+    const cfg = (window.__hdns && window.__hdns.getConfig && window.__hdns.getConfig()) || {};
+    const host = profileHost(cfg);
+    const protocol = transport === 'doh' ? 'HTTPS' : 'TLS';
+    const label = transport === 'doh' ? 'DoH' : 'DoT';
+    const idPrefix = `com.digitdns.profile.${transport}`;
+
+    let serverKeys;
+    if (transport === 'doh') {
+      serverKeys =
+        `            <key>ServerURL</key>\n` +
+        `            <string>${escapeXml(endpoint)}</string>\n` +
+        `            <key>ServerNames</key>\n` +
+        `            <array>\n` +
+        `                <string>${escapeXml(host)}</string>\n` +
+        `            </array>`;
+    } else {
+      serverKeys =
+        `            <key>ServerAddresses</key>\n` +
+        `            <array>\n` +
+        `                <string>${escapeXml(host)}</string>\n` +
+        `            </array>\n` +
+        `            <key>ServerNames</key>\n` +
+        `            <array>\n` +
+        `                <string>${escapeXml(host)}</string>\n` +
+        `            </array>`;
+    }
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>DNSSettings</key>
+            <dict>
+                <key>DNSProtocol</key>
+                <string>${protocol}</string>
+${serverKeys}
+            </dict>
+            <key>PayloadDisplayName</key>
+            <string>DigitDNS ${label}</string>
+            <key>PayloadIdentifier</key>
+            <string>${idPrefix}.dns</string>
+            <key>PayloadType</key>
+            <string>com.apple.dns.managed</string>
+            <key>PayloadUUID</key>
+            <string>${uuid()}</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+        </dict>
+    </array>
+    <key>PayloadDescription</key>
+    <string>Configure DigitDNS encrypted DNS (${label})</string>
+    <key>PayloadDisplayName</key>
+    <string>DigitDNS DNS ${label}</string>
+    <key>PayloadIdentifier</key>
+    <string>${idPrefix}</string>
+    <key>PayloadOrganization</key>
+    <string>DigitDNS</string>
+    <key>PayloadRemovalDisallowed</key>
+    <false/>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>${uuid()}</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+</dict>
+</plist>`;
+  }
+
+  function setStatus(text, ok) {
+    const el = statusEl();
+    if (!el) return;
+    el.textContent = text;
+    el.style.color = ok ? 'var(--success, #34d399)' : 'var(--danger, #f87171)';
+  }
+
+  function downloadProfile() {
+    const transport = selectedTransport();
+    const endpoint = profileEndpoint(transport);
+    if (!endpoint) {
+      setStatus('Configure a domain and certificate first', false);
+      return;
+    }
+    const filename = `digitdns-profile-${transport}.mobileconfig`;
+    const blob = new Blob([buildMobileconfig(transport, endpoint)], { type: 'application/x-plist' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    try { localStorage.setItem('digitdns-transport', transport); } catch (e) { /* storage disabled */ }
+    setStatus(`Saved ${filename}`, true);
+  }
+
+  function init() {
+    radios().forEach((radio) => radio.addEventListener('change', () => {
+      renderEndpoint();
+      try { localStorage.setItem('digitdns-transport', selectedTransport()); } catch (e) { /* storage disabled */ }
+    }));
+    const btn = genBtn();
+    if (btn) btn.addEventListener('click', downloadProfile);
+
+    try {
+      const saved = localStorage.getItem('digitdns-transport');
+      if (saved === 'doh' || saved === 'dot') {
+        const target = radios().find((r) => r.value === saved);
+        if (target) target.checked = true;
+      }
+    } catch (e) { /* storage disabled */ }
+
+    renderEndpoint();
+    // renderConfig calls this after a config refresh so the endpoint tracks edits.
+    window.renderDnsProfiles = renderEndpoint;
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
