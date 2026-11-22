@@ -54,6 +54,19 @@ private object RouteScopeMemory {
     }
 }
 
+/** A remembered scope is only reused if it still covers the row and writes a free pattern. */
+private fun isUsableRememberedScope(
+    domain: String,
+    remembered: MatchScope,
+    targetResolver: (String, MatchScope) -> List<String>,
+    disabledTargets: Set<String>,
+): Boolean {
+    val targets = targetResolver(domain, remembered)
+    return targets.isNotEmpty() &&
+        targets.none(disabledTargets::contains) &&
+        MatchScope.covers(domain, targets)
+}
+
 /**
  * The routing quick-action menu, shared by the Domains list and the Live Query Log so
  * both offer the panel's identical menu: a match-scope selector (exact / *.host /
@@ -76,21 +89,40 @@ fun RouteActionMenu(
     patterns: Set<String> = emptySet(),
     anchorSize: IntSize = IntSize.Zero,
     anchorY: Float = 0f,
+    /**
+     * The importer substitutes a wildcard-safe resolver: a listed `*.host` row is a
+     * complete scope, so the derived wildcard scopes are not offered on top of it.
+     * The Domains list keeps the default resolver.
+     */
+    targetResolver: (String, MatchScope) -> List<String> = { host, matchScope -> matchScope.targets(host) },
+    /** Patterns already configured in DigitDNS; a scope that would rewrite one is disabled. */
+    disabledTargets: Set<String> = emptySet(),
 ) {
     // Keep the last scope picked for this name, then fall back to the one its
     // rules imply. Reopening after choosing *.host must not snap back to exact —
     // but a remembered *.host on the host itself excludes the row the operator
     // clicked, so it must not be reused there.
     var scope by remember(domain, patterns) {
-        val remembered = RouteScopeMemory.get(domain)
-        val rememberedTargets = remembered?.targets(domain).orEmpty()
+        val rememberedScope = RouteScopeMemory.get(domain)
         mutableStateOf(
-            if (remembered != null && rememberedTargets.isNotEmpty() && MatchScope.covers(domain, rememberedTargets)) {
-                remembered
+            if (rememberedScope != null &&
+                isUsableRememberedScope(domain, rememberedScope, targetResolver, disabledTargets)
+            ) {
+                rememberedScope
             } else {
                 MatchScope.initialScope(domain, patterns)
             },
         )
+    }
+    // A remembered wildcard scope on a wildcard row (or one that collides with an
+    // existing rule) must fall back to the row itself instead of offering a scope
+    // that writes nothing or silently overwrites another DigitDNS route.
+    val effectiveScope = if (targetResolver(domain, scope).isNotEmpty() &&
+        targetResolver(domain, scope).none(disabledTargets::contains)
+    ) {
+        scope
+    } else {
+        MatchScope.Exact
     }
     // What a scope click wrote in this menu session. The next click removes it, so
     // *.parent -> exact restores the origin even though the origin left the lists.
@@ -139,25 +171,26 @@ fun RouteActionMenu(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
         )
-        ScopeSelector(domain, scope, onSelect = { chosen ->
+        ScopeSelector(domain, effectiveScope, targetResolver, disabledTargets, onSelect = { chosen ->
             onScopeChange(chosen, appliedTargets)
-            appliedTargets = chosen.targets(domain)
+            appliedTargets = targetResolver(domain, chosen)
             scope = chosen
             RouteScopeMemory.put(domain, chosen)
         })
         // The scope labels are short on purpose: without the resolved pattern a
         // *.host action on a host looks like it covers that host, while it writes
         // *.host and covers its subdomains only.
-        val targets = scope.targets(domain)
+        val targets = targetResolver(domain, effectiveScope)
+        val blocked = targets.isNotEmpty() && targets.any(disabledTargets::contains)
         // A wildcard-only scope leaves the clicked host itself on its old rule.
         // Say so in the menu, not only after the write, so the action cannot look
         // like it was ignored.
         val missesHost = targets.isNotEmpty() && !domain.startsWith("*.") && !MatchScope.covers(domain, targets)
         Text(
-            text = if (targets.isEmpty()) {
-                "No pattern for this scope"
-            } else {
-                "applies to ${targets.joinToString(" + ")}" +
+            text = when {
+                targets.isEmpty() -> "No pattern for this scope"
+                blocked -> "already configured: ${targets.joinToString(" + ")}"
+                else -> "applies to ${targets.joinToString(" + ")}" +
                     if (missesHost) " — $domain itself unchanged" else ""
             },
             style = MaterialTheme.typography.labelSmall,
@@ -172,7 +205,7 @@ fun RouteActionMenu(
         ) {
             val moveActions = listOf(RouteAction.Proxy, RouteAction.Block, RouteAction.Direct)
             moveActions.forEach { action ->
-                val enabled = targets.isNotEmpty()
+                val enabled = targets.isNotEmpty() && targets.none(disabledTargets::contains)
                 OutlinedButton(
                     onClick = {
                         if (targets.isEmpty()) return@OutlinedButton
@@ -196,7 +229,7 @@ fun RouteActionMenu(
         }
         if (allowRemove) {
             val removeAction = RouteAction.Remove
-            val removeEnabled = targets.isNotEmpty()
+            val removeEnabled = targets.isNotEmpty() && targets.none(disabledTargets::contains)
             Button(
                 onClick = {
                     if (targets.isEmpty()) return@Button
@@ -220,7 +253,13 @@ fun RouteActionMenu(
 
 /** The scope selector: a 2 x 2 grid, so every label and hint fits on one line. */
 @Composable
-private fun ScopeSelector(domain: String, selected: MatchScope, onSelect: (MatchScope) -> Unit) {
+private fun ScopeSelector(
+    domain: String,
+    selected: MatchScope,
+    targetResolver: (String, MatchScope) -> List<String>,
+    disabledTargets: Set<String>,
+    onSelect: (MatchScope) -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -237,6 +276,8 @@ private fun ScopeSelector(domain: String, selected: MatchScope, onSelect: (Match
                         scope = scope,
                         domain = domain,
                         selected = scope == selected,
+                        targetResolver = targetResolver,
+                        disabledTargets = disabledTargets,
                         onSelect = onSelect,
                         modifier = Modifier.weight(1f),
                     )
@@ -253,10 +294,13 @@ private fun ScopeCell(
     scope: MatchScope,
     domain: String,
     selected: Boolean,
+    targetResolver: (String, MatchScope) -> List<String>,
+    disabledTargets: Set<String>,
     onSelect: (MatchScope) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val valid = scope.targets(domain).isNotEmpty()
+    val targets = targetResolver(domain, scope)
+    val valid = targets.isNotEmpty() && targets.none(disabledTargets::contains)
     val active = selected && valid
     Column(
         modifier = modifier

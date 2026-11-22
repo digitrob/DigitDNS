@@ -1,75 +1,94 @@
-@file:Suppress("TooGenericExceptionCaught", "TooManyFunctions")
+@file:Suppress("TooGenericExceptionCaught", "TooManyFunctions", "LongParameterList")
 
 package com.digitrob.digitdns.ui.rules
 
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.AdGuardApplyRequest
-import com.digitrob.digitdns.core.network.AdGuardApplyResultDto
 import com.digitrob.digitdns.core.network.AdGuardPreviewDto
 import com.digitrob.digitdns.core.network.AdGuardPreviewRequest
 import com.digitrob.digitdns.core.network.AdGuardRowDto
 import com.digitrob.digitdns.core.network.AdGuardSourceDto
 import com.digitrob.digitdns.core.network.AdGuardSourceSaveRequest
 import com.digitrob.digitdns.data.AdGuardSyncRepository
+import com.digitrob.digitdns.data.RulesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 
 internal const val ADGUARD_REMOVAL_KEEP = "keep"
-internal const val ADGUARD_REMOVAL_SYNCED_ONLY = "synced_only"
-internal const val ADGUARD_REMOVAL_MIRROR = "mirror"
 
-/** How many upstream addresses one compact notice may name before it trails off. */
-private const val MAX_NOTICE_TARGETS = 3
+internal const val ADGUARD_ACTION_PROXY = "proxy"
+internal const val ADGUARD_ACTION_DIRECT = "direct"
+internal const val ADGUARD_ACTION_BLOCK = "block"
+
+private val ADGUARD_ACTIONS = setOf(ADGUARD_ACTION_PROXY, ADGUARD_ACTION_DIRECT, ADGUARD_ACTION_BLOCK)
+
+/**
+ * The importer's scope resolver. A wildcard named by the AdGuard source is already a
+ * complete scope: deriving `*.host` or `*.parent` from it would stack a wildcard on
+ * top of a wildcard, so only the listed pattern is offered.
+ */
+internal fun adGuardScopeTargets(domain: String, scope: MatchScope): List<String> {
+    val raw = domain.trim().trimStart('.').lowercase(Locale.US)
+    return when {
+        raw.isEmpty() -> emptyList()
+        raw.startsWith("*.") -> if (scope == MatchScope.Exact) listOf(raw) else emptyList()
+        else -> scope.targets(domain)
+    }
+}
+
+/** Which of the two mutually exclusive review filters is pressed, if any. */
+enum class AdGuardFilter { All, SelectedOnly, AlreadyPresent }
 
 data class AdGuardImportUiState(
     val sources: List<AdGuardSourceDto> = emptyList(),
     val selectedSourceId: String = "",
     val displayName: String = "",
-    val enabled: Boolean = true,
-    val managedUpstream: String = "",
     val text: String = "",
+    val sourceMenuOpen: Boolean = false,
+    val deleteConfirmation: Boolean = false,
     val loadingSources: Boolean = false,
     val previewing: Boolean = false,
     val applying: Boolean = false,
     val saving: Boolean = false,
     val preview: AdGuardPreviewDto? = null,
     val selectedImport: Set<String> = emptySet(),
-    val selectedManaged: Set<String> = emptySet(),
     val importTouched: Boolean = false,
+    val recentlyUnchecked: Set<String> = emptySet(),
     val search: String = "",
-    val selectedOnly: Boolean = false,
-    val removalMode: String = ADGUARD_REMOVAL_KEEP,
-    val confirmMirror: Boolean = false,
-    val acknowledgeRisk: Boolean = false,
-    val result: AdGuardApplyResultDto? = null,
+    val filter: AdGuardFilter = AdGuardFilter.All,
+    /** Keys are resolved patterns, not the row that opened the shared menu. */
+    val domainActions: Map<String, String> = emptyMap(),
+    /** A scope replaces the origin pattern in both import and domain_actions. */
+    val stagedScopes: Map<String, List<String>> = emptyMap(),
+    /** Covered/conflict rows whose route the operator explicitly edited. */
+    val existingRoutes: Set<String> = emptySet(),
+    /** All four DigitDNS routing lists, used to disable colliding wildcard scopes. */
+    val digitDnsPatterns: Set<String> = emptySet(),
+    /** True when staged review inputs changed after the last preview checksum. */
+    val reviewDirty: Boolean = false,
+    val status: String = "Ready",
     val error: String? = null,
     val message: String? = null,
 )
 
-/** A compact, operator-facing notice. Raw server warning strings are never shown. */
-internal data class AdGuardNoticeUi(
-    val kind: String,
-    val title: String,
-    val message: String,
-    val targets: List<String> = emptyList(),
-    val domains: List<String> = emptyList(),
-)
-
 /**
- * State machine for the AdGuard upstream-list importer. The server owns parsing and
- * the preview checksum; this class owns selection, staged counts and the guardrails
- * around destructive removal modes. Nothing reaches the rule store until apply.
+ * State machine for the add-only AdGuard importer. Parsing, coverage and checksums
+ * belong to the server; this class owns selection, staged route scopes, the mutually
+ * exclusive filters and the exact preview text/checksum carried into apply.
  */
 @HiltViewModel
 class AdGuardUpstreamImportViewModel @Inject constructor(
     private val repository: AdGuardSyncRepository,
+    private val rulesRepository: RulesRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AdGuardImportUiState())
@@ -77,63 +96,97 @@ class AdGuardUpstreamImportViewModel @Inject constructor(
 
     init {
         loadSources()
+        loadPatterns()
     }
 
     fun loadSources() {
         viewModelScope.launch { refreshSources() }
     }
 
-    fun selectSource(id: String) {
+    /** Best effort, like the live log: a failure leaves scope collision checks permissive. */
+    fun loadPatterns() {
+        viewModelScope.launch {
+            runCatching { rulesRepository.load() }
+                .onSuccess { lists ->
+                    val patterns = lists.managedPatterns
+                        .map { it.trim().trimStart('.').trimEnd('.').lowercase(Locale.US) }
+                        .filter { it.isNotEmpty() }
+                        .toSet()
+                    _state.update { it.copy(digitDnsPatterns = patterns) }
+                }
+        }
+    }
+
+    fun toggleSourceMenu() = _state.update { it.copy(sourceMenuOpen = !it.sourceMenuOpen) }
+
+    fun dismissSourceMenu() = _state.update { it.copy(sourceMenuOpen = false) }
+
+    /** Selecting a saved list loads and previews it; there is no separate Load button. */
+    fun loadSource(id: String) {
+        if (id.isBlank()) {
+            newSource()
+            return
+        }
         val source = _state.value.sources.find { it.id == id }
+        if (source == null) {
+            _state.update { it.copy(error = "That saved list is no longer available.") }
+            return
+        }
         _state.update { current ->
             current.copy(
                 selectedSourceId = id,
-                displayName = source?.name.orEmpty(),
-                enabled = source?.enabled ?: true,
-                managedUpstream = source?.managedUpstream.orEmpty(),
-                text = source?.text.orEmpty(),
+                displayName = source.name,
+                text = source.text,
+                sourceMenuOpen = false,
+                deleteConfirmation = false,
                 preview = null,
                 selectedImport = emptySet(),
-                selectedManaged = emptySet(),
                 importTouched = false,
-                result = null,
+                recentlyUnchecked = emptySet(),
+                domainActions = emptyMap(),
+                stagedScopes = emptyMap(),
+                existingRoutes = emptySet(),
+                reviewDirty = false,
+                status = "Source loaded",
                 error = null,
+                message = null,
             )
         }
-    }
-
-    /** Load the selected saved source into the form and re-preview it. */
-    fun loadSelectedSource() {
-        val id = _state.value.selectedSourceId
-        if (id.isBlank()) {
-            _state.update { it.copy(error = "Select a saved source first.") }
-            return
-        }
-        selectSource(id)
         preview(resetSelection = true)
     }
 
-    fun newSource() = selectSource("")
+    fun newSource() = _state.update { current ->
+        current.copy(
+            selectedSourceId = "",
+            displayName = "",
+            text = "",
+            sourceMenuOpen = false,
+            deleteConfirmation = false,
+            preview = null,
+            selectedImport = emptySet(),
+            importTouched = false,
+            recentlyUnchecked = emptySet(),
+            domainActions = emptyMap(),
+            stagedScopes = emptyMap(),
+            existingRoutes = emptySet(),
+            reviewDirty = false,
+            search = "",
+            filter = AdGuardFilter.All,
+            status = "Ready",
+            error = null,
+            message = null,
+        )
+    }
 
     fun setDisplayName(value: String) = _state.update { it.copy(displayName = value, error = null) }
 
     fun setText(value: String) = _state.update { it.copy(text = value, error = null) }
 
-    fun setEnabled(value: Boolean) = _state.update { it.copy(enabled = value) }
-
-    fun setManagedUpstream(value: String) = _state.update { it.copy(managedUpstream = value) }
-
     fun setSearch(value: String) = _state.update { it.copy(search = value) }
 
-    fun setSelectedOnly(value: Boolean) = _state.update { it.copy(selectedOnly = value) }
-
-    fun setRemovalMode(value: String) = _state.update {
-        it.copy(removalMode = value, confirmMirror = if (value == ADGUARD_REMOVAL_MIRROR) it.confirmMirror else false)
+    fun setFilter(value: AdGuardFilter) = _state.update { current ->
+        current.copy(filter = if (current.filter == value) AdGuardFilter.All else value, recentlyUnchecked = emptySet())
     }
-
-    fun setConfirmMirror(value: Boolean) = _state.update { it.copy(confirmMirror = value) }
-
-    fun setAcknowledgeRisk(value: Boolean) = _state.update { it.copy(acknowledgeRisk = value) }
 
     fun saveSource() {
         val current = _state.value
@@ -141,171 +194,204 @@ class AdGuardUpstreamImportViewModel @Inject constructor(
             _state.update { it.copy(error = "Paste an AdGuard upstream list before saving.") }
             return
         }
+        val name = current.displayName.trim().ifBlank { defaultSourceName() }
         viewModelScope.launch {
-            _state.update { it.copy(saving = true, error = null, message = null) }
+            _state.update { it.copy(saving = true, status = "Saving…", error = null, message = null, displayName = name) }
             try {
                 val saved = repository.saveSource(
                     AdGuardSourceSaveRequest(
                         sourceId = current.selectedSourceId,
-                        name = current.displayName.trim(),
+                        name = name,
                         text = current.text,
-                        enabled = current.enabled,
-                        managedUpstream = current.managedUpstream.trim(),
                     ),
                 )
                 refreshSources(saved.id)
-                _state.update { it.copy(saving = false, message = "AdGuard source saved.") }
+                _state.update { it.copy(saving = false, status = "List saved", message = "AdGuard list saved.") }
             } catch (e: Throwable) {
-                _state.update { it.copy(saving = false, error = errorText(e)) }
+                _state.update { it.copy(saving = false, status = "Save failed", error = errorText(e)) }
             }
         }
     }
 
-    fun deleteSource() {
+    fun requestDelete() {
+        if (_state.value.selectedSourceId.isBlank()) {
+            _state.update { it.copy(error = "Select a saved list before deleting.") }
+            return
+        }
+        _state.update { it.copy(deleteConfirmation = true, sourceMenuOpen = false) }
+    }
+
+    fun dismissDelete() = _state.update { it.copy(deleteConfirmation = false) }
+
+    fun confirmDelete() {
         val id = _state.value.selectedSourceId
         if (id.isBlank()) {
-            _state.update { it.copy(error = "Select a saved source before deleting.") }
+            dismissDelete()
             return
         }
         viewModelScope.launch {
-            _state.update { it.copy(saving = true, error = null, message = null) }
+            _state.update { it.copy(saving = true, deleteConfirmation = false, error = null, message = null) }
             try {
                 repository.deleteSource(id)
                 newSource()
                 refreshSources()
                 _state.update {
-                    it.copy(saving = false, message = "AdGuard source deleted. Imported domains were kept.")
+                    it.copy(
+                        saving = false,
+                        status = "List deleted",
+                        message = "AdGuard source deleted. Imported domains were kept.",
+                    )
                 }
             } catch (e: Throwable) {
-                _state.update { it.copy(saving = false, error = errorText(e)) }
+                _state.update { it.copy(saving = false, status = "Delete failed", error = errorText(e)) }
             }
         }
     }
 
     fun preview(resetSelection: Boolean = true) {
-        viewModelScope.launch { fetchPreview(resetSelection) }
+        loadPatterns()
+        viewModelScope.launch {
+            try {
+                fetchPreviewSuspend(resetSelection)
+            } catch (_: Throwable) {
+                // fetchPreviewSuspend already recorded a friendly error in state.
+            }
+        }
     }
 
     fun toggleImport(domain: String) = _state.update { current ->
-        val next = if (domain in current.selectedImport) {
-            current.selectedImport - domain
-        } else {
-            current.selectedImport + domain
-        }
-        current.copy(selectedImport = next, importTouched = true)
+        val wasSelected = domain in current.selectedImport
+        val next = if (wasSelected) current.selectedImport - domain else current.selectedImport + domain
+        val recently = if (wasSelected) current.recentlyUnchecked + domain else current.recentlyUnchecked - domain
+        pruneStagedRoutes(current.copy(selectedImport = next, recentlyUnchecked = recently, importTouched = true))
     }
 
-    fun toggleManaged(domain: String) = _state.update { current ->
-        val next = if (domain in current.selectedManaged) {
-            current.selectedManaged - domain
-        } else {
-            current.selectedManaged + domain
-        }
-        current.copy(selectedManaged = next)
-    }
-
-    fun selectAllToAdd() = _state.update { current ->
-        val preview = current.preview
-        if (preview == null) {
-            current
-        } else {
-            current.copy(selectedImport = importableDomains(preview), importTouched = true)
-        }
-    }
-
-    fun clearImports() = _state.update { it.copy(selectedImport = emptySet(), importTouched = true) }
-
-    fun selectAllToSendBack() = _state.update { current ->
-        val preview = current.preview
-        if (preview == null) {
-            current
-        } else {
-            current.copy(selectedManaged = preview.managed.map { it.domain }.toSet())
-        }
-    }
-
-    fun clearExports() = _state.update { it.copy(selectedManaged = emptySet()) }
-
-    /** The list header's select/deselect acts on the currently visible importable rows. */
+    /** The header checkbox acts on importable rows visible under the current filter. */
     fun toggleVisibleImports(domains: List<String>) = _state.update { current ->
         val visible = domains.toSet()
         val allSelected = visible.isNotEmpty() && visible.all { it in current.selectedImport }
-        current.copy(
-            selectedImport = if (allSelected) current.selectedImport - visible else current.selectedImport + visible,
-            importTouched = true,
-        )
+        val next = if (allSelected) current.selectedImport - visible else current.selectedImport + visible
+        val recently = if (allSelected) current.recentlyUnchecked - visible else current.recentlyUnchecked
+        pruneStagedRoutes(current.copy(selectedImport = next, recentlyUnchecked = recently, importTouched = true))
     }
 
-    @Suppress("ReturnCount")
+    /** Proxy / Direct / Block bulk chips keep each row's staged scope. */
+    fun setBulkRoute(action: String) {
+        if (action !in ADGUARD_ACTIONS) return
+        _state.update { current ->
+            current.selectedImport.fold(current) { acc, origin ->
+                val targets = acc.stagedScopes[origin].takeUnless { it.isNullOrEmpty() } ?: listOf(origin)
+                applyRoute(acc, origin, action, targets)
+            }
+        }
+    }
+
+    /**
+     * Called by the shared Domains-list menu in importer mode. A scope click and an
+     * action click both stage the resolved patterns so apply writes exactly what the
+     * menu previewed.
+     */
+    fun setRoute(domain: String, action: String, targets: List<String>) {
+        if (action !in ADGUARD_ACTIONS) return
+        _state.update { current -> applyRoute(current, domain, action, targets) }
+    }
+
     fun apply() {
-        val current = _state.value
-        val preview = current.preview ?: return
-        if (current.text != preview.text) {
-            _state.update { it.copy(error = "The source text changed. Preview it again before applying.") }
-            return
-        }
-        if (current.selectedImport.isEmpty() && current.selectedManaged.isEmpty()) return
-        if (current.removalMode == ADGUARD_REMOVAL_MIRROR && !current.confirmMirror) {
-            _state.update { it.copy(error = "Confirm mirror mode before applying it.") }
-            return
-        }
-        if (requiresAcknowledgement(preview) && !current.acknowledgeRisk) {
-            _state.update { it.copy(error = "Acknowledge the conflicting or broad domains before applying.") }
-            return
-        }
-        viewModelScope.launch {
-            _state.update { it.copy(applying = true, error = null, message = null) }
-            try {
-                val result = repository.apply(
-                    AdGuardApplyRequest(
-                        sourceId = preview.sourceId.ifBlank { current.selectedSourceId },
-                        name = current.displayName.trim().ifBlank { preview.name },
-                        text = preview.text,
-                        checksum = preview.checksum,
-                        enabled = current.enabled,
-                        managedUpstream = current.managedUpstream.trim(),
-                        managedSelection = current.selectedManaged.toList(),
-                        importDomains = current.selectedImport.toList(),
-                        managedDomains = current.selectedManaged.toList(),
-                        removalMode = current.removalMode,
-                        confirmMirror = current.confirmMirror,
-                        acknowledgeRisk = current.acknowledgeRisk,
-                    ),
-                )
-                _state.update {
-                    it.copy(applying = false, result = result, message = "AdGuard sync applied to DigitDNS.")
+        val initial = _state.value
+        val initialPreview = initial.preview
+        if (initialPreview == null || (initial.selectedImport.isEmpty() && initial.existingRoutes.isEmpty())) return
+        if (initial.text != initialPreview.text) {
+            preview(resetSelection = true)
+            _state.update { it.copy(message = "The source changed. Review the new preview before applying.") }
+        } else {
+            loadPatterns()
+            viewModelScope.launch {
+                _state.update { it.copy(applying = true, status = "Applying…", error = null, message = null) }
+                try {
+                    if (_state.value.reviewDirty) fetchPreviewSuspend(resetSelection = false)
+                    val current = _state.value
+                    val preview = current.preview ?: return@launch
+                    val result = repository.apply(
+                        AdGuardApplyRequest(
+                            sourceId = preview.sourceId.ifBlank { current.selectedSourceId },
+                            name = current.displayName.trim().ifBlank { preview.name },
+                            text = preview.text,
+                            checksum = preview.checksum,
+                            importDomains = adGuardActiveTargets(current).toList().sorted(),
+                            removalMode = ADGUARD_REMOVAL_KEEP,
+                            confirmMirror = false,
+                            acknowledgeRisk = true,
+                            domainActions = resolvedDomainActions(current),
+                        ),
+                    )
+                    _state.update {
+                        it.copy(applying = false, status = "Applied", message = "AdGuard upstream list applied to DigitDNS.")
+                    }
+                    loadPatterns()
+                    refreshSources(result.source.id.ifBlank { preview.sourceId })
+                    fetchPreviewSuspend(resetSelection = true)
+                } catch (e: Throwable) {
+                    _state.update { it.copy(applying = false, status = "Apply failed", error = errorText(e)) }
                 }
-                refreshSources(result.source.id.ifBlank { preview.sourceId })
-                fetchPreview(resetSelection = true)
-            } catch (e: Throwable) {
-                _state.update { it.copy(applying = false, error = errorText(e)) }
             }
         }
     }
-
-    fun saveBlock(uri: Uri) {
-        val block = _state.value.result?.generatedBlock?.takeIf { it.isNotBlank() }
-            ?: _state.value.preview?.generatedBlock.orEmpty()
-        if (block.isBlank()) {
-            _state.update { it.copy(error = "Select DigitDNS-only domains before saving a block.") }
-            return
-        }
-        viewModelScope.launch {
-            _state.update { it.copy(saving = true, error = null, message = null) }
-            try {
-                repository.saveBlock(uri, block)
-                _state.update { it.copy(saving = false, message = "AdGuard block saved.") }
-            } catch (e: Throwable) {
-                _state.update { it.copy(saving = false, error = errorText(e)) }
-            }
-        }
-    }
-
-    fun blockCopied() = _state.update { it.copy(message = "AdGuard block copied.") }
 
     fun dismissMessage() = _state.update { it.copy(message = null) }
 
     fun dismissError() = _state.update { it.copy(error = null) }
+
+    private fun applyRoute(
+        current: AdGuardImportUiState,
+        domain: String,
+        action: String,
+        targets: List<String>,
+    ): AdGuardImportUiState {
+        val row = current.preview?.rows?.firstOrNull { it.domain == domain }
+        val patterns = targets.map { it.trim().lowercase(Locale.US) }.filter { it.isNotEmpty() }.distinct()
+        if (row == null || row.bucket == "digitdnsOnly" || patterns.isEmpty()) return current
+        val oldPatterns = current.stagedScopes[domain] ?: listOf(domain)
+
+        val actions = current.domainActions.toMutableMap()
+        oldPatterns.forEach { old -> if (old !in patterns) actions.remove(old) }
+        patterns.forEach { pattern -> actions[pattern] = action }
+
+        val scopes = current.stagedScopes.toMutableMap()
+        scopes[domain] = patterns
+
+        val existingRoutes = if (row.bucket == "adguardOnly") {
+            current.existingRoutes
+        } else {
+            current.existingRoutes + domain
+        }
+
+        return pruneStagedRoutes(
+            current.copy(
+                domainActions = actions,
+                stagedScopes = scopes,
+                existingRoutes = existingRoutes,
+                reviewDirty = true,
+            ),
+        )
+    }
+
+    /** A re-preview can remove rows; stale scopes and actions must not survive it. */
+    private fun pruneStagedRoutes(current: AdGuardImportUiState): AdGuardImportUiState {
+        val parsed = current.preview?.rows
+            ?.filter { it.bucket != "digitdnsOnly" }
+            ?.map { it.domain }
+            ?.toSet()
+            .orEmpty()
+        val existingRoutes = current.existingRoutes intersect parsed
+        val origins = current.selectedImport + existingRoutes
+        val stagedScopes = current.stagedScopes.filterKeys { it in origins }
+        val pruned = current.copy(
+            existingRoutes = existingRoutes,
+            stagedScopes = stagedScopes,
+        )
+        val active = adGuardActiveTargets(pruned)
+        return pruned.copy(domainActions = pruned.domainActions.filterKeys { it in active })
+    }
 
     private suspend fun refreshSources(preferredId: String? = null) {
         _state.update { it.copy(loadingSources = true, error = null) }
@@ -319,10 +405,8 @@ class AdGuardUpstreamImportViewModel @Inject constructor(
                     loadingSources = false,
                     selectedSourceId = selected?.id.orEmpty(),
                     displayName = selected?.name?.takeIf { it.isNotBlank() } ?: current.displayName,
-                    enabled = selected?.enabled ?: current.enabled,
-                    managedUpstream = selected?.managedUpstream?.takeIf { it.isNotBlank() } ?: current.managedUpstream,
-                    // A refreshed source can omit text (for example a URL-backed one);
-                    // never blank the form before the post-apply re-preview.
+                    // A refreshed source can omit text; never blank a form that is
+                    // about to be re-previewed after save or apply.
                     text = selected?.text?.takeIf { it.isNotBlank() } ?: current.text,
                 )
             }
@@ -331,44 +415,52 @@ class AdGuardUpstreamImportViewModel @Inject constructor(
         }
     }
 
-    private suspend fun fetchPreview(resetSelection: Boolean) {
-        val current = _state.value
-        if (current.text.isBlank()) {
+    private suspend fun fetchPreviewSuspend(resetSelection: Boolean) {
+        val initial = _state.value
+        if (initial.text.isBlank()) {
             _state.update { it.copy(error = "Paste an AdGuard upstream list before previewing.") }
             return
         }
-        _state.update { it.copy(previewing = true, error = null) }
+        val name = initial.displayName.trim().ifBlank { defaultSourceName() }
+        _state.update { it.copy(previewing = true, status = "Previewing…", error = null, displayName = name) }
         try {
+            val current = _state.value
             val preview = repository.preview(
                 AdGuardPreviewRequest(
                     sourceId = current.selectedSourceId,
-                    name = current.displayName.trim(),
+                    name = name,
                     text = current.text,
-                    enabled = current.enabled,
-                    managedUpstream = current.managedUpstream.trim(),
-                    managedSelection = current.selectedManaged.toList(),
+                    domainActions = resolvedDomainActions(current),
+                    removalMode = ADGUARD_REMOVAL_KEEP,
+                    confirmMirror = false,
+                    acknowledgeRisk = true,
                 ),
             )
             _state.update { state ->
                 val importable = importableDomains(preview)
-                val managedAllowed = preview.managed.map { it.domain }.toSet()
-                state.copy(
+                val next = if (resetSelection) {
+                    state.copy(
+                        selectedImport = importable,
+                        importTouched = false,
+                        recentlyUnchecked = emptySet(),
+                        domainActions = emptyMap(),
+                        stagedScopes = emptyMap(),
+                        existingRoutes = emptySet(),
+                    )
+                } else {
+                    state.copy(selectedImport = state.selectedImport intersect importable, recentlyUnchecked = emptySet())
+                }
+                val refreshed = next.copy(
                     previewing = false,
+                    status = "Preview ready",
                     preview = preview,
-                    // Default selection is every AdGuard-only row; a manual selection
-                    // survives a re-preview but is pruned to what still importable.
-                    selectedImport = if (resetSelection || !state.importTouched) {
-                        importable
-                    } else {
-                        state.selectedImport intersect importable
-                    },
-                    selectedManaged = if (resetSelection) emptySet() else state.selectedManaged intersect managedAllowed,
-                    importTouched = false,
-                    result = null,
+                    reviewDirty = false,
                 )
+                pruneStagedRoutes(refreshed)
             }
         } catch (e: Throwable) {
-            _state.update { it.copy(previewing = false, error = errorText(e)) }
+            _state.update { it.copy(previewing = false, status = "Preview failed", error = errorText(e)) }
+            throw e
         }
     }
 
@@ -376,120 +468,69 @@ class AdGuardUpstreamImportViewModel @Inject constructor(
         e.message?.trim().takeUnless { it.isNullOrEmpty() } ?: "The server could not complete that request."
 }
 
-/** The four buckets share one row type; DigitDNS-only rows arrive in `managed`. */
-internal fun adGuardDisplayRows(preview: AdGuardPreviewDto): List<AdGuardRowDto> = preview.rows + preview.managed
+/** Only parsed AdGuard rows appear in the review; send-back rows are out of scope. */
+internal fun adGuardDisplayRows(preview: AdGuardPreviewDto): List<AdGuardRowDto> = preview.rows
 
 internal fun importableDomains(preview: AdGuardPreviewDto): Set<String> =
     preview.rows.filter { it.bucket == "adguardOnly" }.map { it.domain }.toSet()
 
+/**
+ * A wildcard scope replaces its origin. Explicit edits on already-present rows ride
+ * alongside new imports, but never become source-owned provenance on the server.
+ */
+internal fun adGuardActiveTargets(state: AdGuardImportUiState): Set<String> {
+    val origins = state.selectedImport + state.existingRoutes
+    return origins.flatMap { origin ->
+        state.stagedScopes[origin]?.takeIf { it.isNotEmpty() } ?: listOf(origin)
+    }.toSet()
+}
+
+internal fun resolvedDomainActions(state: AdGuardImportUiState): Map<String, String> =
+    state.domainActions.filterKeys { it in adGuardActiveTargets(state) }
+
+internal fun adGuardRowAction(row: AdGuardRowDto, state: AdGuardImportUiState): String {
+    val staged = state.stagedScopes[row.domain].orEmpty()
+    val explicit = state.domainActions[row.domain]
+        ?: staged.firstNotNullOfOrNull { pattern -> state.domainActions[pattern] }
+    if (explicit != null && explicit in ADGUARD_ACTIONS) return explicit
+    return row.suggestedAction.takeIf { it in ADGUARD_ACTIONS } ?: ADGUARD_ACTION_PROXY
+}
+
+internal data class AdGuardStagedCounts(val imports: Int, val routeChanges: Int)
+
+internal fun adGuardStagedCounts(state: AdGuardImportUiState): AdGuardStagedCounts {
+    val active = adGuardActiveTargets(state)
+    val routes = state.domainActions.keys
+        .filter { it in active && state.domainActions[it] != ADGUARD_ACTION_PROXY }
+        .toSet() + state.existingRoutes
+    return AdGuardStagedCounts(imports = state.selectedImport.size, routeChanges = routes.size)
+}
+
 internal fun filterAdGuardRows(
     rows: List<AdGuardRowDto>,
     query: String,
-    selectedOnly: Boolean,
+    filter: AdGuardFilter,
     selectedImport: Set<String>,
-    selectedManaged: Set<String>,
+    recentlyUnchecked: Set<String> = emptySet(),
 ): List<AdGuardRowDto> {
-    val needle = query.trim().lowercase()
+    val needle = query.trim().lowercase(Locale.US)
     return rows.filter { row ->
+        if (row.bucket == "digitdnsOnly") return@filter false
         val matches = needle.isBlank() || row.domain.contains(needle) ||
             row.group.contains(needle) || row.target.contains(needle)
-        val isSelected = row.domain in selectedImport || row.domain in selectedManaged
-        matches && (!selectedOnly || isSelected)
-    }
-}
-
-internal fun requiresAcknowledgement(preview: AdGuardPreviewDto): Boolean {
-    val rows = adGuardDisplayRows(preview)
-    return preview.counts.conflict > 0 || preview.broadCount > 0 || rows.any { it.broad } ||
-        preview.warnings.any { it.contains("broad domain", ignoreCase = true) }
-}
-
-/** Before apply, this is an estimate from this source's own provenance. */
-internal fun estimatedRemovals(source: AdGuardSourceDto?, preview: AdGuardPreviewDto, removalMode: String): Int {
-    if (removalMode == ADGUARD_REMOVAL_KEEP) return 0
-    val named = adGuardDisplayRows(preview).map { it.domain }.toSet()
-    return source?.imported?.count { it !in named } ?: 0
-}
-
-@Suppress("ReturnCount")
-internal fun canApplyAdGuardSync(state: AdGuardImportUiState): Boolean {
-    val preview = state.preview ?: return false
-    if (state.applying || preview.checksum.isBlank() || state.text != preview.text) return false
-    if (state.selectedImport.isEmpty() && state.selectedManaged.isEmpty()) return false
-    if (state.removalMode == ADGUARD_REMOVAL_MIRROR && !state.confirmMirror) return false
-    if (requiresAcknowledgement(preview) && !state.acknowledgeRisk) return false
-    return true
-}
-
-/**
- * Prefer the server's structured notices. On older installs the additive fields are
- * absent, so a small set of friendly notices is derived from rows, targets and the
- * shape of the warnings — never by printing each raw warning string in the UI.
- */
-// Several independent additive/legacy signals feed one short, grouped notice list.
-@Suppress("CyclomaticComplexMethod")
-internal fun friendlyAdGuardNotices(preview: AdGuardPreviewDto): List<AdGuardNoticeUi> {
-    if (preview.notices.isNotEmpty()) {
-        return preview.notices.map { notice ->
-            AdGuardNoticeUi(
-                // The server calls this `upstream`; the review pill calls it
-                // `external_upstream`. Normalize once so the summary can rely on it.
-                kind = if (notice.kind == "upstream") "external_upstream" else notice.kind,
-                title = notice.title.ifBlank { "Review this source" },
-                message = notice.message,
-                targets = notice.targets,
-                domains = notice.domains,
-            )
+        when (filter) {
+            AdGuardFilter.All -> matches
+            AdGuardFilter.SelectedOnly -> matches && (row.domain in selectedImport || row.domain in recentlyUnchecked)
+            AdGuardFilter.AlreadyPresent -> matches && row.bucket == "covered"
         }
     }
-
-    val result = mutableListOf<AdGuardNoticeUi>()
-    val rows = adGuardDisplayRows(preview)
-    val externalFromRows = rows.filter { !it.targetIsSelf && it.target.isNotBlank() }.map { it.target }
-    val selfTargets = rows.filter { it.targetIsSelf }.map { it.target } +
-        preview.groups.filter { it.targetIsSelf }.map { it.target }
-    val externalTargets = (preview.foreignTargets + externalFromRows)
-        .filter { it.isNotBlank() && it !in selfTargets }
-        .distinct()
-        .take(MAX_NOTICE_TARGETS)
-    val shownTargets = externalTargets.ifEmpty {
-        listOf(preview.upstream).filter { it.isNotBlank() && selfTargets.isEmpty() }
-    }
-    if (shownTargets.isNotEmpty()) {
-        result += AdGuardNoticeUi(
-            kind = "external_upstream",
-            title = "AdGuard keeps its current routing",
-            message = "Domains are copied to DigitDNS, but AdGuard will keep routing to " +
-                shownTargets.joinToString(", ") + " until its config is changed.",
-            targets = shownTargets,
-        )
-    }
-
-    val broadFromRows = rows.count { it.broad }
-    val broadCount = if (broadFromRows > 0) broadFromRows else preview.broadCount
-    val broadWarning = preview.warnings.any { it.contains("broad domain", ignoreCase = true) }
-    if (broadCount > 0 || broadWarning) {
-        result += AdGuardNoticeUi(
-            kind = "broad",
-            title = "Broad domains need a second look",
-            message = if (broadCount > 0) {
-                "$broadCount broad domain${if (broadCount == 1) "" else "s"} are in this list. Import only what you intend."
-            } else {
-                "This list includes a broad domain. Import only what you intend."
-            },
-        )
-    }
-
-    val otherWarnings = preview.warnings.count { warning ->
-        !warning.contains("broad domain", ignoreCase = true) &&
-            !warning.contains("Target is not this DigitDNS server", ignoreCase = true)
-    }
-    if (otherWarnings > 0) {
-        result += AdGuardNoticeUi(
-            kind = "review",
-            title = "A few details to review",
-            message = "$otherWarnings additional item${if (otherWarnings == 1) "" else "s"} were reported for this source.",
-        )
-    }
-    return result
 }
+
+internal fun canApplyAdGuardSync(state: AdGuardImportUiState): Boolean {
+    val preview = state.preview ?: return false
+    return !state.applying && preview.checksum.isNotBlank() && state.text == preview.text &&
+        (state.selectedImport.isNotEmpty() || state.existingRoutes.isNotEmpty())
+}
+
+internal fun defaultSourceName(now: Date = Date()): String =
+    "AdGuard Home — " + SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(now)

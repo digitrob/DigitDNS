@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.11.0] — AdGuard import actions and upstream picker
+
+### Added
+- **Per-domain route actions.** The importer's status pill now offers `PROXY`, `DIRECT` and `Blocked`, and applying writes the chosen DigitDNS route list instead of always adding to `custom_proxied`.
+- **Per-domain adblock targets.** Selected domains can be appended to DigitDNS's existing filtering custom rules without creating a separate filter list. Handwritten custom rules are preserved.
+- **Favicon upstream picker.** `Managed upstream for exported rules` is now a dropdown with `This server` as the default, current upstreams, provider presets with favicons, search and inline add-new.
+- **Saved-source cards.** Saved imports are presented as cards with an AdGuard favicon, domain count, date and checksum. New names default to `AdGuard Home — YYYY-MM-DD HH:mm`; identical content is deduplicated by checksum.
+
+### Changed
+- **Already-covered domains are hidden by default.** A countable notice with `Show them` replaces the old mixed table. Search, filters, selected-only, reset and the staged summary continue to operate over the full preview.
+- **Notices and removals are friendlier.** Raw warning strings are no longer rendered, the old acknowledgement wording is gone, and removals are described as `Off`, `This review only` or `Mirror source`.
+- **The generated AdGuard block section is gone.** Both clients keep the checksum-aware apply flow but no longer present the generated block as an action.
+- **Android reaches parity.** The dedicated Settings → DNS policy page now supports the same route actions, adblock targets, hidden-domain default, upstream picker, saved-source UX, notices and staging summary as the dashboard.
+
+### API
+- The v3 sync endpoints stay compatible. Apply accepts additive optional fields for per-domain route actions, adblock domains and managed upstream selection; old clients keep the proxy-only default.
+
+No database schema migration is required. Existing rules, saved sources, provenance, certificates, relay agents, history and service icons are preserved. The Android companion moves to `android-v5.11.0`, with version code 582.
+
+---
+
 ## 🏷️ [v5.10.2] — AdGuard Upstream List Import polish
 
 ### Added

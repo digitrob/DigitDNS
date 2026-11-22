@@ -1,50 +1,63 @@
-# DigitDNS v5.10.2 — AdGuard Upstream List Import polish
+# DigitDNS v5.11.0 — AdGuard import actions and upstream picker
 
-This patch refines the AdGuard coverage sync introduced in v5.10.1 on both clients. It needs no database schema migration: saved sources, checksums, provenance and rules stay in the existing `Policy` store. Existing rules, clients, certificates, relay agents, egress options, stored history and service icons are preserved. Upstream selection defaults are unchanged: Racing still maps to Hedged.
+This release finishes the AdGuard Upstream List Import workflow on the dashboard and the Android companion. It needs no database schema migration: saved sources, checksums, provenance and rules stay in the existing `Policy` store. Existing rules, clients, certificates, relay agents, egress options, stored history and service icons are preserved.
 
-## Dashboard: AdGuard Upstream List Import
+## Dashboard: real DigitDNS actions
 
-The full-width card on the Domains tab is now called **AdGuard Upstream List Import** and follows the Domains page's visual language.
+The importer still lives below the Domains panel and keeps its own review palette, but the review table now writes the action it shows.
 
-- **A clear three-step explainer.** Paste the `[domain1/domain2/]upstream` list, review the comparison, then apply deliberately. The page states that DigitDNS is the primary rule store and that handwritten AdGuard sections are never rewritten automatically.
-- **A Domains-style comparison table.** The header stays in place while only the domain rows scroll. Existing panel fonts, buttons, checkboxes, dividers and empty states are reused.
-- **Bulk selection.** Select all domains that need to be added to DigitDNS, clear imports, select all domains to send back to AdGuard, clear exports, filter by domain/group/upstream, and show only selected rows. Apply stays disabled until an import, export or removal is staged.
-- **A palette of its own.** `Already in DigitDNS`, `Add to DigitDNS`, `Conflict`, `Send back to AdGuard`, `Broad` and `External upstream` have dedicated tones. They are deliberately different from live-log actions, history states, DNS transports and service badges, and a legend makes the meaning explicit.
-- **No source URL.** Saved sources continue to work from their pasted text. The URL field and URL-refresh button are gone from the dashboard; server endpoints remain compatible for existing clients.
+- **Route status menu.** The old `Adds to custom_proxied` column is replaced by a Domains-style pill/menu with `PROXY`, `DIRECT` and `Blocked`. Applying writes the selected domain to `custom_proxied`, `custom_direct` or `custom_blocked` and removes it from the other two route lists.
+- **Per-row adblock target.** Selected domains can also be appended to DigitDNS's existing filtering custom rules. This does not create a separate filter list or a new adblock source, and handwritten custom rules are preserved.
+- **Hidden by default.** Domains already present in DigitDNS are hidden behind a countable notice with a `Show them` action. Search, status/coverage filters, selected-only and reset still work over the full loaded preview.
+- **Saved sources.** Saved imports are first-class cards with an AdGuard favicon, domain count, date and checksum. Saving auto-names the snapshot `AdGuard Home — YYYY-MM-DD HH:mm` and deduplicates identical content by checksum. No source URL is shown or stored.
+- **Favicon upstream picker.** `Managed upstream for exported rules` is now a dropdown with `This server` as the default, current upstreams, provider presets with favicons, search, and inline `Add custom upstream…`.
+- **Clearer staging.** `Preview list` and `Save List` sit directly under the imported list box. The sticky footer shows route changes, adblock additions, removals and the managed upstream, plus a short `What will not change` note. `Apply to DigitDNS` stays disabled until the computed change set is non-empty and the checksum is current.
+- **No generated block section.** The `Generated AdGuard block` panel is gone from both clients. The server may still return its legacy field for API compatibility, but the UI no longer presents it as an action.
 
-## Friendly notices instead of raw warning spam
+## Friendly notices and removals
 
-The preview API still returns the original `warnings` array for compatibility, but the dashboard and Android app now render grouped `notices`:
+Raw warning strings are no longer rendered. The clients consume grouped notices for already-covered domains, broad domains, conflicts, removals and unchanged data.
 
-- One compact notice names any upstream targets that are not this DigitDNS server and explains that their domains can be imported while AdGuard keeps routing them there until its upstream settings change.
-- One compact notice reports the number of high-traffic domains with a few examples, and broad rows carry their own pill.
-- Conflicts get one short explanation rather than a per-domain warning wall.
+The old acknowledgement wording is gone. Removals are described in plain language:
 
-The additive preview fields are `notices`, `broad_count`, `foreign_targets` and a per-row `broad` flag. The risk acknowledgement and exact-preview checksum rules are unchanged.
+- `Off — nothing is removed.`
+- `This review only — only domains shown here can be removed.`
+- `Mirror source — domains this source stops naming can be removed.`
 
-## Android: dedicated settings page
+Broad and conflict awareness is preserved through inline review actions inside the relevant notice, not legalistic checkboxes. Checksum-aware apply remains in force: changing the preview, row actions, adblock targets, removal mode or managed upstream invalidates the staged apply until the list is previewed again.
 
-The companion gains a separate **AdGuard Upstream List Import** page under Settings → DNS policy. It is not a new bottom tab. It mirrors the dashboard flow: saved-source selector, display name, enabled switch, managed upstream, pasted list, preview, bulk selection, bounded apply, and copy/share of the generated managed block. It uses Material 3 panel components and its own semantic palette so its review states cannot be confused with existing action or status pills.
+## Android: full parity
 
-The companion carries the matching `android-v5.10.2` version line, version code 581.
+The dedicated **AdGuard Upstream List Import** page under Settings → DNS policy now mirrors the dashboard flow end to end. It keeps its own semantic palette and is still not a bottom tab.
 
-## Fixed
+- Domains-style status menus for Proxy, Direct and Block.
+- Per-row adblock targets and bulk add-selected-to-adblock.
+- Hidden already-present domains with a countable show action.
+- Search, filters, selected-only, reset, staged summary and disabled Apply.
+- Saved-source cards with `AdGuard Home` auto-naming and checksum dedupe.
+- The same favicon upstream picker with provider presets and inline add-new.
+- Grouped notices and the same plain-language removals copy.
+- No generated block screen or save step.
 
-The repository is `gofmt` clean again, including the AdGuard sync files added in v5.10.1.
+The companion carries the matching `android-v5.11.0` version line, version code 582.
+
+## API compatibility
+
+The v3 sync endpoints keep their paths and existing fields. Apply accepts additive optional fields for per-domain route actions, adblock domains and managed upstream selection; old clients continue to default to proxy-only imports with no adblock changes and `this-server`. Preview adds structured per-row metadata and notices while retaining the legacy `warnings` array.
 
 ## Upgrade
 
 In-place upgrades from the dashboard are supported.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.10.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.0/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.10.2
-docker pull ghcr.io/digitrob/digitdns-agent:5.10.2
-docker pull robmeister/digitdns:5.10.2
-docker pull robmeister/digitdns-agent:5.10.2
+docker pull ghcr.io/digitrob/digitdns:5.11.0
+docker pull ghcr.io/digitrob/digitdns-agent:5.11.0
+docker pull robmeister/digitdns:5.11.0
+docker pull robmeister/digitdns-agent:5.11.0
 ```

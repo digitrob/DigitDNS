@@ -1380,48 +1380,6 @@ input:checked + .slider:before {
 /* AdGuard Upstream List Import uses its own palette. These tones deliberately do
  * not reuse .badge-* or the action colours: a bucket here is a review state, not
  * a query result, transport or service status. */
-.ag-steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.ag-steps li {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  padding: 10px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.28);
-  color: #94a3b8;
-  font-size: 11px;
-  line-height: 1.5;
-}
-.ag-steps li > span {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: rgba(148, 163, 184, 0.16);
-  color: #cbd5e1;
-  font-size: 10px;
-  font-weight: 700;
-}
-.ag-steps strong {
-  color: #e2e8f0;
-  font-weight: 600;
-}
-.ag-steps code {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  color: #c4b5fd;
-}
-
 .ag-pill {
   --ag-ink: #cbd5e1;
   --ag-bg: rgba(148, 163, 184, 0.14);
@@ -1438,6 +1396,9 @@ input:checked + .slider:before {
   font-weight: 600;
   letter-spacing: 0.02em;
   line-height: 1.6;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -1461,21 +1422,6 @@ input:checked + .slider:before {
   --ag-bg: rgba(249, 115, 22, 0.14);
   --ag-line: rgba(251, 146, 60, 0.4);
 }
-.ag-pill-send {
-  --ag-ink: #93c5fd;
-  --ag-bg: rgba(59, 130, 246, 0.14);
-  --ag-line: rgba(96, 165, 250, 0.4);
-}
-.ag-pill-broad {
-  --ag-ink: #f0abfc;
-  --ag-bg: rgba(217, 70, 239, 0.13);
-  --ag-line: rgba(240, 171, 252, 0.36);
-}
-.ag-pill-external {
-  --ag-ink: #d4d4d8;
-  --ag-bg: rgba(113, 113, 122, 0.18);
-  --ag-line: rgba(161, 161, 170, 0.38);
-}
 .ag-pill-busy {
   --ag-ink: #e2e8f0;
   --ag-bg: rgba(148, 163, 184, 0.2);
@@ -1493,96 +1439,76 @@ input:checked + .slider:before {
   --ag-ink: #c2410c;
   --ag-line: rgba(194, 65, 12, 0.35);
 }
-[data-theme="light"] .ag-pill-send {
-  --ag-ink: #1d4ed8;
-  --ag-line: rgba(29, 78, 216, 0.35);
-}
-[data-theme="light"] .ag-pill-broad {
-  --ag-ink: #a21caf;
-  --ag-line: rgba(162, 28, 175, 0.35);
-}
-[data-theme="light"] .ag-pill-external {
-  --ag-ink: #52525b;
-  --ag-line: rgba(82, 82, 91, 0.35);
-}
 
-.ag-notices {
-  display: grid;
-  gap: 8px;
-}
-.ag-notices:empty {
-  display: none;
-}
-.ag-notice {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  padding: 9px 11px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-left-width: 3px;
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.32);
-  font-size: 11px;
-  line-height: 1.5;
-  color: #94a3b8;
-}
-.ag-notice strong {
-  display: block;
-  color: #e2e8f0;
-  font-size: 11px;
-}
-.ag-notice-upstream {
-  border-left-color: #a1a1aa;
-}
-.ag-notice-broad {
-  border-left-color: #f0abfc;
-}
-.ag-notice-conflict {
-  border-left-color: #fdba74;
-}
-
-.ag-toolbar,
-.ag-bulk,
-.ag-legend {
+.ag-bulk {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
+/* Filtering stays on one line. The row scrolls horizontally on a narrow panel
+ * instead of wrapping: wrapping moved the search box between rows as soon as a
+ * summary pill appeared, which read as the filter jumping under the pointer. */
 .ag-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   justify-content: space-between;
-  padding-top: 4px;
+  gap: 10px;
+  padding-top: 2px;
+  overflow-x: auto;
+}
+.ag-summary-line,
+.ag-filter-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.ag-filter-line {
+  margin-inline-start: auto;
+}
+/* Match the Domains card search field: it flexes to fill the leftover width
+   instead of sitting at the 7rem floor, so the two importers scan alike. */
+.ag-filter-line .proxied-search-box {
+  flex: 1 1 10rem;
+  min-width: 9rem;
 }
 .ag-pill-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-wrap: nowrap;
+  gap: 5px;
+  min-width: 220px;
 }
 .ag-counts,
 .ag-staged {
-  color: #94a3b8;
-  font-size: 11px;
+  color: var(--text-muted);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
-.ag-filter {
-  width: 190px;
-  font-size: 11px;
+.ag-counts {
+  min-width: 7rem;
 }
+/* The review toolbar reuses .proxied-search-box and .domain-filter-chip from
+   the Domains list, so the search field and filter pills are literally the same
+   controls rather than close-looking copies. */
 .ag-bulk {
-  padding: 8px 10px;
+  padding: 5px 8px;
   border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.24);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.2);
 }
 .ag-staged {
-  margin-left: auto;
-}
-.ag-legend {
-  gap: 6px;
-  padding: 2px 0;
+  margin-inline-start: auto;
 }
 .ag-results {
-  min-height: 72px;
+  min-height: 56px;
+}
+.ag-config-field .ag-source-text {
+  min-height: 12rem;
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
 }
 
 /* The header stays put while only the rows scroll, matching the Domains list. */
@@ -1597,67 +1523,46 @@ input:checked + .slider:before {
   overflow: auto;
   scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
 }
-.ag-table {
-  width: 100%;
-  min-width: 720px;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
+/* The importer table borrows the Domains list's .proxied-table shape. Only the
+ * column widths differ: this review has no Service/Relay/Actions columns, so the
+ * upstream group takes their place and Status/Route keep the same badge geometry.
+ * Domains stay compact; the freed width goes to the group/upstream text. */
+.ag-table-scroll .proxied-col-domain { width: 13rem; }
+.ag-col-upstream { width: 21rem; }
+.ag-col-route { width: 5.5rem; }
+.ag-table-scroll .proxied-table { min-width: 720px; }
+/* A row's bucket is carried by the surface, not a second status pill: covered
+ * rows are tinted green and conflicts amber, with a leading accent line. The
+ * sr-only label in the domain cell keeps the state announced without relying on
+ * colour alone. */
+.ag-table-scroll tbody tr.ag-row-covered { background: rgba(16, 185, 129, 0.10); }
+.ag-table-scroll tbody tr.ag-row-covered:hover { background: rgba(16, 185, 129, 0.14); }
+.ag-table-scroll tbody tr.ag-row-conflict { background: rgba(249, 115, 22, 0.10); }
+.ag-table-scroll tbody tr.ag-row-conflict:hover { background: rgba(249, 115, 22, 0.14); }
+.ag-table-scroll tbody tr.ag-row-covered td:first-child {
+  box-shadow: inset 2px 0 0 rgba(52, 211, 153, 0.45);
 }
-.ag-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 8px 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(15, 23, 42, 0.96);
-  color: #64748b;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-align: left;
-  text-transform: uppercase;
+.ag-table-scroll tbody tr.ag-row-conflict td:first-child {
+  box-shadow: inset 2px 0 0 rgba(251, 146, 60, 0.45);
 }
-[data-theme="light"] .ag-table thead th {
-  background: rgba(248, 250, 252, 0.96);
-  color: #64748b;
-}
-.ag-table th:nth-child(1) {
-  width: 38px;
-  text-align: center;
-}
-.ag-table th:nth-child(2) {
-  width: 24%;
-}
-.ag-table th:nth-child(3) {
-  width: 30%;
-}
-.ag-table th:nth-child(4) {
-  width: 17%;
-}
-.ag-table td {
-  padding: 8px 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-  color: #cbd5e1;
-  font-size: 11px;
-  vertical-align: middle;
-}
-.ag-table tbody tr:last-child td {
-  border-bottom: 0;
-}
-.ag-table tbody tr:hover td {
-  background: rgba(148, 163, 184, 0.06);
-}
-.ag-table td:nth-child(1) {
-  text-align: center;
-}
+[data-theme="light"] .ag-table-scroll tbody tr.ag-row-covered { background: rgba(5, 150, 105, 0.10); }
+[data-theme="light"] .ag-table-scroll tbody tr.ag-row-covered:hover { background: rgba(5, 150, 105, 0.14); }
+[data-theme="light"] .ag-table-scroll tbody tr.ag-row-conflict { background: rgba(234, 88, 12, 0.10); }
+[data-theme="light"] .ag-table-scroll tbody tr.ag-row-conflict:hover { background: rgba(234, 88, 12, 0.14); }
 .ag-domain {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   color: #e2e8f0;
-  overflow-wrap: anywhere;
 }
 .ag-meta,
 .ag-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #94a3b8;
   font-size: 11px;
 }
@@ -1670,28 +1575,166 @@ input:checked + .slider:before {
   color: #64748b;
   font-size: 11px;
 }
-.ag-managed {
+/* Saved source picker and List Name share a row on desktop; the picker's own
+   controls already wrap, so the two fields stack only when space is tight. */
+.ag-source-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 4px 12px;
-  margin-top: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 8px;
+  align-items: start;
 }
-.ag-managed label {
+.ag-source-wrap {
+  position: relative;
+  min-width: 0;
+}
+.ag-source-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ag-source-picker {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ag-source-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-inline: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+.ag-source-selected {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #cbd5e1;
+  min-width: 0;
+  color: var(--text-main);
   font-size: 11px;
 }
+.ag-source-selected-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ag-source-chevron {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.ag-source-favicon {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+}
+.ag-source-menu {
+  position: absolute;
+  z-index: 35;
+  inset-block-start: calc(100% + 4px);
+  inset-inline: 0;
+  max-height: 14rem;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid rgb(var(--c-slate-700));
+  border-radius: var(--radius-md);
+  background: rgb(var(--c-slate-950));
+  box-shadow: 0 12px 28px rgb(0 0 0 / 0.35);
+}
+.ag-source-menu.hidden {
+  display: none;
+}
+[data-theme="light"] .ag-source-menu {
+  background: rgb(var(--c-slate-50));
+  border-color: rgb(var(--c-slate-300));
+}
+.ag-source-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-main);
+  text-align: start;
+  cursor: pointer;
+}
+.ag-source-option:hover,
+.ag-source-option-active {
+  background: rgb(var(--c-cyan-500) / 0.1);
+}
+.ag-source-option-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+}
+.ag-source-option-name > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ag-source-option-meta {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-bulk-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(148, 163, 184, 0.25);
+}
+.ag-bulk .ag-note {
+  margin-right: 2px;
+}
+/* Removals and the commit action share one footer row. It reads like the
+ * Domains list's bulk bar: controls on the left, one primary verb on the right. */
+.ag-apply-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 2px;
+}
+.ag-removal-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+.ag-removal-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* The importer reuses the Domains-list popover unchanged: the head, wildcard
+ * scopes, pattern preview and three action rows are all the same controls. Only
+ * the write path differs — the importer stages a review action instead of saving
+ * DigitDNS rules immediately. */
 @media (max-width: 900px) {
-  .ag-steps {
-    grid-template-columns: 1fr;
-  }
-  .ag-toolbar {
+  .ag-apply-row {
     align-items: flex-start;
-  }
-  .ag-filter {
-    width: 100%;
   }
 }
 
@@ -3710,6 +3753,14 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-main);
+}
+
+/* This card names a product and a feature ("AdGuard Upstream List Import"), so
+ * its casing is part of the label. Keep the header's icon slot and type ramp but
+ * do not uppercase the words. */
+.panel-card-header.ag-card-title {
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
 /* The glyph defaults to the accent, but a heading may pick its own colour:

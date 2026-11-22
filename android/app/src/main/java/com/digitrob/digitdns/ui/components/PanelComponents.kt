@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -81,6 +82,11 @@ import java.time.format.DateTimeFormatter
  * [solid] swaps the translucent card colour for the opaque surface. A dialog uses it so
  * the page behind the panel is not visible through the text; ordinary dashboard cards
  * keep the glass treatment.
+ *
+ * [accent] tints a row's surface and border with a semantic token without taking over
+ * the selection border. Lists that mark a row's state by colour (the AdGuard importer)
+ * pass success/warning here; [highlighted] still wins the border so a selected row is
+ * always recognisable.
  */
 @Composable
 @Suppress("LongParameterList")
@@ -90,16 +96,26 @@ fun PanelCard(
     verticalPadding: Dp = contentPadding,
     bottomPadding: Dp = verticalPadding,
     highlighted: Boolean = false,
+    accent: Color? = null,
     contentAlignment: Alignment = Alignment.TopStart,
     solid: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colors = DigitDnsTheme.colors
-    val border = if (highlighted) MaterialTheme.colorScheme.primary else colors.borderColor
+    val border = when {
+        highlighted -> MaterialTheme.colorScheme.primary
+        accent != null -> accent.copy(alpha = 0.45f)
+        else -> colors.borderColor
+    }
+    val background = when {
+        solid -> MaterialTheme.colorScheme.surface
+        accent != null -> accent.copy(alpha = 0.10f).compositeOver(colors.bgCard)
+        else -> colors.bgCard
+    }
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(if (solid) MaterialTheme.colorScheme.surface else colors.bgCard)
+            .background(background)
             .border(1.dp, border, RoundedCornerShape(12.dp))
             .padding(start = contentPadding, end = contentPadding, top = verticalPadding, bottom = bottomPadding),
         contentAlignment = contentAlignment,

@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.core.network
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import retrofit2.http.Body
@@ -59,13 +60,16 @@ data class AdGuardSourceDto(
     @SerialName("updated_at") val updatedAt: String = "",
 )
 
+/**
+ * The dashboard card sends only these three fields when it saves a list. The API keeps
+ * `enabled` and `managed_upstream` on its response records for older clients, but this
+ * client deliberately omits both from every write.
+ */
 @Serializable
 data class AdGuardSourceSaveRequest(
     @SerialName("source_id") val sourceId: String = "",
     val name: String = "",
     val text: String = "",
-    val enabled: Boolean = true,
-    @SerialName("managed_upstream") val managedUpstream: String = "",
 )
 
 @Serializable
@@ -73,9 +77,12 @@ data class AdGuardPreviewRequest(
     @SerialName("source_id") val sourceId: String = "",
     val name: String = "",
     val text: String = "",
-    val enabled: Boolean = true,
-    @SerialName("managed_upstream") val managedUpstream: String = "",
-    @SerialName("managed_selection") val managedSelection: List<String> = emptyList(),
+    // The dashboard always sends the add-only guardrails explicitly, including the
+    // implicit risk acknowledgement for broad/conflicting rows.
+    @EncodeDefault @SerialName("domain_actions") val domainActions: Map<String, String> = emptyMap(),
+    @EncodeDefault @SerialName("removal_mode") val removalMode: String = "keep",
+    @EncodeDefault @SerialName("confirm_mirror") val confirmMirror: Boolean = false,
+    @EncodeDefault @SerialName("acknowledge_risk") val acknowledgeRisk: Boolean = true,
 )
 
 @Serializable
@@ -85,14 +92,13 @@ data class AdGuardApplyRequest(
     // The exact text and checksum from preview, never a re-serialization of the form.
     val text: String = "",
     val checksum: String = "",
-    val enabled: Boolean = true,
-    @SerialName("managed_upstream") val managedUpstream: String = "",
-    @SerialName("managed_selection") val managedSelection: List<String> = emptyList(),
     @SerialName("import") val importDomains: List<String> = emptyList(),
-    @SerialName("managed") val managedDomains: List<String> = emptyList(),
-    @SerialName("removal_mode") val removalMode: String = "keep",
-    @SerialName("confirm_mirror") val confirmMirror: Boolean = false,
-    @SerialName("acknowledge_risk") val acknowledgeRisk: Boolean = false,
+    @EncodeDefault @SerialName("removal_mode") val removalMode: String = "keep",
+    @EncodeDefault @SerialName("confirm_mirror") val confirmMirror: Boolean = false,
+    @EncodeDefault @SerialName("acknowledge_risk") val acknowledgeRisk: Boolean = true,
+    // Per-domain route actions default to proxy on the server when omitted, so old
+    // clients keep their original behaviour. The importer sends only staged patterns.
+    @EncodeDefault @SerialName("domain_actions") val domainActions: Map<String, String> = emptyMap(),
 )
 
 @Serializable
@@ -122,8 +128,12 @@ data class AdGuardRowDto(
     @SerialName("target_is_self") val targetIsSelf: Boolean = false,
     @SerialName("covered_by") val coveredBy: String = "",
     val warning: String = "",
-    // Additive server field: absent on older installs, so it defaults to false.
+    // Additive server fields: absent on older installs, so these defaults keep
+    // the v5.10 client behaviour while still drawing a useful review row.
     val broad: Boolean = false,
+    @SerialName("in_digitdns") val inDigitDns: Boolean = false,
+    @SerialName("suggested_action") val suggestedAction: String = "proxy",
+    val variants: List<String> = emptyList(),
 )
 
 @Serializable
@@ -186,4 +196,7 @@ data class AdGuardApplyResultDto(
     val imported: Int = 0,
     val removed: Int = 0,
     @SerialName("generated_block") val generatedBlock: String = "",
+    // Additive v5.11 apply counters. The UI no longer saves a generated block.
+    @SerialName("route_changes") val routeChanges: Int = 0,
+    @SerialName("adblock_added") val adblockAdded: Int = 0,
 )

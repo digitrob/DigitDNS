@@ -5411,7 +5411,7 @@
           "sync"
         ],
         "summary": "Save an AdGuard sync source",
-        "description": "Creates or updates a pasted or URL-backed AdGuard upstream source. Credentials embedded in a URL userinfo are removed before storage.",
+        "description": "Creates or updates a pasted or URL-backed AdGuard upstream source. Credentials embedded in a URL userinfo are removed before storage. A save with no source_id and text identical to an existing source reuses that source and its id; an explicit source_id always edits that source.",
         "responses": {
           "200": {
             "description": "OK"
@@ -5495,13 +5495,23 @@
           "sync"
         ],
         "summary": "Preview AdGuard coverage",
-        "description": "Parses pasted AdGuard upstream rules and returns covered, adguardOnly, digitdnsOnly and conflict buckets. Structured notices group external upstream targets, high-traffic domains and conflicts; raw parser warnings remain for compatibility.",
+        "description": "Parses pasted AdGuard upstream rules and returns covered, adguardOnly, digitdnsOnly and conflict buckets. Rows carry in_digitdns, suggested_action and sibling variants. Optional review fields (domain_actions, adblock_domains, removal_mode, confirm_mirror, acknowledge_risk) are included in the returned checksum. Structured notices group external upstream targets, high-traffic domains, conflicts, already-covered rows and what will not change; raw parser warnings remain for compatibility.",
         "responses": {
           "200": {
             "description": "OK"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
           }
         }
       }
@@ -5512,13 +5522,23 @@
           "sync"
         ],
         "summary": "Apply an AdGuard sync preview",
-        "description": "Imports the selected uncovered domains into DigitDNS proxy rules. The preview checksum must match the source text, and destructive removals require explicit confirmation.",
+        "description": "Imports the selected domains into DigitDNS route lists using the reviewed per-domain actions (proxy, direct or block) and adds selected adblock domains to filtering custom_rules. The preview checksum covers the review fields when present; legacy text-only checksums still work. Destructive removals require explicit confirmation. Response includes route_changes and adblock_added in addition to the legacy counters.",
         "responses": {
           "200": {
             "description": "OK"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
           }
         }
       }

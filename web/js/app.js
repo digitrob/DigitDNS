@@ -7960,6 +7960,9 @@ function insertStreamQuery(q) {
 // action is the same write as editing the Proxied or Rules tab by hand.
 let streamActionDomain = '';
 let streamActionScope = 'exact';
+// Which surface opened the shared menu. The live log and Domains list write rules
+// straight away; the AdGuard importer only stages a route in its review payload.
+let streamActionMode = 'live';
 // Which Explain surface opened the menu, if any. Live-log rows leave it blank;
 // an Explain button asks applyStreamAction to re-run that lookup after saving.
 let streamActionExplainSource = '';
@@ -8212,14 +8215,23 @@ const STREAM_SCOPE_HINTS = {
 // both the "which wildcard am I applying" hint and the fix for selecting *.parent
 // on a bare host, which used to fail only after the action was chosen.
 function updateStreamActionScopes(domain) {
+  // The importer only adds missing domains. A wildcard target that already exists
+  // in DigitDNS is shown as unavailable instead of silently overwriting that rule.
+  const existing = streamActionMode === 'adguard' ? streamManagedPatterns() : null;
   streamActionScopeButtons().forEach((b) => {
-    const targets = streamScopeTargets(domain, b.dataset.scope || 'exact');
-    b.disabled = targets.length === 0;
+    const targets = adGuardSyncScopeTargets(domain, b.dataset.scope || 'exact');
+    const collision = existing ? targets.filter((t) => existing.has(t)) : [];
+    b.disabled = targets.length === 0 || collision.length > 0;
     const hint = STREAM_SCOPE_HINTS[b.dataset.scope] || '';
-    b.title = targets.length
-      ? `Apply to ${targets.join(' + ')} (${hint})`
-      : 'Not available for this domain';
-    if (!targets.length) {
+    const listedWildcard = streamActionMode === 'adguard' && domain.startsWith('*.') && b.dataset.scope !== 'exact';
+    b.title = listedWildcard
+      ? `Already scoped by the AdGuard list: ${escapeHTML(domain)}`
+      : collision.length
+        ? `Already in DigitDNS: ${collision.join(' + ')}`
+        : targets.length
+          ? `Apply to ${targets.join(' + ')} (${hint})`
+          : 'Not available for this domain';
+    if (b.disabled) {
       b.classList.remove('is-active');
       b.setAttribute('aria-checked', 'false');
     }
@@ -8233,13 +8245,14 @@ function updateStreamActionScopes(domain) {
 function updateStreamActionPreview() {
   const el = document.getElementById('stream-action-target');
   if (!el) return;
-  const targets = streamScopeTargets(streamActionDomain, streamActionScope);
+  const targets = adGuardSyncScopeTargets(streamActionDomain, streamActionScope);
   if (!targets.length) {
     el.textContent = 'No pattern for this scope';
     el.title = '';
     return;
   }
-  const hint = STREAM_SCOPE_HINTS[streamActionScope] || '';
+  const listedWildcard = streamActionMode === 'adguard' && streamActionDomain.startsWith('*.');
+  const hint = listedWildcard ? 'as listed in AdGuard' : (STREAM_SCOPE_HINTS[streamActionScope] || '');
   // Say it in the menu, not only in the toast after the write: a wildcard-only
   // scope leaves the clicked host itself on its old rule, which reads as a no-op.
   const missesHost = !streamActionDomain.startsWith('*.') &&
@@ -8257,8 +8270,15 @@ function streamActionScopeButtons() {
 function openStreamActionMenu(trigger) {
   const menu = document.getElementById('stream-action-menu');
   if (!menu) return;
-  streamActionDomain = trigger.dataset.domain || '';
+  // The importer reuses the Domains-list popover verbatim, including its wildcard
+  // scopes. Its row badge carries a separate data attribute so the shared menu
+  // stages review actions instead of writing DigitDNS rules immediately.
+  const adguardDomain = trigger.dataset.adguardRouteDomain || '';
+  streamActionMode = adguardDomain ? 'adguard' : 'live';
+  menu.classList.toggle('adguard-route-menu', !!adguardDomain);
+  streamActionDomain = adguardDomain || trigger.dataset.domain || '';
   streamActionExplainSource = trigger.dataset.explainSource || '';
+  if (adguardDomain) streamActionExplainSource = 'adguard';
   streamActionApplied = [];
   const patterns = streamManagedPatterns();
   // Keep the last scope picked for this name; fall back to the one its rules imply.
@@ -8266,16 +8286,19 @@ function openStreamActionMenu(trigger) {
   // the operator reopens the menu, presses Proxy, and the row they clicked stays
   // exactly as it was. Only reuse it when it still covers the row.
   const remembered = streamActionScopeMemory.get(streamActionDomain);
-  const rememberedTargets = remembered ? streamScopeTargets(streamActionDomain, remembered) : [];
+  const rememberedTargets = remembered ? adGuardSyncScopeTargets(streamActionDomain, remembered) : [];
   streamActionScope = rememberedTargets.length && scopeCoversDomain(streamActionDomain, rememberedTargets)
     ? remembered
     : currentStreamScope(streamActionDomain, patterns);
   const domainEl = document.getElementById('stream-action-domain');
   if (domainEl) domainEl.textContent = streamActionDomain;
   updateStreamActionScopes(streamActionDomain);
-  // The chosen scope can be disabled on a row whose base has no parent; fall back
-  // to exact rather than opening with nothing selected.
-  if (!streamScopeTargets(streamActionDomain, streamActionScope).length) streamActionScope = 'exact';
+  // The chosen scope can be unavailable on a row with no parent, or disabled in
+  // the importer because that wildcard is already in DigitDNS. Fall back to exact
+  // rather than opening with nothing selected.
+  const activeScope = Array.from(streamActionScopeButtons())
+    .find((b) => b.dataset.scope === streamActionScope && !b.disabled);
+  if (!activeScope || !adGuardSyncScopeTargets(streamActionDomain, streamActionScope).length) streamActionScope = 'exact';
   streamActionScopeButtons().forEach((b) => {
     const active = b.dataset.scope === streamActionScope && !b.disabled;
     b.classList.toggle('is-active', active);
@@ -8305,7 +8328,11 @@ function positionStreamActionMenu(trigger, menu) {
 
 function closeStreamActionMenu() {
   const menu = document.getElementById('stream-action-menu');
-  if (menu) menu.classList.add('hidden');
+  if (menu) {
+    menu.classList.add('hidden');
+    menu.classList.remove('adguard-route-menu');
+  }
+  streamActionMode = 'live';
   document.querySelectorAll('.stream-action-btn[aria-expanded="true"], .proxied-route-btn[aria-expanded="true"], [data-explain-quick-action][aria-expanded="true"]')
     .forEach((b) => b.setAttribute('aria-expanded', 'false'));
 }
@@ -8642,6 +8669,7 @@ async function applyStreamAction(action, onSaved) {
 async function onStreamActionMenuClick(e) {
   const scopeBtn = e.target.closest('.stream-action-scope');
   if (scopeBtn) {
+    if (scopeBtn.disabled) return;
     streamActionScope = scopeBtn.dataset.scope || 'exact';
     streamActionScopeMemory.set(streamActionDomain, streamActionScope);
     streamActionScopeButtons().forEach((b) => {
@@ -8650,6 +8678,20 @@ async function onStreamActionMenuClick(e) {
       b.setAttribute('aria-checked', active ? 'true' : 'false');
     });
     updateStreamActionPreview();
+    if (streamActionMode === 'adguard') {
+      // Same menu as the Domains list. A wildcard already in the AdGuard source
+      // stays as listed; derived scopes stage review actions instead of writing
+      // rules, and existing DigitDNS domains stay untouched.
+      const domain = streamActionDomain;
+      const targets = adGuardSyncScopeTargets(domain, streamActionScope);
+      adGuardSyncSetRoute(domain, adGuardSyncAction(domain), targets);
+      const menu = document.getElementById('stream-action-menu');
+      const fresh = Array.from(document.querySelectorAll('[data-adguard-route-domain]'))
+        .find((el) => el.dataset.adguardRouteDomain === domain);
+      if (fresh && menu) positionStreamActionMenu(fresh, menu);
+      else closeStreamActionMenu();
+      return;
+    }
     // Rows that already have a rule change scope on the spot; nothing is written for
     // a name with no rule until an action button is pressed.
     await applyStreamScope(streamActionDomain, streamActionScope);
@@ -8657,6 +8699,12 @@ async function onStreamActionMenuClick(e) {
   }
   const actionBtn = e.target.closest('.stream-action-item');
   if (!actionBtn) return;
+  if (streamActionMode === 'adguard') {
+    const targets = adGuardSyncScopeTargets(streamActionDomain, streamActionScope);
+    adGuardSyncSetRoute(streamActionDomain, actionBtn.dataset.action || '', targets);
+    closeStreamActionMenu();
+    return;
+  }
   // Only an Explain-opened menu needs its lookup refreshed. The live log has its
   // own buffered-row repaint above, so it keeps the single-write behaviour.
   const refresh = streamActionExplainSource === 'tools' ? toolsExplain
@@ -10279,21 +10327,42 @@ async function testFilterRule() {
 // AdGuard Upstream List Import
 //
 // DigitDNS is the primary rule store. This panel reads a pasted AdGuard upstream
-// config, separates domains DigitDNS already covers from ones to import, and
-// proposes a managed AdGuard block for DigitDNS-only domains back the other way.
-// The backend owns parsing and the checksum; this layer only renders DTOs and
-// carries the exact preview text/checksum into apply so a changed source cannot
-// be applied from a stale preview.
+// config and shows only the domains it can add to DigitDNS, with a staged route
+// for each one. The backend owns parsing and the checksum; this layer renders
+// DTOs and carries the exact preview text/checksum into apply so a changed
+// source cannot be applied from a stale preview.
 // -----------------------------------------------------------------------------
 let adGuardSyncInitialized = false;
 let adGuardSyncSources = [];
+// The saved-source dropdown keeps its own open flag, like the upstream picker.
+let adGuardSyncSourceOpen = false;
 let adGuardSyncPreview = null;
 let adGuardSyncSelectedImport = new Set();
-let adGuardSyncSelectedManaged = new Set();
 let adGuardSyncImportTouched = false;
 let adGuardSyncFilter = '';
 let adGuardSyncSelectedOnly = false;
 let adGuardSyncBusy = false;
+// Route actions are staged after the first preview, so any change makes the
+// checksum stale until a fresh preview runs.
+// Filter chips are mutually exclusive: with neither pressed the table shows every
+// parsed domain. "Already in DigitDNS" narrows it to rows already present; "Selected
+// Only" narrows it to checked rows.
+let adGuardSyncAlreadyOnly = false;
+let adGuardSyncReviewDirty = false;
+let adGuardSyncDomainActions = new Map();
+// When the shared menu picks a wildcard scope, the origin row keeps its own key
+// here so the staged action and the apply payload include every pattern the
+// Domains list would have written.
+let adGuardSyncStagedScopes = new Map();
+// An explicit route edit on a covered/conflict row is not an import tick, but it
+// still has to ride in the apply payload so Apply writes that reviewed route.
+let adGuardSyncExistingRoutes = new Set();
+
+const ADGUARD_STATUS_META = {
+  proxy: { label: 'PROXY', badge: 'badge-proxy' },
+  direct: { label: 'DIRECT', badge: 'badge-direct' },
+  block: { label: 'Blocked', badge: 'badge-block' },
+};
 
 function adGuardSyncValue(id) {
   return (document.getElementById(id)?.value || '').trim();
@@ -10307,13 +10376,73 @@ function adGuardSyncChecked(id) {
   return !!document.getElementById(id)?.checked;
 }
 
+// Filter chips use aria-pressed instead of checkbox ticks. "Already in DigitDNS"
+// is active when covered rows are shown, so the visible chip reads as what you see.
+function adGuardSyncChipPressed(id) {
+  return document.getElementById(id)?.getAttribute('aria-pressed') === 'true';
+}
+
+function setAdGuardSyncChip(id, pressed) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+  el.classList.toggle('is-active', pressed);
+}
+
+// The two review chips are mutually exclusive filters. Pressing one clears the
+// other; pressing the active one clears both, which restores the whole list.
+function adGuardSyncSetFilterChips(selectedOnly, alreadyOnly) {
+  setAdGuardSyncChip('adguard-sync-selected-only', selectedOnly);
+  setAdGuardSyncChip('adguard-sync-hide-covered', alreadyOnly);
+  adGuardSyncSelectedOnly = selectedOnly;
+  adGuardSyncAlreadyOnly = alreadyOnly;
+  if (adGuardSyncPreview) renderAdGuardSyncPreview(adGuardSyncPreview);
+}
+
+// A blank display name gets a stable, readable timestamp instead of an empty
+// label. Both save and preview run this so the name shown in the form is the
+// name actually stored on the source.
+function adGuardSyncAutoName() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  return `AdGuard Home — ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+function adGuardSyncEnsureName() {
+  const name = adGuardSyncValue('adguard-sync-source-name');
+  if (name) return name;
+  const auto = adGuardSyncAutoName();
+  const el = document.getElementById('adguard-sync-source-name');
+  if (el) el.value = auto;
+  return auto;
+}
+
+function adGuardSyncReviewPayload() {
+  return {
+    domain_actions: Object.fromEntries(adGuardSyncDomainActions),
+    // The dashboard never removes domains. Reviewed route edits stay scoped to
+    // rows in this preview, and the card always submits an explicit risk ack so
+    // the API does not need a separate tick for broad or conflicting rows.
+    removal_mode: 'keep',
+    confirm_mirror: false,
+    acknowledge_risk: true,
+  };
+}
+
+function adGuardSyncMarkDirty() {
+  adGuardSyncReviewDirty = true;
+  adGuardSyncUpdateSelectionUI();
+}
+
 function setAdGuardSyncStatus(message, tone = 'neutral') {
   const el = document.getElementById('adguard-sync-status');
   if (!el) return;
   const tones = {
     neutral: 'ag-pill-neutral',
     busy: 'ag-pill-busy',
-    ready: 'ag-pill-add',
+    // A finished preview is a usable state, so it reads green like Saved/Applied.
+    // It used to reuse the purple "to DigitDNS" chip, which looked like pending work.
+    ready: 'ag-pill-covered',
     good: 'ag-pill-covered',
     bad: 'ag-pill-conflict',
   };
@@ -10329,13 +10458,14 @@ async function adGuardSyncFetch(path, options = {}) {
   return res.json();
 }
 
+// Saved lists are just records in this card: import once, then load or delete.
+// The API keeps its enabled field for older/Android clients, but the dashboard
+// neither shows nor sends it.
 function adGuardSyncInputPayload() {
   return {
     source_id: adGuardSyncValue('adguard-sync-source-select'),
-    name: adGuardSyncValue('adguard-sync-source-name'),
+    name: adGuardSyncEnsureName(),
     text: adGuardSyncTextValue('adguard-sync-source-text'),
-    enabled: adGuardSyncChecked('adguard-sync-enabled'),
-    managed_upstream: adGuardSyncValue('adguard-sync-managed-upstream'),
   };
 }
 
@@ -10343,42 +10473,41 @@ function applyAdGuardSourceToForm(src) {
   if (!src) return;
   const name = document.getElementById('adguard-sync-source-name');
   const text = document.getElementById('adguard-sync-source-text');
-  const upstream = document.getElementById('adguard-sync-managed-upstream');
-  const enabled = document.getElementById('adguard-sync-enabled');
   if (name) name.value = src.name || '';
   if (text) text.value = src.text || '';
-  if (upstream) upstream.value = src.managed_upstream || '';
-  if (enabled) enabled.checked = src.enabled !== false;
+  adGuardSyncReviewDirty = false;
   setAdGuardSyncStatus('Source loaded', 'good');
 }
 
 function clearAdGuardSyncForm() {
-  for (const id of ['adguard-sync-source-name', 'adguard-sync-source-text', 'adguard-sync-managed-upstream']) {
+  for (const id of ['adguard-sync-source-name', 'adguard-sync-source-text']) {
     const el = document.getElementById(id);
     if (el) el.value = '';
   }
   const select = document.getElementById('adguard-sync-source-select');
   if (select) select.value = '';
-  const enabled = document.getElementById('adguard-sync-enabled');
-  if (enabled) enabled.checked = true;
   const filter = document.getElementById('adguard-sync-filter');
   if (filter) filter.value = '';
-  const selectedOnly = document.getElementById('adguard-sync-selected-only');
-  if (selectedOnly) selectedOnly.checked = false;
+  setAdGuardSyncChip('adguard-sync-selected-only', false);
+  setAdGuardSyncChip('adguard-sync-hide-covered', false);
   adGuardSyncFilter = '';
   adGuardSyncSelectedOnly = false;
+  adGuardSyncAlreadyOnly = false;
   adGuardSyncPreview = null;
   adGuardSyncSelectedImport = new Set();
-  adGuardSyncSelectedManaged = new Set();
   adGuardSyncImportTouched = false;
-  for (const id of ['adguard-sync-summary', 'adguard-sync-notices']) {
+  adGuardSyncReviewDirty = false;
+  adGuardSyncDomainActions = new Map();
+  adGuardSyncStagedScopes = new Map();
+  adGuardSyncExistingRoutes = new Set();
+  adGuardSyncSourceOpen = false;
+  for (const id of ['adguard-sync-summary']) {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '';
   }
   const results = document.getElementById('adguard-sync-results');
   if (results) results.innerHTML = '<p class="text-xs text-slate-500">Preview a source to compare its upstream groups with the Domains list.</p>';
-  const out = document.getElementById('adguard-sync-export');
-  if (out) out.textContent = 'No DigitDNS-only domains selected.';
+  renderAdGuardSyncSourcePicker();
   adGuardSyncUpdateSelectionUI();
   setAdGuardSyncStatus('Not previewed');
 }
@@ -10405,19 +10534,11 @@ async function loadAdGuardSources(selectedId = null) {
     const select = document.getElementById('adguard-sync-source-select');
     if (!select) return null;
     const wanted = selectedId || select.value;
-    select.innerHTML = '';
-    const blank = document.createElement('option');
-    blank.value = '';
-    blank.textContent = 'New source…';
-    select.appendChild(blank);
-    for (const src of adGuardSyncSources) {
-      const option = document.createElement('option');
-      option.value = src.id;
-      option.textContent = src.name || src.id;
-      select.appendChild(option);
-    }
+    select.innerHTML = '<option value="">New source…</option>' + adGuardSyncSources.map((src) =>
+      `<option value="${escapeHTML(src.id)}">${escapeHTML(src.name || src.id)}</option>`).join('');
     const found = adGuardSyncSources.find(src => src.id === wanted);
     select.value = found ? wanted : '';
+    renderAdGuardSyncSourcePicker();
     if (found) applyAdGuardSourceToForm(found);
     return found || null;
   } catch (err) {
@@ -10427,11 +10548,102 @@ async function loadAdGuardSources(selectedId = null) {
   }
 }
 
+// Cards stay compact: one name line and one metadata line. Every detail is
+// optional because older saved sources only carry name/text.
+function adGuardSyncSourceDomainCount(src) {
+  if (Number.isFinite(src?.domain_count)) return Number(src.domain_count);
+  const text = String(src?.text || '');
+  if (!text) return 0;
+  const found = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    const value = line.trim();
+    if (!value || value.startsWith('!') || value.startsWith('#')) continue;
+    const bracket = value.match(/^\[([^\]]+)\]/);
+    const tokens = bracket ? bracket[1].split('/') : [value.split(/\s+/)[0]];
+    for (const token of tokens) {
+      const domain = token.trim().replace(/^\|\|/, '').replace(/^\*\./, '').replace(/\^$/, '');
+      if (!domain || domain.includes('://') || /:\d+$/.test(domain)) continue;
+      found.add(domain);
+    }
+  }
+  return found.size;
+}
+
+function adGuardSyncSourceFavicon() {
+  // The favicon helper lives outside this slice; the guard keeps the importer
+  // testable on its own while the dashboard renders the real AdGuard icon.
+  return typeof providerFaviconMarkup === 'function'
+    ? providerFaviconMarkup('adguard', 'ag-source-favicon')
+    : '';
+}
+
+// The saved-source picker is one compact dropdown: the selected card sits in the
+// trigger, and the full details only appear while the menu is open. The hidden
+// select remains the single source of truth for selection, Save and Delete.
+function adGuardSyncSourceMeta(src) {
+  const when = String(src.updated_at || src.last_applied_at || '').slice(0, 16).replace('T', ' ');
+  const count = adGuardSyncSourceDomainCount(src);
+  const size = count > 0 ? `${count} domains` : (src.text ? `${String(src.text).length} chars` : 'no text');
+  const checksum = String(src.last_checksum || '').trim();
+  return {
+    text: [size, when, checksum ? checksum.slice(0, 8) : '']
+      .filter(Boolean).join(' · '),
+    checksum,
+  };
+}
+
+function adGuardSyncSourceOption(id, name, meta, active) {
+  const optionClass = active ? ' ag-source-option-active' : '';
+  const selected = active ? 'true' : 'false';
+  const checksumTitle = meta.checksum ? ` title="Checksum ${escapeHTML(meta.checksum)}"` : '';
+  return `<button type="button" class="ag-source-option${escapeHTML(optionClass)}" role="option" data-adguard-source="${escapeHTML(id)}" aria-selected="${escapeHTML(selected)}">
+    <span class="ag-source-option-name">${adGuardSyncSourceFavicon()}<span>${escapeHTML(name)}</span></span>
+    <span class="ag-source-option-meta"${checksumTitle}>${escapeHTML(meta.text)}</span>
+  </button>`;
+}
+
+function renderAdGuardSyncSourcePicker() {
+  const active = adGuardSyncValue('adguard-sync-source-select');
+  const activeSource = adGuardSyncSources.find(src => src.id === active);
+  const selected = document.getElementById('adguard-sync-source-selected');
+  if (selected) {
+    selected.innerHTML = `${adGuardSyncSourceFavicon()}<span class="ag-source-selected-name">${escapeHTML(activeSource ? (activeSource.name || activeSource.id) : 'New source')}</span>`;
+  }
+  const toggle = document.getElementById('adguard-sync-source-toggle');
+  if (toggle) toggle.setAttribute('aria-expanded', adGuardSyncSourceOpen ? 'true' : 'false');
+  const menu = document.getElementById('adguard-sync-source-menu');
+  if (menu) menu.classList.toggle('hidden', !adGuardSyncSourceOpen);
+  const options = document.getElementById('adguard-sync-source-options');
+  if (!options) return;
+  let html = adGuardSyncSourceOption('', 'New source', { text: 'Paste a fresh AdGuard list', checksum: '' }, !active);
+  for (const src of adGuardSyncSources) {
+    html += adGuardSyncSourceOption(
+      src.id,
+      src.name || src.id,
+      adGuardSyncSourceMeta(src),
+      src.id === active,
+    );
+  }
+  options.innerHTML = html;
+}
+
+function adGuardSyncSetSource(id) {
+  if (!id) {
+    clearAdGuardSyncForm();
+    return Promise.resolve(null);
+  }
+  const select = document.getElementById('adguard-sync-source-select');
+  if (select) select.value = id;
+  adGuardSyncSourceOpen = false;
+  renderAdGuardSyncSourcePicker();
+  return loadSelectedAdGuardSource();
+}
+
 function loadSelectedAdGuardSource() {
   const id = adGuardSyncValue('adguard-sync-source-select');
   const src = adGuardSyncSources.find(item => item.id === id);
   if (!src) {
-    setAdGuardSyncStatus('New source');
+    clearAdGuardSyncForm();
     return Promise.resolve(null);
   }
   applyAdGuardSourceToForm(src);
@@ -10450,11 +10662,11 @@ async function saveAdGuardSyncSource() {
       body: JSON.stringify(payload),
     });
     await loadAdGuardSources(src.id);
-    setAdGuardSyncStatus('Source saved', 'good');
-    showToast('AdGuard source saved.', 'success');
+    setAdGuardSyncStatus('List saved', 'good');
+    showToast('AdGuard list saved.', 'success');
   } catch (err) {
     setAdGuardSyncStatus('Save failed', 'bad');
-    showToast(err.message || 'Could not save the AdGuard source.', 'error');
+    showToast(err.message || 'Could not save the AdGuard list.', 'error');
   }
 }
 
@@ -10465,9 +10677,9 @@ async function deleteAdGuardSyncSource() {
     return;
   }
   const confirmed = await confirmAction({
-    title: 'Delete AdGuard source?',
-    message: 'The saved list and its sync provenance will be forgotten. Domains already imported into DigitDNS are kept.',
-    confirmText: 'DELETE SOURCE',
+    title: 'Delete AdGuard List?',
+    message: 'Domains already imported into DigitDNS are kept.',
+    confirmText: 'DELETE LIST',
     destructive: true,
   });
   if (!confirmed) return;
@@ -10488,8 +10700,7 @@ async function previewAdGuardSync(options = {}) {
   if (btn) btn.disabled = true;
   setAdGuardSyncStatus('Previewing…', 'busy');
   try {
-    const payload = adGuardSyncInputPayload();
-    payload.managed_selection = Array.from(adGuardSyncSelectedManaged);
+    const payload = Object.assign(adGuardSyncInputPayload(), adGuardSyncReviewPayload());
     const preview = await adGuardSyncFetch('/api/v3/sync/adguard/preview', {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -10497,19 +10708,22 @@ async function previewAdGuardSync(options = {}) {
     const importable = new Set((preview.rows || [])
       .filter(row => row.bucket === 'adguardOnly')
       .map(row => row.domain));
-    if (options.resetSelection || !adGuardSyncImportTouched) {
+    adGuardSyncPreview = preview;
+    if (options.resetSelection) {
       adGuardSyncSelectedImport = new Set(importable);
       adGuardSyncImportTouched = false;
+      adGuardSyncDomainActions = new Map();
+      adGuardSyncStagedScopes = new Map();
+      adGuardSyncExistingRoutes = new Set();
     } else {
+      // A checksum refresh keeps route choices; only domains that left the
+      // preview are dropped.
       adGuardSyncSelectedImport = new Set(Array.from(adGuardSyncSelectedImport).filter(d => importable.has(d)));
+      adGuardSyncPruneStagedRoutes();
     }
-    const exportable = new Set((preview.managed || []).map(row => row.domain));
-    // Export proposals start unchecked after a fresh preview or apply; a normal
-    // re-preview (used when regenerating the block) keeps explicit choices.
-    adGuardSyncSelectedManaged = options.resetSelection
-      ? new Set()
-      : new Set(Array.from(adGuardSyncSelectedManaged).filter(d => exportable.has(d)));
-    adGuardSyncPreview = preview;
+    adGuardSyncSelectedOnly = adGuardSyncChipPressed('adguard-sync-selected-only');
+    adGuardSyncAlreadyOnly = adGuardSyncChipPressed('adguard-sync-hide-covered');
+    adGuardSyncReviewDirty = false;
     renderAdGuardSyncPreview(preview);
     setAdGuardSyncStatus('Preview ready', 'ready');
     return preview;
@@ -10527,15 +10741,6 @@ function adGuardSyncPill(cls, label) {
   return `<span class="ag-pill ${escapeHTML(cls)}">${escapeHTML(label)}</span>`;
 }
 
-function renderAdGuardSyncNotices(preview) {
-  const notices = document.getElementById('adguard-sync-notices');
-  if (!notices) return;
-  notices.innerHTML = (preview.notices || []).map((notice) => {
-    const cls = ['upstream', 'broad', 'conflict'].includes(notice.kind) ? notice.kind : 'upstream';
-    return `<div class="ag-notice ag-notice-${escapeHTML(cls)}"><div><strong>${escapeHTML(notice.title || 'Review this list')}</strong>${escapeHTML(notice.message || '')}</div></div>`;
-  }).join('');
-}
-
 function adGuardSyncVisibleRows() {
   const rows = adGuardSyncPreview?.rows || [];
   const needle = adGuardSyncFilter.trim().toLowerCase();
@@ -10543,18 +10748,118 @@ function adGuardSyncVisibleRows() {
     if (needle && !row.domain.toLowerCase().includes(needle) &&
       !(row.group || '').toLowerCase().includes(needle) &&
       !(row.target || '').toLowerCase().includes(needle)) return false;
-    if (adGuardSyncSelectedOnly && !adGuardSyncSelectedImport.has(row.domain) &&
-      !adGuardSyncSelectedManaged.has(row.domain)) return false;
+    if (adGuardSyncSelectedOnly && !adGuardSyncSelectedImport.has(row.domain)) return false;
+    // Send-back is out of scope here, so DigitDNS-only domains are not part of
+    // this review. Conflicts stay in the parsed list because they need an
+    // explicit route decision.
+    if (row.bucket === 'digitdnsOnly') return false;
+    if (adGuardSyncAlreadyOnly && row.bucket !== 'covered') return false;
     return true;
   });
 }
 
-function adGuardSyncRowState(row) {
-  if (row.bucket === 'covered') return ['ag-pill-covered', 'Already in DigitDNS'];
-  if (row.bucket === 'adguardOnly') return ['ag-pill-add', 'Add to DigitDNS'];
-  if (row.bucket === 'conflict') return ['ag-pill-conflict', 'Conflict'];
-  if (row.bucket === 'digitdnsOnly') return ['ag-pill-send', 'Send back to AdGuard'];
-  return ['ag-pill-neutral', 'Unchanged'];
+// The review table marks a row's bucket with a tinted surface instead of a second
+// status pill. The label stays available to assistive tech in the domain cell, so
+// the state is never conveyed by colour alone.
+function adGuardSyncRowStateLabel(row) {
+  if (row.bucket === 'covered') return 'Already in DigitDNS';
+  if (row.bucket === 'adguardOnly') return 'Add to DigitDNS';
+  if (row.bucket === 'conflict') return 'Conflict';
+  return 'Unchanged';
+}
+
+// A wildcard already present in the AdGuard list is a complete scope. The shared
+// Domains-list menu derives *.host and *.parent from a row; doing that here would
+// write a wildcard on top of a wildcard (or broaden the listed one). The importer
+// keeps the listed pattern and disables the derived wildcard scopes.
+function adGuardSyncScopeTargets(domain, scope) {
+  const raw = String(domain || '').trim().toLowerCase().replace(/^\.+/, '');
+  if (streamActionMode !== 'adguard' || !raw.startsWith('*.')) return streamScopeTargets(domain, scope);
+  return scope === 'exact' ? [raw] : [];
+}
+
+function adGuardSyncAction(domain) {
+  if (adGuardSyncDomainActions.has(domain)) return adGuardSyncDomainActions.get(domain);
+  // A wildcard scope writes a different pattern than the row shows. Keep the
+  // chip in step with the staged action so a *.host + Block choice reads as
+  // Blocked on the row that opened the menu.
+  const staged = adGuardSyncStagedScopes.get(domain) || [];
+  for (const pattern of staged) {
+    const action = adGuardSyncDomainActions.get(pattern);
+    if (action) return action;
+  }
+  return 'proxy';
+}
+
+// The route cell uses the Domains-list trigger and shared popover, not a custom
+// importer-only dropdown. Clicking it stages a review action through the same
+// menu the Proxied page uses, so the icons, colours and positioning stay identical.
+function adGuardSyncRouteButton(domain, action) {
+  const meta = ADGUARD_STATUS_META[action] || ADGUARD_STATUS_META.proxy;
+  return `<button type="button" class="proxied-route-btn adguard-route-btn badge ${escapeHTML(meta.badge)} inline-flex items-center gap-1" data-adguard-route-domain="${escapeHTML(domain)}" data-domain="${escapeHTML(domain)}" title="Proxy, block or direct ${escapeHTML(domain)}" aria-haspopup="menu" aria-expanded="false">${meta.label}</button>`;
+}
+
+function adGuardSyncParsedDomain(domain) {
+  return (adGuardSyncPreview?.rows || []).find(row =>
+    row.domain === domain && row.bucket !== 'digitdnsOnly');
+}
+
+function adGuardSyncActiveTargets() {
+  // A scope from the Domains list replaces the origin pattern, it does not add
+  // to it: *.host writes only the wildcard, exactly as the quick-action menu
+  // does. Explicit edits on covered/conflict rows ride alongside new imports.
+  const targets = new Set();
+  for (const origin of new Set([...adGuardSyncSelectedImport, ...adGuardSyncExistingRoutes])) {
+    const staged = adGuardSyncStagedScopes.get(origin);
+    if (staged && staged.length) {
+      for (const pattern of staged) targets.add(pattern);
+    } else {
+      targets.add(origin);
+    }
+  }
+  return targets;
+}
+
+function adGuardSyncImportList() {
+  return Array.from(adGuardSyncActiveTargets());
+}
+
+// Switching a scope back to exact must not leave the old wildcard staged.
+function adGuardSyncPruneStagedRoutes() {
+  for (const origin of Array.from(adGuardSyncExistingRoutes)) {
+    if (!adGuardSyncParsedDomain(origin)) adGuardSyncExistingRoutes.delete(origin);
+  }
+  const origins = new Set([...adGuardSyncSelectedImport, ...adGuardSyncExistingRoutes]);
+  for (const origin of Array.from(adGuardSyncStagedScopes.keys())) {
+    if (!origins.has(origin)) adGuardSyncStagedScopes.delete(origin);
+  }
+  const keep = adGuardSyncActiveTargets();
+  for (const domain of Array.from(adGuardSyncDomainActions.keys())) {
+    if (!keep.has(domain)) adGuardSyncDomainActions.delete(domain);
+  }
+}
+
+function adGuardSyncRowAction(row) {
+  const staged = adGuardSyncStagedScopes.get(row.domain) || [];
+  const hasStaged = adGuardSyncDomainActions.has(row.domain) ||
+    staged.some(pattern => adGuardSyncDomainActions.has(pattern));
+  return hasStaged ? adGuardSyncAction(row.domain) : (row.suggested_action || 'proxy');
+}
+
+// Called by the shared quick-action menu when the AdGuard importer opened it.
+// The menu's wildcard scope can target several patterns; all of them are staged
+// under the same action so Apply writes the same thing the Domains list would.
+function adGuardSyncSetRoute(domain, action, targets = null) {
+  if (!domain || !ADGUARD_STATUS_META[action]) return;
+  const row = adGuardSyncParsedDomain(domain);
+  if (row && row.bucket !== 'adguardOnly') adGuardSyncExistingRoutes.add(domain);
+  const patterns = targets && targets.length ? targets : [domain];
+  if (targets && targets.length) adGuardSyncStagedScopes.set(domain, [...targets]);
+  else adGuardSyncStagedScopes.delete(domain);
+  for (const pattern of patterns) adGuardSyncDomainActions.set(pattern, action);
+  adGuardSyncPruneStagedRoutes();
+  adGuardSyncMarkDirty();
+  if (adGuardSyncPreview) renderAdGuardSyncPreview(adGuardSyncPreview);
 }
 
 function renderAdGuardSyncPreview(preview) {
@@ -10563,13 +10868,10 @@ function renderAdGuardSyncPreview(preview) {
   if (summary) {
     summary.innerHTML = [
       ['ag-pill-add', Number(counts.adguardOnly || 0) + ' to DigitDNS'],
-      ['ag-pill-send', Number(counts.digitdnsOnly || 0) + ' to AdGuard'],
       ['ag-pill-covered', Number(counts.covered || 0) + ' already covered'],
       ['ag-pill-conflict', Number(counts.conflict || 0) + ' conflict'],
     ].map(([cls, label]) => adGuardSyncPill(cls, label)).join('');
   }
-
-  renderAdGuardSyncNotices(preview);
 
   const results = document.getElementById('adguard-sync-results');
   if (!results) {
@@ -10586,72 +10888,65 @@ function renderAdGuardSyncPreview(preview) {
     html += '<p class="ag-empty">No active AdGuard upstream groups were found in this list.</p>';
   } else {
     html += '<div class="ag-table-frame"><div class="ag-table-scroll">';
-    html += '<table class="ag-table"><thead><tr>';
-    html += `<th><input type="checkbox" class="proxied-check" data-adguard-select-all-import aria-label="Select all visible domains to add"${allVisibleSelected ? ' checked' : ''}></th>`;
-    html += '<th>Domain</th><th>Group / upstream</th><th>Status</th><th>Note</th>';
-    html += '</tr></thead><tbody>';
+    // Same table shape and cell padding as the Domains list above: fixed columns,
+    // sticky slate header, centred controls and a centred status badge.
+    html += '<table class="proxied-table w-full text-start border-collapse text-xs font-mono"><caption class="sr-only">AdGuard upstream domains</caption>';
+    html += '<thead class="bg-slate-950/80 sticky top-0 text-slate-400 border-b border-slate-800 z-10"><tr>';
+    html += `<th class="proxied-col-check py-2.5 px-3 text-center"><input type="checkbox" class="proxied-check" data-adguard-select-all-import aria-label="Select all visible domains to add"${allVisibleSelected ? ' checked' : ''}></th>`;
+    html += '<th class="proxied-col-domain py-2.5 px-3 text-start">DOMAIN</th>';
+    html += '<th class="ag-col-upstream py-2.5 px-3 text-start">GROUP/UPSTREAM</th>';
+    html += '<th class="ag-col-route py-2.5 px-3 text-center">ROUTE</th>';
+    html += '</tr></thead><tbody class="divide-y divide-slate-800/50 text-slate-300">';
     if (visible.length === 0) {
-      html += '<tr><td colspan="5" class="ag-empty">No domains match this filter.</td></tr>';
+      html += '<tr><td colspan="4" class="py-8 text-center text-slate-500">No domains match this filter.</td></tr>';
     }
     for (const row of visible) {
-      const [stateCls, stateLabel] = adGuardSyncRowState(row);
+      const stateLabel = adGuardSyncRowStateLabel(row);
       const target = row.target_is_self ? 'this DigitDNS server' : (row.target || 'unknown upstream');
-      let note = '';
-      if (row.covered_by) note = 'Covered by ' + row.covered_by;
-      else if (row.bucket === 'conflict') note = 'Different DigitDNS action: ' + row.covered_by;
-      else if (row.bucket === 'adguardOnly') note = 'Adds to custom_proxied';
-      else if (row.bucket === 'covered') note = 'Already in the Domains list';
-      const checked = row.bucket === 'adguardOnly' && adGuardSyncSelectedImport.has(row.domain);
-      html += '<tr>';
-      html += '<td>' + (row.bucket === 'adguardOnly'
+      const upstream = `${row.group || 'Ungrouped'} · ${target}`;
+      const importable = row.bucket === 'adguardOnly';
+      const checked = importable && adGuardSyncSelectedImport.has(row.domain);
+      const rowClass = row.bucket === 'covered' ? 'ag-row-covered'
+        : row.bucket === 'conflict' ? 'ag-row-conflict' : '';
+      // rowClass comes from the closed set above, never from server text; escaping it
+      // keeps the dashboard's attribute guard uniform.
+      html += `<tr class="${escapeHTML(rowClass)} hover:bg-slate-800/40 transition" data-adguard-state="${escapeHTML(row.bucket)}">`;
+      html += '<td class="py-2.5 px-3 text-center">' + (importable
         ? `<input type="checkbox" class="proxied-check" data-adguard-import="${escapeHTML(row.domain)}"${checked ? ' checked' : ''}>`
         : '') + '</td>';
-      html += `<td class="ag-domain">${escapeHTML(row.domain)}</td>`;
-      html += `<td class="ag-meta">${escapeHTML(row.group || 'Ungrouped')} · ${escapeHTML(target)}</td>`;
-      html += `<td>${adGuardSyncPill(stateCls, stateLabel)}`;
-      if (row.broad) html += ' ' + adGuardSyncPill('ag-pill-broad', 'Broad');
-      if (!row.target_is_self && row.target) html += ' ' + adGuardSyncPill('ag-pill-external', 'External upstream');
-      html += '</td>';
-      html += `<td class="ag-note">${escapeHTML(note)}</td>`;
+      html += `<td class="py-2.5 px-3 text-start ag-domain" title="${escapeHTML(row.domain)}"><span class="sr-only">${escapeHTML(stateLabel)}: </span>${escapeHTML(row.domain)}</td>`;
+      html += `<td class="py-2.5 px-3 text-start ag-meta" title="${escapeHTML(upstream)}">${escapeHTML(upstream)}</td>`;
+      html += `<td class="py-2.5 px-3 text-center">${adGuardSyncRouteButton(row.domain, adGuardSyncRowAction(row))}</td>`;
       html += '</tr>';
     }
     html += '</tbody></table></div></div>';
   }
-
-  const managed = preview.managed || [];
-  html += '<div class="ag-managed">';
-  if (managed.length === 0) {
-    html += '<span class="ag-note">Every proxied domain is already named by this source.</span>';
-  } else {
-    for (const row of managed) {
-      const checked = adGuardSyncSelectedManaged.has(row.domain);
-      html += `<label><input type="checkbox" class="proxied-check" data-adguard-managed="${escapeHTML(row.domain)}"${checked ? ' checked' : ''}><span class="ag-domain">${escapeHTML(row.domain)}</span></label>`;
-    }
-  }
-  html += '</div>';
   results.innerHTML = html;
-
-  const out = document.getElementById('adguard-sync-export');
-  if (out) out.textContent = preview.generated_block || 'No DigitDNS-only domains selected.';
   adGuardSyncUpdateSelectionUI();
 }
 
 function adGuardSyncUpdateSelectionUI() {
   const imports = adGuardSyncSelectedImport.size;
-  const managed = adGuardSyncSelectedManaged.size;
+  const activeTargets = adGuardSyncActiveTargets();
+  const routeChanges = new Set([
+    ...Array.from(adGuardSyncDomainActions.entries())
+      .filter(([domain, action]) => activeTargets.has(domain) && action !== 'proxy')
+      .map(([domain]) => domain),
+    ...adGuardSyncExistingRoutes,
+  ]).size;
   const counts = document.getElementById('adguard-sync-selected-counts');
-  if (counts) counts.textContent = `${imports} selected to add · ${managed} selected to send back`;
-  const removalMode = adGuardSyncValue('adguard-sync-removal-mode') || 'keep';
+  if (counts) counts.textContent = `${imports} selected to add`;
   const staged = document.getElementById('adguard-sync-staged');
   if (staged) {
     const parts = [];
     if (imports) parts.push(`+${imports} to DigitDNS`);
-    if (managed) parts.push(`${managed} to AdGuard`);
-    if (removalMode !== 'keep') parts.push('removals enabled');
+    if (routeChanges) parts.push(`${routeChanges} route changes`);
     staged.textContent = parts.length ? parts.join(' · ') : 'No changes staged.';
   }
   const apply = document.getElementById('adguard-sync-apply-btn');
-  if (apply) apply.disabled = !adGuardSyncPreview || !(imports || managed || removalMode !== 'keep');
+  if (apply) {
+    apply.disabled = !adGuardSyncPreview || (!imports && !adGuardSyncExistingRoutes.size);
+  }
 }
 
 function adGuardSyncBulkImports(select) {
@@ -10665,53 +10960,42 @@ function adGuardSyncBulkImports(select) {
   else adGuardSyncUpdateSelectionUI();
 }
 
-function adGuardSyncBulkManaged(select) {
-  for (const row of (adGuardSyncPreview?.managed || [])) {
-    if (select) adGuardSyncSelectedManaged.add(row.domain);
-    else adGuardSyncSelectedManaged.delete(row.domain);
+function adGuardSyncBulkStatus(status) {
+  if (!ADGUARD_STATUS_META[status]) return;
+  for (const domain of adGuardSyncSelectedImport) {
+    const targets = adGuardSyncStagedScopes.get(domain) || [domain];
+    for (const target of targets) adGuardSyncDomainActions.set(target, status);
   }
-  return previewAdGuardSync();
+  adGuardSyncMarkDirty();
+  if (adGuardSyncPreview) renderAdGuardSyncPreview(adGuardSyncPreview);
 }
 
 async function applyAdGuardSync() {
-  const preview = adGuardSyncPreview;
+  let preview = adGuardSyncPreview;
   if (!preview || !preview.checksum) {
     showToast('Preview a source before applying it.', 'error');
     return;
   }
-  const removalMode = adGuardSyncValue('adguard-sync-removal-mode') || 'keep';
-  const confirmMirror = adGuardSyncChecked('adguard-sync-confirm-mirror');
-  const acknowledgeRisk = adGuardSyncChecked('adguard-sync-ack-risk');
-  if (removalMode === 'mirror') {
-    if (!confirmMirror) {
-      showToast('Confirm mirror mode before applying it.', 'error');
-      return;
-    }
-    const ok = await confirmAction({
-      title: 'Mirror AdGuard source?',
-      message: 'DigitDNS custom proxied domains not named by this source will be removed. Domains owned by another sync source are kept. This cannot be undone from the sync panel.',
-      confirmText: 'MIRROR SOURCE',
-      destructive: true,
-    });
-    if (!ok) return;
-  }
-  const risks = [];
-  if (Number(preview.counts?.conflict || 0) > 0) risks.push('conflicting rules');
-  if (Number(preview.broad_count || 0) > 0 || (preview.rows || []).some(row => row.broad)) risks.push('broad domains');
-  if (risks.length > 0 && !acknowledgeRisk) {
-    showToast('Acknowledge ' + risks.join(' and ') + ' before applying.', 'error');
+  // A changed source always starts over: the old checksum describes different
+  // text, and a stale review must never be applied to new rules.
+  if (adGuardSyncTextValue('adguard-sync-source-text') !== preview.text) {
+    await previewAdGuardSync({ resetSelection: true });
+    showToast('The source changed. Review the new preview before applying.', 'info');
     return;
   }
+  // Route actions are staged after the initial preview. Refresh it (preserving
+  // those choices) so the checksum covers them.
+  if (adGuardSyncReviewDirty) {
+    const fresh = await previewAdGuardSync();
+    if (!fresh) return;
+    preview = fresh;
+  }
 
-  const payload = adGuardSyncInputPayload();
+  const payload = Object.assign(adGuardSyncInputPayload(), adGuardSyncReviewPayload());
   payload.source_id = preview.source_id || payload.source_id;
   payload.text = preview.text;
   payload.checksum = preview.checksum;
-  payload.import = Array.from(adGuardSyncSelectedImport);
-  payload.managed = Array.from(adGuardSyncSelectedManaged);
-  payload.removal_mode = removalMode;
-  payload.confirm_mirror = confirmMirror;
-  payload.acknowledge_risk = acknowledgeRisk;
+  payload.import = adGuardSyncImportList();
 
   const btn = document.getElementById('adguard-sync-apply-btn');
   if (btn) btn.disabled = true;
@@ -10721,8 +11005,6 @@ async function applyAdGuardSync() {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    const out = document.getElementById('adguard-sync-export');
-    if (out) out.textContent = result.generated_block || 'No DigitDNS-only domains selected.';
     setAdGuardSyncStatus('Applied', 'good');
     showToast('AdGuard upstream list applied to DigitDNS.', 'success');
     await reloadAdGuardDomains();
@@ -10736,70 +11018,53 @@ async function applyAdGuardSync() {
   }
 }
 
-async function downloadAdGuardSyncBlock() {
-  const out = document.getElementById('adguard-sync-export');
-  let block = (out?.textContent || '').trim();
-  let filename = 'digitdns-managed-adguard.txt';
-  const id = adGuardSyncValue('adguard-sync-source-select');
-  if (id) {
-    try {
-      const result = await adGuardSyncFetch('/api/v3/sync/adguard/sources/' + encodeURIComponent(id) + '/export');
-      block = result.block || block;
-      filename = result.filename || filename;
-    } catch (err) {
-      showToast(err.message || 'Could not export the saved source.', 'error');
-      return;
-    }
-  }
-  if (!block || block.startsWith('No DigitDNS-only')) {
-    showToast('Select DigitDNS-only domains before downloading.', 'error');
-    return;
-  }
-  const url = URL.createObjectURL(new Blob([block], { type: 'text/plain' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 function initAdGuardSync() {
   if (adGuardSyncInitialized) return;
   const card = document.getElementById('adguard-sync-card');
   if (!card) return;
   adGuardSyncInitialized = true;
 
-  document.getElementById('adguard-sync-load-btn')?.addEventListener('click', loadSelectedAdGuardSource);
-  document.getElementById('adguard-sync-new-btn')?.addEventListener('click', clearAdGuardSyncForm);
   document.getElementById('adguard-sync-save-btn')?.addEventListener('click', saveAdGuardSyncSource);
   document.getElementById('adguard-sync-delete-btn')?.addEventListener('click', deleteAdGuardSyncSource);
   document.getElementById('adguard-sync-preview-btn')?.addEventListener('click', () => previewAdGuardSync({ resetSelection: true }));
   document.getElementById('adguard-sync-apply-btn')?.addEventListener('click', applyAdGuardSync);
   document.getElementById('adguard-sync-source-select')?.addEventListener('change', loadSelectedAdGuardSource);
-  document.getElementById('adguard-sync-select-import-all')?.addEventListener('click', () => adGuardSyncBulkImports(true));
-  document.getElementById('adguard-sync-clear-import')?.addEventListener('click', () => adGuardSyncBulkImports(false));
-  document.getElementById('adguard-sync-select-managed-all')?.addEventListener('click', () => adGuardSyncBulkManaged(true));
-  document.getElementById('adguard-sync-clear-managed')?.addEventListener('click', () => adGuardSyncBulkManaged(false));
-  document.getElementById('adguard-sync-removal-mode')?.addEventListener('change', adGuardSyncUpdateSelectionUI);
+  document.getElementById('adguard-sync-bulk-actions')?.addEventListener('click', (event) => {
+    const status = event.target.closest('[data-adguard-bulk-status]');
+    if (status) adGuardSyncBulkStatus(status.dataset.adguardBulkStatus);
+  });
   document.getElementById('adguard-sync-filter')?.addEventListener('input', (event) => {
     adGuardSyncFilter = event.target.value || '';
     if (adGuardSyncPreview) renderAdGuardSyncPreview(adGuardSyncPreview);
   });
-  document.getElementById('adguard-sync-selected-only')?.addEventListener('change', (event) => {
-    adGuardSyncSelectedOnly = !!event.target.checked;
-    if (adGuardSyncPreview) renderAdGuardSyncPreview(adGuardSyncPreview);
+  document.getElementById('adguard-sync-selected-only')?.addEventListener('click', () => {
+    adGuardSyncSetFilterChips(!adGuardSyncChipPressed('adguard-sync-selected-only'), false);
   });
-  document.getElementById('adguard-sync-copy-btn')?.addEventListener('click', (event) => {
-    const block = (document.getElementById('adguard-sync-export')?.textContent || '').trim();
-    if (!block || block.startsWith('No DigitDNS-only')) {
-      showToast('Select DigitDNS-only domains before copying.', 'error');
-      return;
-    }
-    copyClipboard(block, 'AdGuard block copied.', event.currentTarget);
+  document.getElementById('adguard-sync-hide-covered')?.addEventListener('click', () => {
+    adGuardSyncSetFilterChips(false, !adGuardSyncChipPressed('adguard-sync-hide-covered'));
   });
-  document.getElementById('adguard-sync-download-btn')?.addEventListener('click', downloadAdGuardSyncBlock);
 
-  document.getElementById('adguard-sync-results')?.addEventListener('change', (event) => {
+  // Saved-source dropdown. Selecting "New source" clears the form; selecting a
+  // saved source loads and previews it.
+  const sourceWrap = document.getElementById('adguard-sync-source-wrap');
+  document.getElementById('adguard-sync-source-toggle')?.addEventListener('click', () => {
+    adGuardSyncSourceOpen = !adGuardSyncSourceOpen;
+    renderAdGuardSyncSourcePicker();
+  });
+  document.getElementById('adguard-sync-source-menu')?.addEventListener('click', (event) => {
+    const option = event.target.closest('[data-adguard-source]');
+    if (!option) return;
+    void adGuardSyncSetSource(option.dataset.adguardSource);
+  });
+  document.addEventListener('click', (event) => {
+    if (adGuardSyncSourceOpen && sourceWrap && !sourceWrap.contains(event.target)) {
+      adGuardSyncSourceOpen = false;
+      renderAdGuardSyncSourcePicker();
+    }
+  });
+
+  const results = document.getElementById('adguard-sync-results');
+  results?.addEventListener('change', (event) => {
     const target = event.target;
     if (!target || !target.dataset || target.tagName !== 'INPUT') return;
     if (target.dataset.adguardSelectAllImport !== undefined) {
@@ -10810,12 +11075,6 @@ function initAdGuardSync() {
       if (target.checked) adGuardSyncSelectedImport.add(target.dataset.adguardImport);
       else adGuardSyncSelectedImport.delete(target.dataset.adguardImport);
       adGuardSyncUpdateSelectionUI();
-    }
-    if (target.dataset.adguardManaged) {
-      if (target.checked) adGuardSyncSelectedManaged.add(target.dataset.adguardManaged);
-      else adGuardSyncSelectedManaged.delete(target.dataset.adguardManaged);
-      // The block is generated server-side from the exact same parser as apply.
-      previewAdGuardSync();
     }
   });
 }
