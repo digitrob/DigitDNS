@@ -1,4 +1,4 @@
-# DigitDNS v5.11.1 — macOS DNS transport profiles
+# DigitDNS v5.11.2 — macOS DNS profile fixes
 
 This release adds a first-class way to hand a macOS client a working encrypted-DNS configuration. Both the dashboard and the Android companion can now generate a `.mobileconfig` profile from the server's own transport settings, so the exported endpoint can never drift from what the resolver actually listens on. No database schema migration is required: existing rules, saved sources, certificates, relay agents, egress options, stored history and service icons are preserved.
 
@@ -19,7 +19,7 @@ Under **Settings → Resolvers**, the new **DNS Transport Profiles** card sits d
 - DoH/DoT selection, a live endpoint readout, and a **Generate .mobileconfig** action that writes the file to the app cache and shares it through a `FileProvider` chooser (mail, Files, AirDrop, and so on).
 - A short note in the panel explains installation and removal on macOS.
 
-The companion carries the matching `android-v5.11.1` version line, version code 583.
+The companion carries the matching `android-v5.11.2` version line, version code 584.
 
 ## Profile contents
 
@@ -37,14 +37,14 @@ Because the profile is unsigned, macOS presents it as an unmanaged profile to ap
 In-place upgrades from the dashboard are supported.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.1/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.2/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.11.1
-docker pull ghcr.io/digitrob/digitdns-agent:5.11.1
-docker pull robmeister/digitdns:5.11.1
-docker pull robmeister/digitdns-agent:5.11.1
+docker pull ghcr.io/digitrob/digitdns:5.11.2
+docker pull ghcr.io/digitrob/digitdns-agent:5.11.2
+docker pull robmeister/digitdns:5.11.2
+docker pull robmeister/digitdns-agent:5.11.2
 ```

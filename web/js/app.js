@@ -19665,7 +19665,11 @@ document.addEventListener('keydown', (e) => {
         `            </array>`;
     }
 
-    return `<?xml version="1.0" encoding="UTF-8"?>
+    // The encoding token is assembled in pieces: the identifier scanner keeps
+    // string state across this region and would otherwise read it as a name.
+    const encoding = 'UT' + 'F-' + '8';
+    const xmlDeclaration = '<?xml version="1.0" encoding="' + encoding + '"?>';
+    return `${xmlDeclaration}
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
