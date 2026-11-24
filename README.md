@@ -417,7 +417,7 @@ Start with `./digitdns -server` on a fresh machine to generate the database, key
 
 ### 4. Build from source
 
-Requires Go 1.26+.
+Requires Go 1.27+.
 
 ```bash
 git clone https://github.com/digitrob/DigitDNS.git

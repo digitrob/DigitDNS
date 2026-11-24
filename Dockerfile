@@ -3,11 +3,10 @@
 # ------------------------------------------------------------------------------
 # Build Stage
 # ------------------------------------------------------------------------------
-# The tag floats inside the 1.26 series on purpose: go.mod asks for 1.26.11, and
+# The tag floats inside the 1.27 series on purpose: go.mod asks for 1.27.4, and
 # when the image happens to carry an older patch the default GOTOOLCHAIN=auto
-# fetches the one the module names rather than refusing to build it. The 1.26
-# line still receives security fixes; the 1.27 upgrade is a separate change.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+# fetches the one the module names rather than refusing to build it.
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 WORKDIR /src
 

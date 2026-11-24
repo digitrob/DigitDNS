@@ -388,7 +388,7 @@ curl -s http://127.0.0.1:8080/api/v1/version
   "channel": "stable",
   "display": "v3.1.0-stable",
   "hash": "3585f9bf",
-  "go": "go1.26"
+  "go": "go1.27"
 }
 ```
 
@@ -419,7 +419,7 @@ same payload the dashboard polls. Every field below is present on every response
     "channel": "stable",
     "display": "v3.1.0-stable",
     "hash": "3585f9bf",
-    "go": "go1.26"
+    "go": "go1.27"
   },
   "timestamp": "2026-09-01T19:30:00Z",
   "public_ip": "95.179.140.241",

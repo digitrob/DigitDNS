@@ -14,7 +14,7 @@ nothing is installed, started, pulled, or networked.
 Run from any directory: python3 tests/scripts/test_restore_production.py
 Windows: MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-24.04 -u root -e python3 \
          "/mnt/c/OTHER/AI/codespace/DNS Controller/tests/scripts/test_restore_production.py"
-Requires a cached golang:1.26-bookworm image and build/digitdns-restore-fixture
+Requires a cached golang:1.27-bookworm image and build/digitdns-restore-fixture
 (Linux amd64), which the host builds offline with GOPROXY=off.
 """
 
@@ -394,7 +394,7 @@ def build_fixture(repo, goproxy):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--image', default='golang:1.26-bookworm',
+    parser.add_argument('--image', default='golang:1.27-bookworm',
                         help='Cached Linux amd64 image with bash/python3/coreutils')
     parser.add_argument('--wsl', default='Ubuntu-24.04',
                         help='Windows WSL distribution with Docker (ignored on Linux)')
