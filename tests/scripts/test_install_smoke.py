@@ -3,7 +3,7 @@
 
 Run from any directory: python tests/scripts/test_install_smoke.py
 Windows uses WSL Ubuntu-24.04's Docker as root; Linux uses local Docker.
-Requires Go with cached modules and a cached golang:1.26-bookworm image.
+Requires Go with cached modules and a cached golang:1.27-bookworm image.
 No image pulls, network access, host mounts, production edits, or real services.
 Only allowlisted public inputs are streamed into a disposable container.
 """
@@ -171,7 +171,7 @@ def inside():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--image', default='golang:1.26-bookworm', help='Cached Linux amd64 image with bash/python3/openssl/coreutils')
+    parser.add_argument('--image', default='golang:1.27-bookworm', help='Cached Linux amd64 image with bash/python3/openssl/coreutils')
     parser.add_argument('--wsl', default='Ubuntu-24.04', help='Windows WSL distribution with Docker')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]

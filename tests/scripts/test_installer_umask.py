@@ -175,7 +175,7 @@ def stat_mode(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--image', default='golang:1.26-bookworm')
+    parser.add_argument('--image', default='golang:1.27-bookworm')
     parser.add_argument('--wsl', default='Ubuntu-24.04')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
