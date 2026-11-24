@@ -59,6 +59,14 @@ func (ws *WebServer) handleResolutionSettings(w http.ResponseWriter, r *http.Req
 }
 
 func (ws *WebServer) writeResolution(w http.ResponseWriter, withStats bool) {
+	ws.writeResolutionRanked(w, withStats, false)
+}
+
+// writeResolutionRanked is writeResolution with an explicit ranking metric for
+// the attached upstream stats. A forced run ranks on the latest probe, so its
+// response must render that same number; the scheduled path keeps the probe
+// window median.
+func (ws *WebServer) writeResolutionRanked(w http.ResponseWriter, withStats, fresh bool) {
 	ws.dnsMu.Lock()
 	cfg := ws.mutableDNSLocked()
 	transports := resolution.NormalizeProtocols(cfg.Transports)
@@ -89,7 +97,11 @@ func (ws *WebServer) writeResolution(w http.ResponseWriter, withStats bool) {
 	encrypted := encryptedUpstreams(upstreams)
 	var stats []upstream.UpstreamStat
 	if withStats && ws.upstreams != nil {
-		stats = ws.upstreams.GetUpstreamStats()
+		if fresh {
+			stats = ws.upstreams.GetUpstreamStatsFresh()
+		} else {
+			stats = ws.upstreams.GetUpstreamStats()
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resolutionView{
@@ -134,7 +146,9 @@ func (ws *WebServer) handleResolutionAdaptiveRun(w http.ResponseWriter, r *http.
 		}
 		return
 	}
-	ws.writeResolution(w, true)
+	// The response is the card's post-benchmark truth: rank it by the same
+	// latest probe the forced selection just used.
+	ws.writeResolutionRanked(w, true, true)
 }
 
 func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {

@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -trimpath -buildvcs=false -ldflags="-s -w" \
     -o /out/digitdns-agent ./cmd/digitdns-agent
 
-FROM alpine:3.20
+FROM alpine:3.24
 
 # The agent dials the hub over HTTPS and resolves origin hostnames itself, so it
 # needs a trust store. tzdata keeps its log timestamps in the operator's zone.

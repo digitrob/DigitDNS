@@ -103,6 +103,10 @@ data class DashboardUiState(
     val isRefreshing: Boolean = false,
     val isBenchmarking: Boolean = false,
     val isAdaptiveRunning: Boolean = false,
+    /** null until a Force run finishes; true on success, false on failure. */
+    val adaptiveRunOk: Boolean? = null,
+    /** The server's error message for the last failed Force run, when there was one. */
+    val adaptiveRunError: String? = null,
     val error: String? = null,
 ) {
     /** The cache-miss latency distribution, the one that moves when an upstream slows. */
@@ -544,16 +548,19 @@ class DashboardViewModel @Inject constructor(
     fun runAdaptiveNow() {
         if (_state.value.isAdaptiveRunning) return
         viewModelScope.launch {
-            _state.update { it.copy(isAdaptiveRunning = true) }
+            _state.update {
+                it.copy(isAdaptiveRunning = true, adaptiveRunOk = null, adaptiveRunError = null)
+            }
             try {
                 val saved = settingsRepository.runAdaptive()
-                _state.update { it.copy(resolution = saved) }
+                _state.update { it.copy(resolution = saved, adaptiveRunOk = true) }
                 runCatching { upstreamsRepository.stats() }
                     .onSuccess { upstreams -> _state.update { it.copy(upstreams = upstreams) } }
             } catch (e: ApiException) {
-                _state.update { it.copy(error = e.userMessage) }
+                _state.update { it.copy(adaptiveRunOk = false, adaptiveRunError = e.userMessage) }
             } catch (e: java.io.IOException) {
                 Timber.d(e, "adaptive check failed")
+                _state.update { it.copy(adaptiveRunOk = false) }
             } finally {
                 _state.update { it.copy(isAdaptiveRunning = false) }
             }

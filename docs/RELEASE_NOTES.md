@@ -1,34 +1,38 @@
-# DigitDNS v5.11.3 — Adaptive Force check fixes
+# DigitDNS v5.11.4 — Force regressions and a supported container base
 
-This release focuses on the Dashboard **Adaptive** resolution “Force” (Check now) flow: the control is now a single clickable button, forced ranking uses the freshest probe with a visible (0.1 ms) difference rule, and feedback is clearer and more reliable. No database schema migration is required.
+This is a focused follow-up to v5.11.3. It fixes the Adaptive **Force** regressions found in review, makes the Android card report the real outcome, and moves the shipped images off an end-of-life Alpine branch. No database schema migration is required.
 
 ## Dashboard (Web)
 
-- **Single Force control:** the “Force” button is clickable as one control (icon + label) with proper focus styling and a `Benchmarking…` label while running.
-- **Forced vs scheduled behavior:** Force ranks using the latest successful probe for that run’s decision; switches happen only when the visibly fastest resolver is lower by the displayed 0.1 ms granularity versus the current choice. Scheduled Adaptive checks continue to use the median-window logic to reduce flapping.
-- **Better feedback:** toasts/notes reflect the server’s decision (switched/kept with ms values). The UI uses an epoch/timeout guard so stale responses and long-running benchmarks don’t produce confusing UI states; on timeout it warns that the server may still finish and the card updates on the next poll.
-- **Aligned stats:** the Force endpoint returns post-benchmark upstream stats so the UI shows consistent numbers after a run.
+- **The Force control recovers.** The button returns to `Force` after a run, stays disabled while a timed-out benchmark is still running server-side, and lets the next poll settle the result instead of leaving the card stuck on `Benchmarking…`.
+- **The card and the decision agree.** A forced run ranks on the latest successful probe, and the Force response now renders the resolver list by that same metric (`latency_is_fresh`). The row marked **FASTEST** is the row the run selected, even when the probe-window median points at a different resolver. Scheduled runs keep the window median and 12% hysteresis; the tooltip shows the latest probe and the window median when they differ.
+- **Decision feedback stays honest.** Switched/kept notes still carry the concrete millisecond values, and the tooltip explains which metric produced the order.
 
 ## Android
 
-- **Merged Force control:** “Check now” is a single tappable row (not split icon/text controls).
-- **Clearer outcomes:** success is indicated only after a successful run; API errors are surfaced to the user; the card note shows the server’s decision text when provided.
+- **No more green flash on failure.** A failed Force run now shows the server's message (or a connection message) next to the control; only a successful run flashes the success colour.
+- **The card footer carries the failure**, so an API or network error is visible without leaving the dashboard.
 
-The Android companion moves to **android-v5.11.3**, version code **585**.
+## Toolchain and container
+
+- **Alpine 3.24.** The hub and agent runtime images move from `alpine:3.20` (end of support 2026-04-01) to `alpine:3.24` (supported to 2028-06).
+- **Go 1.26.11.** CI, the GitHub release binaries and the Docker builder now all use the latest 1.26 patch instead of three different 1.26 patches. The Go 1.27 upgrade is a separate change so a regression is easy to bisect.
+
+The Android companion moves to **android-v5.11.4**, version code **586**.
 
 ## Upgrade
 
 In-place upgrades from the dashboard are supported.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.3/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.4/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.11.3
-docker pull ghcr.io/digitrob/digitdns-agent:5.11.3
-docker pull robmeister/digitdns:5.11.3
-docker pull robmeister/digitdns-agent:5.11.3
+docker pull ghcr.io/digitrob/digitdns:5.11.4
+docker pull ghcr.io/digitrob/digitdns-agent:5.11.4
+docker pull robmeister/digitdns:5.11.4
+docker pull robmeister/digitdns-agent:5.11.4
 ```

@@ -261,6 +261,7 @@
     <string name="adaptive_interval_24h">24h</string>
     <string name="adaptive_last_run">Last run %1$s · using %2$s</string>
     <string name="adaptive_last_run_empty">No benchmark yet.</string>
+    <string name="adaptive_run_failed">Could not run the adaptive check — check the connection and try again.</string>
     <string name="upstream_last_used">Last used: %1$s</string>
     <string name="domains_transport_excluded">The selected upstream is excluded by this transport and is ignored.</string>
     <string name="domains_pinned_records">DNS Rewrites</string>

@@ -1,3 +1,8 @@
+// The racer card is intentionally a set of small composables (header, add row,
+// resolver row, chips, footer). Splitting them across files would only move the
+// same private helpers, so the function-count threshold is suppressed here.
+@file:Suppress("TooManyFunctions")
+
 package com.digitrob.digitdns.ui.dashboard
 
 import androidx.compose.foundation.Image
@@ -174,10 +179,7 @@ internal fun UpstreamRacersCard(
             ResolutionDefaults(
                 resolution = resolutionControls.settings,
                 configured = upstreams.map { it.address },
-                onChange = resolutionControls.onChange,
-                isAdaptiveRunning = resolutionControls.isAdaptiveRunning,
-                onRunAdaptive = resolutionControls.onRunAdaptive,
-                lastSingleUpstream = resolutionControls.lastSingleUpstream,
+                controls = resolutionControls,
             )
         }
     }
@@ -366,8 +368,20 @@ data class ResolutionControls(
     val settings: ResolutionSettings? = null,
     val onChange: (ResolutionSettings) -> Unit = {},
     val isAdaptiveRunning: Boolean = false,
+    /** null until a Force run finishes; true on success, false on failure. */
+    val adaptiveRunOk: Boolean? = null,
+    /** The server's message for a failed Force run, when it sent one. */
+    val adaptiveRunError: String? = null,
     val onRunAdaptive: () -> Unit = {},
     val lastSingleUpstream: String = "",
+)
+
+/** The transient state of a manual Adaptive run, kept together so the chip row
+ *  does not grow a parameter per field. */
+private data class AdaptiveRunState(
+    val isRunning: Boolean = false,
+    val runOk: Boolean? = null,
+    val runError: String? = null,
 )
 
 /**
@@ -379,14 +393,17 @@ data class ResolutionControls(
 private fun ResolutionDefaults(
     resolution: ResolutionSettings?,
     configured: List<String>,
-    onChange: (ResolutionSettings) -> Unit,
-    isAdaptiveRunning: Boolean,
-    onRunAdaptive: () -> Unit,
-    lastSingleUpstream: String,
+    controls: ResolutionControls,
 ) {
     val base = resolution ?: ResolutionSettings()
     val strategy = normalizedResolutionStrategy(base.defaultStrategy)
     val single = base.defaultUpstream.isNotEmpty()
+    val onChange = controls.onChange
+    val adaptiveRun = AdaptiveRunState(
+        isRunning = controls.isAdaptiveRunning,
+        runOk = controls.adaptiveRunOk,
+        runError = controls.adaptiveRunError,
+    )
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         ChipBlock(label = stringResource(R.string.domains_strategy), dimmed = single) {
             Row(
@@ -414,14 +431,14 @@ private fun ResolutionDefaults(
             strategy = strategy,
             enabled = !single,
             onChange = onChange,
-            isRunning = isAdaptiveRunning,
-            onRunAdaptive = onRunAdaptive,
+            run = adaptiveRun,
+            onRunAdaptive = controls.onRunAdaptive,
         )
         TransportChips(base = base, enabled = !single, onChange = onChange)
         SingleServerRow(
             base = base,
             configured = configured,
-            lastSingleUpstream = lastSingleUpstream,
+            lastSingleUpstream = controls.lastSingleUpstream,
             onChange = onChange,
         )
     }
@@ -525,7 +542,7 @@ private fun AdaptiveIntervalChips(
     strategy: String,
     enabled: Boolean,
     onChange: (ResolutionSettings) -> Unit,
-    isRunning: Boolean,
+    run: AdaptiveRunState,
     onRunAdaptive: () -> Unit,
 ) {
     val colors = DigitDnsTheme.colors
@@ -533,44 +550,25 @@ private fun AdaptiveIntervalChips(
     val selectedInterval = normalizedAdaptiveIntervalMinutes(base.adaptiveIntervalMinutes)
     var flash by remember { mutableStateOf(false) }
     var wasRunning by remember { mutableStateOf(false) }
-    LaunchedEffect(isRunning) {
-        if (isRunning) {
+    // A run that ends in an error must not flash the success colour. The
+    // ViewModel publishes runOk in the same state update that clears isRunning,
+    // so this effect sees the outcome alongside the transition.
+    LaunchedEffect(run.isRunning, run.runOk) {
+        if (run.isRunning) {
             wasRunning = true
         } else if (wasRunning) {
             wasRunning = false
-            flash = true
-            delay(1500)
-            flash = false
+            if (run.runOk == true) {
+                flash = true
+                delay(1500)
+                flash = false
+            }
         }
     }
     ChipBlock(
         label = stringResource(R.string.adaptive_interval),
         dimmed = !enabled,
-        footer = {
-            val footerText = when {
-                !enabled -> base.defaultUpstream.takeIf { it.isNotBlank() }?.let {
-                    stringResource(R.string.upstream_last_used, it)
-                }.orEmpty()
-                !adaptive -> ""
-                base.adaptiveLastRun.isBlank() -> stringResource(R.string.adaptive_last_run_empty)
-                else -> {
-                    val head = stringResource(
-                        R.string.adaptive_last_run,
-                        formatAdaptiveRun(base.adaptiveLastRun),
-                        base.adaptiveCurrent.ifBlank { "—" },
-                    )
-                    if (base.adaptiveLastNote.isBlank()) head else head + "\n" + base.adaptiveLastNote
-                }
-            }
-            Text(
-                text = footerText,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.72f),
-                maxLines = 3,
-                minLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
+        footer = { AdaptiveFooter(base, enabled, adaptive, run) },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(
@@ -595,12 +593,62 @@ private fun AdaptiveIntervalChips(
             }
             AdaptiveForceButton(
                 enabled = adaptive,
-                isRunning = isRunning,
+                isRunning = run.isRunning,
                 flash = flash,
                 onClick = onRunAdaptive,
             )
         }
     }
+}
+
+@Suppress("CyclomaticComplexMethod") // one small text decision tree; splitting it would not simplify it
+@Composable
+private fun AdaptiveFooter(
+    base: ResolutionSettings,
+    enabled: Boolean,
+    adaptive: Boolean,
+    run: AdaptiveRunState,
+) {
+    val footerText = when {
+        !enabled -> base.defaultUpstream.takeIf { it.isNotBlank() }?.let {
+            stringResource(R.string.upstream_last_used, it)
+        }.orEmpty()
+        !adaptive -> ""
+        base.adaptiveLastRun.isBlank() -> stringResource(R.string.adaptive_last_run_empty)
+        else -> {
+            val head = stringResource(
+                R.string.adaptive_last_run,
+                formatAdaptiveRun(base.adaptiveLastRun),
+                base.adaptiveCurrent.ifBlank { "—" },
+            )
+            if (base.adaptiveLastNote.isBlank()) head else head + "\n" + base.adaptiveLastNote
+        }
+    }
+    // A failed Force run used to leave the last successful note in place and
+    // flash green. Show the failure next to the control instead.
+    val failureText = if (adaptive && run.runOk == false) {
+        run.runError?.takeIf { it.isNotBlank() }
+            ?: stringResource(R.string.adaptive_run_failed)
+    } else {
+        ""
+    }
+    val footerWithError = when {
+        failureText.isBlank() -> footerText
+        footerText.isBlank() -> failureText
+        else -> footerText + "\n" + failureText
+    }
+    Text(
+        text = footerWithError,
+        style = MaterialTheme.typography.labelSmall,
+        color = if (failureText.isNotBlank()) {
+            MaterialTheme.colorScheme.error
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.72f)
+        },
+        maxLines = 4,
+        minLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable

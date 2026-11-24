@@ -1495,7 +1495,9 @@ func (p *UpstreamPool) selectAdaptiveFastest(current string, minImprovement floa
 		allowed[u] = struct{}{}
 	}
 
-	stats := p.GetUpstreamStats()
+	// Rank in the same order the response will render: a forced run reads the
+	// fresh-probe view, so its tie-breaks and the card's row order agree.
+	stats := p.getUpstreamStats(force)
 	var (
 		bestAddr      string
 		bestLatency   time.Duration
@@ -2169,7 +2171,11 @@ type UpstreamStat struct {
 	// LatencyIsProbe is true while the displayed number comes from the warm
 	// benchmark median because there are not yet enough live samples to trust a
 	// live p50. One slow live exchange must not dominate the card.
-	LatencyIsProbe      bool    `json:"latency_is_probe,omitempty"`
+	LatencyIsProbe bool `json:"latency_is_probe,omitempty"`
+	// LatencyIsFresh is true only on the Force response: the displayed number is
+	// the latest successful benchmark probe, which is the number that run ranked
+	// by. Scheduled runs keep ranking by ProbeMedianMs.
+	LatencyIsFresh      bool    `json:"latency_is_fresh,omitempty"`
 	Hits                uint64  `json:"hits"`
 	Errors              uint64  `json:"errors"`
 	TransportErrors     uint64  `json:"transport_errors"`
@@ -2190,9 +2196,10 @@ type UpstreamStat struct {
 	ProbeErrors uint64  `json:"probe_errors"`
 	ProbePolicy uint64  `json:"probe_policy"`
 	LastProbeMs float64 `json:"last_probe_ms"`
-	// ProbeMedianMs is the median of the recent benchmark medians: the number
-	// the Adaptive choice ranks by, and the number the card shows while the
-	// strategy is Adaptive. ProbeSamples is how many probes are in that window.
+	// ProbeMedianMs is the median of the recent benchmark medians. Scheduled
+	// Adaptive runs rank by it, and the card shows it for those runs. The Force
+	// response ranks by LastProbeMs instead and marks that row LatencyIsFresh.
+	// ProbeSamples is how many probes are in that window.
 	ProbeMedianMs float64 `json:"probe_median_ms,omitempty"`
 	ProbeSamples  int     `json:"probe_samples,omitempty"`
 	LastProbeOK   bool    `json:"last_probe_ok"`
@@ -2205,8 +2212,20 @@ type UpstreamStat struct {
 // healthy resolver look broken until enough traffic arrived to move the median.
 const minLiveLatencySamples = 3
 
-// GetUpstreamStats returns a snapshot of latency/health stats for all upstreams, sorted by latency.
+// GetUpstreamStats returns a snapshot of latency/health stats for all upstreams,
+// sorted by the metric the scheduled Adaptive path ranks by.
 func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
+	return p.getUpstreamStats(false)
+}
+
+// GetUpstreamStatsFresh is GetUpstreamStats ranked by the latest successful
+// benchmark probe instead of the probe-window median. The Force response uses
+// it so the row the card calls FASTEST is the row that run selected.
+func (p *UpstreamPool) GetUpstreamStatsFresh() []UpstreamStat {
+	return p.getUpstreamStats(true)
+}
+
+func (p *UpstreamPool) getUpstreamStats(rankFresh bool) []UpstreamStat {
 	type snapshot struct {
 		latency             time.Duration
 		latencyP95          time.Duration
@@ -2303,11 +2322,18 @@ func (p *UpstreamPool) GetUpstreamStats() []UpstreamStat {
 			case adaptive && raw.lastProbeOK && raw.probeMedian > 0:
 				// Adaptive decides on the probe window, so the card shows the
 				// probe window. The live p50 stays in the tooltip's sample count
-				// and is what other strategies rank by.
+				// and is what other strategies rank by. A forced run ranks on
+				// the latest probe, so its response shows that same number.
 				s.Measured = true
 				s.LatencyIsProbe = true
-				s.LatencyNs = int64(raw.probeMedian)
-				s.LatencyP50Ms = float64(raw.probeMedian) / 1e6
+				if rankFresh && raw.lastProbeLatency > 0 {
+					s.LatencyIsFresh = true
+					s.LatencyNs = int64(raw.lastProbeLatency)
+					s.LatencyP50Ms = float64(raw.lastProbeLatency) / 1e6
+				} else {
+					s.LatencyNs = int64(raw.probeMedian)
+					s.LatencyP50Ms = float64(raw.probeMedian) / 1e6
+				}
 				s.LatencyP95Ms = s.LatencyP50Ms
 				s.LatencyAvgMs = s.LatencyP50Ms
 			case raw.samples >= minLiveLatencySamples:

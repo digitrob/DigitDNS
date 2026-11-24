@@ -1625,6 +1625,50 @@ func TestAdaptiveCardAndSelectionUseTheSameLatency(t *testing.T) {
 	}
 }
 
+// A forced run ranks on the latest probe, so the row the card calls FASTEST
+// must be the resolver the decision selects even when the probe-window median
+// points somewhere else. This is the v5.9.1 invariant, applied to the fresh
+// metric the forced path now uses.
+func TestAdaptiveForcedCardAndSelectionUseTheSameFreshProbe(t *testing.T) {
+	a := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.88"}), nil)
+	b := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.89"}), nil)
+
+	p := newTestPool(t, []string{a.addr, b.addr}, 2*time.Second, false, "")
+	// A wins the probe window (median 7 ms vs 9 ms) ...
+	for range 3 {
+		setProbeLatency(t, p, a.addr, 7*time.Millisecond)
+		setProbeLatency(t, p, b.addr, 9*time.Millisecond)
+	}
+	// ... but the latest probe reverses the order (A 12 ms, B 6 ms).
+	setProbeLatency(t, p, a.addr, 12*time.Millisecond)
+	setProbeLatency(t, p, b.addr, 6*time.Millisecond)
+	p.SetPolicy(Policy{DefaultStrategy: resolution.StrategyAdaptive, AdaptiveCurrent: a.addr})
+
+	stats := p.GetUpstreamStatsFresh()
+	if stats[0].Address != b.addr {
+		t.Fatalf("forced card order = %s first, want the fresh-probe winner %s", stats[0].Address, b.addr)
+	}
+	if !stats[0].LatencyIsFresh || stats[0].LatencyP50Ms != 6 {
+		t.Fatalf("forced card latency = %.2f ms (fresh=%t), want the 6 ms latest probe",
+			stats[0].LatencyP50Ms, stats[0].LatencyIsFresh)
+	}
+	if stats[0].ProbeMedianMs != 9 {
+		t.Fatalf("forced card median = %.2f ms, want the window median 9 ms kept for the tooltip", stats[0].ProbeMedianMs)
+	}
+
+	d := p.SelectAdaptiveFastestForced(a.addr)
+	if d.Current != b.addr || d.Fastest != b.addr {
+		t.Fatalf("forced decision disagrees with the card: %+v", d)
+	}
+
+	// The scheduled view still ranks on the window median.
+	scheduled := p.GetUpstreamStats()
+	if scheduled[0].Address != a.addr || scheduled[0].LatencyIsFresh {
+		t.Fatalf("scheduled card order = %s (fresh=%t), want the median winner %s",
+			scheduled[0].Address, scheduled[0].LatencyIsFresh, a.addr)
+	}
+}
+
 // Force switches when the displayed (0.1 ms) value is better; it keeps only
 // when rounded values are equal.
 func TestAdaptiveForcedSwitchesOnVisibleGap(t *testing.T) {
@@ -1654,7 +1698,9 @@ func TestAdaptiveForcedSwitchesOnVisibleGap(t *testing.T) {
 	if d.Changed {
 		t.Fatalf("forced selection flipped on equal displayed values: %+v", d)
 	}
-	if !strings.Contains(d.Note, "Kept") {
+	// Equal values keep the current resolver; the note may say it is still the
+	// fastest rather than using the word "Kept".
+	if d.Note == "" || strings.Contains(d.Note, "Switched") {
 		t.Fatalf("forced selection note = %q", d.Note)
 	}
 }

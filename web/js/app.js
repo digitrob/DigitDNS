@@ -3899,6 +3899,11 @@ function rememberSingleServer(address) {
 let adaptiveFlash = false;
 let adaptiveFlashTimer = null;
 let adaptiveLoadEpoch = 0;
+// A Force request that timed out client-side is still running on the server.
+// Keep the control disabled (and labelled honestly) until the next poll or a
+// short grace period settles it, without blocking resolution reloads.
+let adaptiveServerRunning = false;
+let adaptiveServerTimer = null;
 
 // The DNSSEC card in Settings mirrors /api/settings/dnssec. The endpoint is
 // startup-only: saving writes the "dns" record, and restart_required tells the
@@ -4459,15 +4464,21 @@ function syncAdaptiveControls() {
     button.setAttribute('aria-pressed', Number(button.dataset.interval) === interval ? 'true' : 'false');
   });
 
+  const busy = adaptiveRunInFlight || adaptiveServerRunning;
   const run = document.getElementById('resolution-adaptive-run');
   if (run) {
-    run.disabled = single || !adaptive || adaptiveRunInFlight;
-    run.classList.toggle('is-running', adaptiveRunInFlight);
+    run.disabled = single || !adaptive || busy;
+    run.classList.toggle('is-running', busy);
     run.classList.toggle('is-success', adaptiveFlash && !single);
-    run.setAttribute('aria-busy', adaptiveRunInFlight ? 'true' : 'false');
+    run.setAttribute('aria-busy', busy ? 'true' : 'false');
   }
   const forceLabel = document.getElementById('resolution-adaptive-force-label');
   if (forceLabel) {
+    // The label lives inside the button, so this is also the single place the
+    // running state is described. Keeping it here means every caller of
+    // syncAdaptiveControls() restores it instead of leaving "Benchmarking…"
+    // behind after the request finishes.
+    forceLabel.textContent = busy ? 'Benchmarking…' : 'Force';
     forceLabel.classList.toggle('resolution-adaptive-disabled', single || !adaptive);
   }
 
@@ -4657,16 +4668,19 @@ async function saveResolutionSettings(overrides, message) {
 // interval. The server runs the probe synchronously and returns the updated
 // settings, so the card can show the new resolver immediately.
 async function runAdaptiveNow() {
-  if (adaptiveRunInFlight) return;
+  if (adaptiveRunInFlight || adaptiveServerRunning) return;
   if (normalizeStrategyValue(resolutionSettings.default_strategy) !== 'adaptive') return;
   adaptiveRunInFlight = true;
   adaptiveFlash = false;
   if (adaptiveFlashTimer) clearTimeout(adaptiveFlashTimer);
-  const forceBtn = document.getElementById('resolution-adaptive-run');
-  const forceLabel = document.getElementById('resolution-adaptive-force-label');
-  const prevLabel = forceLabel ? forceLabel.textContent : 'Force';
-  if (forceLabel) forceLabel.textContent = 'Benchmarking…';
-  if (forceBtn) forceBtn.disabled = true;
+  // A previous request may have timed out while the server kept benchmarking;
+  // this click supersedes that grace period.
+  if (adaptiveServerTimer) {
+    clearTimeout(adaptiveServerTimer);
+    adaptiveServerTimer = null;
+  }
+  adaptiveServerRunning = false;
+  syncAdaptiveControls();
   const startedAt = Date.now();
   adaptiveLoadEpoch += 1;
   const epoch = adaptiveLoadEpoch;
@@ -4697,20 +4711,24 @@ async function runAdaptiveNow() {
     }, 1600);
   } catch (e) {
     if (e && e.name === 'AbortError') {
-      showToast('Benchmark still running on the server — the card will update on the next poll', 'warning');
-      // Keep the in-flight state briefly so the UI stays consistent; the next load/poll will settle it.
-      setTimeout(() => {
-        adaptiveRunInFlight = false;
+      // The request was abandoned, not the benchmark: the server keeps going.
+      // Leave the control disabled so a second click cannot queue another probe,
+      // but let resolution reloads run so the card can catch the result.
+      showToast('Benchmark still running on the server — the card will update when it finishes', 'warning');
+      adaptiveServerRunning = true;
+      if (adaptiveServerTimer) clearTimeout(adaptiveServerTimer);
+      adaptiveServerTimer = setTimeout(() => {
+        adaptiveServerRunning = false;
+        adaptiveServerTimer = null;
         syncAdaptiveControls();
+        void loadResolutionSettings();
       }, 5000);
       return;
     }
     showToast('Could not run the adaptive check', 'error');
   } finally {
     clearTimeout(timeoutId);
-    if (forceLabel && !adaptiveRunInFlight) forceLabel.textContent = prevLabel;
     adaptiveRunInFlight = false;
-    // If a newer load started while we awaited, don't clobber its epoch assumptions; still resync.
     syncAdaptiveControls();
     // Nudge the poll window so the note/latencies catch up soon.
     if (epoch === adaptiveLoadEpoch) lastResolutionSyncAt = startedAt;
@@ -6737,7 +6755,9 @@ function renderUpstreams(upstreams) {
     u.policy_errors || 0, u.circuit_open ? 1 : 0, u.last_error || '',
     u.measured ? 1 : 0, u.samples || 0, u.recent_samples || 0,
     Math.round((u.recent_error_rate || 0) * 100), u.consecutive_failures || 0,
-    u.latency_is_probe ? 1 : 0, u.probe_samples || 0,
+    u.latency_is_probe ? 1 : 0, u.latency_is_fresh ? 1 : 0,
+    Math.round((u.probe_median_ms || 0) * 10), Math.round((u.last_probe_ms || 0) * 10),
+    u.probe_samples || 0,
   ].join(':')).join('|') + '|' + policySig;
   if (sig === lastUpstreamsSig) return;
   lastUpstreamsSig = sig;
@@ -6811,18 +6831,29 @@ function renderUpstreams(upstreams) {
     // where the distinction is spelled out for whoever hovers it.
     const latText = measured ? `${latency.toFixed(1)} ms` : '—';
     const latencyIsProbe = !!u.latency_is_probe;
+    const latencyIsFresh = !!u.latency_is_fresh;
     const recentRate = Number(u.recent_error_rate) || 0;
     const recentSamples = Number(u.recent_samples) || 0;
     const failing = (Number(u.consecutive_failures) || 0) > 0
       || (recentSamples > 0 && recentRate >= 0.1);
 
     let latTitle = measured
-      ? (latencyIsProbe
-          ? (Number(u.probe_samples) > 1
-              ? `Median of the last ${Number(u.probe_samples)} benchmark probes — the number Adaptive ranks by`
-              : 'Median of the latest warm benchmark probe — waiting for three live exchanges')
-          : `Median of the last ${Number(u.samples).toLocaleString()} live exchanges`)
+      ? (latencyIsFresh
+          ? 'Latest benchmark probe — the number this Force run ranked by'
+          : latencyIsProbe
+            ? (Number(u.probe_samples) > 1
+                ? `Median of the last ${Number(u.probe_samples)} benchmark probes — the number scheduled Adaptive runs rank by`
+                : 'Median of the latest warm benchmark probe — waiting for three live exchanges')
+            : `Median of the last ${Number(u.samples).toLocaleString()} live exchanges`)
       : 'Not measured yet — no answer has been timed from this upstream';
+    // Show the other half of the comparison when both numbers exist, so a row
+    // that is fastest on the latest probe but slower over the window (or the
+    // reverse) does not look like a contradiction.
+    if (measured && latencyIsFresh && Number(u.probe_median_ms) > 0) {
+      latTitle += ` · window median ${Number(u.probe_median_ms).toFixed(1)} ms`;
+    } else if (measured && latencyIsProbe && !latencyIsFresh && Number(u.probe_samples) > 1 && Number(u.last_probe_ms) > 0) {
+      latTitle += ` · latest ${Number(u.last_probe_ms).toFixed(1)} ms`;
+    }
     if (measured && Number(u.latency_p95_ms) > 0) {
       latTitle += ` · p95 ${Number(u.latency_p95_ms).toFixed(1)} ms`;
     }

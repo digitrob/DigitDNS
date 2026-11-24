@@ -611,6 +611,8 @@ private fun LazyGridScope.liveCard(
                     settings = state.resolution,
                     onChange = actions.onResolutionChange,
                     isAdaptiveRunning = state.isAdaptiveRunning,
+                    adaptiveRunOk = state.adaptiveRunOk,
+                    adaptiveRunError = state.adaptiveRunError,
                     onRunAdaptive = actions.onRunAdaptive,
                     lastSingleUpstream = state.lastSingleUpstream,
                 ),

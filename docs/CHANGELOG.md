@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.11.4] — Force regressions and a supported container base
+
+### Fixed
+- **Force label and abort state (web).** The Adaptive Force button restores its label after a run, stays disabled while a timed-out benchmark is still running server-side, and lets the next poll settle the result instead of leaving the control stuck on `Benchmarking…`.
+- **Card and decision agree on a forced run.** The Force response now ranks and renders the upstream list by the same latest probe the forced selection uses (`latency_is_fresh`), so the row marked **FASTEST** is the row that run selected. The scheduled path keeps the probe-window median and its 12% hysteresis, and the tooltip shows both numbers when they differ.
+- **Android reports the real outcome.** A failed Force run no longer flashes success; the card shows the server's error (or a connection message) and only a successful run turns green.
+- **Docs caught up with the release.** README, the security support table, the release policy and the relay-agent examples now name v5.11.4.
+
+### Changed
+- **Supported container runtime.** The hub and agent images move from `alpine:3.20` (end of support 2026-04-01) to `alpine:3.24` (supported to 2028-06).
+- **One Go patch line.** CI, the release binaries and the Docker builder now all use Go **1.26.11**, the latest 1.26 patch, instead of three different 1.26 patches. The Go 1.27 upgrade is a separate change.
+
+No database schema migration is required. The Android companion moves to `android-v5.11.4`, with version code 586.
+
 ## 🏷️ [v5.11.3] — Adaptive “Force” check fixes
 
 ### Fixed
