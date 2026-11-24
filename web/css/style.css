@@ -3241,8 +3241,10 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  gap: 0.35rem;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0 0.4rem;
   flex-shrink: 0;
   border-radius: 0.45rem;
   border: 1px solid rgb(var(--c-slate-700));
@@ -3252,16 +3254,26 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 
+.resolver-adaptive-force-btn {
+  min-width: 64px;
+}
+
 .resolver-force-label {
   flex-shrink: 0;
-  color: rgb(var(--c-slate-300));
+  color: inherit;
   font-size: var(--text-xs);
   font-weight: 700;
   white-space: nowrap;
+  pointer-events: none;
 }
 
 .resolver-refresh-btn:hover:not(:disabled) {
   background: rgb(var(--c-slate-800));
+}
+
+.resolver-refresh-btn:focus-visible {
+  outline: 2px solid rgb(var(--c-cyan-400));
+  outline-offset: 2px;
 }
 
 .resolver-refresh-btn:disabled {

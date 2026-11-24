@@ -3898,6 +3898,7 @@ function rememberSingleServer(address) {
 }
 let adaptiveFlash = false;
 let adaptiveFlashTimer = null;
+let adaptiveLoadEpoch = 0;
 
 // The DNSSEC card in Settings mirrors /api/settings/dnssec. The endpoint is
 // startup-only: saving writes the "dns" record, and restart_required tells the
@@ -4229,16 +4230,21 @@ async function saveProxyLeakSettings(enabled, message) {
 
 async function loadResolutionSettings() {
   if (resolutionLoading) return;
+  if (adaptiveRunInFlight) return;
   resolutionLoading = true;
+  const epoch = adaptiveLoadEpoch;
   try {
     const res = await fetch(api('/api/settings/resolution'), {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     if (!res.ok) throw new Error(await errorMessage(res, 'Could not read resolver settings'));
-    resolutionSettings = normalizeResolutionSettings(await res.json());
+    const data = await res.json();
+    if (epoch !== adaptiveLoadEpoch) return;
+    resolutionSettings = normalizeResolutionSettings(data);
     syncResolutionControls();
     refreshProxiedListIfVisible();
   } catch (e) {
+    if (epoch !== adaptiveLoadEpoch) return;
     // The upstream list is this card's visible half. A failed read used to leave
     // the markup's "Reading upstream health…" placeholder in place, which reads
     // as a pool that never finished loading rather than a request that failed.
@@ -4250,16 +4256,12 @@ async function loadResolutionSettings() {
       inlineLoadError('upstreams-list',
         e.message || 'Could not read resolver settings.',
         () => {
-          // Two requests feed this card: the saved policy and the live pool.
-          // Retry re-runs both, so a failure of either one recovers in place.
           loadResolutionSettings();
           pollStatsOnce();
         });
     }
   } finally {
     resolutionLoading = false;
-    // The switch is revealed only after the saved default upstream has been
-    // applied, so opening the tab cannot replay an OFF→ON slide.
     revealServerSwitch('resolution-single-switch-control');
   }
 }
@@ -4660,11 +4662,21 @@ async function runAdaptiveNow() {
   adaptiveRunInFlight = true;
   adaptiveFlash = false;
   if (adaptiveFlashTimer) clearTimeout(adaptiveFlashTimer);
-  syncAdaptiveControls();
+  const forceBtn = document.getElementById('resolution-adaptive-run');
+  const forceLabel = document.getElementById('resolution-adaptive-force-label');
+  const prevLabel = forceLabel ? forceLabel.textContent : 'Force';
+  if (forceLabel) forceLabel.textContent = 'Benchmarking…';
+  if (forceBtn) forceBtn.disabled = true;
+  const startedAt = Date.now();
+  adaptiveLoadEpoch += 1;
+  const epoch = adaptiveLoadEpoch;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
   try {
     const res = await fetch(api('/api/settings/resolution/run-adaptive'), {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${authToken}` }
+      headers: { 'Authorization': `Bearer ${authToken}` },
+      signal: controller.signal,
     });
     if (!res.ok) {
       showToast(await errorMessage(res, 'Could not run the adaptive check'), 'error');
@@ -4674,23 +4686,34 @@ async function runAdaptiveNow() {
     resolutionSettings = normalizeResolutionSettings(payload);
     adaptiveFlash = true;
     syncResolutionControls();
-    // Repaint the resolver rows from the numbers the server just measured. The
-    // Force response carries them because /api/stats is cached for a second and
-    // a follow-up fetch could hand back the pre-benchmark latencies — which made
-    // the new choice look slower than the one it replaced.
     if (Array.isArray(payload.upstream_stats)) renderUpstreams(payload.upstream_stats);
     refreshProxiedListIfVisible();
-    showToast('Adaptive check complete', 'success');
+    const note = resolutionSettings.adaptive_last_note || '';
+    showToast(note || 'Adaptive check complete', 'success');
     if (adaptiveFlashTimer) clearTimeout(adaptiveFlashTimer);
     adaptiveFlashTimer = setTimeout(() => {
       adaptiveFlash = false;
       syncAdaptiveControls();
     }, 1600);
   } catch (e) {
+    if (e && e.name === 'AbortError') {
+      showToast('Benchmark still running on the server — the card will update on the next poll', 'warning');
+      // Keep the in-flight state briefly so the UI stays consistent; the next load/poll will settle it.
+      setTimeout(() => {
+        adaptiveRunInFlight = false;
+        syncAdaptiveControls();
+      }, 5000);
+      return;
+    }
     showToast('Could not run the adaptive check', 'error');
   } finally {
+    clearTimeout(timeoutId);
+    if (forceLabel && !adaptiveRunInFlight) forceLabel.textContent = prevLabel;
     adaptiveRunInFlight = false;
+    // If a newer load started while we awaited, don't clobber its epoch assumptions; still resync.
     syncAdaptiveControls();
+    // Nudge the poll window so the note/latencies catch up soon.
+    if (epoch === adaptiveLoadEpoch) lastResolutionSyncAt = startedAt;
   }
 }
 

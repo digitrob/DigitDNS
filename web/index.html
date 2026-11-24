@@ -1489,13 +1489,13 @@
                     <button type="button" class="resolver-chip" data-interval="1440" aria-pressed="false">24h</button>
                   </div>
                   <button id="resolution-adaptive-run" type="button"
-                    class="resolver-refresh-btn"
-                    aria-label="Force an adaptive check now"
+                    class="resolver-refresh-btn resolver-adaptive-force-btn"
+                    aria-label="Force an adaptive check now (benchmark and switch to the fastest healthy resolver)"
                     title="Benchmark now and switch to the fastest healthy resolver"
                     disabled>
                     <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i>
+                    <span id="resolution-adaptive-force-label" class="resolver-force-label">Force</span>
                   </button>
-                  <span id="resolution-adaptive-force-label" class="resolver-force-label">Force</span>
                 </div>
               </div>
 

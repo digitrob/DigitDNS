@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -1505,7 +1506,12 @@ func (p *UpstreamPool) selectAdaptiveFastest(current string, minImprovement floa
 		if _, ok := allowed[s.Address]; !ok {
 			continue
 		}
-		latency := adaptiveLatency(s)
+		var latency time.Duration
+		if force {
+			latency = adaptiveLatencyFresh(s)
+		} else {
+			latency = adaptiveLatency(s)
+		}
 		if s.Address == current {
 			currentLat = latency
 			currentHealth = adaptiveHealthy(s)
@@ -1539,31 +1545,32 @@ func (p *UpstreamPool) selectAdaptiveFastest(current string, minImprovement floa
 		decision.Changed = current != bestAddr
 		decision.Note = "selected the fastest healthy resolver"
 	case bestAddr == current:
-		decision.Note = "current resolver is still the fastest"
-	case force && (currentLat <= 0 || float64(bestLatency) < float64(currentLat)*(1-adaptiveForcedNoise)):
-		decision.Current = bestAddr
-		decision.CurrentLatency = bestLatency
-		decision.Changed = true
-		decision.Note = "forced to the fastest healthy resolver"
+		decision.Note = fmt.Sprintf("current resolver is still the fastest · %.1f ms", float64(currentLat)/1e6)
 	case force:
-		decision.Note = fmt.Sprintf(
-			"kept %s; %s is within measurement noise (%.1f vs %.1f ms)",
-			current, bestAddr, float64(currentLat)/1e6, float64(bestLatency)/1e6)
+		curMs := math.Round(float64(currentLat)/1e5) / 10.0
+		bestMs := math.Round(float64(bestLatency)/1e5) / 10.0
+		if bestMs < curMs {
+			decision.Current = bestAddr
+			decision.CurrentLatency = bestLatency
+			decision.Changed = true
+			decision.Note = fmt.Sprintf("Switched to %s · %.1f ms (was %.1f ms)", bestAddr, bestMs, curMs)
+		} else {
+			decision.Note = fmt.Sprintf("Kept %s · %.1f vs %.1f ms", current, curMs, bestMs)
+		}
 	case float64(bestLatency) < float64(currentLat)*(1-minImprovement):
 		decision.Current = bestAddr
 		decision.CurrentLatency = bestLatency
 		decision.Changed = true
-		decision.Note = "switched to a meaningfully faster resolver"
+		decision.Note = fmt.Sprintf("Switched to %s · %.1f ms", bestAddr, float64(bestLatency)/1e6)
 	default:
-		decision.Note = "kept the current resolver; the fastest is not meaningfully faster"
+		decision.Note = fmt.Sprintf("Kept %s; %s not meaningfully faster (%.1f vs %.1f ms)", current, bestAddr, float64(currentLat)/1e6, float64(bestLatency)/1e6)
 	}
 	return decision
 }
 
 // adaptiveLatency is the number the Adaptive strategy ranks by: the median of
-// the recent benchmark medians. The window is what keeps two clicks in a row
-// from picking different resolvers whose true difference is inside the probe's
-// own noise. When no probe has succeeded yet it falls back to the live p50.
+// the recent benchmark medians (used for scheduled runs). The window keeps two
+// scheduled decisions from flipping on probe noise.
 func adaptiveLatency(s UpstreamStat) time.Duration {
 	if s.LastProbeOK && s.ProbeMedianMs > 0 {
 		return time.Duration(s.ProbeMedianMs * float64(time.Millisecond))
@@ -1572,6 +1579,14 @@ func adaptiveLatency(s UpstreamStat) time.Duration {
 		return time.Duration(s.LastProbeMs * float64(time.Millisecond))
 	}
 	return time.Duration(s.LatencyNs)
+}
+
+// adaptiveLatencyFresh prefers the most recent successful probe (for Force).
+func adaptiveLatencyFresh(s UpstreamStat) time.Duration {
+	if s.LastProbeOK && s.LastProbeMs > 0 {
+		return time.Duration(s.LastProbeMs * float64(time.Millisecond))
+	}
+	return adaptiveLatency(s)
 }
 
 // adaptiveHealthy applies the same health rules the dashboard uses, minus the

@@ -1565,11 +1565,8 @@ func TestAdaptiveSelectionReplacesAStaleChoice(t *testing.T) {
 	}
 }
 
-// A single three-sample probe at 7 ms picks a different winner each run. The
-// Adaptive choice uses the median of the recent probe window, so repeated Force
-// clicks land on the same resolver instead of bouncing between two that are
-// inside the noise.
-func TestAdaptiveForcedSelectionUsesProbeWindow(t *testing.T) {
+// Force uses the freshest probe for ranking (so a fresh run can switch immediately).
+func TestAdaptiveForcedSelectionUsesFreshProbe(t *testing.T) {
 	steady := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.82"}), nil)
 	noisy := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.83"}), nil)
 
@@ -1578,21 +1575,12 @@ func TestAdaptiveForcedSelectionUsesProbeWindow(t *testing.T) {
 		setProbeLatency(t, p, steady.addr, 8*time.Millisecond)
 		setProbeLatency(t, p, noisy.addr, 7*time.Millisecond)
 	}
-	// The latest probe is the worst one noisy has produced, so ranking on the
-	// last probe alone would keep steady.
+	// Latest probe makes noisy worse; forced should follow the fresh probe.
 	setProbeLatency(t, p, noisy.addr, 9*time.Millisecond)
 
 	d := p.SelectAdaptiveFastestForced(steady.addr)
-	if d.Current != noisy.addr || d.Fastest != noisy.addr {
-		t.Fatalf("forced selection ignored the probe window: %+v", d)
-	}
-
-	// Another click adds one more slow sample; the window median is unchanged,
-	// so the choice does not flip back.
-	setProbeLatency(t, p, noisy.addr, 9*time.Millisecond)
-	setProbeLatency(t, p, steady.addr, 8*time.Millisecond)
-	if d := p.SelectAdaptiveFastestForced(noisy.addr); d.Changed {
-		t.Fatalf("forced selection flipped on one noisy probe: %+v", d)
+	if d.Current == noisy.addr {
+		t.Fatalf("forced selection should prefer freshest probe (steady now better): %+v", d)
 	}
 }
 
@@ -1637,35 +1625,37 @@ func TestAdaptiveCardAndSelectionUseTheSameLatency(t *testing.T) {
 	}
 }
 
-// Force means "pick the fastest now", but a margin smaller than the probe's own
-// noise is not a result. It keeps the current resolver and says so instead of
-// flipping the highlight on every click.
-func TestAdaptiveForcedKeepsAResolverInsideMeasurementNoise(t *testing.T) {
+// Force switches when the displayed (0.1 ms) value is better; it keeps only
+// when rounded values are equal.
+func TestAdaptiveForcedSwitchesOnVisibleGap(t *testing.T) {
 	current := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.86"}), nil)
 	rival := newTestResolver(t, forName(probeName, answer{rcode: dns.RcodeSuccess, ip: "203.0.113.87"}), nil)
 
 	p := newTestPool(t, []string{current.addr, rival.addr}, 2*time.Second, false, "")
 	for range 3 {
 		setProbeLatency(t, p, current.addr, 8*time.Millisecond)
-		setProbeLatency(t, p, rival.addr, 8*time.Millisecond-100*time.Microsecond)
+		setProbeLatency(t, p, rival.addr, 7*time.Millisecond+900*time.Microsecond) // 7.9ms -> rounds 7.9 vs 8.0
 	}
 	p.SetPolicy(Policy{DefaultStrategy: resolution.StrategyAdaptive, AdaptiveCurrent: current.addr})
 
 	d := p.SelectAdaptiveFastestForced(current.addr)
-	if d.Changed || d.Current != current.addr {
-		t.Fatalf("forced selection flipped on a 0.1 ms margin: %+v", d)
+	if !d.Changed || d.Current != rival.addr {
+		t.Fatalf("forced selection should switch on visible 0.1 ms gap: %+v", d)
 	}
-	if !strings.Contains(d.Note, "noise") {
-		t.Fatalf("forced selection did not explain the kept choice: %q", d.Note)
+	if !strings.Contains(d.Note, "Switched") {
+		t.Fatalf("forced selection note = %q", d.Note)
 	}
 
-	// A real gap still switches on the first click.
+	// Equal rounded values: keep.
 	for range 3 {
-		setProbeLatency(t, p, rival.addr, 6*time.Millisecond)
+		setProbeLatency(t, p, rival.addr, 8*time.Millisecond)
 	}
-	d = p.SelectAdaptiveFastestForced(current.addr)
-	if !d.Changed || d.Current != rival.addr {
-		t.Fatalf("forced selection ignored a real gap: %+v", d)
+	d = p.SelectAdaptiveFastestForced(rival.addr)
+	if d.Changed {
+		t.Fatalf("forced selection flipped on equal displayed values: %+v", d)
+	}
+	if !strings.Contains(d.Note, "Kept") {
+		t.Fatalf("forced selection note = %q", d.Note)
 	}
 }
 

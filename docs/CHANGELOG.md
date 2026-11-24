@@ -6,13 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## 🏷️ [v5.11.2] — macOS DNS profile fixes
+## 🏷️ [v5.11.3] — Adaptive “Force” check fixes
 
 ### Fixed
-- **Profile generation reliability.** The dashboard and Android `.mobileconfig` generator no longer risk breaking the scanner/parser around the XML declaration in quoted strings.
-- **Android settings search/count.** Adding DNS Profiles updated the Settings hub count and search tests; both are corrected so Android CI passes.
+- **Dashboard Adaptive Force control is a real button.** The “Force” control is now a single clickable button (label inside the control) with clear focus styling and an in-progress state (`Benchmarking…`) while the request runs.
+- **Forced Adaptive ranking uses the freshest probe.** For manual Force runs, selection prefers the latest successful probe result for the decision; the visible switch rule uses the 0.1 ms displayed-granularity comparison (so decisions match what the UI shows). Scheduled Adaptive runs keep the existing median-window behavior for stability.
+- **Decision feedback matches the action.** Force responses include aligned post-benchmark stats and clearer notes/toasts (e.g. switched/kept messages with concrete ms values). The web UI also guards against stale poll/epoch races and surfaces a timeout message when the server takes too long.
 
-No database schema migration is required. The Android companion moves to `android-v5.11.2`, with version code 584.
+### Changed
+- **Android Dashboard:** the Adaptive “Check now” control is merged into a single tappable row, shows an error note when the API call fails, and reports success only after a successful run.
+
+No database schema migration is required. The Android companion moves to `android-v5.11.3`, with version code 585.
 
 ## 🏷️ [v5.11.1] — macOS DNS transport profiles
 

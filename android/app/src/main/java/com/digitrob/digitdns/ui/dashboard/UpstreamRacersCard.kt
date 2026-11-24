@@ -559,8 +559,6 @@ private fun AdaptiveIntervalChips(
                         formatAdaptiveRun(base.adaptiveLastRun),
                         base.adaptiveCurrent.ifBlank { "—" },
                     )
-                    // The server's reason for the last decision, so a run that
-                    // kept the current resolver is not read as a failure.
                     if (base.adaptiveLastNote.isBlank()) head else head + "\n" + base.adaptiveLastNote
                 }
             }
@@ -613,10 +611,12 @@ private fun AdaptiveForceButton(
     onClick: () -> Unit,
 ) {
     val colors = DigitDnsTheme.colors
-    IconButton(
-        onClick = onClick,
-        enabled = enabled && !isRunning,
-        modifier = Modifier.size(32.dp),
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled && !isRunning, role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
     ) {
         if (isRunning) {
             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -628,17 +628,17 @@ private fun AdaptiveForceButton(
                 tint = if (flash) colors.success else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = stringResource(R.string.adaptive_check_now),
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+            color = if (enabled) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+            },
+        )
     }
-    Spacer(Modifier.width(2.dp))
-    Text(
-        text = stringResource(R.string.adaptive_check_now),
-        style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
-        color = if (enabled) {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
-        },
-    )
 }
 
 /* One colour per transport, read from the panel theme instead of a file-level map:
