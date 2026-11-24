@@ -3,7 +3,7 @@
 # Relay agent image. It is deliberately separate from the hub image: the agent
 # has no database, no panel and no DNS server, and its attack surface should not
 # grow because the hub gained a feature.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 WORKDIR /src
 
