@@ -16,7 +16,7 @@ This is a focused follow-up to v5.11.3. It fixes the Adaptive **Force** regressi
 ## Toolchain and container
 
 - **Alpine 3.24.** The hub and agent runtime images move from `alpine:3.20` (end of support 2026-04-01) to `alpine:3.24` (supported to 2028-06).
-- **Go 1.26.11.** CI, the GitHub release binaries and the Docker builder now all use the latest 1.26 patch instead of three different 1.26 patches. The Go 1.27 upgrade is a separate change so a regression is easy to bisect.
+- **Go 1.27.4.** CI, the GitHub release binaries and the Docker builder now all use Go 1.27.4, the current stable line, instead of a mix of older 1.26 patches.
 
 The Android companion moves to **android-v5.11.4**, version code **586**.
 

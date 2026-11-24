@@ -43,7 +43,7 @@ If you have looked at Pi-hole or AdGuard Home, DigitDNS covers the same ground â
 It is a fork of [HyperDNS](https://github.com/IzumiRain/HyperDNS) by HyperRAIN, maintained by [Digitrob](https://github.com/digitrob), free and open source under AGPL-3.0. Use it only on servers and networks you are allowed to operate.
 
 > [!NOTE]
-> **v5.11.4 is out.** The Adaptive **Force** control is one clickable button, a forced run ranks on the latest probe (switching on a visible 0.1 ms gap), and the Android card reports success and failure honestly. The container runtime moves to Alpine 3.24 and the server is built with Go 1.26.11. See the [changelog](docs/CHANGELOG.md) for every release.
+> **v5.11.4 is out.** The Adaptive **Force** control is one clickable button, a forced run ranks on the latest probe (switching on a visible 0.1 ms gap), and the Android card reports success and failure honestly. The container runtime moves to Alpine 3.24 and the server is built with Go 1.27.4. See the [changelog](docs/CHANGELOG.md) for every release.
 
 ## Why people use it
 

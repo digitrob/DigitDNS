@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 - **Supported container runtime.** The hub and agent images move from `alpine:3.20` (end of support 2026-04-01) to `alpine:3.24` (supported to 2028-06).
-- **One Go patch line.** CI, the release binaries and the Docker builder now all use Go **1.26.11**, the latest 1.26 patch, instead of three different 1.26 patches. The Go 1.27 upgrade is a separate change.
+- **Go 1.27.4.** CI, the release binaries and the Docker builder now all use Go **1.27.4** (the current line) instead of a mix of older 1.26 patches.
 
 No database schema migration is required. The Android companion moves to `android-v5.11.4`, with version code 586.
 
