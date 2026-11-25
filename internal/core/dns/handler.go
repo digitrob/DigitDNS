@@ -206,11 +206,23 @@ func NewHandler(
 // inflightQuery is one upstream lookup shared by the queries that arrived while
 // it was running. The leader fills it and closes done; waiters copy the answer.
 type inflightQuery struct {
-	done     chan struct{}
-	resp     *dns.Msg
-	upstream string
-	err      error
+	done        chan struct{}
+	resp        *dns.Msg
+	upstream    string
+	err         error
+	completedAt time.Time
 }
+
+const (
+	// coalesceGrace holds a completed lookup briefly after the upstream answer
+	// lands. The handler writes the answer to the cache only after this function
+	// returns; without the grace, a client that arrives in that window starts a
+	// second upstream query for a name the first client has already resolved.
+	coalesceGrace = 500 * time.Millisecond
+	// coalesceMaxEntries bounds the completed-result map on a resolver seeing
+	// many unique cold names. Completed entries are swept when it is exceeded.
+	coalesceMaxEntries = 4096
+)
 
 // exchangeCoalesced shares one upstream lookup between concurrent identical
 // misses. The key includes the client's EDNS/DO/CD policy because those change
@@ -218,16 +230,24 @@ type inflightQuery struct {
 func (h *Handler) exchangeCoalesced(req *dns.Msg, domain, key string) (*dns.Msg, string, error) {
 	h.inflightMu.Lock()
 	if call, ok := h.inflight[key]; ok {
-		h.inflightMu.Unlock()
-		h.upstreams.RecordCoalesced()
-		<-call.done
-		if call.err != nil {
-			return nil, "", call.err
+		if call.completedAt.IsZero() {
+			h.inflightMu.Unlock()
+			h.upstreams.RecordCoalesced()
+			<-call.done
+			if call.err != nil {
+				return nil, "", call.err
+			}
+			return coalescedCopy(call, req), call.upstream, nil
 		}
-		resp := call.resp.Copy()
-		resp.Id = req.Id
-		resp.Question = req.Question
-		return resp, call.upstream, nil
+		if time.Since(call.completedAt) < coalesceGrace {
+			h.inflightMu.Unlock()
+			h.upstreams.RecordCoalesced()
+			if call.err != nil {
+				return nil, "", call.err
+			}
+			return coalescedCopy(call, req), call.upstream, nil
+		}
+		delete(h.inflight, key)
 	}
 	call := &inflightQuery{done: make(chan struct{})}
 	h.inflight[key] = call
@@ -241,11 +261,35 @@ func (h *Handler) exchangeCoalesced(req *dns.Msg, domain, key string) (*dns.Msg,
 	}
 	call.upstream = upstream
 	call.err = err
-	close(call.done)
+
 	h.inflightMu.Lock()
-	delete(h.inflight, key)
+	call.completedAt = time.Now()
+	close(call.done)
+	if len(h.inflight) > coalesceMaxEntries {
+		h.sweepCoalescedLocked(time.Now())
+	}
 	h.inflightMu.Unlock()
 	return resp, upstream, err
+}
+
+func coalescedCopy(call *inflightQuery, req *dns.Msg) *dns.Msg {
+	if call.resp == nil {
+		return nil
+	}
+	resp := call.resp.Copy()
+	resp.Id = req.Id
+	resp.Question = req.Question
+	return resp
+}
+
+// sweepCoalescedLocked drops completed lookups past their grace window. Caller
+// holds inflightMu.
+func (h *Handler) sweepCoalescedLocked(now time.Time) {
+	for key, call := range h.inflight {
+		if !call.completedAt.IsZero() && now.Sub(call.completedAt) >= coalesceGrace {
+			delete(h.inflight, key)
+		}
+	}
 }
 
 // SetProxyLeakProtection chooses whether proxied names withhold HTTPS/SVCB

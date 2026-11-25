@@ -26,7 +26,11 @@ func TestConcurrentMissesShareOneUpstreamQuery(t *testing.T) {
 	srv := &dns.Server{
 		PacketConn: pc,
 		Handler: dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
-			hits.Add(1)
+			// Sibling prefetch also asks for AAAA/HTTPS; this test is about the
+			// identical A misses sharing one lookup.
+			if len(r.Question) > 0 && r.Question[0].Qtype == dns.TypeA {
+				hits.Add(1)
+			}
 			time.Sleep(200 * time.Millisecond)
 			m := new(dns.Msg)
 			m.SetReply(r)
@@ -82,6 +86,59 @@ func TestConcurrentMissesShareOneUpstreamQuery(t *testing.T) {
 	}
 	if got := pool.Metrics().Coalesced; got == 0 {
 		t.Fatal("coalesced counter stayed at zero")
+	}
+}
+
+// A client that arrives just after the leader's answer lands, but before the
+// handler has written it to the cache, must reuse the completed lookup instead
+// of starting a second upstream query.
+func TestCompletedMissIsReusedWhileCacheWarms(t *testing.T) {
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	var hits atomic.Int64
+	srv := &dns.Server{
+		PacketConn: pc,
+		Handler: dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+			hits.Add(1)
+			m := new(dns.Msg)
+			m.SetReply(r)
+			if len(r.Question) > 0 {
+				if rr, err := dns.NewRR(r.Question[0].Name + " 30 IN A 203.0.113.201"); err == nil {
+					m.Answer = append(m.Answer, rr)
+				}
+			}
+			_ = w.WriteMsg(m)
+		}),
+	}
+	go func() { _ = srv.ActivateAndServe() }()
+	t.Cleanup(func() { _ = srv.Shutdown() })
+
+	c := cache.NewCache(1000, 60, 3600)
+	defer c.Close()
+	pool := upstream.NewUpstreamPool([]string{pc.LocalAddr().String()}, 2*time.Second, false, "")
+	h := NewHandler(&dummyAccess{}, c, matcher.NewMatcher(), pool, nil, "198.51.100.1")
+
+	key := "warm|1|1|false|false|false"
+	first := new(dns.Msg)
+	first.SetQuestion("warm.example.", dns.TypeA)
+	if _, _, err := h.exchangeCoalesced(first, "warm.example", key); err != nil {
+		t.Fatalf("leader: %v", err)
+	}
+
+	second := new(dns.Msg)
+	second.SetQuestion("warm.example.", dns.TypeA)
+	second.Id = 4242
+	resp, _, err := h.exchangeCoalesced(second, "warm.example", key)
+	if err != nil {
+		t.Fatalf("follower: %v", err)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1 while the cache is still warming", got)
+	}
+	if resp == nil || resp.Id != 4242 {
+		t.Fatalf("follower response id = %v, want its own id", resp)
 	}
 }
 
