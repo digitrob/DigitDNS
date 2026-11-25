@@ -123,9 +123,10 @@ func (ws *WebServer) writeResolutionRanked(w http.ResponseWriter, withStats, fre
 	})
 }
 
-// handleResolutionAdaptiveRun forces one Adaptive cycle now instead of waiting
-// for the interval. The benchmark is synchronous so the response carries the
-// resolver the server actually switched to.
+// handleResolutionAdaptiveRun switches to the fastest measured resolver now
+// instead of waiting for the interval. It selects from the latest measurements
+// immediately, so the response carries the resolver the server actually switched
+// to without waiting for a scheduled benchmark.
 func (ws *WebServer) handleResolutionAdaptiveRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httpx.WriteMethodNotAllowed(w, "POST")

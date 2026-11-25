@@ -43,7 +43,7 @@ If you have looked at Pi-hole or AdGuard Home, DigitDNS covers the same ground â
 It is a fork of [HyperDNS](https://github.com/IzumiRain/HyperDNS) by HyperRAIN, maintained by [Digitrob](https://github.com/digitrob), free and open source under AGPL-3.0. Use it only on servers and networks you are allowed to operate.
 
 > [!NOTE]
-> **v5.11.4 is out.** The Adaptive **Force** control is one clickable button, a forced run ranks on the latest probe (switching on a visible 0.1 ms gap), and the Android card reports success and failure honestly. The container runtime moves to Alpine 3.24 and the server is built with Go 1.27.4. See the [changelog](docs/CHANGELOG.md) for every release.
+> **v5.11.5 is out.** DNS failover is much faster: each resolver gets its own turn, a slow or silent choice is hedged after 100 ms, a failed resolver is demoted immediately, and **Force** switches from the latest measurements instead of waiting for a benchmark. Encrypted upstream connections are kept warm, and bootstrap DNS can resolve their hostnames without a self-loop. See the [changelog](docs/CHANGELOG.md) for every release.
 
 ## Why people use it
 
@@ -115,7 +115,8 @@ Every client-facing transport lives in one place, with a port, endpoint, live li
 ### Upstream resolvers
 
 - **All the transports:** plain UDP/TCP, DoT, DoH, DoH3, DoQ and DNSCrypt upstreams, benchmarked from your server.
-- **Adaptive (fastest) is the default strategy.** The pool is benchmarked on a 5 min / 15 min / 1 h / 6 h / 24 h schedule, the fastest healthy resolver is selected with 12% hysteresis, and the choice and last run are persisted. **Force** runs a check immediately, ranks on the latest probe, and switches when the visibly fastest resolver is lower by the displayed 0.1 ms.
+- **Adaptive (fastest) is the default strategy.** The pool is benchmarked on a 5 min / 15 min / 1 h / 6 h / 24 h schedule, the fastest healthy resolver is selected with 12% hysteresis, and the choice and last run are persisted. Each resolver gets its own turn in the fallback walk, and the chosen resolver is hedged after 100 ms if it has not answered; a resolver that failed or lost the hedge is moved behind the healthy ones. **Force** switches immediately from the latest measurements, ranking on the latest probe and switching when the visibly fastest resolver is lower by the displayed 0.1 ms.
+- **Warm encrypted connections.** Active DoH/DoT/DoQ/DoH3 connections are refreshed every 20 s, so the first lookup after a quiet period does not pay a new handshake. `dns.bootstrap_dns` resolves encrypted upstream hostnames without relying on the system resolver (and without a self-loop).
 - **Other strategies:** In Order, Hedged (next resolver after 50 ms) and Best Known. **Single Server** pins one resolver and bypasses the pool.
 - **Transport chips are real filters.** Plain, DoT, DoH, DoH3, DoQ and DNSCrypt can be enabled together; the pool only uses the selected protocols.
 - **Provider presets.** Search a curated top-ten list of public DNS providers, grouped by provider with bundled logos and every supported transport, or type a custom address.
@@ -160,7 +161,7 @@ The optional 90-day aggregate store answers "what did this server see last week?
 
 ### The Android app
 
-The Android app is a native companion with the same control surface as the panel, plus the subscriber client area. It has its own version line (`android-v5.11.4`) and is side-loaded; it is not on Play.
+The Android app is a native companion with the same control surface as the panel, plus the subscriber client area. It has its own version line (`android-v5.11.5`) and is side-loaded; it is not on Play.
 
 - **Admin parity:** dashboard, Domains and wildcards, Users and quotas, Live Log, System Log, Egress Options, upstream resolvers and policies, encrypted transports, DNSSEC, proxy leak protection, IPv6, traffic history, ad blocking, relay agents, diagnostics, certificates, settings and server switching.
 - **Client area:** account status, IP registration, traffic and expiry, every DNS endpoint, the setup guide for your device and saved subscriptions.
@@ -236,7 +237,7 @@ The subscriber portal is a private link with the account status, every DNS endpo
 You need a Linux server (1 vCPU / 1 GB is enough for personal use), root access, and one hostname whose **A record points at the server**. The panel is HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.4/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.5/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a random panel port/path, then prints the login URL. Open it, sign in, and point a device at the server's IP on port 53 (UDP and TCP).
@@ -285,7 +286,7 @@ An agent needs a public IPv4, inbound TCP **80/443**, outbound HTTPS to the hub,
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.4/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.5/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -382,7 +383,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as `checksum
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.11.4/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.11.5/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```

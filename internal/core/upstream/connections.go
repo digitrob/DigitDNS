@@ -176,7 +176,15 @@ func (p *UpstreamPool) doqConnection(ctx context.Context, endpoint string, tlsCo
 	}
 	p.doqMu.Unlock()
 
-	conn, err := quic.DialAddr(ctx, endpoint, tlsConf, &quic.Config{
+	dialEndpoint := endpoint
+	if p.resolver != nil {
+		resolved, err := resolveEndpoint(ctx, p.resolver, endpoint)
+		if err != nil {
+			return nil, err
+		}
+		dialEndpoint = resolved
+	}
+	conn, err := quic.DialAddr(ctx, dialEndpoint, tlsConf, &quic.Config{
 		HandshakeIdleTimeout: p.timeout,
 		MaxIdleTimeout:       doqIdleTimeout,
 	})

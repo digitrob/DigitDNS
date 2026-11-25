@@ -88,6 +88,7 @@ type fileConfig struct {
 		DoQTokenDomain *string   `json:"doq_token_domain"`
 		DoH3Enabled    *bool     `json:"doh3_enabled"`
 		Upstreams      *[]string `json:"upstreams"`
+		BootstrapDNS   *[]string `json:"bootstrap_dns"`
 		CacheSize      *int      `json:"cache_size"`
 		CacheMinTTL    *uint32   `json:"cache_min_ttl"`
 		CacheMaxTTL    *uint32   `json:"cache_max_ttl"`
@@ -197,6 +198,9 @@ func applyConfigFile(path string, server *database.ServerSettings, dns *database
 		}
 		if d.Upstreams != nil {
 			dns.Upstreams = *d.Upstreams
+		}
+		if d.BootstrapDNS != nil {
+			dns.BootstrapDNS = *d.BootstrapDNS
 		}
 		if d.CacheSize != nil {
 			dns.CacheSize = *d.CacheSize

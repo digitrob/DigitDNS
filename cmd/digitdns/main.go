@@ -465,7 +465,13 @@ func main() {
 		log.Printf("[Main] Cache serve-stale: disabled (prefetch still active)")
 	}
 	m := matcher.NewMatcher()
-	u := upstream.NewUpstreamPool(dnsSettings.Upstreams, dnsSettings.QueryTimeout, dnsSettings.FastestRacing, dnsSettings.ECSClientIP)
+	u := upstream.NewUpstreamPoolWithBootstrap(dnsSettings.Upstreams, dnsSettings.QueryTimeout, dnsSettings.FastestRacing, dnsSettings.ECSClientIP, dnsSettings.BootstrapDNS)
+	if len(dnsSettings.BootstrapDNS) > 0 {
+		log.Printf("[Upstream] Bootstrap DNS: %s", strings.Join(dnsSettings.BootstrapDNS, ", "))
+	}
+	keepCtx, keepCancel := context.WithCancel(context.Background())
+	defer keepCancel()
+	u.StartKeepWarm(keepCtx)
 	u.SetPolicy(upstream.Policy{
 		Transport:       dnsSettings.EffectiveTransport(),
 		Transports:      dnsSettings.Transports,

@@ -89,9 +89,9 @@ func (b *BenchmarkRunner) Running() bool {
 }
 
 // Wait blocks until the in-flight run finishes or timeout elapses, and reports
-// whether the gate is free. A Force click during a scheduled or manual benchmark
-// uses this to wait for the measurements that run is already taking instead of
-// answering "a benchmark is already in progress" and doing nothing.
+// whether the gate is free. It remains available to callers that need the
+// measurements a run is already taking; the Force path no longer waits and
+// selects from the latest measurements immediately.
 func (b *BenchmarkRunner) Wait(timeout time.Duration) bool {
 	if b == nil {
 		return true

@@ -161,7 +161,7 @@ type testResolver struct {
 
 // newTestResolver starts a resolver on a port shared by UDP and TCP. tcpReply may
 // be nil, in which case TCP answers like UDP.
-func newTestResolver(t *testing.T, udpReply, tcpReply func(string) answer) *testResolver {
+func newTestResolver(t testing.TB, udpReply, tcpReply func(string) answer) *testResolver {
 	t.Helper()
 	if udpReply == nil {
 		udpReply = always(answer{rcode: dns.RcodeSuccess, ip: "127.0.0.1"})
@@ -279,7 +279,7 @@ func (r *testResolver) subnet() *dns.EDNS0_SUBNET {
 // here to outwait a probe NewUpstreamPool fired from a bare goroutine; the
 // constructor no longer does network I/O, so there is nothing to wait for and a
 // test that reads these stats is no longer racing anything.
-func newTestPool(t *testing.T, addrs []string, timeout time.Duration, racing bool, ecsIP string) *UpstreamPool {
+func newTestPool(t testing.TB, addrs []string, timeout time.Duration, racing bool, ecsIP string) *UpstreamPool {
 	t.Helper()
 	return NewUpstreamPool(addrs, timeout, racing, ecsIP)
 }

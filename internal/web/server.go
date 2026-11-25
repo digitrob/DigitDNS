@@ -133,7 +133,11 @@ type WebServer struct {
 	adaptiveMu     sync.Mutex
 	adaptiveCancel context.CancelFunc
 	adaptiveWake   chan struct{}
-	sseTickets     *sseTicketStore
+	// adaptiveForcedAt is the last Force click. A scheduled benchmark that was
+	// already running when it landed must not persist a choice that overwrites
+	// the operator's immediate one.
+	adaptiveForcedAt atomic.Int64
+	sseTickets       *sseTicketStore
 	// statsCache shares one encoded /api/stats document between every open
 	// dashboard for a second. The payload is identical for all of them, and the
 	// dashboard polls it every couple of seconds.
@@ -435,10 +439,6 @@ const (
 	// retried. Without it the next due check would be immediate (lastRun did not
 	// advance) and the scheduler would spin against a manual benchmark.
 	adaptiveBusyRetry = 5 * time.Second
-	// adaptiveBenchmarkWait bounds how long a Force click waits for an in-flight
-	// benchmark. A full pool probe is one warm-up plus three samples per resolver,
-	// all in parallel, so 30s is generous even with a slow DoH URL in the pool.
-	adaptiveBenchmarkWait = 30 * time.Second
 	// adaptiveIdleCheck is the slow tick used when the strategy is not Adaptive.
 	// It keeps a strategy switch noticed even if the settings save that made it
 	// never reached nudgeAdaptive.
@@ -560,22 +560,29 @@ func (ws *WebServer) runAdaptiveNow(force bool) (upstream.AdaptiveDecision, erro
 	current := cfg.AdaptiveCurrent
 	ws.dnsMu.Unlock()
 
-	// Share the daemon's benchmark gate: a manual run, a scheduled run and the
-	// forced check must never probe the same pool at the same time. A Force click
-	// during a manual or scheduled benchmark used to return 409 and do nothing;
-	// wait for the measurements that run is already taking instead. Only the
-	// forced path waits — the scheduler keeps its short retry so it cannot tie up
-	// a goroutine behind an operator's benchmark.
-	if ws.benchmark != nil {
-		if !ws.benchmark.Run() {
-			if !force || !ws.benchmark.Wait(adaptiveBenchmarkWait) {
+	// A Force click is the operator asking for the switch now, so it never waits
+	// for an in-flight scheduled benchmark and never starts a full three-sample
+	// probe. It selects from the latest measurements immediately. A pool that has
+	// never been measured at all takes one quick pass first, because there is
+	// nothing to select from otherwise.
+	//
+	// The scheduled path keeps the shared benchmark gate: a manual run and the
+	// scheduler must not probe the same pool at the same time.
+	var benchmarkStarted time.Time
+	if force {
+		if !ws.upstreams.HasMeasured() {
+			ws.upstreams.QuickProbeAll()
+		}
+		ws.adaptiveForcedAt.Store(time.Now().UnixNano())
+	} else {
+		benchmarkStarted = time.Now()
+		if ws.benchmark != nil {
+			if !ws.benchmark.Run() {
 				return upstream.AdaptiveDecision{}, errAdaptiveBusy
 			}
-			// The run we waited for measured the pool; select from its results
-			// rather than probing every resolver a second time.
+		} else {
+			ws.upstreams.BenchmarkAll()
 		}
-	} else {
-		ws.upstreams.BenchmarkAll()
 	}
 
 	ws.dnsMu.Lock()
@@ -587,6 +594,13 @@ func (ws *WebServer) runAdaptiveNow(force bool) (upstream.AdaptiveDecision, erro
 	// A save during the benchmark may have changed the persisted choice.
 	current = cfg.AdaptiveCurrent
 	ws.dnsMu.Unlock()
+
+	// A Force click that landed while this scheduled benchmark was running has
+	// already persisted its immediate choice. Do not overwrite it with a selection
+	// made from the same run a few seconds later; the next due run re-evaluates.
+	if !force && ws.adaptiveForcedAt.Load() > benchmarkStarted.UnixNano() {
+		return upstream.AdaptiveDecision{Current: current, Note: "a forced check superseded this run"}, nil
+	}
 
 	var decision upstream.AdaptiveDecision
 	if force {

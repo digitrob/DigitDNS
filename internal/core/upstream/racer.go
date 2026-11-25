@@ -24,13 +24,19 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 )
 
 type UpstreamPool struct {
-	mu          sync.RWMutex
-	upstreams   []string
-	timeout     time.Duration
+	mu        sync.RWMutex
+	upstreams []string
+	timeout   time.Duration
+	// bootstrap are the plain DNS servers used only to resolve encrypted
+	// upstream hostnames; resolver is the net.Resolver built from them. Both are
+	// immutable after construction.
+	bootstrap   []string
+	resolver    *net.Resolver
 	udpClient   *dns.Client
 	tcpClient   *dns.Client
 	tlsClient   *dns.Client
@@ -90,6 +96,15 @@ type latencyOrder struct {
 	built   time.Time
 	forList []string
 	order   []string
+}
+
+// orderMetric is what the query path ranks a resolver by: the latency the card
+// shows and whether the resolver just failed. A resolver in probation is moved
+// behind every healthy one, so a single timeout does not cost the next query the
+// same wait again.
+type orderMetric struct {
+	latency   time.Duration
+	probation bool
 }
 
 // poolSnapshot is the read-only query-path state. Every field is immutable once
@@ -400,9 +415,15 @@ type upstreamStatInternal struct {
 	// consecutiveFailures counts transport failures only. A REFUSED or SERVFAIL
 	// proves the resolver is reachable; it must not trip the breaker.
 	consecutiveFailures uint32
-	lastError           string
-	lastErrorAt         time.Time
-	lastUpdated         time.Time
+	// hedgeLosses counts Adaptive hedges where another resolver answered first
+	// and this one was cancelled before it could. It is a soft demotion signal:
+	// the resolver is moved behind healthy ones and excluded from selection until
+	// it answers again, but it does not open the circuit.
+	hedgeLosses     uint32
+	lastHedgeLossAt time.Time
+	lastError       string
+	lastErrorAt     time.Time
+	lastUpdated     time.Time
 	// openUntil is UnixNano, or 0 while the circuit is closed. Atomic so the
 	// query path can skip an open resolver without taking the per-stat mutex.
 	openUntil atomic.Int64
@@ -661,20 +682,82 @@ func parseECSClientIP(raw string) net.IP {
 }
 
 func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecsIP string) *UpstreamPool {
+	return NewUpstreamPoolWithBootstrap(upstreams, timeout, racing, ecsIP, nil)
+}
+
+// NewUpstreamPoolWithBootstrap is NewUpstreamPool plus the servers used to
+// resolve encrypted upstream hostnames. Without it the DoH/DoT/DoQ dialers use
+// the system resolver, which on a box that points at itself is a loop. The
+// bootstrap list is plain DNS (for example 1.1.1.1:53) and is not used for
+// client queries.
+func NewUpstreamPoolWithBootstrap(upstreams []string, timeout time.Duration, racing bool, ecsIP string, bootstrap []string) *UpstreamPool {
 	if timeout <= 0 {
 		timeout = 2500 * time.Millisecond
 	}
 
 	normalized := normalizeUpstreams(upstreams)
+	normalizedBootstrap := normalizeUpstreams(bootstrap)
+	var resolver *net.Resolver
+	if len(normalizedBootstrap) > 0 {
+		resolver = newBootstrapResolver(normalizedBootstrap)
+	}
 
 	// TLS 1.3 resumption saves a round trip even when a connection has to be
 	// re-established. The cache is shared by DoT, DoH and DoQ because the key is
 	// the server name, not the transport.
 	sessionCache := tls.NewLRUClientSessionCache(128)
 
+	// DoT verifies the upstream's certificate like any other TLS client; there
+	// is deliberately no InsecureSkipVerify escape hatch. The host is taken
+	// from the address by miekg/dns when TLSConfig.ServerName is empty.
+	dotClient := &dns.Client{
+		Net:     "tcp-tls",
+		Timeout: timeout,
+		TLSConfig: &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			ClientSessionCache: sessionCache,
+		},
+	}
+	if resolver != nil {
+		dotClient.Dialer = &net.Dialer{Timeout: timeout, Resolver: resolver}
+	}
+
+	// DoH posts a binary DNS message over HTTPS. Proxy is nil because an
+	// upstream resolver is not a web fetch: honouring HTTP_PROXY here would
+	// route every query through the operator's environment by accident, the
+	// same reason the updater ignores it.
+	dohTransport := &http.Transport{
+		Proxy:               nil,
+		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12, ClientSessionCache: sessionCache},
+		ForceAttemptHTTP2:   true,
+		MaxIdleConns:        32,
+		MaxIdleConnsPerHost: 8,
+		MaxConnsPerHost:     16,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  true,
+	}
+	if resolver != nil {
+		dohTransport.DialContext = (&net.Dialer{Timeout: timeout, Resolver: resolver}).DialContext
+	}
+
+	// DoH3 posts the same RFC 8484 body over HTTP/3. The http3.Transport
+	// negotiates the "h3" ALPN itself and verifies the certificate like the
+	// HTTP/2 client above; there is no skip-verify escape hatch here either.
+	h3Transport := &http3.Transport{
+		TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12, ClientSessionCache: sessionCache},
+		DisableCompression: true,
+	}
+	if resolver != nil {
+		h3Transport.Dial = func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+			return dialQUICWithResolver(ctx, resolver, addr, tlsCfg, cfg)
+		}
+	}
+
 	pool := &UpstreamPool{
 		upstreams:   normalized,
 		timeout:     timeout,
+		bootstrap:   normalizedBootstrap,
+		resolver:    resolver,
 		racing:      racing,
 		ecsClientIP: parseECSClientIP(ecsIP),
 		stats:       make(map[string]*upstreamStatInternal),
@@ -688,44 +771,9 @@ func NewUpstreamPool(upstreams []string, timeout time.Duration, racing bool, ecs
 			Net:     "tcp",
 			Timeout: timeout,
 		},
-		// DoT verifies the upstream's certificate like any other TLS client; there
-		// is deliberately no InsecureSkipVerify escape hatch. The host is taken
-		// from the address by miekg/dns when TLSConfig.ServerName is empty.
-		tlsClient: &dns.Client{
-			Net:     "tcp-tls",
-			Timeout: timeout,
-			TLSConfig: &tls.Config{
-				MinVersion:         tls.VersionTLS12,
-				ClientSessionCache: sessionCache,
-			},
-		},
-		// DoH posts a binary DNS message over HTTPS. Proxy is nil because an
-		// upstream resolver is not a web fetch: honouring HTTP_PROXY here would
-		// route every query through the operator's environment by accident, the
-		// same reason the updater ignores it.
-		httpClient: &http.Client{
-			Timeout: timeout,
-			Transport: &http.Transport{
-				Proxy:               nil,
-				TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12, ClientSessionCache: sessionCache},
-				ForceAttemptHTTP2:   true,
-				MaxIdleConns:        32,
-				MaxIdleConnsPerHost: 8,
-				MaxConnsPerHost:     16,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  true,
-			},
-		},
-		// DoH3 posts the same RFC 8484 body over HTTP/3. The http3.Transport
-		// negotiates the "h3" ALPN itself and verifies the certificate like the
-		// HTTP/2 client above; there is no skip-verify escape hatch here either.
-		h3Client: &http.Client{
-			Timeout: timeout,
-			Transport: &http3.Transport{
-				TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12, ClientSessionCache: sessionCache},
-				DisableCompression: true,
-			},
-		},
+		tlsClient:  dotClient,
+		httpClient: &http.Client{Timeout: timeout, Transport: dohTransport},
+		h3Client:   &http.Client{Timeout: timeout, Transport: h3Transport},
 		// DoQ reuses one QUIC connection per endpoint and opens a stream per query.
 		// NextProtos carries the RFC 9250 "doq" ALPN token; ServerName is filled in
 		// per dial from the upstream.
@@ -802,6 +850,14 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 				p.openCircuits.Add(-1)
 				log.Printf("[Upstream] Circuit closed for %s after a successful benchmark probe", addr)
 			}
+			// A successful probe proves the resolver is reachable, so it should
+			// not stay demoted behind healthy resolvers after one bad query or
+			// one lost hedge.
+			if stat.consecutiveFailures > 0 || stat.hedgeLosses > 0 {
+				stat.consecutiveFailures = 0
+				stat.hedgeLosses = 0
+				p.orderView.Store(nil)
+			}
 			break
 		}
 		stat.hits++
@@ -809,7 +865,14 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 		stat.observeLatency(rtt)
 		stat.observeRecent(false)
 		stat.lastMeasured = now
+		hadFailures := stat.consecutiveFailures > 0 || stat.hedgeLosses > 0
 		stat.consecutiveFailures = 0
+		stat.hedgeLosses = 0
+		if hadFailures {
+			// It is healthy again; let the query path rank it normally instead
+			// of keeping it behind the pool for the rest of the cached order.
+			p.orderView.Store(nil)
+		}
 		if stat.openUntil.Swap(0) != 0 {
 			p.openCircuits.Add(-1)
 			log.Printf("[Upstream] Circuit closed for %s after a successful probe", addr)
@@ -827,7 +890,12 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 		// Reachable, so it counts as a good outcome for the health dot even
 		// though the rcode is not a usable answer.
 		stat.observeRecent(false)
+		hadFailures := stat.consecutiveFailures > 0 || stat.hedgeLosses > 0
 		stat.consecutiveFailures = 0
+		stat.hedgeLosses = 0
+		if hadFailures {
+			p.orderView.Store(nil)
+		}
 		if stat.openUntil.Swap(0) != 0 {
 			p.openCircuits.Add(-1)
 			log.Printf("[Upstream] Circuit closed for %s after a policy response", addr)
@@ -846,6 +914,9 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 		stat.transportErrors++
 		stat.observeRecent(true)
 		stat.consecutiveFailures++
+		// Drop the cached latency order so the next query starts with a healthy
+		// resolver instead of the one that just timed out.
+		p.orderView.Store(nil)
 		stat.lastError = reason
 		stat.lastErrorAt = now
 		if stat.consecutiveFailures >= circuitFailureThreshold {
@@ -951,12 +1022,65 @@ func (p *UpstreamPool) BenchmarkAll() {
 // made fresh benchmarks look much slower than the same resolver on a re-run.
 const benchmarkSamples = 3
 
+// quickProbeTimeout bounds the one-sample probe used when a Force click has no
+// measurements at all. It is deliberately shorter than the live query timeout:
+// the click exists to switch immediately, so one hanging resolver must not turn
+// the first click into another two-second wait.
+const quickProbeTimeout = 700 * time.Millisecond
+
 // BenchmarkUpstream probes one resolver through the same per-scheme path a live
 // query takes. It is used after an add so a newly configured resolver has a
 // latency on the next stats poll instead of staying "not measured" until the
 // next manual/startup benchmark.
 func (p *UpstreamPool) BenchmarkUpstream(addr string) {
+	p.benchmarkUpstream(addr, benchmarkSamples)
+}
+
+// QuickProbeAll takes one measurement per resolver in parallel. The Force path
+// uses it only when the pool has never been measured; when measurements exist,
+// Force selects from them immediately without probing.
+func (p *UpstreamPool) QuickProbeAll() {
 	if p == nil {
+		return
+	}
+	p.mu.RLock()
+	servers := make([]string, len(p.upstreams))
+	copy(servers, p.upstreams)
+	p.mu.RUnlock()
+
+	var wg sync.WaitGroup
+	for _, s := range servers {
+		wg.Add(1)
+		go func(addr string) {
+			defer wg.Done()
+			p.benchmarkUpstream(addr, 1)
+		}(s)
+	}
+	wg.Wait()
+}
+
+// HasMeasured reports whether any resolver has a live sample or a successful
+// probe. The Force path uses it to decide between an instant selection from the
+// existing stats and the one quick probe a brand-new pool needs.
+func (p *UpstreamPool) HasMeasured() bool {
+	if p == nil {
+		return false
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, st := range p.stats {
+		st.mu.Lock()
+		measured := st.samples > 0 || (st.lastProbeOK && st.lastProbeLatency > 0) || st.probeCount > 0
+		st.mu.Unlock()
+		if measured {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *UpstreamPool) benchmarkUpstream(addr string, sampleCount int) {
+	if p == nil || sampleCount <= 0 {
 		return
 	}
 	defer safego.Recover("upstream.benchmark")
@@ -974,24 +1098,31 @@ func (p *UpstreamPool) BenchmarkUpstream(addr string) {
 		// stat for it would resurrect a resolver that is no longer configured.
 		return
 	}
+	if sampleCount <= 1 && timeout > quickProbeTimeout {
+		timeout = quickProbeTimeout
+	}
 
 	m := new(dns.Msg)
 	m.SetQuestion("cloudflare.com.", dns.TypeA)
 
-	// Warm-up. Its result is deliberately not recorded; it only establishes the
-	// connection/caches that the measured probes should reuse.
-	p.benchmarkQuery(canonical, m, timeout)
+	if sampleCount > 1 {
+		// Warm-up. Its result is deliberately not recorded; it only establishes
+		// the connection/caches that the measured probes should reuse. A quick
+		// one-sample probe skips it so a cold handshake is measured as the real
+		// first-query cost instead of doubling the click's wait.
+		p.benchmarkQuery(canonical, m, timeout)
+	}
 
-	samples := make([]time.Duration, 0, benchmarkSamples)
+	okSamples := make([]time.Duration, 0, sampleCount)
 	failures := 0
 	failureRTT := time.Duration(0)
 	failureOutcome := statTransportError
 	failureReason := "benchmark produced no usable answer"
 
-	for range benchmarkSamples {
+	for range sampleCount {
 		rtt, outcome, reason := p.benchmarkQuery(canonical, m, timeout)
 		if outcome == statSuccess {
-			samples = append(samples, rtt)
+			okSamples = append(okSamples, rtt)
 		} else {
 			failures++
 			failureRTT, failureOutcome, failureReason = rtt, outcome, reason
@@ -1000,8 +1131,13 @@ func (p *UpstreamPool) BenchmarkUpstream(addr string) {
 
 	// Require a majority of the measured probes to answer. A single lucky packet
 	// must not hide a resolver that failed two of three attempts, and the last
-	// attempt being the lucky one must not turn the whole benchmark green.
-	if len(samples) < 2 {
+	// attempt being the lucky one must not turn the whole benchmark green. A
+	// one-sample quick probe accepts its one answer.
+	minSuccess := 2
+	if sampleCount < 2 {
+		minSuccess = 1
+	}
+	if len(okSamples) < minSuccess {
 		p.recordStat(canonical, failureRTT, failureOutcome, failureReason, true)
 		return
 	}
@@ -1010,7 +1146,7 @@ func (p *UpstreamPool) BenchmarkUpstream(addr string) {
 		// majority answer decides the probe verdict and latency.
 		p.recordStat(canonical, failureRTT, failureOutcome, failureReason, true)
 	}
-	p.recordStat(canonical, medianDuration(samples), statSuccess, "", true)
+	p.recordStat(canonical, medianDuration(okSamples), statSuccess, "", true)
 }
 
 // benchmarkQuery sends one probe through the same per-scheme path a live query
@@ -1319,18 +1455,30 @@ func (p *UpstreamPool) exchangeWith(req *dns.Msg, upstreams []string, strategy, 
 // per-query trade-off, not another setting to tune on every install.
 const hedgeStartDelay = 50 * time.Millisecond
 
+// adaptiveHedgeDelay is how long the Adaptive choice gets before the next
+// healthy resolver is asked in parallel. It is deliberately longer than the
+// Hedged strategy's 50 ms: the Adaptive choice is the measured fastest, so a
+// small head start usually lets it win without a second upstream query.
+const adaptiveHedgeDelay = 100 * time.Millisecond
+
+// sequentialAttemptTimeout bounds one resolver's turn in the fallback walk.
+// The whole walk still has the caller's budget; this only stops the first slow
+// resolver from consuming all of it. The last resolver gets whatever remains,
+// so a pool with one slow-but-working server can still use the full budget.
+const sequentialAttemptTimeout = 800 * time.Millisecond
+
 // orderLatencies returns only the number the resolver card would show for each
 // upstream. The old rebuild called GetUpstreamStats(), which also copied every
 // health counter, formatted timestamps, built a dashboard-sized slice and sorted
 // it — all on whichever cache miss crossed the once-a-second rebuild tick. The
 // ranking needs just this one value, so it no longer pays for the whole snapshot.
 // The switch mirrors the latency switch in GetUpstreamStats; keep both together.
-func (p *UpstreamPool) orderLatencies() map[string]time.Duration {
+func (p *UpstreamPool) orderLatencies() map[string]orderMetric {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
 	adaptive := resolution.NormalizeStrategy(p.policy.DefaultStrategy) == resolution.StrategyAdaptive
-	out := make(map[string]time.Duration, len(p.stats))
+	out := make(map[string]orderMetric, len(p.stats))
 	for addr, st := range p.stats {
 		st.mu.Lock()
 		p50, _, _ := st.latencyPercentiles()
@@ -1346,7 +1494,13 @@ func (p *UpstreamPool) orderLatencies() map[string]time.Duration {
 		case st.samples > 0:
 			latency = p50
 		}
-		out[addr] = latency
+		out[addr] = orderMetric{
+			latency: latency,
+			// Chiefly transport failures. A REFUSED/SERVFAIL is an answer and
+			// does not set this counter; the query path still falls through to
+			// the next resolver for it, but the resolver is not demoted.
+			probation: st.consecutiveFailures > 0 || st.hedgeLosses > 0 || st.openUntil.Load() != 0,
+		}
 		st.mu.Unlock()
 	}
 	return out
@@ -1379,15 +1533,24 @@ func (p *UpstreamPool) orderedByLatency(upstreams []string) []string {
 	out := slices.Clone(upstreams)
 	slices.SortStableFunc(out, func(a, b string) int {
 		la, lb := latency[a], latency[b]
+		// A resolver that just failed goes behind every healthy one, even if its
+		// last good latency was the lowest. It returns to its place when a query
+		// succeeds and resets consecutiveFailures.
+		if la.probation != lb.probation {
+			if la.probation {
+				return 1
+			}
+			return -1
+		}
 		switch {
-		case la == 0 && lb == 0:
+		case la.latency == 0 && lb.latency == 0:
 			return 0
-		case la == 0:
+		case la.latency == 0:
 			return 1
-		case lb == 0:
+		case lb.latency == 0:
 			return -1
 		default:
-			return cmp.Compare(la, lb)
+			return cmp.Compare(la.latency, lb.latency)
 		}
 	})
 	p.orderView.Store(&latencyOrder{built: time.Now(), forList: slices.Clone(upstreams), order: out})
@@ -1438,8 +1601,11 @@ type AdaptiveDecision struct {
 // Best Known and starts with the fastest measured resolver.
 func (p *UpstreamPool) exchangeAdaptive(req *dns.Msg, upstreams []string, current string, timeout time.Duration) (*dns.Msg, time.Duration, string, error) {
 	order := p.orderedByLatency(upstreams)
-	if current == "" {
-		return p.exchangeSequential(req, order, timeout)
+	if current == "" || p.resolverProbation(current) {
+		// No choice yet, or the persisted choice just failed. Start from the
+		// healthy order; a hanging first resolver is hedged after the short
+		// Adaptive head start instead of making the client wait for its turn.
+		return p.exchangeHedgedOrder(req, order, adaptiveHedgeDelay, timeout, true)
 	}
 	out := make([]string, 0, len(order))
 	found := false
@@ -1450,7 +1616,7 @@ func (p *UpstreamPool) exchangeAdaptive(req *dns.Msg, upstreams []string, curren
 		}
 	}
 	if !found {
-		return p.exchangeSequential(req, order, timeout)
+		return p.exchangeHedgedOrder(req, order, adaptiveHedgeDelay, timeout, true)
 	}
 	out = append(out, current)
 	for _, u := range order {
@@ -1458,7 +1624,10 @@ func (p *UpstreamPool) exchangeAdaptive(req *dns.Msg, upstreams []string, curren
 			out = append(out, u)
 		}
 	}
-	return p.exchangeSequential(req, out, timeout)
+	// The measured choice goes first; if it has not answered within the head
+	// start, the next healthy resolver is asked in parallel. The first usable
+	// answer wins and the loser is cancelled.
+	return p.exchangeHedgedOrder(req, out, adaptiveHedgeDelay, timeout, true)
 }
 
 // SelectAdaptiveFastest runs the selection half of an Adaptive interval: read
@@ -1514,11 +1683,15 @@ func (p *UpstreamPool) selectAdaptiveFastest(current string, minImprovement floa
 		} else {
 			latency = adaptiveLatency(s)
 		}
+		// Selection must agree with the query path: a resolver in probation
+		// (recent timeout or lost hedge) is not a candidate even if its probe
+		// latency still looks good.
+		healthy := adaptiveHealthy(s) && !p.resolverProbation(s.Address)
 		if s.Address == current {
 			currentLat = latency
-			currentHealth = adaptiveHealthy(s)
+			currentHealth = healthy
 		}
-		if !adaptiveHealthy(s) {
+		if !healthy {
 			continue
 		}
 		if bestAddr == "" || latency < bestLatency {
@@ -1591,6 +1764,44 @@ func adaptiveLatencyFresh(s UpstreamStat) time.Duration {
 	return adaptiveLatency(s)
 }
 
+// resolverProbation reports whether a resolver failed its most recent transport
+// attempt and should be tried behind the healthy ones. A success resets the
+// counter, so the demotion lasts only until the resolver answers again.
+func (p *UpstreamPool) resolverProbation(addr string) bool {
+	if p == nil || addr == "" {
+		return false
+	}
+	p.mu.RLock()
+	st := p.stats[addr]
+	p.mu.RUnlock()
+	if st == nil {
+		return false
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.consecutiveFailures > 0 || st.hedgeLosses > 0 || st.openUntil.Load() != 0
+}
+
+// recordHedgeLoss marks a resolver that was cancelled because another resolver
+// answered first. It is a soft demotion: the resolver goes behind the healthy
+// ones and is not selected by a Force click until it answers again.
+func (p *UpstreamPool) recordHedgeLoss(addr string) {
+	if p == nil || addr == "" {
+		return
+	}
+	p.mu.RLock()
+	st := p.stats[addr]
+	p.mu.RUnlock()
+	if st == nil {
+		return
+	}
+	st.mu.Lock()
+	st.hedgeLosses++
+	st.lastHedgeLossAt = time.Now()
+	st.mu.Unlock()
+	p.orderView.Store(nil)
+}
+
 // adaptiveHealthy applies the same health rules the dashboard uses, minus the
 // "never probed" false positive: a resolver that has been successfully probed
 // (the Force button's benchmark, or a scheduled Adaptive run) is eligible even
@@ -1605,6 +1816,12 @@ func adaptiveHealthy(s UpstreamStat) bool {
 		return false
 	}
 	if s.CircuitOpen || s.CircuitState == "open" || s.CircuitState == "half-open" {
+		return false
+	}
+	// A resolver that just failed a live query is in probation on the query
+	// path; selection must agree, or a Force click can switch back to the
+	// resolver the query path is already avoiding.
+	if s.ConsecutiveFailures > 0 {
 		return false
 	}
 	if s.LastProbeAt != "" && !s.LastProbeOK {
@@ -1624,8 +1841,17 @@ func (p *UpstreamPool) exchangeHedged(req *dns.Msg, upstreams []string, timeout 
 	if len(upstreams) <= 1 {
 		return p.exchangeSequential(req, upstreams, timeout)
 	}
+	return p.exchangeHedgedOrder(req, p.orderedByLatency(upstreams), hedgeStartDelay, timeout, false)
+}
 
-	order := p.orderedByLatency(upstreams)
+// exchangeHedgedOrder runs an already-ordered candidate list, starting the next
+// resolver after delay until a usable answer arrives. Hedged and Adaptive differ
+// only in the order they build and the delay they use.
+func (p *UpstreamPool) exchangeHedgedOrder(req *dns.Msg, order []string, delay, timeout time.Duration, recordLoss bool) (*dns.Msg, time.Duration, string, error) {
+	if len(order) <= 1 {
+		return p.exchangeSequential(req, order, timeout)
+	}
+
 	type result struct {
 		resp     *dns.Msg
 		duration time.Duration
@@ -1636,8 +1862,10 @@ func (p *UpstreamPool) exchangeHedged(req *dns.Msg, upstreams []string, timeout 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	resChan := make(chan result, len(order))
+	inFlightAddrs := make(map[string]struct{}, len(order))
 
 	start := func(addr string) {
+		inFlightAddrs[addr] = struct{}{}
 		go func() {
 			defer safego.Recover("upstream.hedged")
 			resp, rtt, err := p.safeQueryOne(ctx, req, addr)
@@ -1666,7 +1894,7 @@ func (p *UpstreamPool) exchangeHedged(req *dns.Msg, upstreams []string, timeout 
 	}
 
 	launch()
-	timer := time.NewTimer(hedgeStartDelay)
+	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	resetTimer := func() {
 		if !timer.Stop() {
@@ -1675,7 +1903,7 @@ func (p *UpstreamPool) exchangeHedged(req *dns.Msg, upstreams []string, timeout 
 			default:
 			}
 		}
-		timer.Reset(hedgeStartDelay)
+		timer.Reset(delay)
 	}
 
 	var (
@@ -1690,7 +1918,16 @@ collect:
 		select {
 		case res := <-resChan:
 			inFlight--
+			delete(inFlightAddrs, res.upstream)
 			if res.err == nil && usableRcode(res.resp) {
+				if recordLoss {
+					// The Adaptive head start is a speed decision: a resolver
+					// that was still silent when another answered is moved
+					// behind the healthy ones for the next query.
+					for addr := range inFlightAddrs {
+						p.recordHedgeLoss(addr)
+					}
+				}
 				cancel()
 				return res.resp, res.duration, res.upstream, nil
 			}
@@ -1709,7 +1946,7 @@ collect:
 		case <-timer.C:
 			if started < len(order) {
 				launch()
-				timer.Reset(hedgeStartDelay)
+				timer.Reset(delay)
 			}
 		case <-ctx.Done():
 			break collect
@@ -2114,6 +2351,7 @@ collect:
 func (p *UpstreamPool) exchangeSequential(req *dns.Msg, upstreams []string, timeout time.Duration) (*dns.Msg, time.Duration, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	deadline, _ := ctx.Deadline()
 
 	var (
 		lastErr      error
@@ -2122,10 +2360,27 @@ func (p *UpstreamPool) exchangeSequential(req *dns.Msg, upstreams []string, time
 		fallbackAddr string
 	)
 	for i, u := range upstreams {
-		if i > 0 && ctx.Err() != nil {
+		if ctx.Err() != nil {
 			break
 		}
-		resp, rtt, err := p.safeQueryOne(ctx, req, u)
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
+		}
+		// Each resolver gets its own slice of the budget. Before this, the whole
+		// walk shared one context: a hanging first resolver consumed all of it,
+		// the next attempt had no time left, and the client saw a timeout even
+		// though healthy resolvers were configured behind it.
+		attempt := sequentialAttemptTimeout
+		if i == len(upstreams)-1 || attempt > remaining {
+			attempt = remaining
+		}
+		if attempt <= 0 {
+			break
+		}
+		attemptCtx, attemptCancel := context.WithTimeout(ctx, attempt)
+		resp, rtt, err := p.safeQueryOne(attemptCtx, req, u)
+		attemptCancel()
 		outcome, reason := classifyStat(resp, err)
 		ok := outcome == statSuccess
 		p.recordStat(u, rtt, outcome, reason, false)

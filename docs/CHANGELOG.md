@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.11.5] — Faster DNS failover and immediate Force
+
+### Fixed
+- **A slow resolver no longer consumes the whole query budget.** Each resolver in the fallback walk gets its own 800 ms turn; the last one gets the remainder. A silent first resolver now fails over in about 100–800 ms instead of waiting ~2 s and failing.
+- **A failed resolver is demoted immediately.** One transport timeout, or a lost Adaptive hedge, moves the resolver behind healthy ones and excludes it from selection until it answers again. A success resets it. The circuit breaker still opens after repeated failures.
+- **Force switches immediately.** The Force button no longer waits for an in-flight scheduled benchmark and no longer runs a full benchmark. It selects from the latest measurements and persists that choice in milliseconds; only a pool with no measurements at all takes one quick probe. The control and title now read “Switch…”.
+
+### Added
+- **Adaptive hedging.** The measured fastest resolver gets a 100 ms head start; if it has not answered, the next healthy resolver is asked in parallel and the first usable answer wins. A fast first resolver sends no extra query.
+- **Warm encrypted connections.** Active DoH/DoT/DoQ/DoH3 connections are refreshed every 20 s, so the first lookup after a quiet period does not pay a new handshake. The keep-warm queries are not recorded as probes or live samples.
+- **Bootstrap DNS.** `dns.bootstrap_dns` resolves encrypted upstream hostnames through operator-chosen plain DNS servers instead of the system resolver, removing the self-resolution loop on a box that points at itself.
+
+### Tests
+- New regression tests cover per-attempt failover, demotion, hedging, selection probation, immediate Force, bootstrap resolution, and connection reuse. Full Go, web and Node suites pass.
+
+No database schema migration is required. The Android companion moves to `android-v5.11.5`, with version code 587.
+
 ## 🏷️ [v5.11.4] — Force regressions and a supported container base
 
 ### Fixed

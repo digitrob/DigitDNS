@@ -4478,7 +4478,7 @@ function syncAdaptiveControls() {
     // running state is described. Keeping it here means every caller of
     // syncAdaptiveControls() restores it instead of leaving "Benchmarking…"
     // behind after the request finishes.
-    forceLabel.textContent = busy ? 'Benchmarking…' : 'Force';
+    forceLabel.textContent = busy ? 'Switching…' : 'Force';
     forceLabel.classList.toggle('resolution-adaptive-disabled', single || !adaptive);
   }
 
@@ -4714,7 +4714,7 @@ async function runAdaptiveNow() {
       // The request was abandoned, not the benchmark: the server keeps going.
       // Leave the control disabled so a second click cannot queue another probe,
       // but let resolution reloads run so the card can catch the result.
-      showToast('Benchmark still running on the server — the card will update when it finishes', 'warning');
+      showToast('The switch is still running on the server — the card will update when it finishes', 'warning');
       adaptiveServerRunning = true;
       if (adaptiveServerTimer) clearTimeout(adaptiveServerTimer);
       adaptiveServerTimer = setTimeout(() => {

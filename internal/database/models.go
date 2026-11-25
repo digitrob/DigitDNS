@@ -282,9 +282,12 @@ type DNSSettings struct {
 	DoTTokens      []string `json:"dot_tokens"`
 	// mTLS is an additional listener gate for DoT/DoH/DoQ. DoH enforces it only
 	// on /dns-query so the subscriber portal on the same listener stays reachable.
-	MTLSEnabled   bool          `json:"mtls_enabled"`
-	MTLSCAPEM     string        `json:"mtls_ca_pem"`
-	Upstreams     []string      `json:"upstreams"`
+	MTLSEnabled bool     `json:"mtls_enabled"`
+	MTLSCAPEM   string   `json:"mtls_ca_pem"`
+	Upstreams   []string `json:"upstreams"`
+	// BootstrapDNS resolves encrypted upstream hostnames (DoH/DoT/DoQ/DoH3).
+	// Empty uses the system resolver, which loops when the box points at itself.
+	BootstrapDNS  []string      `json:"bootstrap_dns,omitempty"`
 	CacheSize     int           `json:"cache_size"`
 	CacheMinTTL   uint32        `json:"cache_min_ttl"`
 	CacheMaxTTL   uint32        `json:"cache_max_ttl"`
