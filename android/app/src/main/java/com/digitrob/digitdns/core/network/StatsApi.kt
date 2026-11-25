@@ -5,6 +5,7 @@ import androidx.compose.runtime.Immutable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import retrofit2.http.GET
+import retrofit2.http.Query
 
 /**
  * The v3 live telemetry surface.
@@ -17,7 +18,7 @@ import retrofit2.http.GET
 interface StatsApi {
 
     @GET("stats")
-    suspend fun live(): LiveStats
+    suspend fun live(@Query("range") range: String? = null): LiveStats
 }
 
 @Serializable
@@ -62,6 +63,9 @@ data class LiveStats(
     // Query service-time distributions: all queries, and cache-misses only.
     val latency: LatencySnapshot = LatencySnapshot(),
     @SerialName("latency_uncached") val latencyUncached: LatencySnapshot = LatencySnapshot(),
+    /** The window the two snapshots and the stage figures used. */
+    @SerialName("latency_range") val latencyRange: String = "5m",
+    @SerialName("upstream_metrics") val upstreamMetrics: UpstreamMetrics = UpstreamMetrics(),
     // The per-upstream rows are already in this response. The dashboard used to
     // poll /upstreams/stats every three seconds as well, doubling the request
     // count for data that had just arrived here.
@@ -81,7 +85,31 @@ data class LatencySnapshot(
     @SerialName("p95_ms") val p95Ms: Double = 0.0,
     @SerialName("p99_ms") val p99Ms: Double = 0.0,
     @SerialName("max_ms") val maxMs: Double = 0.0,
+    @SerialName("peak_ms") val peakMs: Double = 0.0,
+    @SerialName("peak_5m_ms") val peak5mMs: Double = 0.0,
+    /** The window this snapshot describes (5m/15m/1h/6h/24h). */
+    val range: String = "",
+    /** Rolling five-minute sample count. -1 means an older server omitted it. */
+    @SerialName("window_count") val windowCount: Long = -1,
+    @SerialName("window_avg_ms") val windowAvgMs: Double = 0.0,
+    @SerialName("since_start_p50_ms") val sinceStartP50Ms: Double = 0.0,
+    @SerialName("since_start_p95_ms") val sinceStartP95Ms: Double = 0.0,
+    @SerialName("since_start_p99_ms") val sinceStartP99Ms: Double = 0.0,
 ) {
-    /** True when at least one observation has been recorded, so a dash is honest. */
-    val hasData: Boolean get() = count > 0
+    /**
+     * True when the card's five-minute window has an observation. An older
+     * server sends no window_count, so its lifetime count is the fallback.
+     */
+    val hasData: Boolean get() = if (windowCount >= 0) windowCount > 0 else count > 0
 }
+
+/** Query-path counters: why a cache miss needed more than one resolver. */
+@Serializable
+@Immutable
+data class UpstreamMetrics(
+    val timeouts: Long = 0,
+    val hedges: Long = 0,
+    val failovers: Long = 0,
+    @SerialName("hedge_losses") val hedgeLosses: Long = 0,
+    val coalesced: Long = 0,
+)

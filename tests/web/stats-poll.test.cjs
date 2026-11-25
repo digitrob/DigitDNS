@@ -28,7 +28,11 @@ function harness(full, live) {
       const body = compact ? live : full;
       return { ok: true, status: 200, json: async () => body };
     },
-    document: { querySelector: () => null, visibilityState: 'visible' },
+    document: {
+      querySelector: () => null,
+      getElementById: () => null,
+      visibilityState: 'visible',
+    },
     activeDashTab: 'dashboard',
     statEl: (id) => {
       if (!elements.has(id)) elements.set(id, { textContent: '', className: '' });
@@ -53,6 +57,7 @@ function harness(full, live) {
     renderedUpstreams,
     update: () => vm.runInContext('updateStats()', context),
     invalidate: () => vm.runInContext('invalidateStatsSnapshot()', context),
+    setRange: (range) => vm.runInContext(`latencyRange = ${JSON.stringify(range)}`, context),
   };
 }
 
@@ -75,6 +80,15 @@ test('the first poll is full and the next one is a compact=2 heartbeat', async (
   await h.update();
   await h.update();
   assert.deepEqual(h.urls, ['/api/stats', '/api/stats?compact=2']);
+});
+
+test('a non-default latency range is carried on the stats request', async () => {
+  const h = harness(fullPayload, livePayload);
+  await h.update();
+  h.invalidate();
+  h.setRange('1h');
+  await h.update();
+  assert.deepEqual(h.urls, ['/api/stats', '/api/stats?range=1h']);
 });
 
 test('a heartbeat keeps slow fields from the last full document', async () => {

@@ -68,6 +68,20 @@ type Bucket struct {
 
 	LatencySumMs float64 `json:"latency_sum_ms"`
 	LatencyCount uint64  `json:"latency_count"`
+	// UncachedLatency* is the same distribution restricted to cache misses. The
+	// history card labels its average "cache misses"; before these fields it was
+	// actually averaging every query, which a high hit rate pulled far down.
+	UncachedLatencySumMs float64 `json:"uncached_latency_sum_ms,omitempty"`
+	UncachedLatencyCount uint64  `json:"uncached_latency_count,omitempty"`
+	// ResolutionLatency* is the clean definition: only queries that actually
+	// reached an upstream. UncachedLatency* also counts blocked, custom and
+	// quota answers, which are logged uncached but finish in microseconds and
+	// dragged the history average down to a number that described nothing.
+	// Tracked distinguishes a bucket written after this definition from a
+	// legacy bucket whose zero count means "not recorded".
+	ResolutionLatencySumMs   float64 `json:"resolution_latency_sum_ms,omitempty"`
+	ResolutionLatencyCount   uint64  `json:"resolution_latency_count,omitempty"`
+	ResolutionLatencyTracked bool    `json:"resolution_latency_tracked,omitempty"`
 
 	// Chunks is only populated on the current hour's bucket. The index is the
 	// UTC minute divided by five, so slot 0 covers :00–:04 and slot 11 :55–:59.
@@ -188,8 +202,17 @@ func (b *Bucket) record(item database.QueryLogItem, cfg Config, clientSalt []byt
 		hllAdd(b.ClientHLL, key)
 	}
 
+	b.ResolutionLatencyTracked = true
 	if item.LatencyMs > 0 {
 		b.LatencySumMs += item.LatencyMs
+		if !item.Cached {
+			b.UncachedLatencySumMs += item.LatencyMs
+			b.UncachedLatencyCount++
+		}
+		if !item.Cached && item.Upstream != "" {
+			b.ResolutionLatencySumMs += item.LatencyMs
+			b.ResolutionLatencyCount++
+		}
 	}
 	b.LatencyCount++
 }
@@ -221,6 +244,11 @@ func (b *Bucket) merge(other *Bucket, cfg Config) {
 		b.Chunks[i].LatencySumMs += other.Chunks[i].LatencySumMs
 		b.Chunks[i].LatencyCount += other.Chunks[i].LatencyCount
 	}
+	b.UncachedLatencySumMs += other.UncachedLatencySumMs
+	b.UncachedLatencyCount += other.UncachedLatencyCount
+	b.ResolutionLatencySumMs += other.ResolutionLatencySumMs
+	b.ResolutionLatencyCount += other.ResolutionLatencyCount
+	b.ResolutionLatencyTracked = b.ResolutionLatencyTracked || other.ResolutionLatencyTracked
 
 	b.ensureMaps()
 	mergeMap(b.ByAction, other.ByAction)
@@ -277,19 +305,24 @@ func (b *Bucket) clone() *Bucket {
 	defer b.mu.Unlock()
 
 	out := &Bucket{
-		Queries:           b.Queries,
-		Blocked:           b.Blocked,
-		Proxied:           b.Proxied,
-		Cached:            b.Cached,
-		Failed:            b.Failed,
-		LatencySumMs:      b.LatencySumMs,
-		LatencyCount:      b.LatencyCount,
-		Chunks:            b.Chunks,
-		TopDomains:        b.TopDomains.clone(),
-		TopClients:        b.TopClients.clone(),
-		TopBlockedDomains: b.TopBlockedDomains.clone(),
-		ClientHLL:         append([]byte(nil), b.ClientHLL...),
-		ClientHLLComplete: b.ClientHLLComplete,
+		Queries:                  b.Queries,
+		Blocked:                  b.Blocked,
+		Proxied:                  b.Proxied,
+		Cached:                   b.Cached,
+		Failed:                   b.Failed,
+		LatencySumMs:             b.LatencySumMs,
+		LatencyCount:             b.LatencyCount,
+		UncachedLatencySumMs:     b.UncachedLatencySumMs,
+		UncachedLatencyCount:     b.UncachedLatencyCount,
+		ResolutionLatencySumMs:   b.ResolutionLatencySumMs,
+		ResolutionLatencyCount:   b.ResolutionLatencyCount,
+		ResolutionLatencyTracked: b.ResolutionLatencyTracked,
+		Chunks:                   b.Chunks,
+		TopDomains:               b.TopDomains.clone(),
+		TopClients:               b.TopClients.clone(),
+		TopBlockedDomains:        b.TopBlockedDomains.clone(),
+		ClientHLL:                append([]byte(nil), b.ClientHLL...),
+		ClientHLLComplete:        b.ClientHLLComplete,
 	}
 	out.ByAction = cloneMap(b.ByAction)
 	out.ByProtocol = cloneMap(b.ByProtocol)

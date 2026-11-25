@@ -132,7 +132,16 @@ internal fun HistorySummaryCard(summary: StatsSummary?, unavailable: Boolean) {
                         ),
                         SummaryMetric(
                             label = R.string.history_avg_latency,
-                            value = String.format(Locale.US, "%.1f", summary.latencyAvgMs),
+                            value = when {
+                                summary.latencyResolutionAvgMs > 0 -> {
+                                    val prefix = if (summary.latencyResolutionApprox) "≈ " else ""
+                                    prefix + String.format(Locale.US, "%.1f", summary.latencyResolutionAvgMs)
+                                }
+                                // Older server: only the wider cache-miss counter exists.
+                                summary.latencyUncachedAvgMs > 0 ->
+                                    "≈ " + String.format(Locale.US, "%.1f", summary.latencyUncachedAvgMs)
+                                else -> "—"
+                            },
                             meta = stringResource(R.string.history_latency_unit),
                         ),
                     )

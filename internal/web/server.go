@@ -368,7 +368,31 @@ func NewWebServer(
 	// own handlers, so "full parity" means the same implementation the panel
 	// uses — not a re-implementation that could drift.
 	apiInst.SetV3Backend(NewV3Backend(ws))
+	// A live re-selection moves the pool's Adaptive choice between scheduled
+	// benchmarks; persist it so a restart and the settings card agree with the
+	// resolver that is actually in use.
+	if upstreams != nil {
+		upstreams.SetAdaptiveSwitchHook(ws.persistAutoAdaptive)
+	}
 	return ws
+}
+
+// persistAutoAdaptive writes a live re-selection to the DNS record. It runs in
+// the upstream pool's sampling goroutine, not the query path.
+func (ws *WebServer) persistAutoAdaptive(addr string) {
+	ws.dnsMu.Lock()
+	cfg := ws.mutableDNSLocked()
+	if cfg.AdaptiveCurrent == addr {
+		ws.dnsMu.Unlock()
+		return
+	}
+	cfg.AdaptiveCurrent = addr
+	cfg.AdaptiveLastNote = "auto-switched to " + addr + " after a sustained slowdown"
+	err := ws.db.SetSetting("dns", cfg)
+	ws.dnsMu.Unlock()
+	if err != nil {
+		log.Printf("[Web] Could not persist the automatic Adaptive switch: %v", err)
+	}
 }
 
 // SetControlState attaches the daemon-owned mutable state shared by the web
@@ -540,6 +564,11 @@ var (
 	errAdaptiveBusy        = errors.New("a benchmark is already in progress")
 )
 
+// adaptiveForceWait bounds how long a Force click waits for a scheduled
+// benchmark that is already probing. It stays below the dashboard's 45 s
+// request timeout, so the client gets the result instead of an abort.
+const adaptiveForceWait = 30 * time.Second
+
 // runAdaptiveNow performs one complete Adaptive cycle: benchmark the pool, pick
 // the fastest healthy resolver with hysteresis, install it, and persist the
 // result. It is shared by the scheduler and the panel/app "Check now" button.
@@ -560,18 +589,23 @@ func (ws *WebServer) runAdaptiveNow(force bool) (upstream.AdaptiveDecision, erro
 	current := cfg.AdaptiveCurrent
 	ws.dnsMu.Unlock()
 
-	// A Force click is the operator asking for the switch now, so it never waits
-	// for an in-flight scheduled benchmark and never starts a full three-sample
-	// probe. It selects from the latest measurements immediately. A pool that has
-	// never been measured at all takes one quick pass first, because there is
-	// nothing to select from otherwise.
-	//
-	// The scheduled path keeps the shared benchmark gate: a manual run and the
-	// scheduler must not probe the same pool at the same time.
+	// A Force click is the operator asking for fresh numbers now, not at the next
+	// interval. It runs a full benchmark and selects from that run. If the
+	// scheduler is already probing, Force waits for that run to finish and uses
+	// its results rather than starting a second probe; the shared gate is never
+	// bypassed.
 	var benchmarkStarted time.Time
 	if force {
-		if !ws.upstreams.HasMeasured() {
-			ws.upstreams.QuickProbeAll()
+		if ws.benchmark != nil {
+			if ws.benchmark.Running() {
+				if !ws.benchmark.Wait(adaptiveForceWait) {
+					return upstream.AdaptiveDecision{}, errAdaptiveBusy
+				}
+			} else if !ws.benchmark.Run() {
+				return upstream.AdaptiveDecision{}, errAdaptiveBusy
+			}
+		} else {
+			ws.upstreams.BenchmarkAll()
 		}
 		ws.adaptiveForcedAt.Store(time.Now().UnixNano())
 	} else {
@@ -2868,25 +2902,31 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	compactMode := r.URL.Query().Get("compact")
-	cacheKey := "web/stats"
+	// The range chips change every latency window in the document, so each range
+	// gets its own one-second cache entry. An unknown value falls back to 5m
+	// instead of producing an empty card.
+	rangeKey := service.NormalizeLatencyRange(r.URL.Query().Get("range"))
+	cacheKey := "web/stats:" + rangeKey
 	switch compactMode {
 	case "1":
-		cacheKey = "web/stats:compact"
+		cacheKey += ":compact"
 	case "2":
-		cacheKey = "web/stats:compact2"
+		cacheKey += ":compact2"
 	}
 	if entry, ok := ws.statsCache.Get(cacheKey); ok {
 		httpx.WriteCached(w, r, entry)
 		return
 	}
-	st := ws.stats.GetLiveStats()
+	st := ws.stats.GetLiveStatsForRange(rangeKey)
 
 	// GetUpstreamStats on a nil pool panics, and the panic would land on the
 	// dashboard's 2-second poll — one misconfigured start would then look like the
 	// whole panel being down.
 	var upstreamStats any = []struct{}{}
+	var upstreamMetrics any = upstream.UpstreamMetrics{}
 	if ws.upstreams != nil {
 		upstreamStats = ws.upstreams.GetUpstreamStats()
+		upstreamMetrics = ws.upstreams.Metrics()
 	}
 	if compactMode == "2" {
 		if full, ok := upstreamStats.([]upstream.UpstreamStat); ok {
@@ -2966,8 +3006,9 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 		// that moves when an upstream gets slow.
 		"latency":          st.Latency,
 		"latency_uncached": st.LatencyUncached,
-
-		"upstreams": upstreamStats,
+		"latency_range":    st.LatencyRange,
+		"upstreams":        upstreamStats,
+		"upstream_metrics": upstreamMetrics,
 	}
 	// compact=1 is the legacy delete-list form used by older clients. compact=2
 	// is the dashboard's whitelist heartbeat: it omits both the slow fields and

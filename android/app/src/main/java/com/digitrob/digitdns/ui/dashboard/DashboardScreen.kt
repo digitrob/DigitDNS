@@ -85,6 +85,7 @@ import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.network.LatencySnapshot
 import com.digitrob.digitdns.core.network.LiveStats
 import com.digitrob.digitdns.core.network.ResolutionSettings
+import com.digitrob.digitdns.core.network.UpstreamMetrics
 import com.digitrob.digitdns.core.network.UpstreamPresetProvider
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.data.DashboardCard
@@ -210,6 +211,7 @@ fun DashboardScreen(
                         onLoadUpstreamPresets = viewModel::loadUpstreamPresets,
                         onResolutionChange = viewModel::saveResolution,
                         onRunAdaptive = viewModel::runAdaptiveNow,
+                        onLatencyRangeChange = viewModel::setLatencyRange,
                     ),
                 )
             }
@@ -541,6 +543,7 @@ private data class DashboardActions(
     val onLoadUpstreamPresets: suspend () -> List<UpstreamPresetProvider>?,
     val onResolutionChange: (ResolutionSettings) -> Unit,
     val onRunAdaptive: () -> Unit,
+    val onLatencyRangeChange: (String) -> Unit,
 )
 
 @Composable
@@ -619,7 +622,12 @@ private fun LazyGridScope.liveCard(
             )
         }
         DashboardCard.RESOLVER_LATENCY -> item(span = { GridItemSpan(maxLineSpan) }) {
-            ResolverLatencyCard(state.latency)
+            ResolverLatencyCard(
+                latency = state.latency,
+                metrics = state.upstreamMetrics,
+                range = state.latencyRange,
+                onRangeChange = actions.onLatencyRangeChange,
+            )
         }
         else -> Unit
     }
@@ -944,15 +952,33 @@ private fun Sparkline(
 
 /** The resolver racer: upstreams sorted fastest-first, with add/remove and a benchmark. */
 @Composable
-private fun ResolverLatencyCard(latency: LatencySnapshot) {
+private fun ResolverLatencyCard(
+    latency: LatencySnapshot,
+    metrics: UpstreamMetrics,
+    range: String,
+    onRangeChange: (String) -> Unit,
+) {
     // A tighter inset than the standard card: four equal tiles plus their own padding
     // have to fit the phone width, and the default 16 dp edge pushed a four-digit
     // millisecond value past the tile and clipped it.
     PanelCard(modifier = Modifier.fillMaxWidth(), contentPadding = 12.dp) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            DashboardCardTitle(
-                text = stringResource(R.string.dashboard_resolver_latency),
-                icon = DashboardCard.RESOLVER_LATENCY.icon,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                DashboardCardTitle(
+                    text = stringResource(R.string.dashboard_resolver_latency),
+                    icon = DashboardCard.RESOLVER_LATENCY.icon,
+                    modifier = Modifier.weight(1f),
+                )
+                LatencyRangeChips(range = range, onRangeChange = onRangeChange)
+            }
+            Text(
+                text = "Upstream resolution time · last $range",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (!latency.hasData) {
                 Text(
@@ -978,10 +1004,71 @@ private fun ResolverLatencyCard(latency: LatencySnapshot) {
                     )
                     LatencyCell(stringResource(R.string.dashboard_p95), latency.p95Ms, modifier = Modifier.weight(1f))
                     LatencyCell(stringResource(R.string.dashboard_p99), latency.p99Ms, modifier = Modifier.weight(1f))
-                    LatencyCell(stringResource(R.string.dashboard_peak), latency.maxMs, modifier = Modifier.weight(1f))
+                    LatencyCell(
+                        stringResource(R.string.dashboard_peak),
+                        (latency.peakMs.takeIf { it > 0 } ?: latency.peak5mMs.takeIf { it > 0 }),
+                        modifier = Modifier.weight(1f),
+                    )
                 }
+                Text(
+                    text = stringResource(
+                        R.string.dashboard_upstream_metrics,
+                        metrics.timeouts,
+                        metrics.hedges,
+                        metrics.failovers,
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
+    }
+}
+
+private val LATENCY_RANGE_CHOICES = listOf("5m", "15m", "1h", "6h", "24h")
+
+@Composable
+private fun LatencyRangeChips(range: String, onRangeChange: (String) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        LATENCY_RANGE_CHOICES.forEach { choice ->
+            LatencyRangePill(
+                label = choice,
+                selected = choice == range,
+                onClick = { onRangeChange(choice) },
+            )
+        }
+    }
+}
+
+/** The same compact pill as the dashboard's top history chips. */
+@Composable
+private fun LatencyRangePill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (selected) accent.copy(alpha = 0.16f) else Color.Transparent)
+            .border(
+                width = 1.dp,
+                color = if (selected) accent.copy(alpha = 0.6f) else DigitDnsTheme.colors.borderColor,
+                shape = RoundedCornerShape(6.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 10.sp,
+                lineHeight = 12.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            ),
+            color = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
     }
 }
 
@@ -1000,7 +1087,7 @@ private fun latencyColor(ms: Double): Color {
 }
 
 @Composable
-private fun LatencyCell(label: String, ms: Double, color: Color? = null, modifier: Modifier = Modifier) {
+private fun LatencyCell(label: String, ms: Double?, color: Color? = null, modifier: Modifier = Modifier) {
     val colors = DigitDnsTheme.colors
     Column(
         modifier = modifier
@@ -1011,7 +1098,7 @@ private fun LatencyCell(label: String, ms: Double, color: Color? = null, modifie
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
-            text = "%.1f ms".format(ms),
+            text = ms?.let { "%.1f ms".format(it) } ?: "—",
             style = MaterialTheme.typography.titleMedium.copy(fontFamily = PanelMono),
             color = color ?: MaterialTheme.colorScheme.onSurface,
             maxLines = 1,

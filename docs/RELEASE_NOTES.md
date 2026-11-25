@@ -1,50 +1,72 @@
-# DigitDNS v5.11.5 — Faster DNS failover and immediate Force
+# DigitDNS v5.11.7 — Configurable upstreams and honest latency
 
-This release focuses on the time a website waits when a DNS resolver is slow or silent, and on making **Force** mean “switch now”. It also keeps encrypted upstream connections warm and lets bootstrap DNS resolve their hostnames without relying on the system resolver. No database schema migration is required.
+This release makes the resolver’s maintenance policy configurable from the panel and the Android app, coalesces identical cold lookups, and fixes a latency card that could report a median of 0.09 ms while the resolver was waiting tens of milliseconds on an upstream. No database schema migration is required.
 
-## DNS failover
+## Advanced upstream settings
 
-- **Each resolver gets its own turn.** The fallback walk gives every resolver an 800 ms slice of the 2 s budget instead of letting the first one consume all of it. The last resolver still gets the remainder.
-- **A failed resolver is demoted immediately.** One transport timeout, or a lost hedge, moves it behind the healthy resolvers and excludes it from selection until it answers again. A success resets it.
-- **Adaptive hedging.** The measured fastest resolver gets a 100 ms head start. If it has not answered, the next healthy resolver is asked in parallel; the first usable answer wins and the loser is cancelled. A fast first resolver sends no extra query.
-- **Result:** a slow first resolver answers in about 100 ms, and a silent one fails over in about 100 ms instead of waiting ~2 s and failing.
+A new **Advanced upstream settings** card in Settings → Resolvers, and a matching screen under **Settings → Upstreams** in the app, now carry:
+
+- **Bootstrap DNS** — plain resolvers used only to resolve DoT/DoH/DoQ hostnames.
+- **Fallback DNS** — a last-resort pool tried only after every primary resolver failed. It is never used on the normal path.
+- **Keep-warm scope** — off, active, active + next (default), or all encrypted upstreams.
+- **Keep-warm interval** — 5–600 seconds; a save re-arms the loop immediately.
+- **Probation** — how long a repeatedly failing resolver is skipped before it is probed again.
+- **Startup cache warm** — pre-resolve the top 1–100 names from the last 24 hours in the background after a restart.
+
+Everything applies on save except Bootstrap DNS, which needs a restart because the upstream dialers are built at startup. Defaults match the previous behaviour, so an existing install changes nothing until an operator edits the card.
+
+## Faster cold paths
+
+- **Single-flight misses.** Concurrent identical misses — same name, type, class and EDNS/DO/CD flags — now share one upstream query. Each client still receives its own transaction ID. A new `coalesced` counter shows how many queries joined an in-flight lookup.
+- **Sibling prefetch.** When an allowed name misses, the resolver warms the other record types a browser asks for (A, AAAA, HTTPS/SVCB) in the background. The work is bounded to four workers and deduplicated, so a cold page load pays one upstream round trip instead of three.
+- **Adaptive hedge mode.** The head start is now derived from the active resolver’s own median: balanced waits twice the median, aggressive waits one. Both are clamped and selectable in the advanced settings.
+- **Live re-selection.** A resolver that stays roughly 25% slower than a healthy alternative for five consecutive checks is replaced immediately, without waiting for the next scheduled Adaptive run.
+- **Keep-warm is narrower by default.** The background loop refreshes the active encrypted resolver plus the next fastest one, not every encrypted upstream. On a seven-resolver install this cut the maintenance traffic from seven queries every 20 seconds to two.
+- **Startup cache warm** resolves the most popular names from history after the listeners are up, so a restart does not hand the first devices a burst of cold lookups.
+- **Restart ordering.** The last-known resolver medians are cached on disk, so the first query after a restart starts with the order the previous run measured.
+
+## Latency card corrected
+
+The old “cache miss” figures included every query the cache did not answer: blocked names, custom records, self-service answers, quota refusals and proxy paths. Those finish in microseconds, so on a filtering resolver the median became the time to say “blocked” — 0.09 ms — rather than the time to resolve a name.
+
+- The card now counts **only queries that reached an upstream**, including failed attempts.
+- **p50, p95, p99 and Peak share the selected window.** Since-start values remain in the tooltips.
+- The estimated p99 is capped at the exact window peak, so it can no longer display above Peak.
+- The history **Avg latency** card uses a resolution-only counter. Ranges containing pre-upgrade buckets are marked `≈` until those buckets age out.
+
+## Range chips
+
+The Resolver Latency card now has **5m / 15m / 1h / 6h / 24h** chips on web and Android. The server keeps 60 one-minute slots and 288 five-minute slots, so every range is computed from real observations rather than a rescaling of the five-minute figures.
 
 ## Force
 
-The **Force** control now switches from the latest measurements immediately. It no longer waits for an in-flight scheduled benchmark and no longer runs a full three-sample benchmark on click. The control and tooltip read “Switch…” to match. Only a pool that has never been measured takes one quick probe.
+**Force** now runs a full benchmark and selects the fastest healthy resolver from that run, immediately, instead of waiting for the configured interval. If a scheduled benchmark is already running, Force waits for it and uses its results rather than starting a second probe.
 
-## Encrypted upstreams
+## Web layout
 
-- **Warm connections.** Active DoH/DoT/DoQ/DoH3 connections are refreshed every 20 s, so the first lookup after a quiet period does not pay a new handshake. The keep-warm queries are not recorded as probes or live samples.
-- **Bootstrap DNS.** New `dns.bootstrap_dns` config key: plain DNS servers used only to resolve encrypted upstream hostnames. Set it when the server is its own system resolver to avoid a lookup loop. Empty keeps the OS resolver.
+The **Force** button now uses the same 32 px box and padding as the interval chips. It sits next to the chips and wraps with them, so it never clips an interval label.
 
-```json
-{
-  "dns": {
-    "bootstrap_dns": ["1.1.1.1:53", "9.9.9.9:53"]
-  }
-}
-```
+Ranked history tables are fixed at ten rows again; the `10 / 50 / all` toolbar toggle has been removed.
 
-## Tests
+## Verification
 
-Regression coverage now includes per-attempt failover, demotion, Adaptive hedging, selection probation, immediate Force, bootstrap resolution, and keep-warm connection reuse. Full Go, dashboard and Node suites pass, and the behaviour was measured on the live Norwich instance.
+Full Go suite, `go vet`, the race detector, 112 dashboard tests, Android unit tests and detekt pass. The release was exercised on the live Norwich instance: startup cache warm resolved 100/100 names in about 1.1 seconds, keep-warm stayed at two encrypted connections, and cached queries returned in 0–1 ms.
 
-The Android companion moves to **android-v5.11.5**, version code **587**.
+The Android companion moves to **android-v5.11.7**, version code **589**.
 
 ## Upgrade
 
 In-place upgrades from the dashboard are supported.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.5/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.7/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.11.5
-docker pull ghcr.io/digitrob/digitdns-agent:5.11.5
-docker pull robmeister/digitdns:5.11.5
-docker pull robmeister/digitdns-agent:5.11.5
+docker pull ghcr.io/digitrob/digitdns:5.11.7
+docker pull ghcr.io/digitrob/digitdns-agent:5.11.7
+docker pull robmeister/digitdns:5.11.7
+docker pull robmeister/digitdns-agent:5.11.7
 ```

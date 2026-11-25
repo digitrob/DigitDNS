@@ -95,7 +95,6 @@ type StatsService struct {
 	// latencyResolve covers only the queries the cache did not answer.
 	latencyAll     latencyHistogram
 	latencyResolve latencyHistogram
-
 	// stop ends telemetryLoop, which used to be a bare `for range ticker.C` with no
 	// way out. That is harmless for the daemon's single long-lived service, but this
 	// loop ticks once a *second*, so every service that outlives its owner keeps
@@ -260,7 +259,11 @@ func (s *StatsService) PushQueryLog(item database.QueryLogItem) {
 	// the SSE fan-out below is deliberately lossy, and the ring buffer only keeps a
 	// hundred entries, so neither is a place percentiles can be computed from.
 	s.latencyAll.observe(item.LatencyMs)
-	if !item.Cached {
+	// Resolution latency means a query that actually reached an upstream. A
+	// blocked name, a custom record, a self-service answer or a quota refusal is
+	// logged with cached=false too, and folding those sub-millisecond policy
+	// answers into this histogram made its median the time to say "blocked".
+	if !item.Cached && item.Upstream != "" {
 		s.latencyResolve.observe(item.LatencyMs)
 	}
 
@@ -677,9 +680,20 @@ type LiveStatsResponse struct {
 	// cache hit, so p50 measures the cache and nothing else.
 	Latency         LatencySnapshot `json:"latency"`
 	LatencyUncached LatencySnapshot `json:"latency_uncached"`
+	// LatencyRange is the window those two snapshots and the stage figures used.
+	LatencyRange string `json:"latency_range"`
 }
 
 func (s *StatsService) GetLiveStats() LiveStatsResponse {
+	return s.GetLiveStatsForRange(LatencyRange5m)
+}
+
+// GetLiveStatsForRange builds the same document as GetLiveStats, but with every
+// latency window (card percentiles, stage breakdown and slow-query list) computed
+// for the requested range.
+func (s *StatsService) GetLiveStatsForRange(rangeKey string) LiveStatsResponse {
+	rangeKey = NormalizeLatencyRange(rangeKey)
+	now := time.Now()
 	var activeRelays int64
 	var totalRelays, bytesSent, bytesRecv uint64
 	if s.getProxyStats != nil {
@@ -778,8 +792,9 @@ func (s *StatsService) GetLiveStats() LiveStatsResponse {
 		RelaysRefusedResolve:   proxyDrops.ResolveFailed,
 		RelaysRefusedFlood:     proxyDrops.Flood,
 
-		Latency:         s.latencyAll.snapshot(),
-		LatencyUncached: s.latencyResolve.snapshot(),
+		Latency:         s.latencyAll.snapshotRangeAt(now, rangeKey),
+		LatencyUncached: s.latencyResolve.snapshotRangeAt(now, rangeKey),
+		LatencyRange:    rangeKey,
 
 		// Machine-wide load (internal/sysmetrics): the whole server's CPU and
 		// RAM, as opposed to the process-only figures above.

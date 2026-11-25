@@ -3110,15 +3110,185 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
 }
 
 .resolver-interval-row {
-  flex-wrap: nowrap;
+  /* Wrap instead of scrolling: a horizontally scrolled chip row clipped the
+     last interval label mid-word against Force, which read as a collision. */
+  flex-wrap: wrap;
   overflow: visible;
-  gap: 0.15rem;
+  /* The same gap the interval chips use between themselves. */
+  gap: 0.3rem;
 }
 
 .resolver-interval-row .resolver-chip-group {
-  flex: 0 1 auto;
-  overflow-x: auto;
-  scrollbar-width: thin;
+  /* Expose the chips directly to the row's flex layout so Force follows the
+     last chip at the normal gap instead of being pushed to the far edge. The
+     row still wraps as a whole when the width runs out. */
+  display: contents;
+}
+
+/* Force follows the chips, never stretches, and wraps with them. */
+.resolver-interval-row .resolver-adaptive-force-btn {
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+/* Advanced upstream settings: a collapsed card at the bottom of the Resolvers
+   tab. The summary is the whole click target, and the chevron is the only
+   affordance that changes when it opens. */
+.advanced-upstream-card > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+.advanced-upstream-card > summary::-webkit-details-marker {
+  display: none;
+}
+.advanced-upstream-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.advanced-upstream-icon {
+  display: flex;
+  flex-shrink: 0;
+  padding: 0.5rem;
+  border-radius: 0.75rem;
+  background: rgb(var(--c-cyan-500) / 0.2);
+  color: rgb(var(--c-cyan-400));
+}
+.advanced-upstream-summary-text {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: var(--text-2xs);
+  color: rgb(var(--c-slate-500));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.advanced-upstream-chevron {
+  flex-shrink: 0;
+  color: rgb(var(--c-slate-500));
+  transition: transform 0.15s;
+}
+.advanced-upstream-card[open] .advanced-upstream-chevron {
+  transform: rotate(180deg);
+}
+.advanced-upstream-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+.advanced-upstream-intro {
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  color: rgb(var(--c-slate-500));
+}
+.advanced-upstream-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+}
+@media (max-width: 640px) {
+  .advanced-upstream-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.advanced-upstream-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: rgb(var(--c-slate-400));
+}
+.advanced-upstream-field small {
+  font-size: var(--text-2xxs);
+  font-weight: 400;
+  line-height: 1.4;
+  color: rgb(var(--c-slate-500));
+}
+.advanced-upstream-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.advanced-upstream-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+.advanced-upstream-inline-label {
+  font-weight: 600;
+}
+.advanced-upstream-inline input[type="number"] {
+  width: 5rem;
+}
+.advanced-upstream-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.advanced-upstream-restart {
+  font-size: var(--text-2xs);
+  color: rgb(var(--c-amber-400));
+}
+
+/* Range chips for the resolver latency card. They select the server-side
+   window, so the tiles, peak and stage table all describe the same period. */
+.latency-range-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  gap: 0.25rem;
+  margin: 0;
+}
+.latency-range-chip {
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgb(var(--c-slate-700));
+  background: rgb(var(--c-slate-900));
+  color: rgb(var(--c-slate-400));
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.latency-range-chip:hover {
+  border-color: rgb(var(--c-slate-600));
+  color: rgb(var(--c-slate-200));
+}
+.latency-range-chip.is-active {
+  border-color: rgb(var(--c-cyan-500) / 0.55);
+  background: rgb(var(--c-cyan-500) / 0.15);
+  color: rgb(var(--c-cyan-300));
+}
+.latency-range-chip:focus-visible {
+  outline: 2px solid rgb(var(--c-cyan-400));
+  outline-offset: 2px;
+}
+
+/* One fixed-height diagnostics line. The full counters are in the tooltip;
+   keeping this to a single ellipsized line means no value can grow the card
+   into a horizontal or vertical scroll inside its custom-layout cell. */
+.latency-diagnostics {
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.latency-diagnostics > span {
+  min-width: 0;
 }
 
 /* The stacked transport block gives the chips the full card width; keep the
@@ -3254,8 +3424,25 @@ html[data-boot-tab] #tab-stream:not(.hidden) {
   transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 
+/* Force is the one action on this card an operator reaches for when a site
+   feels slow. It keeps its place in the adaptive row but reads as a primary
+   action instead of a small utility button. */
 .resolver-adaptive-force-btn {
-  min-width: 64px;
+  /* Same box as an interval chip: 32 px high and 0.1rem/0.3rem padding. The
+     content decides the width, so it shrinks with the row instead of forcing
+     the chips into a collision. */
+  min-width: 0;
+  min-height: 32px;
+  padding: 0.1rem 0.3rem;
+  gap: 0.25rem;
+  border-color: transparent;
+  background: rgb(var(--c-cyan-500));
+  color: rgb(var(--c-slate-950));
+}
+
+.resolver-refresh-btn.resolver-adaptive-force-btn:hover:not(:disabled) {
+  background: rgb(var(--c-cyan-400));
+  color: rgb(var(--c-slate-950));
 }
 
 .resolver-force-label {

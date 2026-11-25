@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"encoding/binary"
 	"hash/maphash"
 	"strings"
 	"sync"
@@ -11,11 +10,12 @@ import (
 	"github.com/miekg/dns"
 )
 
-const numShards = 64
-
-// maxNameLen is the RFC 1035 limit on a presentation-format domain name. It sizes
-// the stack scratch buffer in cacheKey.
-const maxNameLen = 255
+const (
+	numShards = 64
+	// maxNameLen is the RFC 1035 presentation-format limit, used by tests that
+	// exercise names a config file can supply but the wire cannot.
+	maxNameLen = 255
+)
 
 // shardSeed spreads keys across the shards. A per-process seed, rather than a
 // fixed one, means an attacker cannot precompute a set of names that all land in
@@ -25,6 +25,16 @@ const maxNameLen = 255
 // and bought nothing: shard selection needs uniform spread and unpredictability,
 // not collision resistance against an adversary who already knows the key.
 var shardSeed = maphash.MakeSeed()
+
+// cacheKey is the map key. It is a comparable struct rather than a byte string:
+// building the string allocated and scanned the name on every lookup, and the
+// name is already an immutable string owned by the caller's parsed request.
+type cacheKey struct {
+	name   string
+	qtype  uint16
+	qclass uint16
+	flags  byte
+}
 
 type cacheEntry struct {
 	msg      *dns.Msg
@@ -66,7 +76,7 @@ func (o QueryOptions) flags() byte {
 
 type cacheShard struct {
 	mu      sync.RWMutex
-	entries map[string]*cacheEntry
+	entries map[cacheKey]*cacheEntry
 }
 
 type Cache struct {
@@ -88,7 +98,7 @@ type Cache struct {
 	// inflight is the single-flight set for background refreshes, keyed by cache
 	// key; refreshSem bounds how many run at once.
 	flightMu   sync.Mutex
-	inflight   map[string]struct{}
+	inflight   map[cacheKey]struct{}
 	refreshSem chan struct{}
 
 	// generation is bumped by Flush and checked by runRefresh before it puts a
@@ -130,14 +140,14 @@ func NewCache(maxSize int, minTTL, maxTTL uint32) *Cache {
 		minTTL:     minTTL,
 		maxTTL:     maxTTL,
 		staleFor:   defaultStaleWindow,
-		inflight:   make(map[string]struct{}),
+		inflight:   make(map[cacheKey]struct{}),
 		refreshSem: make(chan struct{}, maxRefreshWorkers),
 		stop:       make(chan struct{}),
 	}
 
 	for i := range c.shards {
 		c.shards[i] = &cacheShard{
-			entries: make(map[string]*cacheEntry),
+			entries: make(map[cacheKey]*cacheEntry),
 		}
 	}
 
@@ -146,51 +156,32 @@ func NewCache(maxSize int, minTTL, maxTTL uint32) *Cache {
 	return c
 }
 
-func (c *Cache) getShard(key string) *cacheShard {
-	return c.shards[maphash.String(shardSeed, key)%numShards]
+func (c *Cache) getShard(key cacheKey) *cacheShard {
+	return c.shards[maphash.String(shardSeed, key.name)%numShards]
 }
 
-// cacheKey normalizes the name to lower case. DNS names are case-insensitive,
+// cacheKeyFor normalizes the name to lower case. DNS names are case-insensitive,
 // so keying on the raw name let a flood of case-varied spellings of one domain
 // occupy an unbounded number of distinct entries.
 //
-// Type and class are written as their raw 16-bit values rather than looked up in
-// dns.TypeToString/dns.ClassToString: two map lookups per query bought nothing
-// but a human-readable key that nothing ever reads. The one-byte flags field
-// carries EDNS/DO/CD so a signed answer is never served to a client that did not
-// ask for signatures, and an unchecked answer is never served to a validating
-// client. They go in front of the name, not after it, so the fixed-width prefix
-// can never be confused with part of a name and two different option sets can
-// never derive the same key. strings.ToLower returns the original string
-// untouched when there is no uppercase to fold. The scratch array is sized for
-// the 255-byte DNS name limit plus the five prefix bytes, so on the lookup path —
-// where the key is not retained — it stays on the stack.
-func (c *Cache) cacheKey(q dns.Question) string {
+// Type, class and the EDNS/DO/CD flags are part of the comparable struct. The
+// flags keep a signed answer from being served to a client that did not ask for
+// signatures, and an unchecked answer from a validating client. strings.ToLower
+// returns the original string untouched when there is no uppercase to fold, and
+// the key itself no longer allocates.
+func (c *Cache) cacheKey(q dns.Question) cacheKey {
 	return c.cacheKeyFor(q, QueryOptions{})
 }
 
-func (c *Cache) cacheKeyFor(q dns.Question, opts QueryOptions) string {
+func (c *Cache) cacheKeyFor(q dns.Question, opts QueryOptions) cacheKey {
 	return c.cacheKeyForName(q, strings.ToLower(q.Name), opts)
 }
 
 // cacheKeyForName is cacheKeyFor for a caller that already normalised the name.
 // The resolver lowercases the question once for logging and the matcher, so
 // doing it again here was a second scan of the same bytes on every hit.
-func (c *Cache) cacheKeyForName(q dns.Question, name string, opts QueryOptions) string {
-
-	var scratch [maxNameLen + 5]byte
-	var buf []byte
-	if len(name) <= maxNameLen {
-		buf = scratch[:0]
-	} else {
-		buf = make([]byte, 0, len(name)+5)
-	}
-
-	buf = binary.BigEndian.AppendUint16(buf, q.Qtype)
-	buf = binary.BigEndian.AppendUint16(buf, q.Qclass)
-	buf = append(buf, opts.flags())
-	buf = append(buf, name...)
-	return string(buf)
+func (c *Cache) cacheKeyForName(q dns.Question, name string, opts QueryOptions) cacheKey {
+	return cacheKey{name: name, qtype: q.Qtype, qclass: q.Qclass, flags: opts.flags()}
 }
 
 // Get returns a cached DNS message if present and unexpired, with adjusted TTLs.
@@ -205,6 +196,20 @@ func (c *Cache) Get(q dns.Question) *dns.Msg {
 // GetWithOptions is Get for a request whose EDNS/DO/CD flags are significant.
 func (c *Cache) GetWithOptions(q dns.Question, opts QueryOptions) *dns.Msg {
 	return c.get(q, opts, true)
+}
+
+// HasFresh reports whether a fresh entry exists without returning it or moving
+// the hit/miss counters. Background work (sibling prefetch) uses this to avoid
+// paying for a lookup it already has, without making the cache ratio look
+// better than the clients experienced.
+func (c *Cache) HasFresh(q dns.Question, opts QueryOptions) bool {
+	key := c.cacheKeyFor(q, opts)
+	shard := c.getShard(key)
+	shard.mu.RLock()
+	entry, ok := shard.entries[key]
+	fresh := ok && !time.Now().After(entry.expireAt)
+	shard.mu.RUnlock()
+	return fresh
 }
 
 func (c *Cache) get(q dns.Question, opts QueryOptions, normalize bool) *dns.Msg {
@@ -385,14 +390,14 @@ func (c *Cache) evictLocked(shard *cacheShard, now time.Time) {
 	}
 
 	for len(shard.entries) >= limit {
-		var victim string
+		var victim cacheKey
 		var victimAt time.Time
 		for k, e := range shard.entries {
-			if victim == "" || e.expireAt.Before(victimAt) {
+			if victim.name == "" || e.expireAt.Before(victimAt) {
 				victim, victimAt = k, e.expireAt
 			}
 		}
-		if victim == "" {
+		if victim.name == "" {
 			return
 		}
 		delete(shard.entries, victim)
@@ -603,7 +608,7 @@ func (c *Cache) Flush() {
 	c.generation.Add(1)
 	for i := range c.shards {
 		c.shards[i].mu.Lock()
-		c.shards[i].entries = make(map[string]*cacheEntry)
+		c.shards[i].entries = make(map[cacheKey]*cacheEntry)
 		c.shards[i].mu.Unlock()
 	}
 }

@@ -86,6 +86,7 @@ func TestRecordDetailBuildsBoundedTotalsAndTopLists(t *testing.T) {
 	blocked.Domain = "ads.example."
 	blocked.Action = "BLOCK"
 	blocked.Rcode = dns.RcodeSuccess
+	blocked.Upstream = "" // answered locally, not by a resolver
 	a.RecordTotal(now)
 	a.RecordDetail(blocked)
 
@@ -93,6 +94,7 @@ func TestRecordDetailBuildsBoundedTotalsAndTopLists(t *testing.T) {
 	proxied.Domain = "video.example."
 	proxied.Action = "PROXY"
 	proxied.RelayCountry = "DE"
+	proxied.Upstream = "" // answered through a relay, not a resolver
 	a.RecordTotal(now)
 	a.RecordDetail(proxied)
 
@@ -106,6 +108,7 @@ func TestRecordDetailBuildsBoundedTotalsAndTopLists(t *testing.T) {
 	limited.Domain = "noisy.example."
 	limited.Action = "RATELIMIT"
 	limited.Rcode = dns.RcodeRefused
+	limited.Upstream = ""
 	a.RecordTotal(now)
 	a.RecordDetail(limited)
 
@@ -147,6 +150,65 @@ func TestRecordDetailBuildsBoundedTotalsAndTopLists(t *testing.T) {
 	}
 	if b.LatencyCount != 5 || b.LatencySumMs != 62.5 {
 		t.Errorf("latency = %v/%d, want 62.5/5", b.LatencySumMs, b.LatencyCount)
+	}
+	if b.UncachedLatencyCount != 5 || b.UncachedLatencySumMs != 62.5 {
+		t.Errorf("uncached latency = %v/%d, want 62.5/5", b.UncachedLatencySumMs, b.UncachedLatencyCount)
+	}
+	// Only the direct answer and the failed upstream attempt reached a resolver;
+	// the block, proxy and rate-limit answers are local policy.
+	if !b.ResolutionLatencyTracked || b.ResolutionLatencyCount != 2 || b.ResolutionLatencySumMs != 25 {
+		t.Errorf("resolution latency = %v/%d tracked=%v, want 25/2",
+			b.ResolutionLatencySumMs, b.ResolutionLatencyCount, b.ResolutionLatencyTracked)
+	}
+}
+
+// The history card says "cache misses", so its average must exclude cache hits;
+// the all-query average remains available for other callers.
+func TestSummaryReportsCacheMissAverage(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 30, 0, 0, time.UTC)
+	a, _ := openTestAggregator(t, &now, Config{FlushInterval: time.Hour, CacheTTL: -1})
+
+	for range 9 {
+		item := testItem(now)
+		item.Cached = true
+		item.LatencyMs = 0.2
+		a.RecordTotal(now)
+		a.RecordDetail(item)
+	}
+	item := testItem(now)
+	item.Cached = false
+	item.LatencyMs = 40
+	a.RecordTotal(now)
+	a.RecordDetail(item)
+
+	// A local policy answer is logged uncached but must not enter the history
+	// "upstream resolution" average.
+	blocked := testItem(now)
+	blocked.Action = "BLOCK"
+	blocked.Cached = false
+	blocked.Upstream = ""
+	blocked.LatencyMs = 0.05
+	a.RecordTotal(now)
+	a.RecordDetail(blocked)
+
+	summary, err := a.Summary(Range24h)
+	if err != nil {
+		t.Fatalf("Summary: %v", err)
+	}
+	if want := 41.85 / 11; summary.LatencyAvgMs < want-1e-9 || summary.LatencyAvgMs > want+1e-9 {
+		t.Errorf("all-query average = %.4f ms, want %.4f", summary.LatencyAvgMs, want)
+	}
+	if want := 40.05 / 2; summary.LatencyUncachedAvgMs < want-1e-9 || summary.LatencyUncachedAvgMs > want+1e-9 {
+		t.Errorf("cache-miss average = %.4f ms, want %.4f", summary.LatencyUncachedAvgMs, want)
+	}
+	if summary.LatencyResolutionAvgMs != 40 {
+		t.Errorf("resolution average = %.2f ms, want 40", summary.LatencyResolutionAvgMs)
+	}
+	if summary.LatencyResolutionApprox {
+		t.Error("resolution average should not be marked approximate for new buckets")
+	}
+	if summary.LatencyUncachedApprox {
+		t.Error("cache-miss average should not be marked approximate for new buckets")
 	}
 }
 

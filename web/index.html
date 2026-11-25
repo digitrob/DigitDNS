@@ -1199,12 +1199,9 @@
               <button type="button" data-history-range="90d" aria-pressed="false"
                 class="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 transition">90d</button>
             </div>
-            <!-- Ranked cards default to ten rows: a broad history range can hold
+            <!-- Ranked cards show ten rows: a broad history range can hold
                  hundreds of names per dimension, and painting them all on every
-                 refresh is wasted DOM. The API caps the list at 100. -->
-            <button id="history-top-limit-btn" type="button" data-limit="10"
-              class="px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 transition"
-              title="Ranked cards currently show 10 entries; the API caps this list at 100.">Show 50</button>
+                 refresh is wasted DOM. -->
             <!-- Exports are actions, not time selectors: they sit after the range
                  group at the far right and use the emerald action tint instead of
                  the cyan selected-range tint. -->
@@ -1490,10 +1487,10 @@
                   </div>
                   <button id="resolution-adaptive-run" type="button"
                     class="resolver-refresh-btn resolver-adaptive-force-btn"
-                    aria-label="Switch to the fastest measured healthy resolver now"
-                    title="Switch to the fastest measured healthy resolver now"
+                    aria-label="Benchmark the pool and switch to the fastest healthy resolver now"
+                    title="Benchmark the pool and switch to the fastest healthy resolver now"
                     disabled>
-                    <i data-feather="refresh-cw" class="w-3.5 h-3.5"></i>
+                    <i data-feather="refresh-cw" class="w-4 h-4"></i>
                     <span id="resolution-adaptive-force-label" class="resolver-force-label">Force</span>
                   </button>
                 </div>
@@ -1547,20 +1544,24 @@
                slow the upstreams get. The large row is cache misses only — the queries
                that actually did resolution work, and the ones a download or update stalls on.
                The footer covers every query. -->
-          <div data-dash-card="latency" class="glass-panel panel-card p-4 sm:p-5 lg:col-span-2">
-            <div class="flex items-center justify-between mb-3 sm:mb-4 gap-3">
-              <div class="min-w-0">
-                <h3 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2 font-heading">
-                  <i data-feather="activity" class="w-4 h-4 text-cyan-400"></i> Resolver Latency
-                </h3>
-                <!-- `sm:truncate`, not `truncate`: on a 360px phone the badge beside this leaves
-                     the text block about 196px, and this subtitle needs roughly 230px at
-                     11px, so an unconditional clamp cut it off with no hover to recover it.
-                     Below `sm` it wraps to a second line instead — a taller panel is cheaper
-                     than an unreadable subtitle. -->
-                <p class="text-[11px] text-slate-400 sm:truncate">Service time for queries the cache did not answer</p>
+          <div data-dash-card="latency" class="glass-panel panel-card p-4 sm:p-5 lg:col-span-2 min-w-0">
+            <div class="flex items-center justify-between mb-3 sm:mb-4 gap-2 sm:gap-3">
+              <div class="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                <div class="min-w-0">
+                  <h3 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2 font-heading min-w-0">
+                    <i data-feather="activity" class="w-4 h-4 text-cyan-400 shrink-0"></i>
+                    <span class="truncate">Resolver Latency</span>
+                  </h3>
+                  <p class="text-[11px] text-slate-400 truncate" title="Upstream resolution time">Upstream resolution time</p>
+                </div>
+                <div id="latency-range-chips" class="latency-range-chips" role="group" aria-label="Latency range">
+                  <button type="button" class="latency-range-chip is-active" data-latency-range="5m" aria-pressed="true">5m</button>
+                  <button type="button" class="latency-range-chip" data-latency-range="15m" aria-pressed="false">15m</button>
+                  <button type="button" class="latency-range-chip" data-latency-range="1h" aria-pressed="false">1h</button>
+                  <button type="button" class="latency-range-chip" data-latency-range="6h" aria-pressed="false">6h</button>
+                  <button type="button" class="latency-range-chip" data-latency-range="24h" aria-pressed="false">24h</button>
+                </div>
               </div>
-              <span id="stat-lat-count" class="text-[10px] font-mono text-slate-400 px-2.5 py-0.5 rounded-full bg-slate-800/70 border border-slate-700 whitespace-nowrap">no data yet</span>
             </div>
             <div class="latency-grid grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
               <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
@@ -1571,18 +1572,22 @@
                 <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">p95</div>
                 <div class="flex items-baseline gap-1"><span id="stat-lat-p95" class="text-lg sm:text-xl font-extrabold font-mono text-slate-100">—</span><span class="text-[10px] text-slate-500">ms</span></div>
               </div>
-              <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
-                <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">p99 worst 1%</div>
+              <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2" title="Estimated from a latency histogram over the selected range; Peak is the exact worst reading in the same window.">
+                <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">p99</div>
                 <div class="flex items-baseline gap-1"><span id="stat-lat-p99" class="text-lg sm:text-xl font-extrabold font-mono text-slate-100">—</span><span class="text-[10px] text-slate-500">ms</span></div>
               </div>
-              <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2">
+              <div class="rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2" title="Worst exact upstream resolution time in the selected range; the all-time maximum is in the tooltip.">
                 <div class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Peak</div>
                 <div class="flex items-baseline gap-1"><span id="stat-lat-max" class="text-lg sm:text-xl font-extrabold font-mono text-slate-100">—</span><span class="text-[10px] text-slate-500">ms</span></div>
               </div>
             </div>
-            <div class="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] sm:text-[11px] font-mono text-slate-500">
-              <span>All queries: <span id="stat-lat-all" class="text-slate-300">—</span></span>
-              <span id="stat-cache-health" class="text-slate-500">Cache refresh: —</span>
+            <!-- One fixed line: the full counters live in the tooltip so the card
+                 cannot grow taller or wider than its grid cell. -->
+            <div id="latency-diagnostics" class="latency-diagnostics mt-3 pt-3 border-t border-slate-800 text-[10px] sm:text-[11px] font-mono text-slate-500">
+              <span id="stat-lat-context">Waiting for resolutions…</span>
+              <span id="stat-lat-all" style="display:none">—</span>
+              <span id="stat-upstream-metrics" style="display:none">Timeouts 0 · Hedges 0 · Failovers 0</span>
+              <span id="stat-cache-health" style="display:none">Cache refresh: —</span>
             </div>
           </div>
         </div>
@@ -1620,7 +1625,7 @@
             <div data-dash-card="history-latency" class="glass-panel panel-card p-3.5 sm:p-4">
               <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400"><i data-feather="clock" class="w-3 h-3 text-blue-400"></i> Avg latency (ms)</div>
               <div id="history-latency" class="text-xl sm:text-2xl font-extrabold font-mono text-slate-200 mt-1 whitespace-nowrap">—</div>
-              <div class="text-[10px] sm:text-[11px] text-slate-500 font-mono mt-0.5">cache misses</div>
+              <div class="text-[10px] sm:text-[11px] text-slate-500 font-mono mt-0.5">upstream resolutions</div>
             </div>
 
             <div data-dash-card="history-chart" class="glass-panel panel-card p-4 sm:p-5 col-span-2 sm:col-span-3 xl:col-span-6">
@@ -2938,6 +2943,7 @@ async function onBuySubscription(ctx, username) {
           <button type="button" class="panel-chip" data-settings-jump="dns-profiles-card" aria-pressed="false">DNS Profiles</button>
           <button type="button" class="panel-chip" data-settings-jump="proxy-leak-card" aria-pressed="false">Protection</button>
           <button type="button" class="panel-chip" data-settings-jump="doh-tokens-card" aria-pressed="false">Tokens</button>
+          <button type="button" class="panel-chip" data-settings-jump="advanced-upstream-card" aria-pressed="false">Advanced</button>
         </nav>
 
         <h3 class="settings-section-heading settings-wide">Client transports</h3>
@@ -3482,6 +3488,91 @@ async function onBuySubscription(ctx, username) {
              image/binary selector. On a phone the pair collapses to one column in
              that same order. Plain CSS for the grid, because the purged utility
              sheet cannot grow a new breakpoint class here. -->
+        <!-- Upstream maintenance policy. These are not per-query routing rules:
+             bootstrap reaches an encrypted resolver, fallback answers when every
+             primary failed, keep-warm and probation tune the pool, and the cache
+             warm fills the cache after a restart. Collapsed by default so the
+             Resolvers tab still opens on transports. -->
+        <details class="glass-panel panel-card p-5 sm:p-6 settings-wide advanced-upstream-card" id="advanced-upstream-card">
+          <summary class="advanced-upstream-summary">
+            <span class="advanced-upstream-heading">
+              <span class="advanced-upstream-icon"><i data-feather="sliders" class="w-5 h-5"></i></span>
+              <span class="min-w-0">
+                <span class="panel-card-title block">Advanced upstream settings</span>
+                <span id="advanced-upstream-summary-text" class="advanced-upstream-summary-text">Loading…</span>
+              </span>
+            </span>
+            <i data-feather="chevron-down" class="advanced-upstream-chevron w-4 h-4"></i>
+          </summary>
+          <div class="advanced-upstream-body">
+            <p class="advanced-upstream-intro">
+              Connection maintenance and last-resort resolution. Changes apply immediately except
+              Bootstrap DNS, which needs a restart because the dialers are built at startup.
+            </p>
+            <div class="advanced-upstream-grid">
+              <label class="advanced-upstream-field" for="advanced-bootstrap-dns">
+                <span>Bootstrap DNS</span>
+                <input type="text" id="advanced-bootstrap-dns" class="panel-field font-mono text-xs" autocomplete="off" spellcheck="false" placeholder="1.1.1.1:53, 9.9.9.9:53">
+                <small>Plain DNS used only to resolve DoT/DoH/DoQ hostnames. Empty uses the system resolver.</small>
+              </label>
+              <label class="advanced-upstream-field" for="advanced-fallback-dns">
+                <span>Fallback DNS</span>
+                <input type="text" id="advanced-fallback-dns" class="panel-field font-mono text-xs" autocomplete="off" spellcheck="false" placeholder="optional, e.g. 9.9.9.9:53">
+                <small>Plain DNS tried only after every primary resolver failed.</small>
+              </label>
+              <label class="advanced-upstream-field" for="advanced-keep-warm">
+                <span>Keep-warm scope</span>
+                <select id="advanced-keep-warm" class="panel-field text-xs">
+                  <option value="off">Off</option>
+                  <option value="active">Active resolver</option>
+                  <option value="active_next">Active + next</option>
+                  <option value="all">All encrypted</option>
+                </select>
+                <small>Which encrypted connections are refreshed in the background.</small>
+              </label>
+              <label class="advanced-upstream-field" for="advanced-keep-warm-seconds">
+                <span>Keep-warm interval (s)</span>
+                <input type="number" id="advanced-keep-warm-seconds" class="panel-field font-mono text-xs" min="5" max="600" step="1">
+                <small>5–600 seconds; 20 s stays under the DoT/DoQ idle timeout.</small>
+              </label>
+              <label class="advanced-upstream-field" for="advanced-hedge">
+                <span>Adaptive hedge</span>
+                <select id="advanced-hedge" class="panel-field text-xs">
+                  <option value="balanced">Balanced</option>
+                  <option value="aggressive">Aggressive</option>
+                </select>
+                <small>Balanced waits twice the active resolver's median before asking the next one; aggressive waits one median.</small>
+              </label>
+              <label class="advanced-upstream-field" for="advanced-probation-seconds">
+                <span>Probation (s)</span>
+                <input type="number" id="advanced-probation-seconds" class="panel-field font-mono text-xs" min="5" max="300" step="1">
+                <small>How long a repeatedly failing resolver is skipped before it is probed again.</small>
+              </label>
+              <div class="advanced-upstream-field">
+                <span>Startup cache warm</span>
+                <span class="advanced-upstream-inline">
+                  <label class="advanced-upstream-check">
+                    <input type="checkbox" id="advanced-warm-cache" class="accent-cyan-500">
+                    <span>On</span>
+                  </label>
+                  <label for="advanced-warm-cache-top" class="advanced-upstream-inline-label">Top</label>
+                  <input type="number" id="advanced-warm-cache-top" class="panel-field font-mono text-xs" min="1" max="100" step="1">
+                </span>
+                <small>Resolve the most popular names from the last 24 h in the background after a restart.</small>
+              </div>
+            </div>
+            <p id="advanced-restart-note" class="advanced-upstream-restart hidden">
+              Bootstrap DNS saved. Restart the resolver to use the new servers.
+            </p>
+            <div class="advanced-upstream-actions">
+              <button type="button" id="save-advanced-upstream" class="panel-btn panel-btn-primary panel-btn-sm">
+                Save advanced settings
+              </button>
+              <span id="advanced-upstream-status" class="text-[11px] text-slate-400"></span>
+            </div>
+          </div>
+        </details>
+
         <h3 class="settings-section-heading settings-wide">Server &amp; access</h3>
         <div class="settings-pair settings-wide">
           <!-- Server location: the country the GeoIP database resolves for this

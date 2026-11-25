@@ -40,7 +40,9 @@ var compactStatsV2Keys = map[string]struct{}{
 	"relays_refused_flood":      {},
 	"latency":                   {},
 	"latency_uncached":          {},
+	"latency_range":             {},
 	"upstreams":                 {},
+	"upstream_metrics":          {},
 }
 
 // compactStatsV2 keeps only the heartbeat fields. The caller still builds the

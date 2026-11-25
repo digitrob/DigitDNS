@@ -3,8 +3,11 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
+	"slices"
 	"strings"
+	"time"
 
 	"digitdns/internal/core/resolution"
 	"digitdns/internal/core/upstream"
@@ -41,6 +44,36 @@ type resolutionView struct {
 	// answer is cached for a second, so a follow-up fetch could hand back the
 	// pre-benchmark latencies and make the new choice look slower than the old.
 	UpstreamStats []upstream.UpstreamStat `json:"upstream_stats,omitempty"`
+	// Advanced is the maintenance policy that is not part of per-query routing.
+	// Bootstrap DNS is restart-only; the rest applies on save.
+	Advanced advancedResolutionView `json:"advanced"`
+	// RestartRequired is set on the save response when a bootstrap change was
+	// written but cannot rebind the live dialers.
+	RestartRequired bool `json:"restart_required,omitempty"`
+}
+
+// advancedSaveBody uses pointers so an omitted field keeps its stored value:
+// a client built before a field existed must not reset it to a zero default.
+type advancedSaveBody struct {
+	BootstrapDNS     *[]string `json:"bootstrap_dns"`
+	FallbackDNS      *[]string `json:"fallback_dns"`
+	KeepWarm         *string   `json:"keep_warm"`
+	KeepWarmSeconds  *int      `json:"keep_warm_seconds"`
+	Hedge            *string   `json:"hedge"`
+	ProbationSeconds *int      `json:"probation_seconds"`
+	WarmCacheOnStart *bool     `json:"warm_cache_on_start"`
+	WarmCacheTop     *int      `json:"warm_cache_top"`
+}
+
+type advancedResolutionView struct {
+	BootstrapDNS     []string `json:"bootstrap_dns"`
+	FallbackDNS      []string `json:"fallback_dns"`
+	KeepWarm         string   `json:"keep_warm"`
+	KeepWarmSeconds  int      `json:"keep_warm_seconds"`
+	Hedge            string   `json:"hedge"`
+	ProbationSeconds int      `json:"probation_seconds"`
+	WarmCacheOnStart bool     `json:"warm_cache_on_start"`
+	WarmCacheTop     int      `json:"warm_cache_top"`
 }
 
 // handleResolutionSettings reads or writes the global encrypted-only filter and
@@ -59,7 +92,7 @@ func (ws *WebServer) handleResolutionSettings(w http.ResponseWriter, r *http.Req
 }
 
 func (ws *WebServer) writeResolution(w http.ResponseWriter, withStats bool) {
-	ws.writeResolutionRanked(w, withStats, false)
+	ws.writeResolutionView(w, withStats, false, false)
 }
 
 // writeResolutionRanked is writeResolution with an explicit ranking metric for
@@ -67,6 +100,12 @@ func (ws *WebServer) writeResolution(w http.ResponseWriter, withStats bool) {
 // response must render that same number; the scheduled path keeps the probe
 // window median.
 func (ws *WebServer) writeResolutionRanked(w http.ResponseWriter, withStats, fresh bool) {
+	ws.writeResolutionView(w, withStats, fresh, false)
+}
+
+// writeResolutionView renders the settings card. restartRequired is only true
+// on the save response that changed bootstrap DNS.
+func (ws *WebServer) writeResolutionView(w http.ResponseWriter, withStats, fresh, restartRequired bool) {
 	ws.dnsMu.Lock()
 	cfg := ws.mutableDNSLocked()
 	transports := resolution.NormalizeProtocols(cfg.Transports)
@@ -82,6 +121,16 @@ func (ws *WebServer) writeResolutionRanked(w http.ResponseWriter, withStats, fre
 		profiles[k] = v
 	}
 	upstreams := canonicalUpstreams(cfg.Upstreams)
+	advanced := advancedResolutionView{
+		BootstrapDNS:     canonicalUpstreams(cfg.BootstrapDNS),
+		FallbackDNS:      canonicalUpstreams(cfg.FallbackDNS),
+		KeepWarm:         cfg.EffectiveKeepWarmMode(),
+		KeepWarmSeconds:  cfg.EffectiveKeepWarmSeconds(),
+		Hedge:            cfg.EffectiveHedgeMode(),
+		ProbationSeconds: cfg.EffectiveCircuitCooldownSeconds(),
+		WarmCacheOnStart: cfg.WarmCacheOnStart(),
+		WarmCacheTop:     cfg.EffectiveWarmCacheTop(),
+	}
 	ws.dnsMu.Unlock()
 
 	// The pool is the operational truth. Read the view from it so a resolver
@@ -120,6 +169,8 @@ func (ws *WebServer) writeResolutionRanked(w http.ResponseWriter, withStats, fre
 		Profiles:           profiles,
 		Upstreams:          upstreams,
 		UpstreamStats:      stats,
+		Advanced:           advanced,
+		RestartRequired:    restartRequired,
 	})
 }
 
@@ -172,6 +223,9 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 		// know the field preserves the stored interval instead of resetting it.
 		AdaptiveIntervalMinutes *int                          `json:"adaptive_interval_minutes"`
 		Profiles                map[string]resolution.Profile `json:"profiles"`
+		// Advanced is a pointer so a client that does not know the object leaves
+		// the stored maintenance policy untouched.
+		Advanced *advancedSaveBody `json:"advanced"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	dec.DisallowUnknownFields()
@@ -198,6 +252,45 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 	if body.AdaptiveIntervalMinutes != nil && !resolution.ValidAdaptiveInterval(*body.AdaptiveIntervalMinutes) {
 		httpx.WriteJSONError(w, http.StatusBadRequest, "Unknown adaptive interval")
 		return
+	}
+	var advancedBootstrap, advancedFallback []string
+	if adv := body.Advanced; adv != nil {
+		if adv.BootstrapDNS != nil {
+			list, msg := normalizeMaintenanceServers(*adv.BootstrapDNS)
+			if msg != "" {
+				httpx.WriteJSONError(w, http.StatusBadRequest, "Bootstrap DNS: "+msg)
+				return
+			}
+			advancedBootstrap = list
+		}
+		if adv.FallbackDNS != nil {
+			list, msg := normalizeMaintenanceServers(*adv.FallbackDNS)
+			if msg != "" {
+				httpx.WriteJSONError(w, http.StatusBadRequest, "Fallback DNS: "+msg)
+				return
+			}
+			advancedFallback = list
+		}
+		if adv.KeepWarm != nil && !resolution.ValidKeepWarm(*adv.KeepWarm) {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "Unknown keep-warm scope")
+			return
+		}
+		if adv.Hedge != nil && !resolution.ValidHedge(*adv.Hedge) {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "Unknown hedge mode")
+			return
+		}
+		if adv.KeepWarmSeconds != nil && (*adv.KeepWarmSeconds < 5 || *adv.KeepWarmSeconds > 600) {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "Keep-warm interval must be between 5 and 600 seconds")
+			return
+		}
+		if adv.ProbationSeconds != nil && (*adv.ProbationSeconds < 5 || *adv.ProbationSeconds > 300) {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "Probation must be between 5 and 300 seconds")
+			return
+		}
+		if adv.WarmCacheTop != nil && (*adv.WarmCacheTop < 1 || *adv.WarmCacheTop > 100) {
+			httpx.WriteJSONError(w, http.StatusBadRequest, "Startup cache warm size must be between 1 and 100 names")
+			return
+		}
 	}
 	// Empty and the retired "fastest" value both normalise onto the strategy
 	// this release actually runs.
@@ -255,6 +348,8 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 		clean[key] = p
 	}
 
+	restartRequired := false
+	var advancedPolicy upstream.AdvancedPolicy
 	ws.dnsMu.Lock()
 	cfg := ws.mutableDNSLocked()
 	before := *cfg
@@ -280,6 +375,40 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 	}
 	if cfg.AdaptiveIntervalMinutes <= 0 {
 		cfg.AdaptiveIntervalMinutes = resolution.DefaultAdaptiveIntervalMinutes
+	}
+	if adv := body.Advanced; adv != nil {
+		if adv.BootstrapDNS != nil {
+			cfg.BootstrapDNS = advancedBootstrap
+			restartRequired = !slices.Equal(before.BootstrapDNS, advancedBootstrap)
+		}
+		if adv.FallbackDNS != nil {
+			cfg.FallbackDNS = advancedFallback
+		}
+		if adv.KeepWarm != nil {
+			cfg.KeepWarmMode = resolution.NormalizeKeepWarm(*adv.KeepWarm)
+		}
+		if adv.KeepWarmSeconds != nil {
+			cfg.KeepWarmSeconds = *adv.KeepWarmSeconds
+		}
+		if adv.Hedge != nil {
+			cfg.HedgeMode = resolution.NormalizeHedge(*adv.Hedge)
+		}
+		if adv.ProbationSeconds != nil {
+			cfg.CircuitCooldownSeconds = *adv.ProbationSeconds
+		}
+		if adv.WarmCacheOnStart != nil {
+			cfg.WarmCacheDisabled = !*adv.WarmCacheOnStart
+		}
+		if adv.WarmCacheTop != nil {
+			cfg.WarmCacheTop = *adv.WarmCacheTop
+		}
+	}
+	advancedPolicy = upstream.AdvancedPolicy{
+		KeepWarm:        cfg.EffectiveKeepWarmMode(),
+		KeepWarmEvery:   time.Duration(cfg.EffectiveKeepWarmSeconds()) * time.Second,
+		Hedge:           cfg.EffectiveHedgeMode(),
+		CircuitCooldown: time.Duration(cfg.EffectiveCircuitCooldownSeconds()) * time.Second,
+		Fallback:        append([]string(nil), cfg.FallbackDNS...),
 	}
 	cfg.Profiles = clean
 	adaptiveCleared := false
@@ -353,11 +482,46 @@ func (ws *WebServer) saveResolution(w http.ResponseWriter, r *http.Request) {
 	if adaptiveCleared {
 		ws.upstreams.SetAdaptiveCurrent("")
 	}
+	if ws.upstreams != nil {
+		ws.upstreams.SetAdvancedPolicy(advancedPolicy)
+	}
 	if ws.cache != nil {
 		ws.cache.Flush()
 	}
 	ws.nudgeAdaptive()
-	ws.writeResolution(w, false)
+	ws.writeResolutionView(w, false, false, restartRequired)
+}
+
+// normalizeMaintenanceServers canonicalises the bootstrap/fallback lists. Both
+// are plain DNS on purpose: they exist to reach an encrypted resolver or to
+// answer when every primary failed, so an encrypted scheme here would recreate
+// the chicken-and-egg problem the bootstrap list solves. Duplicates collapse,
+// and an invalid entry is an error rather than silently dropped.
+func normalizeMaintenanceServers(list []string) ([]string, string) {
+	if len(list) > 8 {
+		return nil, "at most 8 resolvers"
+	}
+	out := make([]string, 0, len(list))
+	seen := make(map[string]bool, len(list))
+	for _, raw := range list {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		canonical, ok := upstream.NormalizeUpstream(raw)
+		if !ok || strings.Contains(canonical, "://") {
+			return nil, "not a plain DNS address: " + raw
+		}
+		host, _, err := net.SplitHostPort(canonical)
+		if err != nil || host == "" {
+			return nil, "not a plain DNS address: " + raw
+		}
+		if seen[canonical] {
+			continue
+		}
+		seen[canonical] = true
+		out = append(out, canonical)
+	}
+	return out, ""
 }
 
 // normalizeProfileKey accepts "example.com", "*.example.com" and trailing dots,
@@ -412,8 +576,16 @@ func (ws *WebServer) applyResolutionPolicy() {
 		AdaptiveCurrent: cfg.AdaptiveCurrent,
 		Profiles:        cfg.Profiles,
 	}
+	advanced := upstream.AdvancedPolicy{
+		KeepWarm:        cfg.EffectiveKeepWarmMode(),
+		KeepWarmEvery:   time.Duration(cfg.EffectiveKeepWarmSeconds()) * time.Second,
+		Hedge:           cfg.EffectiveHedgeMode(),
+		CircuitCooldown: time.Duration(cfg.EffectiveCircuitCooldownSeconds()) * time.Second,
+		Fallback:        append([]string(nil), cfg.FallbackDNS...),
+	}
 	ws.dnsMu.Unlock()
 	ws.upstreams.SetPolicy(policy)
+	ws.upstreams.SetAdvancedPolicy(advanced)
 }
 
 // pruneResolutionProfiles drops rules whose domain is no longer in either

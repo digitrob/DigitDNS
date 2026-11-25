@@ -53,6 +53,11 @@ data class StatsSummary(
     /** True only when the range includes pre-HLL buckets; see the server docs. */
     @SerialName("active_clients_approx") val activeClientsApprox: Boolean = false,
     @SerialName("latency_avg_ms") val latencyAvgMs: Double = 0.0,
+    @SerialName("latency_uncached_avg_ms") val latencyUncachedAvgMs: Double = 0.0,
+    @SerialName("latency_uncached_approx") val latencyUncachedApprox: Boolean = false,
+    /** Upstream resolution time only; excludes cache hits and local policy answers. */
+    @SerialName("latency_resolution_avg_ms") val latencyResolutionAvgMs: Double = 0.0,
+    @SerialName("latency_resolution_approx") val latencyResolutionApprox: Boolean = false,
     val buckets: Int = 0,
 )
 

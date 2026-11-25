@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
@@ -35,7 +36,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +76,12 @@ import kotlin.math.roundToInt
 fun UpstreamsScreen(viewModel: UpstreamsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    var showAdvanced by rememberSaveable { mutableStateOf(false) }
+
+    if (showAdvanced) {
+        AdvancedUpstreamsScreen(onBack = { showAdvanced = false })
+        return
+    }
 
     LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
@@ -80,6 +89,21 @@ fun UpstreamsScreen(viewModel: UpstreamsViewModel = hiltViewModel()) {
         viewModel.dismissMessage()
     }
 
+    UpstreamsBody(
+        state = state,
+        viewModel = viewModel,
+        snackbar = snackbar,
+        onOpenAdvanced = { showAdvanced = true },
+    )
+}
+
+@Composable
+private fun UpstreamsBody(
+    state: UpstreamsUiState,
+    viewModel: UpstreamsViewModel,
+    snackbar: SnackbarHostState,
+    onOpenAdvanced: () -> Unit,
+) {
     Scaffold(snackbarHost = { PanelSnackbarHost(snackbar) }) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             PanelScreenHeader(showBadge = false)
@@ -147,14 +171,57 @@ fun UpstreamsScreen(viewModel: UpstreamsViewModel = hiltViewModel()) {
                 )
             }
 
-            UpstreamList(state = state, viewModel = viewModel)
+            UpstreamList(
+                state = state,
+                viewModel = viewModel,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            )
+            AdvancedUpstreamsLink(
+                onClick = onOpenAdvanced,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
+/** Opens the maintenance screen without adding a second settings destination. */
+@Composable
+private fun AdvancedUpstreamsLink(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    PanelCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Advanced upstream settings",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "Bootstrap, fallback, keep-warm, probation, cache warm",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
 
 /** The reorderable pool list, with the pull-to-refresh wrapper the panel uses everywhere. */
 @Composable
-private fun UpstreamList(state: UpstreamsUiState, viewModel: UpstreamsViewModel) {
+private fun UpstreamList(
+    state: UpstreamsUiState,
+    viewModel: UpstreamsViewModel,
+    modifier: Modifier = Modifier,
+) {
     var rowHeightPx by remember { mutableFloatStateOf(0f) }
     var draggingIndex by remember { mutableIntStateOf(NO_DRAG) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
@@ -162,7 +229,7 @@ private fun UpstreamList(state: UpstreamsUiState, viewModel: UpstreamsViewModel)
     PanelRefreshBox(
         isRefreshing = state.isLoading && state.upstreams.isNotEmpty(),
         onRefresh = viewModel::refresh,
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier,
     ) {
         when {
             state.isLoading && state.upstreams.isEmpty() -> SettingsLoadingSkeleton(cards = 2)

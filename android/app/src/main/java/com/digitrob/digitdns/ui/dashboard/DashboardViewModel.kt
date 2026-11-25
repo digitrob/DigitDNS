@@ -11,6 +11,7 @@ import com.digitrob.digitdns.core.network.ResolutionSettings
 import com.digitrob.digitdns.core.network.StatsSeries
 import com.digitrob.digitdns.core.network.StatsSummary
 import com.digitrob.digitdns.core.network.StatsTop
+import com.digitrob.digitdns.core.network.UpstreamMetrics
 import com.digitrob.digitdns.core.network.UpstreamPresetProvider
 import com.digitrob.digitdns.core.network.UpstreamStat
 import com.digitrob.digitdns.core.network.normalizedResolutionStrategy
@@ -42,6 +43,9 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
+
+/** The resolver-latency windows the server offers. */
+private val LATENCY_RANGES = listOf("5m", "15m", "1h", "6h", "24h")
 
 /** The live window the dashboard shows, derived from the shared stream. */
 @Immutable
@@ -97,6 +101,8 @@ data class DashboardUiState(
     val serverDomain: String = "",
     /** Global resolution defaults and per-domain overrides, when loaded. */
     val resolution: ResolutionSettings? = null,
+    /** Selected resolver-latency window: 5m, 15m, 1h, 6h or 24h. */
+    val latencyRange: String = "5m",
     /** Last resolver chosen in Single Server mode, remembered across Pool toggles. */
     val lastSingleUpstream: String = "",
     val isLoading: Boolean = false,
@@ -111,6 +117,9 @@ data class DashboardUiState(
 ) {
     /** The cache-miss latency distribution, the one that moves when an upstream slows. */
     val latency: LatencySnapshot get() = stats?.latencyUncached ?: LatencySnapshot()
+
+    /** Failover counters for the resolver latency card footer. */
+    val upstreamMetrics: UpstreamMetrics get() = stats?.upstreamMetrics ?: UpstreamMetrics()
 }
 
 /**
@@ -339,6 +348,13 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /** Switch the resolver-latency window and repaint the card from a fresh poll. */
+    fun setLatencyRange(range: String) {
+        if (range !in LATENCY_RANGES || range == _state.value.latencyRange) return
+        _state.update { it.copy(latencyRange = range) }
+        viewModelScope.launch { refreshOnce(background = true) }
+    }
+
     /** Switch the history window and fetch it, cancelling any in-flight range. */
     fun setHistoryRange(range: HistoryRange) {
         if (_state.value.history.range == range) return
@@ -471,7 +487,7 @@ class DashboardViewModel @Inject constructor(
             _state.update { it.copy(isRefreshing = true) }
         }
         try {
-            val stats = statsRepository.live()
+            val stats = statsRepository.live(_state.value.latencyRange)
             // Current hubs carry the upstream rows in /stats. Keep the separate
             // read as a fallback for a hub that predates that field, so an older
             // server still renders its resolver list.

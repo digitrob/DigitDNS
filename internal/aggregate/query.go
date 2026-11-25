@@ -41,10 +41,16 @@ type Summary struct {
 	ProxiedPct  float64 `json:"proxied_pct"`
 	CacheHitPct float64 `json:"cache_hit_pct"`
 
-	ActiveClients       int     `json:"active_clients"`
-	ActiveClientsApprox bool    `json:"active_clients_approx"`
-	LatencyAvgMs        float64 `json:"latency_avg_ms"`
-	Buckets             int     `json:"buckets"`
+	ActiveClients         int     `json:"active_clients"`
+	ActiveClientsApprox   bool    `json:"active_clients_approx"`
+	LatencyAvgMs          float64 `json:"latency_avg_ms"`
+	LatencyUncachedAvgMs  float64 `json:"latency_uncached_avg_ms"`
+	LatencyUncachedApprox bool    `json:"latency_uncached_approx,omitempty"`
+	// Resolution latency excludes cache hits AND every policy answer (blocked,
+	// custom, self-service, quota). This is the figure the history card shows.
+	LatencyResolutionAvgMs  float64 `json:"latency_resolution_avg_ms"`
+	LatencyResolutionApprox bool    `json:"latency_resolution_approx,omitempty"`
+	Buckets                 int     `json:"buckets"`
 }
 
 type SeriesPoint struct {
@@ -219,6 +225,7 @@ func (a *Aggregator) Summary(window string) (Summary, error) {
 	registers := newHLL()
 	hllComplete := true
 	legacyClients := make(map[string]struct{})
+	var latencyUncachedCount, latencyResolutionCount uint64
 	for _, tb := range buckets {
 		b := tb.bucket
 		if b == nil {
@@ -230,6 +237,19 @@ func (a *Aggregator) Summary(window string) (Summary, error) {
 		out.Cached += b.Cached
 		out.Failed += b.Failed
 		out.LatencyAvgMs += b.LatencySumMs
+		out.LatencyUncachedAvgMs += b.UncachedLatencySumMs
+		latencyUncachedCount += b.UncachedLatencyCount
+		if b.UncachedLatencyCount == 0 && b.Queries > b.Cached {
+			// A bucket written before the cache-miss counters existed.
+			out.LatencyUncachedApprox = true
+		}
+		out.LatencyResolutionAvgMs += b.ResolutionLatencySumMs
+		latencyResolutionCount += b.ResolutionLatencyCount
+		if !b.ResolutionLatencyTracked && b.UncachedLatencyCount > 0 {
+			// The bucket predates the resolution-only definition; its samples
+			// include policy answers that took microseconds.
+			out.LatencyResolutionApprox = true
+		}
 		if b.ClientHLLComplete && len(b.ClientHLL) == hllRegisters {
 			hllMerge(registers, b.ClientHLL)
 		} else {
@@ -254,6 +274,12 @@ func (a *Aggregator) Summary(window string) (Summary, error) {
 	}
 	if latencyCount > 0 {
 		out.LatencyAvgMs /= float64(latencyCount)
+	}
+	if latencyUncachedCount > 0 {
+		out.LatencyUncachedAvgMs /= float64(latencyUncachedCount)
+	}
+	if latencyResolutionCount > 0 {
+		out.LatencyResolutionAvgMs /= float64(latencyResolutionCount)
 	}
 	if hllComplete {
 		out.ActiveClients = hllEstimate(registers)

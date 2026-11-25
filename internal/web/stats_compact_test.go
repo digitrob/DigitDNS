@@ -66,7 +66,7 @@ func TestStatsCompactContracts(t *testing.T) {
 
 	wantCompact := []string{
 		"active_proxy_conns", "cache_entries", "cache_hit_ratio",
-		"latency", "latency_uncached", "qps", "rate_limit_qps",
+		"latency", "latency_uncached", "latency_range", "qps", "rate_limit_qps",
 		"rate_limited", "refresh_dropped", "refresh_failed",
 		"refresh_started", "relays_refused", "relays_refused_blocked",
 		"relays_refused_flood", "relays_refused_malformed",
@@ -74,7 +74,7 @@ func TestStatsCompactContracts(t *testing.T) {
 		"relays_refused_self", "relays_refused_table_full",
 		"relays_unreadable", "speed_in_kbps", "speed_out_kbps",
 		"stale_served", "total_bytes_transferred", "total_proxy_conns",
-		"total_queries", "upstreams",
+		"total_queries", "upstream_metrics", "upstreams",
 	}
 	slices.Sort(wantCompact)
 	if got := statsSortedKeys(compact); !slices.Equal(got, wantCompact) {

@@ -64,6 +64,66 @@ func TestWarmEncryptedReusesDoTConnection(t *testing.T) {
 	}
 }
 
+// The dashboard counters must reflect the three paths: a hedge, a failure-driven
+// failover, and a plain timeout.
+func TestUpstreamMetricsCountHedgeFailoverAndTimeout(t *testing.T) {
+	slow := newTestResolver(t, always(answer{
+		rcode: dns.RcodeSuccess,
+		ip:    "203.0.113.243",
+		delay: 300 * time.Millisecond,
+	}), nil)
+	fast := newTestResolver(t, always(answer{rcode: dns.RcodeSuccess, ip: "203.0.113.244"}), nil)
+	hedged := newTestPool(t, []string{slow.addr, fast.addr}, 2*time.Second, false, "")
+	adaptiveWithCurrent(t, hedged, slow.addr)
+	if _, _, _, err := hedged.ExchangeFor(query("metrics-hedge.example."), ""); err != nil {
+		t.Fatalf("hedged query: %v", err)
+	}
+	if got := hedged.Metrics(); got.Hedges == 0 || got.HedgeLosses == 0 {
+		t.Fatalf("hedge metrics = %+v, want at least one hedge and one loss", got)
+	}
+
+	refused := "127.0.0.1:1"
+	failedOver := newTestPool(t, []string{refused, fast.addr}, 2*time.Second, false, "")
+	adaptiveWithCurrent(t, failedOver, refused)
+	if _, _, _, err := failedOver.ExchangeFor(query("metrics-failover.example."), ""); err != nil {
+		t.Fatalf("failover query: %v", err)
+	}
+	if got := failedOver.Metrics(); got.Failovers == 0 {
+		t.Fatalf("failover metrics = %+v, want at least one failover", got)
+	}
+
+	hang := newTestResolver(t, always(answer{silent: true}), nil)
+	timedOut := newTestPool(t, []string{hang.addr}, 300*time.Millisecond, false, "")
+	if _, _, _, err := timedOut.ExchangeFor(query("metrics-timeout.example."), ""); err == nil {
+		t.Fatal("single hanging resolver unexpectedly answered")
+	}
+	if got := timedOut.Metrics(); got.Timeouts == 0 {
+		t.Fatalf("timeout metrics = %+v, want at least one timeout", got)
+	}
+}
+
+// Keep-warm must not touch every encrypted resolver: active + next only.
+func TestWarmTargetsActiveAndNextOnly(t *testing.T) {
+	p := newTestPool(t, []string{
+		"1.1.1.1:53",
+		"tls://a.example:853",
+		"tls://b.example:853",
+		"tls://c.example:853",
+	}, 2*time.Second, false, "")
+	p.SetAdaptiveCurrent("tls://b.example:853")
+
+	got := p.warmTargets()
+	if len(got) != 2 || got[0] != "tls://b.example:853" || got[1] != "tls://a.example:853" {
+		t.Fatalf("warm targets = %v, want [active b, next a]", got)
+	}
+
+	p.SetAdaptiveCurrent("1.1.1.1:53")
+	got = p.warmTargets()
+	if len(got) != 2 || got[0] != "tls://a.example:853" || got[1] != "tls://b.example:853" {
+		t.Fatalf("warm targets with a plain active = %v, want the first two encrypted", got)
+	}
+}
+
 // The constructor must only build a bootstrap resolver when servers are set.
 func TestBootstrapResolverOnlyWhenConfigured(t *testing.T) {
 	plain := newTestPool(t, []string{"1.1.1.1:53"}, 2*time.Second, false, "")

@@ -204,6 +204,53 @@ type Matcher struct {
 	// swapped whole by the filter service, so the read path never waits on a
 	// download or a parse.
 	blockIndex *blocklist.Index
+
+	// verdicts caches matchDetailLower per published snapshot.
+	verdicts atomic.Pointer[matcherVerdicts]
+}
+
+// matcherVerdicts bounds the per-snapshot decision cache. The blocklist walk and
+// four ruleset lookups are cheap individually but run for every query; repeat
+// traffic (the same handful of names) is most of what a home resolver sees.
+// Resetting the map when it fills is deliberately crude: it costs one allocation
+// per 8192 distinct names and keeps memory bounded without an LRU lock.
+const matcherVerdictCap = 8192
+
+type matcherVerdict struct {
+	action  Action
+	rule    string
+	pattern string
+}
+
+type matcherVerdicts struct {
+	snap    *matcherSnapshot
+	mu      sync.RWMutex
+	entries map[string]matcherVerdict
+}
+
+func (m *Matcher) verdictsFor(snap *matcherSnapshot) *matcherVerdicts {
+	if cached := m.verdicts.Load(); cached != nil && cached.snap == snap {
+		return cached
+	}
+	next := &matcherVerdicts{snap: snap, entries: make(map[string]matcherVerdict, 256)}
+	m.verdicts.Store(next)
+	return next
+}
+
+func (c *matcherVerdicts) get(d string) (matcherVerdict, bool) {
+	c.mu.RLock()
+	v, ok := c.entries[d]
+	c.mu.RUnlock()
+	return v, ok
+}
+
+func (c *matcherVerdicts) put(d string, v matcherVerdict) {
+	c.mu.Lock()
+	if len(c.entries) >= matcherVerdictCap {
+		c.entries = make(map[string]matcherVerdict, 256)
+	}
+	c.entries[d] = v
+	c.mu.Unlock()
 }
 
 // CustomGroup is an operator-defined named policy: a bundle of domains that resolve
@@ -498,6 +545,21 @@ func (m *Matcher) matchDetailLower(d string) (Action, string, string) {
 		return ActionDirect, "Direct", ""
 	}
 
+	// The verdict for a name is deterministic for a published snapshot, and a
+	// snapshot is replaced whole on every rule or list change. Caching the final
+	// answer therefore skips the blocklist suffix walk for repeat traffic without
+	// ever serving a stale policy: the cache is keyed by the snapshot pointer.
+	cache := m.verdictsFor(snap)
+	if verdict, ok := cache.get(d); ok {
+		return verdict.action, verdict.rule, verdict.pattern
+	}
+	action, rule, pattern := matchDetailSnap(snap, d)
+	cache.put(d, matcherVerdict{action: action, rule: rule, pattern: pattern})
+	return action, rule, pattern
+}
+
+// matchDetailSnap is the uncached precedence walk.
+func matchDetailSnap(snap *matcherSnapshot, d string) (Action, string, string) {
 	// The live-log decision is the operator's most specific statement of intent.
 	// It outranks custom records, blocklists, forced-direct rules and every
 	// custom list, including a broader wildcard in a lower tier.

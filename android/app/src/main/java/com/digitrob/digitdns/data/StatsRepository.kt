@@ -12,7 +12,7 @@ import javax.inject.Singleton
 class StatsRepository @Inject constructor(
     private val api: StatsApi,
 ) {
-    suspend fun live(): LiveStats = api.live()
+    suspend fun live(range: String = "5m"): LiveStats = api.live(range)
 }
 
 /**

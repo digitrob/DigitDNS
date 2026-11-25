@@ -47,6 +47,42 @@ type UpstreamPool struct {
 	racing      bool
 	ecsClientIP net.IP
 	stats       map[string]*upstreamStatInternal
+	// Query-path counters for the dashboard. They are process-lifetime totals,
+	// like the per-upstream counters they summarize.
+	timeouts    atomic.Uint64
+	hedges      atomic.Uint64
+	failovers   atomic.Uint64
+	hedgeLosses atomic.Uint64
+	coalesced   atomic.Uint64
+
+	// Advanced resolver policy, applied live by SetAdvancedPolicy. The keep-warm
+	// loop reads these each tick, so changing the scope or interval does not need
+	// a restart. cooldownNs is the circuit-breaker cooldown in nanoseconds.
+	keepWarmMode  atomic.Value // string
+	keepWarmEvery atomic.Int64
+	// keepWarmWake interrupts a long sleep so a new interval applies at once
+	// instead of after the old one expires. Buffered: a save never blocks.
+	keepWarmWake chan struct{}
+	cooldownNs   atomic.Int64
+
+	// Adaptive hedge and live re-selection. The head start is derived from the
+	// active resolver's own median and cached for a second, so the query path
+	// pays one atomic load. The re-selection streak prevents a single noisy
+	// sample from moving the Adaptive choice.
+	hedgeAggressive    atomic.Bool
+	adaptiveHeadStart  atomic.Int64
+	hedgeUpdated       atomic.Int64
+	reselectSamples    atomic.Uint64
+	reselectStreak     atomic.Int32
+	reselectBusy       atomic.Bool
+	adaptiveSwitchHook atomic.Pointer[func(string)]
+	// seedPath is where the last-known resolver latencies are cached between
+	// restarts; seedSaved rate-limits the writes.
+	seedPath  atomic.Value // string
+	seedSaved atomic.Int64
+	// fallback is the optional last-resort pool. It is built from FallbackDNS at
+	// save time and has no fallback of its own, so a query can never recurse.
+	fallback atomic.Pointer[UpstreamPool]
 	// statsView is the read-only query-path view of stats. The map only changes
 	// when the upstream list does, so publishing an immutable copy lets the
 	// per-query path do one atomic load instead of taking mu for every answer.
@@ -544,8 +580,15 @@ const (
 	circuitProbeLease = 10 * time.Second
 )
 
-func circuitOpenFor() time.Duration {
-	return circuitCooldown + rand.N(circuitJitter)
+// circuitOpenFor is the breaker cooldown plus jitter. The cooldown is read from
+// the live policy so an operator can tune how long a failed resolver is skipped
+// without a restart.
+func (p *UpstreamPool) circuitOpenFor() time.Duration {
+	cooldown := circuitCooldown
+	if ns := p.cooldownNs.Load(); ns > 0 {
+		cooldown = time.Duration(ns)
+	}
+	return cooldown + rand.N(circuitJitter)
 }
 
 // statOutcome separates a resolver that answered from one that could not be
@@ -583,6 +626,13 @@ func shortError(err error) string {
 		return msg[:max] + "…"
 	}
 	return msg
+}
+
+// isTimeoutReason identifies the transport failures that mean "no answer before
+// the deadline", which is the number the dashboard labels Timeouts.
+func isTimeoutReason(reason string) bool {
+	lower := strings.ToLower(reason)
+	return strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline exceeded")
 }
 
 // normalizeUpstreams cleans a raw upstream list: trims blanks, canonicalises
@@ -777,9 +827,15 @@ func NewUpstreamPoolWithBootstrap(upstreams []string, timeout time.Duration, rac
 		// DoQ reuses one QUIC connection per endpoint and opens a stream per query.
 		// NextProtos carries the RFC 9250 "doq" ALPN token; ServerName is filled in
 		// per dial from the upstream.
-		quicTLS:  &tls.Config{MinVersion: tls.VersionTLS12, NextProtos: []string{doqALPN}, ClientSessionCache: sessionCache},
-		dnscrypt: newDNSCryptTransport(timeout),
+		quicTLS:      &tls.Config{MinVersion: tls.VersionTLS12, NextProtos: []string{doqALPN}, ClientSessionCache: sessionCache},
+		dnscrypt:     newDNSCryptTransport(timeout),
+		keepWarmWake: make(chan struct{}, 1),
 	}
+
+	pool.keepWarmMode.Store(resolution.KeepWarmActiveNext)
+	pool.keepWarmEvery.Store(int64(keepWarmInterval))
+	pool.cooldownNs.Store(int64(circuitCooldown))
+	pool.adaptiveHeadStart.Store(int64(adaptiveHedgeDelay))
 
 	for _, u := range normalized {
 		pool.stats[u] = &upstreamStatInternal{lastUpdated: time.Now()}
@@ -914,6 +970,9 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 		stat.transportErrors++
 		stat.observeRecent(true)
 		stat.consecutiveFailures++
+		if isTimeoutReason(reason) {
+			p.timeouts.Add(1)
+		}
 		// Drop the cached latency order so the next query starts with a healthy
 		// resolver instead of the one that just timed out.
 		p.orderView.Store(nil)
@@ -923,7 +982,7 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 			oldUntil := stat.openUntil.Load()
 			wasOpen := oldUntil != 0
 			halfOpen := wasOpen && now.UnixNano() >= oldUntil
-			stat.openUntil.Store(now.Add(circuitOpenFor()).UnixNano())
+			stat.openUntil.Store(now.Add(p.circuitOpenFor()).UnixNano())
 			switch {
 			case !wasOpen:
 				p.openCircuits.Add(1)
@@ -935,6 +994,16 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 		}
 	}
 	stat.errors = stat.transportErrors + stat.policyErrors
+
+	// Live re-selection, sampled rather than evaluated on every answer: a
+	// sustained slowdown is what matters, not one slow lookup. The goroutine
+	// waits for this stat's lock to be released, so the query path never pays
+	// for the comparison.
+	if outcome == statSuccess && !probe && addr == p.AdaptiveCurrent() {
+		if p.reselectSamples.Add(1)%32 == 0 {
+			go p.maybeReselect(addr)
+		}
+	}
 }
 
 // upstreamAvailable reports whether an upstream is outside its breaker cooldown.
@@ -1014,6 +1083,7 @@ func (p *UpstreamPool) BenchmarkAll() {
 		}(s)
 	}
 	wg.Wait()
+	p.persistLatencySeeds()
 }
 
 // benchmarkSamples is the number of warm measurements a benchmark takes. The
@@ -1057,6 +1127,7 @@ func (p *UpstreamPool) QuickProbeAll() {
 		}(s)
 	}
 	wg.Wait()
+	p.persistLatencySeeds()
 }
 
 // HasMeasured reports whether any resolver has a live sample or a successful
@@ -1395,6 +1466,11 @@ func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.
 	// default route is the only fallback behaviour.
 	distinctFallback := len(fallbackCandidates) > 0 && !sameUpstreams(candidates, fallbackCandidates)
 	if !distinctFallback {
+		// An operator-configured fallback pool is the last resort before the
+		// primary pool's own verdict is handed back.
+		if resp, dur, upstream, fallbackErr := p.exchangeNamedFallback(queryMsg); fallbackErr == nil {
+			return resp, dur, upstream, nil
+		}
 		if lastResp != nil {
 			// The pool itself answered (or refused) as a unit; hand its verdict
 			// back rather than inventing a SERVFAIL.
@@ -1407,10 +1483,41 @@ func (p *UpstreamPool) ExchangeFor(req *dns.Msg, domain string) (*dns.Msg, time.
 	}
 
 	resp, dur, upstream, err := p.exchangeWith(queryMsg, fallbackCandidates, poolStrategy(racing), "", timeout)
-	if err == nil {
+	if err == nil && usableRcode(resp) {
 		return resp, dur, upstream, nil
 	}
-	return nil, 0, "", err
+	if resp, dur, upstream, fallbackErr := p.exchangeNamedFallback(queryMsg); fallbackErr == nil {
+		return resp, dur, upstream, nil
+	}
+	if err != nil {
+		return nil, 0, "", err
+	}
+	if resp != nil {
+		return resp, dur, upstream, nil
+	}
+	return nil, 0, "", errors.New("fallback upstream returned no usable response")
+}
+
+// exchangeNamedFallback asks the operator's fallback pool only after every
+// primary path failed. It returns an error when no pool is configured or its
+// answer is not usable, so callers can keep the primary verdict.
+func (p *UpstreamPool) exchangeNamedFallback(req *dns.Msg) (*dns.Msg, time.Duration, string, error) {
+	fb := p.fallback.Load()
+	if fb == nil {
+		return nil, 0, "", errors.New("no fallback pool configured")
+	}
+	resp, dur, upstream, err := fb.Exchange(req)
+	if err != nil {
+		return nil, 0, "", err
+	}
+	if resp == nil || !usableRcode(resp) {
+		rcode := "no response"
+		if resp != nil {
+			rcode = dns.RcodeToString[resp.Rcode]
+		}
+		return nil, 0, "", errors.New("fallback upstream returned " + rcode)
+	}
+	return resp, dur, upstream, nil
 }
 
 // poolStrategy is the strategy represented by the legacy racing flag. Hedged is
@@ -1460,6 +1567,136 @@ const hedgeStartDelay = 50 * time.Millisecond
 // Hedged strategy's 50 ms: the Adaptive choice is the measured fastest, so a
 // small head start usually lets it win without a second upstream query.
 const adaptiveHedgeDelay = 100 * time.Millisecond
+
+// adaptiveHeadStartDuration is the live hedge delay. Balanced gives the
+// measured-fastest resolver twice its own median before asking the next one;
+// aggressive gives it one median. Both are clamped so a sub-millisecond local
+// resolver does not race every query and a slow resolver still gets a turn.
+func (p *UpstreamPool) adaptiveHeadStartDuration() time.Duration {
+	if p == nil {
+		return adaptiveHedgeDelay
+	}
+	p.refreshAdaptiveHeadStart()
+	if ns := p.adaptiveHeadStart.Load(); ns > 0 {
+		return time.Duration(ns)
+	}
+	return adaptiveHedgeDelay
+}
+
+// refreshAdaptiveHeadStart recomputes the delay at most once a second. The
+// Adaptive choice changes rarely, so a per-second cache is plenty and keeps the
+// query path to one atomic load.
+func (p *UpstreamPool) refreshAdaptiveHeadStart() {
+	now := time.Now().UnixNano()
+	last := p.hedgeUpdated.Load()
+	if now-last < int64(time.Second) {
+		return
+	}
+	if !p.hedgeUpdated.CompareAndSwap(last, now) {
+		return
+	}
+	p.mu.RLock()
+	st := p.stats[p.adaptiveCurrent]
+	p.mu.RUnlock()
+	if st == nil {
+		return
+	}
+	st.mu.Lock()
+	p50, _, _ := st.latencyPercentiles()
+	samples := st.samples
+	st.mu.Unlock()
+	if samples < minLiveLatencySamples || p50 <= 0 {
+		return
+	}
+	var delay time.Duration
+	if p.hedgeAggressive.Load() {
+		delay = clampDuration(p50, 15*time.Millisecond, 60*time.Millisecond)
+	} else {
+		delay = clampDuration(2*p50, 30*time.Millisecond, 150*time.Millisecond)
+	}
+	p.adaptiveHeadStart.Store(int64(delay))
+}
+
+func clampDuration(value, low, high time.Duration) time.Duration {
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
+}
+
+// SetAdaptiveSwitchHook installs the persistence callback used when live
+// re-selection moves the Adaptive choice between scheduled benchmarks.
+func (p *UpstreamPool) SetAdaptiveSwitchHook(fn func(string)) {
+	if p == nil {
+		return
+	}
+	if fn == nil {
+		p.adaptiveSwitchHook.Store(nil)
+		return
+	}
+	p.adaptiveSwitchHook.Store(&fn)
+}
+
+// maybeReselect moves the Adaptive choice when the current resolver has been
+// consistently slower than a healthy alternative. The 25% margin and five
+// consecutive checks keep a noisy sample from flipping the choice; the scheduled
+// benchmark still runs and can move it back.
+func (p *UpstreamPool) maybeReselect(current string) {
+	if p == nil || !p.reselectBusy.CompareAndSwap(false, true) {
+		return
+	}
+	defer p.reselectBusy.Store(false)
+
+	p.mu.RLock()
+	if p.adaptiveCurrent != current {
+		p.mu.RUnlock()
+		return
+	}
+	var cur, best time.Duration
+	var bestAddr string
+	for addr, st := range p.stats {
+		st.mu.Lock()
+		probation := st.consecutiveFailures > 0 || st.hedgeLosses > 0 || st.openUntil.Load() != 0
+		samples := st.samples
+		var p50 time.Duration
+		if samples >= minLiveLatencySamples {
+			p50, _, _ = st.latencyPercentiles()
+		}
+		st.mu.Unlock()
+		if addr == current {
+			if samples >= minLiveLatencySamples {
+				cur = p50
+			}
+			continue
+		}
+		if probation || p50 <= 0 {
+			continue
+		}
+		if best == 0 || p50 < best {
+			best = p50
+			bestAddr = addr
+		}
+	}
+	p.mu.RUnlock()
+
+	if cur <= 0 || best <= 0 || bestAddr == "" || best*5 >= cur*4 {
+		p.reselectStreak.Store(0)
+		return
+	}
+	if p.reselectStreak.Add(1) < 5 {
+		return
+	}
+	p.reselectStreak.Store(0)
+	p.SetAdaptiveCurrent(bestAddr)
+	log.Printf("[Upstream] Adaptive auto-switch: %s (%.1f ms) replaced %s (%.1f ms) after a sustained slowdown",
+		bestAddr, float64(best.Microseconds())/1000.0, current, float64(cur.Microseconds())/1000.0)
+	if hook := p.adaptiveSwitchHook.Load(); hook != nil {
+		(*hook)(bestAddr)
+	}
+}
 
 // sequentialAttemptTimeout bounds one resolver's turn in the fallback walk.
 // The whole walk still has the caller's budget; this only stops the first slow
@@ -1627,7 +1864,7 @@ func (p *UpstreamPool) exchangeAdaptive(req *dns.Msg, upstreams []string, curren
 	// The measured choice goes first; if it has not answered within the head
 	// start, the next healthy resolver is asked in parallel. The first usable
 	// answer wins and the loser is cancelled.
-	return p.exchangeHedgedOrder(req, out, adaptiveHedgeDelay, timeout, true)
+	return p.exchangeHedgedOrder(req, out, p.adaptiveHeadStartDuration(), timeout, true)
 }
 
 // SelectAdaptiveFastest runs the selection half of an Adaptive interval: read
@@ -1799,6 +2036,7 @@ func (p *UpstreamPool) recordHedgeLoss(addr string) {
 	st.hedgeLosses++
 	st.lastHedgeLossAt = time.Now()
 	st.mu.Unlock()
+	p.hedgeLosses.Add(1)
 	p.orderView.Store(nil)
 }
 
@@ -1940,11 +2178,13 @@ collect:
 			// A failed resolver should not make the client wait for the hedge
 			// timer before the next one starts.
 			if started < len(order) {
+				p.failovers.Add(1)
 				launch()
 				resetTimer()
 			}
 		case <-timer.C:
 			if started < len(order) {
+				p.hedges.Add(1)
 				launch()
 				timer.Reset(delay)
 			}
@@ -2358,6 +2598,7 @@ func (p *UpstreamPool) exchangeSequential(req *dns.Msg, upstreams []string, time
 		fallback     *dns.Msg
 		fallbackRTT  time.Duration
 		fallbackAddr string
+		failedBefore bool
 	)
 	for i, u := range upstreams {
 		if ctx.Err() != nil {
@@ -2385,8 +2626,12 @@ func (p *UpstreamPool) exchangeSequential(req *dns.Msg, upstreams []string, time
 		ok := outcome == statSuccess
 		p.recordStat(u, rtt, outcome, reason, false)
 		if ok {
+			if failedBefore {
+				p.failovers.Add(1)
+			}
 			return resp, rtt, u, nil
 		}
+		failedBefore = true
 		// A SERVFAIL or REFUSED used to end the walk here, so a single filtered
 		// resolver at the head of the list meant the ones behind it were never
 		// tried at all.
@@ -2405,6 +2650,39 @@ func (p *UpstreamPool) exchangeSequential(req *dns.Msg, upstreams []string, time
 		lastErr = errors.New("all upstream servers failed to respond")
 	}
 	return nil, 0, "", lastErr
+}
+
+// UpstreamMetrics summarizes the query path's failover behaviour. The dashboard
+// shows these beside the latency percentiles so an operator can see that the
+// resolver is failing over rather than simply being slow.
+type UpstreamMetrics struct {
+	Timeouts    uint64 `json:"timeouts"`
+	Hedges      uint64 `json:"hedges"`
+	Failovers   uint64 `json:"failovers"`
+	HedgeLosses uint64 `json:"hedge_losses"`
+	Coalesced   uint64 `json:"coalesced"`
+}
+
+// RecordCoalesced counts a client query that joined an in-flight identical
+// lookup instead of sending a second upstream query.
+func (p *UpstreamPool) RecordCoalesced() {
+	if p != nil {
+		p.coalesced.Add(1)
+	}
+}
+
+// Metrics returns the process-lifetime query-path counters.
+func (p *UpstreamPool) Metrics() UpstreamMetrics {
+	if p == nil {
+		return UpstreamMetrics{}
+	}
+	return UpstreamMetrics{
+		Timeouts:    p.timeouts.Load(),
+		Hedges:      p.hedges.Load(),
+		Failovers:   p.failovers.Load(),
+		HedgeLosses: p.hedgeLosses.Load(),
+		Coalesced:   p.coalesced.Load(),
+	}
 }
 
 // UpstreamStat is an exported, read-only snapshot of a single upstream server health.

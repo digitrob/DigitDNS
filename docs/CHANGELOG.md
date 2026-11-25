@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.11.7] — Configurable upstreams and honest latency
+
+### Added
+- **Advanced upstream settings in the panel and Android app.** One screen now carries Bootstrap DNS, Fallback DNS, keep-warm scope (`off`, `active`, `active+next`, `all`), the keep-warm interval, resolver probation and startup cache warm (top 1–100 names from the last 24 h). Everything applies on save except Bootstrap DNS, which needs a restart because the dialers are built at startup.
+- **Fallback DNS is a real last resort.** A plain-DNS pool that is tried only after every primary resolver — including an explicit single-server pin — failed. It is never used on the normal path.
+- **Startup cache warm.** After a restart the resolver pre-resolves the most popular names from history in the background, so the first devices to reconnect do not each pay a cold lookup.
+- **Single-flight cache misses.** Concurrent identical misses (same name, type, class and EDNS/DO/CD flags) now share one upstream query. Waiters receive a copy with their own transaction ID, and a new `coalesced` counter reports how many queries joined an in-flight one.
+- **Upstream counters on the latency card.** Timeouts, hedges and failovers are shown in the footer; hedge losses and coalesced totals are in the tooltip and the stats API.
+- **Peak and p99.** The latency card separates the exact peak of the selected range from the histogram-estimated tail.
+- **Range chips on the latency card.** `5m`, `15m`, `1h`, `6h` and `24h` select the server-side window, so the percentiles and peak describe the same period on web and Android.
+- **Sibling prefetch.** A cold A/AAAA/HTTPS lookup warms the other two record types in the background, bounded to four workers and deduplicated, so the first page load pays one upstream round trip instead of three.
+- **Adaptive hedge mode.** `balanced` waits twice the active resolver's own median before asking the next one; `aggressive` waits one median. Both are clamped and configurable from the advanced upstream card.
+- **Live re-selection.** If the active resolver stays ~25% slower than a healthy alternative across five checks, Adaptive switches without waiting for the scheduled benchmark and persists the choice.
+- **Last-known latency seeds.** Resolver medians are cached on disk between restarts, so the first query is ordered by the previous run rather than the configured list order.
+
+### Changed
+- **Keep-warm is scoped by default.** The background loop now refreshes the active encrypted resolver and the next fastest one instead of every encrypted upstream. The scope and interval are configurable, and a save re-arms the loop immediately.
+- **The latency card measures upstream resolution.** Blocked names, custom records, self-service answers, quota refusals and proxy paths are no longer folded into the cache-miss histogram. On a filtering resolver those sub-millisecond policy answers used to become the median, which is why p50 could read 0.09 ms.
+- **Every figure on the latency card uses the same selected window.** p50, p95, p99 and Peak describe the same period; since-start values moved into the tooltips. The estimated p99 is capped at the exact window peak, so it can never read above it.
+- **History “Avg latency” uses a resolution-only counter.** Older buckets that used the wider cache-miss definition are marked approximate until they age out.
+- **Force button layout.** On the web it keeps the same 32 px box and padding as the interval chips, sits next to the chips and wraps with them, so it never clips an interval label.
+- **Force now benchmarks.** A click runs a full probe and selects from that run immediately, instead of reusing the previous measurements. If a scheduled benchmark is already probing, Force waits for it and uses its results rather than starting a second run.
+- **The history `10/50/all` selector is gone.** Ranked history cards are fixed at ten rows again, so the toolbar no longer carries a control that only changed DOM size.
+- **Hot-path CPU.** The matcher caches its verdict per published rules snapshot (invalidated on every save), and cache keys are comparable structs instead of allocated byte strings.
+
+### Tests
+- New coverage for advanced settings validation and persistence, fallback resolution, keep-warm scopes, single-flight coalescing, startup cache warm, rolling percentiles, the resolution-only histogram and the aggregate counter. Full Go, dashboard, Node and Android suites pass.
+
+No database schema migration is required. The Android companion moves to `android-v5.11.7`, with version code 589.
+
 ## 🏷️ [v5.11.5] — Faster DNS failover and immediate Force
 
 ### Fixed

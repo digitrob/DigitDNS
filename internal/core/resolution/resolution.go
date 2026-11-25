@@ -66,6 +66,66 @@ func NormalizeAdaptiveInterval(minutes int) int {
 	return DefaultAdaptiveIntervalMinutes
 }
 
+// Keep-warm scopes. The loop only refreshes encrypted resolvers: plain UDP/TCP
+// has no connection to keep alive.
+const (
+	KeepWarmOff        = "off"
+	KeepWarmActive     = "active"
+	KeepWarmActiveNext = "active_next"
+	KeepWarmAll        = "all"
+)
+
+// KeepWarmChoices is the ordered set the panel and the app offer.
+var KeepWarmChoices = []string{KeepWarmOff, KeepWarmActive, KeepWarmActiveNext, KeepWarmAll}
+
+// ValidKeepWarm reports whether value is an offered keep-warm scope.
+func ValidKeepWarm(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case KeepWarmOff, KeepWarmActive, KeepWarmActiveNext, KeepWarmAll:
+		return true
+	}
+	return false
+}
+
+// NormalizeKeepWarm maps a stored/requested value onto an offered scope. Empty
+// (a record written before the switch existed) keeps the recommended
+// active-plus-next default.
+func NormalizeKeepWarm(value string) string {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if ValidKeepWarm(v) {
+		return v
+	}
+	return KeepWarmActiveNext
+}
+
+// Adaptive hedge aggressiveness. The delay is derived from the active
+// resolver's own median; balanced waits longer, aggressive starts the second
+// resolver sooner.
+const (
+	HedgeBalanced   = "balanced"
+	HedgeAggressive = "aggressive"
+)
+
+// NormalizeHedge maps a stored/requested value onto an offered mode. Empty and
+// unknown values are the balanced default.
+func NormalizeHedge(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case HedgeAggressive:
+		return HedgeAggressive
+	default:
+		return HedgeBalanced
+	}
+}
+
+// ValidHedge reports whether value is an offered hedge mode.
+func ValidHedge(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case HedgeBalanced, HedgeAggressive:
+		return true
+	}
+	return false
+}
+
 // Fallback values accepted in a profile. Empty means FallbackPool.
 const (
 	FallbackPool = "pool"

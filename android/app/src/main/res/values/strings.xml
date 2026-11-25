@@ -217,8 +217,9 @@
     <string name="dashboard_uptime">Uptime %1$s</string>
     <string name="dashboard_p50">p50 median</string>
     <string name="dashboard_p95">p95</string>
-    <string name="dashboard_p99" formatted="false">p99 worst 1%</string>
+    <string name="dashboard_p99" formatted="false">p99</string>
     <string name="dashboard_peak">Peak</string>
+    <string name="dashboard_upstream_metrics">Timeouts %1$d · Hedges %2$d · Failovers %3$d</string>
 
     <!-- Dashboard card names in Settings. -->
     <string name="card_query_rate">Query rate</string>
@@ -259,7 +260,7 @@
     <string name="adaptive_interval_1h">1h</string>
     <string name="adaptive_interval_6h">6h</string>
     <string name="adaptive_interval_24h">24h</string>
-    <string name="adaptive_last_run">Last run %1$s · using %2$s</string>
+    <string name="adaptive_last_run">Last run %1$s · measured %2$s · using %3$s</string>
     <string name="adaptive_last_run_empty">No benchmark yet.</string>
     <string name="adaptive_run_failed">Could not run the adaptive check — check the connection and try again.</string>
     <string name="upstream_last_used">Last used: %1$s</string>
@@ -720,7 +721,7 @@
     <string name="history_hits_value">%1$s hits</string>
     <string name="history_clients_hll">HLL distinct</string>
     <string name="history_clients_approx">top-N approx.</string>
-    <string name="history_latency_unit">cache misses</string>
+    <string name="history_latency_unit">upstream resolutions</string>
     <string name="history_chart_title">Queries over time</string>
     <string name="history_no_data">No data in this range.</string>
     <string name="history_allowed">Allowed</string>

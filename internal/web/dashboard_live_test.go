@@ -82,18 +82,19 @@ func TestLatencyRowsHaveFourColourTiers(t *testing.T) {
 	}
 }
 
-func TestHistoryRankedListLimitToggle(t *testing.T) {
+// Ranked history tables are fixed at ten rows. The old 10/50/all toolbar
+// selector only changed DOM size, so it was removed; this test fails if it (or
+// a replacement that fetches hundreds of rows per refresh) comes back.
+func TestHistoryRankedListsAreFixedAtTen(t *testing.T) {
 	app := jsLineCommentRe.ReplaceAllString(readAsset(t, "js/app.js"), "")
 	doc := readAsset(t, "index.html")
 
-	if !strings.Contains(doc, "id=\"history-top-limit-btn\"") {
-		t.Error("the history toolbar lost the ranked-list limit control")
+	if strings.Contains(doc, "history-top-limit-btn") {
+		t.Error("the history toolbar brought back the ranked-list limit control")
 	}
 	for _, want := range []string{
-		"const HISTORY_TOP_LIMITS = [10, 50, 100]",
-		"function cycleHistoryTopLimit()",
-		"limit=${HISTORY_TOP_LIMITS[historyTopLimitIndex]}",
-		"getElementById('history-top-limit-btn')?.addEventListener('click', cycleHistoryTopLimit)",
+		"const HISTORY_TOP_LIMIT = 10",
+		"limit=${HISTORY_TOP_LIMIT}",
 	} {
 		if !strings.Contains(app, want) {
 			t.Errorf("js/app.js no longer contains %q", want)

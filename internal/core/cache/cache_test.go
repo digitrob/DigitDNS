@@ -142,7 +142,7 @@ func TestKeyIsUnambiguous(t *testing.T) {
 		{Name: "a.example.", Qtype: 0, Qclass: 0},
 	}
 
-	seen := make(map[string]dns.Question, len(questions))
+	seen := make(map[cacheKey]dns.Question, len(questions))
 	for _, q := range questions {
 		key := c.cacheKey(q)
 		if prev, dup := seen[key]; dup && prev != q {
@@ -152,9 +152,9 @@ func TestKeyIsUnambiguous(t *testing.T) {
 	}
 }
 
-// A name longer than the RFC 1035 limit takes the heap fallback in cacheKey. It
-// cannot arrive over the wire, but it can arrive from a config file or an
-// internal caller, and it must not run off the stack scratch buffer.
+// A name longer than the RFC 1035 limit cannot arrive over the wire, but it can
+// arrive from a config file or an internal caller. The struct key must keep it
+// intact rather than truncating at a fixed-size buffer.
 func TestKeyHandlesOversizeName(t *testing.T) {
 	c := NewCache(1024, 30, 3600)
 	defer c.Close()
@@ -162,8 +162,8 @@ func TestKeyHandlesOversizeName(t *testing.T) {
 	q := dns.Question{Name: long, Qtype: dns.TypeA, Qclass: dns.ClassINET}
 
 	key := c.cacheKey(q)
-	if want := len(long) + 5; len(key) != want {
-		t.Fatalf("key length = %d, want %d", len(key), want)
+	if key.name != strings.ToLower(long) {
+		t.Fatalf("key name length = %d, want the full %d-byte name", len(key.name), len(long))
 	}
 	if shard := c.getShard(key); shard == nil {
 		t.Fatal("shard selection returned nil for an oversize name")

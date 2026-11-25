@@ -287,7 +287,29 @@ type DNSSettings struct {
 	Upstreams   []string `json:"upstreams"`
 	// BootstrapDNS resolves encrypted upstream hostnames (DoH/DoT/DoQ/DoH3).
 	// Empty uses the system resolver, which loops when the box points at itself.
-	BootstrapDNS  []string      `json:"bootstrap_dns,omitempty"`
+	BootstrapDNS []string `json:"bootstrap_dns,omitempty"`
+	// FallbackDNS is a last-resort plain-DNS pool. It is consulted only after
+	// every eligible primary resolver failed, including an explicit single-server
+	// pin. Empty keeps the historical behaviour: retry the pool.
+	FallbackDNS []string `json:"fallback_dns,omitempty"`
+	// KeepWarmMode selects which encrypted upstream connections the background
+	// loop refreshes: "off", "active", "active_next" (default) or "all".
+	KeepWarmMode string `json:"keep_warm_mode,omitempty"`
+	// KeepWarmSeconds is the refresh interval. Zero uses the built-in 20 s.
+	KeepWarmSeconds int `json:"keep_warm_seconds,omitempty"`
+	// HedgeMode tunes the Adaptive hedge delay: "balanced" (default) or
+	// "aggressive". The actual delay is derived from the active resolver's own
+	// median, so this is a policy hint rather than a fixed number.
+	HedgeMode string `json:"hedge_mode,omitempty"`
+	// CircuitCooldownSeconds is how long a resolver that failed repeatedly is
+	// skipped before it is probed again. Zero uses the built-in 30 s.
+	CircuitCooldownSeconds int `json:"circuit_cooldown_seconds,omitempty"`
+	// WarmCacheDisabled is the negative form of "warm the cache on startup", so
+	// records written before the setting existed keep the recommended default.
+	WarmCacheDisabled bool `json:"warm_cache_disabled,omitempty"`
+	// WarmCacheTop is how many popular names from history are pre-resolved.
+	// Zero uses the built-in 100; the aggregate store caps a Top query at 100.
+	WarmCacheTop  int           `json:"warm_cache_top,omitempty"`
 	CacheSize     int           `json:"cache_size"`
 	CacheMinTTL   uint32        `json:"cache_min_ttl"`
 	CacheMaxTTL   uint32        `json:"cache_max_ttl"`
@@ -368,6 +390,77 @@ type DNSCryptSettings struct {
 	ResolverSk   string `json:"resolver_secret"`
 	EsVersion    int    `json:"es_version"`
 	CertNotAfter int64  `json:"cert_not_after"`
+}
+
+// Bounds for the advanced upstream settings. They are deliberately narrow: a
+// keep-warm loop or a benchmark is real network traffic, and a free-form value
+// would let an operator turn either into a query amplifier.
+const (
+	DefaultKeepWarmSeconds        = 20
+	MinKeepWarmSeconds            = 5
+	MaxKeepWarmSeconds            = 600
+	DefaultCircuitCooldownSeconds = 30
+	MinCircuitCooldownSeconds     = 5
+	MaxCircuitCooldownSeconds     = 300
+	DefaultWarmCacheTop           = 100
+	MinWarmCacheTop               = 1
+	MaxWarmCacheTop               = 100 // aggregate.Top's own limit
+	DefaultFallbackMax            = 8
+)
+
+// EffectiveKeepWarmMode maps the stored value onto an offered scope. Empty is
+// the recommended active-plus-next default.
+func (s DNSSettings) EffectiveKeepWarmMode() string {
+	return resolution.NormalizeKeepWarm(s.KeepWarmMode)
+}
+
+// EffectiveKeepWarmSeconds bounds the stored interval, using 20 s when unset.
+func (s DNSSettings) EffectiveKeepWarmSeconds() int {
+	return clampSeconds(s.KeepWarmSeconds, DefaultKeepWarmSeconds, MinKeepWarmSeconds, MaxKeepWarmSeconds)
+}
+
+// EffectiveHedgeMode maps the stored value onto an offered mode.
+func (s DNSSettings) EffectiveHedgeMode() string {
+	return resolution.NormalizeHedge(s.HedgeMode)
+}
+
+// EffectiveCircuitCooldownSeconds bounds the stored cooldown, using 30 s when
+// unset.
+func (s DNSSettings) EffectiveCircuitCooldownSeconds() int {
+	return clampSeconds(s.CircuitCooldownSeconds, DefaultCircuitCooldownSeconds, MinCircuitCooldownSeconds, MaxCircuitCooldownSeconds)
+}
+
+// EffectiveWarmCacheTop bounds how many popular names are warmed at startup.
+func (s DNSSettings) EffectiveWarmCacheTop() int {
+	n := s.WarmCacheTop
+	if n <= 0 {
+		return DefaultWarmCacheTop
+	}
+	if n < MinWarmCacheTop {
+		return MinWarmCacheTop
+	}
+	if n > MaxWarmCacheTop {
+		return MaxWarmCacheTop
+	}
+	return n
+}
+
+// WarmCacheOnStart reports the positive form of the startup cache warm switch.
+func (s DNSSettings) WarmCacheOnStart() bool {
+	return !s.WarmCacheDisabled
+}
+
+func clampSeconds(value, def, min, max int) int {
+	if value <= 0 {
+		return def
+	}
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
 }
 
 // DoH3Active reports whether HTTP/3 is actually served. DoH3 shares the DoH

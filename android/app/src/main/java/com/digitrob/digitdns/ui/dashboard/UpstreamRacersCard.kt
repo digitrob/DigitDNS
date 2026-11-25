@@ -36,9 +36,11 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -91,6 +93,7 @@ import com.digitrob.digitdns.ui.theme.transportColor
 import com.digitrob.digitdns.ui.theme.transportLabelRes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -619,6 +622,7 @@ private fun AdaptiveFooter(
             val head = stringResource(
                 R.string.adaptive_last_run,
                 formatAdaptiveRun(base.adaptiveLastRun),
+                adaptiveAge(base.adaptiveLastRun).ifBlank { "—" },
                 base.adaptiveCurrent.ifBlank { "—" },
             )
             if (base.adaptiveLastNote.isBlank()) head else head + "\n" + base.adaptiveLastNote
@@ -659,12 +663,11 @@ private fun AdaptiveForceButton(
     onClick: () -> Unit,
 ) {
     val colors = DigitDnsTheme.colors
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled && !isRunning, role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 2.dp),
+    FilledTonalButton(
+        onClick = onClick,
+        enabled = enabled && !isRunning,
+        modifier = Modifier.heightIn(min = 40.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
     ) {
         if (isRunning) {
             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -672,19 +675,14 @@ private fun AdaptiveForceButton(
             Icon(
                 Icons.Filled.Refresh,
                 contentDescription = stringResource(R.string.adaptive_check_now),
-                modifier = Modifier.size(14.dp),
-                tint = if (flash) colors.success else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+                tint = if (flash) colors.success else LocalContentColor.current,
             )
         }
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(6.dp))
         Text(
             text = stringResource(R.string.adaptive_check_now),
             style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
-            color = if (enabled) {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
-            },
         )
     }
 }
@@ -866,6 +864,21 @@ private fun formatAdaptiveRun(raw: String): String {
     return DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
         .withZone(ZoneId.systemDefault())
         .format(instant)
+}
+
+private const val MINUTES_PER_HOUR = 60
+private const val MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR
+
+/** The age of the last Adaptive measurement, in the form an operator scans. */
+private fun adaptiveAge(raw: String): String {
+    val instant = runCatching { Instant.parse(raw) }.getOrNull() ?: return ""
+    val minutes = Duration.between(instant, Instant.now()).toMinutes().coerceAtLeast(0)
+    return when {
+        minutes < 1 -> "just now"
+        minutes < MINUTES_PER_HOUR -> "${minutes}m ago"
+        minutes < MINUTES_PER_DAY -> "${minutes / MINUTES_PER_HOUR}h ago"
+        else -> "${minutes / MINUTES_PER_DAY}d ago"
+    }
 }
 
 /**

@@ -269,6 +269,23 @@ data class ResolutionSettings(
     @SerialName("adaptive_last_note") val adaptiveLastNote: String = "",
     val profiles: Map<String, ResolutionProfileDto> = emptyMap(),
     val upstreams: List<String> = emptyList(),
+    val advanced: AdvancedUpstreamDto = AdvancedUpstreamDto(),
+    /** True on a save that wrote Bootstrap DNS, which needs a restart to apply. */
+    @SerialName("restart_required") val restartRequired: Boolean = false,
+)
+
+/** Maintenance policy that is not part of per-query routing. Bootstrap is restart-only. */
+@Serializable
+@Immutable
+data class AdvancedUpstreamDto(
+    @SerialName("bootstrap_dns") val bootstrapDns: List<String> = emptyList(),
+    @SerialName("fallback_dns") val fallbackDns: List<String> = emptyList(),
+    @SerialName("keep_warm") val keepWarm: String = "active_next",
+    @SerialName("keep_warm_seconds") val keepWarmSeconds: Int = 20,
+    val hedge: String = "balanced",
+    @SerialName("probation_seconds") val probationSeconds: Int = 30,
+    @SerialName("warm_cache_on_start") val warmCacheOnStart: Boolean = true,
+    @SerialName("warm_cache_top") val warmCacheTop: Int = 100,
 )
 
 @Serializable
@@ -281,6 +298,8 @@ data class ResolutionSaveRequest(
     /** Null keeps the stored interval and keeps saves compatible with older servers. */
     @SerialName("adaptive_interval_minutes") val adaptiveIntervalMinutes: Int? = null,
     val profiles: Map<String, ResolutionProfileDto> = emptyMap(),
+    /** Null keeps the stored maintenance policy, so an older screen cannot reset it. */
+    val advanced: AdvancedUpstreamDto? = null,
 )
 
 @Serializable

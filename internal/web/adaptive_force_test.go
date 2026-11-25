@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -45,39 +46,28 @@ func TestAdaptiveRunResponseCarriesUpstreamStats(t *testing.T) {
 	}
 }
 
-// Force is the operator asking for the switch now. It must not wait for an
-// in-flight scheduled benchmark: it selects from the latest measurements and
-// persists that choice immediately, while the benchmark finishes on its own.
-func TestForceSelectsImmediatelyWithoutWaitingForBenchmark(t *testing.T) {
+// Force is the operator asking for fresh numbers now, not at the next
+// interval: it runs the benchmark and selects from that run.
+func TestForceRunsBenchmarkAndSelects(t *testing.T) {
 	ws, _, cleanup := setupTestWebServer(t)
 	defer cleanup()
 
 	fake := startWebTestDNS(t)
 	ws.upstreams = upstream.NewUpstreamPool([]string{fake}, 500*time.Millisecond, false, "")
-	ws.upstreams.QuickProbeAll()
-	if !ws.upstreams.HasMeasured() {
-		t.Fatal("fake resolver was not measured")
-	}
 
-	benchmarkStarted := make(chan struct{})
-	releaseBenchmark := make(chan struct{})
+	var runs atomic.Int32
 	runner := service.NewBenchmarkRunner(func() {
-		close(benchmarkStarted)
-		<-releaseBenchmark
+		runs.Add(1)
+		ws.upstreams.BenchmarkAll()
 	})
 	ws.SetControlState(runner, nil)
-	go runner.Run()
-	<-benchmarkStarted
-	defer close(releaseBenchmark)
 
-	began := time.Now()
 	decision, err := ws.runAdaptiveNow(true)
-	elapsed := time.Since(began)
 	if err != nil {
 		t.Fatalf("Force run: %v", err)
 	}
-	if elapsed >= 200*time.Millisecond {
-		t.Fatalf("Force waited %s for the in-flight benchmark", elapsed)
+	if runs.Load() != 1 {
+		t.Fatalf("benchmark runs = %d, want exactly 1", runs.Load())
 	}
 	if decision.Current != fake {
 		t.Fatalf("Force chose %q, want the measured resolver %q", decision.Current, fake)

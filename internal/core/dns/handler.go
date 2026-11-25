@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -87,6 +88,19 @@ type Handler struct {
 	matcher   *matcher.Matcher
 	upstreams *upstream.UpstreamPool
 	telemetry TelemetrySink
+	// inflight coalesces concurrent identical cache misses: one leader asks the
+	// upstream pool and every waiter receives a copy of that answer. This is
+	// what stops ten devices opening the same cold site from sending ten
+	// upstream queries.
+	inflightMu sync.Mutex
+	inflight   map[string]*inflightQuery
+	// Sibling prefetch: after a real resolution, warm the other record types a
+	// browser asks for. The semaphore bounds the extra upstream traffic; the
+	// in-flight set stops two clients asking for the same cold name from
+	// launching the same prefetch twice.
+	prefetchMu       sync.Mutex
+	prefetchInflight map[string]bool
+	prefetchSem      chan struct{}
 	// queryLog is the optional persistent query history. It is nil unless the
 	// operator enabled it; Push never blocks.
 	queryLog func(database.QueryLogItem)
@@ -157,12 +171,15 @@ func NewHandler(
 	publicIP string,
 ) *Handler {
 	h := &Handler{
-		access:    access,
-		cache:     c,
-		matcher:   m,
-		upstreams: u,
-		telemetry: t,
-		limiter:   newRateLimiter(defaultRateLimitQPS),
+		access:           access,
+		cache:            c,
+		matcher:          m,
+		upstreams:        u,
+		telemetry:        t,
+		inflight:         make(map[string]*inflightQuery),
+		prefetchInflight: make(map[string]bool),
+		prefetchSem:      make(chan struct{}, 4),
+		limiter:          newRateLimiter(defaultRateLimitQPS),
 	}
 	h.SetPublicIP(publicIP)
 	// Recommended default: proxied names must not advertise QUIC or origin
@@ -184,6 +201,51 @@ func NewHandler(
 		c.SetRefresherWithOptions(h.refreshUpstream)
 	}
 	return h
+}
+
+// inflightQuery is one upstream lookup shared by the queries that arrived while
+// it was running. The leader fills it and closes done; waiters copy the answer.
+type inflightQuery struct {
+	done     chan struct{}
+	resp     *dns.Msg
+	upstream string
+	err      error
+}
+
+// exchangeCoalesced shares one upstream lookup between concurrent identical
+// misses. The key includes the client's EDNS/DO/CD policy because those change
+// the question sent upstream and the validation path.
+func (h *Handler) exchangeCoalesced(req *dns.Msg, domain, key string) (*dns.Msg, string, error) {
+	h.inflightMu.Lock()
+	if call, ok := h.inflight[key]; ok {
+		h.inflightMu.Unlock()
+		h.upstreams.RecordCoalesced()
+		<-call.done
+		if call.err != nil {
+			return nil, "", call.err
+		}
+		resp := call.resp.Copy()
+		resp.Id = req.Id
+		resp.Question = req.Question
+		return resp, call.upstream, nil
+	}
+	call := &inflightQuery{done: make(chan struct{})}
+	h.inflight[key] = call
+	h.inflightMu.Unlock()
+
+	resp, _, upstream, err := h.upstreams.ExchangeFor(req, domain)
+	if resp != nil {
+		// Store a copy: the leader's response is about to be validated and
+		// TTL-clamped by its own client path.
+		call.resp = resp.Copy()
+	}
+	call.upstream = upstream
+	call.err = err
+	close(call.done)
+	h.inflightMu.Lock()
+	delete(h.inflight, key)
+	h.inflightMu.Unlock()
+	return resp, upstream, err
 }
 
 // SetProxyLeakProtection chooses whether proxied names withhold HTTPS/SVCB
@@ -250,6 +312,142 @@ func (h *Handler) refreshUpstream(q dns.Question, opts cache.QueryOptions) (*dns
 	return resp, nil
 }
 
+// WarmCache resolves up to limit popular names and stores their A answers in
+// the cache. It runs after startup, never on a client's path: the goal is that
+// the first devices to reconnect after a restart hit the cache instead of
+// racing an upstream for names the install already knows.
+//
+// Four workers bound the burst. The refresher path is used deliberately: it
+// bypasses client access rules and query telemetry, so a warm-up does not look
+// like a client query in the log, and a filtered name still gets no cache entry
+// it could bypass (the filter runs before the cache lookup).
+func (h *Handler) WarmCache(names []string, limit int) int {
+	if h == nil || h.cache == nil || h.upstreams == nil || len(names) == 0 {
+		return 0
+	}
+	if limit <= 0 || limit > len(names) {
+		limit = len(names)
+	}
+	seen := make(map[string]bool, limit)
+	work := make(chan dns.Question)
+	var warmed atomic.Int64
+	var wg sync.WaitGroup
+	const workers = 4
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for q := range work {
+				opts := cache.QueryOptions{EDNS: true}
+				resp, err := h.refreshUpstream(q, opts)
+				if err != nil || resp == nil {
+					continue
+				}
+				h.cache.PutWithOptions(q, resp, opts)
+				warmed.Add(1)
+			}
+		}()
+	}
+	sent := 0
+	for _, raw := range names {
+		if sent >= limit {
+			break
+		}
+		name := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))
+		if name == "" || seen[name] || !validWarmName(name) {
+			continue
+		}
+		fqdn := dns.Fqdn(name)
+		seen[name] = true
+		work <- dns.Question{Name: fqdn, Qtype: dns.TypeA, Qclass: dns.ClassINET}
+		sent++
+	}
+	close(work)
+	wg.Wait()
+	return int(warmed.Load())
+}
+
+// prefetchSiblings warms the other record types a browser asks for around the
+// same time. A cold page is usually A + AAAA + HTTPS/SVCB; resolving one and
+// leaving the other two to arrive as separate misses turns one upstream round
+// trip into three. Only a real resolution reaches this method, so cache hits,
+// blocks and proxied names never amplify anything, and the four-slot semaphore
+// plus the in-flight set bound the extra work.
+func (h *Handler) prefetchSiblings(q dns.Question, opts cache.QueryOptions) {
+	if h == nil || h.cache == nil || h.upstreams == nil {
+		return
+	}
+	var siblings []uint16
+	switch q.Qtype {
+	case dns.TypeA, dns.TypeAAAA:
+		siblings = []uint16{dns.TypeA, dns.TypeAAAA, dns.TypeHTTPS}
+	case dns.TypeHTTPS, dns.TypeSVCB:
+		siblings = []uint16{dns.TypeA, dns.TypeAAAA}
+	default:
+		return
+	}
+	name := strings.ToLower(dns.Fqdn(q.Name))
+	for _, qtype := range siblings {
+		if qtype == q.Qtype {
+			continue
+		}
+		sq := dns.Question{Name: name, Qtype: qtype, Qclass: q.Qclass}
+		if h.cache.HasFresh(sq, opts) {
+			continue
+		}
+		key := coalesceKey(name, sq, opts)
+		h.prefetchMu.Lock()
+		if h.prefetchInflight[key] {
+			h.prefetchMu.Unlock()
+			continue
+		}
+		select {
+		case h.prefetchSem <- struct{}{}:
+		default:
+			h.prefetchMu.Unlock()
+			continue
+		}
+		h.prefetchInflight[key] = true
+		h.prefetchMu.Unlock()
+
+		go func(question dns.Question, key string) {
+			defer safego.Recover("dns.prefetch")
+			defer func() {
+				<-h.prefetchSem
+				h.prefetchMu.Lock()
+				delete(h.prefetchInflight, key)
+				h.prefetchMu.Unlock()
+			}()
+			resp, err := h.refreshUpstream(question, opts)
+			if err != nil || resp == nil {
+				return
+			}
+			h.cache.PutWithOptions(question, resp, opts)
+		}(sq, key)
+	}
+}
+
+// validWarmName is deliberately stricter than dns.IsDomainName, which accepts
+// spaces and punctuation as a single label. A history bucket only ever holds
+// real query names, so anything else is corruption rather than a name to warm.
+func validWarmName(name string) bool {
+	if name == "" || len(name) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(name, ".") {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		for _, r := range label {
+			if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+				continue
+			}
+			return false
+		}
+	}
+	return true
+}
+
 func cacheOptions(r *dns.Msg) cache.QueryOptions {
 	opt := r.IsEdns0()
 	return cache.QueryOptions{
@@ -257,6 +455,13 @@ func cacheOptions(r *dns.Msg) cache.QueryOptions {
 		DO:   opt != nil && opt.Do(),
 		CD:   r.CheckingDisabled,
 	}
+}
+
+// coalesceKey identifies a miss that another client is already resolving. The
+// name is already normalized; the flags are part of the key because they change
+// what is sent upstream and how the answer is validated.
+func coalesceKey(name string, q dns.Question, opts cache.QueryOptions) string {
+	return fmt.Sprintf("%s|%d|%d|%t|%t|%t", name, q.Qtype, q.Qclass, opts.EDNS, opts.DO, opts.CD)
 }
 
 // SetRateLimit replaces the per-source query limit. A value of zero or less turns
@@ -1115,12 +1320,15 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		upstreamQuery = r.Copy()
 		ensureDNSSECRequest(upstreamQuery)
 	}
-	resp, _, upstream, err := h.upstreams.ExchangeFor(upstreamQuery, domain)
+	resp, upstream, err := h.exchangeCoalesced(upstreamQuery, domain, coalesceKey(qName, q, cacheOpts))
 	if err != nil {
 		log.Printf("[DNS] Upstream query error for %s: %v", domain, err)
 		m := new(dns.Msg)
 		m.SetRcode(r, dns.RcodeServerFailure)
-		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "SERVFAIL", false, "", matchedPattern, q.Qtype, dns.RcodeServerFailure, nil)
+		// Carry the attempted upstream: this query did reach (or try to reach) a
+		// resolver, and the latency histogram must see it as a resolution
+		// failure rather than drop it as a local policy answer.
+		h.logQuery(start, clientIP, accountName, proto, domain, ruleName, "SERVFAIL", false, upstream, matchedPattern, q.Qtype, dns.RcodeServerFailure, nil)
 		return m
 	}
 
@@ -1134,7 +1342,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 			m := new(dns.Msg)
 			m.SetRcode(r, dns.RcodeServerFailure)
 			attachBogusEDE(m, r)
-			h.logQuery(start, clientIP, accountName, proto, domain, "DNSSEC Bogus", "BOGUS", false, "", matchedPattern, q.Qtype, dns.RcodeServerFailure, nil)
+			h.logQuery(start, clientIP, accountName, proto, domain, "DNSSEC Bogus", "BOGUS", false, upstream, matchedPattern, q.Qtype, dns.RcodeServerFailure, nil)
 			return m
 		}
 	}
@@ -1152,6 +1360,9 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		// answer this client gets too, so the first requester is not the one
 		// client told to hold the record for longer than the cache will.
 		h.cache.ClampTTLs(resp)
+		// Warm the sibling record types in the background. This is deliberately
+		// after the client's answer is cached: the client never waits on it.
+		h.prefetchSiblings(q, cacheOpts)
 	}
 
 	// Validation forced DO=1 upstream. Put the client's own EDNS/DO view back

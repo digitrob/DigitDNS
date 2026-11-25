@@ -131,7 +131,7 @@ func (c *Cache) lookup(q dns.Question, opts QueryOptions, normalize bool) (*dns.
 	return c.lookupKey(c.cacheKeyFor(q, opts), q, opts, normalize)
 }
 
-func (c *Cache) lookupKey(key string, q dns.Question, opts QueryOptions, normalize bool) (*dns.Msg, bool) {
+func (c *Cache) lookupKey(key cacheKey, q dns.Question, opts QueryOptions, normalize bool) (*dns.Msg, bool) {
 	shard := c.getShard(key)
 	now := time.Now()
 
@@ -235,7 +235,7 @@ func setTTLs(msg *dns.Msg, ttl uint32) {
 // Without the reclaim, a name queried once and never again holds its slot until
 // the thirty-second sweep, and a flood of one-shot names pins the cache at its
 // ceiling.
-func (c *Cache) reclaimExpired(shard *cacheShard, key string, now time.Time) {
+func (c *Cache) reclaimExpired(shard *cacheShard, key cacheKey, now time.Time) {
 	shard.mu.Lock()
 	if cur, still := shard.entries[key]; still && now.After(cur.expireAt) {
 		delete(shard.entries, key)
@@ -250,7 +250,7 @@ func (c *Cache) reclaimExpired(shard *cacheShard, key string, now time.Time) {
 // burst of identical upstream queries: the first caller claims the key and every
 // other caller for the duration is served from the entry and skips, so at most one
 // upstream query per name is ever outstanding.
-func (c *Cache) startRefresh(q dns.Question, key string, opts QueryOptions, refresh RefreshFunc) bool {
+func (c *Cache) startRefresh(q dns.Question, key cacheKey, opts QueryOptions, refresh RefreshFunc) bool {
 	c.flightMu.Lock()
 	if _, busy := c.inflight[key]; busy {
 		c.flightMu.Unlock()
@@ -274,7 +274,7 @@ func (c *Cache) startRefresh(q dns.Question, key string, opts QueryOptions, refr
 	return true
 }
 
-func (c *Cache) runRefresh(q dns.Question, key string, opts QueryOptions, refresh RefreshFunc) {
+func (c *Cache) runRefresh(q dns.Question, key cacheKey, opts QueryOptions, refresh RefreshFunc) {
 	// The generation this refresh was born into (v2.1.0 B-14 remediation).
 	gen := c.generation.Load()
 	defer func() {
@@ -307,7 +307,7 @@ func (c *Cache) runRefresh(q dns.Question, key string, opts QueryOptions, refres
 	c.PutWithOptions(q, resp, opts)
 }
 
-func (c *Cache) releaseFlight(key string) {
+func (c *Cache) releaseFlight(key cacheKey) {
 	c.flightMu.Lock()
 	delete(c.inflight, key)
 	c.flightMu.Unlock()

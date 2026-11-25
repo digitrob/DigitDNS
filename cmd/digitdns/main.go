@@ -466,12 +466,14 @@ func main() {
 	}
 	m := matcher.NewMatcher()
 	u := upstream.NewUpstreamPoolWithBootstrap(dnsSettings.Upstreams, dnsSettings.QueryTimeout, dnsSettings.FastestRacing, dnsSettings.ECSClientIP, dnsSettings.BootstrapDNS)
+	// The first query after a restart should use the order the previous run
+	// measured, before the startup benchmark has a chance to run.
+	u.SetLatencySeedPath(filepath.Join(filepath.Dir(dPath), "upstream-latency.json"))
 	if len(dnsSettings.BootstrapDNS) > 0 {
 		log.Printf("[Upstream] Bootstrap DNS: %s", strings.Join(dnsSettings.BootstrapDNS, ", "))
 	}
 	keepCtx, keepCancel := context.WithCancel(context.Background())
 	defer keepCancel()
-	u.StartKeepWarm(keepCtx)
 	u.SetPolicy(upstream.Policy{
 		Transport:       dnsSettings.EffectiveTransport(),
 		Transports:      dnsSettings.Transports,
@@ -480,6 +482,14 @@ func main() {
 		AdaptiveCurrent: dnsSettings.AdaptiveCurrent,
 		Profiles:        dnsSettings.Profiles,
 	})
+	u.SetAdvancedPolicy(upstream.AdvancedPolicy{
+		KeepWarm:        dnsSettings.EffectiveKeepWarmMode(),
+		KeepWarmEvery:   time.Duration(dnsSettings.EffectiveKeepWarmSeconds()) * time.Second,
+		Hedge:           dnsSettings.EffectiveHedgeMode(),
+		CircuitCooldown: time.Duration(dnsSettings.EffectiveCircuitCooldownSeconds()) * time.Second,
+		Fallback:        dnsSettings.FallbackDNS,
+	})
+	u.StartKeepWarm(keepCtx)
 	// The pool is deliberately not probed here. The constructor only seeds an
 	// empty estimate, and a benchmark issued during boot competes with ACME, TLS
 	// setup and the panel's own initialization — its figures describe that
@@ -1183,6 +1193,34 @@ func main() {
 	// The Adaptive strategy's one scheduler. It is independent of a browser
 	// session: an install with the panel closed still re-benchmarks and moves.
 	webServer.StartAdaptiveScheduler()
+
+	// Warm the cache from history after the listeners are up. This is a
+	// background convenience: a fresh install has no history, a failed read only
+	// costs the log line, and a warm name never delays a client because the
+	// resolver answers from the cache or races normally.
+	if dnsSettings.WarmCacheOnStart() && dnsHandler != nil {
+		if agg := statsService.Aggregate(); agg != nil {
+			top := dnsSettings.EffectiveWarmCacheTop()
+			go func() {
+				topDomains, err := agg.Top(aggregate.Range24h, "domain", top)
+				if err != nil {
+					log.Printf("[Resolution] Startup cache warm skipped: %v", err)
+					return
+				}
+				names := make([]string, 0, len(topDomains.Items))
+				for _, item := range topDomains.Items {
+					names = append(names, item.Value)
+				}
+				if len(names) == 0 {
+					return
+				}
+				start := time.Now()
+				warmed := dnsHandler.WarmCache(names, top)
+				log.Printf("[Resolution] Startup cache warm: %d/%d names cached in %s",
+					warmed, len(names), time.Since(start).Round(time.Millisecond))
+			}()
+		}
+	}
 
 	// First benchmark, now that every listener is up and the startup burst is
 	// over. Adaptive mode does not schedule one here: its scheduler runs a single

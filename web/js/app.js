@@ -60,11 +60,9 @@ let streamFallbackFailed = false;
 let qpsChart = null;
 let historyChart = null;
 let historyRange = '24h';
-// The API caps ranked lists at 100. Default to ten rows per card so a dashboard
-// refresh does not build hundreds of DOM nodes; the toolbar cycles 10 → 50 → 100.
-const HISTORY_TOP_LIMITS = [10, 50, 100];
-const HISTORY_TOP_LIMIT_LABELS = ['Show 50', 'Show all', 'Show 10'];
-let historyTopLimitIndex = 0;
+// Ranked cards show ten rows. A broad range can hold hundreds of names per
+// dimension, and painting them all on every refresh is wasted DOM.
+const HISTORY_TOP_LIMIT = 10;
 let historyTimer = null;
 let historyInFlight = false;
 let historySeq = 0;
@@ -4325,7 +4323,28 @@ function normalizeResolutionSettings(settings) {
   out.adaptive_current = out.adaptive_current || '';
   out.adaptive_last_latency_ms = Number(out.adaptive_last_latency_ms) || 0;
   out.adaptive_last_note = out.adaptive_last_note || '';
+  out.advanced = normalizeAdvancedSettings(out.advanced);
   return out;
+}
+
+// The server owns the advanced defaults; an older server simply omits the
+// object, and this keeps the card usable against it.
+function normalizeAdvancedSettings(value) {
+  const a = value || {};
+  const keepWarm = ['off', 'active', 'active_next', 'all'].includes(a.keep_warm) ? a.keep_warm : 'active_next';
+  const keepWarmSeconds = Number(a.keep_warm_seconds);
+  const probationSeconds = Number(a.probation_seconds);
+  const warmTop = Number(a.warm_cache_top);
+  return {
+    bootstrap_dns: Array.isArray(a.bootstrap_dns) ? a.bootstrap_dns : [],
+    fallback_dns: Array.isArray(a.fallback_dns) ? a.fallback_dns : [],
+    keep_warm: keepWarm,
+    keep_warm_seconds: keepWarmSeconds >= 5 && keepWarmSeconds <= 600 ? Math.round(keepWarmSeconds) : 20,
+    hedge: a.hedge === 'aggressive' ? 'aggressive' : 'balanced',
+    probation_seconds: probationSeconds >= 5 && probationSeconds <= 300 ? Math.round(probationSeconds) : 30,
+    warm_cache_on_start: a.warm_cache_on_start !== false,
+    warm_cache_top: warmTop >= 1 && warmTop <= 100 ? Math.round(warmTop) : 100,
+  };
 }
 
 // The server's encrypted set is authoritative, but a stale settings snapshot
@@ -4507,9 +4526,12 @@ function syncAdaptiveControls() {
     return;
   }
   const when = new Date(lastRun);
-  const stamp = Number.isNaN(when.getTime()) ? lastRun : when.toLocaleString();
-  note.textContent = `Last run ${stamp} · using ${current || 'no healthy resolver selected'}`;
-  note.title = lastNote;
+  const valid = !Number.isNaN(when.getTime());
+  const stamp = valid ? when.toLocaleString() : lastRun;
+  note.textContent = valid
+    ? `Last run ${relativeAge(when)} · using ${current || 'no healthy resolver selected'}`
+    : `Last run ${stamp} · using ${current || 'no healthy resolver selected'}`;
+  note.title = valid ? `${stamp} · ${lastNote}` : lastNote;
 }
 
 function syncTransportChips() {
@@ -4596,6 +4618,7 @@ function syncResolutionControls() {
   syncTransportChips();
   syncAdaptiveControls();
   syncSingleUpstream();
+  syncAdvancedUpstreamControls();
   if (lastUpstreamsPayload) {
     lastUpstreamsSig = '';
     renderUpstreams(lastUpstreamsPayload);
@@ -4662,6 +4685,88 @@ async function saveResolutionSettings(overrides, message) {
     showToast('Could not save the resolution settings', 'error');
     return false;
   }
+}
+
+// Advanced upstream settings are part of the resolution record, so they save
+// through the same endpoint. The object is sent whole: the server treats a
+// missing field as "keep the stored value", and an explicit list as the new one.
+function syncAdvancedUpstreamControls() {
+  const advanced = normalizeAdvancedSettings(resolutionSettings.advanced);
+  const bootstrap = document.getElementById('advanced-bootstrap-dns');
+  const fallback = document.getElementById('advanced-fallback-dns');
+  const keepWarm = document.getElementById('advanced-keep-warm');
+  const keepWarmSeconds = document.getElementById('advanced-keep-warm-seconds');
+  const hedge = document.getElementById('advanced-hedge');
+  const probation = document.getElementById('advanced-probation-seconds');
+  const warm = document.getElementById('advanced-warm-cache');
+  const warmTop = document.getElementById('advanced-warm-cache-top');
+  if (bootstrap) bootstrap.value = advanced.bootstrap_dns.join(', ');
+  if (fallback) fallback.value = advanced.fallback_dns.join(', ');
+  if (keepWarm) keepWarm.value = advanced.keep_warm;
+  if (keepWarmSeconds) keepWarmSeconds.value = String(advanced.keep_warm_seconds);
+  if (hedge) hedge.value = advanced.hedge;
+  if (probation) probation.value = String(advanced.probation_seconds);
+  if (warm) warm.checked = advanced.warm_cache_on_start;
+  if (warmTop) {
+    warmTop.value = String(advanced.warm_cache_top);
+    warmTop.disabled = !advanced.warm_cache_on_start;
+  }
+  const summary = document.getElementById('advanced-upstream-summary-text');
+  if (summary) {
+    const scope = {
+      off: 'off',
+      active: 'active only',
+      active_next: 'active + next',
+      all: 'all encrypted',
+    }[advanced.keep_warm] || advanced.keep_warm;
+    const parts = [
+      advanced.bootstrap_dns.length ? `Bootstrap ${advanced.bootstrap_dns.length}` : 'System bootstrap',
+      advanced.fallback_dns.length ? `Fallback ${advanced.fallback_dns.length}` : '',
+      `Warm ${scope}`,
+      `Hedge ${advanced.hedge}`,
+      `Probation ${advanced.probation_seconds}s`,
+      advanced.warm_cache_on_start ? `Cache warm top ${advanced.warm_cache_top}` : 'Cache warm off',
+    ].filter(Boolean);
+    summary.textContent = parts.join(' · ');
+  }
+}
+
+function splitAddressList(value) {
+  return String(value || '').split(/[\s,]+/).map(item => item.trim()).filter(Boolean);
+}
+
+function clampedInt(id, min, max, fallback) {
+  const el = document.getElementById(id);
+  const value = Number(el?.value);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+async function saveAdvancedUpstreamSettings() {
+  if (!resolutionSettings.loaded) {
+    showToast('Could not load the resolution settings — reload the page', 'error');
+    return;
+  }
+  const beforeBootstrap = JSON.stringify(normalizeAdvancedSettings(resolutionSettings.advanced).bootstrap_dns);
+  const warmToggle = document.getElementById('advanced-warm-cache');
+  const payload = {
+    bootstrap_dns: splitAddressList(document.getElementById('advanced-bootstrap-dns')?.value),
+    fallback_dns: splitAddressList(document.getElementById('advanced-fallback-dns')?.value),
+    keep_warm: document.getElementById('advanced-keep-warm')?.value || 'active_next',
+    keep_warm_seconds: clampedInt('advanced-keep-warm-seconds', 5, 600, 20),
+    hedge: document.getElementById('advanced-hedge')?.value || 'balanced',
+    probation_seconds: clampedInt('advanced-probation-seconds', 5, 300, 30),
+    warm_cache_on_start: !!warmToggle?.checked,
+    warm_cache_top: clampedInt('advanced-warm-cache-top', 1, 100, 100),
+  };
+  const ok = await saveResolutionSettings({ advanced: payload }, 'Advanced upstream settings saved');
+  if (!ok) return;
+  const afterBootstrap = JSON.stringify(normalizeAdvancedSettings(resolutionSettings.advanced).bootstrap_dns);
+  const restart = beforeBootstrap !== afterBootstrap;
+  const note = document.getElementById('advanced-restart-note');
+  if (note) note.classList.toggle('hidden', !restart);
+  const status = document.getElementById('advanced-upstream-status');
+  if (status) status.textContent = restart ? 'Saved · restart required for Bootstrap DNS' : 'Saved';
 }
 
 // Force one Adaptive benchmark/selection cycle instead of waiting for the
@@ -5749,6 +5854,17 @@ function fmtWhole(value) {
   return wholeNumberFormatter.format(value);
 }
 
+// relativeAge turns the Adaptive last-run timestamp into the age an operator
+// actually cares about ("2m ago"). The exact timestamp stays in the tooltip.
+function relativeAge(date) {
+  const minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return minutes + 'm ago';
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + 'h ago';
+  return Math.floor(hours / 24) + 'd ago';
+}
+
 // A compact=2 poll carries only the fields that can move in a second. Merge
 // them over the last full document, and merge each upstream row by address so
 // the fields the heartbeat deliberately omits (p50/average/probe numbers) keep
@@ -5768,12 +5884,46 @@ function mergeCompactStats(full, live) {
   return merged;
 }
 
+// The resolver-latency card's selected window. The server accepts 5m/15m/1h/
+// 6h/24h; 5m is the default and needs no query parameter, which keeps the
+// existing poll contract and its tests unchanged.
+let latencyRange = '5m';
+
 // A full snapshot is required after any break in the poll chain: login, tab
 // return, network return, or a rejected session. Without it the compact fields
 // would be painted over a stale slow-field baseline.
 function invalidateStatsSnapshot() {
   statsFull = null;
   statsPollCount = 0;
+}
+
+function syncLatencyRangeChips() {
+  document.querySelectorAll('#latency-range-chips [data-latency-range]').forEach((button) => {
+    const active = button.dataset.latencyRange === latencyRange;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
+// Switching the range changes every latency window in the document, so the next
+// poll must be a full one and all cached derived values are discarded.
+function setLatencyRange(range) {
+  const choices = ['5m', '15m', '1h', '6h', '24h'];
+  if (!choices.includes(range) || range === latencyRange) return;
+  latencyRange = range;
+  syncLatencyRangeChips();
+  invalidateStatsSnapshot();
+  if (statsPollTimer) {
+    clearTimeout(statsPollTimer);
+    statsPollTimer = null;
+  }
+  if (statsPollInFlight) {
+    setTimeout(() => {
+      if (!statsPollInFlight) pollStatsOnce();
+    }, 350);
+    return;
+  }
+  void pollStatsOnce();
 }
 
 let statsPollTimer = null;
@@ -5885,7 +6035,11 @@ async function updateStats() {
     // as well, so the panel paid for two full documents after every login.
     const fullDue = statsPollCount++ % 5 === 0;
     const needFull = !statsFull || fullDue;
-    const res = await fetch(api('/api/stats') + (needFull ? '' : '?compact=2'), {
+    const rangeQuery = latencyRange === '5m' ? '' : `range=${encodeURIComponent(latencyRange)}`;
+    const statsUrl = api('/api/stats')
+      + (needFull ? '' : '?compact=2')
+      + (rangeQuery ? (needFull ? `?${rangeQuery}` : `&${rangeQuery}`) : '');
+    const res = await fetch(statsUrl, {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     if (res.status === 401) {
@@ -5971,7 +6125,9 @@ async function updateStats() {
     setTxt('stat-traffic-total', formatBytes(data.total_bytes_transferred));
     renderRateLimit(data.rate_limit_qps, data.rate_limited);
     renderLatency(data.latency_uncached, data.latency);
+    renderUpstreamMetrics(data.upstream_metrics);
     renderCacheHealth(data);
+    syncLatencyDiagnostics();
     renderProxyDrops(data);
 
     // Render upstreams list
@@ -5994,6 +6150,35 @@ async function updateStats() {
     // behaviour: swallow it and leave the page claiming to be live.
     markStatsHealth(false, 'The dashboard cannot reach the daemon');
   }
+}
+
+// renderUpstreamMetrics shows why a miss was answered: a hedge started a second
+// resolver, a failure moved to the next one, or an upstream timed out.
+function renderUpstreamMetrics(metrics) {
+  const el = statEl('stat-upstream-metrics');
+  if (!el) return;
+  const m = metrics || {};
+  const text = `Timeouts ${fmtWhole(m.timeouts || 0)} · Hedges ${fmtWhole(m.hedges || 0)} · Failovers ${fmtWhole(m.failovers || 0)}`;
+  if (el.textContent !== text) el.textContent = text;
+  const title = `Since start · hedge losses ${fmtWhole(m.hedge_losses || 0)} · coalesced ${fmtWhole(m.coalesced || 0)}`;
+  if (el.title !== title) el.title = title;
+}
+
+// The diagnostics footer is one ellipsized line; the counters it cannot show
+// live in its tooltip. This keeps the card a fixed size inside the custom
+// dashboard layout instead of growing its own scrollbar.
+function syncLatencyDiagnostics() {
+  const box = document.getElementById('latency-diagnostics');
+  if (!box) return;
+  const all = document.getElementById('stat-lat-all');
+  const upstream = document.getElementById('stat-upstream-metrics');
+  const cache = document.getElementById('stat-cache-health');
+  const parts = [];
+  if (all && all.textContent) parts.push(`All queries since start: ${all.textContent}`);
+  if (upstream && upstream.textContent) parts.push(upstream.textContent);
+  if (cache && cache.textContent) parts.push(cache.textContent);
+  const title = parts.join(' · ');
+  if (box.title !== title) box.title = title;
 }
 
 // statsFailures counts consecutive failed polls so one blip does not repaint the badge.
@@ -6125,26 +6310,53 @@ function renderLatency(miss, all) {
     ? (v < 10 ? v.toFixed(2) : v.toFixed(1))
     : '—';
 
-  const haveMiss = !!(miss && miss.count > 0);
+  // A current server reports the rolling five-minute distribution: p50/p95/p99
+  // and Peak all describe the same window. An older server only has lifetime
+  // percentiles, so fall back to them and say so in the tooltips.
+  const rolling = !!(miss && typeof miss.window_count === 'number');
+  const haveMiss = rolling ? miss.window_count > 0 : !!(miss && miss.count > 0);
   setTxt('stat-lat-p50', haveMiss ? fmt(miss.p50_ms) : '—');
   setTxt('stat-lat-p95', haveMiss ? fmt(miss.p95_ms) : '—');
   setTxt('stat-lat-p99', haveMiss ? fmt(miss.p99_ms) : '—');
-  setTxt('stat-lat-max', haveMiss ? fmt(miss.max_ms) : '—');
+  const sinceStart = rolling && typeof miss.since_start_p50_ms === 'number'
+    ? ` · since start p50 ${fmt(miss.since_start_p50_ms)} · p95 ${fmt(miss.since_start_p95_ms)} · p99 ${fmt(miss.since_start_p99_ms)}`
+    : '';
+  const windowTitle = rolling ? `Last ${latencyRange}` : 'Since the daemon started';
+  for (const id of ['stat-lat-p50', 'stat-lat-p95', 'stat-lat-p99']) {
+    const el = statEl(id);
+    if (!el) continue;
+    const title = haveMiss
+      ? `${windowTitle} · histogram estimate${sinceStart}`
+      : '';
+    if (el.title !== title) el.title = title;
+  }
 
-  const badge = statEl('stat-lat-count');
-  if (badge) {
-    let badgeText = 'no data yet';
-    let badgeTitle = 'The resolver has not answered a query yet';
-    if (haveMiss) {
-      badgeText = `${fmtWhole(miss.count)} resolved`;
-      badgeTitle = 'Queries answered by an upstream rather than from cache, since the daemon started';
-    } else if (all && all.count > 0) {
-      // A real and reassuring state, not an error: nothing has needed an upstream.
-      badgeText = 'every answer from cache';
-      badgeTitle = 'No query has needed an upstream resolver yet';
-    }
-    if (badge.textContent !== badgeText) badge.textContent = badgeText;
-    if (badge.title !== badgeTitle) badge.title = badgeTitle;
+  // Peak is the exact worst reading in the same window as the percentiles, so
+  // it can never sit below p99. The all-time maximum stays in the tooltip.
+  const peakValue = haveMiss && typeof miss.peak_ms === 'number'
+    ? miss.peak_ms
+    : (haveMiss && typeof miss.peak_5m_ms === 'number' ? miss.peak_5m_ms : null);
+  const peak = peakValue != null ? (peakValue > 0 ? peakValue : null) : (haveMiss ? miss.max_ms : null);
+  setTxt('stat-lat-max', peak != null ? fmt(peak) : '—');
+  const peakEl = statEl('stat-lat-max');
+  if (peakEl) {
+    const peakTitle = !haveMiss
+      ? ''
+      : peakValue != null
+        ? `Worst exact resolution time in the last ${latencyRange} · all-time ${fmt(miss.max_ms)} ms`
+        : `All-time peak · this server does not report a windowed peak`;
+    if (peakEl.title !== peakTitle) peakEl.title = peakTitle;
+  }
+
+  // The visible footer line is the sample size behind these figures, which the
+  // tiles cannot show. The all-query lifetime distribution stays in the tooltip.
+  const contextEl = statEl('stat-lat-context');
+  if (contextEl) {
+    const resolved = rolling ? (miss.window_count || 0) : (miss.count || 0);
+    const context = resolved > 0
+      ? `${fmtWhole(resolved)} upstream resolution${resolved === 1 ? '' : 's'} in ${latencyRange}`
+      : `No upstream resolutions in ${latencyRange}`;
+    if (contextEl.textContent !== context) contextEl.textContent = context;
   }
 
   // p50 carries the colour because it is the everyday experience. The thresholds
@@ -9406,8 +9618,30 @@ function renderHistorySummary(summary) {
   if (clientsSub) {
     clientsSub.textContent = summary.active_clients_approx ? 'top-N approx.' : 'HLL distinct';
   }
-  set('history-latency', typeof summary.latency_avg_ms === 'number'
-    ? summary.latency_avg_ms.toFixed(1) : '—');
+  // Upstream resolution time: queries that actually reached a resolver. A
+  // pre-upgrade range has only the old cache-miss counter, which also included
+  // blocked and custom answers, so it is marked approximate and prefixed
+  // instead of being presented as the same measurement.
+  const resolution = summary.latency_resolution_avg_ms;
+  const hasResolution = typeof resolution === 'number' && resolution > 0;
+  const uncached = summary.latency_uncached_avg_ms;
+  const hasUncached = typeof uncached === 'number' && uncached > 0;
+  const value = hasResolution ? resolution : uncached;
+  const hasValue = hasResolution || hasUncached;
+  const approx = hasValue && (hasResolution
+    ? summary.latency_resolution_approx === true
+    : true);
+  set('history-latency', hasValue ? `${approx ? '≈ ' : ''}${value.toFixed(1)}` : '—');
+  const latEl = document.getElementById('history-latency');
+  if (latEl) {
+    latEl.title = hasValue
+      ? (hasResolution
+          ? (approx
+              ? 'Average upstream resolution time; older buckets used a wider definition and are excluded'
+              : 'Average upstream resolution time')
+          : 'Average cache-miss time from an older server; this included blocked and custom answers')
+      : 'No upstream resolution latency recorded for this range yet';
+  }
 }
 
 function renderHistoryTop(id, data, empty, dimension) {
@@ -9495,21 +9729,6 @@ function setHistoryTopUpstreamGrouping(byProvider) {
   renderHistoryTop('history-top-upstreams', top, 'No upstream history in this range.', 'upstream');
 }
 
-function updateHistoryTopLimitButton() {
-  const btn = document.getElementById('history-top-limit-btn');
-  if (!btn) return;
-  const limit = HISTORY_TOP_LIMITS[historyTopLimitIndex];
-  btn.textContent = HISTORY_TOP_LIMIT_LABELS[historyTopLimitIndex];
-  btn.dataset.limit = String(limit);
-  btn.title = `Ranked cards currently show ${limit} entries; the API caps this list at 100.`;
-}
-
-function cycleHistoryTopLimit() {
-  historyTopLimitIndex = (historyTopLimitIndex + 1) % HISTORY_TOP_LIMITS.length;
-  updateHistoryTopLimitButton();
-  loadHistory(true);
-}
-
 function relayCountryLabel(value) {
   const code = String(value || '').toUpperCase();
   if (code === 'LOCAL') return 'Local';
@@ -9590,7 +9809,7 @@ async function loadHistory(force = false) {
     // and the summary all come from the same aggregate store, so splitting them
     // only added round trips — seven extra on every refresh, on every client.
     const data = await historyFetch(
-      `/api/v3/stats/history?${query}&interval=${encodeURIComponent(interval)}&limit=${HISTORY_TOP_LIMITS[historyTopLimitIndex]}`);
+      `/api/v3/stats/history?${query}&interval=${encodeURIComponent(interval)}&limit=${HISTORY_TOP_LIMIT}`);
     if (seq !== historySeq) return;
     renderHistorySummary(data.summary);
     await renderHistoryChart(data.series);
@@ -9657,8 +9876,6 @@ function initHistory() {
   document.getElementById('history-top-upstreams-toggle')?.addEventListener('click', () => {
     setHistoryTopUpstreamGrouping(!historyTopUpstreamByProvider);
   });
-  updateHistoryTopLimitButton();
-  document.getElementById('history-top-limit-btn')?.addEventListener('click', cycleHistoryTopLimit);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       if (historyTimer) {
@@ -15753,6 +15970,16 @@ function initEventListeners() {
     saveResolutionSettings({ transports: normalizeTransports(next, 'any') }, 'Transports saved');
   });
   document.getElementById('resolution-adaptive-run')?.addEventListener('click', runAdaptiveNow);
+  document.getElementById('latency-range-chips')?.addEventListener('click', (e) => {
+    const button = e.target.closest('[data-latency-range]');
+    if (!button) return;
+    setLatencyRange(button.dataset.latencyRange);
+  });
+  document.getElementById('save-advanced-upstream')?.addEventListener('click', saveAdvancedUpstreamSettings);
+  document.getElementById('advanced-warm-cache')?.addEventListener('change', (e) => {
+    const top = document.getElementById('advanced-warm-cache-top');
+    if (top) top.disabled = !e.target.checked;
+  });
   document.getElementById('resolution-single-upstream')?.addEventListener('click', (e) => {
     e.stopPropagation();
     const menu = document.getElementById('resolution-single-menu');

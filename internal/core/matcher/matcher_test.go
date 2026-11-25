@@ -487,6 +487,24 @@ func TestMatchDetailReturnsTheMatchedPattern(t *testing.T) {
 	}
 }
 
+// The verdict cache is keyed by the published snapshot, so a rule save must be
+// visible on the very next query. A cache keyed only by name would keep serving
+// the old action until the process restarted.
+func TestMatchDetailVerdictCacheFollowsThePublishedSnapshot(t *testing.T) {
+	m := NewMatcher()
+	m.SetCustomRules(nil, []string{"repeat.example"}, nil, nil)
+	for range 3 {
+		if action, _, _ := m.MatchDetailLower("repeat.example"); action != ActionBlock {
+			t.Fatalf("first snapshot action = %v, want block", action)
+		}
+	}
+
+	m.SetCustomRules(nil, nil, []string{"repeat.example"}, nil)
+	if action, _, _ := m.MatchDetailLower("repeat.example"); action != ActionDirect {
+		t.Fatalf("action after the rule change = %v, want direct", action)
+	}
+}
+
 func TestBlocklistPrecedenceAndExceptions(t *testing.T) {
 	m := NewMatcher()
 	index, _ := blocklist.Build([]blocklist.Source{{

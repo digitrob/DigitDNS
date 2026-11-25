@@ -4,6 +4,7 @@ import (
 	"math"
 	"sync"
 	"testing"
+	"time"
 
 	"digitdns/internal/database"
 )
@@ -20,6 +21,28 @@ import (
 // millisecond; this tolerance is for the float arithmetic in the expectations.
 func closeEnough(got, want float64) bool {
 	return math.Abs(got-want) <= 1e-6
+}
+
+// The rolling peak must forget a five-minute-old spike while the all-time max
+// keeps it as evidence.
+func TestRollingPeakDropsOldMinutes(t *testing.T) {
+	var h latencyHistogram
+	base := time.Now().Truncate(time.Minute)
+	h.observeAt(5000, base)
+	h.observeAt(10, base.Add(time.Minute))
+
+	if got := h.snapshotAt(base.Add(time.Minute)).Peak5mMs; got != 5000 {
+		t.Fatalf("peak5m = %.1f ms, want 5000", got)
+	}
+	h.observeAt(20, base.Add(5*time.Minute))
+
+	snap := h.snapshotAt(base.Add(5 * time.Minute))
+	if snap.Peak5mMs != 20 {
+		t.Fatalf("peak5m after five minutes = %.1f ms, want 20", snap.Peak5mMs)
+	}
+	if snap.MaxMs != 5000 {
+		t.Fatalf("all-time max = %.1f ms, want 5000", snap.MaxMs)
+	}
 }
 
 // A histogram nobody has written to must report zeros rather than a percentile
@@ -62,8 +85,11 @@ func TestPercentilesOfAKnownDistribution(t *testing.T) {
 	if want := 20 + 15*0.5; !closeEnough(snap.P95Ms, want) {
 		t.Errorf("p95 = %.6f ms, want %.6f", snap.P95Ms, want)
 	}
-	if want := 20 + 15*0.9; !closeEnough(snap.P99Ms, want) {
-		t.Errorf("p99 = %.6f ms, want %.6f", snap.P99Ms, want)
+	// The interpolation would say 33.5 ms, but the exact worst reading is 30 ms.
+	// A card that shows p99 above Peak reads as a contradiction, so the
+	// estimate is capped at the exact maximum of the same window.
+	if snap.P99Ms != 30 {
+		t.Errorf("p99 = %.6f ms, want it capped at the exact max 30", snap.P99Ms)
 	}
 	// The average is the figure this histogram exists to replace: it sits two
 	// orders of magnitude above the median and describes no actual query.
@@ -73,14 +99,72 @@ func TestPercentilesOfAKnownDistribution(t *testing.T) {
 	if snap.MaxMs != 30 {
 		t.Errorf("max = %.3f ms, want exactly 30", snap.MaxMs)
 	}
-	// Ordered, but note what is deliberately *not* asserted: p99 (33.5 ms here)
-	// exceeds the exact max (30 ms). Interpolation spreads a bucket's observations
-	// evenly across it, and all ten of these sit on the bucket's lower half, so a
-	// high quantile reads as "somewhere in the 20–35 ms band" — which is the
-	// precision a bucketed histogram buys its zero-allocation write path with.
-	// MaxMs is the number to trust for the worst case.
-	if !(snap.P50Ms < snap.P95Ms && snap.P95Ms <= snap.P99Ms) {
-		t.Errorf("percentiles are out of order: %+v", snap)
+	if !(snap.P50Ms < snap.P95Ms && snap.P95Ms <= snap.P99Ms && snap.P99Ms <= snap.Peak5mMs) {
+		t.Errorf("percentiles are out of order or exceed the peak: %+v", snap)
+	}
+}
+
+// The range chips must select genuinely different windows from the same
+// histogram: 5m/15m/1h use the minute ring, 6h/24h the five-minute ring.
+func TestLatencyRangesSelectTheirWindows(t *testing.T) {
+	var h latencyHistogram
+	now := time.Now().Truncate(time.Minute).Add(7 * time.Hour)
+	h.observeAt(10, now.Add(-7*time.Hour))
+	h.observeAt(20, now.Add(-10*time.Minute))
+	h.observeAt(30, now.Add(-5*time.Hour))
+	h.observeAt(40, now)
+
+	cases := []struct {
+		rangeKey string
+		count    uint64
+		peak     float64
+	}{
+		{LatencyRange5m, 1, 40},
+		{LatencyRange15m, 2, 40},
+		{LatencyRange1h, 2, 40},
+		{LatencyRange6h, 3, 40},
+		{LatencyRange24h, 4, 40},
+	}
+	for _, c := range cases {
+		snap := h.snapshotRangeAt(now, c.rangeKey)
+		if snap.WindowCount != c.count {
+			t.Errorf("%s count = %d, want %d", c.rangeKey, snap.WindowCount, c.count)
+		}
+		if snap.PeakMs != c.peak {
+			t.Errorf("%s peak = %.1f, want %.1f", c.rangeKey, snap.PeakMs, c.peak)
+		}
+		if snap.Range != c.rangeKey {
+			t.Errorf("%s snapshot range = %q", c.rangeKey, snap.Range)
+		}
+	}
+	if NormalizeLatencyRange("nonsense") != LatencyRange5m {
+		t.Fatal("an unknown range did not fall back to 5m")
+	}
+}
+
+// The card shows the rolling window; the tooltip keeps the lifetime figures. A
+// slow minute must leave the rolling numbers without erasing the history.
+func TestRollingPercentilesDifferFromLifetime(t *testing.T) {
+	var h latencyHistogram
+	base := time.Now().Truncate(time.Minute)
+	h.observeAt(400, base)
+	h.observeAt(20, base.Add(5*time.Minute))
+
+	snap := h.snapshotAt(base.Add(5 * time.Minute))
+	if snap.WindowCount != 1 {
+		t.Fatalf("window count = %d, want only the current minute", snap.WindowCount)
+	}
+	if snap.Peak5mMs != 20 {
+		t.Fatalf("rolling peak = %.1f, want 20", snap.Peak5mMs)
+	}
+	if snap.P99Ms > 20 || snap.P99Ms <= 19 {
+		t.Fatalf("rolling p99 = %.1f, want the estimate capped at 20", snap.P99Ms)
+	}
+	if snap.Count != 2 {
+		t.Fatalf("lifetime count = %d, want 2", snap.Count)
+	}
+	if snap.SinceStartP99Ms < 20 || snap.MaxMs != 400 {
+		t.Fatalf("lifetime figures were lost: p99 %.1f max %.1f", snap.SinceStartP99Ms, snap.MaxMs)
 	}
 }
 
@@ -229,15 +313,23 @@ func TestPushQueryLogSplitsCachedFromUncached(t *testing.T) {
 		})
 	}
 	s.PushQueryLog(database.QueryLogItem{
-		Domain: "resolved.example.", Protocol: "UDP", LatencyMs: 42, Cached: false,
+		Domain: "resolved.example.", Protocol: "UDP", LatencyMs: 42, Cached: false, Upstream: "1.1.1.1:53",
 	})
+	// A blocked answer is logged uncached but never reached a resolver. It must
+	// not enter the resolution distribution: on a filtering resolver these
+	// 0.05 ms answers otherwise become the median and describe nothing.
+	for range 20 {
+		s.PushQueryLog(database.QueryLogItem{
+			Domain: "blocked.example.", Protocol: "UDP", LatencyMs: 0.05, Cached: false, Action: "BLOCK",
+		})
+	}
 
 	st := s.GetLiveStats()
-	if st.Latency.Count != 10 {
-		t.Errorf("latency.count = %d, want all 10 queries", st.Latency.Count)
+	if st.Latency.Count != 30 {
+		t.Errorf("latency.count = %d, want all 30 queries", st.Latency.Count)
 	}
 	if st.LatencyUncached.Count != 1 {
-		t.Errorf("latency_uncached.count = %d, want only the cache miss", st.LatencyUncached.Count)
+		t.Errorf("latency_uncached.count = %d, want only the upstream resolution", st.LatencyUncached.Count)
 	}
 	// Nine hits in ten drag the overall median into the first bucket while the one
 	// real resolution sits at 42 ms. That gap is what a single distribution hides.
