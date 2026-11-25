@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DigitDNS social preview</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #050a14;
+      color: #cbd5e1;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    .card {
+      width: min(100%, 1200px);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, .55);
+      border: 1px solid #1e293b;
+    }
+    .card img { display: block; width: 100%; height: auto; }
+    p { max-width: 760px; margin: 18px auto 0; font-size: 13px; line-height: 1.6; color: #94a3b8; }
+    code { color: #99f6e4; }
+  </style>
+</head>
+<body>
+  <div>
+    <div class="card">
+      <img src="digitdns-social-preview.png" width="1280" height="640"
+        alt="DigitDNS — Smart DNS, SNI proxy and ad blocking without a VPN">
+    </div>
+    <p>
+      Repository social preview (1280×640). Upload this image in
+      <strong>GitHub → Settings → Social preview</strong>. Regenerate it from the
+      shipped app tile with <code>python3 scripts/generate-social-preview.py</code>.
+    </p>
+  </div>
+</body>
+</html>

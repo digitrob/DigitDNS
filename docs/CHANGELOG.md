@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.12.0] — A new identity and a home-screen icon you choose
+
+### Added
+- **New DigitDNS visual identity.** A DNS-switch-and-globe tile now ships in the panel sidebar, mobile header, login page, favicon set (ICO, SVG, 16/32/64 px), Apple touch icon, PWA icons (192/512 plus maskable), Android launcher (adaptive colour and grayscale), monochrome themed-icon layer, white notification glyph and the GitHub social preview.
+- **Regular or Grayscale app icon.** Settings → App shows both icons as selectable previews. The choice is stored, survives restarts and switches the launcher entry in place without reinstalling.
+- **1280×640 social card.** A new card with stronger body-text contrast and the feature line **Smart DNS · SNI Proxy · Ad Blocking**, used by both Open Graph metadata and the GitHub repository preview.
+- **Refreshed screenshot set.** Dashboard in Dark, Grey and Light, Domains, Ad Blocking, Traffic History, the subscriber portal, and the Android app in all three themes plus App settings, all captured from a synthetic environment.
+
+### Changed
+- **Launcher entries are aliases again.** The manifest declares colour and grayscale `activity-alias` entries built from `${applicationId}`; `MainActivity` no longer carries the launcher filter.
+- **README and docs.** New hero, screenshot tables, an app-icon feature note and version references for v5.12.0.
+
+### Fixed
+- **Icon switching in debug builds.** Aliases were named from the manifest namespace while the runtime looked them up under the application ID, so the preference saved but the icon never changed. Alias names now follow the application ID, and launch normalisation repairs an interrupted switch.
+- **Cold misses during the cache-warm window.** A completed single-flight lookup is reused for 500 ms, bounded to 4,096 entries, so a client arriving before the cache write no longer starts a duplicate upstream query.
+
+### Tests
+- Updated Android settings-view-model coverage for the icon preference, and added single-flight coverage that counts only A misses so sibling prefetch is not mistaken for a duplicate. Full Go suite, race detector, `go vet`, dashboard tests, Android unit tests, detekt and lint pass.
+
+No database schema migration is required. The Android companion moves to `android-v5.12.0`, with version code 590.
+
 ## 🏷️ [v5.11.7] — Configurable upstreams and honest latency
 
 ### Added

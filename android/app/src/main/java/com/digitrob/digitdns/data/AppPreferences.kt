@@ -117,9 +117,23 @@ enum class ThemeMode {
     }
 }
 
+/** The launcher icon the operator picked: the colour mark or its grayscale twin. */
+enum class IconStyle {
+    COLOR,
+    GRAYSCALE,
+    ;
+
+    companion object {
+        /** Parse a stored value, falling back to the colour mark. */
+        fun fromStored(value: String?): IconStyle =
+            entries.firstOrNull { it.name == value } ?: COLOR
+    }
+}
+
 /**
- * App-level preferences that are neither secrets nor server connection data: today,
- * just the theme. A plain Preferences DataStore, like
+ * App-level preferences that are neither secrets nor server connection data: the
+ * theme, launcher icon, dashboard layout and a few local UI choices. A plain
+ * Preferences DataStore, like
  * [LiveAlertsPreferences][com.digitrob.digitdns.data.LiveAlertsPreferences] — these are
  * UI choices, not credentials, so they do not belong in `SecretStore`.
  *
@@ -132,6 +146,7 @@ class AppPreferences @Inject constructor(
 ) {
     private object Keys {
         val themeMode = stringPreferencesKey("theme_mode")
+        val iconStyle = stringPreferencesKey("icon_style")
         val dashboardOrder = stringPreferencesKey("dashboard_order")
         val dashboardDisabled = stringPreferencesKey("dashboard_disabled")
         val appMode = stringPreferencesKey("app_mode")
@@ -186,6 +201,17 @@ class AppPreferences @Inject constructor(
     suspend fun setThemeMode(mode: ThemeMode) {
         context.appPrefsDataStore.edit { prefs ->
             prefs[Keys.themeMode] = mode.name
+        }
+    }
+
+    /** The chosen launcher icon. The package-manager alias state is applied separately. */
+    val iconStyle: Flow<IconStyle> = context.appPrefsDataStore.data.map { prefs ->
+        IconStyle.fromStored(prefs[Keys.iconStyle])
+    }
+
+    suspend fun setIconStyle(style: IconStyle) {
+        context.appPrefsDataStore.edit { prefs ->
+            prefs[Keys.iconStyle] = style.name
         }
     }
 

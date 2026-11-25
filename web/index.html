@@ -16,13 +16,23 @@
        data-theme attribute below by app.js. -->
   <meta name="color-scheme" content="dark light">
   <title>DigitDNS — Complete SmartDNS, SNI-proxy and Ad-Blocking Solution</title>
-  <!-- A drawn mark rather than the ⚡ emoji this used to be. An emoji favicon is rendered
-       by the platform's emoji font, so the tab showed a different glyph on every OS — flat
-       yellow on Windows, a blue-grey bolt on macOS, nothing at all in some Linux builds —
-       and none of them were this panel's colours. The data: URI keeps it request-free.
-       %22 for the quotes and %23 for the # are required: both are URL-significant here. -->
+  <!-- The same mark ships as ICO, SVG, PNG and an Apple touch icon. The SVG is
+       preferred by modern browsers; the PNG/ICO entries are the fallback. -->
+  <link rel="icon" href="/img/favicon.ico" sizes="any">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/img/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="/img/favicon-16.png" sizes="16x16" type="image/png">
   <link rel="icon" href="/img/favicon-64.png" sizes="64x64" type="image/png">
+  <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+  <link rel="manifest" href="/img/site.webmanifest">
+  <meta name="theme-color" content="#0a1229">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="DigitDNS — your own DNS, your rules">
+  <meta property="og:description" content="A self-hosted DNS server that blocks ads, encrypts every lookup and relays only the domains you choose.">
+  <meta property="og:image" content="/img/og-image.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta name="twitter:card" content="summary_large_image">
   <!-- Theme and language are applied before the first paint, ahead of every other
        script and the stylesheet, so the panel never renders one theme and then flips.
        Inlined rather than imported for the same reason: an external module would be a

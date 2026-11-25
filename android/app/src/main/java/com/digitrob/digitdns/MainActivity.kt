@@ -50,11 +50,13 @@ import androidx.navigation.compose.rememberNavController
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.data.AppMode
 import com.digitrob.digitdns.data.AppPreferences
+import com.digitrob.digitdns.data.IconStyle
 import com.digitrob.digitdns.data.AuthRepository
 import com.digitrob.digitdns.data.SubscriberSession
 import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.core.network.AuthState
 import com.digitrob.digitdns.data.stream.LiveQueryStream
+import com.digitrob.digitdns.core.branding.LauncherIcon
 import com.digitrob.digitdns.ui.auth.LoginScreen
 import com.digitrob.digitdns.ui.clients.ClientsScreen
 import com.digitrob.digitdns.ui.dashboard.DashboardScreen
@@ -121,6 +123,15 @@ class MainActivity : FragmentActivity() {
             val themeMode by appPreferences.themeMode.collectAsStateWithLifecycle(
                 initialValue = ThemeMode.SYSTEM,
             )
+            // Normalise the launcher-alias state on every start as well as when
+            // the preference changes. This recovers from an interrupted switch
+            // that left both aliases enabled or disabled.
+            val iconStyle by appPreferences.iconStyle.collectAsStateWithLifecycle(
+                initialValue = IconStyle.COLOR,
+            )
+            LaunchedEffect(iconStyle) {
+                LauncherIcon.apply(applicationContext, iconStyle)
+            }
             val darkTheme = when (themeMode) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
                 ThemeMode.DARK, ThemeMode.GREY -> true

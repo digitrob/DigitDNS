@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/v570-web-dashboard-dark.jpg" alt="DigitDNS web dashboard: live DNS metrics, upstream resolvers and traffic charts" width="100%">
+  <img src="docs/screenshots/v5117-web-dashboard-dark.jpg" alt="DigitDNS web dashboard: live DNS metrics, upstream resolvers and traffic charts" width="100%">
 </p>
 
 ## What is DigitDNS?
@@ -43,7 +43,7 @@ If you have looked at Pi-hole or AdGuard Home, DigitDNS covers the same ground �
 It is a fork of [HyperDNS](https://github.com/IzumiRain/HyperDNS) by HyperRAIN, maintained by [Digitrob](https://github.com/digitrob), free and open source under AGPL-3.0. Use it only on servers and networks you are allowed to operate.
 
 > [!NOTE]
-> **v5.11.7 is out.** Upstream maintenance is now configurable from the panel and the Android app — bootstrap and fallback DNS, keep-warm scope and interval, probation, and startup cache warm. Concurrent identical cache misses share one upstream query, and the latency card reports real upstream resolution time over a selectable 5m–24h window instead of mixing policy answers with resolver time. **Force** now benchmarks and switches immediately. See the [changelog](docs/CHANGELOG.md) for every release.
+> **v5.12.0 is out.** DigitDNS has a new visual identity across the panel, login page, PWA, Android app and documentation — plus a selectable home-screen icon: choose **Regular** or **Grayscale** under **Settings → App**, with live previews and no reinstall. This release also carries the cold-miss coalescing fix from post-5.11.7 `main`. See the [changelog](docs/CHANGELOG.md) for every release.
 
 ## Why people use it
 
@@ -161,7 +161,7 @@ The optional 90-day aggregate store answers "what did this server see last week?
 
 ### The Android app
 
-The Android app is a native companion with the same control surface as the panel, plus the subscriber client area. It has its own version line (`android-v5.11.7`) and is side-loaded; it is not on Play.
+The Android app is a native companion with the same control surface as the panel, plus the subscriber client area. It has its own version line (`android-v5.12.0`) and is side-loaded; it is not on Play.
 
 - **Admin parity:** dashboard, Domains and wildcards, Users and quotas, Live Log, System Log, Egress Options, upstream resolvers and policies, encrypted transports, DNSSEC, proxy leak protection, IPv6, traffic history, ad blocking, relay agents, diagnostics, certificates, settings and server switching.
 - **Client area:** account status, IP registration, traffic and expiry, every DNS endpoint, the setup guide for your device and saved subscriptions.
@@ -169,6 +169,7 @@ The Android app is a native companion with the same control surface as the panel
 - **Biometric login:** require a fingerprint, face or device PIN to open the app, with device-PIN fallback and a sign-out escape.
 - **Quick Settings tile** toggles ad blocking without opening the app.
 - **Themes:** Follow system, Dark, Grey and Light. The choice is stored and applied at launch.
+- **App icon:** pick **Regular** or **Grayscale** under Settings → App. The launcher alias is switched in place, so the home-screen icon changes without reinstalling the app.
 
 | APK | Architecture |
 | :--- | :--- |
@@ -190,18 +191,22 @@ REST API v2 and v3 cover clients, domains, settings, resolution policy, upstream
 
 ## Screenshots
 
+> All screenshots are captured from a synthetic test environment. Domains, client
+> names, IP addressing and traffic are demo data — no real subscriber, host or
+> server information is shown.
+
 ### Web panel
 
 | Domains and routing | Ad blocking |
 | :---: | :---: |
-| <img src="docs/screenshots/v570-web-domains.jpg" alt="DigitDNS Domains list with proxy, direct and blocked rules, services and relay assignments" width="100%"> | <img src="docs/screenshots/v570-web-adblocking.jpg" alt="DigitDNS Ad Blocking with 45 presets, active blocklists, policy and rule tester" width="100%"> |
+| <img src="docs/screenshots/v5117-web-domains.jpg" alt="DigitDNS Domains list with proxy, direct and blocked rules, services and relay assignments" width="100%"> | <img src="docs/screenshots/v5117-web-adblocking.jpg" alt="DigitDNS Ad Blocking with 45 presets, policy, custom rules and active blocklists" width="100%"> |
 
 ### Traffic history
 
 The optional aggregate store keeps 90 days of counters and top tables, never the raw queries.
 
 <p align="center">
-  <img src="docs/screenshots/v570-web-history.jpg" alt="DigitDNS 24-hour traffic history with total, blocked, proxied and cached queries plus top tables" width="100%">
+  <img src="docs/screenshots/v5117-web-history.jpg" alt="DigitDNS 24-hour traffic history with total, blocked, proxied and cached queries plus top tables" width="100%">
 </p>
 
 ### Themes
@@ -209,7 +214,7 @@ The optional aggregate store keeps 90 days of counters and top tables, never the
 Three themes, one panel. The choice is stored, survives login and restarts, and is applied before the first paint so there is no flash. Android adds **Follow system** alongside Dark, Grey and Light.
 
 <p align="center">
-  <img src="docs/screenshots/v570-themes.jpg" alt="DigitDNS web dashboard in Dark, Grey and Light themes" width="100%">
+  <img src="docs/screenshots/v5117-web-themes.jpg" alt="DigitDNS web dashboard in Dark, Grey and Light themes" width="100%">
 </p>
 
 ### Client portal
@@ -217,18 +222,18 @@ Three themes, one panel. The choice is stored, survives login and restarts, and 
 The subscriber portal is a private link with the account status, every DNS endpoint and a setup guide for the device in hand.
 
 <p align="center">
-  <img src="docs/screenshots/v570-web-client-portal.jpg" alt="DigitDNS subscriber portal: registration, subscription details, usage, endpoints and setup guide" width="78%">
+  <img src="docs/screenshots/v5117-web-client-portal.jpg" alt="DigitDNS subscriber portal: registration, subscription details, usage, endpoints and setup guide" width="78%">
 </p>
 
 ### Android
 
-| Dashboard | Domains | Ad blocking | Users |
-| :---: | :---: | :---: | :---: |
-| <img src="docs/screenshots/v570-android-dash-dark.png" alt="DigitDNS Android dashboard with adaptive upstream controls and live metrics" width="220"> | <img src="docs/screenshots/v570-android-domains.png" alt="DigitDNS Android Domains screen with proxy rules and relay flags" width="220"> | <img src="docs/screenshots/v570-android-adblocking.png" alt="DigitDNS Android ad blocking with active blocklists and policy" width="220"> | <img src="docs/screenshots/v570-android-users.png" alt="DigitDNS Android Users with quotas and expiry" width="220"> |
+| Dashboard | Domains | Ad blocking |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/v5117-android-dash-dark.png" alt="DigitDNS Android dashboard with adaptive upstream controls and live metrics" width="240"> | <img src="docs/screenshots/v5117-android-domains.png" alt="DigitDNS Android Domains screen with proxy, direct and blocked rules" width="240"> | <img src="docs/screenshots/v5117-android-adblocking.png" alt="DigitDNS Android ad blocking with active blocklists and policy" width="240"> |
 
-| Dark | Grey | Light | Theme settings |
+| Dark | Grey | Light | App settings |
 | :---: | :---: | :---: | :---: |
-| <img src="docs/screenshots/v570-android-dash-dark.png" alt="DigitDNS Android dashboard in Dark theme" width="220"> | <img src="docs/screenshots/v570-android-dash-grey.png" alt="DigitDNS Android dashboard in Grey theme" width="220"> | <img src="docs/screenshots/v570-android-dash-light.png" alt="DigitDNS Android dashboard in Light theme" width="220"> | <img src="docs/screenshots/v570-android-app-settings.png" alt="DigitDNS Android theme settings with Follow system, Dark, Grey and Light" width="220"> |
+| <img src="docs/screenshots/v5117-android-dash-dark.png" alt="DigitDNS Android dashboard in Dark theme" width="220"> | <img src="docs/screenshots/v5117-android-dash-grey.png" alt="DigitDNS Android dashboard in Grey theme" width="220"> | <img src="docs/screenshots/v5117-android-dash-light.png" alt="DigitDNS Android dashboard in Light theme" width="220"> | <img src="docs/screenshots/v5117-android-settings.png" alt="DigitDNS Android App settings with Follow system, Dark, Grey and Light themes plus the Regular and Grayscale app icon choice" width="220"> |
 
 > Screenshots use a test server with documentation addresses. No real client names or public addresses are shown.
 
@@ -237,7 +242,7 @@ The subscriber portal is a private link with the account status, every DNS endpo
 You need a Linux server (1 vCPU / 1 GB is enough for personal use), root access, and one hostname whose **A record points at the server**. The panel is HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.7/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.12.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a random panel port/path, then prints the login URL. Open it, sign in, and point a device at the server's IP on port 53 (UDP and TCP).
@@ -286,7 +291,7 @@ An agent needs a public IPv4, inbound TCP **80/443**, outbound HTTPS to the hub,
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.11.7/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.12.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -356,7 +361,7 @@ docker logs -f digitdns
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.11.1` | Current release |
+| `5.12.0` | Current release |
 | `edge` | Nightly build from `main` — not for production |
 
 Every release also has its own immutable `vX.Y.Z` tag. See the [releases page](https://github.com/digitrob/DigitDNS/releases) for the full list.
@@ -383,7 +388,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as `checksum
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.11.7/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.12.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```

@@ -1,10 +1,12 @@
 package com.digitrob.digitdns.ui.system
 
+import android.content.Context
 import androidx.fragment.app.FragmentActivity
 import com.digitrob.digitdns.core.security.BiometricAuthenticator
 import com.digitrob.digitdns.core.security.BiometricAvailability
 import com.digitrob.digitdns.data.AppPreferences
 import com.digitrob.digitdns.data.DashboardCard
+import com.digitrob.digitdns.data.IconStyle
 import com.digitrob.digitdns.data.ThemeMode
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -33,13 +35,16 @@ class AppSettingsViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var preferences: AppPreferences
     private lateinit var biometric: BiometricAuthenticator
+    private lateinit var appContext: Context
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         preferences = mockk(relaxed = true)
         biometric = mockk(relaxed = true)
+        appContext = mockk(relaxed = true)
         every { preferences.themeMode } returns flowOf(ThemeMode.DARK)
+        every { preferences.iconStyle } returns flowOf(IconStyle.COLOR)
         every { preferences.dashboardOrder } returns flowOf(DashboardCard.defaultOrder)
         every { preferences.dashboardDisabled } returns flowOf(emptySet())
         every { preferences.biometricEnabled } returns flowOf(true)
@@ -54,7 +59,7 @@ class AppSettingsViewModelTest {
 
     @Test
     fun biometricPreferenceIsReflectedInState() = runTest(dispatcher) {
-        val viewModel = AppSettingsViewModel(preferences, biometric)
+        val viewModel = AppSettingsViewModel(preferences, biometric, appContext)
         advanceUntilIdle()
 
         assertTrue(viewModel.state.value.biometricEnabled)
@@ -66,7 +71,7 @@ class AppSettingsViewModelTest {
         val activity = mockk<FragmentActivity>(relaxed = true)
         coEvery { biometric.authenticate(any(), any(), any()) } returns true
 
-        val viewModel = AppSettingsViewModel(preferences, biometric)
+        val viewModel = AppSettingsViewModel(preferences, biometric, appContext)
         advanceUntilIdle()
         viewModel.setBiometricEnabled(activity, true)
         advanceUntilIdle()
@@ -81,7 +86,7 @@ class AppSettingsViewModelTest {
         coEvery { biometric.authenticate(any(), any(), any()) } returns false
         every { preferences.biometricEnabled } returns flowOf(false)
 
-        val viewModel = AppSettingsViewModel(preferences, biometric)
+        val viewModel = AppSettingsViewModel(preferences, biometric, appContext)
         advanceUntilIdle()
         viewModel.setBiometricEnabled(activity, true)
         advanceUntilIdle()
@@ -92,7 +97,7 @@ class AppSettingsViewModelTest {
 
     @Test
     fun disablingIsImmediateAndDoesNotPrompt() = runTest(dispatcher) {
-        val viewModel = AppSettingsViewModel(preferences, biometric)
+        val viewModel = AppSettingsViewModel(preferences, biometric, appContext)
         advanceUntilIdle()
         viewModel.setBiometricEnabled(null, false)
         advanceUntilIdle()

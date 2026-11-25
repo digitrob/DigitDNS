@@ -1,5 +1,9 @@
 package com.digitrob.digitdns.ui.system
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DragHandle
@@ -33,8 +38,15 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -46,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.security.BiometricAvailability
 import com.digitrob.digitdns.data.DashboardCard
+import com.digitrob.digitdns.data.IconStyle
 import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.ui.components.PanelCard
 import com.digitrob.digitdns.ui.components.PanelToggle
@@ -90,6 +103,31 @@ fun AppSettingsScreen(viewModel: AppSettingsViewModel = hiltViewModel()) {
                 }
                 Text(
                     text = stringResource(R.string.settings_theme_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                Text(
+                    text = stringResource(R.string.settings_app_icon),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    IconStyle.entries.forEach { style ->
+                        AppIconChoice(
+                            style = style,
+                            isSelected = state.iconStyle == style,
+                            onClick = { viewModel.setIconStyle(style) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.settings_app_icon_help),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -307,7 +345,55 @@ private val dashboardCardLabels = mapOf(
 @StringRes
 private fun DashboardCard.labelRes(): Int = dashboardCardLabels.getValue(this)
 
-@StringRes
+@Composable
+private fun AppIconChoice(
+    style: IconStyle,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    val accent = MaterialTheme.colorScheme.primary
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .background(
+                if (isSelected) accent.copy(alpha = 0.10f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f),
+            )
+            .border(
+                width = if (isSelected) 2.dp else 1.dp,
+                color = if (isSelected) accent else MaterialTheme.colorScheme.outlineVariant,
+                shape = shape,
+            )
+            .clickable(role = Role.RadioButton, onClick = onClick)
+            .padding(10.dp)
+            .semantics { selected = isSelected },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Image(
+            painter = painterResource(
+                if (style == IconStyle.COLOR) R.drawable.ic_app_icon_color else R.drawable.ic_app_icon_gray,
+            ),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.size(52.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = stringResource(style.labelRes()),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+private fun IconStyle.labelRes(): Int = when (this) {
+    IconStyle.COLOR -> R.string.settings_app_icon_color
+    IconStyle.GRAYSCALE -> R.string.settings_app_icon_grayscale
+}
+
 private fun ThemeMode.labelRes(): Int = when (this) {
     ThemeMode.SYSTEM -> R.string.theme_system
     ThemeMode.DARK -> R.string.theme_dark

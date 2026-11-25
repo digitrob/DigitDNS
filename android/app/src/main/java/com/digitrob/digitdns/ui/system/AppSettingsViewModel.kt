@@ -1,5 +1,6 @@
 package com.digitrob.digitdns.ui.system
 
+import android.content.Context
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,9 +8,12 @@ import com.digitrob.digitdns.R
 import com.digitrob.digitdns.core.security.BiometricAuthenticator
 import com.digitrob.digitdns.core.security.BiometricAvailability
 import com.digitrob.digitdns.data.AppPreferences
+import com.digitrob.digitdns.core.branding.LauncherIcon
 import com.digitrob.digitdns.data.DashboardCard
+import com.digitrob.digitdns.data.IconStyle
 import com.digitrob.digitdns.data.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +23,7 @@ import javax.inject.Inject
 
 data class AppSettingsUiState(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val iconStyle: IconStyle = IconStyle.COLOR,
     val dashboardOrder: List<DashboardCard> = DashboardCard.defaultOrder,
     val dashboardDisabled: Set<DashboardCard> = emptySet(),
     val biometricEnabled: Boolean = false,
@@ -35,6 +40,7 @@ data class AppSettingsUiState(
 class AppSettingsViewModel @Inject constructor(
     private val preferences: AppPreferences,
     private val biometric: BiometricAuthenticator,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AppSettingsUiState())
@@ -44,6 +50,11 @@ class AppSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             preferences.themeMode.collect { mode ->
                 _state.update { it.copy(themeMode = mode) }
+            }
+        }
+        viewModelScope.launch {
+            preferences.iconStyle.collect { style ->
+                _state.update { it.copy(iconStyle = style) }
             }
         }
         viewModelScope.launch {
@@ -66,6 +77,16 @@ class AppSettingsViewModel @Inject constructor(
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { preferences.setThemeMode(mode) }
+    }
+
+    /** Save the choice and switch the launcher alias immediately. */
+    fun setIconStyle(style: IconStyle) {
+        if (style == _state.value.iconStyle) return
+        _state.update { it.copy(iconStyle = style) }
+        viewModelScope.launch {
+            preferences.setIconStyle(style)
+            LauncherIcon.apply(appContext, style)
+        }
     }
 
     /**
