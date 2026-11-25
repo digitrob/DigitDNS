@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **README and docs.** New hero, screenshot tables, an app-icon feature note and version references for v5.12.0.
 
 ### Fixed
+- **Force switches on the first tap.** The Force path now selects from the latest measurements immediately instead of blocking on a full benchmark; only a pool that has never been measured gets one short probe. The v3/Android response also carries the ranked upstream rows, so the app applies the new resolver without racing the cached `/upstreams/stats` response.
 - **Icon switching in debug builds.** Aliases were named from the manifest namespace while the runtime looked them up under the application ID, so the preference saved but the icon never changed. Alias names now follow the application ID, and launch normalisation repairs an interrupted switch.
 - **Cold misses during the cache-warm window.** A completed single-flight lookup is reused for 500 ms, bounded to 4,096 entries, so a client arriving before the cache write no longer starts a duplicate upstream query.
 

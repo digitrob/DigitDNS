@@ -25,6 +25,10 @@ The browser manifest, theme colour and Open Graph metadata now point at the new 
 
 The launcher entries are two activity aliases whose names are built from the application ID. That last detail matters: the previous implementation named them from the manifest namespace, so a debug build saved the preference but silently failed to change the icon.
 
+## Force switches on the first tap
+
+The Force button now selects from the latest resolver measurements immediately. It no longer waits for a full three-sample benchmark, and it does not queue behind a scheduled one; a pool that has never been measured gets a single short probe first. The Android Force response also returns the ranked upstream rows, so the card applies the new resolver and its latency in one round trip instead of reading a cached follow-up snapshot.
+
 ## Faster cold paths
 
 A client that arrived just after the leader's upstream answer but before the handler wrote it to the cache could still start a second query for the same name. Completed single-flight lookups are now reused for **500 ms**, bounded to 4,096 entries and swept when full. A busy resolver sees one upstream query per cold name instead of a small burst.

@@ -14,11 +14,10 @@ import (
 	"github.com/miekg/dns"
 )
 
-// The Force response must carry the post-benchmark resolver numbers. The panel
-// used to repaint from its previous /api/stats payload, which is cached for a
-// second, so the row the server had just selected kept showing the latency it
-// had before the benchmark — and the new choice could look slower than the old
-// one. A plain GET keeps the smaller payload.
+// The Force response must carry the resolver numbers the selection just used.
+// The panel used to repaint from its previous /api/stats payload, which is
+// cached for a second, so the row the server had just selected kept showing the
+// pre-switch latency. A plain GET keeps the smaller payload.
 func TestAdaptiveRunResponseCarriesUpstreamStats(t *testing.T) {
 	ws, _, cleanup := setupTestWebServer(t)
 	defer cleanup()
@@ -46,14 +45,17 @@ func TestAdaptiveRunResponseCarriesUpstreamStats(t *testing.T) {
 	}
 }
 
-// Force is the operator asking for fresh numbers now, not at the next
-// interval: it runs the benchmark and selects from that run.
-func TestForceRunsBenchmarkAndSelects(t *testing.T) {
+// Force switches from the measurements already in hand and does not queue a
+// full benchmark or wait for the scheduler. That is the first-tap guarantee:
+// tying the switch to a probe made the old resolver stay active until the
+// benchmark finished, and a scheduled probe could outlast the client timeout.
+func TestForceSelectsFromLatestMeasurementsWithoutBenchmark(t *testing.T) {
 	ws, _, cleanup := setupTestWebServer(t)
 	defer cleanup()
 
 	fake := startWebTestDNS(t)
 	ws.upstreams = upstream.NewUpstreamPool([]string{fake}, 500*time.Millisecond, false, "")
+	ws.upstreams.BenchmarkAll() // the pool already has a measured resolver
 
 	var runs atomic.Int32
 	runner := service.NewBenchmarkRunner(func() {
@@ -66,8 +68,8 @@ func TestForceRunsBenchmarkAndSelects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Force run: %v", err)
 	}
-	if runs.Load() != 1 {
-		t.Fatalf("benchmark runs = %d, want exactly 1", runs.Load())
+	if runs.Load() != 0 {
+		t.Fatalf("benchmark runs = %d, want 0 — Force must switch without a probe", runs.Load())
 	}
 	if decision.Current != fake {
 		t.Fatalf("Force chose %q, want the measured resolver %q", decision.Current, fake)
@@ -78,6 +80,30 @@ func TestForceRunsBenchmarkAndSelects(t *testing.T) {
 	ws.dnsMu.Unlock()
 	if persisted != fake {
 		t.Fatalf("persisted choice = %q, want %q", persisted, fake)
+	}
+}
+
+// The v3 Force response is what the Android app consumes. It must carry the
+// racer rows too, so the app does not have to follow up with /upstreams/stats
+// and race that endpoint's one-second cache.
+func TestV3ForceResponseCarriesUpstreamStats(t *testing.T) {
+	ws, _, cleanup := setupTestWebServer(t)
+	defer cleanup()
+
+	fake := startWebTestDNS(t)
+	ws.upstreams = upstream.NewUpstreamPool([]string{fake}, 500*time.Millisecond, false, "")
+	ws.upstreams.BenchmarkAll()
+
+	out, err := NewV3Backend(ws).RunAdaptive()
+	if err != nil {
+		t.Fatalf("v3 Force run: %v", err)
+	}
+	stats, ok := out["upstream_stats"].([]any)
+	if !ok || len(stats) != 1 {
+		t.Fatalf("v3 Force upstream_stats = %#v, want one racer row", out["upstream_stats"])
+	}
+	if got, _ := out["adaptive_current"].(string); got != fake {
+		t.Fatalf("v3 Force adaptive_current = %q, want %q", got, fake)
 	}
 }
 

@@ -569,9 +569,21 @@ class DashboardViewModel @Inject constructor(
             }
             try {
                 val saved = settingsRepository.runAdaptive()
-                _state.update { it.copy(resolution = saved, adaptiveRunOk = true) }
-                runCatching { upstreamsRepository.stats() }
-                    .onSuccess { upstreams -> _state.update { it.copy(upstreams = upstreams) } }
+                // Apply the resolver choice and the racer rows from the same
+                // response. The separate stats endpoint is cached for a second,
+                // so its first answer can still describe the pre-switch pool.
+                val freshRows = saved.upstreamStats
+                _state.update {
+                    it.copy(
+                        resolution = saved,
+                        upstreams = if (freshRows.isNotEmpty()) freshRows else it.upstreams,
+                        adaptiveRunOk = true,
+                    )
+                }
+                if (freshRows.isEmpty()) {
+                    runCatching { upstreamsRepository.stats() }
+                        .onSuccess { upstreams -> _state.update { it.copy(upstreams = upstreams) } }
+                }
             } catch (e: ApiException) {
                 _state.update { it.copy(adaptiveRunOk = false, adaptiveRunError = e.userMessage) }
             } catch (e: java.io.IOException) {

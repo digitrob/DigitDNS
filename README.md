@@ -43,7 +43,7 @@ If you have looked at Pi-hole or AdGuard Home, DigitDNS covers the same ground �
 It is a fork of [HyperDNS](https://github.com/IzumiRain/HyperDNS) by HyperRAIN, maintained by [Digitrob](https://github.com/digitrob), free and open source under AGPL-3.0. Use it only on servers and networks you are allowed to operate.
 
 > [!NOTE]
-> **v5.12.0 is out.** DigitDNS has a new visual identity across the panel, login page, PWA, Android app and documentation — plus a selectable home-screen icon: choose **Regular** or **Grayscale** under **Settings → App**, with live previews and no reinstall. This release also carries the cold-miss coalescing fix from post-5.11.7 `main`. See the [changelog](docs/CHANGELOG.md) for every release.
+> **v5.12.0 is out.** DigitDNS has a new visual identity across the panel, login page, PWA, Android app and documentation — plus a selectable home-screen icon: choose **Regular** or **Grayscale** under **Settings → App**, with live previews and no reinstall. This release also carries the cold-miss coalescing fix from post-5.11.7 `main`, and **Force** now switches resolvers on the first tap instead of waiting for a full benchmark. See the [changelog](docs/CHANGELOG.md) for every release.
 
 ## Why people use it
 

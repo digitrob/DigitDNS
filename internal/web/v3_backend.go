@@ -336,7 +336,16 @@ func (b *v3Backend) RunAdaptive() (map[string]any, error) {
 		}
 		return nil, err
 	}
-	return b.ResolutionSettings()
+	// Return the same ranked view the web Force handler writes. A plain
+	// ResolutionSettings() carries no upstream stats, so the app had to fetch
+	// /upstreams/stats separately — and that endpoint is cached for a second.
+	// The first call could therefore repaint the card with the pre-switch
+	// latencies and make a successful switch look like a no-op.
+	rec := httptest.NewRecorder()
+	b.ws.writeResolutionRanked(rec, true, true)
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	return out, nil
 }
 
 // DnssecSettings is the dashboard's DNSSEC policy view. The Android client uses

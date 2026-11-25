@@ -269,6 +269,8 @@ data class ResolutionSettings(
     @SerialName("adaptive_last_note") val adaptiveLastNote: String = "",
     val profiles: Map<String, ResolutionProfileDto> = emptyMap(),
     val upstreams: List<String> = emptyList(),
+    /** Fresh racer rows on a Force response; absent on ordinary reads. */
+    @SerialName("upstream_stats") val upstreamStats: List<UpstreamStat> = emptyList(),
     val advanced: AdvancedUpstreamDto = AdvancedUpstreamDto(),
     /** True on a save that wrote Bootstrap DNS, which needs a restart to apply. */
     @SerialName("restart_required") val restartRequired: Boolean = false,
