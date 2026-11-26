@@ -3275,7 +3275,8 @@ async function autoSaveTransportDraft() {
 // "is there another batch", read by both the observer and the fallback button.
 const PROXIED_BATCH = 50;
 let proxiedSort = 'added-desc';
-// null means all statuses; the chips toggle one of these on and off.
+// null means all statuses; the chips toggle one of these on and off. The default
+// view shows everything, with active rules first and paused rows sorted last.
 let proxiedStatusFilter = null;
 let proxiedVisible = PROXIED_BATCH;
 let proxiedHasMore = false;
@@ -3358,17 +3359,25 @@ function proxiedOrderedRows() {
     return Number.isFinite(t) ? t : 0;
   };
   const anyStamp = rows.some((r) => stamp(r.domain) > 0);
+  // Paused rows always sink below the active ones, whichever way "Added" runs.
+  // Array.prototype.sort is stable, so within each group the newest/oldest order
+  // is preserved: active domains by Added (newest), then paused by Added (newest).
+  const pausedLast = (a, b) => (a.status === 'paused' ? 1 : 0) - (b.status === 'paused' ? 1 : 0);
 
   switch (proxiedSort) {
     case 'added-asc':
-      return anyStamp ? rows.slice().sort((a, b) => stamp(a.domain) - stamp(b.domain)) : rows;
+      return anyStamp
+        ? rows.slice().sort((a, b) => pausedLast(a, b) || stamp(a.domain) - stamp(b.domain))
+        : rows.slice().sort(pausedLast);
     case 'az': return rows.slice().sort(byBase);
     case 'za': return rows.slice().sort((a, b) => byBase(b, a));
     case 'status':
       return rows.slice().sort((a, b) => DOMAIN_STATUS_RANK[a.status] - DOMAIN_STATUS_RANK[b.status]);
     case 'added-desc':
     default:
-      return anyStamp ? rows.slice().sort((a, b) => stamp(b.domain) - stamp(a.domain)) : rows.slice().reverse();
+      return anyStamp
+        ? rows.slice().sort((a, b) => pausedLast(a, b) || stamp(b.domain) - stamp(a.domain))
+        : rows.slice().reverse().sort(pausedLast);
   }
 }
 
@@ -3598,7 +3607,7 @@ function closeBulkEgressMenu() {
 }
 
 async function assignEgressToSelected(agentId) {
-  if (!agentId || proxiedSelected.size === 0) return;
+  if (!agentId || !currentConfig || !currentConfig.rules || proxiedSelected.size === 0) return;
   closeBulkEgressMenu();
   const domains = Array.from(proxiedSelected);
   const rules = currentConfig.rules;
@@ -3630,7 +3639,7 @@ function closeBulkServiceMenu() {
 }
 
 async function assignServiceToSelected(serviceId) {
-  if (!serviceId || proxiedSelected.size === 0) return;
+  if (!serviceId || !currentConfig || !currentConfig.rules || proxiedSelected.size === 0) return;
   closeBulkServiceMenu();
   const domains = Array.from(proxiedSelected);
   const rules = currentConfig.rules;
@@ -5039,16 +5048,17 @@ function renderProxiedList() {
   // The service filter is a view over the same in-memory rules, but it has to be
   // applied before the count and the pagination slice - otherwise the header says
   // "3 domains" while one row is visible and "Load more" grows a hidden list.
-  const serviceScoped = activeService
+  // When searching, search runs across all services (ignore service filter).
+  const serviceScoped = (!needle && activeService)
     ? ordered.filter(({ domain }) => {
         const sid = serviceOfDomain(domain);
         return activeService === '__none__' ? !sid : sid === activeService;
       })
     : ordered;
   const total = serviceScoped.length;
-  const serviceScope = activeService === '__none__'
+  const serviceScope = (!needle && activeService === '__none__')
     ? 'No service'
-    : (activeService ? serviceName(activeService) : '');
+    : (!needle && activeService ? serviceName(activeService) : '');
   const countEl = document.getElementById('proxied-count');
   const moreBtn = document.getElementById('proxied-load-more');
   const statusLabel = proxiedStatusFilter
@@ -5475,25 +5485,39 @@ function proxiedBulkSetEnabled(enable) {
 
 // proxiedBulkRemove deletes the selected domains from both lists for good. It asks
 // first, because a long list can hide the rows a bulk selection captured and the tick
-// marks are small; the message names the count so the dialog is a real decision.
+// marks are small; the message names the count and previews the domains so the dialog
+// is a real decision.
 async function proxiedBulkRemove() {
   if (!currentConfig || !currentConfig.rules || proxiedSelected.size === 0) return;
-  const n = proxiedSelected.size;
+  const selectedList = Array.from(proxiedSelected);
+  selectedList.sort((a, b) => a.localeCompare(b));
+  const n = selectedList.length;
+  const previewLimit = 10;
+  const preview = selectedList.slice(0, previewLimit).map((d) => `• ${d}`).join('\n');
+  const more = n > previewLimit ? `\n…and ${n - previewLimit} more` : '';
   const ok = await confirmAction({
     destructive: true,
     title: `Remove ${n} domain${n === 1 ? '' : 's'}?`,
     hint: 'THIS CANNOT BE UNDONE',
-    message: `${n} selected domain${n === 1 ? '' : 's'} will be deleted from the managed lists. A proxied domain stops being spoofed to the SNI proxy immediately and resolves normally.`,
+    message: `${n} selected domain${n === 1 ? '' : 's'} will be deleted from the managed lists. A proxied domain stops being spoofed to the SNI proxy immediately and resolves normally.\n\n${preview}${more}`,
     confirmText: 'REMOVE',
   });
   if (!ok) return;
   const rules = currentConfig.rules;
-  rules.custom_proxied = (rules.custom_proxied || []).filter((d) => !proxiedSelected.has(d));
-  rules.custom_proxied_disabled = (rules.custom_proxied_disabled || []).filter((d) => !proxiedSelected.has(d));
-  rules.custom_blocked = (rules.custom_blocked || []).filter((d) => !proxiedSelected.has(d));
-  rules.custom_direct = (rules.custom_direct || []).filter((d) => !proxiedSelected.has(d));
+  const selectedSet = new Set(selectedList);
+  rules.custom_proxied = (rules.custom_proxied || []).filter((d) => !selectedSet.has(d));
+  rules.custom_proxied_disabled = (rules.custom_proxied_disabled || []).filter((d) => !selectedSet.has(d));
+  rules.custom_blocked = (rules.custom_blocked || []).filter((d) => !selectedSet.has(d));
+  rules.custom_direct = (rules.custom_direct || []).filter((d) => !selectedSet.has(d));
   const added = rules.custom_domain_added || (rules.custom_domain_added = {});
-  for (const domain of proxiedSelected) delete added[domain];
+  for (const domain of selectedList) delete added[domain];
+  // Also clear any service/relay assignments for removed domains (avoid orphans).
+  if (rules.domain_services && typeof rules.domain_services === 'object') {
+    for (const domain of selectedList) delete rules.domain_services[domain];
+  }
+  if (rules.domain_agents && typeof rules.domain_agents === 'object') {
+    for (const domain of selectedList) delete rules.domain_agents[domain];
+  }
   proxiedSelected = new Set();
   renderConfig(currentConfig);
   saveRules();
@@ -16146,8 +16170,18 @@ function initEventListeners() {
       closeRelayPicker();
     }
   });
-  window.addEventListener('scroll', closeServicePicker, true);
-  window.addEventListener('scroll', closeRelayPicker, true);
+  // A fixed picker must follow neither the page nor the table, so a scroll
+  // outside it closes it. Scrolling the picker's own list is the one gesture
+  // that must not: the service/relay lists are longer than the menu, and the
+  // capture-phase listener used to fire for the menu's own scrollbar, closing
+  // the menu the moment the operator tried to reach a lower entry.
+  const closePickerOnOutsideScroll = (menuId, close) => (e) => {
+    const menu = document.getElementById(menuId);
+    if (menu && !menu.classList.contains('hidden') && e.target instanceof Node && menu.contains(e.target)) return;
+    close();
+  };
+  window.addEventListener('scroll', closePickerOnOutsideScroll('service-picker-menu', closeServicePicker), true);
+  window.addEventListener('scroll', closePickerOnOutsideScroll('relay-picker-menu', closeRelayPicker), true);
   window.addEventListener('resize', closeServicePicker);
   window.addEventListener('resize', closeRelayPicker);
   window.addEventListener('resize', sizeProxiedScroll);

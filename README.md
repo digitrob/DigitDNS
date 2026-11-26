@@ -43,7 +43,7 @@ If you have looked at Pi-hole or AdGuard Home, DigitDNS covers the same ground �
 It is a fork of [HyperDNS](https://github.com/IzumiRain/HyperDNS) by HyperRAIN, maintained by [Digitrob](https://github.com/digitrob), free and open source under AGPL-3.0. Use it only on servers and networks you are allowed to operate.
 
 > [!NOTE]
-> **v5.12.0 is out.** DigitDNS has a new visual identity across the panel, login page, PWA, Android app and documentation — plus a selectable home-screen icon: choose **Regular** or **Grayscale** under **Settings → App**, with live previews and no reinstall. This release also carries the cold-miss coalescing fix from post-5.11.7 `main`, and **Force** now switches resolvers on the first tap instead of waiting for a full benchmark. See the [changelog](docs/CHANGELOG.md) for every release.
+> **v5.12.1 is out.** A Domains-page patch: the per-domain **Service** and **Relay** menus now stay open while you scroll them, bulk actions act only on the rows you ticked (the delete dialog previews them and names the count), and the default order keeps active rules on top with paused domains sorted last — each group still newest-added first. See the [changelog](docs/CHANGELOG.md) for every release.
 
 ## Why people use it
 
@@ -161,7 +161,7 @@ The optional 90-day aggregate store answers "what did this server see last week?
 
 ### The Android app
 
-The Android app is a native companion with the same control surface as the panel, plus the subscriber client area. It has its own version line (`android-v5.12.0`) and is side-loaded; it is not on Play.
+The Android app is a native companion with the same control surface as the panel, plus the subscriber client area. It has its own version line (`android-v5.12.1`) and is side-loaded; it is not on Play.
 
 - **Admin parity:** dashboard, Domains and wildcards, Users and quotas, Live Log, System Log, Egress Options, upstream resolvers and policies, encrypted transports, DNSSEC, proxy leak protection, IPv6, traffic history, ad blocking, relay agents, diagnostics, certificates, settings and server switching.
 - **Client area:** account status, IP registration, traffic and expiry, every DNS endpoint, the setup guide for your device and saved subscriptions.
@@ -242,7 +242,7 @@ The subscriber portal is a private link with the account status, every DNS endpo
 You need a Linux server (1 vCPU / 1 GB is enough for personal use), root access, and one hostname whose **A record points at the server**. The panel is HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.12.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.12.1/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a random panel port/path, then prints the login URL. Open it, sign in, and point a device at the server's IP on port 53 (UDP and TCP).
@@ -291,7 +291,7 @@ An agent needs a public IPv4, inbound TCP **80/443**, outbound HTTPS to the hub,
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.12.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.12.1/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -361,7 +361,7 @@ docker logs -f digitdns
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.12.0` | Current release |
+| `5.12.1` | Current release |
 | `edge` | Nightly build from `main` — not for production |
 
 Every release also has its own immutable `vX.Y.Z` tag. See the [releases page](https://github.com/digitrob/DigitDNS/releases) for the full list.
@@ -388,7 +388,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as `checksum
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.12.0/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.12.1/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```

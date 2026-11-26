@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.12.1] — Domains page: menus that scroll, bulk actions that stay scoped
+
+### Fixed
+- **The per-domain Service and Relay menus stay open while you scroll them.** A capture-phase `scroll` listener on `window` also caught the menu's own scrollbar, so reaching a lower service closed the picker. The listener now ignores scrolls that originate inside the open menu; page and table scrolls still dismiss it, as do outside clicks, `Esc` and resize.
+- **Bulk actions touch only the ticked domains.** Delete, Pause/Resume, Assign service and Assign relay/egress iterate the exact selection set and refuse to run when nothing is ticked. The delete dialog now names the count and previews the first ten selected domains before confirming, so an accidental **Select all** is visible before anything is removed. Removing a domain also clears its service and relay assignment.
+- **Search spans every service.** Typing in the Domains search box no longer intersects the active service filter; the search runs across the whole managed list.
+
+### Changed
+- **Active rules first, paused last.** The default **Added (newest)** order keeps non-paused domains on top and sorts paused domains below, each group still newest-added first. **Added (oldest)** follows the same paused-last rule; name sorts stay alphabetical.
+
+### Tests
+- Dashboard asset tests pass after the minified rebuild (`app.min.js`, `index.min.html` and Brotli sidecars). No database schema migration is required.
+
+The Android companion moves to `android-v5.12.1`, with version code 591. No Android code changed in this release.
+
 ## 🏷️ [v5.12.0] — A new identity and a home-screen icon you choose
 
 ### Added

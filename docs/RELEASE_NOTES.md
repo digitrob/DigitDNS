@@ -1,61 +1,44 @@
-# DigitDNS v5.12.0 — A new identity and a home-screen icon you choose
+# DigitDNS v5.12.1 — Domains page: menus that scroll, bulk actions that stay scoped
 
-DigitDNS has a new mark across the panel, login page, PWA, Android app and documentation. The Android companion also lets you choose the home-screen icon — **Regular** or **Grayscale** — and this release carries the cold-miss coalescing fix from `main`. No database schema migration is required.
+A focused patch for the Domains page. The per-domain **Service** and **Relay** menus can now be scrolled, bulk actions act only on the rows you ticked, and paused domains sort below the active ones. No database schema migration is required.
 
-## A new mark
+## Menus that scroll
 
-The new tile reads as a DNS switch with a globe at the end: encrypted resolution, routing and the public internet in one shape. It replaces the old logo everywhere it was visible:
+The Service and Relay pickers are fixed popups, positioned over the row that opened them. They were closed by a capture-phase `scroll` listener on `window` — which also saw the menu's own scrollbar. With a long service list, the first wheel or trackpad movement closed the menu before you could reach a lower entry.
 
-- **Web panel:** sidebar and mobile header, favicon set (ICO, SVG, 16/32/64 px PNG), Apple touch icon, and PWA icons at 192/512 px plus maskable variants.
-- **Login page:** the brand lockup and both inline favicons.
-- **Android:** adaptive colour icon, adaptive grayscale icon, monochrome layer for themed icons, and a white notification glyph generated from the same mark.
-- **Documentation:** README hero, Android screenshots and the GitHub repository social preview.
+The listener now ignores scroll events that originate inside the open menu. Page and table scrolls still dismiss it, as do an outside click, `Esc` and a window resize.
 
-The browser manifest, theme colour and Open Graph metadata now point at the new assets. The social card is 1280×640, uses stronger text contrast and lists **Smart DNS · SNI Proxy · Ad Blocking**.
+## Bulk actions stay scoped
 
-## Choose the app icon
+Delete, Pause/Resume, Assign service and Assign relay/egress all iterate the exact selection set and refuse to run when nothing is ticked. The delete dialog now names the count and previews the first ten selected domains before confirming, so an accidental **Select all** is visible before anything is removed. Removing a domain also clears its service and relay assignment.
 
-**Settings → App → App icon** now shows the two real icons instead of text chips. Pick one and the launcher entry switches in place:
+## Active first, paused last
 
-- **Regular** uses the full-colour adaptive icon.
-- **Grayscale** uses a desaturated version of the same mark.
-- **Themed icons** follow Android's monochrome layer in either mode.
-- The choice is stored in DataStore, restored at launch, and normalised on every start so an interrupted switch cannot leave both aliases enabled or disabled.
-- No reinstall is needed. Some launchers cache the icon for a moment or until their next restart.
+The default **Added (newest)** order keeps non-paused domains on top and sorts paused domains below, each group still newest-added first. **Added (oldest)** follows the same paused-last rule; **Name A–Z** and **Z–A** stay purely alphabetical, and **Status (on first)** is unchanged.
 
-The launcher entries are two activity aliases whose names are built from the application ID. That last detail matters: the previous implementation named them from the manifest namespace, so a debug build saved the preference but silently failed to change the icon.
+## Search across services
 
-## Force switches on the first tap
-
-The Force button now selects from the latest resolver measurements immediately. It no longer waits for a full three-sample benchmark, and it does not queue behind a scheduled one; a pool that has never been measured gets a single short probe first. The Android Force response also returns the ranked upstream rows, so the card applies the new resolver and its latency in one round trip instead of reading a cached follow-up snapshot.
-
-## Faster cold paths
-
-A client that arrived just after the leader's upstream answer but before the handler wrote it to the cache could still start a second query for the same name. Completed single-flight lookups are now reused for **500 ms**, bounded to 4,096 entries and swept when full. A busy resolver sees one upstream query per cold name instead of a small burst.
-
-## Screenshots and docs
-
-Every README screenshot was recaptured in a synthetic local environment: dashboard in Dark, Grey and Light, Domains, Ad Blocking, Traffic History, the subscriber portal, and the Android app in all three themes plus App settings. The screenshots use documentation addresses and demo client names only; the disclaimer says so.
+Typing in the Domains search box no longer intersects the active service filter. The search runs across the whole managed list, and the result count and empty state describe the search rather than the selected service.
 
 ## Verification
 
-`go vet`, the full Go suite, the race detector, the dashboard regression tests, Android unit tests, detekt and Android lint pass. The debug APK assembles locally; CI builds and signs the release APKs.
+Dashboard asset tests pass after the minified rebuild (`app.min.js`, `index.min.html` and the Brotli sidecars). No database schema migration is required.
 
-The Android companion moves to **android-v5.12.0**, version code **590**.
+The Android companion moves to **android-v5.12.1**, version code **591**. No Android code changed in this release.
 
 ## Upgrade
 
 In-place upgrades from the dashboard are supported.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.12.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.12.1/scripts/install.sh | sudo bash
 ```
 
 Docker:
 
 ```bash
-docker pull ghcr.io/digitrob/digitdns:5.12.0
-docker pull ghcr.io/digitrob/digitdns-agent:5.12.0
-docker pull robmeister/digitdns:5.12.0
-docker pull robmeister/digitdns-agent:5.12.0
+docker pull ghcr.io/digitrob/digitdns:5.12.1
+docker pull ghcr.io/digitrob/digitdns-agent:5.12.1
+docker pull robmeister/digitdns:5.12.1
+docker pull robmeister/digitdns-agent:5.12.1
 ```
