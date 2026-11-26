@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.12.2] — Domains: attributes survive a scope change, no duplicate rules, blocklist selection and copy
+
+### Fixed
+- **A wildcard/scope change keeps the row's attributes.** Changing a domain between Exact, `*.host` and `*.parent` (or changing its action with a wildcard scope) used to rebase only the routing lists. The service label, relay override and resolution profile stayed on the old key, which the server then pruned — the new wildcard row came back with **no service**. Both web paths and the Android `RouteAction`/`changeScope` paths now move `domain_services`, `domain_agents`, the `Added` stamp and the resolution profile with the rule. An existing label on the target wins, and a separate wildcard row's label is never taken.
+- **Removing a rule cleans all of its attributes.** The Android remove path now drops the relay override, the Added stamp and the resolution profile alongside the service label, for both the row and (when they belong to the same list) its companion wildcard.
+
+### Added
+- **Coverage detection when adding a domain.** A plain rule covers itself and every subdomain; a wildcard covers its subtree. Adding `frontend.googleapis.com` under `googleapis.com` is now flagged in the Add box while you type, and on Add a dialog names the covered names with **SKIP COVERED** (default) and **ADD ANYWAY** (for a per-name label or relay). Bulk import partitions `added / already covered / invalid` and reports the covered entries instead of appending duplicates.
+- **Broad-rule advisory.** Adding `googleapis.com` while `*.googleapis.com` exists reports the narrower rules it now makes redundant. Nothing is deleted automatically.
+- **Custom Blocklist group selection.** In the default grouped view, the header **Select all** now selects everything **except** the folded Custom Blocklist, and the sinkhole row has its own checkbox that selects only that group — the whole set, not just the rendered batch. Ticking the group does not expand it. A search or status chip flattens the view, where the header tick includes matching blocked rows. The same split is available in the Android Domains screen with a tri-state group checkbox.
+- **Copy button on every domain.** **Domains** and the **Live Log** show a copy glyph beside the domain name. It copies the exact stored pattern (including the `*.` prefix), flashes a green check, and does not select the row or filter the log.
+
+### Changed
+- **Blocked additions are warned, not hidden.** A new proxy name that sits under a blocked or direct parent is still added, but the toast says it is shadowed, because those lists outrank proxy in the matcher.
+
+### Tests
+- New web regression tests for coverage (`domain-coverage.test.cjs`) and the copy control (`domain-copy.test.cjs`), plus scope-selection cases in `sinkhole-group.test.cjs` and attribute migration in `wildcard-scope.test.cjs`.
+- Android unit tests pin the scope migration (service + relay + stamp), the existing-target-wins rule, coverage matching, removal patterns and the two selection scopes.
+
+The Android companion moves to `android-v5.12.2`, with version code 592. No database schema migration is required.
+
 ## 🏷️ [v5.12.1] — Domains page: menus that scroll, bulk actions that stay scoped
 
 ### Fixed

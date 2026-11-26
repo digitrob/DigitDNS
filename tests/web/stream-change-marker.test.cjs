@@ -34,6 +34,7 @@ function rowHarness(change) {
     blocklistCategory: () => '',
     countryName: () => '',
     currentConfig: { server: {} },
+    domainCopyButton: (domain) => `<button type="button" class="domain-copy-btn" data-copy-value="${domain}">copy</button>`,
     escapeHTML: (v) => String(v),
     flagURL: () => '',
     formatLatencyMs: () => '1ms',

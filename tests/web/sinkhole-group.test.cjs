@@ -62,3 +62,68 @@ test('no blocked rows means no group entry', () => {
   assert.equal(out.head.length, 0);
   assert.equal(out.flat.length, 1);
 });
+
+// The two select checkboxes. The header tick owns the view minus the folded
+// Custom Blocklist; the group tick owns the blocklist alone. Before this, the
+// header tick selected the hidden blocked rows too, so "select all" quietly
+// captured the whole sinkhole and a bulk label hit it.
+const selectionCode = source.slice(
+  source.indexOf('function proxiedScopedRows'),
+  source.indexOf('// syncProxiedSelectionBoxes'),
+);
+
+function selection(rows, opts = {}) {
+  const context = vm.createContext({
+    proxiedStatusFilter: opts.status || null,
+    activeService: opts.service || '',
+    proxiedFilterNeedle: () => opts.needle || '',
+    proxiedFilteredRows: () => (opts.status ? rows.filter((row) => row.status === opts.status) : rows),
+    serviceOfDomain: (domain) => (opts.services || {})[domain] || '',
+  });
+  vm.runInContext(selectionCode, context);
+  const pick = (name) => Array.from(
+    vm.runInContext(name, context)().map((row) => row.domain),
+  );
+  return {
+    selectAll: pick('proxiedSelectAllRows'),
+    sinkhole: pick('proxiedSinkholeRows'),
+    grouped: vm.runInContext('proxiedSinkholeGrouped', context)(),
+  };
+}
+
+const selectionRows = [
+  { domain: 'proxy.example', status: 'proxy' },
+  { domain: 'ads.one', status: 'blocked' },
+  { domain: 'ads.two', status: 'blocked' },
+  { domain: 'direct.example', status: 'direct' },
+];
+
+test('the header tick excludes the folded Custom Blocklist', () => {
+  const out = selection(selectionRows);
+  assert.equal(out.grouped, true);
+  assert.deepEqual(out.selectAll, ['proxy.example', 'direct.example']);
+  assert.deepEqual(out.sinkhole, ['ads.one', 'ads.two']);
+});
+
+test('a search flattens the view, so the header tick includes matches', () => {
+  const out = selection(selectionRows, { needle: 'ads' });
+  assert.equal(out.grouped, false);
+  assert.deepEqual(out.selectAll, selectionRows.map((r) => r.domain));
+  assert.deepEqual(out.sinkhole, []);
+});
+
+test('a status chip flattens the view too', () => {
+  const out = selection(selectionRows, { status: 'blocked' });
+  assert.equal(out.grouped, false);
+  assert.deepEqual(out.selectAll, ['ads.one', 'ads.two']);
+  assert.deepEqual(out.sinkhole, []);
+});
+
+test('a service filter narrows both select scopes', () => {
+  const out = selection(selectionRows, {
+    service: 'tv',
+    services: { 'proxy.example': 'tv', 'ads.one': 'tv' },
+  });
+  assert.deepEqual(out.selectAll, ['proxy.example']);
+  assert.deepEqual(out.sinkhole, ['ads.one']);
+});

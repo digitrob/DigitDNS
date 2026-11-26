@@ -1025,6 +1025,27 @@ input:checked + .slider:before {
   -webkit-mask-size: contain;
   mask-size: contain;
 }
+/* Copyable domain names in the Domains table and the Live Log. The glyph is
+   always visible at low opacity so it is discoverable on touch, and brightens on
+   hover/focus. It must not shrink when the name truncates beside it. */
+.domain-copy-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.375rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+  transition: color 0.15s, background-color 0.15s, opacity 0.15s;
+}
+.domain-copy-btn:hover,
+.domain-copy-btn:focus-visible {
+  opacity: 1;
+  color: var(--accent-cyan);
+  background: rgb(var(--c-cyan-400) / 0.12);
+}
 /* Copyable values: IPs, tokens, UUIDs. */
 .code-box {
   background: var(--code-bg);
@@ -1833,6 +1854,21 @@ input:checked + .slider:before {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.3rem;
+}
+/* Coverage note under the Add box. It has to read as an aside, not an error:
+   a covered name is usually a duplicate the operator wants to skip, but an
+   exact-label override is a legitimate reason to add it anyway. */
+.proxied-add-hint {
+  margin-top: -0.15rem;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+.proxied-add-hint.is-cover {
+  color: var(--accent-amber);
+}
+.proxied-add-hint.is-conflict {
+  color: rgb(var(--c-red-400));
 }
 /* A narrow, fixed sort control: "Added (newest)" still fits, but it no longer
    pushes the search and bulk buttons onto a second line. */

@@ -119,11 +119,85 @@ fun projectDomainRows(rows: List<DomainRow>, group: Boolean): DomainListProjecti
     }
 }
 
+/**
+ * The rows the header "select all" tick owns. In the grouped view the Custom
+ * Blocklist folds into its own entry with its own tick, so "all" means everything
+ * except that group; a flat view (status chip or search) has no fold.
+ */
+internal fun selectableDomains(rows: List<DomainRow>, grouped: Boolean): Set<String> =
+    rows.filter { !grouped || it.status != DomainStatus.BLOCKED }.map { it.domain }.toSet()
+
+/** The rows the folded Custom Blocklist tick owns, empty when the view is flat. */
+internal fun sinkholeDomains(rows: List<DomainRow>, grouped: Boolean): Set<String> =
+    if (grouped) {
+        rows.filter { it.status == DomainStatus.BLOCKED }.map { it.domain }.toSet()
+    } else {
+        emptySet()
+    }
+
 /** What "this row's rule" means: a wildcard row owns itself, a plain host its pair. */
 private fun rowPatterns(domain: String): Set<String> {
     val wildcard = domain.startsWith("*.")
     val base = if (wildcard) domain.removePrefix("*.") else domain
     return if (wildcard) setOf(domain) else setOf(base, "*.$base")
+}
+
+/**
+ * Whether [rule] already covers [name] under the server's matcher: a plain rule
+ * covers itself and every subdomain, a wildcard covers strict subdomains only.
+ * Keep this in step with internal/core/matcher and the panel's ruleCoversDomain.
+ */
+internal fun patternCovers(rule: String, name: String): Boolean {
+    val pattern = rule.trim().trimEnd('.').lowercase(Locale.US)
+    val domain = name.trim().trimEnd('.').lowercase(Locale.US)
+    val wildcard = pattern.startsWith("*.")
+    val base = if (wildcard) pattern.removePrefix("*.") else pattern
+    return pattern.isNotEmpty() && domain.isNotEmpty() && base.isNotEmpty() &&
+        (if (wildcard) {
+            domain.endsWith(".$base")
+        } else {
+            domain == base || domain.endsWith(".$base")
+        })
+}
+
+/**
+ * The key a row's attributes are stored under: the exact target when the scope
+ * writes one, else the wildcard itself. This is the string the service and relay
+ * pickers use, and the one the server keeps only while it is still in a list.
+ */
+private fun attributeKey(targets: List<String>): String? =
+    targets.firstOrNull { !it.startsWith("*.") } ?: targets.firstOrNull()
+
+/**
+ * The patterns a Remove click takes with it. A wildcard row is only itself; a
+ * plain row also owns its host wildcard when both sit in the same list, which is
+ * what the panel's domainRemovalPatterns does.
+ */
+internal fun removalPatterns(lists: RuleLists, domain: String): Set<String> {
+    val key = domain.normalizedDomain()
+    val twin = "*.$key"
+    val shared = key.isNotEmpty() && !key.startsWith("*.") &&
+        listOf(lists.proxied, lists.proxiedDisabled, lists.blocked, lists.direct)
+            .any { key in it && twin in it }
+    return when {
+        key.isEmpty() -> emptySet()
+        key.startsWith("*.") -> setOf(key)
+        shared -> setOf(key, twin)
+        else -> setOf(key)
+    }
+}
+
+/**
+ * Rebase an attribute map onto [next] when the row's pattern changed. An entry
+ * already stored on [next] wins; every stale key is dropped either way, so the
+ * server cannot prune a value the operator just moved.
+ */
+private fun Map<String, String>.rebased(olds: Collection<String>, next: String): Map<String, String> {
+    val stale = olds.toSet()
+    if (stale.isEmpty()) return this
+    val moved = if (this[next].isNullOrBlank()) olds.firstNotNullOfOrNull { this[it] } else null
+    val kept = this - stale
+    return if (moved != null) kept + (next to moved) else kept
 }
 
 /** The list a name lives in, or null when it has no rule. */
@@ -159,6 +233,15 @@ fun RuleLists.withScope(
         val rowPatterns = if (wildcard) setOf(domain) else setOf(base, "*.$base")
         val remove = rowPatterns + previous + targets
         fun strip(list: List<String>) = list.filter { it !in remove }
+        // The label and relay belong to the pattern the row was displayed under.
+        // Move them with the rule: the server prunes any entry whose key is no
+        // longer in a list, which is how a scope change used to lose the service.
+        val nextKey = attributeKey(targets)
+        val oldKeys = if (nextKey == null) {
+            emptyList()
+        } else {
+            (listOf(domain) + previous).map { it.normalizedDomain() }.filter { it != nextKey }
+        }
         // The target list keeps the row's slot; the others only lose the patterns.
         copy(
             proxied = if (status == DomainStatus.PROXY) {
@@ -181,6 +264,10 @@ fun RuleLists.withScope(
             } else {
                 strip(direct)
             },
+            domainServices = domainServices.rebased(oldKeys, nextKey.orEmpty()),
+            domainAgents = domainAgents.rebased(oldKeys, nextKey.orEmpty()),
+            // Keep the Added position across a rebase, like the panel does.
+            domainAdded = domainAdded.rebased(oldKeys, nextKey.orEmpty()),
         )
     }
 }
@@ -664,18 +751,36 @@ class RulesViewModel @Inject constructor(
     }
 
     /**
-     * The select-all checkbox: tick every visible row, or clear the visible ones
-     * when they are all already ticked. Hidden rows are left alone.
+     * The select-all checkbox: tick every selectable row, or clear them when they
+     * are all ticked. Hidden rows are left alone, and in the grouped view the
+     * Custom Blocklist folds into its own entry with its own tick, so "all" here
+     * means everything except that group.
      */
     fun toggleSelectAllVisible() = _state.update {
-        val visible = it.rows.map { row -> row.domain }.toSet()
-        val allSelected = visible.isNotEmpty() && visible.all { domain -> domain in it.selectedDomains }
+        val grouped = it.filter == null && it.search.isBlank()
+        val selectable = selectableDomains(it.rows, grouped)
+        val allSelected = selectable.isNotEmpty() && selectable.all { domain -> domain in it.selectedDomains }
         it.copy(
             selectedDomains = if (allSelected) {
-                it.selectedDomains - visible
+                it.selectedDomains - selectable
             } else {
-                it.selectedDomains + visible
+                it.selectedDomains + selectable
             },
+        )
+    }
+
+    /**
+     * The sinkhole entry's own checkbox: tick or clear only the folded Custom
+     * Blocklist members, so a label or relay can be applied to that set alone.
+     * The whole group moves, not just the rows the list has rendered.
+     */
+    fun toggleSinkholeSelection() = _state.update {
+        val grouped = it.filter == null && it.search.isBlank()
+        val members = sinkholeDomains(it.rows, grouped)
+        if (members.isEmpty()) return@update it
+        val allSelected = members.all { domain -> domain in it.selectedDomains }
+        it.copy(
+            selectedDomains = if (allSelected) it.selectedDomains - members else it.selectedDomains + members,
         )
     }
 
@@ -752,17 +857,30 @@ class RulesViewModel @Inject constructor(
 
     /** Add a proxied domain (bulk paste: one or more names, any separators). */
     fun addDomain(raw: String) {
-        val domains = parseDomains(raw)
-        if (domains.isEmpty()) return
+        val parsed = parseDomains(raw)
+        if (parsed.isEmpty()) return
         viewModelScope.launch {
-            val merged = (_state.value.lists.proxied + domains).distinct()
+            val lists = _state.value.lists
+            // A plain rule covers its whole subtree, so a name under it would be a
+            // duplicate that can never win. Skip those instead of appending them;
+            // the panel's Add box offers "Add anyway" for the exact-label case, and
+            // the Android route menu can rebase the existing rule to a wildcard.
+            val known = (lists.proxied + lists.proxiedDisabled).distinct()
+            val fresh = parsed.filter { name -> name !in known && known.none { patternCovers(it, name) } }
+            val skipped = parsed.size - fresh.size
+            if (fresh.isEmpty()) {
+                _state.update { it.copy(savedMessage = "Already covered by an existing rule.") }
+                return@launch
+            }
+            val merged = (lists.proxied + fresh).distinct()
             // Stamp the new names locally too: the server assigns the same kind
             // of timestamp on save, and without it a just-added row sorted to
             // the bottom under "Added (newest)" until the next reload.
-            write(
-                _state.value.lists.copy(proxied = merged).withAddedStamps(domains),
-                "Added ${domains.size} domain(s).",
-            )
+            val message = buildString {
+                append("Added ${fresh.size} domain(s).")
+                if (skipped > 0) append(" Skipped $skipped already covered.")
+            }
+            write(lists.copy(proxied = merged).withAddedStamps(fresh), message)
         }
     }
 
@@ -786,19 +904,23 @@ class RulesViewModel @Inject constructor(
     fun removeDomain(domain: String) {
         viewModelScope.launch {
             val lists = _state.value.lists
+            val patterns = removalPatterns(lists, domain)
+            if (patterns.isEmpty()) return@launch
+            val keep: (String) -> Boolean = { it !in patterns }
             val next = lists.copy(
-                proxied = lists.proxied - domain,
-                proxiedDisabled = lists.proxiedDisabled - domain,
-                blocked = lists.blocked - domain,
-                direct = lists.direct - domain,
+                proxied = lists.proxied.filter(keep),
+                proxiedDisabled = lists.proxiedDisabled.filter(keep),
+                blocked = lists.blocked.filter(keep),
+                direct = lists.direct.filter(keep),
                 // The server prunes a label whose domain is gone; doing it here keeps
                 // the screen from showing a label the next save would drop anyway.
-                domainServices = lists.domainServices - domain.normalizedDomain(),
+                domainServices = lists.domainServices.filterKeys(keep),
+                domainAgents = lists.domainAgents.filterKeys(keep),
                 // Drop the Added stamp with the rule, so re-adding the name later
                 // puts it at the top instead of in its old position.
-                domainAdded = lists.domainAdded - domain,
+                domainAdded = lists.domainAdded.filterKeys(keep),
             )
-            write(next, "Removed $domain.")
+            if (write(next, "Removed $domain.")) dropResolutionProfiles(patterns)
         }
     }
 
@@ -818,6 +940,7 @@ class RulesViewModel @Inject constructor(
             val old = origin?.let { rowPatterns(it) } ?: unique.toSet()
             val keep = { d: String -> d !in old && d !in unique }
             fun strip(list: List<String>) = list.filter(keep)
+            val removedKeys = (unique.map(String::normalizedDomain) + listOfNotNull(origin?.normalizedDomain())).toSet()
             val next = when (action) {
                 RouteAction.Proxy -> lists.copy(
                     proxied = replaceDomainPatterns(lists.proxied, old, unique),
@@ -842,9 +965,11 @@ class RulesViewModel @Inject constructor(
                     proxiedDisabled = strip(lists.proxiedDisabled),
                     blocked = strip(lists.blocked),
                     direct = strip(lists.direct),
-                    // Removing the rule also drops the label: it would otherwise be
-                    // pruned by the server on the next save and blink out later.
-                    domainServices = lists.domainServices.filterKeys { it !in unique.map(String::normalizedDomain) },
+                    // Removing the rule also drops the label and relay: they would
+                    // otherwise be pruned by the server on the next save and blink
+                    // out later.
+                    domainServices = lists.domainServices.filterKeys { it !in removedKeys },
+                    domainAgents = lists.domainAgents.filterKeys { it !in removedKeys },
                 )
             }
             val verb = when (action) {
@@ -857,7 +982,8 @@ class RulesViewModel @Inject constructor(
             // a brand-new rule is stamped now. A removal must not re-add stamps
             // for the names it just deleted.
             write(
-                next.stampRouteAction(action, unique, addedStampFor(lists, origin)),
+                next.stampRouteAction(action, unique, addedStampFor(lists, origin))
+                    .rebaseRowAttributes(origin, unique, action),
                 "$verb ${unique.joinToString(" + ")}.",
             )
         }
@@ -871,8 +997,65 @@ class RulesViewModel @Inject constructor(
     fun changeScope(domain: String, scope: MatchScope, previous: List<String> = emptyList()) {
         val next = _state.value.lists.withScope(domain, scope, previous) ?: return
         val targets = scope.targets(domain)
+        val nextKey = attributeKey(targets)
+        val oldKeys = if (nextKey == null) {
+            emptyList()
+        } else {
+            (listOf(domain) + previous).map { it.normalizedDomain() }.filter { it != nextKey }
+        }
         viewModelScope.launch {
-            write(next, "Scope: ${targets.joinToString(" + ")}.")
+            if (!write(next, "Scope: ${targets.joinToString(" + ")}.")) return@launch
+            moveResolutionProfile(oldKeys, nextKey)
+        }
+    }
+
+    /**
+     * Carry a domain's resolution override to the new pattern after a scope change.
+     * The rules save has already pruned the old profile server-side, so this posts
+     * the same map with exactly the moved entry. Runs only after a successful save.
+     */
+    @Suppress("ReturnCount")
+    private suspend fun moveResolutionProfile(oldKeys: List<String>, nextKey: String?) {
+        val current = _state.value.resolution ?: return
+        if (nextKey.isNullOrBlank() || oldKeys.isEmpty()) return
+        if (current.profiles.containsKey(nextKey)) return
+        val profile = oldKeys.firstNotNullOfOrNull { current.profiles[it] } ?: return
+        val profiles = current.profiles.toMutableMap()
+        oldKeys.forEach { profiles.remove(it) }
+        profiles[nextKey] = profile
+        saveResolutionProfiles(current, profiles, "Resolution rule moved with the domain.")
+    }
+
+    /** Drop profiles for keys whose rule was removed, instead of waiting for the next load. */
+    private suspend fun dropResolutionProfiles(keys: Collection<String>) {
+        val current = _state.value.resolution ?: return
+        if (keys.none { current.profiles.containsKey(it) }) return
+        val profiles = current.profiles.toMutableMap() - keys.toSet()
+        saveResolutionProfiles(current, profiles, null)
+    }
+
+    private suspend fun saveResolutionProfiles(
+        current: ResolutionSettings,
+        profiles: Map<String, ResolutionProfileDto>,
+        message: String?,
+    ) {
+        runCatching {
+            settingsRepository.saveResolution(
+                ResolutionSaveRequest(
+                    transport = current.transport,
+                    transports = current.transports,
+                    defaultUpstream = current.defaultUpstream,
+                    defaultStrategy = current.defaultStrategy,
+                    adaptiveIntervalMinutes = current.adaptiveIntervalMinutes
+                        .takeIf { current.defaultStrategy == "adaptive" },
+                    profiles = profiles,
+                ),
+            )
+        }.onSuccess { saved ->
+            _state.update { it.copy(resolution = saved, savedMessage = message ?: it.savedMessage) }
+        }.onFailure { error ->
+            Timber.w(error, "Could not save the moved resolution rule")
+            _state.update { it.copy(error = error.message ?: "Could not move the resolution rule") }
         }
     }
 
@@ -898,7 +1081,7 @@ class RulesViewModel @Inject constructor(
         viewModelScope.launch { write(_state.value.lists.copy(records = next), "Removed $domain.") }
     }
 
-    private suspend fun write(next: RuleLists, message: String? = null) {
+    private suspend fun write(next: RuleLists, message: String? = null): Boolean {
         _state.update {
             it.copy(
                 lists = next,
@@ -909,15 +1092,18 @@ class RulesViewModel @Inject constructor(
                 selectedDomains = it.selectedDomains intersect next.managedPatterns,
             )
         }
-        try {
+        return try {
             val ok = repository.save(next)
             _state.update {
                 it.copy(isSaving = false, savedMessage = if (ok) message else null, error = if (ok) null else "Save failed.")
             }
+            ok
         } catch (e: ApiException) {
             _state.update { it.copy(isSaving = false, error = e.userMessage) }
+            false
         } catch (e: IOException) {
             _state.update { it.copy(isSaving = false, error = e.message ?: "Could not save rules.") }
+            false
         }
     }
 
@@ -934,6 +1120,33 @@ class RulesViewModel @Inject constructor(
     }
 
     /** A removal drops the stamps; every other action stamps a brand-new rule. */
+    /**
+     * The action can also change the pattern (host and parent scopes). The label
+     * and relay follow the row so the new wildcard is not bare. Remove already
+     * drops both maps above, so only a live move needs the rebase.
+     */
+    private fun RuleLists.rebaseRowAttributes(
+        origin: String?,
+        unique: List<String>,
+        action: RouteAction,
+    ): RuleLists {
+        val nextKey = if (action == RouteAction.Remove) "" else attributeKey(unique).orEmpty()
+        val oldKeys = if (nextKey.isEmpty() || origin == null) {
+            emptyList()
+        } else {
+            listOf(origin.normalizedDomain()).filter { it != nextKey }
+        }
+        return if (oldKeys.isEmpty()) {
+            this
+        } else {
+            copy(
+                domainServices = domainServices.rebased(oldKeys, nextKey),
+                domainAgents = domainAgents.rebased(oldKeys, nextKey),
+                domainAdded = domainAdded.rebased(oldKeys, nextKey),
+            )
+        }
+    }
+
     private fun RuleLists.stampRouteAction(
         action: RouteAction,
         domains: List<String>,

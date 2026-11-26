@@ -213,6 +213,103 @@ class RulesUiStateTest {
     }
 
     @Test
+    fun `a scope change carries the service label to the new pattern`() {
+        val lists = RuleLists(
+            proxied = listOf("a.b.c"),
+            services = mapOf("tv" to "TV"),
+            domainServices = mapOf("a.b.c" to "tv"),
+        )
+        val next = lists.withScope("a.b.c", MatchScope.Host)!!
+        assertEquals(mapOf("*.a.b.c" to "tv"), next.domainServices)
+        val back = next.withScope("*.a.b.c", MatchScope.Exact)!!
+        assertEquals(mapOf("a.b.c" to "tv"), back.domainServices)
+    }
+
+    @Test
+    fun `a scope change carries the relay override and its stamp`() {
+        val lists = RuleLists(
+            proxied = listOf("a.b.c"),
+            domainAgents = mapOf("a.b.c" to "agt_de"),
+            domainAdded = mapOf("a.b.c" to "2026-01-02T03:04:05Z"),
+        )
+        val next = lists.withScope("a.b.c", MatchScope.Parent)!!
+        assertEquals(mapOf("*.b.c" to "agt_de"), next.domainAgents)
+        assertEquals(mapOf("*.b.c" to "2026-01-02T03:04:05Z"), next.domainAdded)
+    }
+
+    @Test
+    fun `a label already on the target wins over the moved one`() {
+        val lists = RuleLists(
+            proxied = listOf("a.b.c", "*.a.b.c"),
+            services = mapOf("tv" to "TV", "radio" to "Radio"),
+            domainServices = mapOf("a.b.c" to "tv", "*.a.b.c" to "radio"),
+        )
+        // Host scope from the plain row writes *.a.b.c, which already carries radio.
+        val next = lists.withScope("a.b.c", MatchScope.Host)!!
+        assertEquals(mapOf("*.a.b.c" to "radio"), next.domainServices)
+    }
+
+    @Test
+    fun `a status-only move leaves every attribute key alone`() {
+        val lists = RuleLists(
+            proxied = listOf("a.b.c"),
+            domainServices = mapOf("a.b.c" to "tv"),
+            domainAgents = mapOf("a.b.c" to "__local__"),
+        )
+        val paused = lists.copy(proxied = emptyList(), proxiedDisabled = listOf("a.b.c"))
+        assertEquals(mapOf("a.b.c" to "tv"), paused.domainServices)
+        assertEquals(mapOf("a.b.c" to "__local__"), paused.domainAgents)
+    }
+
+    @Test
+    fun `a plain rule covers itself and every subdomain`() {
+        assertTrue(patternCovers("example.com", "example.com"))
+        assertTrue(patternCovers("example.com", "api.example.com"))
+        assertTrue(patternCovers("example.com", "deep.api.example.com"))
+        assertFalse(patternCovers("example.com", "notexample.com"))
+    }
+
+    @Test
+    fun `a wildcard covers strict subdomains but not its apex`() {
+        assertFalse(patternCovers("*.example.com", "example.com"))
+        assertTrue(patternCovers("*.example.com", "api.example.com"))
+    }
+
+    @Test
+    fun `removal takes the companion wildcard only when the same list holds it`() {
+        val shared = RuleLists(blocked = listOf("a.b.c", "*.a.b.c"))
+        assertEquals(setOf("a.b.c", "*.a.b.c"), removalPatterns(shared, "a.b.c"))
+        val separate = RuleLists(blocked = listOf("a.b.c"), direct = listOf("*.a.b.c"))
+        assertEquals(setOf("a.b.c"), removalPatterns(separate, "a.b.c"))
+        assertEquals(setOf("*.a.b.c"), removalPatterns(separate, "*.a.b.c"))
+    }
+
+    private val selectionRows = listOf(
+        DomainRow("proxy.example", DomainStatus.PROXY),
+        DomainRow("ads.one", DomainStatus.BLOCKED),
+        DomainRow("ads.two", DomainStatus.BLOCKED),
+        DomainRow("direct.example", DomainStatus.DIRECT),
+    )
+
+    @Test
+    fun `the header tick excludes the folded Custom Blocklist`() {
+        assertEquals(
+            setOf("proxy.example", "direct.example"),
+            selectableDomains(selectionRows, grouped = true),
+        )
+        assertEquals(setOf("ads.one", "ads.two"), sinkholeDomains(selectionRows, grouped = true))
+    }
+
+    @Test
+    fun `a flat view puts blocked rows back in the select-all scope`() {
+        assertEquals(
+            selectionRows.map { it.domain }.toSet(),
+            selectableDomains(selectionRows, grouped = false),
+        )
+        assertEquals(emptySet<String>(), sinkholeDomains(selectionRows, grouped = false))
+    }
+
+    @Test
     fun `A-Z sorting uses the base name for wildcard rows`() {
         val state = RulesUiState(
             lists = RuleLists(proxied = listOf("b.example", "*.a.example")),

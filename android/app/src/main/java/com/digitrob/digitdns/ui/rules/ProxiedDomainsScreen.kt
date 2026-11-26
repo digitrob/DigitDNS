@@ -52,6 +52,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,6 +73,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -246,6 +248,15 @@ private fun DomainsList(
         // rows are not buried; a status chip or a search keeps it flat.
         val groupSinkhole = state.filter == null && state.search.isBlank()
         val projection = remember(rows, groupSinkhole) { projectDomainRows(rows, groupSinkhole) }
+        // The header tick owns the view minus the folded sinkhole; the group tick
+        // owns the sinkhole alone. Both are computed from the same rows the list
+        // draws, so a tick can never capture rows the operator cannot see in scope.
+        val selectableSet = remember(rows, groupSinkhole) {
+            selectableDomains(rows, groupSinkhole)
+        }
+        val sinkholeSet = remember(rows, groupSinkhole) {
+            sinkholeDomains(rows, groupSinkhole)
+        }
         var sinkholeExpanded by remember { mutableStateOf(false) }
         val renderDomainRow: @Composable (DomainRow) -> Unit = { row ->
             DomainRowItem(
@@ -299,8 +310,8 @@ private fun DomainsList(
                     FilterChips(
                         selected = state.filter,
                         onSelect = viewModel::setFilter,
-                        allSelected = rows.isNotEmpty() &&
-                            rows.all { row -> row.domain in selectedDomains },
+                        allSelected = selectableSet.isNotEmpty() &&
+                            selectableSet.all { domain -> domain in selectedDomains },
                         onToggleAll = viewModel::toggleSelectAllVisible,
                     )
                 }
@@ -321,7 +332,12 @@ private fun DomainsList(
                         SinkholeGroupRow(
                             count = projection.sinkhole.size,
                             expanded = sinkholeExpanded,
+                            selected = sinkholeSet.isNotEmpty() &&
+                                sinkholeSet.all { domain -> domain in selectedDomains },
+                            indeterminate = sinkholeSet.any { domain -> domain in selectedDomains } &&
+                                !sinkholeSet.all { domain -> domain in selectedDomains },
                             onToggle = { sinkholeExpanded = !sinkholeExpanded },
+                            onToggleSelect = viewModel::toggleSinkholeSelection,
                         )
                     }
                     // The members sit directly under the entry that owns them, not
@@ -1163,26 +1179,42 @@ private fun FilterChips(
 }
 
 /**
- * The one-line entry that stands in for the whole Custom Blocklist. The chevron
- * is the only control: expanding it reveals the member domains, each with the
- * same checkbox, actions and status pill a flat row carries.
+ * The one-line entry that stands in for the whole Custom Blocklist. Two controls:
+ * the checkbox selects only that group (the whole blocked set, not just the rows
+ * the list has expanded), and the chevron expands the members, each with the same
+ * checkbox, actions and status pill a flat row carries.
  */
 @Composable
 private fun SinkholeGroupRow(
     count: Int,
     expanded: Boolean,
+    selected: Boolean,
+    indeterminate: Boolean,
     onToggle: () -> Unit,
+    onToggleSelect: () -> Unit,
 ) {
     val colors = DigitDnsTheme.colors
+    val selectLabel = stringResource(R.string.domains_select_sinkhole)
     PanelCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onToggle),
         verticalPadding = 10.dp,
         contentAlignment = Alignment.CenterStart,
-        highlighted = expanded,
+        highlighted = expanded || selected,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            TriStateCheckbox(
+                state = when {
+                    indeterminate -> ToggleableState.Indeterminate
+                    selected -> ToggleableState.On
+                    else -> ToggleableState.Off
+                },
+                onClick = onToggleSelect,
+                modifier = Modifier
+                    .size(36.dp)
+                    .semantics { contentDescription = selectLabel },
+            )
             Icon(
                 imageVector = if (expanded) {
                     Icons.Filled.KeyboardArrowDown

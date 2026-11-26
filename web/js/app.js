@@ -2465,6 +2465,73 @@ function parseDomainList(text, existing) {
   return { accepted, duplicates, invalid };
 }
 
+// A plain rule covers itself and every subdomain; a wildcard rule covers strict
+// subdomains only. This mirrors internal/core/matcher (and the AdGuard importer's
+// Covers), so "already covered" means the same thing here as it does to a lookup.
+function ruleCoversDomain(rule, domain) {
+  const pattern = String(rule || '').trim().toLowerCase().replace(/\.$/, '');
+  const name = String(domain || '').trim().toLowerCase().replace(/\.$/, '');
+  if (!pattern || !name) return false;
+  const wildcard = pattern.startsWith('*.');
+  const base = wildcard ? pattern.slice(2) : pattern;
+  if (!base) return false;
+  // A wildcard excludes its own apex, so *.example.com does not cover example.com.
+  if (!wildcard && name === base) return true;
+  return name.endsWith('.' + base);
+}
+
+// coveringRuleFor is the most specific pattern in [list] that already covers
+// [domain], or '' when the name is genuinely new to that list. Longest wins: a
+// plain host beats the wildcard that also covers it.
+function coveringRuleFor(domain, list) {
+  let best = '';
+  for (const rule of list || []) {
+    if (!ruleCoversDomain(rule, domain)) continue;
+    if (String(rule).length > best.length) best = String(rule);
+  }
+  return best;
+}
+
+const COVERAGE_STATUS = {
+  custom_proxied: 'proxy',
+  custom_proxied_disabled: 'paused',
+  custom_blocked: 'blocked',
+  custom_direct: 'direct',
+};
+
+// coveringRuleInfo looks across all four routing lists: the Add box reports the
+// same-kind duplicate it would normally create, and still names a blocked or
+// direct parent, because those outrank a new proxy rule in the matcher.
+function coveringRuleInfo(domain, rules) {
+  let best = null;
+  for (const key of DOMAIN_RULE_LISTS) {
+    const pattern = coveringRuleFor(domain, rules?.[key] || []);
+    if (!pattern) continue;
+    if (!best || pattern.length > best.pattern.length) {
+      best = { pattern, status: COVERAGE_STATUS[key], key };
+    }
+  }
+  return best;
+}
+
+// subsumedRules lists the narrower rules a new plain rule makes redundant
+// (googleapis.com vs *.googleapis.com or api.googleapis.com). A wildcard never
+// subsumes: it covers strict subdomains only, and each existing rule may still
+// serve its own apex.
+function subsumedRules(rule, lists) {
+  const pattern = String(rule || '').trim().toLowerCase().replace(/\.$/, '');
+  if (!pattern || pattern.startsWith('*.')) return [];
+  const out = [];
+  for (const list of lists || []) {
+    for (const candidate of list || []) {
+      if (candidate !== pattern && ruleCoversDomain(pattern, candidate) && !out.includes(candidate)) {
+        out.push(candidate);
+      }
+    }
+  }
+  return out;
+}
+
 // RECORD_DOMAIN_RE is DOMAIN_RE without the "*.", because a custom static record is
 // an exact-hostname A/AAAA answer: the matcher resolves it by exact key lookup, so a
 // wildcard record would be stored and then never answer anything.
@@ -3468,6 +3535,40 @@ function proxiedFilterNeedle() {
   return (document.getElementById('new-proxied-input')?.value || '').trim().toLowerCase();
 }
 
+// updateProxiedAddHint answers "is this name already handled?" before Add is
+// pressed. Only a single well-formed name gets a note: a pasted list is checked
+// in one dialog when Add runs, and a partial token is not worth a verdict.
+function updateProxiedAddHint() {
+  const el = document.getElementById('proxied-add-hint');
+  const input = document.getElementById('new-proxied-input');
+  if (!el || !input) {
+    return;
+  }
+  const raw = String(input.value || '').trim().toLowerCase().replace(/\.$/, '');
+  if (!raw || /[\s,;]/.test(raw) || !DOMAIN_RE.test(raw)) {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+  const cover = coveringRuleInfo(raw, (currentConfig && currentConfig.rules) || {});
+  if (!cover) {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+  const label = (DOMAIN_STATUS_META[cover.status] || DOMAIN_STATUS_META.direct).label;
+  const sameKind = cover.status === 'proxy' || cover.status === 'paused';
+  el.textContent = cover.pattern === raw
+    ? `Already listed as ${label}. Adding it again changes nothing.`
+    : `${sameKind ? 'Covered by' : 'Still shadowed by'} ${cover.pattern} (${label}) — ` +
+      (sameKind
+        ? 'adding this name is a duplicate unless it needs its own service or relay.'
+        : 'this rule would exist but never answer.');
+  el.classList.toggle('is-cover', sameKind);
+  el.classList.toggle('is-conflict', !sameKind);
+  el.hidden = false;
+}
+
 // proxiedFilteredRows is proxiedOrderedRows in the operator's order, narrowed to
 // the rows matching proxiedFilterNeedle. Everything that draws or selects rows
 // reads this, so the count, the empty state, the select-all box and the bulk
@@ -3480,6 +3581,49 @@ function proxiedFilteredRows() {
   const needle = proxiedFilterNeedle();
   if (!needle) return ordered;
   return ordered.filter((r) => r.domain.toLowerCase().includes(needle));
+}
+
+// proxiedScopedRows is exactly the set renderProxiedList draws: the ordered,
+// search/status-filtered list, narrowed to the active service unless a search is
+// active (search spans every service). The table, the count and the two select
+// checkboxes all read this, so they cannot disagree about what "this view" is.
+function proxiedScopedRows() {
+  const needle = proxiedFilterNeedle();
+  const ordered = proxiedFilteredRows();
+  if (needle || !activeService) return ordered;
+  return ordered.filter(({ domain }) => {
+    const sid = serviceOfDomain(domain);
+    return activeService === '__none__' ? !sid : sid === activeService;
+  });
+}
+
+// The plain "all domains" view folds the Custom Blocklist into one entry. A status
+// chip or a search flattens it, so there is no group to tick then.
+function proxiedSinkholeGrouped() {
+  return !proxiedFilterNeedle() && !proxiedStatusFilter;
+}
+
+// Rows the header checkbox owns: everything in view except the folded sinkhole,
+// which has its own tick. In a flat view it owns every matching row.
+function proxiedSelectAllRows() {
+  const rows = proxiedScopedRows();
+  return proxiedSinkholeGrouped() ? rows.filter((r) => r.status !== 'blocked') : rows;
+}
+
+// Rows the sinkhole group's checkbox owns: all folded blocked members in view,
+// not only the batch the table has rendered.
+function proxiedSinkholeRows() {
+  const rows = proxiedScopedRows();
+  return proxiedSinkholeGrouped() ? rows.filter((r) => r.status === 'blocked') : [];
+}
+
+// syncProxiedSelectionBoxes mirrors proxiedSelected onto the rendered boxes. The
+// header and group ticks can add rows that are not on screen (a collapsed group,
+// a batch boundary), so a blanket `checked = on` would lie about the members.
+function syncProxiedSelectionBoxes() {
+  document.querySelectorAll('.proxied-select-check').forEach((box) => {
+    box.checked = proxiedSelected.has(box.dataset.val);
+  });
 }
 
 function updateDomainFilterChips() {
@@ -3663,7 +3807,6 @@ async function assignServiceToSelected(serviceId) {
 
 function updateProxiedBulkBar() {
   const n = proxiedSelected.size;
-  const shown = proxiedFilteredRows();
   const selectedRows = proxiedOrderedRows().filter((r) => proxiedSelected.has(r.domain));
   const pausable = selectedRows.length > 0 &&
     selectedRows.every((r) => r.status === 'proxy' || r.status === 'paused');
@@ -3685,11 +3828,28 @@ function updateProxiedBulkBar() {
     bulkEgress.disabled = n === 0;
     if (n === 0) closeBulkEgressMenu();
   }
+  // The header tick owns the view minus the folded sinkhole; the group tick owns
+  // the sinkhole alone. Both are computed from the same scoped rows the table
+  // draws, which is what fixes the old header checkbox counting hidden blocked
+  // rows (and the service filter it ignored).
   const all = document.getElementById('proxied-select-all');
   if (all) {
-    const selectedShown = shown.filter((r) => proxiedSelected.has(r.domain)).length;
-    all.checked = shown.length > 0 && selectedShown === shown.length;
-    all.indeterminate = selectedShown > 0 && selectedShown < shown.length;
+    const selectable = proxiedSelectAllRows();
+    const selected = selectable.filter((r) => proxiedSelected.has(r.domain)).length;
+    all.checked = selectable.length > 0 && selected === selectable.length;
+    all.indeterminate = selected > 0 && selected < selectable.length;
+    all.disabled = selectable.length === 0;
+    all.title = proxiedSinkholeGrouped()
+      ? 'Select all domains except the Custom Blocklist'
+      : 'Select all domains in this view';
+    all.setAttribute('aria-label', all.title);
+  }
+  const groupBox = document.querySelector('[data-sinkhole-select]');
+  if (groupBox) {
+    const members = proxiedSinkholeRows();
+    const selected = members.filter((r) => proxiedSelected.has(r.domain)).length;
+    groupBox.checked = members.length > 0 && selected === members.length;
+    groupBox.indeterminate = selected > 0 && selected < members.length;
   }
 }
 
@@ -5036,6 +5196,18 @@ function wildcardLabelFor(domain, index) {
   return { text: types.map(({ type }) => type).join(' · '), title, wildcard: true };
 }
 
+// The copy glyph is inline SVG, not a feather placeholder: live-log rows are
+// inserted without a per-row feather pass, and the Domains rows are rebuilt from
+// innerHTML. `[data-copied-flash]` in style.css swaps it for a green check.
+const DOMAIN_COPY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+
+// domainCopyButton is the per-row clipboard control shared by the Domains table
+// and the Live Log. data-copy-value carries the exact stored pattern, so a
+// wildcard copies with its "*." prefix.
+function domainCopyButton(domain) {
+  return `<button type="button" class="domain-copy-btn" data-copy-value="${escapeHTML(domain)}" aria-label="Copy ${escapeHTML(domain)}" title="Copy domain">${DOMAIN_COPY_ICON}</button>`;
+}
+
 function renderProxiedList() {
   const container = document.getElementById('custom-proxied-rows');
   if (!container) return;
@@ -5044,17 +5216,11 @@ function renderProxiedList() {
   proxiedPruneSelection();
   updateDomainFilterChips();
   const needle = proxiedFilterNeedle();
-  const ordered = proxiedFilteredRows();
   // The service filter is a view over the same in-memory rules, but it has to be
   // applied before the count and the pagination slice - otherwise the header says
   // "3 domains" while one row is visible and "Load more" grows a hidden list.
-  // When searching, search runs across all services (ignore service filter).
-  const serviceScoped = (!needle && activeService)
-    ? ordered.filter(({ domain }) => {
-        const sid = serviceOfDomain(domain);
-        return activeService === '__none__' ? !sid : sid === activeService;
-      })
-    : ordered;
+  // proxiedScopedRows owns that rule so the select-all helpers agree with it.
+  const serviceScoped = proxiedScopedRows();
   const total = serviceScoped.length;
   const serviceScope = (!needle && activeService === '__none__')
     ? 'No service'
@@ -5093,7 +5259,7 @@ function renderProxiedList() {
   // In the plain "all domains" view the sinkhole collapses to one entry; a
   // status chip or a search means the operator is hunting a specific name, so
   // those stay flat. buildDomainEntries owns the split.
-  const groupSinkhole = !needle && !proxiedStatusFilter;
+  const groupSinkhole = proxiedSinkholeGrouped();
   const entries = buildDomainEntries(serviceScoped, {
     groupSinkhole,
     expanded: blockedGroupExpanded,
@@ -5165,7 +5331,10 @@ function renderProxiedList() {
       </td>
       <td class="py-2.5 px-3 text-start" title="${escapeHTML(domain)}">
         <div class="flex flex-col min-w-0">
-          <span class="font-mono ${domainClass} truncate">${escapeHTML(domain)}</span>
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="font-mono ${domainClass} truncate flex-1 min-w-0">${escapeHTML(domain)}</span>
+            ${domainCopyButton(domain)}
+          </div>
           <span class="text-[10px] font-mono truncate ${wildcardClass}" title="${escapeHTML(wildcardInfo.title)}">${escapeHTML(wildcardInfo.text)}</span>
         </div>
       </td>
@@ -5312,14 +5481,15 @@ function buildDomainEntries(rows, opts) {
 
 // sinkholeGroupRow is the one-line entry that stands in for the whole Custom
 // Blocklist. The title lives in the domain column and the status pill in the
-// status column, so the row reads like every other table row. The chevron is the
-// only control: expanding it reveals the member domains, each with the same
-// checkbox and actions a flat row carries.
+// status column, so the row reads like every other table row. Two controls: the
+// checkbox selects only the blocklist members (folded or expanded, the whole set,
+// not just the rendered batch), and the chevron expands them. Ticking the group
+// never expands it.
 function sinkholeGroupRow(count) {
   const row = document.createElement('tr');
   row.className = 'sinkhole-group-row';
   row.innerHTML = `
-    <td class="py-1.5 px-3 text-center"></td>
+    <td class="py-1.5 px-3 text-center"><input type="checkbox" class="proxied-check" data-sinkhole-select aria-label="Select only the Custom Blocklist domains"></td>
     <td class="py-1.5 px-3 text-start" colspan="3">
       <button type="button" class="sinkhole-group-toggle">
         <i data-feather="chevron-right" class="w-4 h-4"></i>
@@ -5329,6 +5499,18 @@ function sinkholeGroupRow(count) {
     </td>
     <td class="py-1.5 px-3 text-center"></td>
     <td class="py-1.5 px-3 text-center"><span class="badge badge-block">Blocked</span></td>`;
+  const box = row.querySelector('[data-sinkhole-select]');
+  const members = proxiedSinkholeRows();
+  const selected = members.filter((r) => proxiedSelected.has(r.domain)).length;
+  box.checked = members.length > 0 && selected === members.length;
+  box.indeterminate = selected > 0 && selected < members.length;
+  box.title = `Select only the ${members.length} Custom Blocklist domain${members.length === 1 ? '' : 's'}`;
+  box.addEventListener('change', () => {
+    if (box.checked) members.forEach((r) => proxiedSelected.add(r.domain));
+    else members.forEach((r) => proxiedSelected.delete(r.domain));
+    syncProxiedSelectionBoxes();
+    updateProxiedBulkBar();
+  });
   const button = row.querySelector('.sinkhole-group-toggle');
   // The state is written through the DOM rather than interpolated into the
   // template: a quoted attribute built from an expression is the pattern the
@@ -8091,7 +8273,10 @@ function queryRowHTML(q) {
     <td class="stream-col-client stream-filter-cell py-2.5 px-2 sm:px-3"${clientFilterAttr}>${clientDisplay}</td>
     <td class="stream-col-proto py-2.5 px-2 sm:px-3 hidden sm:table-cell" title="${escapeHTML(protoTitle)}"><span class="proto-pill ${escapeHTML(protoPill)}">${escapeHTML(protoStr)}</span></td>
     <td class="stream-col-domain stream-filter-cell py-2.5 px-2 sm:px-3"${domainFilterAttr}>
-      <div class="text-cyan-300 font-semibold truncate" title="${escapeHTML(domain)}">${escapeHTML(domain)}</div>
+      <div class="flex items-center gap-1.5 min-w-0">
+        <div class="text-cyan-300 font-semibold truncate flex-1 min-w-0" title="${escapeHTML(domain)}">${escapeHTML(domain)}</div>
+        ${domainCopyButton(domain)}
+      </div>
       ${blockDetail}
     </td>
     <td class="stream-col-rule py-2.5 px-2 sm:px-3 text-slate-400 hidden sm:table-cell">${escapeHTML(ruleStr)}</td>
@@ -8396,6 +8581,69 @@ function streamActionListKey(domain) {
   return null;
 }
 
+// rowAttributeKey is the key the attribute maps use for a row: the exact pattern
+// the row is displayed under. A scope with an exact target keeps that host;
+// a wildcard-only scope uses the wildcard itself. This is exactly the string the
+// per-row service and relay pickers write.
+function rowAttributeKey(targets) {
+  const list = Array.isArray(targets) ? targets : [];
+  return list.find((t) => t && !t.startsWith('*.')) || list[0] || '';
+}
+
+// migrateDomainAttributes carries a row's service label and relay override to the
+// pattern(s) a scope change writes. It used to be forgotten: the lists were
+// rebased, the old key was pruned by the server, and the row came back unlabelled.
+//
+// [oldKeys] is the row's displayed key plus any pattern an earlier click in the
+// same menu wrote. Only those move, so a separate wildcard row keeps its own
+// label. An existing label on the target wins and the stale one is dropped - the
+// operator's last explicit assignment is the one they can see.
+//
+// Resolution profiles live outside the rules payload; the caller gets
+// [resolutionFrom] back and moves it after the rules save succeeds.
+function migrateDomainAttributes(rules, oldKeys, targets, profiles) {
+  const nextKey = rowAttributeKey(targets);
+  if (!rules || !nextKey) return { key: '', resolutionFrom: '' };
+  const olds = [...new Set(oldKeys || [])]
+    .map((k) => String(k || '').trim().toLowerCase().replace(/\.$/, ''))
+    .filter((k) => k && k !== nextKey);
+  for (const mapName of ['domain_services', 'domain_agents']) {
+    const links = rules[mapName];
+    if (!links || typeof links !== 'object') continue;
+    let value;
+    for (const pattern of olds) {
+      if (!Object.prototype.hasOwnProperty.call(links, pattern)) continue;
+      if (value === undefined) value = links[pattern];
+      delete links[pattern];
+    }
+    if (value !== undefined && !links[nextKey]) links[nextKey] = value;
+  }
+  let resolutionFrom = '';
+  if (profiles && typeof profiles === 'object') {
+    for (const pattern of olds) {
+      const profile = profiles[pattern];
+      if (profile && typeof profile === 'object' && Object.keys(profile).length) {
+        resolutionFrom = pattern;
+        break;
+      }
+    }
+  }
+  return { key: nextKey, resolutionFrom };
+}
+
+// moveResolutionProfile copies the old row's override to the new key after a
+// scope change. The rules save has already pruned the old profile server-side, so
+// this posts the map with exactly the moved entry.
+async function moveResolutionProfile(from, to) {
+  if (!from || !to || from === to || !resolutionSettings.loaded) return true;
+  const profiles = Object.assign({}, resolutionSettings.profiles || {});
+  const profile = profiles[from];
+  if (!profile || !Object.keys(profile).length) return true;
+  delete profiles[from];
+  if (!profiles[to] || !Object.keys(profiles[to]).length) profiles[to] = profile;
+  return saveResolutionSettings({ profiles }, '');
+}
+
 // applyStreamScope rewrites an existing rule in place when the operator picks a scope.
 // Selecting *.host used to only arm the next action, so the line under the domain
 // stayed "exact" and the change looked unsaved. Now the row's own patterns are
@@ -8413,6 +8661,15 @@ async function applyStreamScope(domain, scope) {
   const rowPatterns = streamRowPatterns(domain);
   const stamp = streamRowStamp(domain) || streamRowStamp(streamActionApplied[0] || '');
   const remove = [...new Set([...rowPatterns, ...streamActionApplied, ...targets])];
+  // The row's label and relay belong to whatever pattern it was displayed under.
+  // Rebase them with the rule; otherwise the server prunes the old key and the
+  // new wildcard row comes back with no service.
+  const migrated = migrateDomainAttributes(
+    rules,
+    [domain, ...streamActionApplied],
+    targets,
+    resolutionSettings.profiles,
+  );
   // A scope change on a live-log rule stays a live-log rule. A scope change on an
   // ordinary Rules-tab row does not silently promote it into the override tier.
   const wasManual = streamDomainIsManual(rules, domain) ||
@@ -8431,6 +8688,9 @@ async function applyStreamScope(domain, scope) {
     streamActionApplied = [];
     await loadConfig();
     return false;
+  }
+  if (migrated.resolutionFrom) {
+    await moveResolutionProfile(migrated.resolutionFrom, migrated.key);
   }
   refreshRuleViewsAfterQuickAction();
   renderQueryStream();
@@ -8898,6 +9158,15 @@ async function applyStreamAction(action, onSaved) {
     return;
   }
 
+  // Changing the action can change the pattern too (host/subdomain scopes). The
+  // label and relay follow the row to its new key instead of being pruned.
+  const migrated = migrateDomainAttributes(
+    rules,
+    [streamActionDomain, ...streamActionApplied],
+    targets,
+    resolutionSettings.profiles,
+  );
+
   // Read the log badge before anything is written. It used to be read after the
   // rule lists had already been mutated in place: a throw from that line left
   // currentConfig edited, nothing saved, and no row repainted, so the click looked
@@ -8937,6 +9206,9 @@ async function applyStreamAction(action, onSaved) {
   if (!(await saveRules(true))) {
     await loadConfig();
     return;
+  }
+  if (migrated.resolutionFrom) {
+    await moveResolutionProfile(migrated.resolutionFrom, migrated.key);
   }
   // Only a decision made from a live-log row supersedes that row's recorded
   // action. An Explain result is not a query, so it has no badge to grey out.
@@ -16080,6 +16352,10 @@ function initEventListeners() {
   ['proxied-search', 'new-proxied-input'].forEach((id) => {
     document.getElementById(id)?.addEventListener('input', proxiedFilterDebounced);
   });
+  // The Add box also says whether the typed name is already covered. Separate
+  // debounce so the note can appear after the table has settled.
+  document.getElementById('new-proxied-input')
+    ?.addEventListener('input', debounce(updateProxiedAddHint, 120));
 
   // Multi-select for the bulk actions. The row checkboxes are delegated on the table
   // body because renderProxiedList replaces its innerHTML on every save; the header
@@ -16093,12 +16369,25 @@ function initEventListeners() {
     else proxiedSelected.delete(box.dataset.val);
     updateProxiedBulkBar();
   });
+  // A row's copy button must not toggle its selection. The row handler already
+  // ignores buttons; this delegated handler stops the click before it reaches it
+  // and reuses the clipboard helper (Clipboard API or the textarea fallback).
+  document.getElementById('custom-proxied-rows')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-copy-value]');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    copyText(btn.dataset.copyValue, btn);
+  });
   document.getElementById('proxied-select-all')?.addEventListener('change', (e) => {
     const on = e.target.checked;
+    // In the grouped view this is "everything except the Custom Blocklist"; the
+    // blocklist has its own tick. Unchecking clears the whole selection, which is
+    // what a top-level "select all" means.
     proxiedSelected = on
-      ? new Set(proxiedFilteredRows().map((r) => r.domain))
+      ? new Set(proxiedSelectAllRows().map((r) => r.domain))
       : new Set();
-    document.querySelectorAll('.proxied-select-check').forEach((b) => { b.checked = on; });
+    syncProxiedSelectionBoxes();
     updateProxiedBulkBar();
   });
   document.getElementById('proxied-bulk-pause')?.addEventListener('click', () => proxiedBulkSetEnabled(false));
@@ -16251,34 +16540,51 @@ function initEventListeners() {
       ? active.concat(Array.isArray(currentConfig.rules.custom_proxied_disabled) ? currentConfig.rules.custom_proxied_disabled : [])
       : active;
     const { accepted, duplicates, invalid } = parseDomainList(ta ? ta.value : '', known);
+    // A proxied import creates the same duplicates the Add box warns about: a
+    // plain rule covers its subtree, so frontend.googleapis.com under
+    // googleapis.com would never win. Split those out and report them instead of
+    // appending every line.
+    const covered = [];
+    let fresh = accepted;
+    if (bulkImportTarget === 'proxied') {
+      fresh = [];
+      for (const d of accepted) {
+        const cover = coveringRuleInfo(d, currentConfig.rules);
+        if (cover && (cover.status === 'proxy' || cover.status === 'paused')) covered.push({ domain: d, ...cover });
+        else fresh.push(d);
+      }
+    }
     const conflicts = bulkImportTarget === 'blocked'
       ? accepted.filter((d) => ruleConflictFor(d, currentConfig.rules, 'custom_blocked'))
       : [];
 
-    const parts = [`${accepted.length} added`];
+    const parts = [`${fresh.length} added`];
     if (duplicates.length) parts.push(`${duplicates.length} already listed`);
+    if (covered.length) parts.push(`${covered.length} already covered`);
     if (invalid.length) parts.push(`${invalid.length} invalid`);
     if (conflicts.length) parts.push(`${conflicts.length} already routed`);
     const summary = parts.join(', ');
     const invalidPreview = invalid.slice(0, 3).join(', ');
+    const coveredPreview = covered.slice(0, 3).map((c) => `${c.domain} → ${c.pattern}`).join(', ');
 
-    if (accepted.length === 0) {
+    if (fresh.length === 0) {
       setBulkImportStatus(`Nothing to import — ${summary}${invalidPreview ? `: ${invalidPreview}` : ''}.`, 'error');
       return;
     }
 
     // Imported domains always land enabled; the operator can switch them off after.
-    currentConfig.rules[key] = active.concat(accepted);
-    stampDomainsAsAdded(currentConfig.rules, accepted);
+    currentConfig.rules[key] = active.concat(fresh);
+    stampDomainsAsAdded(currentConfig.rules, fresh);
     saveRules();
     renderConfig(currentConfig);
 
-    if (invalid.length || duplicates.length || conflicts.length) {
-      setBulkImportStatus(`Imported (${summary}).${invalidPreview ? ` Invalid: ${invalidPreview}.` : ''} Skipped entries are ignored, not added.`, conflicts.length ? 'error' : 'ok');
+    if (invalid.length || duplicates.length || conflicts.length || covered.length) {
+      const coveredNote = coveredPreview ? ` Covered: ${coveredPreview}.` : '';
+      setBulkImportStatus(`Imported (${summary}).${coveredNote}${invalidPreview ? ` Invalid: ${invalidPreview}.` : ''} Skipped entries are ignored, not added.`, conflicts.length ? 'error' : 'ok');
       return;
     }
     closeBulkImport();
-    showToast(`Imported ${accepted.length} domain(s)`, 'success');
+    showToast(`Imported ${fresh.length} domain(s)`, 'success');
   });
 
   // Migration importer: Pi-hole / AdGuard Home -> two-step analyze/apply.
@@ -16702,7 +17008,7 @@ function initEventListeners() {
   document.getElementById('migrate-undo-btn')?.addEventListener('click', undoMigrate);
 
   // Add Custom Proxied
-  document.getElementById('add-proxied-btn')?.addEventListener('click', () => {
+  document.getElementById('add-proxied-btn')?.addEventListener('click', async () => {
     const input = document.getElementById('new-proxied-input');
     if (!input || !currentConfig) return;
     if (!currentConfig.rules.custom_proxied_disabled) currentConfig.rules.custom_proxied_disabled = [];
@@ -16721,7 +17027,46 @@ function initEventListeners() {
       else if (invalid.length) showToast(`${invalid.length} invalid domain(s)`, 'error');
       return;
     }
+    // A plain rule covers itself and every subdomain; a wildcard covers its whole
+    // subtree. Adding a name under either is a duplicate rule that can never win,
+    // so same-kind coverage (proxy/paused) is skipped by default. A blocked or
+    // direct parent still lets the proxy rule exist, but never answers, so that is
+    // reported as a warning rather than silently accepted.
+    let toAdd = [];
+    const sameKind = [];
+    const crossKind = [];
     for (const d of accepted) {
+      const cover = coveringRuleInfo(d, currentConfig.rules);
+      if (!cover) toAdd.push(d);
+      else if (cover.status === 'proxy' || cover.status === 'paused') sameKind.push({ domain: d, ...cover });
+      else crossKind.push({ domain: d, ...cover });
+    }
+    if (sameKind.length) {
+      const preview = sameKind.slice(0, 8)
+        .map((c) => `${c.domain} — covered by ${c.pattern}`)
+        .join('\n');
+      const more = sameKind.length > 8 ? `\n…and ${sameKind.length - 8} more` : '';
+      const addAnyway = await confirmAction({
+        title: 'Already covered',
+        message: `${sameKind.length} domain(s) are already covered by an existing proxy rule:\n\n${preview}${more}\n\nSkip them, or add them anyway if you need a separate service label or relay for the exact name.`,
+        confirmText: 'ADD ANYWAY',
+        cancelText: 'SKIP COVERED',
+      });
+      if (addAnyway) toAdd = toAdd.concat(sameKind.map((c) => c.domain));
+    }
+    if (!toAdd.length) {
+      showToast(`Skipped ${sameKind.length || accepted.length} covered domain(s)`, 'info');
+      return;
+    }
+    // The reverse case: a new plain rule can make existing narrower rules in the
+    // same lists redundant (googleapis.com vs *.googleapis.com). Adding it is
+    // allowed, but the operator is told what it now covers so the duplicates can
+    // be removed deliberately instead of being discovered later.
+    const subsumed = [...new Set(toAdd.flatMap((d) => subsumedRules(d, [
+      currentConfig.rules.custom_proxied || [],
+      currentConfig.rules.custom_proxied_disabled || [],
+    ])))].filter((rule) => !toAdd.includes(rule));
+    for (const d of toAdd) {
       // Add is a move, not a second copy. Direct is checked before Proxy in the
       // matcher, so a name left in Direct would keep winning and the Add would
       // look ignored. Remove the name and its own host wildcard from every other
@@ -16733,11 +17078,28 @@ function initEventListeners() {
       if (!active.includes(d)) active.push(d);
     }
     currentConfig.rules.custom_proxied = active;
-    stampDomainsAsAdded(currentConfig.rules, accepted);
+    stampDomainsAsAdded(currentConfig.rules, toAdd);
     input.value = '';
+    updateProxiedAddHint();
     saveRules();
     renderConfig(currentConfig);
-    if (invalid.length) showToast(`Added ${accepted.length}; ${invalid.length} invalid`, 'error');
+    const skippedCovered = accepted.length - toAdd.length;
+    if (invalid.length || skippedCovered || crossKind.length || subsumed.length) {
+      const notes = [];
+      if (skippedCovered) notes.push(`${skippedCovered} already covered`);
+      if (invalid.length) notes.push(`${invalid.length} invalid`);
+      if (crossKind.length) {
+        const covers = [...new Set(crossKind.map((c) => c.pattern))].slice(0, 3).join(', ');
+        notes.push(`${crossKind.length} still shadowed by ${covers}`);
+      }
+      if (subsumed.length) {
+        notes.push(`${subsumed.length} existing rule(s) now redundant: ${subsumed.slice(0, 3).join(', ')}`);
+      }
+      showToast(
+        `Added ${toAdd.length}; ${notes.join(', ')}`,
+        crossKind.length || subsumed.length ? 'warning' : invalid.length ? 'error' : 'info',
+      );
+    }
   });
 
   // Add Custom Blocked. The box accepts a pasted list: parseDomainList splits on
@@ -17085,6 +17447,15 @@ function initEventListeners() {
   // every keystroke — a listener bound to the button itself would be discarded by the next
   // render.
   document.getElementById('stream-tbody')?.addEventListener('click', (e) => {
+    // The copy glyph lives inside the domain cell, which is itself a filter
+    // shortcut. Copy must win there, or tapping it would narrow the log instead.
+    const copyBtn = e.target.closest('[data-copy-value]');
+    if (copyBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      copyText(copyBtn.dataset.copyValue, copyBtn);
+      return;
+    }
     // The per-row info button opens the DNS-response tooltip. Checked before the
     // action badge so the two never both fire; both live in the ACTION cell.
     if (e.target.closest('.info-stream-btn')) {

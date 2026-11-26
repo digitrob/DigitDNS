@@ -21,6 +21,8 @@ function load(rules = null) {
     targets: (domain, scope) => [...vm.runInContext('streamScopeTargets', context)(domain, scope)],
     scopeFor: (domain, patterns) => vm.runInContext('currentStreamScope', context)(domain, patterns),
     covers: (domain, targets) => vm.runInContext('scopeCoversDomain', context)(domain, targets),
+    migrate: (rules, olds, targets, profiles) =>
+      vm.runInContext('migrateDomainAttributes', context)(rules, olds, targets, profiles),
     hints: () => vm.runInContext('STREAM_SCOPE_HINTS', context),
     patterns: () => vm.runInContext('streamManagedPatterns', context)(),
     manual: (rules, add, remove) => {
@@ -111,6 +113,66 @@ test('a live-log decision records an override marker', () => {
 test('a live-log decision carries its override marker in the save payload', () => {
   assert.match(source, /manual_overrides:\s*currentConfig\.rules\.manual_overrides/);
   assert.match(source, /setStreamManualOverrides\(rules, targets, remove\)/);
+});
+
+// A scope change rebases the rule's pattern. The label and relay used to stay on
+// the old key, which the server then pruned: the wildcard row came back with no
+// service. These pin the move, including the exact key the pickers write.
+test('a scope change carries the service and relay to the new key', () => {
+  const { migrate } = load();
+  const rules = {
+    domain_services: { 'a.b.c': 'tv' },
+    domain_agents: { 'a.b.c': 'agt_de' },
+  };
+  const out = migrate(rules, ['a.b.c'], ['*.a.b.c'], {});
+  assert.equal(out.key, '*.a.b.c');
+  assert.deepEqual({ ...rules.domain_services }, { '*.a.b.c': 'tv' });
+  assert.deepEqual({ ...rules.domain_agents }, { '*.a.b.c': 'agt_de' });
+});
+
+test('host-plus-suffix targets use the exact host as the attribute key', () => {
+  const { migrate } = load();
+  const rules = { domain_services: { '*.a.b.c': 'tv' } };
+  const out = migrate(rules, ['*.a.b.c'], ['a.b.c', '*.a.b.c'], {});
+  assert.equal(out.key, 'a.b.c');
+  assert.deepEqual({ ...rules.domain_services }, { 'a.b.c': 'tv' });
+});
+
+test('a label already on the target wins and the stale one is dropped', () => {
+  const { migrate } = load();
+  const rules = {
+    domain_services: { 'a.b.c': 'tv', '*.a.b.c': 'radio' },
+    domain_agents: { 'a.b.c': 'old', '*.a.b.c': 'new' },
+  };
+  migrate(rules, ['a.b.c'], ['*.a.b.c'], {});
+  assert.deepEqual({ ...rules.domain_services }, { '*.a.b.c': 'radio' });
+  assert.deepEqual({ ...rules.domain_agents }, { '*.a.b.c': 'new' });
+});
+
+test('an unchanged key is a no-op', () => {
+  const { migrate } = load();
+  const rules = { domain_services: { 'a.b.c': 'tv' } };
+  const out = migrate(rules, ['a.b.c', '*.a.b.c'], ['a.b.c'], {});
+  assert.equal(out.key, 'a.b.c');
+  assert.deepEqual({ ...rules.domain_services }, { 'a.b.c': 'tv' });
+});
+
+test('a resolution profile is reported for the caller to move after the save', () => {
+  const { migrate } = load();
+  const profiles = { 'a.b.c': { upstream: '1.1.1.1' } };
+  const out = migrate({}, ['a.b.c'], ['*.b.c'], profiles);
+  assert.equal(out.resolutionFrom, 'a.b.c');
+  // The helper never edits the profile map: the rules save has to succeed first.
+  assert.deepEqual(profiles, { 'a.b.c': { upstream: '1.1.1.1' } });
+});
+
+test('moving a pattern does not steal a separate wildcard row\'s label', () => {
+  const { migrate } = load();
+  // The plain row has no label; the wildcard row does. A parent-scope change on
+  // the plain row must not carry the wildcard row's label along.
+  const rules = { domain_services: { '*.a.b.c': 'radio' } };
+  migrate(rules, ['a.b.c'], ['*.b.c'], {});
+  assert.deepEqual({ ...rules.domain_services }, { '*.a.b.c': 'radio' });
 });
 
 test('collects patterns from all four routing lists', () => {
