@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -196,13 +197,24 @@ func (t *dnscryptTransport) exchange(stamp string, q *dns.Msg) (*dns.Msg, time.D
 func normalizeStamp(raw string) (string, bool) {
 	stamp, err := dnsstamps.NewServerStampFromString(raw)
 	if err != nil {
+		// Some stamps (notably older Quad9 DNSCrypt stamps) parse into usable data
+		// but the parser still reports a trailing-garbage error. Accept them if the
+		// decoded stamp is a DNSCrypt stamp we can re-encode.
+		if stamp.Proto == dnsstamps.StampProtoTypeDNSCrypt {
+			if s := stamp.String(); s != "" && strings.HasPrefix(strings.ToLower(s), sdnsPrefix) {
+				return s, true
+			}
+		}
 		return "", false
 	}
 	switch stamp.Proto {
 	case dnsstamps.StampProtoTypeDNSCrypt:
 		// Re-encode through the library so two spellings of the same stamp (for
 		// example one with padding) collapse to a single entry.
-		return stamp.String(), true
+		if s := stamp.String(); s != "" {
+			return s, true
+		}
+		return "", false
 	case dnsstamps.StampProtoTypeDoH:
 		return normalizeHTTPResolverURL(schemeHTTPS, stamp.ProviderName+stamp.Path)
 	case dnsstamps.StampProtoTypeTLS:

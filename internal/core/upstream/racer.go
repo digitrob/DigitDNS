@@ -1106,9 +1106,9 @@ func (p *UpstreamPool) BenchmarkUpstream(addr string) {
 	p.benchmarkUpstream(addr, benchmarkSamples)
 }
 
-// QuickProbeAll takes one measurement per resolver in parallel. The Force path
-// uses it only when the pool has never been measured; when measurements exist,
-// Force selects from them immediately without probing.
+// QuickProbeAll takes one measurement per resolver in parallel. It is a cheap
+// liveness smoke test for callers that do not need a full benchmark. Force takes
+// the full BenchmarkAll path, because its job is to re-measure the pool now.
 func (p *UpstreamPool) QuickProbeAll() {
 	if p == nil {
 		return
@@ -1131,8 +1131,8 @@ func (p *UpstreamPool) QuickProbeAll() {
 }
 
 // HasMeasured reports whether any resolver has a live sample or a successful
-// probe. The Force path uses it to decide between an instant selection from the
-// existing stats and the one quick probe a brand-new pool needs.
+// probe. It answers "is there any number to show", not "are those numbers fresh
+// enough to select from".
 func (p *UpstreamPool) HasMeasured() bool {
 	if p == nil {
 		return false

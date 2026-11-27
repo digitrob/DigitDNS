@@ -98,6 +98,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import java.util.Base64
 
 /**
  * The Upstream Racers tile: the resolver pool ranked by latency, with the panel's two
@@ -847,15 +848,46 @@ private val PROVIDER_NAMES = listOf(
     listOf("cleanbrowsing", "185.228.168.9", "185.228.169.9") to "CleanBrowsing",
 )
 
+private const val BASE64_GROUP_SIZE = 4
+
+/**
+ * DNS stamps are base64 of the binary stamp, so the provider host is not visible
+ * in the `sdns://` string itself. Decode a copy for display matching only; a
+ * failure just means "unknown provider", never a broken row.
+ */
+private fun dnscryptStampText(address: String): String = runCatching {
+    val encoded = address.trim().removePrefix("sdns://")
+    val padding = "=".repeat((BASE64_GROUP_SIZE - encoded.length % BASE64_GROUP_SIZE) % BASE64_GROUP_SIZE)
+    String(Base64.getUrlDecoder().decode(encoded + padding), Charsets.ISO_8859_1)
+}.getOrDefault("")
+
 /** The public provider's display name, or null for a custom resolver. */
 internal fun providerName(address: String): String? {
-    val a = address.trim().lowercase()
-    return PROVIDER_NAMES.firstOrNull { (needles, _) -> needles.any { a.contains(it) } }?.second
+    val raw = address.trim()
+    val a = raw.lowercase()
+    if (!a.startsWith("sdns://")) {
+        return PROVIDER_NAMES.firstOrNull { (needles, _) -> needles.any { a.contains(it) } }?.second
+    }
+    // The provider host lives inside the base64 payload, not in the visible
+    // stamp, so match the decoded text instead of the opaque token. Decode the
+    // original casing: base64 is case-sensitive.
+    val stamp = dnscryptStampText(raw).lowercase()
+    return when {
+        stamp.contains("quad9") || stamp.contains("9.9.9.9") || stamp.contains("149.112.112.112") ->
+            "Quad9 (DNSCrypt)"
+        stamp.contains("opendns") || stamp.contains("208.67.222.222") || stamp.contains("208.67.220.220") ->
+            "OpenDNS (DNSCrypt)"
+        stamp.contains("adguard") || stamp.contains("94.140.14.14") || stamp.contains("94.140.15.15") ->
+            "AdGuard (DNSCrypt)"
+        else -> null
+    }
 }
 
 internal fun providerDrawable(address: String): Int? {
-    val a = address.trim().lowercase()
-    return PROVIDER_MATCHES.firstOrNull { (needles, _) -> needles.any { a.contains(it) } }?.second
+    val raw = address.trim()
+    val a = raw.lowercase()
+    val haystack = if (a.startsWith("sdns://")) dnscryptStampText(raw).lowercase() else a
+    return PROVIDER_MATCHES.firstOrNull { (needles, _) -> needles.any { haystack.contains(it) } }?.second
 }
 
 /** The server stores RFC3339; the card shows the same localized time as the rest of the app. */
@@ -1053,6 +1085,8 @@ private fun UpstreamRow(
                     style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -1092,6 +1126,10 @@ private fun UpstreamRow(
                     }
                 }
             }
+            // Keep a little air between a long resolver URL and the latency badge;
+            // without it the horizontally scrolling address runs right up against
+            // the number and reads as one string.
+            Spacer(Modifier.width(6.dp))
             Text(
                 text = if (stat.isMeasured) "%.1f ms".format(stat.displayLatencyMs) else "—",
                 style = MaterialTheme.typography.bodyMedium.copy(fontFamily = PanelMono),

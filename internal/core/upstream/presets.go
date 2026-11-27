@@ -72,7 +72,7 @@ var presetSpecs = []presetSpec{
 			{"https://dns.quad9.net/dns-query", "dns.quad9.net"},
 			{"quic://dns.quad9.net", "dns.quad9.net"},
 			{"h3://dns.quad9.net/dns-query", "dns.quad9.net"},
-			{"sdns://AQMAAAAAAAAADDkuOS45Ljk6ODQ0MyBnyEe4yHWM0SAkVUO-dWdG3zTfHYTAC4xHA2jfgh2GPhkyLmRuc2NyeXB0LWNlcnQucXVhZDkubmV0", "sdns://…"},
+			{"sdns://AQMAAAAAAAAADDkuOS45Ljk6ODQ0MyBnyEe4yHWM0SAkVUO-dWdG3zTfHYTAC4xHA2jfgh2GPhkyLmRuc2NyeXB0LWNlcnQucXVhZDkubmV0", "Quad9 (DNSCrypt)"},
 		},
 	},
 	{
@@ -83,7 +83,7 @@ var presetSpecs = []presetSpec{
 			{"208.67.220.220", "208.67.220.220"},
 			{"tls://dns.opendns.com", "dns.opendns.com"},
 			{"https://doh.opendns.com/dns-query", "doh.opendns.com"},
-			{"sdns://AQAAAAAAAAAADjIwOC42Ny4yMjAuMjIwILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5vcGVuZG5zLmNvbQ", "sdns://…"},
+			{"sdns://AQAAAAAAAAAADjIwOC42Ny4yMjAuMjIwILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5vcGVuZG5zLmNvbQ", "OpenDNS (DNSCrypt)"},
 		},
 	},
 	{
@@ -95,7 +95,7 @@ var presetSpecs = []presetSpec{
 			{"tls://dns.adguard-dns.com", "dns.adguard-dns.com"},
 			{"https://dns.adguard-dns.com/dns-query", "dns.adguard-dns.com"},
 			{"quic://dns.adguard-dns.com", "dns.adguard-dns.com"},
-			{"sdns://AQIAAAAAAAAAETk0LjE0MC4xNC4xNDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20", "sdns://…"},
+			{"sdns://AQIAAAAAAAAAETk0LjE0MC4xNC4xNDo1NDQzINErR_JS3PLCu_iZEIbq95zkSV2LFsigxDIuUso_OQhzIjIuZG5zY3J5cHQuZGVmYXVsdC5uczEuYWRndWFyZC5jb20", "AdGuard (DNSCrypt)"},
 		},
 	},
 	{

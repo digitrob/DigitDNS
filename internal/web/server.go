@@ -467,6 +467,11 @@ const (
 	// It keeps a strategy switch noticed even if the settings save that made it
 	// never reached nudgeAdaptive.
 	adaptiveIdleCheck = 30 * time.Second
+	// adaptiveForceWait bounds how long a Force click waits for an in-flight
+	// benchmark before selecting from the measurements it already has. A full
+	// benchmark is bounded by four probe timeouts per resolver, so this stays
+	// below the Android client's 20-second read timeout.
+	adaptiveForceWait = 12 * time.Second
 )
 
 func (ws *WebServer) adaptiveLoop(ctx context.Context) {
@@ -564,18 +569,19 @@ var (
 	errAdaptiveBusy        = errors.New("a benchmark is already in progress")
 )
 
-// runAdaptiveNow performs one complete Adaptive cycle: pick the fastest healthy
-// resolver with hysteresis, install it, and persist the result. It is shared by
-// the scheduler and the panel/app "Force" button. The benchmark runs outside
+// runAdaptiveNow performs one complete Adaptive cycle: benchmark the pool, pick
+// the fastest healthy resolver, install it, and persist the result. It is shared
+// by the scheduler and the panel/app "Force" button. The benchmark runs outside
 // dnsMu so a slow resolver cannot block a settings save; the record is re-read
 // afterwards so a strategy change during the probe wins.
 //
-// Force is deliberately the fast path: it selects from the measurements that
-// already exist, so the first tap switches the resolver immediately. A pool
-// that has never been measured gets one short probe first; it never waits for a
-// scheduled benchmark or starts a full three-sample run. Tying Force to a full
-// benchmark made the first tap appear to do nothing until the probes finished,
-// and a scheduled run could push the request past the Android client's timeout.
+// Force means "find the fastest resolver now", so it must not select from stale
+// numbers. A previous implementation did exactly that — it reused the last probe
+// whenever any resolver had ever been measured — and the button appeared to do
+// nothing until the interval run replaced the choice. Force now takes a fresh
+// full benchmark. If another benchmark already holds the shared gate, Force waits
+// for that run instead of failing with "busy"; its measurements are only seconds
+// old and are the ones the operator asked for.
 func (ws *WebServer) runAdaptiveNow(force bool) (upstream.AdaptiveDecision, error) {
 	if ws == nil || ws.upstreams == nil || ws.db == nil {
 		return upstream.AdaptiveDecision{}, errAdaptiveNotSelected
@@ -590,14 +596,22 @@ func (ws *WebServer) runAdaptiveNow(force bool) (upstream.AdaptiveDecision, erro
 	current := cfg.AdaptiveCurrent
 	ws.dnsMu.Unlock()
 
-	// A Force click switches from the latest measurements immediately. Only a
-	// pool that has never been measured needs one short probe, because there is
-	// nothing to select from otherwise. The scheduled path keeps the full
-	// benchmark and its shared gate.
+	// Both paths take measurements before selecting. The scheduler runs the full
+	// benchmark synchronously under the shared gate; Force does the same, but when
+	// another benchmark owns the gate it waits for that run rather than rejecting
+	// the click.
 	var benchmarkStarted time.Time
 	if force {
-		if !ws.upstreams.HasMeasured() {
-			ws.upstreams.QuickProbeAll()
+		benchmarkStarted = time.Now()
+		if ws.benchmark != nil {
+			if !ws.benchmark.Run() {
+				// A scheduled or manual benchmark already owns the gate. Wait for
+				// it when it is close to done, then select from what it measured;
+				// a Force click must still answer rather than fail as "busy".
+				ws.benchmark.Wait(adaptiveForceWait)
+			}
+		} else {
+			ws.upstreams.BenchmarkAll()
 		}
 		ws.adaptiveForcedAt.Store(time.Now().UnixNano())
 	} else {

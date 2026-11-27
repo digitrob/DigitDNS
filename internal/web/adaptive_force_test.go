@@ -45,17 +45,16 @@ func TestAdaptiveRunResponseCarriesUpstreamStats(t *testing.T) {
 	}
 }
 
-// Force switches from the measurements already in hand and does not queue a
-// full benchmark or wait for the scheduler. That is the first-tap guarantee:
-// tying the switch to a probe made the old resolver stay active until the
-// benchmark finished, and a scheduled probe could outlast the client timeout.
-func TestForceSelectsFromLatestMeasurementsWithoutBenchmark(t *testing.T) {
+// Force means "find the fastest resolver now": it takes a fresh benchmark before
+// selecting. Reusing whatever probe happened to be stored made the button look
+// inert until the interval run finally replaced the choice.
+func TestForceRunsFreshBenchmarkBeforeSelecting(t *testing.T) {
 	ws, _, cleanup := setupTestWebServer(t)
 	defer cleanup()
 
 	fake := startWebTestDNS(t)
 	ws.upstreams = upstream.NewUpstreamPool([]string{fake}, 500*time.Millisecond, false, "")
-	ws.upstreams.BenchmarkAll() // the pool already has a measured resolver
+	ws.upstreams.BenchmarkAll() // even a measured pool must be probed again
 
 	var runs atomic.Int32
 	runner := service.NewBenchmarkRunner(func() {
@@ -68,8 +67,8 @@ func TestForceSelectsFromLatestMeasurementsWithoutBenchmark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Force run: %v", err)
 	}
-	if runs.Load() != 0 {
-		t.Fatalf("benchmark runs = %d, want 0 — Force must switch without a probe", runs.Load())
+	if runs.Load() != 1 {
+		t.Fatalf("benchmark runs = %d, want 1 — Force must re-measure before selecting", runs.Load())
 	}
 	if decision.Current != fake {
 		t.Fatalf("Force chose %q, want the measured resolver %q", decision.Current, fake)

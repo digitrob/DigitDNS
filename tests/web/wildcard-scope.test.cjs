@@ -175,6 +175,28 @@ test('moving a pattern does not steal a separate wildcard row\'s label', () => {
   assert.deepEqual({ ...rules.domain_services }, { '*.a.b.c': 'radio' });
 });
 
+test('migrates Added stamp to the new key when target has none', () => {
+  const { migrate } = load();
+  const rules = {
+    custom_domain_added: { 'a.b.c': '2026-01-01T00:00:00.000Z' },
+    domain_services: { 'a.b.c': 'tv' },
+  };
+  const out = migrate(rules, ['a.b.c'], ['*.a.b.c'], {});
+  assert.equal(out.key, '*.a.b.c');
+  assert.equal(rules.custom_domain_added['*.a.b.c'], '2026-01-01T00:00:00.000Z');
+  assert.equal(rules.custom_domain_added['a.b.c'], undefined);
+});
+
+test('keeps target Added stamp when already present', () => {
+  const { migrate } = load();
+  const rules = {
+    custom_domain_added: { 'a.b.c': '2026-01-01T00:00:00.000Z', '*.a.b.c': '2026-02-01T00:00:00.000Z' },
+  };
+  migrate(rules, ['a.b.c'], ['*.a.b.c'], {});
+  assert.equal(rules.custom_domain_added['*.a.b.c'], '2026-02-01T00:00:00.000Z');
+  assert.equal(rules.custom_domain_added['a.b.c'], undefined);
+});
+
 test('collects patterns from all four routing lists', () => {
   const { patterns } = load({
     custom_proxied: ['one.example'],

@@ -21,4 +21,14 @@ class UpstreamProviderMarkTest {
         assertEquals(R.drawable.provider_nextdns, providerDrawable("45.90.28.0"))
         assertEquals(R.drawable.provider_cleanbrowsing, providerDrawable("185.228.168.9"))
     }
+
+    @Test
+    fun dnscryptStampsMatchTheirProviderLogo() {
+        val quad9 = "sdns://AQYAAAAAAAAADTkuOS45LjExOjg0NDMgZ8hHuMh1jNEgJFVDvnVnRt803x2EwAuMRwNo34Idhj4XMi5kbnNjcnlwdC1jZXJ0LnF1YWQ5Lm5ldA"
+        assertEquals("Quad9 (DNSCrypt)", providerName(quad9))
+        assertEquals(R.drawable.provider_quad9, providerDrawable(quad9))
+
+        val unknown = "sdns://AQcAAAAAAAAADTE5Mi4wLjIuMTo1NDQzILc1EUAgbyJdPivYItf9aR6hwzzI1maNDL4Ev6vKQ_t5GzIuZG5zY3J5cHQtY2VydC5leGFtcGxlLmNvbQ"
+        assertEquals(null, providerName(unknown))
+    }
 }

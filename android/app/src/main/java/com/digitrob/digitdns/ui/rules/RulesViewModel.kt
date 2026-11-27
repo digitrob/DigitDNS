@@ -997,11 +997,11 @@ class RulesViewModel @Inject constructor(
     fun changeScope(domain: String, scope: MatchScope, previous: List<String> = emptyList()) {
         val next = _state.value.lists.withScope(domain, scope, previous) ?: return
         val targets = scope.targets(domain)
-        val nextKey = attributeKey(targets)
-        val oldKeys = if (nextKey == null) {
+        val nextKey = attributeKey(targets)?.normalizedDomain()
+        val oldKeys = if (nextKey.isNullOrBlank()) {
             emptyList()
         } else {
-            (listOf(domain) + previous).map { it.normalizedDomain() }.filter { it != nextKey }
+            (listOf(domain) + previous).map { it.normalizedDomain() }.filter { it.isNotBlank() && it != nextKey }
         }
         viewModelScope.launch {
             if (!write(next, "Scope: ${targets.joinToString(" + ")}.")) return@launch
@@ -1017,12 +1017,14 @@ class RulesViewModel @Inject constructor(
     @Suppress("ReturnCount")
     private suspend fun moveResolutionProfile(oldKeys: List<String>, nextKey: String?) {
         val current = _state.value.resolution ?: return
-        if (nextKey.isNullOrBlank() || oldKeys.isEmpty()) return
-        if (current.profiles.containsKey(nextKey)) return
-        val profile = oldKeys.firstNotNullOfOrNull { current.profiles[it] } ?: return
+        val key = nextKey?.normalizedDomain().orEmpty()
+        if (key.isBlank() || oldKeys.isEmpty()) return
+        if (current.profiles.containsKey(key)) return
+        val normalizedOlds = oldKeys.map { it.normalizedDomain() }.filter { it.isNotBlank() && it != key }
+        val profile = normalizedOlds.firstNotNullOfOrNull { current.profiles[it] } ?: return
         val profiles = current.profiles.toMutableMap()
-        oldKeys.forEach { profiles.remove(it) }
-        profiles[nextKey] = profile
+        normalizedOlds.forEach { profiles.remove(it) }
+        profiles[key] = profile
         saveResolutionProfiles(current, profiles, "Resolution rule moved with the domain.")
     }
 
@@ -1130,11 +1132,16 @@ class RulesViewModel @Inject constructor(
         unique: List<String>,
         action: RouteAction,
     ): RuleLists {
-        val nextKey = if (action == RouteAction.Remove) "" else attributeKey(unique).orEmpty()
-        val oldKeys = if (nextKey.isEmpty() || origin == null) {
-            emptyList()
+        val nextKey = if (action == RouteAction.Remove) {
+            ""
         } else {
-            listOf(origin.normalizedDomain()).filter { it != nextKey }
+            attributeKey(unique)?.normalizedDomain().orEmpty()
+        }
+        var oldKeys: List<String> = emptyList()
+        if (nextKey.isNotBlank()) {
+            oldKeys = buildSet {
+                if (!origin.isNullOrBlank()) add(origin.normalizedDomain())
+            }.filter { it.isNotBlank() && it != nextKey }
         }
         return if (oldKeys.isEmpty()) {
             this

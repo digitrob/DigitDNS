@@ -4557,10 +4557,35 @@ function upstreamProtocolEnabled(address) {
   return (resolutionSettings.transports || ALL_TRANSPORTS).includes(upstreamProtocolKey(address));
 }
 
+// DNS stamps are base64 of the binary stamp, so a provider host such as
+// "dns.quad9.net" is not visible in the sdns:// token. Decode a copy for the
+// bundled favicon lookup; display still shows the exact stored address.
+function sdnsStampText(address) {
+  const raw = String(address || '').trim();
+  if (!raw.toLowerCase().startsWith('sdns://')) return '';
+  const encoded = raw.slice('sdns://'.length).replace(/-/g, '+').replace(/_/g, '/');
+  const padded = encoded + '='.repeat((4 - encoded.length % 4) % 4);
+  try {
+    // atob is browser-only; the guard keeps the pure string helpers usable in
+    // Node tests that load app.js without a DOM.
+    return (typeof atob === 'function' ? atob(padded) : '').toLowerCase();
+  } catch (e) {
+    return '';
+  }
+}
+
 // Provider marks use the bundled images, never a remote favicon request. The
 // address patterns cover the public resolvers the preset catalogue ships with.
 function providerIdForUpstream(address) {
-  const a = String(address || '').trim().toLowerCase();
+  const raw = String(address || '').trim();
+  const a = raw.toLowerCase();
+  if (a.startsWith('sdns://')) {
+    const stamp = sdnsStampText(raw);
+    if (stamp.includes('quad9') || stamp.includes('9.9.9.9') || stamp.includes('149.112.112.112')) return 'quad9';
+    if (stamp.includes('opendns') || stamp.includes('208.67.222.222') || stamp.includes('208.67.220.220')) return 'opendns';
+    if (stamp.includes('adguard') || stamp.includes('94.140.14.14') || stamp.includes('94.140.15.15')) return 'adguard';
+    return '';
+  }
   if (a.includes('cloudflare') || a.includes('1.1.1.1') || a.includes('1.0.0.1') || a.includes('one.one.one.one')) return 'cloudflare';
   if (a.includes('google') || a.includes('8.8.8.8') || a.includes('8.8.4.4')) return 'google';
   if (a.includes('quad9') || a.includes('9.9.9.9') || a.includes('149.112.112.112')) return 'quad9';
@@ -8590,22 +8615,16 @@ function rowAttributeKey(targets) {
   return list.find((t) => t && !t.startsWith('*.')) || list[0] || '';
 }
 
-// migrateDomainAttributes carries a row's service label and relay override to the
-// pattern(s) a scope change writes. It used to be forgotten: the lists were
-// rebased, the old key was pruned by the server, and the row came back unlabelled.
-//
-// [oldKeys] is the row's displayed key plus any pattern an earlier click in the
-// same menu wrote. Only those move, so a separate wildcard row keeps its own
-// label. An existing label on the target wins and the stale one is dropped - the
-// operator's last explicit assignment is the one they can see.
-//
-// Resolution profiles live outside the rules payload; the caller gets
-// [resolutionFrom] back and moves it after the rules save succeeds.
+function normalizeAttrKey(k) {
+  return String(k || '').trim().toLowerCase().replace(/\.$/, '');
+}
+
+// migrateDomainAttributes carries a row's service label, relay override, Added stamp,
+// and resolution override to the pattern(s) a scope change writes.
 function migrateDomainAttributes(rules, oldKeys, targets, profiles) {
-  const nextKey = rowAttributeKey(targets);
+  const nextKey = normalizeAttrKey(rowAttributeKey(targets));
   if (!rules || !nextKey) return { key: '', resolutionFrom: '' };
-  const olds = [...new Set(oldKeys || [])]
-    .map((k) => String(k || '').trim().toLowerCase().replace(/\.$/, ''))
+  const olds = [...new Set((oldKeys || []).map(normalizeAttrKey))]
     .filter((k) => k && k !== nextKey);
   for (const mapName of ['domain_services', 'domain_agents']) {
     const links = rules[mapName];
@@ -8617,6 +8636,18 @@ function migrateDomainAttributes(rules, oldKeys, targets, profiles) {
       delete links[pattern];
     }
     if (value !== undefined && !links[nextKey]) links[nextKey] = value;
+  }
+  // Move Added stamp (custom_domain_added) to the new key if target has none.
+  const added = rules.custom_domain_added;
+  if (added && typeof added === 'object') {
+    let stamp;
+    for (const pattern of olds) {
+      if (Object.prototype.hasOwnProperty.call(added, pattern) && added[pattern]) {
+        if (stamp === undefined) stamp = added[pattern];
+        delete added[pattern];
+      }
+    }
+    if (stamp !== undefined && !added[nextKey]) added[nextKey] = stamp;
   }
   let resolutionFrom = '';
   if (profiles && typeof profiles === 'object') {
@@ -8659,11 +8690,8 @@ async function applyStreamScope(domain, scope) {
   const targets = streamScopeTargets(domain, scope);
   if (!targets.length) return false;
   const rowPatterns = streamRowPatterns(domain);
-  const stamp = streamRowStamp(domain) || streamRowStamp(streamActionApplied[0] || '');
   const remove = [...new Set([...rowPatterns, ...streamActionApplied, ...targets])];
-  // The row's label and relay belong to whatever pattern it was displayed under.
-  // Rebase them with the rule; otherwise the server prunes the old key and the
-  // new wildcard row comes back with no service.
+  // The row's label, relay, Added stamp, and resolution profile follow the rule.
   const migrated = migrateDomainAttributes(
     rules,
     [domain, ...streamActionApplied],
@@ -8679,9 +8707,12 @@ async function applyStreamScope(domain, scope) {
     rules[key] = (rules[key] || []).filter((x) => !remove.includes(x));
   }
   rules[current.key] = replacePatterns(rules[current.key] || [], remove, targets);
-  const added = rules.custom_domain_added || (rules.custom_domain_added = {});
-  for (const pattern of rowPatterns) delete added[pattern];
-  stampDomainsAsAdded(rules, targets, stamp);
+  // Ensure any target still missing an Added stamp keeps inherited time if present.
+  const addedMap = rules.custom_domain_added || (rules.custom_domain_added = {});
+  const inheritedStamp = streamRowStamp(domain) || streamRowStamp(streamActionApplied[0] || '') || new Date().toISOString();
+  for (const t of targets) {
+    if (!addedMap[t]) addedMap[t] = inheritedStamp;
+  }
   setStreamManualOverrides(rules, wasManual ? targets : [], remove);
   streamActionApplied = targets;
   if (!(await saveRules(true))) {
@@ -9139,7 +9170,6 @@ async function applyStreamAction(action, onSaved) {
   // Every action starts from a clean slate: a domain lives in exactly one list,
   // so switching it from blocked to proxied is a move, not an addition to both.
   const rowPatterns = streamRowPatterns(streamActionDomain);
-  const stamp = streamRowStamp(streamActionDomain) || streamRowStamp(streamActionApplied[0] || '');
   const remove = [...new Set([...rowPatterns, ...streamActionApplied, ...targets])];
   const targetKey = { proxy: 'custom_proxied', block: 'custom_blocked', direct: 'custom_direct' }[action] || '';
   if (!targetKey) return;
@@ -9183,9 +9213,11 @@ async function applyStreamAction(action, onSaved) {
   rules.custom_blocked = lists.custom_blocked;
   rules.custom_direct = lists.custom_direct;
   streamActionApplied = [];
-  const added = rules.custom_domain_added || (rules.custom_domain_added = {});
-  for (const pattern of rowPatterns) delete added[pattern];
-  stampDomainsAsAdded(rules, targets, stamp);
+  const addedMap = rules.custom_domain_added || (rules.custom_domain_added = {});
+  const inheritedStamp = streamRowStamp(streamActionDomain) || streamRowStamp(streamActionApplied[0] || '') || new Date().toISOString();
+  for (const t of targets) {
+    if (!addedMap[t]) addedMap[t] = inheritedStamp;
+  }
   // This is the decision that creates the override. A wildcard target becomes an
   // exception for its whole subtree; an exact target covers the host and, because
   // a plain rule is indexed as exact + suffix, its subdomains too.
