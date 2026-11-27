@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.13.0] — One Resolver widget, a Domains toolbar that stays put, and faster query paths
+
+### Added
+- **One home-screen Resolver widget** replaces the old Status and Toggle widgets. It lists the resolver pool with the provider mark, the transport inline beside the name (DoH/DoT/DoQ/DNSCrypt/plain), the measured latency, a status dot and a **FASTEST** badge on the resolver currently in use. Policy-excluded transports are dimmed, and the list follows the same adaptive/default rules as the panel. The header shows the last update time, an animated refresh control and a gear that opens the appearance editor; the footer carries the **Filtering ON/OFF** pill and an app launcher.
+- **Widget Settings under Settings → App.** Theme (app/dark/grey/light), background opacity and text size are editable per placed widget from the app, from the widget's gear and from the launcher's configure dialog — all three write the same preferences and repaint the widget in place, without removing it. Each slider carries a short tip explaining what it changes.
+- **Four resolvers fit at the default size.** Rows, header and footer were compacted and the widget's minimum height raised to three launcher rows, so a 3×3 widget shows four resolvers without the bottom row colliding with the footer.
+
+### Fixed
+- **The Domains search field no longer moves when domains are selected.** The selection-count slot was a `min-width` floor, so "No domains selected" widened it and the flex search field shrank by the difference on the first tick. The slot is now a fixed width, right-aligned, with tabular digits; the search field, sort control and bulk buttons stay put at every width.
+- **Widget inflation.** A toolbar spacer used a bare `<View>`, which RemoteViews refuses to inflate; the launcher answered with an empty box and "couldn't add widget". The layout now uses only RemoteView-allowed classes and an explicit ProgressBar style.
+
+### Changed
+- **Faster cache-hit path.** The live-log/matcher walk now short-circuits when no manual rules, custom records or `$dnsrewrite` rules exist, and custom-record lookup reuses the already-normalised name. A cold-miss single-flight key is a comparable struct instead of a formatted string, and the cache evicts from a small sample instead of scanning the shard under its write lock.
+- **Correctness fixes that cost reconnects and retries.**
+  - The loopback rate-limit exemption now receives the bare transport peer; plain UDP/TCP/DoT had been passing `host:port`, so local health checks, the panel's resolver test and the TUI could be rate-limited.
+  - Truncated (TC=1) answers can no longer enter the cache through the background refresh/prefetch writers; only a complete answer is stored.
+  - The public IPv6 address is published through an atomic pointer, removing a data race between the settings API and the query path.
+  - A panic in a single-flight leader now broadcasts a failure to its waiters instead of leaving them blocked forever.
+  - Only the single-flight leader writes the shared answer to the cache; followers no longer duplicate the copy/clamp/normalise work.
+- **Steadier upstream selection.** Invalidation of the latency order is throttled and circuit-state logging happens outside the per-upstream lock, so a lossy resolver no longer serialises queries behind log writes or triggers a full re-sort on every error. Plain TCP upstreams and the truncation fallback reuse idle connections.
+- **Faster outbound fetches.** Blocklist, AdGuard-source, icon and RDAP downloads share one HTTP client with keep-alive and HTTP/2, so refreshing a second list does not repeat a TLS handshake. Closing an AdGuard preview now cancels its download instead of running to the size limit.
+- **Bigger DNS receive buffer.** The plain-DNS UDP listener requests a 4 MB socket buffer (Linux, best-effort) so query bursts are absorbed instead of dropped and retransmitted a second later.
+- **Live log encoding moved off the resolver goroutine.** Query items are queued and JSON-encoded once on a dedicated encoder goroutine; the aggregate hour key is cached and the client/domain shard hash no longer concatenates strings.
+- **Dashboard polish.** The three end-of-body scripts are deferred, the icon sweep is scoped to the panel it just rendered, the AdGuard preview filter is debounced, and the system-log/stream fallback timers stop when their tab is hidden; dead CSS/JS was removed.
+
+### Notes
+- No database schema migration is required. The old Status and Toggle widgets are removed; existing placements of those types will disappear on upgrade, and the Resolver widget is added from the picker.
+- The Android companion moves to `android-v5.13.0`, version code 594.
+
 ## 🏷️ [v5.12.2] — Domains: attributes survive a scope change, no duplicate rules, blocklist selection and copy
 
 ### Fixed

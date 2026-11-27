@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -133,6 +134,12 @@ internal enum class SettingsSection(
     Diagnostics(R.string.settings_diagnostics, Icons.Filled.MonitorHeart, SettingsGroup.Monitoring, "diagnostics health"),
 
     App(R.string.settings_app, Icons.Filled.Tune, SettingsGroup.App, "app theme biometrics layout"),
+    Widgets(
+        R.string.settings_widgets,
+        Icons.Filled.Widgets,
+        SettingsGroup.App,
+        "widget widgets home screen resolver theme opacity transparency text size",
+    ),
     RestApi(R.string.settings_rest_api, Icons.Filled.Code, SettingsGroup.App, "rest api key"),
     ConnectGuide(R.string.settings_connect_guide, Icons.Filled.Wifi, SettingsGroup.App, "connect guide setup"),
     About(R.string.settings_about, Icons.Filled.Info, SettingsGroup.App, "about version licence"),
@@ -285,6 +292,7 @@ private fun SettingsSectionContent(
 ) {
     when (section) {
         SettingsSection.App -> AppSettingsScreen()
+        SettingsSection.Widgets -> WidgetSettingsScreen()
         SettingsSection.Dnssec -> DnssecProxySettingsScreen()
         SettingsSection.Transports -> ClientTransportsScreen()
         SettingsSection.Ipv6 -> Ipv6SettingsScreen()

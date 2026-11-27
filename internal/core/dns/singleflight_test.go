@@ -120,17 +120,17 @@ func TestCompletedMissIsReusedWhileCacheWarms(t *testing.T) {
 	pool := upstream.NewUpstreamPool([]string{pc.LocalAddr().String()}, 2*time.Second, false, "")
 	h := NewHandler(&dummyAccess{}, c, matcher.NewMatcher(), pool, nil, "198.51.100.1")
 
-	key := "warm|1|1|false|false|false"
+	key := coalesceKeyT{name: "warm.example", qtype: dns.TypeA, qclass: dns.ClassINET}
 	first := new(dns.Msg)
 	first.SetQuestion("warm.example.", dns.TypeA)
-	if _, _, err := h.exchangeCoalesced(first, "warm.example", key); err != nil {
+	if _, _, _, err := h.exchangeCoalesced(first, "warm.example", key); err != nil {
 		t.Fatalf("leader: %v", err)
 	}
 
 	second := new(dns.Msg)
 	second.SetQuestion("warm.example.", dns.TypeA)
 	second.Id = 4242
-	resp, _, err := h.exchangeCoalesced(second, "warm.example", key)
+	resp, _, _, err := h.exchangeCoalesced(second, "warm.example", key)
 	if err != nil {
 		t.Fatalf("follower: %v", err)
 	}

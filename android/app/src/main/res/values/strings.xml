@@ -136,11 +136,6 @@
     <string name="tile_filtering_on">Filtering on</string>
     <string name="tile_filtering_off">Filtering off</string>
     <string name="tile_filtering_offline">Sign in to DigitDNS</string>
-    <string name="widget_status_description">DigitDNS status: total queries and current query rate</string>
-    <string name="widget_status_title">DigitDNS</string>
-    <string name="widget_status_queries">Total queries</string>
-    <string name="widget_status_qps">Queries / s</string>
-    <string name="widget_status_open">Open</string>
     <string name="agents_domains">Domains</string>
     <string name="agents_traffic_service_none">%1$s relayed · No service default</string>
     <string name="agents_traffic_services">%1$s relayed · Services: %2$s</string>
@@ -886,11 +881,29 @@
     <string name="egress_status_unknown">unknown</string>
     <string name="settings_system_log">System Log</string>
     <string name="egress_upload_conf">Upload .conf</string>
-    <!-- Widget strings (toggle) -->
-    <string name="widget_toggle_description">Toggle DigitDNS ad blocking</string>
-    <string name="widget_toggle_on">Filtering on</string>
-    <string name="widget_toggle_off">Filtering off</string>
-    <string name="widget_toggle_unavailable">Unavailable — sign in</string>
-    <string name="widget_toggle_tap">Tap to toggle ad blocking</string>
+    <!-- Widget strings (resolver) -->
+    <string name="widget_resolver_description">DigitDNS resolvers: list, latency and ad blocking</string>
+    <string name="widget_resolvers_empty">No resolver data yet</string>
+    <string name="widget_refresh">Refresh</string>
+    <string name="widget_refreshing">Refreshing…</string>
+    <string name="widget_config_title">Widget settings</string>
+    <string name="settings_widgets">Widget Settings</string>
+    <string name="settings_widgets_help">Theme, background opacity and text size for the home-screen Resolver widget.</string>
+    <string name="widget_settings_empty">No Resolver widget on the home screen yet. Add it from the widget picker first.</string>
+    <string name="widget_settings_widget">Widget %1$d</string>
+    <string name="widget_settings_theme">Theme</string>
+    <string name="widget_settings_theme_app">App theme</string>
+    <string name="widget_settings_theme_dark">Dark</string>
+    <string name="widget_settings_theme_grey">Grey</string>
+    <string name="widget_settings_theme_light">Light</string>
+    <string name="widget_settings_transparency">Background opacity</string>
+    <string name="widget_settings_opacity_tip">100% is solid. Lower values let the wallpaper show through; 0% leaves only the text and icons.</string>
+    <string name="widget_settings_font_size">Text size</string>
+    <string name="widget_settings_font_tip">Scales the resolver name, transport, latency and footer text. Larger text shows fewer rows in the same widget size.</string>
+    <string name="widget_settings_percent">%1$d%%</string>
+    <string name="widget_settings_font_value">%1$d%%</string>
+    <string name="widget_toggle_on">Filtering ON</string>
+    <string name="widget_toggle_off">Filtering OFF</string>
+    <string name="widget_toggle_unavailable">Filtering —</string>
     <string name="widget_toggle_open">Open app</string>
 </resources>

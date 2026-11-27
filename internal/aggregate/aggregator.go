@@ -208,7 +208,7 @@ func (a *Aggregator) RecordDetail(item database.QueryLogItem) {
 	}
 	// Distribute detail records across shards using a hash of client IP + domain
 	// so concurrent queries don't serialize on a single shard's mutex.
-	h := hashBucketKey(item.ClientIP + item.Domain)
+	h := hashBucketKey2(item.ClientIP, item.Domain)
 	a.withBucket(at, shardKeyFromHash(h), func(b *Bucket, chunk *Chunk) {
 		blocked, proxied := b.Blocked, b.Proxied
 		cached, failed := b.Cached, b.Failed
@@ -522,6 +522,22 @@ func (a *Aggregator) Close() {
 	})
 }
 
+// hashBucketKey2 hashes two strings as if they were concatenated, without
+// allocating the concatenation on every query.
+func hashBucketKey2(a, b string) uint64 {
+	h := uint64(0xcbf29ce484222325)
+	const prime = uint64(0x100000001b3)
+	for i := 0; i < len(a); i++ {
+		h ^= uint64(a[i])
+		h *= prime
+	}
+	for i := 0; i < len(b); i++ {
+		h ^= uint64(b[i])
+		h *= prime
+	}
+	return h
+}
+
 // hashBucketKey returns a uint64 hash of s, used to distribute RecordDetail
 // records across shards. The hash is deterministic and based on the string content.
 func hashBucketKey(s string) uint64 {
@@ -535,8 +551,24 @@ func hashBucketKey(s string) uint64 {
 	return h
 }
 
+// hourKeyCache holds the current hour's formatted key. withBucket used to call
+// Format twice per query (RecordTotal and RecordDetail), allocating a string
+// each time for a value that changes once an hour.
+type hourKeyCacheEntry struct {
+	bucket int64
+	key    string
+}
+
+var hourKeyCache atomic.Pointer[hourKeyCacheEntry]
+
 func hourKey(t time.Time) string {
-	return t.UTC().Format("2006010215")
+	bucket := t.Unix() / 3600
+	if cached := hourKeyCache.Load(); cached != nil && cached.bucket == bucket {
+		return cached.key
+	}
+	key := t.UTC().Format("2006010215")
+	hourKeyCache.Store(&hourKeyCacheEntry{bucket: bucket, key: key})
+	return key
 }
 
 func dayKey(t time.Time) string {

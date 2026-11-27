@@ -491,6 +491,12 @@ func (m *Matcher) manualMatchLower(d string) (Action, string, string, bool) {
 // exact manual rule beats a broader manual wildcard regardless of which action
 // each chose. A manual wildcard is an exception for every host in its subtree.
 func (s *matcherSnapshot) lookupManual(d string) (Action, string, string, bool) {
+	// The live-log override plane is almost always empty. Every query used to
+	// walk all of its labels against three rule sets even then; a three-map
+	// length check is cheaper than the first label probe.
+	if s.manualDirect.size()+s.manualBlocked.size()+s.manualProxied.size() == 0 {
+		return ActionDirect, "", "", false
+	}
 	type set struct {
 		action Action
 		rs     *ruleSet
@@ -683,7 +689,12 @@ func (m *Matcher) Explain(domain string) Explanation {
 
 // GetCustomRecord returns the custom DNS answer configured for a domain, if any.
 func (m *Matcher) GetCustomRecord(domain string) (string, bool) {
-	d := normalizeDomain(domain)
+	return m.GetCustomRecordLower(normalizeDomain(domain))
+}
+
+// GetCustomRecordLower is GetCustomRecord for a name the resolver already
+// normalised, so the query hot path does not lower-case it twice.
+func (m *Matcher) GetCustomRecordLower(d string) (string, bool) {
 	snap := m.snapshot.Load()
 	if snap == nil {
 		return "", false

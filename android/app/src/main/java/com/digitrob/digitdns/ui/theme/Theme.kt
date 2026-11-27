@@ -9,6 +9,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.digitrob.digitdns.data.ThemeMode
 import com.digitrob.digitdns.ui.theme.PanelColors as P
 
 /**
@@ -143,6 +144,21 @@ fun DigitDnsTheme(
             content = content,
         )
     }
+}
+
+/**
+ * The same theme selected by a [ThemeMode], resolving [ThemeMode.SYSTEM] against the
+ * phone. The widget editor uses this to render its own controls in the theme the
+ * widget will actually have, instead of the app's current theme.
+ */
+@Composable
+fun DigitDnsTheme(themeMode: ThemeMode, content: @Composable () -> Unit) {
+    val dark = when (themeMode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.DARK, ThemeMode.GREY -> true
+        ThemeMode.LIGHT -> false
+    }
+    DigitDnsTheme(darkTheme = dark, greyTheme = themeMode == ThemeMode.GREY, content = content)
 }
 
 /** The non-M3 panel tokens, resolved for the theme in force: `DigitDnsTheme.colors`. */

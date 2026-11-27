@@ -19,6 +19,7 @@ import (
 
 	"digitdns/internal/adguard"
 	"digitdns/internal/database"
+	"digitdns/internal/httpx"
 )
 
 // AdGuard coverage sync keeps DigitDNS as the primary rule store. AdGuard is a
@@ -517,7 +518,7 @@ func fetchAdGuardSource(ctx context.Context, rawURL string) (string, error) {
 		return "", errors.New("could not build the source request")
 	}
 	req.Header.Set("User-Agent", "DigitDNS-AdGuard-Sync/1.0")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpx.Outbound.Do(req)
 	if err != nil {
 		return "", errors.New("could not fetch the source URL")
 	}
@@ -538,13 +539,13 @@ func fetchAdGuardSource(ctx context.Context, rawURL string) (string, error) {
 
 // adGuardPreviewText resolves a preview's source text. A failed refresh never
 // replaces the last good copy: it falls back to the stored text and says so.
-func (ws *WebServer) adGuardPreviewText(req *adguardPreviewRequest) (string, []string, error) {
+func (ws *WebServer) adGuardPreviewText(ctx context.Context, req *adguardPreviewRequest) (string, []string, error) {
 	warnings := []string{}
 	// Keep the exact bytes: the checksum returned with a preview has to match
 	// the text sent back with apply, including its trailing newline.
 	text := req.Text
 	if strings.TrimSpace(text) == "" && strings.TrimSpace(req.URL) != "" {
-		fetched, err := fetchAdGuardSource(context.Background(), req.URL)
+		fetched, err := fetchAdGuardSource(ctx, req.URL)
 		if err != nil {
 			if req.SourceID == "" {
 				return "", warnings, err
@@ -810,11 +811,18 @@ func adGuardPreviewNotices(groups []adguard.Group, patterns []adguard.Pattern, c
 }
 
 func (ws *WebServer) adGuardPreview(req adguardPreviewRequest) (map[string]any, error) {
+	return ws.adGuardPreviewContext(context.Background(), req)
+}
+
+// adGuardPreviewContext is adGuardPreview with the caller's request context, so
+// closing the review dialog cancels an in-flight source download instead of
+// letting it run to the size limit.
+func (ws *WebServer) adGuardPreviewContext(ctx context.Context, req adguardPreviewRequest) (map[string]any, error) {
 	if _, err := canonicalAdGuardDomainActions(req.DomainActions); err != nil {
 		return nil, err
 	}
 	req.ManagedUpstream = normalizeAdGuardUpstream(req.ManagedUpstream)
-	text, warnings, err := ws.adGuardPreviewText(&req)
+	text, warnings, err := ws.adGuardPreviewText(ctx, &req)
 	if err != nil {
 		return nil, err
 	}
@@ -946,11 +954,15 @@ func (ws *WebServer) adGuardPreview(req adguardPreviewRequest) (map[string]any, 
 }
 
 func (ws *WebServer) adGuardSyncPreview(body map[string]any) (map[string]any, error) {
+	return ws.adGuardSyncPreviewContext(context.Background(), body)
+}
+
+func (ws *WebServer) adGuardSyncPreviewContext(ctx context.Context, body map[string]any) (map[string]any, error) {
 	var req adguardPreviewRequest
 	if err := decodeAdGuardBody(body, &req); err != nil {
 		return nil, err
 	}
-	return ws.adGuardPreview(req)
+	return ws.adGuardPreviewContext(ctx, req)
 }
 
 func stringSliceContains(list []string, want string) bool {
@@ -1204,7 +1216,7 @@ func (ws *WebServer) adGuardSyncApply(r *http.Request, body map[string]any) (map
 		return nil, errors.New("preview checksum does not match the source text; preview again")
 	}
 
-	preview, err := ws.adGuardPreview(req.adguardPreviewRequest)
+	preview, err := ws.adGuardPreviewContext(r.Context(), req.adguardPreviewRequest)
 	if err != nil {
 		return nil, err
 	}

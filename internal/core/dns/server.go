@@ -294,7 +294,11 @@ func (s *Server) startPlainDNS() error {
 // protocol serving while the other is down.
 func (s *Server) startPlainDNSLocked(port int) error {
 	udpAddr := s.addr(port)
-	pc, err := net.ListenPacket("udp", udpAddr)
+	// Ask for a receive buffer large enough to absorb a query burst before the
+	// kernel starts dropping datagrams (which clients see as a ~1 s retransmit).
+	var listenCfg net.ListenConfig
+	listenCfg.Control = udpBufferControl
+	pc, err := listenCfg.ListenPacket(context.Background(), "udp", udpAddr)
 	if err != nil {
 		return fmt.Errorf("bind DNS UDP %s: %w", udpAddr, err)
 	}

@@ -277,8 +277,17 @@ func TestSSEReportsDroppedFramesToTheSubscriber(t *testing.T) {
 		client.frames <- "event: query\ndata: {}\n\n"
 	}
 	// The queue is full and the writer cannot drain it yet, so this push must be
-	// counted as dropped rather than silently discarded.
+	// counted as dropped rather than silently discarded. Encoding and fan-out now
+	// run on the stats service's encoder goroutine, so wait for it to observe the
+	// full per-client channel before releasing the writer.
 	s.PushQueryLog(database.QueryLogItem{Domain: "overflow.example"})
+	dropDeadline := time.Now().Add(3 * time.Second)
+	for client.dropped.Load() == 0 {
+		if time.Now().After(dropDeadline) {
+			t.Fatal("the encoder never accounted for the dropped frame")
+		}
+		time.Sleep(time.Millisecond)
+	}
 
 	close(rec.release)
 	deadline := time.Now().Add(3 * time.Second)

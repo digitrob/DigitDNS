@@ -202,6 +202,13 @@ class AppPreferences @Inject constructor(
         context.appPrefsDataStore.edit { prefs ->
             prefs[Keys.themeMode] = mode.name
         }
+        context.getSharedPreferences("digitdns_widget", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putString("app_theme_mode", mode.name)
+            .apply()
+        // A widget set to follow the app theme must repaint now, not on the next
+        // periodic update, so its look matches the change immediately.
+        runCatching { com.digitrob.digitdns.core.widget.WidgetPrefs.requestRerender(context) }
     }
 
     /** The chosen launcher icon. The package-manager alias state is applied separately. */
@@ -213,6 +220,10 @@ class AppPreferences @Inject constructor(
         context.appPrefsDataStore.edit { prefs ->
             prefs[Keys.iconStyle] = style.name
         }
+        context.getSharedPreferences("digitdns_widget", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putString("icon_style", style.name)
+            .apply()
     }
 
     /** The saved dashboard card order, defaulting to the panel's order. */

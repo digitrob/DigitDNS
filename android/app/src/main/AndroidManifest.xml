@@ -80,37 +80,38 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Home-screen widgets. The receivers must be declared for Android to offer
-             them in the widget picker; each provider owns one appwidget-provider XML
+        <!-- Home-screen widget. The receiver must be declared for Android to offer
+             it in the widget picker; the provider owns one appwidget-provider XML
              and renders through RemoteViews. -->
-        <receiver
-            android:name=".core.widget.DigitDnsStatusWidgetProvider"
-            android:exported="false"
-            android:label="@string/widget_status_description">
+        <activity
+            android:name=".core.widget.DigitDnsResolverWidgetConfigureActivity"
+            android:exported="true">
             <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
             </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/digitdns_status_widget_info" />
-        </receiver>
+        </activity>
 
         <receiver
-            android:name=".core.widget.DigitDnsToggleWidgetProvider"
+            android:name=".core.widget.DigitDnsResolverWidgetProvider"
             android:exported="false"
-            android:label="@string/widget_toggle_description">
+            android:label="@string/widget_resolver_description">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/digitdns_toggle_widget_info" />
+                android:resource="@xml/digitdns_resolver_widget_info" />
         </receiver>
 
         <!-- Holds the authenticated SSE stream open and raises a local notification
              on events (quota, expiry, security). This is the (a) transport chosen for
              v1: no FCM, no Google dependency, no server change — the same
              /api/v3/events/stream the panel subscribes to. -->
+        <service
+            android:name=".core.widget.ResolverWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
         <service
             android:name=".core.notifications.LiveStreamService"
             android:exported="false"

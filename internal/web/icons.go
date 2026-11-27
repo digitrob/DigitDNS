@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"digitdns/internal/httpx"
 )
 
 // iconifyBase is the icon repository's API root. It is a variable so the
@@ -144,6 +146,8 @@ func fetchIconSearch(parent context.Context, q string) ([]string, error) {
 // requestIconSearch asks the repository for one term and answers only ids that
 // match the shape an Iconify id has; arbitrary upstream text is dropped.
 func requestIconSearch(ctx context.Context, term string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 7*time.Second)
+	defer cancel()
 	endpoint := iconifyBase + "/search?query=" + url.QueryEscape(term) +
 		"&limit=" + strconv.Itoa(iconSearchLimit*2) +
 		"&prefixes=logos,flat-color-icons,twemoji,mdi,simple-icons"
@@ -152,7 +156,7 @@ func requestIconSearch(ctx context.Context, term string) ([]string, error) {
 		return nil, err
 	}
 
-	resp, err := (&http.Client{Timeout: 7 * time.Second}).Do(req)
+	resp, err := httpx.Outbound.Do(req)
 	if err != nil {
 		return nil, err
 	}

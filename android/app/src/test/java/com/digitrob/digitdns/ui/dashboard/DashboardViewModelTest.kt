@@ -13,7 +13,6 @@ import androidx.lifecycle.viewModelScope
 import com.digitrob.digitdns.core.network.LiveStats
 import com.digitrob.digitdns.core.network.StatsSeries
 import com.digitrob.digitdns.core.network.StatsSummary
-import com.digitrob.digitdns.core.widget.WidgetPublisher
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -86,7 +85,6 @@ class DashboardViewModelTest {
         val historyRepository = mockk<HistoryRepository> {
             coEvery { load(any()) } returns HistorySnapshot(StatsSummary(), StatsSeries(), emptyMap())
         }
-        val widgetPublisher = mockk<WidgetPublisher>(relaxed = true)
 
         val viewModel = DashboardViewModel(
             statsRepository = statsRepository,
@@ -95,7 +93,6 @@ class DashboardViewModelTest {
             settingsRepository = settingsRepository,
             liveStream = liveStream,
             appPreferences = appPreferences,
-            widgetPublisher = widgetPublisher,
             connectionStore = connectionStore,
         )
 

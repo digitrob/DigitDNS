@@ -43,7 +43,7 @@ If you have looked at Pi-hole or AdGuard Home, DigitDNS covers the same ground �
 It is a fork of [HyperDNS](https://github.com/IzumiRain/HyperDNS) by HyperRAIN, maintained by [Digitrob](https://github.com/digitrob), free and open source under AGPL-3.0. Use it only on servers and networks you are allowed to operate.
 
 > [!NOTE]
-> **v5.12.2 is out.** A Domains-page release: changing a rule's wildcard scope now **keeps its service label, relay and resolution override**, adding a domain that an existing rule or wildcard already covers is **flagged and skipped by default** (the Add box explains why, Bulk import reports it), the **Custom Blocklist folds into its own selectable group** so a label can be applied to just those domains, and every domain in **Domains** and the **Live Log** now has a **copy button**. The Android app gets the same scope, add-coverage and blocklist-selection behaviour. See the [changelog](docs/CHANGELOG.md) for every release.
+> **v5.13.0 is out.** A performance-and-polish release: the two home-screen widgets become **one Resolver widget** that lists the pool (inline transport, latency, FASTEST badge), fits **four resolvers** at the default size, and carries its own theme/opacity/text-size settings under **Settings → App → Widget Settings**; the **Domains search field stops moving** when domains are selected; and the resolver's hot paths lose a formatting allocation, a shard-wide eviction scan, a duplicate cache write and a serialised log write. Two correctness bugs (loopback rate limiting on plain DNS, truncated answers reaching the cache) and an IPv6 data race are fixed. See the [changelog](docs/CHANGELOG.md) for every release.
 
 ## Why people use it
 
@@ -161,7 +161,7 @@ The optional 90-day aggregate store answers "what did this server see last week?
 
 ### The Android app
 
-The Android app is a native companion with the same control surface as the panel, plus the subscriber client area. It has its own version line (`android-v5.12.2`) and is side-loaded; it is not on Play.
+The Android app is a native companion with the same control surface as the panel, plus the subscriber client area. It has its own version line (`android-v5.13.0`) and is side-loaded; it is not on Play.
 
 - **Admin parity:** dashboard, Domains and wildcards, Users and quotas, Live Log, System Log, Egress Options, upstream resolvers and policies, encrypted transports, DNSSEC, proxy leak protection, IPv6, traffic history, ad blocking, relay agents, diagnostics, certificates, settings and server switching.
 - **Client area:** account status, IP registration, traffic and expiry, every DNS endpoint, the setup guide for your device and saved subscriptions.
@@ -242,7 +242,7 @@ The subscriber portal is a private link with the account status, every DNS endpo
 You need a Linux server (1 vCPU / 1 GB is enough for personal use), root access, and one hostname whose **A record points at the server**. The panel is HTTPS-only and obtains its own Let's Encrypt certificate, so the domain is not optional for a normal install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.12.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.13.0/scripts/install.sh | sudo bash
 ```
 
 The installer sets up the service, firewall, certificate, admin password and a random panel port/path, then prints the login URL. Open it, sign in, and point a device at the server's IP on port 53 (UDP and TCP).
@@ -291,7 +291,7 @@ An agent needs a public IPv4, inbound TCP **80/443**, outbound HTTPS to the hub,
 Interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.12.2/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.13.0/scripts/install.sh | sudo bash
 ```
 
 Non-interactive:
@@ -361,7 +361,7 @@ docker logs -f digitdns
 | Tag | Meaning |
 | :--- | :--- |
 | `latest` | Latest stable release |
-| `5.12.2` | Current release |
+| `5.13.0` | Current release |
 | `edge` | Nightly build from `main` — not for production |
 
 Every release also has its own immutable `vX.Y.Z` tag. See the [releases page](https://github.com/digitrob/DigitDNS/releases) for the full list.
@@ -388,7 +388,7 @@ Release binaries are Linux amd64 and arm64. Checksums are published as `checksum
 
 ```bash
 curl -fsSL -o digitdns \
-  https://github.com/digitrob/DigitDNS/releases/download/v5.12.2/digitdns-linux-amd64
+  https://github.com/digitrob/DigitDNS/releases/download/v5.13.0/digitdns-linux-amd64
 chmod +x digitdns
 sudo install -m 0755 digitdns /opt/digitdns/digitdns
 ```

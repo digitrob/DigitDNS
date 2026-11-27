@@ -238,6 +238,10 @@ func (i *Index) MatchRewriteNormalized(d string) (target string, ok bool) {
 	if i == nil || d == "" {
 		return "", false
 	}
+	// $dnsrewrite rules are rare; skip the suffix walk when none were compiled.
+	if len(i.rewriteExact) == 0 && len(i.rewriteSuffix) == 0 {
+		return "", false
+	}
 	if target, ok := i.rewriteExact[d]; ok {
 		return target, true
 	}

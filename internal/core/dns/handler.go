@@ -93,13 +93,13 @@ type Handler struct {
 	// what stops ten devices opening the same cold site from sending ten
 	// upstream queries.
 	inflightMu sync.Mutex
-	inflight   map[string]*inflightQuery
+	inflight   map[coalesceKeyT]*inflightQuery
 	// Sibling prefetch: after a real resolution, warm the other record types a
 	// browser asks for. The semaphore bounds the extra upstream traffic; the
 	// in-flight set stops two clients asking for the same cold name from
 	// launching the same prefetch twice.
 	prefetchMu       sync.Mutex
-	prefetchInflight map[string]bool
+	prefetchInflight map[coalesceKeyT]bool
 	prefetchSem      chan struct{}
 	// queryLog is the optional persistent query history. It is nil unless the
 	// operator enabled it; Push never blocks.
@@ -109,13 +109,14 @@ type Handler struct {
 	// so checking the function pointer alone used to make every cache hit render
 	// and stringify its whole answer section for a Push that immediately returned.
 	queryLogWantsAnswers func() bool
-	publicIP             string
-	publicIPv6           string
+	publicIP string
 	// Parsed forms of the two addresses above. They are built when the operator
 	// sets the address and reused for every self-name and proxied answer, so the
-	// query path never re-parses the same literal.
+	// query path never re-parses the same literal. The IPv6 form is written by the
+	// settings API while listeners are serving, so it sits behind an atomic
+	// pointer; the IPv4 form is startup-only.
 	publicIPv4     net.IP
-	publicIPv6Addr net.IP
+	publicIPv6Addr atomic.Pointer[net.IP]
 	// relayLookup resolves a proxied name to a geo agent's public address. It is
 	// nil on installs without agents, so the local relay path is unchanged.
 	relayLookup RelayLookup
@@ -176,8 +177,8 @@ func NewHandler(
 		matcher:          m,
 		upstreams:        u,
 		telemetry:        t,
-		inflight:         make(map[string]*inflightQuery),
-		prefetchInflight: make(map[string]bool),
+		inflight:         make(map[coalesceKeyT]*inflightQuery),
+		prefetchInflight: make(map[coalesceKeyT]bool),
 		prefetchSem:      make(chan struct{}, 4),
 		limiter:          newRateLimiter(defaultRateLimitQPS),
 	}
@@ -213,6 +214,15 @@ type inflightQuery struct {
 	completedAt time.Time
 }
 
+// coalesceKeyT identifies one in-flight lookup. It is a comparable struct so
+// the cold-query path does not format a string (and allocate) per miss.
+type coalesceKeyT struct {
+	name   string
+	qtype  uint16
+	qclass uint16
+	flags  uint8
+}
+
 const (
 	// coalesceGrace holds a completed lookup briefly after the upstream answer
 	// lands. The handler writes the answer to the cache only after this function
@@ -227,7 +237,7 @@ const (
 // exchangeCoalesced shares one upstream lookup between concurrent identical
 // misses. The key includes the client's EDNS/DO/CD policy because those change
 // the question sent upstream and the validation path.
-func (h *Handler) exchangeCoalesced(req *dns.Msg, domain, key string) (*dns.Msg, string, error) {
+func (h *Handler) exchangeCoalesced(req *dns.Msg, domain string, key coalesceKeyT) (*dns.Msg, string, bool, error) {
 	h.inflightMu.Lock()
 	if call, ok := h.inflight[key]; ok {
 		if call.completedAt.IsZero() {
@@ -235,23 +245,37 @@ func (h *Handler) exchangeCoalesced(req *dns.Msg, domain, key string) (*dns.Msg,
 			h.upstreams.RecordCoalesced()
 			<-call.done
 			if call.err != nil {
-				return nil, "", call.err
+				return nil, "", false, call.err
 			}
-			return coalescedCopy(call, req), call.upstream, nil
+			return coalescedCopy(call, req), call.upstream, false, nil
 		}
 		if time.Since(call.completedAt) < coalesceGrace {
 			h.inflightMu.Unlock()
 			h.upstreams.RecordCoalesced()
 			if call.err != nil {
-				return nil, "", call.err
+				return nil, "", false, call.err
 			}
-			return coalescedCopy(call, req), call.upstream, nil
+			return coalescedCopy(call, req), call.upstream, false, nil
 		}
 		delete(h.inflight, key)
 	}
 	call := &inflightQuery{done: make(chan struct{})}
 	h.inflight[key] = call
 	h.inflightMu.Unlock()
+
+	// The leader publishes the result even if the exchange panics: the handler
+	// boundary recovers the panic for this client, but every waiter blocked on
+	// <-call.done would otherwise wait forever and leak the map entry.
+	defer func() {
+		if r := recover(); r != nil {
+			call.err = fmt.Errorf("coalesced lookup panicked: %v", r)
+			h.inflightMu.Lock()
+			call.completedAt = time.Now()
+			close(call.done)
+			h.inflightMu.Unlock()
+			panic(r)
+		}
+	}()
 
 	resp, _, upstream, err := h.upstreams.ExchangeFor(req, domain)
 	if resp != nil {
@@ -269,7 +293,7 @@ func (h *Handler) exchangeCoalesced(req *dns.Msg, domain, key string) (*dns.Msg,
 		h.sweepCoalescedLocked(time.Now())
 	}
 	h.inflightMu.Unlock()
-	return resp, upstream, err
+	return resp, upstream, true, err
 }
 
 func coalescedCopy(call *inflightQuery, req *dns.Msg) *dns.Msg {
@@ -454,7 +478,7 @@ func (h *Handler) prefetchSiblings(q dns.Question, opts cache.QueryOptions) {
 		h.prefetchInflight[key] = true
 		h.prefetchMu.Unlock()
 
-		go func(question dns.Question, key string) {
+		go func(question dns.Question, key coalesceKeyT) {
 			defer safego.Recover("dns.prefetch")
 			defer func() {
 				<-h.prefetchSem
@@ -504,8 +528,18 @@ func cacheOptions(r *dns.Msg) cache.QueryOptions {
 // coalesceKey identifies a miss that another client is already resolving. The
 // name is already normalized; the flags are part of the key because they change
 // what is sent upstream and how the answer is validated.
-func coalesceKey(name string, q dns.Question, opts cache.QueryOptions) string {
-	return fmt.Sprintf("%s|%d|%d|%t|%t|%t", name, q.Qtype, q.Qclass, opts.EDNS, opts.DO, opts.CD)
+func coalesceKey(name string, q dns.Question, opts cache.QueryOptions) coalesceKeyT {
+	var flags uint8
+	if opts.EDNS {
+		flags |= 1
+	}
+	if opts.DO {
+		flags |= 2
+	}
+	if opts.CD {
+		flags |= 4
+	}
+	return coalesceKeyT{name: name, qtype: q.Qtype, qclass: q.Qclass, flags: flags}
 }
 
 // SetRateLimit replaces the per-source query limit. A value of zero or less turns
@@ -561,19 +595,16 @@ func (h *Handler) SetPublicIP(ip string) {
 func (h *Handler) SetPublicIPv6(ip string) {
 	ip = strings.TrimSpace(ip)
 	if ip == "" {
-		h.publicIPv6 = ""
-		h.publicIPv6Addr = nil
+		h.publicIPv6Addr.Store(nil)
 		return
 	}
 	parsed, ok := netutil.ParsePublicIPv6(ip)
 	if !ok {
 		log.Printf("[DNS] Warning: public IPv6 %q is not a usable global IPv6 address; proxied AAAA stays sunk (IPv4 forced)", ip)
-		h.publicIPv6 = ""
-		h.publicIPv6Addr = nil
+		h.publicIPv6Addr.Store(nil)
 		return
 	}
-	h.publicIPv6 = parsed.String()
-	h.publicIPv6Addr = parsed
+	h.publicIPv6Addr.Store(&parsed)
 }
 
 // SetProxyIPv6Enabled chooses whether proxied names may publish the server's
@@ -690,19 +721,20 @@ func (h *Handler) serve(w dns.ResponseWriter, r *dns.Msg, proto string) {
 		}
 	}()
 	remoteAddr := w.RemoteAddr()
-	// One formatting of the peer for both the policy lookup and the log item;
-	// the IP itself comes straight out of the address struct where possible.
-	peerText := remoteAddr.String()
-	clientIP := peerIP(remoteAddr)
+	// The limiter's loopback exemption compares the bare transport peer: the
+	// remoteAddr.String() form carries host:port, which isLoopback cannot parse,
+	// so passing it here silently disabled the exemption on UDP/TCP/DoT.
+	peerAddr := peerIP(remoteAddr)
+	clientIP := peerAddr
 	if clientIP == "" {
-		clientIP = peerText
+		clientIP = remoteAddr.String()
 	}
 	if proto == "" {
 		proto = remoteAddr.Network()
 	}
 	proto = normalizeProto(proto)
 
-	resp := h.ProcessQuery(r, clientIP, proto, peerText)
+	resp := h.ProcessQuery(r, clientIP, proto, peerAddr)
 	if resp == nil {
 		return
 	}
@@ -1019,12 +1051,13 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	if (q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA) && h.isSelfName(domain) {
 		m := new(dns.Msg)
 		m.SetReply(r)
+		v6 := h.publicIPv6Addr.Load()
 		if q.Qtype == dns.TypeA && h.publicIPv4 != nil {
 			if rr := makeARecord(q.Name, 60, h.publicIPv4); rr != nil {
 				m.Answer = append(m.Answer, rr)
 			}
-		} else if q.Qtype == dns.TypeAAAA && h.publicIPv6Addr != nil && h.proxyIPv6Enabled.Load() {
-			if rr := makeAAAARecord(q.Name, 60, h.publicIPv6Addr); rr != nil {
+		} else if q.Qtype == dns.TypeAAAA && v6 != nil && h.proxyIPv6Enabled.Load() {
+			if rr := makeAAAARecord(q.Name, 60, *v6); rr != nil {
 				m.Answer = append(m.Answer, rr)
 			}
 		}
@@ -1094,7 +1127,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 
 	// 3. Custom record overrides outrank every other rule. Both address
 	if !engineOff && !manualHit {
-		if customVal, ok := h.matcher.GetCustomRecord(domain); ok {
+		if customVal, ok := h.matcher.GetCustomRecordLower(domain); ok {
 			customVal = strings.TrimSpace(customVal)
 			ip := net.ParseIP(customVal)
 			if ip != nil && (q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA) {
@@ -1212,14 +1245,19 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		// origin's real address. Egress targets are different: the client still
 		// reaches the hub, so the hub's own address is published and only the
 		// outbound dial changes. A fail-closed egress refuses to fall back.
-		target := RelayTarget{Kind: "local", IPv4: h.publicIPv4, IPv6: h.publicIPv6Addr}
+		v6 := h.publicIPv6Addr.Load()
+		var v6Addr net.IP
+		if v6 != nil {
+			v6Addr = *v6
+		}
+		target := RelayTarget{Kind: "local", IPv4: h.publicIPv4, IPv6: v6Addr}
 		if h.relayLookup != nil {
 			target = h.relayLookup(domain, clientIP)
 			if target.Kind == "" {
 				target.Kind = "local"
 			}
 		}
-		targetIPv4, targetIPv6 := h.publicIPv4, h.publicIPv6Addr
+		targetIPv4, targetIPv6 := h.publicIPv4, v6Addr
 		if target.Kind == "agent" {
 			targetIPv4, targetIPv6 = target.IPv4, target.IPv6
 		}
@@ -1364,7 +1402,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		upstreamQuery = r.Copy()
 		ensureDNSSECRequest(upstreamQuery)
 	}
-	resp, upstream, err := h.exchangeCoalesced(upstreamQuery, domain, coalesceKey(qName, q, cacheOpts))
+	resp, upstream, leader, err := h.exchangeCoalesced(upstreamQuery, domain, coalesceKey(qName, q, cacheOpts))
 	if err != nil {
 		log.Printf("[DNS] Upstream query error for %s: %v", domain, err)
 		m := new(dns.Msg)
@@ -1398,7 +1436,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 	// served the same partial to every client for a full TTL, and a TC=1 over
 	// a connection transport is a protocol violation. The racer now refuses to
 	// hand one back as a winner; this gate is the second fence.
-	if h.cache != nil && resp != nil && !resp.Truncated && (resp.Rcode == dns.RcodeSuccess || resp.Rcode == dns.RcodeNameError) {
+	if h.cache != nil && resp != nil && leader && !resp.Truncated && (resp.Rcode == dns.RcodeSuccess || resp.Rcode == dns.RcodeNameError) {
 		h.cache.PutWithOptions(q, resp, cacheOpts)
 		// The cached copy is clamped to the configured TTL window; clamp the
 		// answer this client gets too, so the first requester is not the one

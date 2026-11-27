@@ -57,6 +57,11 @@ type StatsService struct {
 	// to skip JSON encoding and fan-out when no dashboard is watching; the map
 	// itself is only consulted when the count says there is someone to send to.
 	sseSubscribers atomic.Int64
+	// sseQueue decouples live-log JSON encoding from the resolver goroutine.
+	// PushQueryLog hands the item over and returns; the encoder goroutine
+	// marshals once and fans the frame out. It is bounded and lossy like the
+	// old per-client channels, and the ring still holds the last hundred.
+	sseQueue chan database.QueryLogItem
 	// aggregator is optional: a test harness or a build with stats.db disabled
 	// simply leaves it nil. It is set once during startup, before listeners
 	// accept, but an atomic pointer keeps the read in PushQueryLog safe against
@@ -161,9 +166,11 @@ func NewStatsService(
 		getCacheStats: cacheStats,
 		numCPU:        runtime.NumCPU(),
 		stop:          make(chan struct{}),
+		sseQueue:      make(chan database.QueryLogItem, 512),
 	}
 
 	go s.telemetryLoop()
+	go s.sseEncodeLoop()
 	return s
 }
 
@@ -283,19 +290,40 @@ func (s *StatsService) PushQueryLog(item database.QueryLogItem) {
 		return
 	}
 
-	// Broadcast to SSE clients non-blocking. The event frame is marshalled
-	// ONCE here (v2.2.0 perf): the per-subscriber loop used to hand the struct
-	// to each connection's goroutine, which each marshalled it again — N
-	// dashboards meant N JSON encodes of the same query on the resolver's
-	// single core. The channel now carries the finished frame and the writer
-	// side prints it verbatim.
-	frame := ""
-	if data, err := json.Marshal(item); err == nil {
-		frame = "event: query\ndata: " + string(data) + "\n\n"
+	// Hand the item to the encoder goroutine. JSON encoding used to run on the
+	// resolver goroutine for every query whenever any dashboard was watching;
+	// the queue keeps that cost off the packet path. It is deliberately lossy:
+	// a full queue drops this frame, exactly as a full per-client channel did,
+	// and the ring still holds the last hundred for a reconnect.
+	select {
+	case s.sseQueue <- item:
+	default:
 	}
-	if frame == "" {
+}
+
+// sseEncodeLoop marshals queued log items once and fans the frame out to every
+// live-log subscriber. It runs on its own goroutine so the resolver never pays
+// for JSON encoding or a slow subscriber's channel.
+func (s *StatsService) sseEncodeLoop() {
+	for {
+		select {
+		case <-s.stop:
+			return
+		case item := <-s.sseQueue:
+			s.broadcastQueryFrame(item)
+		}
+	}
+}
+
+func (s *StatsService) broadcastQueryFrame(item database.QueryLogItem) {
+	if s.sseSubscribers.Load() == 0 {
 		return
 	}
+	data, err := json.Marshal(item)
+	if err != nil {
+		return
+	}
+	frame := "event: query\ndata: " + string(data) + "\n\n"
 	s.sseMu.RLock()
 	for client := range s.sseClients {
 		select {

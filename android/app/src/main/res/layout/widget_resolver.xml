@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_resolver_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="8dp"
+    android:background="@drawable/widget_background_dark">
+
+    <LinearLayout
+        android:id="@+id/widget_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/widget_updated"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="end"
+            android:textSize="9sp"
+            android:maxLines="1" />
+
+        <ProgressBar
+            android:id="@+id/widget_refresh_spinner"
+            style="@android:style/Widget.ProgressBar.Small"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginStart="4dp"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/widget_refresh"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="@string/widget_refresh"
+            android:src="@drawable/widget_ic_refresh" />
+
+        <ImageView
+            android:id="@+id/widget_settings"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="@string/widget_config_title"
+            android:src="@drawable/widget_ic_settings" />
+    </LinearLayout>
+
+    <ListView
+        android:id="@+id/widget_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="2dp"
+        android:divider="@android:color/transparent"
+        android:dividerHeight="1dp" />
+
+    <TextView
+        android:id="@+id/widget_empty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="@string/widget_resolvers_empty"
+        android:textSize="11sp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/widget_footer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/widget_filtering"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/widget_toggle_off"
+            android:textStyle="bold"
+            android:textSize="11sp"
+            android:maxLines="1"
+            android:padding="3dp" />
+
+        <ImageView
+            android:id="@+id/widget_open"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:padding="4dp"
+            android:contentDescription="@string/widget_toggle_open"
+            android:src="@mipmap/ic_launcher" />
+    </LinearLayout>
+
+</LinearLayout>

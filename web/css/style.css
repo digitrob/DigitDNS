@@ -1887,12 +1887,15 @@ input:checked + .slider:before {
   min-width: 7rem;
 }
 #proxied-selected-count {
-  min-width: 5rem;
+  /* Reserve the widest label ("No domains selected", ~7rem at 11px) so the
+   * flex search box beside it never resizes when the count changes. min-width
+   * alone let the slot grow to fit the long label and shrink back to the floor
+   * on the first tick, which moved the search field and the bulk buttons. */
+  flex: 0 0 auto;
+  min-width: 8.5rem;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-.proxied-bulk-bar {
-  min-height: 1.75rem;
-  margin-inline-start: auto;
 }
 .proxied-bulk-btn:disabled {
   opacity: var(--disabled-opacity);

@@ -1671,9 +1671,6 @@ function dashResizeRect(cfg, edge, dx, dy) {
   return { x, y, w, h };
 }
 
-function dashCloneLayout(layout) {
-  return JSON.parse(JSON.stringify(layout));
-}
 // DASH_LAYOUT_PURE_END
 
 let dashLayout = { version: DASH_LAYOUT_VERSION, grids: {} };
@@ -3811,7 +3808,14 @@ function updateProxiedBulkBar() {
   const pausable = selectedRows.length > 0 &&
     selectedRows.every((r) => r.status === 'proxy' || r.status === 'paused');
   const countEl = document.getElementById('proxied-selected-count');
-  if (countEl) countEl.textContent = n === 0 ? 'No domains selected' : `${n} selected`;
+  if (countEl) {
+    // Compare before writing: the count is re-applied after every render, and
+    // touching textContent on an unchanged string still invalidates layout.
+    const text = n === 0 ? 'No domains selected' : `${n} selected`;
+    if (countEl.textContent !== text) countEl.textContent = text;
+    countEl.title = text;
+    countEl.setAttribute('aria-label', text);
+  }
   const pause = document.getElementById('proxied-bulk-pause');
   const resume = document.getElementById('proxied-bulk-resume');
   const remove = document.getElementById('proxied-bulk-remove');
@@ -4634,12 +4638,6 @@ function transportExcludes(address, transport) {
   if (mode === 'encrypted') return !upstreamIsEncrypted(address);
   if (mode === 'regular') return upstreamIsEncrypted(address);
   return false;
-}
-
-function transportLabel(mode) {
-  if (mode === 'encrypted') return 'Encrypted Only';
-  if (mode === 'regular') return 'Regular DNS';
-  return 'Any Transport';
 }
 
 // activePin is the Default upstream only when the transport allows it. The pool
@@ -6204,6 +6202,7 @@ function startStatsPolling() {
       // merged over numbers from before the tab was backgrounded.
       invalidateStatsSnapshot();
       stopAgentPolling();
+      stopSystemLogPolling();
       // A hidden tab cannot show the log, but it still costs a daemon goroutine,
       // its own EventSource and a polling timer. Suspend the stream here and
       // reopen it on return through the normal one-time ticket path; the server's
@@ -8922,7 +8921,6 @@ function closeStreamActionMenu() {
 // Stream info tooltip. The row object is stashed on the <tr> itself (see
 // newQueryRow), so the tooltip reads the exact query that produced the row without
 // a parallel id→query map that would have to be pruned in step with the buffer.
-let streamInfoAnchor = null;
 const QTYPE_NAMES = {
   1: 'A', 2: 'NS', 5: 'CNAME', 6: 'SOA', 12: 'PTR', 15: 'MX', 16: 'TXT',
   28: 'AAAA', 33: 'SRV', 43: 'DS', 46: 'RRSIG', 48: 'DNSKEY', 64: 'SVCB', 65: 'HTTPS', 255: 'ANY',
@@ -10972,9 +10970,6 @@ function adGuardSyncTextValue(id) {
   return document.getElementById(id)?.value || '';
 }
 
-function adGuardSyncChecked(id) {
-  return !!document.getElementById(id)?.checked;
-}
 
 // Filter chips use aria-pressed instead of checkbox ticks. "Already in DigitDNS"
 // is active when covered rows are shown, so the visible chip reads as what you see.
@@ -11633,9 +11628,14 @@ function initAdGuardSync() {
     const status = event.target.closest('[data-adguard-bulk-status]');
     if (status) adGuardSyncBulkStatus(status.dataset.adguardBulkStatus);
   });
-  document.getElementById('adguard-sync-filter')?.addEventListener('input', (event) => {
-    adGuardSyncFilter = event.target.value || '';
+  // A pasted upstream list can hold thousands of rows; rebuilding the preview
+  // table on every keystroke blocked the main thread. Same debounce as Domains.
+  const adGuardFilterDebounced = debounce((value) => {
+    adGuardSyncFilter = value || '';
     if (adGuardSyncPreview) renderAdGuardSyncPreview(adGuardSyncPreview);
+  }, 120);
+  document.getElementById('adguard-sync-filter')?.addEventListener('input', (event) => {
+    adGuardFilterDebounced(event.target.value);
   });
   document.getElementById('adguard-sync-selected-only')?.addEventListener('click', () => {
     adGuardSyncSetFilterChips(!adGuardSyncChipPressed('adguard-sync-selected-only'), false);
@@ -11962,7 +11962,9 @@ function renderServices() {
   });
   renderBulkServiceOptions();
   renderBulkEgressOptions();
-  safeFeatherReplace();
+  // Scope the icon pass to the panel that was just rewritten: a document-wide
+  // A bare icon replace call re-parses every icon on the page for each row render.
+  safeFeatherReplace(list);
   requestAnimationFrame(sizeProxiedScroll);
 }
 
@@ -12391,7 +12393,9 @@ async function loadAgents() {
     renderAgents();
     renderServiceRelayControl();
     updateAgentSummary();
-    if (currentConfig && document.getElementById('custom-proxied-rows')) renderProxiedList();
+    // The Domains table can be hidden while the Agents poll runs; rebuilding it
+    // there re-sorts the whole list and repaints a table nobody can see.
+    refreshProxiedListIfVisible();
   } catch (e) {
     if (list) list.innerHTML = `<p class="text-xs text-red-400 py-2">Could not load agents: ${escapeHTML(e.message)}</p>`;
   }
@@ -13408,8 +13412,6 @@ function handleEgressListClick(e) {
 // configures the agent credential and shows the synced catalogue; the actual
 // policy is applied by the server to the same SNI listeners local proxying uses.
 
-let relayModeView = null;
-
 let relayHubsCache = [];
 let relayGlobalEnabled = true;
 
@@ -13840,6 +13842,10 @@ function switchTab(target, updateUrl = true, loadData = true) {
       } else {
         stopAgentPolling();
       }
+      // The fallback only wakes for the Logs tab; leaving it armed meant a 2 s
+      // timer firing forever after the operator had moved on. Returning to Logs
+      // restarts it through the branch above.
+      if (target !== 'stream' && streamFallbackTimer) stopStreamFallback();
       if (target === 'filters') {
         loadFiltering();
       }
@@ -17350,24 +17356,6 @@ function initEventListeners() {
         // the row silently reappears on the next refresh.
         renderConfig(currentConfig);
         if (!await saveRules()) loadConfig();
-      }
-    } else if (btn.classList.contains('proxied-pause-btn')) {
-      const val = btn.dataset.val;
-      if (currentConfig) {
-        currentConfig.rules.custom_proxied = currentConfig.rules.custom_proxied.filter(x => x !== val);
-        if (!currentConfig.rules.custom_proxied_disabled) currentConfig.rules.custom_proxied_disabled = [];
-        if (!currentConfig.rules.custom_proxied_disabled.includes(val)) currentConfig.rules.custom_proxied_disabled.push(val);
-        saveRules();
-        renderConfig(currentConfig);
-      }
-    } else if (btn.classList.contains('proxied-resume-btn')) {
-      const val = btn.dataset.val;
-      if (currentConfig) {
-        if (!currentConfig.rules.custom_proxied_disabled) currentConfig.rules.custom_proxied_disabled = [];
-        currentConfig.rules.custom_proxied_disabled = currentConfig.rules.custom_proxied_disabled.filter(x => x !== val);
-        if (!currentConfig.rules.custom_proxied.includes(val)) currentConfig.rules.custom_proxied.push(val);
-        saveRules();
-        renderConfig(currentConfig);
       }
     } else if (btn.classList.contains('remove-blocked')) {
       const val = btn.dataset.val;

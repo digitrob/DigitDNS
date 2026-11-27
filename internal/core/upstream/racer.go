@@ -113,6 +113,10 @@ type UpstreamPool struct {
 	// when a measurement does, so it is rebuilt at most once per second.
 	orderMu   sync.Mutex
 	orderView atomic.Pointer[latencyOrder]
+	// orderInvalidatedAt throttles invalidation: a lossy upstream used to drop
+	// the order on every error, and each drop forces the next query to re-sort
+	// the whole pool under orderMu.
+	orderInvalidatedAt atomic.Int64
 
 	// openCircuits is a fast-path count: zero means no candidate can be skipped,
 	// so the query path returns the snapshot list without touching any stat lock.
@@ -122,8 +126,13 @@ type UpstreamPool struct {
 	// QUIC connection per endpoint and opens a stream per query.
 	dotPoolsMu sync.Mutex
 	dotPools   map[string]*dotConnPool
-	doqMu      sync.Mutex
-	doqConns   map[string]*doqConn
+	// Plain TCP reuse. The truncation fallback used to dial and close a socket
+	// per retry; an idle connection removes that handshake from the common
+	// large-answer path. UDP deliberately stays per-query (see queryOne).
+	tcpPoolMu sync.Mutex
+	tcpPool   map[string][]*dns.Conn
+	doqMu     sync.Mutex
+	doqConns  map[string]*doqConn
 }
 
 // latencyOrder is an immutable snapshot of the pool ordered by measured latency.
@@ -812,6 +821,7 @@ func NewUpstreamPoolWithBootstrap(upstreams []string, timeout time.Duration, rac
 		ecsClientIP: parseECSClientIP(ecsIP),
 		stats:       make(map[string]*upstreamStatInternal),
 		dotPools:    make(map[string]*dotConnPool),
+		tcpPool:     make(map[string][]*dns.Conn),
 		doqConns:    make(map[string]*doqConn),
 		udpClient: &dns.Client{
 			Net:     "udp",
@@ -880,7 +890,16 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 	}
 
 	stat.mu.Lock()
-	defer stat.mu.Unlock()
+	// Circuit-transition lines are buffered and emitted after the unlock: a
+	// blocked stderr write must not hold the per-upstream lock that every
+	// concurrent query recording stats for this resolver also needs.
+	var transitions []string
+	defer func() {
+		stat.mu.Unlock()
+		for _, line := range transitions {
+			log.Print(line)
+		}
+	}()
 
 	now := time.Now()
 	stat.lastUpdated = now
@@ -904,7 +923,7 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 			// the Adaptive choice for the whole cooldown.
 			if stat.openUntil.Swap(0) != 0 {
 				p.openCircuits.Add(-1)
-				log.Printf("[Upstream] Circuit closed for %s after a successful benchmark probe", addr)
+				transitions = append(transitions, fmt.Sprintf("[Upstream] Circuit closed for %s after a successful benchmark probe", addr))
 			}
 			// A successful probe proves the resolver is reachable, so it should
 			// not stay demoted behind healthy resolvers after one bad query or
@@ -912,7 +931,7 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 			if stat.consecutiveFailures > 0 || stat.hedgeLosses > 0 {
 				stat.consecutiveFailures = 0
 				stat.hedgeLosses = 0
-				p.orderView.Store(nil)
+				p.invalidateOrder()
 			}
 			break
 		}
@@ -927,11 +946,11 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 		if hadFailures {
 			// It is healthy again; let the query path rank it normally instead
 			// of keeping it behind the pool for the rest of the cached order.
-			p.orderView.Store(nil)
+			p.invalidateOrder()
 		}
 		if stat.openUntil.Swap(0) != 0 {
 			p.openCircuits.Add(-1)
-			log.Printf("[Upstream] Circuit closed for %s after a successful probe", addr)
+			transitions = append(transitions, fmt.Sprintf("[Upstream] Circuit closed for %s after a successful probe", addr))
 		}
 	case statPolicyRcode:
 		// The resolver answered. A filtered REFUSED is worth showing, but it is
@@ -950,11 +969,11 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 		stat.consecutiveFailures = 0
 		stat.hedgeLosses = 0
 		if hadFailures {
-			p.orderView.Store(nil)
+			p.invalidateOrder()
 		}
 		if stat.openUntil.Swap(0) != 0 {
 			p.openCircuits.Add(-1)
-			log.Printf("[Upstream] Circuit closed for %s after a policy response", addr)
+			transitions = append(transitions, fmt.Sprintf("[Upstream] Circuit closed for %s after a policy response", addr))
 		}
 		stat.lastError = reason
 		stat.lastErrorAt = now
@@ -975,7 +994,7 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 		}
 		// Drop the cached latency order so the next query starts with a healthy
 		// resolver instead of the one that just timed out.
-		p.orderView.Store(nil)
+		p.invalidateOrder()
 		stat.lastError = reason
 		stat.lastErrorAt = now
 		if stat.consecutiveFailures >= circuitFailureThreshold {
@@ -986,10 +1005,10 @@ func (p *UpstreamPool) recordStat(addr string, rtt time.Duration, outcome statOu
 			switch {
 			case !wasOpen:
 				p.openCircuits.Add(1)
-				log.Printf("[Upstream] Circuit open for %s after %d consecutive failures: %s",
-					addr, stat.consecutiveFailures, reason)
+				transitions = append(transitions, fmt.Sprintf("[Upstream] Circuit open for %s after %d consecutive failures: %s",
+					addr, stat.consecutiveFailures, reason))
 			case halfOpen:
-				log.Printf("[Upstream] Circuit re-opened for %s after a failed probe: %s", addr, reason)
+				transitions = append(transitions, fmt.Sprintf("[Upstream] Circuit re-opened for %s after a failed probe: %s", addr, reason))
 			}
 		}
 	}
@@ -1743,6 +1762,20 @@ func (p *UpstreamPool) orderLatencies() map[string]orderMetric {
 	return out
 }
 
+// invalidateOrder drops the cached latency order, at most a few times a second.
+// Circuit state is enforced separately by availableCandidates (an atomic count),
+// so a short delay here cannot route a query at an open resolver.
+func (p *UpstreamPool) invalidateOrder() {
+	now := time.Now().UnixNano()
+	last := p.orderInvalidatedAt.Load()
+	if now-last < int64(250*time.Millisecond) {
+		return
+	}
+	if p.orderInvalidatedAt.CompareAndSwap(last, now) {
+		p.orderView.Store(nil)
+	}
+}
+
 // orderedByLatency returns a copy of upstreams with the fastest measured
 // resolver first. Untimed resolvers keep their configured order after the known
 // ones. The live stats are the same numbers the resolver card shows.
@@ -2037,7 +2070,7 @@ func (p *UpstreamPool) recordHedgeLoss(addr string) {
 	st.lastHedgeLossAt = time.Now()
 	st.mu.Unlock()
 	p.hedgeLosses.Add(1)
-	p.orderView.Store(nil)
+	p.invalidateOrder()
 }
 
 // adaptiveHealthy applies the same health rules the dashboard uses, minus the
@@ -2416,12 +2449,16 @@ func (p *UpstreamPool) queryOne(ctx context.Context, req *dns.Msg, addr string) 
 		resp, rtt, err = p.exchangeDoT(ctx, q, endpoint)
 	case scheme == schemeTCP:
 		q.Id = dns.Id()
-		resp, rtt, err = p.tcpClient.ExchangeContext(ctx, q, endpoint)
+		resp, rtt, err = p.exchangePlainTCP(ctx, q, endpoint)
 	default:
+		// Plain UDP keeps a fresh socket per query on purpose: pinning one
+		// source port per upstream would collapse RFC 5452's source-port
+		// entropy. The dial is a few microseconds; the poisoning risk is not
+		// worth trading for it.
 		q.Id = dns.Id()
 		resp, rtt, err = p.udpClient.ExchangeContext(ctx, q, endpoint)
 		if err == nil && resp != nil && resp.Truncated {
-			if tcpResp, tcpRTT, tcpErr := p.tcpClient.ExchangeContext(ctx, q, endpoint); tcpErr == nil && tcpResp != nil {
+			if tcpResp, tcpRTT, tcpErr := p.exchangePlainTCP(ctx, q, endpoint); tcpErr == nil && tcpResp != nil {
 				resp, rtt, err = tcpResp, tcpRTT, nil
 			}
 		}
@@ -2438,6 +2475,65 @@ func (p *UpstreamPool) queryOne(ctx context.Context, req *dns.Msg, addr string) 
 		resp.Id = clientID
 	}
 	return resp, rtt, err
+}
+
+// exchangePlainTCP reuses an idle plain-TCP connection for one endpoint. A
+// pooled connection can be closed by the far end between queries, so a failure
+// on a reused socket is retried once on a fresh dial.
+func (p *UpstreamPool) exchangePlainTCP(ctx context.Context, q *dns.Msg, endpoint string) (*dns.Msg, time.Duration, error) {
+	conn, pooled := p.takeTCPConn(ctx, endpoint)
+	if conn == nil {
+		return nil, 0, fmt.Errorf("dial tcp %s failed", endpoint)
+	}
+	resp, rtt, err := p.tcpClient.ExchangeWithConnContext(ctx, q, conn)
+	if err == nil && resp != nil {
+		p.putTCPConn(endpoint, conn)
+		return resp, rtt, nil
+	}
+	_ = conn.Close()
+	if !pooled {
+		return nil, rtt, err
+	}
+	fresh, dialErr := p.tcpClient.DialContext(ctx, endpoint)
+	if dialErr != nil {
+		return nil, rtt, err
+	}
+	resp, rtt, err = p.tcpClient.ExchangeWithConnContext(ctx, q, fresh)
+	if err == nil && resp != nil {
+		p.putTCPConn(endpoint, fresh)
+		return resp, rtt, nil
+	}
+	_ = fresh.Close()
+	return nil, rtt, err
+}
+
+func (p *UpstreamPool) takeTCPConn(ctx context.Context, endpoint string) (*dns.Conn, bool) {
+	p.tcpPoolMu.Lock()
+	if pool := p.tcpPool[endpoint]; len(pool) > 0 {
+		conn := pool[len(pool)-1]
+		p.tcpPool[endpoint] = pool[:len(pool)-1]
+		p.tcpPoolMu.Unlock()
+		return conn, true
+	}
+	p.tcpPoolMu.Unlock()
+	conn, err := p.tcpClient.DialContext(ctx, endpoint)
+	if err != nil {
+		return nil, false
+	}
+	return conn, false
+}
+
+func (p *UpstreamPool) putTCPConn(endpoint string, conn *dns.Conn) {
+	const maxIdlePerEndpoint = 4
+	p.tcpPoolMu.Lock()
+	pool := p.tcpPool[endpoint]
+	if len(pool) >= maxIdlePerEndpoint {
+		p.tcpPoolMu.Unlock()
+		_ = conn.Close()
+		return
+	}
+	p.tcpPool[endpoint] = append(pool, conn)
+	p.tcpPoolMu.Unlock()
 }
 
 // exchangeDoH sends one DNS query over DNS-over-HTTPS (RFC 8484) and returns the

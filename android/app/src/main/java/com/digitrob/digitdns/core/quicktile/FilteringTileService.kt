@@ -3,7 +3,6 @@ package com.digitrob.digitdns.core.quicktile
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.digitrob.digitdns.R
-import com.digitrob.digitdns.core.widget.WidgetPublisher
 import com.digitrob.digitdns.core.widget.WidgetValues
 import com.digitrob.digitdns.data.AuthRepository
 import com.digitrob.digitdns.data.FilteringRepository
@@ -33,7 +32,6 @@ class FilteringTileService : TileService() {
 
     @Inject lateinit var authRepository: AuthRepository
     @Inject lateinit var filteringRepository: FilteringRepository
-    @Inject lateinit var widgetPublisher: WidgetPublisher
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -82,7 +80,6 @@ class FilteringTileService : TileService() {
     }
 
     private suspend fun render(available: Boolean, enabled: Boolean) {
-        widgetPublisher.publishFiltering(if (available) enabled else null)
         withContext(Dispatchers.Main) {
             val tile = qsTile ?: return@withContext
             tile.state = when {

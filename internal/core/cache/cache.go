@@ -267,7 +267,11 @@ func (c *Cache) PutWithOptions(q dns.Question, msg *dns.Msg, opts QueryOptions) 
 }
 
 func (c *Cache) put(q dns.Question, msg *dns.Msg, opts QueryOptions, normalize bool) {
-	if msg == nil || len(msg.Question) == 0 {
+	if msg == nil || len(msg.Question) == 0 || msg.Truncated {
+		// A TC=1 message is an instruction to retry over TCP, not an answer.
+		// The client path already refuses to cache one, but the background
+		// refresh/prefetch writers reach put directly and could otherwise
+		// publish a partial answer to every client for a full TTL.
 		return
 	}
 	// Do not cache errors except NXDOMAIN
@@ -383,22 +387,36 @@ func (c *Cache) evictLocked(shard *cacheShard, now time.Time) {
 		return
 	}
 
-	for k, e := range shard.entries {
-		if now.After(e.expireAt) {
-			delete(shard.entries, k)
-		}
-	}
-
+	// Sample the shard rather than scanning it. The previous version walked
+	// every entry (and re-walked it per victim) under the shard write lock on
+	// each Put once the cache reached its cap, which a unique-name flood turned
+	// into a serialised O(n) stall on the query path. Go's map iteration is
+	// randomised, so a small sample is an unbiased victim pick; bulk expiry is
+	// left to cleanupLoop.
+	const sampleSize = 16
 	for len(shard.entries) >= limit {
 		var victim cacheKey
 		var victimAt time.Time
+		found := false
+		sampled := 0
 		for k, e := range shard.entries {
-			if victim.name == "" || e.expireAt.Before(victimAt) {
-				victim, victimAt = k, e.expireAt
+			sampled++
+			if now.After(e.expireAt) {
+				delete(shard.entries, k)
+			} else if !found || e.expireAt.Before(victimAt) {
+				victim, victimAt, found = k, e.expireAt, true
+			}
+			if sampled >= sampleSize {
+				break
 			}
 		}
-		if victim.name == "" {
-			return
+		if !found {
+			// The sample held only expired entries (now deleted); keep sampling
+			// until the shard is under its cap or nothing is left to evict.
+			if len(shard.entries) == 0 {
+				return
+			}
+			continue
 		}
 		delete(shard.entries, victim)
 	}

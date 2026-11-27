@@ -1992,7 +1992,7 @@
                  wide enough once the search is fixed-width, and one toolbar is
                  easier to scan than two stacked command rows. The buttons carry
                  .proxied-bulk-btn so their disabled state is styled in style.css. -->
-            <span id="proxied-selected-count" class="shrink-0 whitespace-nowrap text-[11px] text-slate-500">No domains selected</span>
+            <span id="proxied-selected-count" role="status" aria-live="polite" class="shrink-0 whitespace-nowrap text-[11px] text-slate-500">No domains selected</span>
             <div class="proxied-bulk-service-wrap">
               <button type="button" id="proxied-bulk-service" class="proxied-bulk-service"
                 title="Assign a service to the selected domains"
@@ -4840,14 +4840,14 @@ async function onBuySubscription(ctx, username) {
   <div id="stream-info-tooltip" class="stream-info-tooltip" style="visibility: hidden"></div>
 
   <!-- Custom JavaScript -->
-  <script src="/js/app.js"></script>
+  <script src="/js/app.js" defer></script>
   <!-- Loaded after app.js on purpose: i18n.js redraws the icons it swaps through
        window.safeFeatherReplace, which app.js defines, and its init() runs on
        DOMContentLoaded — after both files have been evaluated either way. -->
-  <script src="/js/i18n.js"></script>
+  <script src="/js/i18n.js" defer></script>
   <!-- The settings panels are ES modules: deferred, strict, and able to
        read the app.js bridge (window.__hdns) at call time. -->
-  <script src="/js/feather.min.js"></script>
+  <script src="/js/feather.min.js" defer></script>
 
   <script type="module" src="/js/modules/twofa.js"></script>
 </body>

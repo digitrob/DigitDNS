@@ -111,7 +111,7 @@ func (ws *WebServer) handleToolsWhois(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Header.Set("Accept", "application/rdap+json, application/json")
-	resp, err := (&http.Client{Timeout: 12 * time.Second}).Do(req)
+	resp, err := httpx.Outbound.Do(req)
 	if err != nil {
 		writeEgressJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
 		return

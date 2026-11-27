@@ -279,7 +279,7 @@ func (b *v3Backend) ExportAdGuardSyncSource(id string) (any, error) {
 }
 
 func (b *v3Backend) PreviewAdGuardSync(r *http.Request, body map[string]any) (any, error) {
-	resp, err := b.ws.adGuardSyncPreview(body)
+	resp, err := b.ws.adGuardSyncPreviewContext(r.Context(), body)
 	if err != nil {
 		return nil, adGuardSyncV3Error(err)
 	}
