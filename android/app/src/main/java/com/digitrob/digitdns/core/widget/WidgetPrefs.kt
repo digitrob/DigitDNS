@@ -41,6 +41,8 @@ object WidgetPrefs {
     const val THEME_APP = "APP"
 
     const val DEFAULT_ALPHA = 100
+    private const val ALPHA_MIN = 0
+    private const val ALPHA_MAX = 100
     const val MIN_FONT_SCALE = 0.85f
     const val MAX_FONT_SCALE = 1.20f
     const val DEFAULT_FONT_SCALE = 1.0f
@@ -57,10 +59,10 @@ object WidgetPrefs {
     }
 
     fun alpha(context: Context, widgetId: Int): Int =
-        prefs(context).getInt(KEY_ALPHA + widgetId, DEFAULT_ALPHA).coerceIn(0, 100)
+        prefs(context).getInt(KEY_ALPHA + widgetId, DEFAULT_ALPHA).coerceIn(ALPHA_MIN, ALPHA_MAX)
 
     fun setAlpha(context: Context, widgetId: Int, percent: Int) {
-        prefs(context).edit().putInt(KEY_ALPHA + widgetId, percent.coerceIn(0, 100)).apply()
+        prefs(context).edit().putInt(KEY_ALPHA + widgetId, percent.coerceIn(ALPHA_MIN, ALPHA_MAX)).apply()
     }
 
     fun fontScale(context: Context, widgetId: Int): Float =

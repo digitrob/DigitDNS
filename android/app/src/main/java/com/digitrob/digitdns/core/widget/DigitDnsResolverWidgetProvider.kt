@@ -179,7 +179,7 @@ class DigitDnsResolverWidgetProvider : AppWidgetProvider() {
 
         val snapRes = widgetData.resolverSnapshot()
         val now = System.currentTimeMillis()
-        val rows = buildRowsFromSnapshot(snapRes)
+        val rows = WidgetRows.from(snapRes)
         val filteringKnown = snapRes.filtering != null
         val filteringEnabled = snapRes.filtering?.settings?.enabled
         val existing = WidgetSnapshotStore.load(context)
@@ -198,68 +198,6 @@ class DigitDnsResolverWidgetProvider : AppWidgetProvider() {
         }
     }.onFailure { Timber.d(it, "widget refresh failed") }
 
-    private fun buildRowsFromSnapshot(snap: WidgetData.ResolverSnapshot): List<WidgetResolverRow> {
-        val res = snap.resolution
-        val stats = snap.stats
-        if (stats != null && stats.isNotEmpty()) {
-            val current = res?.adaptiveCurrent
-            val defaultAddr = res?.upstreams?.firstOrNull()
-            val allowedTransports = res?.transports?.map { it.lowercase(Locale.US) }?.toSet()
-            val dnscryptEnabled = allowedTransports?.contains("dnscrypt") == true
-            return stats.mapIndexed { index, s ->
-                val isCurrent = (current != null && s.address == current) || (current == null && index == 0)
-                val isDefault = s.address == defaultAddr
-                val protoKey = WidgetValues.resolveProtocolKey(s.address)
-                val dimmed = !WidgetValues.transportAllowedForProtocol(protoKey, allowedTransports, dnscryptEnabled)
-                val measured = s.measured == true
-                val ms = if (measured) s.displayLatencyMs.toLong() else null
-                val statusKey = when {
-                    !measured -> "unknown"
-                    ms != null && ms <= 40L -> "healthy"
-                    ms != null && ms <= 80L -> "warn"
-                    else -> "bad"
-                }
-                WidgetResolverRow(
-                    address = s.address,
-                    displayName = WidgetValues.resolverDisplayName(s.address),
-                    transportLabel = WidgetValues.resolverTransportLabel(s.address),
-                    transportKey = protoKey,
-                    providerKey = WidgetValues.providerKeyFromAddress(s.address),
-                    latencyText = WidgetValues.formatLatencyLabel(ms, measured),
-                    latencyMs = ms,
-                    measured = measured,
-                    isCurrent = isCurrent,
-                    isDefault = isDefault,
-                    isDimmed = dimmed,
-                    statusKey = statusKey,
-                )
-            }
-        }
-        val ups = res?.upstreams ?: emptyList()
-        val current = res?.adaptiveCurrent
-        val allowedTransports = res?.transports?.map { it.lowercase(Locale.US) }?.toSet()
-        val dnscryptEnabled = allowedTransports?.contains("dnscrypt") == true
-        return ups.mapIndexed { index, addr ->
-            val protoKey = WidgetValues.resolveProtocolKey(addr)
-            val dimmed = !WidgetValues.transportAllowedForProtocol(protoKey, allowedTransports, dnscryptEnabled)
-            val isCurrent = (current != null && addr == current) || (current == null && index == 0)
-            WidgetResolverRow(
-                address = addr,
-                displayName = WidgetValues.resolverDisplayName(addr),
-                transportLabel = WidgetValues.resolverTransportLabel(addr),
-                transportKey = protoKey,
-                providerKey = WidgetValues.providerKeyFromAddress(addr),
-                latencyText = "—",
-                latencyMs = null,
-                measured = false,
-                isCurrent = isCurrent,
-                isDefault = index == 0,
-                isDimmed = dimmed,
-                statusKey = "unknown",
-            )
-        }
-    }
-
     private fun renderOne(
         context: Context,
         manager: AppWidgetManager,
@@ -271,124 +209,164 @@ class DigitDnsResolverWidgetProvider : AppWidgetProvider() {
             val colors = WidgetValues.resolverWidgetColors(mode)
             val alphaPct = WidgetPrefs.alpha(context, widgetId)
             val fontScale = WidgetPrefs.fontScale(context, widgetId)
-
             val snapshot = WidgetSnapshotStore.load(context)
             val views = RemoteViews(context.packageName, R.layout.widget_resolver)
-            views.setInt(
-                R.id.widget_resolver_root,
-                "setBackgroundColor",
-                WidgetValues.bgColorWithAlphaPercent(colors.bgColor, alphaPct),
-            )
 
-            val updatedText = if (snapshot == null || snapshot.updatedAtMs <= 0L) "—" else {
-                SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(snapshot.updatedAtMs))
-            }
-            views.setTextViewText(
-                R.id.widget_updated,
-                if (loading) context.getString(R.string.widget_refreshing) else updatedText,
-            )
-            views.setTextColor(R.id.widget_updated, colors.muted)
-            views.setTextViewTextSize(
-                R.id.widget_updated,
-                TypedValue.COMPLEX_UNIT_SP,
-                HEADER_TEXT_SP * fontScale,
-            )
-
-            views.setViewVisibility(
-                R.id.widget_refresh_spinner,
-                if (loading) android.view.View.VISIBLE else android.view.View.GONE,
-            )
-            views.setViewVisibility(
-                R.id.widget_refresh,
-                if (loading) android.view.View.GONE else android.view.View.VISIBLE,
-            )
-
-            val refreshPI = PendingIntent.getBroadcast(
-                context,
-                widgetId + REFRESH_REQUEST_OFFSET,
-                Intent(context, DigitDnsResolverWidgetProvider::class.java).apply {
-                    action = WidgetActions.REFRESH
-                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-                },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-            )
-            views.setOnClickPendingIntent(R.id.widget_refresh, refreshPI)
-
-            val filteringKnown = snapshot?.filteringKnown == true
-            val filteringOn = snapshot?.filteringEnabled == true
-            val filteringText = when {
-                !filteringKnown -> context.getString(R.string.widget_toggle_unavailable)
-                filteringOn -> context.getString(R.string.widget_toggle_on)
-                else -> context.getString(R.string.widget_toggle_off)
-            }
-            views.setTextViewText(R.id.widget_filtering, filteringText)
-            views.setTextColor(R.id.widget_filtering, if (filteringOn) colors.filteringOn else colors.filteringOff)
-            views.setTextViewTextSize(
-                R.id.widget_filtering,
-                TypedValue.COMPLEX_UNIT_SP,
-                FOOTER_TEXT_SP * fontScale,
-            )
-            val togglePI = PendingIntent.getBroadcast(
-                context,
-                widgetId + TOGGLE_REQUEST_OFFSET,
-                Intent(context, DigitDnsResolverWidgetProvider::class.java).apply {
-                    action = WidgetActions.TOGGLE
-                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-                },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-            )
-            views.setOnClickPendingIntent(R.id.widget_filtering, togglePI)
-
-            // The gear opens the appearance editor directly: a broadcast -> activity
-            // hop is blocked by the background activity-start rules on Android 10+.
-            val settingsPI = PendingIntent.getActivity(
-                context,
-                widgetId + SETTINGS_REQUEST_OFFSET,
-                Intent(context, DigitDnsResolverWidgetConfigureActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-                },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-            views.setOnClickPendingIntent(R.id.widget_settings, settingsPI)
-
-            val openPI = PendingIntent.getActivity(
-                context,
-                widgetId,
-                Intent(context, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-            views.setOnClickPendingIntent(R.id.widget_open, openPI)
-
-            val svcIntent = Intent(context, ResolverWidgetService::class.java).apply {
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-                data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
-            }
-            views.setRemoteAdapter(R.id.widget_list, svcIntent)
-            views.setEmptyView(R.id.widget_list, R.id.widget_empty)
-            views.setTextViewTextSize(
-                R.id.widget_empty,
-                TypedValue.COMPLEX_UNIT_SP,
-                EMPTY_TEXT_SP * fontScale,
-            )
-            views.setTextColor(R.id.widget_empty, colors.muted)
-
-            val rowOpenPI = PendingIntent.getActivity(
-                context,
-                widgetId,
-                Intent(context, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-            )
-            views.setPendingIntentTemplate(R.id.widget_list, rowOpenPI)
+            applyBackground(views, colors, alphaPct)
+            applyHeader(context, views, widgetId, snapshot, colors, fontScale, loading)
+            applyFooter(context, views, widgetId, snapshot, colors, fontScale)
+            applyOpenActions(context, views, widgetId)
+            applyList(context, views, widgetId, colors, fontScale)
 
             manager.updateAppWidget(widgetId, views)
             manager.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_list)
         } catch (e: Exception) {
             Timber.d(e, "widget render failed for %d", widgetId)
         }
+    }
+
+    private fun applyBackground(views: RemoteViews, colors: WidgetThemeColors, alphaPct: Int) {
+        views.setInt(
+            R.id.widget_resolver_root,
+            "setBackgroundColor",
+            WidgetValues.bgColorWithAlphaPercent(colors.bgColor, alphaPct),
+        )
+    }
+
+    @Suppress("LongParameterList")
+    private fun applyHeader(
+        context: Context,
+        views: RemoteViews,
+        widgetId: Int,
+        snapshot: WidgetSnapshot?,
+        colors: WidgetThemeColors,
+        fontScale: Float,
+        loading: Boolean,
+    ) {
+        val updatedText = if (snapshot == null || snapshot.updatedAtMs <= 0L) {
+            "—"
+        } else {
+            SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(snapshot.updatedAtMs))
+        }
+        views.setTextViewText(
+            R.id.widget_updated,
+            if (loading) context.getString(R.string.widget_refreshing) else updatedText,
+        )
+        views.setTextColor(R.id.widget_updated, colors.muted)
+        views.setTextViewTextSize(
+            R.id.widget_updated,
+            TypedValue.COMPLEX_UNIT_SP,
+            HEADER_TEXT_SP * fontScale,
+        )
+        views.setViewVisibility(
+            R.id.widget_refresh_spinner,
+            if (loading) android.view.View.VISIBLE else android.view.View.GONE,
+        )
+        views.setViewVisibility(
+            R.id.widget_refresh,
+            if (loading) android.view.View.GONE else android.view.View.VISIBLE,
+        )
+
+        val refreshPi = PendingIntent.getBroadcast(
+            context,
+            widgetId + REFRESH_REQUEST_OFFSET,
+            Intent(context, DigitDnsResolverWidgetProvider::class.java).apply {
+                action = WidgetActions.REFRESH
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+        )
+        views.setOnClickPendingIntent(R.id.widget_refresh, refreshPi)
+
+        // The gear opens the appearance editor directly: a broadcast -> activity
+        // hop is blocked by the background activity-start rules on Android 10+.
+        val settingsPi = PendingIntent.getActivity(
+            context,
+            widgetId + SETTINGS_REQUEST_OFFSET,
+            Intent(context, DigitDnsResolverWidgetConfigureActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        views.setOnClickPendingIntent(R.id.widget_settings, settingsPi)
+    }
+
+    private fun applyFooter(
+        context: Context,
+        views: RemoteViews,
+        widgetId: Int,
+        snapshot: WidgetSnapshot?,
+        colors: WidgetThemeColors,
+        fontScale: Float,
+    ) {
+        val filteringKnown = snapshot?.filteringKnown == true
+        val filteringOn = snapshot?.filteringEnabled == true
+        val filteringText = when {
+            !filteringKnown -> context.getString(R.string.widget_toggle_unavailable)
+            filteringOn -> context.getString(R.string.widget_toggle_on)
+            else -> context.getString(R.string.widget_toggle_off)
+        }
+        views.setTextViewText(R.id.widget_filtering, filteringText)
+        views.setTextColor(R.id.widget_filtering, if (filteringOn) colors.filteringOn else colors.filteringOff)
+        views.setTextViewTextSize(
+            R.id.widget_filtering,
+            TypedValue.COMPLEX_UNIT_SP,
+            FOOTER_TEXT_SP * fontScale,
+        )
+        val togglePi = PendingIntent.getBroadcast(
+            context,
+            widgetId + TOGGLE_REQUEST_OFFSET,
+            Intent(context, DigitDnsResolverWidgetProvider::class.java).apply {
+                action = WidgetActions.TOGGLE
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+        )
+        views.setOnClickPendingIntent(R.id.widget_filtering, togglePi)
+    }
+
+    private fun applyOpenActions(context: Context, views: RemoteViews, widgetId: Int) {
+        val openPi = PendingIntent.getActivity(
+            context,
+            widgetId,
+            openAppIntent(context),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        views.setOnClickPendingIntent(R.id.widget_open, openPi)
+
+        val rowOpenPi = PendingIntent.getActivity(
+            context,
+            widgetId,
+            openAppIntent(context),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+        )
+        views.setPendingIntentTemplate(R.id.widget_list, rowOpenPi)
+    }
+
+    private fun openAppIntent(context: Context): Intent =
+        Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+
+    private fun applyList(
+        context: Context,
+        views: RemoteViews,
+        widgetId: Int,
+        colors: WidgetThemeColors,
+        fontScale: Float,
+    ) {
+        val svcIntent = Intent(context, ResolverWidgetService::class.java).apply {
+            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+            data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
+        }
+        views.setRemoteAdapter(R.id.widget_list, svcIntent)
+        views.setEmptyView(R.id.widget_list, R.id.widget_empty)
+        views.setTextViewTextSize(
+            R.id.widget_empty,
+            TypedValue.COMPLEX_UNIT_SP,
+            EMPTY_TEXT_SP * fontScale,
+        )
+        views.setTextColor(R.id.widget_empty, colors.muted)
     }
 }

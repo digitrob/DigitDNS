@@ -109,7 +109,7 @@ type Handler struct {
 	// so checking the function pointer alone used to make every cache hit render
 	// and stringify its whole answer section for a Push that immediately returned.
 	queryLogWantsAnswers func() bool
-	publicIP string
+	publicIP             string
 	// Parsed forms of the two addresses above. They are built when the operator
 	// sets the address and reused for every self-name and proxied answer, so the
 	// query path never re-parses the same literal. The IPv6 form is written by the
