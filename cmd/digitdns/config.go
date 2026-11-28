@@ -34,6 +34,9 @@ type sniProxyFile struct {
 	// stored record keeps the inverted form so an older database decodes to
 	// "enabled" rather than silently switching the guard off.
 	QUICReject *bool `json:"quic_reject"`
+	// ResolveServers pins the nameservers used to resolve relay targets. Empty
+	// (or omitted) races the host's resolv.conf entries, which is the default.
+	ResolveServers *[]string `json:"resolve_servers"`
 }
 
 // accessFile mirrors the "access" block of config.json.
@@ -279,6 +282,9 @@ func applyConfigFile(path string, server *database.ServerSettings, dns *database
 		}
 		if s.QUICReject != nil {
 			sni.QUICRejectDisabled = !*s.QUICReject
+		}
+		if s.ResolveServers != nil {
+			sni.ResolveServers = append([]string(nil), (*s.ResolveServers)...)
 		}
 	}
 

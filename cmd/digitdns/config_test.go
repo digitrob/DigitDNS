@@ -220,7 +220,8 @@ func TestConfigSNIProxyBlock(t *testing.T) {
 	    "https_port": 8443,
 	    "timeout": 30000000000,
 	    "enable_fragmentation": false,
-	    "quic_reject": false
+	    "quic_reject": false,
+	    "resolve_servers": ["9.9.9.9", "149.112.112.112"]
 	  }
 	}`)
 
@@ -238,6 +239,9 @@ func TestConfigSNIProxyBlock(t *testing.T) {
 	}
 	if !sni.QUICRejectDisabled {
 		t.Error("quic_reject: false was ignored — the guard must be opt-outable")
+	}
+	if len(sni.ResolveServers) != 2 || sni.ResolveServers[0] != "9.9.9.9" || sni.ResolveServers[1] != "149.112.112.112" {
+		t.Errorf("resolve_servers = %v, want [9.9.9.9 149.112.112.112]", sni.ResolveServers)
 	}
 	if sni.HTTPPort != 80 || sni.FragmentSize != 2 {
 		t.Errorf("absent SNI keys were overwritten: %+v", sni)
@@ -261,6 +265,11 @@ func TestConfigSNIProxyLegacySpelling(t *testing.T) {
 	// stored record is the enabled state.
 	if !sni.QUICRejectEnabled() {
 		t.Error("an absent quic_reject key disabled the fast-fail guard")
+	}
+	// An absent resolve_servers must stay empty, which means the relay races the
+	// host's own nameservers rather than being pinned to a stale list.
+	if len(sni.ResolveServers) != 0 {
+		t.Errorf("resolve_servers from an absent key = %v, want empty", sni.ResolveServers)
 	}
 }
 

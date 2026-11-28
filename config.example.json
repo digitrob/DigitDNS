@@ -49,7 +49,8 @@
     "enable_fragmentation": true,
     "fragment_size": 2,
     "fragment_delay_ms": 5,
-    "quic_reject": true
+    "quic_reject": true,
+    "resolve_servers": []
   },
   "access": {
     "allow_all": false,

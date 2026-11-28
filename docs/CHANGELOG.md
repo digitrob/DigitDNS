@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.13.2] — Relay target resolution races every nameserver
+
+A resolver-robustness patch. The relay resolved each proxied hostname with Go's system resolver, which walks `resolv.conf` server by server and waits five seconds on the server it is currently talking to — while the relay allowed the whole lookup two seconds. A dead stub resolver or one lost UDP packet therefore refused the connection, even though another nameserver would have answered in milliseconds.
+
+### Added
+- **Racing target resolver.** The relay queries every configured nameserver concurrently and takes the first usable answer, cancelling the rest. A silent, unreachable or lossy server no longer stalls the lookup; normal answers arrive in about 10 ms.
+- **`resolve_servers` on the `sniproxy` config block.** Pins the nameservers used for relay target resolution. Empty (the default) races the host's `resolv.conf` entries; bare addresses and `host:port` pairs are accepted.
+- **Startup log line** naming the resolver set the relay races.
+
+### Fixed
+- **Intermittent `resolving <host>: i/o timeout` refusals.** On a host whose `resolv.conf` began with a dead stub (a Tailscale node with DNS disabled) and included deprecated resolvers, cache-miss lookups failed whenever the server Go was waiting on lost a packet. This intermittently broke proxied Gemini/NotebookLM endpoints such as `signaler-pa.googleapis.com` and `robinfrontend-pa.googleapis.com`.
+- **The agent relay had its own copy of the sequential resolver.** It now races the host's nameservers too.
+- **The panel's Tools check and blocklist URL validation** use the racing resolver; list validation also gained a five-second bound instead of an unbounded `net.LookupIP`.
+
+### Changed
+- The relay keeps its 30-second positive address cache and its two-second lookup budget; the budget is now spent in parallel across servers rather than serially on one.
+
+### Notes
+- No database schema migration is required.
+- The Android companion moves to `android-v5.13.2`, version code 596.
+
+---
+
 ## 🏷️ [v5.13.1] — AdGuard `$dnstype` rules, QUIC fast-fail on the relay, counters in both apps
 
 A relay-and-filtering patch. AdGuard's `$dnstype` modifier is now understood instead of silently skipping the rule, and the SNI relay answers QUIC attempts at once so clients fall back to TCP instead of waiting out a handshake the relay can never complete.

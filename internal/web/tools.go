@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"digitdns/internal/httpx"
+	"digitdns/internal/netresolve"
 	"digitdns/internal/service"
 	"github.com/miekg/dns"
 )
@@ -159,7 +160,7 @@ func (ws *WebServer) handleToolsCheck(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
-	addrs, err := net.DefaultResolver.LookupHost(ctx, host)
+	addrs, err := netresolve.NewSystem().LookupHost(ctx, host)
 	if err != nil {
 		writeEgressJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error(), "mode": mode})
 		return

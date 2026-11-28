@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"digitdns/internal/core/proxy"
+	"digitdns/internal/netresolve"
 	"digitdns/internal/safego"
 )
 
@@ -107,6 +108,10 @@ type Server struct {
 	// a public agent may be asked to relay any name in its allowlist.
 	dnsMu    sync.Mutex
 	dnsCache map[string]dnsCacheEntry
+	// resolver races every nameserver for a target lookup. The agent used to
+	// call net.DefaultResolver, so a silent first nameserver could stall the
+	// lookup past its five-second budget and drop the relay.
+	resolver *netresolve.Resolver
 	// guardMu guards the per-source malformed-probe penalty box.
 	guardMu        sync.Mutex
 	guard          map[string]*sourcePenalty
@@ -140,6 +145,7 @@ func NewServer(cfg Config) *Server {
 		refusals: newRefusalLog(time.Minute, time.Now),
 		slots:    make(chan struct{}, maxConcurrentRelays),
 		dnsCache: make(map[string]dnsCacheEntry),
+		resolver: netresolve.NewSystem(),
 		guard:    make(map[string]*sourcePenalty),
 	}
 }
@@ -163,6 +169,12 @@ func (s *Server) RefusedIP() int64 { return int64(s.refusedIP.Load()) }
 
 // Start binds the listen addresses and serves until Close.
 func (s *Server) Start() error {
+	if servers := s.resolver.Servers(); len(servers) > 0 {
+		log.Printf("[agent] target resolution races %d nameserver(s): %s",
+			len(servers), strings.Join(servers, ", "))
+	} else {
+		log.Printf("[agent] target resolution uses the system resolver")
+	}
 	s.listenersMu.Lock()
 	defer s.listenersMu.Unlock()
 	return s.bindListenersLocked(s.cfg.IPv6Enabled)
@@ -576,16 +588,17 @@ func (s *Server) resolveHost(host string) ([]net.IP, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	addrs, err := s.resolver.LookupNetIP(ctx, host)
 	if err != nil {
 		return nil, fmt.Errorf("resolve %s: %w", host, err)
 	}
 	out := make([]net.IP, 0, len(addrs))
 	for _, addr := range addrs {
-		if isPrivate(addr.IP) {
+		ip := net.IP(addr.Unmap().AsSlice())
+		if isPrivate(ip) {
 			return nil, fmt.Errorf("%s resolves to a private address", host)
 		}
-		out = append(out, addr.IP)
+		out = append(out, ip)
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("resolve %s: no addresses", host)

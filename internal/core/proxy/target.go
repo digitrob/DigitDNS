@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"digitdns/internal/netresolve"
 )
 
 // Reasons a relay target is refused. They are distinct errors so a caller can
@@ -209,6 +211,11 @@ type targetGuard struct {
 	// are not hidden by the cache.
 	cache map[string]targetCacheEntry
 
+	// resolver races every configured nameserver instead of walking them in
+	// order. A single silent or lossy server used to consume the whole lookup
+	// budget before Go tried the next one, which refused the relay even though
+	// another nameserver would have answered in milliseconds.
+	resolver   *netresolve.Resolver
 	lookupIP   func(ctx context.Context, host string) ([]netip.Addr, error)
 	localAddrs func() map[netip.Addr]struct{}
 	now        func() time.Time
@@ -221,12 +228,16 @@ type targetCacheEntry struct {
 
 const targetCacheTTL = 30 * time.Second
 
-func newTargetGuard() *targetGuard {
+// newTargetGuard builds the relay's destination guard. An empty servers list
+// means "race the host's own nameservers"; a configured list pins the race to
+// those servers, which is what an operator wants on a box whose resolv.conf
+// carries a dead stub or a deliberately deprecated resolver.
+func newTargetGuard(servers []string) *targetGuard {
+	resolver := netresolve.NewOrDefault(servers)
 	return &targetGuard{
-		cache: make(map[string]targetCacheEntry),
-		lookupIP: func(ctx context.Context, host string) ([]netip.Addr, error) {
-			return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
-		},
+		cache:      make(map[string]targetCacheEntry),
+		resolver:   resolver,
+		lookupIP:   resolver.LookupNetIP,
 		localAddrs: localAddrSet,
 		now:        time.Now,
 	}

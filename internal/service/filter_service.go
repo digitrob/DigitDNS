@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"digitdns/internal/core/matcher"
 	"digitdns/internal/database"
 	"digitdns/internal/filterpresets"
+	"digitdns/internal/netresolve"
 )
 
 const (
@@ -806,11 +808,14 @@ func validateListURL(raw string) error {
 		return fmt.Errorf("list URLs must use HTTPS")
 	}
 	host := u.Hostname()
-	ips, err := net.LookupIP(host)
-	if err != nil || len(ips) == 0 {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	addrs, err := netresolve.NewSystem().LookupNetIP(ctx, host)
+	if err != nil || len(addrs) == 0 {
 		return fmt.Errorf("could not resolve list host")
 	}
-	for _, ip := range ips {
+	for _, addr := range addrs {
+		ip := net.IP(addr.Unmap().AsSlice())
 		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
 			return fmt.Errorf("list URL must resolve to a public address")
 		}

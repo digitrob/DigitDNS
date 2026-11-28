@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -269,7 +270,7 @@ func NewServer(
 		bindHost: bindHost,
 		domain:   domain,
 		access:   access,
-		guard:    newTargetGuard(),
+		guard:    newTargetGuard(settings.ResolveServers),
 		slots:    make(chan struct{}, maxConcurrentRelays),
 		flood:    make(map[string]*sourceGuard),
 	}
@@ -375,6 +376,16 @@ func (s *Server) Start() error {
 	host := s.bindHost
 	if host == "" {
 		host = "0.0.0.0"
+	}
+
+	// Name the resolver set at start-up. When a relay refuses with "resolving
+	// <host>: i/o timeout", the operator's next question is which nameservers
+	// this process was racing, and this line answers it without a debug build.
+	if servers := s.guard.resolver.Servers(); len(servers) > 0 {
+		log.Printf("[SNI Proxy] Target resolution races %d nameserver(s): %s",
+			len(servers), strings.Join(servers, ", "))
+	} else {
+		log.Printf("[SNI Proxy] Target resolution uses the system resolver")
 	}
 
 	ports := []struct {

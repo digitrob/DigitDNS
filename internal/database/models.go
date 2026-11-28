@@ -555,6 +555,14 @@ type SNIProxySettings struct {
 	FragmentSize        int           `json:"fragment_size"`
 	FragmentDelayMs     int           `json:"fragment_delay_ms"`
 
+	// ResolveServers pins the nameservers the relay resolves target hostnames
+	// with. Empty means "race the host's own resolv.conf entries", which is the
+	// right default on a clean host. A configured list is for a box whose
+	// resolv.conf carries a dead stub (a Tailscale node with DNS disabled) or a
+	// resolver the operator does not want on the relay path. All entries are
+	// queried concurrently and the first answer wins.
+	ResolveServers []string `json:"resolve_servers,omitempty"`
+
 	// QUICRejectDisabled is the negative form of the fast-fail QUIC responder.
 	// The relay speaks TCP only, so a client that resolves a proxied name to this
 	// server and then opens QUIC to the same address waits for a handshake that
