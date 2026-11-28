@@ -479,10 +479,11 @@ private fun PolicyCard(state: AdBlockingUiState, viewModel: AdBlockingViewModel)
             )
             Text(
                 "AdGuard/uBlock rules; \$dnsrewrite=IP answers A/AAAA with that IP, " +
-                    "and \$dnsrewrite=host returns a CNAME. Custom " +
-                    "regex uses RE2 (max 64 patterns, 512 characters each). Downloaded-list " +
-                    "regex, cosmetic rules, and scoped \$client, \$denyallow and " +
-                    "\$badfilter modifiers are skipped.",
+                    "and \$dnsrewrite=host returns a CNAME. \$dnstype=HTTPS " +
+                    "(or A|AAAA, SVCB, TYPE65) narrows a rule to those query " +
+                    "types. Custom regex uses RE2 (max 64 patterns, 512 characters each). " +
+                    "Downloaded-list regex, cosmetic rules, and scoped \$client, " +
+                    "\$denyallow and \$badfilter modifiers are skipped.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

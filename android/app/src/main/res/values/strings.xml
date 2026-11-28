@@ -203,6 +203,7 @@
     <string name="dashboard_relay_total">Total %1$s · %2$s refused</string>
     <string name="dashboard_relay_total_clean">Total %1$s · no refusals</string>
     <string name="dashboard_relay_unreadable">%1$s unreadable</string>
+    <string name="dashboard_relay_quic">%1$s QUIC fast-fail</string>
     <string name="dashboard_cores">%1$d cores</string>
     <string name="dashboard_ram_server">Server: %1$s / %2$s</string>
     <string name="dashboard_ram_server_usage">Server usage: %1$s</string>

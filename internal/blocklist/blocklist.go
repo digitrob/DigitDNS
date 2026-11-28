@@ -10,8 +10,10 @@ package blocklist
 import (
 	"net"
 	"regexp"
+	"strconv"
 	"strings"
 
+	"github.com/miekg/dns"
 	"golang.org/x/net/idna"
 )
 
@@ -41,10 +43,10 @@ func (s Stats) Total() int { return s.Blocked + s.Allowed }
 // Index is an immutable compiled rule set. Build once, publish to the matcher,
 // and discard the old value; readers never take a lock.
 type Index struct {
-	blockExact    map[string]string
-	blockWildcard map[string]string
-	allowExact    map[string]string
-	allowWildcard map[string]string
+	blockExact    map[string]ruleEntry
+	blockWildcard map[string]ruleEntry
+	allowExact    map[string]ruleEntry
+	allowWildcard map[string]ruleEntry
 	// rewrites holds $dnsrewrite targets (IP addresses or CNAME names): exact
 	// keys and suffix (parent) keys.
 	rewriteExact  map[string]string
@@ -54,10 +56,33 @@ type Index struct {
 	allowRegex []compiledRegex
 }
 
+// ruleEntry is one compiled rule: the list that supplied it and the DNS types it
+// applies to. A nil type set means "every type", which is the common case and
+// keeps the lookup a single map probe.
+type ruleEntry struct {
+	source string
+	types  map[uint16]struct{}
+}
+
+// matches reports whether the rule applies to a query of this type. qtype 0 is
+// used by callers that have no query (the panel's explain endpoint); it matches
+// only untyped rules, never a $dnstype rule.
+func (e ruleEntry) matches(qtype uint16) bool {
+	if len(e.types) == 0 {
+		return true
+	}
+	if qtype == 0 {
+		return false
+	}
+	_, ok := e.types[qtype]
+	return ok
+}
+
 // compiledRegex is one compiled AdGuard regex rule with its source label.
 type compiledRegex struct {
 	re     *regexp.Regexp
 	source string
+	types  map[uint16]struct{}
 }
 
 // MaxCustomRegexRules and MaxCustomRegexPatternSize bound the operator-supplied
@@ -70,10 +95,10 @@ const (
 
 func newIndex() *Index {
 	return &Index{
-		blockExact:    make(map[string]string),
-		blockWildcard: make(map[string]string),
-		allowExact:    make(map[string]string),
-		allowWildcard: make(map[string]string),
+		blockExact:    make(map[string]ruleEntry),
+		blockWildcard: make(map[string]ruleEntry),
+		allowExact:    make(map[string]ruleEntry),
+		allowWildcard: make(map[string]ruleEntry),
 		rewriteExact:  make(map[string]string),
 		rewriteSuffix: make(map[string]string),
 	}
@@ -92,7 +117,7 @@ func Build(sources []Source, allowlist []string) (*Index, Stats) {
 		parseInto(idx, src.Name, src.Text, src.AllowRegex, &stats)
 	}
 	for _, domain := range allowlist {
-		addRule(idx, domain, true, "Allowlist", &stats, "")
+		addRule(idx, domain, true, "Allowlist", &stats, "", nil)
 	}
 	stats.Domains = idx.DomainCount()
 	return idx, stats
@@ -126,7 +151,7 @@ func Merge(indices []*Index, allowlist []string) *Index {
 	}
 	var stats Stats
 	for _, domain := range allowlist {
-		addRule(idx, domain, true, "Allowlist", &stats, "")
+		addRule(idx, domain, true, "Allowlist", &stats, "", nil)
 	}
 	return idx
 }
@@ -182,8 +207,15 @@ func Analyze(text string) Stats {
 
 // Match returns whether the name is blocked, the source that matched and the
 // matching pattern. Allowlist matches return blocked=false and stop the list
-// block; the caller still applies its own custom direct/proxy rules.
+// block; the caller still applies its own custom direct/proxy rules. It is the
+// query-type-agnostic form: a rule compiled with $dnstype never matches here.
 func (i *Index) Match(domain string) (blocked bool, source, pattern string) {
+	return i.MatchQ(domain, 0)
+}
+
+// MatchQ is Match for one DNS query type. qtype 0 means "no query type"; only
+// rules without a $dnstype filter apply.
+func (i *Index) MatchQ(domain string, qtype uint16) (blocked bool, source, pattern string) {
 	if i == nil {
 		return false, "", ""
 	}
@@ -191,40 +223,48 @@ func (i *Index) Match(domain string) (blocked bool, source, pattern string) {
 	if d == "" {
 		return false, "", ""
 	}
-	return i.MatchNormalized(d)
+	return i.MatchNormalizedQ(d, qtype)
 }
 
 // MatchNormalized is Match for a name the caller has already lowercased and
-// trimmed. It checks bounded regex rules only when a source opted in; the
-// resolver and matcher otherwise use the exact lookup plus suffix walk without
-// a per-rule scan.
+// trimmed. It is the query-type-agnostic form.
 func (i *Index) MatchNormalized(d string) (blocked bool, source, pattern string) {
+	return i.MatchNormalizedQ(d, 0)
+}
+
+// MatchNormalizedQ is MatchNormalized for one query type. It checks bounded
+// regex rules only when a source opted in; the resolver and matcher otherwise
+// use the exact lookup plus suffix walk without a per-rule scan.
+func (i *Index) MatchNormalizedQ(d string, qtype uint16) (blocked bool, source, pattern string) {
 	if i == nil || d == "" {
 		return false, "", ""
 	}
-	if _, ok := i.allowExact[d]; ok {
+	if entry, ok := i.allowExact[d]; ok && entry.matches(qtype) {
 		return false, "", ""
 	}
-	if _, _, ok := lookupSuffix(i.allowWildcard, d); ok {
+	if entry, _, ok := lookupSuffix(i.allowWildcard, d); ok && entry.matches(qtype) {
 		return false, "", ""
 	}
-	if regexSource(i.allowRegex, d) != "" {
+	if regexSource(i.allowRegex, d, qtype) != "" {
 		return false, "", ""
 	}
-	if name, ok := i.blockExact[d]; ok {
-		return true, name, d
+	if entry, ok := i.blockExact[d]; ok && entry.matches(qtype) {
+		return true, entry.source, d
 	}
-	if name, pat, ok := lookupSuffix(i.blockWildcard, d); ok {
-		return true, name, pat
+	if entry, pat, ok := lookupSuffix(i.blockWildcard, d); ok && entry.matches(qtype) {
+		return true, entry.source, pat
 	}
-	if name := regexSource(i.blockRegex, d); name != "" {
+	if name := regexSource(i.blockRegex, d, qtype); name != "" {
 		return true, name, d
 	}
 	return false, "", ""
 }
 
-func regexSource(rules []compiledRegex, domain string) string {
+func regexSource(rules []compiledRegex, domain string, qtype uint16) string {
 	for _, rule := range rules {
+		if !(ruleEntry{types: rule.types}).matches(qtype) {
+			continue
+		}
 		if rule.re.MatchString(domain) {
 			return rule.source
 		}
@@ -260,35 +300,46 @@ func (i *Index) MatchRewriteNormalized(d string) (target string, ok bool) {
 // BlockMatchNormalized returns the blocklist rule for d without consulting the
 // allowlist. It is the explanation path: the resolver's MatchNormalized already
 // suppresses an allowed name, but "why was this allowed?" needs to show which
-// blocklist rule would otherwise have applied.
+// blocklist rule would otherwise have applied. The query-type-agnostic form.
 func (i *Index) BlockMatchNormalized(d string) (blocked bool, source, pattern string) {
+	return i.BlockMatchNormalizedQ(d, 0)
+}
+
+// BlockMatchNormalizedQ is BlockMatchNormalized for one query type.
+func (i *Index) BlockMatchNormalizedQ(d string, qtype uint16) (blocked bool, source, pattern string) {
 	if i == nil || d == "" {
 		return false, "", ""
 	}
-	if name, ok := i.blockExact[d]; ok {
-		return true, name, d
+	if entry, ok := i.blockExact[d]; ok && entry.matches(qtype) {
+		return true, entry.source, d
 	}
-	if name, pat, ok := lookupSuffix(i.blockWildcard, d); ok {
-		return true, name, pat
+	if entry, pat, ok := lookupSuffix(i.blockWildcard, d); ok && entry.matches(qtype) {
+		return true, entry.source, pat
 	}
-	if name := regexSource(i.blockRegex, d); name != "" {
+	if name := regexSource(i.blockRegex, d, qtype); name != "" {
 		return true, name, d
 	}
 	return false, "", ""
 }
 
-// AllowMatchNormalized returns the allowlist rule covering d, if any.
+// AllowMatchNormalized returns the allowlist rule covering d, if any. The
+// query-type-agnostic form.
 func (i *Index) AllowMatchNormalized(d string) (source, pattern string, ok bool) {
+	return i.AllowMatchNormalizedQ(d, 0)
+}
+
+// AllowMatchNormalizedQ is AllowMatchNormalized for one query type.
+func (i *Index) AllowMatchNormalizedQ(d string, qtype uint16) (source, pattern string, ok bool) {
 	if i == nil || d == "" {
 		return "", "", false
 	}
-	if name, ok := i.allowExact[d]; ok {
-		return name, d, true
+	if entry, ok := i.allowExact[d]; ok && entry.matches(qtype) {
+		return entry.source, d, true
 	}
-	if name, pat, ok := lookupSuffix(i.allowWildcard, d); ok {
-		return name, pat, true
+	if entry, pat, ok := lookupSuffix(i.allowWildcard, d); ok && entry.matches(qtype) {
+		return entry.source, pat, true
 	}
-	if name := regexSource(i.allowRegex, d); name != "" {
+	if name := regexSource(i.allowRegex, d, qtype); name != "" {
 		return name, d, true
 	}
 	return "", "", false
@@ -351,33 +402,35 @@ func (i *Index) RegexCount() int {
 	return len(i.blockRegex) + len(i.allowRegex)
 }
 
-func (i *Index) addBlock(domain string, exact, suffix bool, source string) {
+func (i *Index) addBlock(domain string, exact, suffix bool, source string, types map[uint16]struct{}) {
 	if source == "" {
 		source = "Blocklist"
 	}
+	entry := ruleEntry{source: source, types: types}
 	if exact {
-		i.blockExact[domain] = source
+		i.blockExact[domain] = entry
 	}
 	if suffix {
-		i.blockWildcard[domain] = source
+		i.blockWildcard[domain] = entry
 	}
 }
 
-func (i *Index) addAllow(domain string, exact, suffix bool, source string) {
+func (i *Index) addAllow(domain string, exact, suffix bool, source string, types map[uint16]struct{}) {
 	if source == "" {
 		source = "Allowlist"
 	}
+	entry := ruleEntry{source: source, types: types}
 	if exact {
-		i.allowExact[domain] = source
+		i.allowExact[domain] = entry
 	}
 	if suffix {
-		i.allowWildcard[domain] = source
+		i.allowWildcard[domain] = entry
 	}
 }
 
-func lookupSuffix(set map[string]string, d string) (string, string, bool) {
+func lookupSuffix(set map[string]ruleEntry, d string) (ruleEntry, string, bool) {
 	if len(set) == 0 {
-		return "", "", false
+		return ruleEntry{}, "", false
 	}
 	for i := 0; i < len(d); {
 		dot := strings.IndexByte(d[i:], '.')
@@ -388,11 +441,11 @@ func lookupSuffix(set map[string]string, d string) (string, string, bool) {
 		if i >= len(d) {
 			break
 		}
-		if name, ok := set[d[i:]]; ok {
-			return name, "*." + d[i:], true
+		if entry, ok := set[d[i:]]; ok {
+			return entry, "*." + d[i:], true
 		}
 	}
-	return "", "", false
+	return ruleEntry{}, "", false
 }
 
 func parseInto(idx *Index, source, text string, allowRegex bool, stats *Stats) {
@@ -421,6 +474,16 @@ func parseInto(idx *Index, source, text string, allowRegex bool, stats *Stats) {
 			allow = true
 			line = strings.TrimSpace(line[2:])
 		}
+		// $dnstype narrows a rule to one or more query types. It is parsed and
+		// removed before the regex and rewrite branches so a regex rule can carry
+		// it too and the remaining modifiers reach stripModifiers unchanged.
+		var types map[uint16]struct{}
+		var validTypes bool
+		line, types, validTypes = extractDNSType(line)
+		if !validTypes {
+			stats.Skipped++
+			continue
+		}
 		// Regex syntax can itself contain '$', so recognize the entire /.../
 		// line before looking for modifier delimiters.
 		if strings.HasPrefix(line, "/") && strings.HasSuffix(line, "/") {
@@ -440,19 +503,20 @@ func parseInto(idx *Index, source, text string, allowRegex bool, stats *Stats) {
 				continue
 			}
 			if allow {
-				idx.allowRegex = append(idx.allowRegex, compiledRegex{re: re, source: source})
+				idx.allowRegex = append(idx.allowRegex, compiledRegex{re: re, source: source, types: types})
 				stats.Allowed++
 			} else {
-				idx.blockRegex = append(idx.blockRegex, compiledRegex{re: re, source: source})
+				idx.blockRegex = append(idx.blockRegex, compiledRegex{re: re, source: source, types: types})
 				stats.Blocked++
 			}
 			continue
 		}
 		// Validate rewrites before stripping modifiers. A malformed rewrite must
 		// not silently degrade into an ordinary block, and rewrite syntax is not
-		// meaningful on an allow exception.
+		// meaningful on an allow exception. A typed rewrite has no defined answer
+		// shape, so it is skipped rather than guessed at.
 		rewriteTarget, hasRewrite, validRewrite := dnsRewriteModifier(line)
-		if !validRewrite || (allow && hasRewrite) {
+		if !validRewrite || (allow && hasRewrite) || (hasRewrite && len(types) > 0) {
 			stats.Skipped++
 			continue
 		}
@@ -469,7 +533,7 @@ func parseInto(idx *Index, source, text string, allowRegex bool, stats *Stats) {
 				if strings.HasPrefix(host, "#") {
 					break
 				}
-				if addRule(idx, host, allow, source, stats, rewriteTarget) {
+				if addRule(idx, host, allow, source, stats, rewriteTarget, types) {
 					added = true
 				}
 			}
@@ -479,7 +543,7 @@ func parseInto(idx *Index, source, text string, allowRegex bool, stats *Stats) {
 			continue
 		}
 
-		if addRule(idx, fields[0], allow, source, stats, rewriteTarget) {
+		if addRule(idx, fields[0], allow, source, stats, rewriteTarget, types) {
 			continue
 		}
 		stats.Skipped++
@@ -578,7 +642,105 @@ func stripClientScope(pattern string, modifier string, hasValue bool) string {
 	return pattern
 }
 
-func addRule(idx *Index, raw string, allow bool, source string, stats *Stats, rewriteTarget string) bool {
+// dnstypeModifierState is the outcome of scanning a modifier list for $dnstype.
+const (
+	dnstypeAbsent = iota
+	dnstypeParsed
+	dnstypeInvalid
+)
+
+// extractDNSType removes a $dnstype=... token from an AdGuard rule and returns
+// the query types it names. A line without the modifier is returned unchanged
+// with a nil set. Modifiers live after the final '$'; a '$' inside a /regex/ is
+// part of the pattern, so every candidate is tried until one parses.
+func extractDNSType(line string) (string, map[uint16]struct{}, bool) {
+	start := strings.IndexByte(line, '$')
+	for start >= 0 {
+		types, rest, state := parseDNSTypeModifiers(line[start+1:])
+		switch state {
+		case dnstypeInvalid:
+			return line, nil, false
+		case dnstypeParsed:
+			prefix := strings.TrimSpace(line[:start])
+			if rest == "" {
+				return prefix, types, true
+			}
+			return prefix + "$" + rest, types, true
+		}
+		next := strings.IndexByte(line[start+1:], '$')
+		if next < 0 {
+			break
+		}
+		start += 1 + next
+	}
+	return line, nil, true
+}
+
+// parseDNSTypeModifiers scans a comma-separated AdGuard modifier list for
+// dnstype and returns the remaining modifiers without it.
+func parseDNSTypeModifiers(mods string) (types map[uint16]struct{}, rest string, state int) {
+	parts := strings.Split(mods, ",")
+	kept := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		name, value, hasValue := strings.Cut(part, "=")
+		if !strings.EqualFold(strings.TrimSpace(name), "dnstype") {
+			if part != "" {
+				kept = append(kept, part)
+			}
+			continue
+		}
+		if state == dnstypeInvalid {
+			continue
+		}
+		set, ok := parseDNSTypeValue(value)
+		if !hasValue || !ok {
+			state = dnstypeInvalid
+			continue
+		}
+		if types == nil {
+			types = make(map[uint16]struct{}, len(set))
+		}
+		for t := range set {
+			types[t] = struct{}{}
+		}
+		state = dnstypeParsed
+	}
+	return types, strings.Join(kept, ","), state
+}
+
+// parseDNSTypeValue accepts the AdGuard pipe form (HTTPS|SVCB) as well as a
+// single mnemonic or TYPE<n> value. Type names are matched case-insensitively.
+func parseDNSTypeValue(value string) (map[uint16]struct{}, bool) {
+	out := make(map[uint16]struct{}, 2)
+	for _, raw := range strings.Split(value, "|") {
+		token := strings.ToUpper(strings.TrimSpace(raw))
+		if token == "" {
+			return nil, false
+		}
+		if t, ok := dns.StringToType[token]; ok {
+			out[t] = struct{}{}
+			continue
+		}
+		if n, ok := parseDNSTypeNumber(token); ok {
+			out[n] = struct{}{}
+			continue
+		}
+		return nil, false
+	}
+	return out, len(out) > 0
+}
+
+func parseDNSTypeNumber(token string) (uint16, bool) {
+	token = strings.TrimPrefix(token, "TYPE")
+	n, err := strconv.ParseUint(token, 10, 16)
+	if err != nil {
+		return 0, false
+	}
+	return uint16(n), true
+}
+
+func addRule(idx *Index, raw string, allow bool, source string, stats *Stats, rewriteTarget string, types map[uint16]struct{}) bool {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return false
@@ -624,10 +786,10 @@ func addRule(idx *Index, raw string, allow bool, source string, stats *Stats, re
 		return true
 	}
 	if allow {
-		idx.addAllow(d, exact, suffix, source)
+		idx.addAllow(d, exact, suffix, source, types)
 		stats.Allowed++
 	} else {
-		idx.addBlock(d, exact, suffix, source)
+		idx.addBlock(d, exact, suffix, source, types)
 		stats.Blocked++
 	}
 	return true

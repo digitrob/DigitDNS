@@ -134,6 +134,9 @@ func (ws *WebServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(&b, "digitdns_quic_handshake_rejected_total{transport=%q} %d\n", "doh3", tm.DoH3HandshakeRejects)
 	fmt.Fprintf(&b, "digitdns_quic_handshake_rejected_total{transport=%q} %d\n", "doq", tm.DoQHandshakeRejects)
 	writeMetric("digitdns_relays_unreadable_total", "Relay connections whose opening bytes named no destination.", "counter", st.RelaysUnreadable)
+	writeMetric("digitdns_relays_quic_rejected_total", "QUIC attempts answered with a fast-fail Version Negotiation packet.", "counter", st.RelaysQUICRejected)
+	writeMetric("digitdns_relays_quic_ignored_total", "UDP datagrams on the relay port that were not QUIC Initials.", "counter", st.RelaysQUICIgnored)
+	writeMetric("digitdns_relays_quic_limited_total", "QUIC fast-fail replies suppressed by the rate limiter.", "counter", st.RelaysQUICLimited)
 
 	writeMetric("digitdns_cpu_percent", "Process CPU usage percentage.", "gauge", st.CPUUsagePercent)
 	writeMetric("digitdns_system_cpu_percent", "Machine-wide CPU usage percentage.", "gauge", st.SystemCPUPercent)

@@ -30,6 +30,10 @@ type sniProxyFile struct {
 	EnableFragmentation *bool  `json:"enable_fragmentation"`
 	FragmentSize        *int   `json:"fragment_size"`
 	FragmentDelayMs     *int   `json:"fragment_delay_ms"`
+	// QUICReject is the positive spelling of the fast-fail QUIC responder. The
+	// stored record keeps the inverted form so an older database decodes to
+	// "enabled" rather than silently switching the guard off.
+	QUICReject *bool `json:"quic_reject"`
 }
 
 // accessFile mirrors the "access" block of config.json.
@@ -272,6 +276,9 @@ func applyConfigFile(path string, server *database.ServerSettings, dns *database
 		}
 		if s.FragmentDelayMs != nil {
 			sni.FragmentDelayMs = *s.FragmentDelayMs
+		}
+		if s.QUICReject != nil {
+			sni.QUICRejectDisabled = !*s.QUICReject
 		}
 	}
 

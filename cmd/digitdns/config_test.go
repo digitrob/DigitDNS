@@ -219,7 +219,8 @@ func TestConfigSNIProxyBlock(t *testing.T) {
 	  "sniproxy": {
 	    "https_port": 8443,
 	    "timeout": 30000000000,
-	    "enable_fragmentation": false
+	    "enable_fragmentation": false,
+	    "quic_reject": false
 	  }
 	}`)
 
@@ -234,6 +235,9 @@ func TestConfigSNIProxyBlock(t *testing.T) {
 	}
 	if sni.EnableFragmentation {
 		t.Error("enable_fragmentation: false was ignored — a zero-valued bool must be honoured")
+	}
+	if !sni.QUICRejectDisabled {
+		t.Error("quic_reject: false was ignored — the guard must be opt-outable")
 	}
 	if sni.HTTPPort != 80 || sni.FragmentSize != 2 {
 		t.Errorf("absent SNI keys were overwritten: %+v", sni)
@@ -252,6 +256,11 @@ func TestConfigSNIProxyLegacySpelling(t *testing.T) {
 
 	if sni.HTTPSPort != 9443 || sni.FragmentSize != 4 {
 		t.Errorf("the legacy sni_proxy block was ignored: %+v", sni)
+	}
+	// A config without quic_reject must leave the guard on: the zero value of the
+	// stored record is the enabled state.
+	if !sni.QUICRejectEnabled() {
+		t.Error("an absent quic_reject key disabled the fast-fail guard")
 	}
 }
 

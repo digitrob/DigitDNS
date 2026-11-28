@@ -1208,7 +1208,7 @@ func (h *Handler) ProcessQuery(r *dns.Msg, clientIP string, protocol ...string) 
 		if manualHit {
 			action, ruleName, matchedPattern = manualAction, manualRule, manualPattern
 		} else {
-			action, ruleName, matchedPattern = h.matcher.MatchDetailLower(domain)
+			action, ruleName, matchedPattern = h.matcher.MatchDetailLowerQ(domain, q.Qtype)
 		}
 	}
 

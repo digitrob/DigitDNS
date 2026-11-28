@@ -240,6 +240,9 @@ type ProxyGuardStats struct {
 	TableFull     uint64
 	ResolveFailed uint64
 	Flood         uint64
+	QUICRejected  uint64
+	QUICIgnored   uint64
+	QUICLimited   uint64
 }
 
 // SetProxyGuardDetailSource wires in the reason breakdown. Call it once during
@@ -700,6 +703,13 @@ type LiveStatsResponse struct {
 	RelaysRefusedTableFull uint64 `json:"relays_refused_table_full"`
 	RelaysRefusedResolve   uint64 `json:"relays_refused_resolve"`
 	RelaysRefusedFlood     uint64 `json:"relays_refused_flood"`
+	// QUIC attempts answered by the relay's fast-fail Version Negotiation guard.
+	// Rejected is the number of clients that were told at once to retry over TCP;
+	// Ignored is UDP noise that was not a QUIC Initial; Limited is replies the
+	// rate limiter suppressed.
+	RelaysQUICRejected uint64 `json:"relays_quic_rejected"`
+	RelaysQUICIgnored  uint64 `json:"relays_quic_ignored"`
+	RelaysQUICLimited  uint64 `json:"relays_quic_limited"`
 
 	// Latency is the service-time distribution of every query; LatencyUncached is
 	// the same restricted to the ones the cache did not answer, which is where an
@@ -819,6 +829,9 @@ func (s *StatsService) GetLiveStatsForRange(rangeKey string) LiveStatsResponse {
 		RelaysRefusedTableFull: proxyDrops.TableFull,
 		RelaysRefusedResolve:   proxyDrops.ResolveFailed,
 		RelaysRefusedFlood:     proxyDrops.Flood,
+		RelaysQUICRejected:     proxyDrops.QUICRejected,
+		RelaysQUICIgnored:      proxyDrops.QUICIgnored,
+		RelaysQUICLimited:      proxyDrops.QUICLimited,
 
 		Latency:         s.latencyAll.snapshotRangeAt(now, rangeKey),
 		LatencyUncached: s.latencyResolve.snapshotRangeAt(now, rangeKey),

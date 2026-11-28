@@ -844,6 +844,9 @@ func main() {
 			TableFull:     d.TableFull,
 			ResolveFailed: d.ResolveFailed,
 			Flood:         d.Flood,
+			QUICRejected:  d.QUICRejected,
+			QUICIgnored:   d.QUICIgnored,
+			QUICLimited:   d.QUICLimited,
 		}
 	})
 

@@ -6673,7 +6673,9 @@ function renderCacheHealth(data) {
 function renderProxyDrops(data) {
   const refusedEl = statEl('stat-proxy-refused');
   const unreadableEl = statEl('stat-proxy-unreadable');
-  if (!refusedEl && !unreadableEl) return;
+  const quicEl = statEl('stat-proxy-quic');
+  const quicWrap = document.getElementById('stat-proxy-quic-wrap');
+  if (!refusedEl && !unreadableEl && !quicEl) return;
 
   const refused = data.relays_refused || 0;
   const malformed = data.relays_refused_malformed || 0;
@@ -6684,6 +6686,8 @@ function renderProxyDrops(data) {
   const resolveFailed = data.relays_refused_resolve || 0;
   const flood = data.relays_refused_flood || 0;
   const unreadable = data.relays_unreadable || 0;
+  const quicRejected = data.relays_quic_rejected || 0;
+  const quicLimited = data.relays_quic_limited || 0;
 
   // Flood attempts are the penalty box counting every retry from a source
   // already blocked for malformed probes. One scanner can produce tens of
@@ -6710,6 +6714,22 @@ function renderProxyDrops(data) {
       ? `${fmtWhole(unreadable)} connection(s) arrived without naming a destination — no TLS SNI and no HTTP Host header. A few are port scans. A rising count means a proxied name is sending clients here for traffic this relay cannot carry; check the server log for the sampled "unreadable destination" lines, which name the port and the first bytes.`
       : 'Every connection that reached the proxy named a destination and was relayed';
     if (unreadableEl.title !== unreadableTitle) unreadableEl.title = unreadableTitle;
+  }
+
+  // The QUIC fast-fail guard is a success counter, not a failure one: each hit
+  // is a client that was told immediately to retry over TCP instead of waiting
+  // out a QUIC handshake this relay can never complete. Hidden at zero so a
+  // TCP-only install keeps its card unchanged.
+  if (quicWrap) {
+    quicWrap.classList.toggle('hidden', quicRejected === 0 && quicLimited === 0);
+  }
+  if (quicEl) {
+    const quicText = fmtWhole(quicRejected);
+    if (quicEl.textContent !== quicText) quicEl.textContent = quicText;
+    const quicTitle = quicRejected > 0 || quicLimited > 0
+      ? `${fmtWhole(quicRejected)} QUIC attempt(s) were answered at once with a Version Negotiation packet, so the client retried over TCP through this relay. Each would otherwise wait out its own QUIC handshake timeout.${quicLimited > 0 ? ` ${fmtWhole(quicLimited)} replies were suppressed by the per-source rate limit.` : ''}`
+      : 'No QUIC attempts reached the relay';
+    if (quicEl.title !== quicTitle) quicEl.title = quicTitle;
   }
 }
 

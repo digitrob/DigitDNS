@@ -48,7 +48,8 @@
     "timeout": 120000000000,
     "enable_fragmentation": true,
     "fragment_size": 2,
-    "fragment_delay_ms": 5
+    "fragment_delay_ms": 5,
+    "quic_reject": true
   },
   "access": {
     "allow_all": false,

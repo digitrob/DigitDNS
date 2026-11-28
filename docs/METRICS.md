@@ -62,6 +62,9 @@ scrape_configs:
 | `digitdns_relays_refused_actionable_total` | counter | Relay connections refused for an actionable reason (flood attempts excluded). |
 | `digitdns_relays_flood_total` | counter | Relay connection attempts from a source already in the malformed-probe penalty box. |
 | `digitdns_relays_unreadable_total` | counter | Connections whose opening bytes named no destination. |
+| `digitdns_relays_quic_rejected_total` | counter | QUIC attempts answered with a fast-fail Version Negotiation packet, so the client retried over TCP. |
+| `digitdns_relays_quic_ignored_total` | counter | UDP datagrams on the relay port that were not QUIC Initials. |
+| `digitdns_relays_quic_limited_total` | counter | QUIC fast-fail replies suppressed by the per-source or global rate limit. |
 | `digitdns_doh3_requests_total` | counter | HTTP/3 DoH requests served since start. |
 | `digitdns_doh3_connections` | gauge | HTTP/3 DoH connections currently open. |
 | `digitdns_doh3_connections_total` | counter | HTTP/3 DoH connections accepted since start. |

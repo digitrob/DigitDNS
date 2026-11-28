@@ -554,6 +554,25 @@ type SNIProxySettings struct {
 	EnableFragmentation bool          `json:"enable_fragmentation"`
 	FragmentSize        int           `json:"fragment_size"`
 	FragmentDelayMs     int           `json:"fragment_delay_ms"`
+
+	// QUICRejectDisabled is the negative form of the fast-fail QUIC responder.
+	// The relay speaks TCP only, so a client that resolves a proxied name to this
+	// server and then opens QUIC to the same address waits for a handshake that
+	// can never complete. Answering its first packet with a Version Negotiation
+	// packet that lists no version the client supports makes it abandon QUIC at
+	// once and retry over TCP through the relay, instead of stalling until the
+	// firewall or its own timeout gives up.
+	//
+	// Inverted so the zero value — every record written before this field
+	// existed — keeps the guard on. Disabling it is the explicit opt-out for a
+	// host that runs a real HTTP/3 service on the same port.
+	QUICRejectDisabled bool `json:"quic_reject_disabled,omitempty"`
+}
+
+// QUICRejectEnabled reports whether the relay should answer QUIC attempts with
+// a fast-fail Version Negotiation packet.
+func (s SNIProxySettings) QUICRejectEnabled() bool {
+	return !s.QUICRejectDisabled
 }
 
 // TLSSettings holds the custom domain and the ACME (Let's Encrypt) contact.

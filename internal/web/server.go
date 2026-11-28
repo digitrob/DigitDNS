@@ -3006,6 +3006,12 @@ func (ws *WebServer) handleStats(w http.ResponseWriter, r *http.Request) {
 		"relays_refused_table_full": st.RelaysRefusedTableFull,
 		"relays_refused_resolve":    st.RelaysRefusedResolve,
 		"relays_refused_flood":      st.RelaysRefusedFlood,
+		// QUIC attempts the relay answered at once with a Version Negotiation
+		// packet, so the client retried over TCP instead of waiting out its own
+		// handshake timeout. Limited counts replies the rate limiter suppressed.
+		"relays_quic_rejected": st.RelaysQUICRejected,
+		"relays_quic_ignored":  st.RelaysQUICIgnored,
+		"relays_quic_limited":  st.RelaysQUICLimited,
 
 		// Query service time. latency covers everything the resolver answered;
 		// latency_uncached drops the cache hits, which is the only one of the two

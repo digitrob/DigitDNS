@@ -55,6 +55,11 @@ data class LiveStats(
     // subtracts them from the actionable drop count.
     @SerialName("relays_refused_flood") val relaysRefusedFlood: Long = 0,
     @SerialName("relays_unreadable") val relaysUnreadable: Long = 0,
+    // QUIC attempts the relay answered at once with a Version Negotiation
+    // packet, so the client retried over TCP instead of waiting out its own
+    // handshake timeout. A success counter, not a drop counter.
+    @SerialName("relays_quic_rejected") val relaysQuicRejected: Long = 0,
+    @SerialName("relays_quic_limited") val relaysQuicLimited: Long = 0,
     // Cache serve-stale / background refresh health.
     @SerialName("stale_served") val staleServed: Long = 0,
     @SerialName("refresh_started") val refreshStarted: Long = 0,

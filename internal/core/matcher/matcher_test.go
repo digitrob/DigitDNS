@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"digitdns/internal/blocklist"
+	"github.com/miekg/dns"
 )
 
 // The matcher decides, for every query the daemon answers, whether the client
@@ -371,6 +372,29 @@ func TestBlocklistDNSRewriteIsServedAndExplainedAsCustomRecord(t *testing.T) {
 			explanation.CustomRecord != "192.0.2.44" {
 			t.Errorf("Explain(%q) = %#v, want blocklist custom record", domain, explanation)
 		}
+	}
+}
+
+func TestBlocklistDNSTypeVerdictDependsOnQueryType(t *testing.T) {
+	m := NewMatcher()
+	index, _ := blocklist.Build([]blocklist.Source{{
+		Name:    "quic guard",
+		Enabled: true,
+		Text:    "||google.com^$dnstype=HTTPS\n",
+	}}, nil)
+	m.SetBlockIndex(index)
+
+	// Exercise the verdict cache in both directions: a name-only cache would
+	// return the first answer for the second type.
+	if action, rule, _ := m.MatchDetailLowerQ("gemini.google.com", dns.TypeHTTPS); action != ActionBlock ||
+		rule != "Blocklist: quic guard" {
+		t.Fatalf("HTTPS action = (%v, %q), want BLOCK from quic guard", action, rule)
+	}
+	if action, _, _ := m.MatchDetailLowerQ("gemini.google.com", dns.TypeA); action != ActionDirect {
+		t.Fatalf("A action = %v, want DIRECT", action)
+	}
+	if action, _, _ := m.MatchDetailLowerQ("gemini.google.com", dns.TypeHTTPS); action != ActionBlock {
+		t.Fatalf("repeat HTTPS action = %v, want BLOCK (cache must keep the type)", action)
 	}
 }
 

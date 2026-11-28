@@ -225,31 +225,39 @@ type matcherVerdict struct {
 type matcherVerdicts struct {
 	snap    *matcherSnapshot
 	mu      sync.RWMutex
-	entries map[string]matcherVerdict
+	entries map[verdictKey]matcherVerdict
+}
+
+// verdictKey includes the query type: a $dnstype blocklist rule makes the
+// verdict for one name differ between A and HTTPS, so a name-only key would
+// serve the wrong action to one of them.
+type verdictKey struct {
+	name  string
+	qtype uint16
 }
 
 func (m *Matcher) verdictsFor(snap *matcherSnapshot) *matcherVerdicts {
 	if cached := m.verdicts.Load(); cached != nil && cached.snap == snap {
 		return cached
 	}
-	next := &matcherVerdicts{snap: snap, entries: make(map[string]matcherVerdict, 256)}
+	next := &matcherVerdicts{snap: snap, entries: make(map[verdictKey]matcherVerdict, 256)}
 	m.verdicts.Store(next)
 	return next
 }
 
-func (c *matcherVerdicts) get(d string) (matcherVerdict, bool) {
+func (c *matcherVerdicts) get(d string, qtype uint16) (matcherVerdict, bool) {
 	c.mu.RLock()
-	v, ok := c.entries[d]
+	v, ok := c.entries[verdictKey{name: d, qtype: qtype}]
 	c.mu.RUnlock()
 	return v, ok
 }
 
-func (c *matcherVerdicts) put(d string, v matcherVerdict) {
+func (c *matcherVerdicts) put(d string, qtype uint16, v matcherVerdict) {
 	c.mu.Lock()
 	if len(c.entries) >= matcherVerdictCap {
-		c.entries = make(map[string]matcherVerdict, 256)
+		c.entries = make(map[verdictKey]matcherVerdict, 256)
 	}
-	c.entries[d] = v
+	c.entries[verdictKey{name: d, qtype: qtype}] = v
 	c.mu.Unlock()
 }
 
@@ -453,14 +461,21 @@ func (m *Matcher) match(domain string, policies []string) (Action, string) {
 }
 
 func (m *Matcher) matchDetail(domain string, _ []string) (Action, string, string) {
-	return m.matchDetailLower(normalizeDomain(domain))
+	return m.matchDetailLower(normalizeDomain(domain), 0)
 }
 
 // MatchDetailLower is MatchDetail for a name the resolver has already
 // normalised: lower case, trimmed and with the trailing dot removed. It skips
-// the second normalisation pass on the query path.
+// the second normalisation pass on the query path. It is the query-type-agnostic
+// form; a $dnstype rule never matches through it.
 func (m *Matcher) MatchDetailLower(d string) (Action, string, string) {
-	return m.matchDetailLower(d)
+	return m.matchDetailLower(d, 0)
+}
+
+// MatchDetailLowerQ is MatchDetailLower for one DNS query type, so a blocklist
+// rule compiled with $dnstype applies only to the type it names.
+func (m *Matcher) MatchDetailLowerQ(d string, qtype uint16) (Action, string, string) {
+	return m.matchDetailLower(d, qtype)
 }
 
 // ManualMatch reports the live-log decision for a domain, if any. The resolver
@@ -541,7 +556,7 @@ func (s *matcherSnapshot) lookupManual(d string) (Action, string, string, bool) 
 	return ActionDirect, "", "", false
 }
 
-func (m *Matcher) matchDetailLower(d string) (Action, string, string) {
+func (m *Matcher) matchDetailLower(d string, qtype uint16) (Action, string, string) {
 	if d == "" {
 		return ActionDirect, "Direct", ""
 	}
@@ -556,16 +571,16 @@ func (m *Matcher) matchDetailLower(d string) (Action, string, string) {
 	// answer therefore skips the blocklist suffix walk for repeat traffic without
 	// ever serving a stale policy: the cache is keyed by the snapshot pointer.
 	cache := m.verdictsFor(snap)
-	if verdict, ok := cache.get(d); ok {
+	if verdict, ok := cache.get(d, qtype); ok {
 		return verdict.action, verdict.rule, verdict.pattern
 	}
-	action, rule, pattern := matchDetailSnap(snap, d)
-	cache.put(d, matcherVerdict{action: action, rule: rule, pattern: pattern})
+	action, rule, pattern := matchDetailSnap(snap, d, qtype)
+	cache.put(d, qtype, matcherVerdict{action: action, rule: rule, pattern: pattern})
 	return action, rule, pattern
 }
 
 // matchDetailSnap is the uncached precedence walk.
-func matchDetailSnap(snap *matcherSnapshot, d string) (Action, string, string) {
+func matchDetailSnap(snap *matcherSnapshot, d string, qtype uint16) (Action, string, string) {
 	// The live-log decision is the operator's most specific statement of intent.
 	// It outranks custom records, blocklists, forced-direct rules and every
 	// custom list, including a broader wildcard in a lower tier.
@@ -588,7 +603,7 @@ func matchDetailSnap(snap *matcherSnapshot, d string) (Action, string, string) {
 	// List blocks sit below the operator's own rules. A list exception returns
 	// blocked=false here, so it can suppress a list block without overriding an
 	// explicit Custom Block above or a proxy rule below.
-	if blocked, source, pattern := snap.blockIndex.MatchNormalized(d); blocked {
+	if blocked, source, pattern := snap.blockIndex.MatchNormalizedQ(d, qtype); blocked {
 		return ActionBlock, "Blocklist: " + source, pattern
 	}
 	if name, pattern, ok := snap.realtime.lookupPattern(d); ok {

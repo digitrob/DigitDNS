@@ -67,7 +67,7 @@ COPY --from=builder /out/digitdns /app/digitdns
 # DNS (53), SNI proxy (80/443), DoT (853), DoQ (853/udp), dashboard (8080),
 # HTTPS/DoH (8443), DoH3 (8443/udp) and DNSCrypt (5443/udp+tcp).
 # Decorative under `network_mode: host`, which is what docker-compose.yml uses.
-EXPOSE 53/udp 53/tcp 80/tcp 443/tcp 853/tcp 853/udp 8080/tcp 8443/tcp 8443/udp 5443/tcp 5443/udp
+EXPOSE 53/udp 53/tcp 80/tcp 443/tcp 443/udp 853/tcp 853/udp 8080/tcp 8443/tcp 8443/udp 5443/tcp 5443/udp
 
 VOLUME ["/app/data", "/app/certs"]
 

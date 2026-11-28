@@ -1305,6 +1305,7 @@
                 <div>Total: <span id="stat-proxy-total" class="text-slate-300 font-bold">0</span></div>
                 <div>Refused: <span id="stat-proxy-refused" class="text-slate-400" title="Actionable refusals only: a blocked target, a self-dial, a spent quota, a resolve failure, or a full relay table. Flood attempts from a source already in the malformed-probe penalty box are excluded.">0</span></div>
                 <div>Unreadable: <span id="stat-proxy-unreadable" class="text-slate-400" title="Connections that arrived without naming a destination — no TLS SNI and no HTTP Host header">0</span></div>
+                <div id="stat-proxy-quic-wrap" class="hidden">QUIC: <span id="stat-proxy-quic" class="text-slate-400" title="QUIC attempts answered at once with a Version Negotiation packet, so the client retried over TCP instead of waiting out its own handshake timeout">0</span></div>
               </div>
             </div>
           </div>
@@ -1743,7 +1744,7 @@
                   class="panel-field mt-1 w-full font-mono text-xs"
                   placeholder="||ads.example.com^&#10;@@||allowed.example.com^&#10;||tracking.example.com^$important"
                   aria-label="Custom filtering rules"></textarea>
-                <span class="text-[10px] text-slate-500 mt-1 block">AdGuard/uBlock network rules: ||domain^ blocks, @@||domain^ allows, $dnsrewrite=IP answers A/AAAA with that IP, and $dnsrewrite=host returns a CNAME. Custom regex uses RE2 (max 64 patterns, 512 characters each). Downloaded-list regex, cosmetic rules, and scoped $client, $denyallow and $badfilter modifiers are skipped.</span>
+                <span class="text-[10px] text-slate-500 mt-1 block">AdGuard/uBlock network rules: ||domain^ blocks, @@||domain^ allows, $dnsrewrite=IP answers A/AAAA with that IP, and $dnsrewrite=host returns a CNAME. $dnstype=HTTPS (or A|AAAA, SVCB, TYPE65) narrows a rule to those query types — useful for withholding HTTPS/SVCB hints without touching A/AAAA. Custom regex uses RE2 (max 64 patterns, 512 characters each). Downloaded-list regex, cosmetic rules, and scoped $client, $denyallow and $badfilter modifiers are skipped.</span>
               </label>
 
               <div class="filtering-settings-actions">

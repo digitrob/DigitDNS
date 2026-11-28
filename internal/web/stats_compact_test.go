@@ -72,7 +72,8 @@ func TestStatsCompactContracts(t *testing.T) {
 		"relays_refused_flood", "relays_refused_malformed",
 		"relays_refused_quota", "relays_refused_resolve",
 		"relays_refused_self", "relays_refused_table_full",
-		"relays_unreadable", "speed_in_kbps", "speed_out_kbps",
+		"relays_unreadable", "relays_quic_rejected", "relays_quic_ignored",
+		"relays_quic_limited", "speed_in_kbps", "speed_out_kbps",
 		"stale_served", "total_bytes_transferred", "total_proxy_conns",
 		"total_queries", "upstream_metrics", "upstreams",
 	}

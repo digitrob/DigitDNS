@@ -1,65 +1,40 @@
-# DigitDNS v5.13.0 — One Resolver widget, a Domains toolbar that stays put, and faster query paths
+# DigitDNS v5.13.1 — AdGuard `$dnstype` rules and a QUIC fast-fail guard for the relay
 
-A performance-and-polish release. The two old home-screen widgets become one Resolver widget with a real resolver list and per-widget appearance settings; the Domains search field stops moving when domains are selected; and the resolver's hot paths lose a formatting allocation, a shard-wide eviction scan, a duplicate cache write and a serialised log write. Two correctness bugs that produced retransmits and a data race are fixed. No database schema migration is required.
+A small, targeted patch. Two things that made a proxied name feel slow — or made a pasted rule do nothing — now behave.
 
-## One Resolver widget
+## `$dnstype` rules are enforced
 
-The Status and Toggle widgets are replaced by a single **Resolver** widget:
+AdGuard's `$dnstype` modifier used to be treated as an unknown modifier, and the blocklist parser skips a line it cannot fully understand. A pasted rule such as:
 
-- Lists the pool with the provider mark, the transport **inline beside the name** (DoH, DoT, DoQ, DNSCrypt, plain), the measured latency and a status dot. The resolver currently in use carries a **FASTEST** badge and a wash; transports excluded by policy are dimmed.
-- Header: last update time, an animated refresh (spinner while the fetch runs) and a gear that opens the appearance editor.
-- Footer: a **Filtering ON/OFF** pill that toggles the server and an app launcher.
-- **Four resolvers fit at the default size.** The row, header and footer metrics were compacted and the widget's minimum height raised to three launcher rows, so a 3×3 placement shows four rows without the last one colliding with the footer.
-- **Widget Settings** now sit under **Settings → App → Widget Settings**, not nested inside the App card. Theme (app/dark/grey/light), background opacity and text size are editable per placed widget; the widget's gear and the launcher configure dialog open the same editor and write the same preferences, and every change repaints in place. Each slider has a short tip describing exactly what it changes.
+```
+||google.com^$dnstype=HTTPS
+```
 
-Existing placements of the old Status/Toggle widgets will disappear on upgrade; add the Resolver widget from the picker.
+was therefore silently discarded. It now narrows a block — or an `@@` allow exception — to the named query types:
 
-The launcher no longer answers with an empty box: a toolbar spacer used a bare `<View>`, which RemoteViews refuses to inflate. The layout now uses only RemoteView-allowed classes and an explicit ProgressBar style.
+- `HTTPS`, `SVCB`, `A`, `AAAA`, `TXT`, any mnemonic, or `TYPE<n>`; pipe lists (`HTTPS|SVCB`) and any case work.
+- Exact, wildcard, custom-regex and downloaded-list rules all carry the filter.
+- `$dnsrewrite` combined with `$dnstype` is skipped rather than guessed at.
 
-## The Domains toolbar stops moving
+Blocking the HTTPS/SVCB record removes the `h3` hint without touching A/AAAA. Pair it with the **PROXY** action on the name and proxy leak protection so A points at the relay and AAAA/HTTPS stay sunk.
 
-The selection count was a `min-width: 5rem` floor. "No domains selected" is about 7rem at 11px, so it widened the slot; the first tick shortened the label to "1 selected", the slot collapsed to its floor, and the flex search field grew by the difference — moving the field, the sort control and every bulk button. The count now occupies a fixed, right-aligned slot with tabular digits, so the search box keeps its width at every breakpoint.
+## QUIC fast-fail on the relay
 
-## Faster, steadier resolver
+The relay speaks TCP only, but a proxied name answers with the relay's address. A client that learned HTTP/3 from an HTTPS/SVCB record — or from an older Alt-Svc cache — opens QUIC over UDP 443 and waits for a handshake that can never complete.
 
-- **Cache-hit work is smaller.** With no live-log overrides, custom records or `$dnsrewrite` rules — the normal state — the matcher returns without walking the name's labels, and custom-record lookup reuses the already-normalised name. Single-flight keys are comparable structs, not formatted strings.
-- **Eviction no longer scans the shard.** At capacity, each insert sampled sixteen entries instead of walking all of them (twice) under the shard write lock.
-- **Followers stop duplicating work.** Only the single-flight leader writes the shared answer to the cache; waiters no longer re-copy, clamp and normalise it.
-- **Lossy links do not serialise the pool.** Latency-order invalidation is throttled to a few times a second, and circuit-transition log lines are written after the per-upstream lock is released. Plain TCP upstreams and the truncation fallback reuse idle connections.
-- **The live log no longer encodes on the resolver goroutine.** Query items are queued and marshalled once on a dedicated encoder goroutine. The aggregate's hour key is cached and the shard hash no longer concatenates IP + domain.
-- **A larger UDP receive buffer** (4 MB, Linux best-effort) absorbs query bursts instead of dropping them and waiting for the client's retransmit.
-- **Outbound fetches reuse connections.** Blocklist sources, AdGuard imports, icon search and RDAP share one keep-alive HTTP/2 client; an abandoned AdGuard preview cancels its download.
+The daemon now binds UDP 443 beside the HTTPS listener and answers a client Initial with a **Version Negotiation packet that offers only a reserved version**. The client has no acceptable version, abandons QUIC at once, and retries over TCP through the relay.
 
-## Correctness fixes
+- Only datagrams of at least 1200 bytes are answered, so the guard cannot be used as a reflector; the reply is smaller than the trigger.
+- Per-source and global token buckets bound the work; the source table is capped and swept.
+- It binds only when the HTTPS TCP listener owns the port, so another process's HTTP/3 is never touched.
+- Enabled by default. A host that runs a real HTTP/3 service on the same port can opt out with `"quic_reject": false` in the `sniproxy` config block. The image exposes `443/udp`.
 
-- **Loopback rate-limit exemption on plain DNS.** UDP/TCP/DoT passed `host:port` where the limiter expected a bare IP, so the exemption never applied and local health checks, the panel's resolver test and the TUI could be refused once loopback passed the limit.
-- **Truncated answers cannot be cached.** The client path already refused TC=1, but the background refresh and prefetch writers reached the cache directly; a partial UDP fallback could be served to every client for a full TTL.
-- **The public IPv6 address is atomic.** Saving the IPv6 card while queries were served was a genuine data race; it is now published through an atomic pointer and loaded once per query.
-- **A panicking single-flight leader** broadcasts a failure to its waiters instead of leaving them blocked forever.
+## Counters in the panel and the app
 
-## Dashboard polish
-
-The three end-of-body scripts are deferred, the icon sweep is scoped to the panel it just rendered, the AdGuard preview filter is debounced, the system-log and live-log fallback timers stop when their tab is hidden, and dead CSS/JS was removed.
-
-## Verification
-
-`go vet`, the full Go suite, the race detector on the resolver/cache/upstream/service packages, the dashboard regression tests, Android unit tests and the debug build pass. Web assets were rebuilt and the minified-hash tests pass. No database schema migration is required.
-
-The Android companion moves to **android-v5.13.0**, version code **594**.
+`relays_quic_rejected`, `relays_quic_ignored` and `relays_quic_limited` are on the **SNI Proxy** card in the web panel and the Android dashboard, present in both the full and compact stats responses, and exported as `digitdns_relays_quic_*_total` for Prometheus. The line is hidden at zero so a TCP-only install keeps its card unchanged.
 
 ## Upgrade
 
-In-place upgrades from the dashboard are supported.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/digitrob/DigitDNS/v5.13.0/scripts/install.sh | sudo bash
-```
-
-Docker:
-
-```bash
-docker pull ghcr.io/digitrob/digitdns:5.13.0
-docker pull ghcr.io/digitrob/digitdns-agent:5.13.0
-docker pull robmeister/digitdns:5.13.0
-docker pull robmeister/digitdns-agent:5.13.0
-```
+- Server: pull the new image (`docker compose pull && docker compose up -d`) or use the one-liner / in-dashboard self-updater. If the relay runs behind a firewall that is not `ufw`/`firewalld`, allow **UDP 443** as well as TCP; the guard is inert without it, and QUIC clients keep their old timeout behaviour.
+- Android: `android-v5.13.1`, version code 595.
+- No database schema migration is required.

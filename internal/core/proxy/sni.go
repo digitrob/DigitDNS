@@ -150,8 +150,12 @@ type Server struct {
 	flood          map[string]*sourceGuard
 	floodLastSweep time.Time
 	listeners      []net.Listener
-	mu             sync.Mutex
-	cancel         context.CancelFunc
+	// quic is the fast-fail guard bound to the HTTPS relay's UDP port, and
+	// quicConn is the socket Stop closes to end its read loop.
+	quic     *quicRejector
+	quicConn *net.UDPConn
+	mu       sync.Mutex
+	cancel   context.CancelFunc
 
 	guard *targetGuard
 	// slots is a counting semaphore: a relay takes one for its lifetime.
@@ -386,6 +390,7 @@ func (s *Server) Start() error {
 		{s.settings.RiotPatcherPort, false, "Riot Patcher"},
 	}
 
+	httpsBound := false
 	for _, p := range ports {
 		if p.port <= 0 {
 			continue
@@ -410,8 +415,19 @@ func (s *Server) Start() error {
 		s.mu.Lock()
 		s.listeners = append(s.listeners, ln)
 		s.mu.Unlock()
+		if p.isTLS && p.port == s.settings.HTTPSPort {
+			httpsBound = true
+		}
 
 		go s.acceptLoop(ctx, ln, p.isTLS, p.port)
+	}
+
+	// QUIC attempts reach the same address as the TLS relay. Answering them
+	// makes the client fall back to TCP at once instead of waiting out its own
+	// handshake timeout. Only bind it when the HTTPS listener actually owns the
+	// port: if another process has the TCP side, its HTTP/3 is not ours to break.
+	if httpsBound {
+		s.startQUICRejector(ctx)
 	}
 
 	return nil
@@ -427,6 +443,10 @@ func (s *Server) Stop() {
 		_ = ln.Close()
 	}
 	s.listeners = nil
+	if s.quicConn != nil {
+		_ = s.quicConn.Close()
+		s.quicConn = nil
+	}
 }
 
 func (s *Server) acceptLoop(ctx context.Context, ln net.Listener, isTLS bool, listenPort int) {
@@ -1118,9 +1138,20 @@ type GuardStatsDetail struct {
 	TableFull     uint64
 	ResolveFailed uint64
 	Flood         uint64
+	// QUICRejected counts QUIC attempts the fast-fail guard answered with a
+	// Version Negotiation packet; QUICIgnored counts UDP datagrams on the same
+	// port that were not Initial-sized long headers; QUICLimited counts replies
+	// suppressed by the per-source or global rate limit.
+	QUICRejected uint64
+	QUICIgnored  uint64
+	QUICLimited  uint64
 }
 
 func (s *Server) GuardStatsDetail() GuardStatsDetail {
+	s.mu.Lock()
+	q := s.quic
+	s.mu.Unlock()
+	quicRejected, quicIgnored, quicLimited := q.stats()
 	return GuardStatsDetail{
 		Refused:       s.refused.Load(),
 		Unreadable:    s.unreadable.Load(),
@@ -1131,5 +1162,8 @@ func (s *Server) GuardStatsDetail() GuardStatsDetail {
 		TableFull:     s.refusedTableFull.Load(),
 		ResolveFailed: s.refusedResolve.Load(),
 		Flood:         s.refusedFlood.Load(),
+		QUICRejected:  quicRejected,
+		QUICIgnored:   quicIgnored,
+		QUICLimited:   quicLimited,
 	}
 }

@@ -815,6 +815,18 @@ private fun SniProxyCard(stats: LiveStats?) {
                     color = colors.warning,
                 )
             }
+            // QUIC fast-fail is a success counter: each hit is a client that was
+            // told at once to retry over TCP, instead of waiting out a QUIC
+            // handshake the TCP-only relay can never complete. Hidden at zero so
+            // an install with no QUIC traffic keeps the card unchanged.
+            val quicRejected = stats?.relaysQuicRejected ?: 0
+            if (quicRejected > 0) {
+                Text(
+                    text = stringResource(R.string.dashboard_relay_quic, formatCount(quicRejected)),
+                    style = MetricMeta,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

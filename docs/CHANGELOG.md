@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## 🏷️ [v5.13.1] — AdGuard `$dnstype` rules, QUIC fast-fail on the relay, counters in both apps
+
+A relay-and-filtering patch. AdGuard's `$dnstype` modifier is now understood instead of silently skipping the rule, and the SNI relay answers QUIC attempts at once so clients fall back to TCP instead of waiting out a handshake the relay can never complete.
+
+### Added
+- **`$dnstype` modifier support.** `||google.com^$dnstype=HTTPS` narrows a block (or an `@@` allow exception) to the named query types. Pipe lists (`HTTPS|SVCB`), mnemonics, `TYPE<n>` and any case are accepted; exact, wildcard, custom-regex and downloaded-list rules all carry the filter. `$dnsrewrite` combined with `$dnstype` is skipped rather than guessed at.
+- **QUIC fast-fail guard on the SNI relay.** The relay speaks TCP only, but a proxied name answers with its address, so a client that learned HTTP/3 from an HTTPS/SVCB record (or an older Alt-Svc cache) opens QUIC over UDP 443 and waits for a handshake that cannot complete. The daemon now binds UDP 443 next to the HTTPS listener and answers a client Initial with a **Version Negotiation packet offering only a reserved version**, so the client abandons QUIC immediately and retries over TCP. Only datagrams of at least 1200 bytes are answered, and per-source plus global token buckets bound the replies. Enabled by default; `"quic_reject": false` in the `sniproxy` block opts out. The image now exposes `443/udp`.
+- **QUIC counters in both clients.** `relays_quic_rejected`, `relays_quic_ignored` and `relays_quic_limited` are on the SNI Proxy card in the web panel and the Android dashboard, in the full and compact stats responses, and as `digitdns_relays_quic_*_total` in Prometheus.
+
+### Fixed
+- **AdGuard `$dnstype` rules did nothing.** The parser treated `dnstype` as an unknown modifier and skipped the whole line, so pasted rules such as `||google.com^$dnstype=HTTPS` never blocked anything.
+
+### Changed
+- The matcher's per-snapshot verdict cache is keyed by `(name, qtype)`, so a type-narrowed rule cannot be served to a query of another type.
+- The filter-rules help text in the panel and the Android app documents `$dnstype` and its type syntax.
+
+### Notes
+- No database schema migration is required.
+- The Android companion moves to `android-v5.13.1`, version code 595.
+
+---
+
 ## 🏷️ [v5.13.0] — One Resolver widget, a Domains toolbar that stays put, and faster query paths
 
 ### Added
